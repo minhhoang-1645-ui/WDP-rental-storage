@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  CUSTOMER
+  STAFF
+  MANAGER
+  ADMIN
+}
+
+enum StorageCondition {
+  STANDARD
+  AIR_CONDITIONED
+}
+
+enum UnitStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum RentalStatus {
+  RESERVED
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  RETURNED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  role         UserRole @default(CUSTOMER)
+  rentals      Rental[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Facility {
+  id           String        @id @default(cuid())
+  name         String
+  address      String
+  storageTypes StorageType[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model StorageType {
+  id          String           @id @default(cuid())
+  facilityId  String
+  facility    Facility         @relation(fields: [facilityId], references: [id])
+  name        String
+  code        String           @unique
+  condition   StorageCondition
+  widthCm     Int
+  lengthCm    Int
+  heightCm    Int
+  monthlyRate Decimal          @db.Decimal(12, 2)
+  units       StorageUnit[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model StorageUnit {
+  id            String      @id @default(cuid())
+  storageTypeId String
+  storageType   StorageType @relation(fields: [storageTypeId], references: [id])
+  unitNumber    String      @unique
+  status        UnitStatus  @default(AVAILABLE)
+  rentals       Rental[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Rental {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  storageUnitId String
+  storageUnit   StorageUnit  @relation(fields: [storageUnitId], references: [id])
+  status        RentalStatus @default(RESERVED)
+  startDate     DateTime
+  endDate       DateTime?
+  monthlyRate   Decimal      @db.Decimal(12, 2)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}

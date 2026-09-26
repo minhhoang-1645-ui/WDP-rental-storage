@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.env
+.env.local
+coverage/
+*.log
+.DS_Store
+FE/src/generated/
+BE/src/generated/
+
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Browser test data
+booking-layout-smoke-*/
+screenshots/

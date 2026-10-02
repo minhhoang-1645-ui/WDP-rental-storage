@@ -5,7 +5,7 @@ export interface PublicUser {
   fullName: string
   email: string
   phone: string
-  role: 'CUSTOMER'
+  role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN'
 }
 
 export interface AuthSession {
@@ -28,7 +28,7 @@ export interface BookingDraft {
   startDate: string
   endDate: string
   periodMode: PeriodMode
-  durationMonths: 1 | 3 | 6 | 12 | null
+  durationMonths: number | null
   quantity: number
   adjacencyPreference: boolean
   addonIds: string[]

@@ -4,8 +4,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
 import { StorageIllustration } from '../../components/booking/StorageIllustration'
 import { Container } from '../../components/ui/Container'
-import { approvedAddons, approvedDurations, bookingAvailabilityFingerprint, bookingSizes, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
-import { getStorageListing, getStorageSize } from '../../data/storage'
+import { bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
+import { useCatalog } from '../../catalog/catalog-context'
 import { ApiError } from '../../services/api'
 import { bookingApi } from '../../services/booking'
 import type { AvailabilityResult, BookingDraft, GuestContact, GuestInquiry, PendingReservation } from '../../types/booking'
@@ -37,7 +37,7 @@ function quoteLineItems(quote: AvailabilityResult['quote'] | null) {
 
 type AvailabilityState = 'idle' | 'checking' | 'available' | 'unavailable' | 'error'
 
-function hasValidAvailabilityInput(draft: BookingDraft) {
+function hasValidAvailabilityInput(draft: BookingDraft, approvedDurations: number[]) {
   if (!draft.startDate) return false
   if (draft.periodMode === 'duration') return approvedDurations.includes(draft.durationMonths as 1 | 3 | 6 | 12)
   return Boolean(draft.endDate && draft.endDate > draft.startDate)
@@ -87,13 +87,14 @@ interface CheckoutStepProps {
   onBack: () => void
   onSubmit: (draft: BookingDraft) => void
   submitting: boolean
+  canSubmit: boolean
 }
 
-function CheckoutStep({ draft, quote, productName, productCode, productSizeId, productDimensions, user, onUpdate, onBack, onSubmit, submitting }: CheckoutStepProps) {
+function CheckoutStep({ draft, quote, productName, productCode, productSizeId, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
   const customer: GuestContact = {
-    fullName: draft.customer.fullName || user?.fullName || '',
-    phone: draft.customer.phone || user?.phone || '',
-    email: draft.customer.email || user?.email || '',
+    fullName: user ? user.fullName : draft.customer.fullName,
+    phone: user ? user.phone : draft.customer.phone,
+    email: user ? user.email : draft.customer.email,
   }
   const paymentChoice = draft.paymentChoice
 
@@ -122,12 +123,12 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
       <fieldset className="checkout-fieldset">
         <legend>Thông tin liên hệ</legend>
         <div className="checkout-fields">
-          <label className="field-label">Họ và tên<input required minLength={2} autoComplete="name" value={customer.fullName} onChange={(event) => updateCustomer('fullName', event.target.value)} /></label>
-          <label className="field-label">Số điện thoại<input required minLength={8} type="tel" autoComplete="tel" value={customer.phone} onChange={(event) => updateCustomer('phone', event.target.value)} /></label>
-          <label className="field-label sm:col-span-2">Email<input required type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer('email', event.target.value)} /></label>
+          <label className="field-label">Họ và tên<input required readOnly={Boolean(user)} minLength={2} autoComplete="name" value={customer.fullName} onChange={(event) => updateCustomer('fullName', event.target.value)} /></label>
+          <label className="field-label">Số điện thoại<input required readOnly={Boolean(user)} minLength={8} type="tel" autoComplete="tel" value={customer.phone} onChange={(event) => updateCustomer('phone', event.target.value)} /></label>
+          <label className="field-label sm:col-span-2">Email<input required readOnly={Boolean(user)} type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer('email', event.target.value)} /></label>
           <label className="field-label sm:col-span-2">Ghi chú thêm, không bắt buộc<textarea rows={4} maxLength={500} value={draft.note} onChange={(event) => onUpdate({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để WDP liên hệ" /></label>
         </div>
-        {user && <p className="checkout-auth-note"><UserRound size={16} /> Đã điền từ tài khoản {user.email}. Bạn vẫn có thể chỉnh thông tin liên hệ.</p>}
+        {user && <p className="checkout-auth-note"><UserRound size={16} /> Yêu cầu sử dụng thông tin của tài khoản {user.email} đang đăng nhập.</p>}
       </fieldset>
 
       <fieldset className="checkout-fieldset">
@@ -139,7 +140,7 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
         <Link className="consult-link" to="/#contact">C. Tư vấn giải pháp riêng tại cơ sở này <ArrowRight size={15} /></Link>
       </fieldset>
 
-      <button className="button-primary mt-7 w-full justify-center" type="submit" disabled={submitting || paymentChoice !== 'pay-later'}>{submitting ? 'Đang kiểm tra và gửi...' : user ? 'Gửi reservation PENDING' : 'Gửi yêu cầu liên hệ'} <ChevronRight size={18} /></button>
+      <button className="button-primary mt-7 w-full justify-center" type="submit" disabled={submitting || !canSubmit || paymentChoice !== 'pay-later'}>{submitting ? 'Đang kiểm tra và gửi...' : !canSubmit ? 'Đang xác minh kho…' : user ? 'Gửi yêu cầu đặt kho' : 'Gửi yêu cầu liên hệ'} <ChevronRight size={18} /></button>
     </form>
 
     <aside className="checkout-quote">
@@ -155,12 +156,14 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
 }
 
 export function BookingWizardPage() {
+  const catalog = useCatalog()
+  const { getStorageListing, getStorageSize, bookingSizes, approvedDurations, approvedAddons } = catalog
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
   const requestedStep = Number(params.get('step'))
   const [draft, setDraft] = useState<BookingDraft>(() => {
-    const saved = readBookingDraft()
+    const saved = readBookingDraft(catalog)
     const product = params.get('product')
     const date = params.get('date')
     const duration = Number(params.get('duration'))
@@ -175,8 +178,8 @@ export function BookingWizardPage() {
     const savedStep = requestedStep >= 1 && requestedStep <= 3 ? requestedStep as 1 | 2 | 3 : readBookingStep()
     return savedStep === 3 && !readBookingAvailability(draft)?.available ? 2 : savedStep
   })
-  const [availability, setAvailability] = useState<AvailabilityResult | null>(() => readBookingAvailability(draft))
-  const [availabilityState, setAvailabilityState] = useState<AvailabilityState>(() => readBookingAvailability(draft)?.available ? 'available' : 'idle')
+  const [availability, setAvailability] = useState<AvailabilityResult | null>(null)
+  const [availabilityState, setAvailabilityState] = useState<AvailabilityState>('idle')
   const [availabilityError, setAvailabilityError] = useState('')
   const [availabilityRetry, setAvailabilityRetry] = useState(0)
   const availabilityRequest = useRef(0)
@@ -199,7 +202,7 @@ export function BookingWizardPage() {
   const product = getStorageListing(draft.productId) ?? getStorageListing('sm-b12')!
   const size = getStorageSize(product.sizeId)!
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
-    const canCheckAvailability = hasValidAvailabilityInput(draft)
+    const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations)
 
   const invalidateAvailability = () => {
     availabilityRequest.current += 1
@@ -218,7 +221,7 @@ export function BookingWizardPage() {
   }
 
   useEffect(() => {
-    if (step !== 2 || !canCheckAvailability) {
+    if ((step !== 2 && step !== 3) || !canCheckAvailability) {
       availabilityController.current?.abort()
       return
     }
@@ -287,6 +290,7 @@ export function BookingWizardPage() {
     setAvailabilityRetry((current) => current + 1)
   }
   const submitCheckout = async (checkoutDraft: BookingDraft) => {
+    if (submitting || availabilityState !== 'available' || !availability?.available) return
     setSubmitting(true)
     setError('')
     try {
@@ -384,7 +388,7 @@ export function BookingWizardPage() {
         </aside>
       </div>}
 
-      {step === 3 && <CheckoutStep draft={draft} quote={availability?.quote ?? null} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} />}
+      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={availability?.quote ?? null} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={availabilityState === 'available'} /></>}
     </Container></section>
     {popupOpen && availabilityState !== 'idle' && availabilityState !== 'checking' && <AvailabilityToast state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} onClose={() => setPopupOpen(false)} />}
   </div>

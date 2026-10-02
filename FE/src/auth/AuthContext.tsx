@@ -25,6 +25,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     login: async (input) => saveSession(await authApi.login(input)),
     register: async (input) => saveSession(await authApi.register(input)),
     logout: () => {
+      // Capture the current bearer token before clearing this browser's session.
+      void authApi.logout().catch(() => undefined)
       localStorage.removeItem(AUTH_TOKEN_KEY)
       setUser(null)
     },

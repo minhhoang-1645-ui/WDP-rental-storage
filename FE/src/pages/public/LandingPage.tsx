@@ -4,9 +4,11 @@ import { ImageCredit } from '../../components/public/ImageCredit'
 import { QuickFinder } from '../../components/public/QuickFinder'
 import { ButtonLink } from '../../components/ui/ButtonLink'
 import { Container } from '../../components/ui/Container'
-import { faqs, imageCredits, storageSizes } from '../../data/storage'
+import { faqs, imageCredits } from '../../data/storage'
+import { useCatalog } from '../../catalog/catalog-context'
 
 export function LandingPage() {
+  const { storageSizes } = useCatalog()
   return <>
     <section className="bg-white"><Container className="grid min-h-[650px] items-stretch px-0 lg:grid-cols-[.9fr_1.1fr] lg:px-8"><div className="flex items-center px-5 py-16 sm:px-8 lg:px-0 lg:pr-16"><div><p className="eyebrow">Kho tự quản · Một cơ sở tại TP.HCM</p><h1 className="mt-5 max-w-xl text-5xl leading-[1.06] font-bold tracking-[-.03em] sm:text-6xl">Thêm chỗ cho cuộc sống đang chuyển động.</h1><p className="mt-6 max-w-xl text-lg leading-8 text-slate">Không gian riêng, an toàn và linh hoạt cho đồ gia đình, hồ sơ hay hàng kinh doanh. Chọn kích thước bằng những vật dụng quen thuộc, rồi gửi yêu cầu giữ chỗ khi đã sẵn sàng.</p><div className="mt-8 flex flex-wrap gap-3"><ButtonLink to="/storage">Xem kho đang nhận yêu cầu <ArrowRight size={18} /></ButtonLink><ButtonLink to="/size-guide" variant="secondary">Hướng dẫn kích thước</ButtonLink></div><div className="mt-10 grid max-w-xl grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-6 text-sm text-slate"><span><ShieldCheck /> An ninh nhiều lớp</span><span><Clock3 /> Truy cập thuận tiện</span><span><Snowflake /> Kho thường & điều hòa</span><span><CalendarDays /> Thời hạn linh hoạt</span></div></div></div><figure className="relative min-h-[430px] overflow-hidden bg-slate-100 lg:min-h-full"><img src={imageCredits.hero.src} alt="Ảnh minh họa một khu lưu trữ với các thùng hàng được sắp xếp gọn gàng" className="absolute inset-0 h-full w-full object-cover" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/80 to-transparent px-6 pt-20 pb-6"><ImageCredit label={imageCredits.hero.label} href={imageCredits.hero.href} /><p className="mt-2 max-w-md text-xs text-white/80">Hình ảnh chỉ minh họa loại hình lưu trữ, không phải cơ sở WDP thực tế.</p></div></figure></Container></section>
 

@@ -2,6 +2,21 @@
 
 Single-facility self-storage rental platform.
 
+## Backend account foundation
+
+Authentication now supports `USER_STORAGE=memory` (development without a DB) or
+`USER_STORAGE=prisma` (the existing Prisma User model). Sessions expire after eight
+hours and can be revoked with `POST /api/auth/logout`. `GET /api/users` is restricted
+to ADMIN. See [BE/README.md](BE/README.md) for setup, API details and limitations.
+Booking/inquiries remain in memory in both modes; PostgreSQL integration has not
+been verified against the team's existing database. No schema migration was made.
+
+The frontend now loads products, sizes and duration choices from the backend
+catalog. `GET /api/storage` filters by size/type and checks reservation overlaps
+when date and duration are provided. Search results and the customer's reservation
+list refresh on demand or window focus. Confirmation pages reload their records
+from the API. See [FE/README.md](FE/README.md) to run both servers without PostgreSQL.
+
 ## Project structure
 
 - `FE/`: React, TypeScript, Vite, Tailwind CSS, React Router, Lucide React and React Three Fiber.

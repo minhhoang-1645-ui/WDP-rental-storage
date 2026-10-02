@@ -3,9 +3,10 @@ import { useSearchParams } from 'react-router-dom'
 import { StorageSizeVisual } from '../../components/public/StorageSizeVisual'
 import { ButtonLink } from '../../components/ui/ButtonLink'
 import { Container } from '../../components/ui/Container'
-import { getStorageSize, storageSizes } from '../../data/storage'
+import { useCatalog } from '../../catalog/catalog-context'
 
 export function SizeGuidePage() {
+  const { getStorageSize, storageSizes } = useCatalog()
   const [params, setParams] = useSearchParams()
   const selected = getStorageSize(params.get('size')) ?? storageSizes[1]
   const choose = (id: string) => setParams({ size: id }, { replace: true })

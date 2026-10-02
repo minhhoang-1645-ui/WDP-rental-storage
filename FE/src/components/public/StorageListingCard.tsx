@@ -1,9 +1,10 @@
 import { ArrowRight, Check, Snowflake, Warehouse } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { getStorageSize } from '../../data/storage'
+import { useCatalog } from '../../catalog/catalog-context'
 import type { StorageListing } from '../../types/storage'
 
 export function StorageListingCard({ unit }: { unit: StorageListing }) {
+  const { getStorageSize } = useCatalog()
   const location = useLocation()
   const size = getStorageSize(unit.sizeId)!
   return <article className="storage-listing-card">

@@ -1,4 +1,4 @@
-import { storageListings, storageSizes } from './storage'
+import type { Catalog } from '../catalog/catalog-context'
 import type { AvailabilityResult, AvailabilitySnapshot, BookingDraft } from '../types/booking'
 import type { StorageSizeId } from '../types/storage'
 
@@ -6,8 +6,6 @@ export const DRAFT_STORAGE_KEY = 'wdp-booking-draft-v1'
 export const AVAILABILITY_STORAGE_KEY = 'wdp-booking-availability-v1'
 export const BOOKING_STEP_STORAGE_KEY = 'wdp-booking-step-v1'
 export const AUTH_TOKEN_KEY = 'wdp-auth-token-v1'
-export const approvedDurations = [1, 3, 6, 12] as const
-export const approvedAddons: never[] = []
 
 export const initialBookingDraft: BookingDraft = {
   productId: 'sm-b12',
@@ -30,10 +28,13 @@ export const bookingVisuals: Record<StorageSizeId, { position: string; alt: stri
   large: { position: '100% 100%', alt: 'Minh họa isometric kho lớn với nội thất, thiết bị, pallet và kệ hàng' },
 }
 
-export function readBookingDraft(): BookingDraft {
+export function readBookingDraft(catalog: Catalog): BookingDraft {
+  const storageListings = catalog.products
+  const approvedDurations = catalog.approvedDurations
+  const fallback = { ...initialBookingDraft, productId: storageListings.find(item => item.id === initialBookingDraft.productId)?.id ?? storageListings[0].id, durationMonths: approvedDurations.includes(3) ? 3 : approvedDurations[0] }
   try {
     const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? '') as Partial<BookingDraft>
-    const productId = storageListings.some((item) => item.id === saved.productId) ? saved.productId! : initialBookingDraft.productId
+    const productId = storageListings.some((item) => item.id === saved.productId) ? saved.productId! : fallback.productId
     const durationMonths = approvedDurations.includes(saved.durationMonths as 1 | 3 | 6 | 12) ? saved.durationMonths as 1 | 3 | 6 | 12 : null
     const quantity = Number.isInteger(saved.quantity) && Number(saved.quantity) >= 1 && Number(saved.quantity) <= 3 ? Number(saved.quantity) : 1
     const customer = saved.customer && typeof saved.customer === 'object' ? saved.customer : initialBookingDraft.customer
@@ -44,7 +45,7 @@ export function readBookingDraft(): BookingDraft {
       startDate: typeof saved.startDate === 'string' ? saved.startDate : '',
       endDate: typeof saved.endDate === 'string' ? saved.endDate : '',
       periodMode: saved.periodMode === 'dates' ? 'dates' : 'duration',
-      durationMonths: durationMonths ?? 3,
+      durationMonths: durationMonths ?? fallback.durationMonths,
       quantity,
       adjacencyPreference: saved.adjacencyPreference === true && quantity > 1,
       addonIds: Array.isArray(saved.addonIds) ? [] : [],
@@ -58,7 +59,7 @@ export function readBookingDraft(): BookingDraft {
       },
     }
   } catch {
-    return initialBookingDraft
+    return fallback
   }
 }
 
@@ -111,8 +112,3 @@ export function clearBookingDraft() {
 export function saveBookingDraft(draft: BookingDraft) {
   localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
 }
-
-export const bookingSizes = storageSizes.map((size) => ({
-  ...size,
-  products: storageListings.filter((product) => product.sizeId === size.id),
-}))

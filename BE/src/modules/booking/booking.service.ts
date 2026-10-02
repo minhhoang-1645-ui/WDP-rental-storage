@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { randomBytes } from 'node:crypto';
 import type { PublicUser } from '../auth/auth.types.js';
 import { bookingProducts } from './booking.catalog.js';
+import { storageSizes } from '../storage/storage.catalog.js';
 import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class BookingService {
   getCatalog() {
     return {
       products: bookingProducts,
+      sizes: storageSizes,
       approvedDurations,
       addons: [],
       pricingPolicy: 'QUOTE_REQUIRED' as const,
@@ -109,6 +111,7 @@ export class BookingService {
   }
 
   private validateDraft(input: Record<string, unknown>): ReservationDraft {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu đặt kho không hợp lệ.');
     const productId = typeof input.productId === 'string' ? input.productId : '';
     if (!bookingProducts.some((product) => product.id === productId)) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
@@ -176,7 +179,9 @@ export class BookingService {
   }
 
   private isDate(value: string) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00.000Z'));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(value + 'T00:00:00.000Z');
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }
 
   private addMonths(startDate: string, months: number) {

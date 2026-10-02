@@ -1,124 +1,82 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Backend WDP — tài khoản và đồng bộ dữ liệu với FE
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Chạy khi chưa có PostgreSQL
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Cần Node.js tương thích với dependencies trong package-lock (các công cụ hiện yêu cầu Node 22.22.3+ thuộc nhánh 22 hoặc 24.15+ thuộc nhánh 24).
 
-## Description
+Trong thư mục BE:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```powershell
+Copy-Item .env.example .env
+npm ci
+npm run prisma:generate
+npm run start:dev
 ```
 
-## Compile and run the project
+Không ghi đè `.env` nếu đã có. `prisma:generate` chỉ sinh mã từ schema, không tạo hoặc sửa bảng.
+Cấu hình mặc định `USER_STORAGE=memory` không cần DB. API chạy ở `http://localhost:3000/api`.
+Chế độ memory không được phép dùng khi `NODE_ENV=production`.
 
-```bash
-# development
-$ npm run start
+## API đã bổ sung/hoàn thiện
 
-# watch mode
-$ npm run start:dev
+| Method | Endpoint | Quyền | Chức năng |
+| --- | --- | --- | --- |
+| POST | /api/auth/register | Công khai | fullName, email, phone, password; chỉ tạo CUSTOMER |
+| POST | /api/auth/login | Công khai | email, password; trả token và user |
+| GET | /api/auth/me | Bearer token | Thông tin tài khoản hiện tại |
+| POST | /api/auth/logout | Bearer token | Thu hồi phiên hiện tại, trả 204 |
+| GET | /api/users?page=1&limit=20 | ADMIN | Danh sách người dùng; limit tối đa 100 |
 
-# production mode
-$ npm run start:prod
+Gửi `Authorization: Bearer <token>` cho API cần đăng nhập.
+Đăng ký chuẩn hóa email, băm mật khẩu bằng scrypt có salt riêng và không trả hash cho client.
+Mật khẩu dài 8–128 ký tự; giữ nguyên khoảng trắng trong mật khẩu.
+Phiên có thời hạn tuyệt đối 8 giờ. Token được băm trước khi giữ trong bộ nhớ.
+Các quyền hiện khớp schema: CUSTOMER, STAFF, MANAGER, ADMIN. RolesGuard kiểm tra vai trò ở backend.
+Public registration không cấp quyền nhân viên/admin. Chưa có API đổi vai trò hoặc tạo admin; admin đầu tiên cần quy trình cấp tài khoản có kiểm soát sau khi đối chiếu DB.
+
+## Khi nhận được thông tin DB
+
+1. Đối chiếu bảng thực tế với `prisma/schema.prisma`, đặc biệt User và enum UserRole. Không chạy db push, migrate reset hoặc migration lên DB nhóm trước khi đối chiếu.
+2. Điền DATABASE_URL trong `.env`, đặt `USER_STORAGE=prisma`.
+3. Backend sẽ kết nối DB lúc khởi động; lỗi kết nối được báo, không tự chuyển về memory.
+4. Tài khoản được đọc/ghi qua Prisma. Hash mới có định dạng `scrypt$salt$hash`; tài khoản cũ dùng định dạng khác cần phương án chuyển đổi hoặc đặt lại mật khẩu.
+
+Chưa kiểm chứng kết nối hoặc truy vấn trên PostgreSQL thực tế do chưa có quyền truy cập.
+Không sửa schema hoặc tạo migration trong giai đoạn này.
+
+## Kiểm thử
+
+```powershell
+npm run build
+npm run lint
+npm run test
+node scripts/auth-smoke.mjs
 ```
 
-## Run tests
+Smoke test dùng backend đã build, cổng ngẫu nhiên trên localhost và kho dữ liệu trong bộ nhớ riêng; không đụng DB thật.
+Kiểm tra HTTP đăng ký, đăng nhập, 401/403, admin đọc danh sách, tạo reservation, chặn trùng lịch và thu hồi token.
 
-```bash
-# unit tests
-$ npm run test
+## Giới hạn còn lại
 
-# e2e tests
-$ npm run test:e2e
+- Phiên đăng nhập vẫn trong bộ nhớ, mất sau restart và chưa chia sẻ giữa nhiều tiến trình.
+- Booking/inquiry vẫn là demo trong bộ nhớ kể cả khi USER_STORAGE=prisma; danh mục kho vẫn là dữ liệu mẫu.
+- Chưa triển khai đầy đủ quản trị người dùng, phân quyền theo cơ sở, giới hạn số lần đăng nhập, quên mật khẩu, xác minh email và nhật ký hoạt động.
+- Vai trò Business Operations Manager trong đề tài chưa có trong schema hiện tại; cần thống nhất mô hình với nhóm.
+- Hợp đồng, giá, thanh toán, phân kho, check-in/check-out, gia hạn và báo cáo là các giai đoạn tiếp theo.
 
-# test coverage
-$ npm run test:cov
-```
+Ưu tiên kế tiếp: thống nhất cấu trúc DB → danh mục/kho thực tế → lưu booking/inquiry → nhân viên xử lý yêu cầu.
 
-## Deployment
+## Danh mục và tìm kho dùng chung với FE
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- `GET /api/booking/catalog`: products, sizes, approvedDurations, addons và chính sách báo giá. Nguồn dữ liệu mẫu duy nhất nằm ở `src/modules/storage/storage.catalog.ts`; FE không còn giữ danh sách sản phẩm riêng.
+- `GET /api/storage?size=small&type=standard&date=2026-11-01&duration=1`: trả `{ items, total, checkedPeriod }`. size: all/locker/small/medium/large; type: all/standard/climate; duration: 1/3/6/12/flexible. Dùng ngày hiện tại hoặc tương lai khi thử.
+- Có ngày và thời hạn cụ thể: loại kho trùng reservation hoặc đang chiếm dụng khỏi kết quả. Không đủ thời gian hoặc duration=flexible: chỉ lọc danh mục, checkedPeriod=false.
+- `GET /api/storage/:id`: chi tiết một sản phẩm; mã không tồn tại trả 404.
+- API tìm kiếm và đặt kho sử dụng cùng BookingService trong một tiến trình. Inquiry không chặn kho; reservation chặn khoảng `[startDate, endDateExclusive)`.
+- Dữ liệu tài khoản/reservation/inquiry được chia sẻ giữa các trình duyệt truy cập cùng backend nhưng chưa bền vững qua restart ở chế độ memory.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+FE tải danh mục qua API, giữ bộ lọc khi đi từ danh sách sang chi tiết/đặt kho, xác minh lại khả dụng khi khôi phục bước xác nhận. Trang yêu cầu của tôi và kết quả tìm kiếm có nút làm mới, đồng thời tải lại khi cửa sổ được focus. Đây là cập nhật theo yêu cầu, chưa phải WebSocket thời gian thực.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+Trang xác nhận luôn tải bản ghi từ API theo mã, chọn đúng endpoint inquiry/reservation ngay cả khi trạng thái đăng nhập thay đổi. Không dùng navigation state như bản ghi đáng tin cậy. API reservation vẫn kiểm tra chủ sở hữu.
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/overview) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Kiểm chứng giai đoạn này: 22 unit tests; HTTP smoke bao gồm catalog, bộ lọc ngày, quyền sở hữu và chặn trùng. Kiểm tra trình duyệt local: gửi inquiry, tải lại xác nhận, đăng nhập và xem reservation theo khoảng ngày, mở inquiry sau đăng nhập, tìm lại cùng kỳ có reservation trả 0 kho.

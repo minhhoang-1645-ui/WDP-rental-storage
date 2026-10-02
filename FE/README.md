@@ -1,32 +1,48 @@
-# React + TypeScript + Vite
+# Frontend WDP
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 
-Currently, two official plugins are available:
+## Chạy local chưa cần PostgreSQL
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Terminal 1, trong BE (lần đầu xem BE/README.md để cài dependencies và generate Prisma):
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+$env:USER_STORAGE='memory'
+$env:DATABASE_CONNECT_ON_STARTUP='false'
+npm run start:dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Terminal 2, trong FE:
+
+```powershell
+npm ci
+npm run dev
+```
+
+Mở địa chỉ mà Vite hiển thị. Có thể chạy trực tiếp để cố định địa chỉ:
+
+```powershell
+node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort
+```
+
+FE mặc định gọi `http://localhost:3000/api`. Nếu cần đổi, tạo `.env.local` theo `.env.example` rồi khởi động lại Vite. Nếu chạy khác port, cấu hình FRONTEND_URL của BE tương ứng.
+
+## Dữ liệu đã nối
+
+- Trang chủ, hướng dẫn kích thước, chi tiết kho và wizard dùng GET /booking/catalog.
+- Trang tìm kho gọi GET /storage theo kích thước, loại, ngày và thời hạn; backend loại các kho trùng lịch.
+- Wizard gọi /booking/availability, /inquiries hoặc /reservations. Khách đã đăng nhập dùng thông tin tài khoản đã xác thực.
+- Trang xác nhận đọc lại bản ghi từ backend; hỗ trợ refresh và trạng thái đăng nhập thay đổi.
+- Trang tài khoản đọc danh sách yêu cầu của chủ tài khoản; có trạng thái tải/lỗi/rỗng và nút làm mới.
+- Không tự thay dữ liệu API lỗi bằng danh sách mẫu. Nút thử lại dùng để phục hồi khi backend hoạt động lại.
+
+Bản thử nghiệm dùng dữ liệu trong bộ nhớ BE. Refresh trình duyệt không xóa yêu cầu, nhưng restart BE sẽ xóa dữ liệu memory. Chưa có thanh toán, hợp đồng hay quy trình vận hành đầy đủ.
+
+## Kiểm tra
+
+```powershell
+npm run build
+npm run lint
+```
+
+HTTP integration smoke ở `BE/scripts/auth-smoke.mjs` (chạy sau khi build BE).

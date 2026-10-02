@@ -7,6 +7,7 @@ export const authApi = {
   login: (input: { email: string; password: string }) =>
     apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
   me: () => apiRequest<PublicUser>('/auth/me'),
+  logout: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
 }
 
 export const bookingApi = {
@@ -15,8 +16,8 @@ export const bookingApi = {
   createReservation: (draft: BookingDraft) =>
     apiRequest<PendingReservation>('/reservations', { method: 'POST', body: JSON.stringify(draft) }),
   createInquiry: (draft: BookingDraft) =>
-    apiRequest<GuestInquiry>('/inquiries', { method: 'POST', body: JSON.stringify(draft) }),
-  list: () => apiRequest<PendingReservation[]>('/reservations'),
-  getReservation: (id: string) => apiRequest<PendingReservation>('/reservations/' + encodeURIComponent(id)),
-  getInquiry: (id: string) => apiRequest<GuestInquiry>('/inquiries/' + encodeURIComponent(id)),
+    apiRequest<GuestInquiry>('/inquiries', { method: 'POST', body: JSON.stringify({ ...draft, ...draft.customer, note: draft.note }) }),
+  list: (signal?: AbortSignal) => apiRequest<PendingReservation[]>('/reservations', { signal }),
+  getReservation: (id: string, signal?: AbortSignal) => apiRequest<PendingReservation>('/reservations/' + encodeURIComponent(id), { signal }),
+  getInquiry: (id: string, signal?: AbortSignal) => apiRequest<GuestInquiry>('/inquiries/' + encodeURIComponent(id), { signal }),
 }

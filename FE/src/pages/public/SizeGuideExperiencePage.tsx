@@ -3,7 +3,7 @@ import { ArrowRight, Box, Boxes, Check, Cuboid, Info, Ruler, ScanLine } from 'lu
 import { useSearchParams } from 'react-router-dom'
 import { ButtonLink } from '../../components/ui/ButtonLink'
 import { Container } from '../../components/ui/Container'
-import { getStorageSize, storageSizes } from '../../data/storage'
+import { useCatalog } from '../../catalog/catalog-context'
 import type { StorageSizeId } from '../../types/storage'
 
 const Storage3DViewer = lazy(() => import('../../components/public/StorageArchitecturalViewer'))
@@ -23,6 +23,7 @@ function ViewerPlaceholder({ image, name }: { image: string, name: string }) {
 }
 
 export function SizeGuidePage() {
+  const { getStorageSize, storageSizes } = useCatalog()
   const [params, setParams] = useSearchParams()
   const selected = getStorageSize(params.get('size')) ?? storageSizes[1]
   const choose = (id: StorageSizeId) => setParams({ size: id }, { replace: true })

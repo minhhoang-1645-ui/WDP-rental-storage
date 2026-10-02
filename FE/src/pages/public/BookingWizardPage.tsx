@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, Snowflake, UserRound, Warehouse } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, Snowflake, UserRound, Warehouse, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
@@ -43,18 +43,37 @@ function hasValidAvailabilityInput(draft: BookingDraft) {
   return Boolean(draft.endDate && draft.endDate > draft.startDate)
 }
 
-function AvailabilityStatus({ state, availability, error, onRetry }: { state: AvailabilityState; availability: AvailabilityResult | null; error: string; onRetry: () => void }) {
-  const copy = state === 'checking'
-    ? { title: 'Đang kiểm tra...', detail: 'Đang xác minh toàn bộ thời gian thuê và số lượng kho.' }
-    : state === 'available'
-      ? { title: 'Còn kho phù hợp', detail: availability?.message ?? 'Kho phù hợp với yêu cầu hiện tại.' }
-      : state === 'unavailable'
-        ? { title: 'Không còn kho phù hợp', detail: availability?.message ?? 'Hãy thử đổi thời gian hoặc loại kho.' }
-        : state === 'error'
-          ? { title: 'Không thể kiểm tra lúc này', detail: error || 'Vui lòng thử lại sau.' }
-          : { title: 'Chờ thông tin thời gian', detail: 'Chọn đủ ngày và thời hạn để kiểm tra tự động.' }
-  const icon = state === 'checking' ? <LoaderCircle className="availability-spinner" size={18} /> : state === 'available' ? <CheckCircle2 size={18} /> : <Info size={18} />
-  return <div className={`availability-status is-${state}`} aria-live="polite">{icon}<span><strong>{copy.title}</strong><small>{copy.detail}</small></span>{state === 'error' && <button type="button" onClick={onRetry}><RotateCcw size={14} /> Thử lại</button>}</div>
+function AvailabilityBadge({ state, onClick }: { state: AvailabilityState; onClick: () => void }) {
+  const interactive = state === 'available' || state === 'unavailable' || state === 'error'
+  const label = state === 'checking' ? 'Đang kiểm tra...'
+    : state === 'available' ? 'Còn kho phù hợp'
+    : state === 'unavailable' ? 'Không còn kho phù hợp'
+    : state === 'error' ? 'Không thể kiểm tra'
+    : 'Chờ thông tin thời gian'
+  const icon = state === 'checking' ? <LoaderCircle className="availability-spinner" size={16} /> : state === 'available' ? <CheckCircle2 size={16} /> : <Info size={16} />
+  return <div className={`availability-badge is-${state}`} onClick={interactive ? onClick : undefined} onKeyDown={interactive ? (e) => { if (e.key === 'Enter') onClick() } : undefined} role={interactive ? 'button' : undefined} tabIndex={interactive ? 0 : undefined} aria-live="polite">{icon}<span>{label}</span>{interactive && <ChevronRight size={14} />}</div>
+}
+
+function AvailabilityToast({ state, availability, error, onRetry, onClose }: { state: AvailabilityState; availability: AvailabilityResult | null; error: string; onRetry: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const timer = window.setTimeout(onClose, 6000)
+    return () => window.clearTimeout(timer)
+  }, [onClose])
+
+  const config = state === 'available'
+    ? { icon: <CheckCircle2 size={20} />, title: 'Còn kho phù hợp', detail: availability?.message ?? 'Kho phù hợp với yêu cầu hiện tại.' }
+    : state === 'unavailable'
+    ? { icon: <Info size={20} />, title: 'Không còn kho phù hợp', detail: availability?.message ?? 'Hãy thử đổi thời gian hoặc loại kho.' }
+    : { icon: <Info size={20} />, title: 'Không thể kiểm tra lúc này', detail: error || 'Vui lòng thử lại sau.' }
+
+  return <div className={`availability-toast is-${state}`} role="alert">
+    <div className="availability-toast-inner">
+      {config.icon}
+      <div className="availability-toast-text"><strong>{config.title}</strong><span>{config.detail}</span></div>
+      {state === 'error' && <button type="button" className="availability-toast-action" onClick={() => { onRetry(); onClose() }}><RotateCcw size={14} /> Thử lại</button>}
+      <button type="button" className="availability-toast-close" onClick={onClose} aria-label="Đóng"><X size={18} /></button>
+    </div>
+  </div>
 }
 interface CheckoutStepProps {
   draft: BookingDraft
@@ -164,9 +183,18 @@ export function BookingWizardPage() {
   const availabilityController = useRef<AbortController | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [popupOpen, setPopupOpen] = useState(false)
+  const prevAvailabilityState = useRef<AvailabilityState>('idle')
 
   useEffect(() => saveBookingDraft(draft), [draft])
   useEffect(() => saveBookingStep(step), [step])
+
+  useEffect(() => {
+    if (prevAvailabilityState.current === 'checking' && (availabilityState === 'available' || availabilityState === 'unavailable' || availabilityState === 'error')) {
+      setPopupOpen(true)
+    }
+    prevAvailabilityState.current = availabilityState
+  }, [availabilityState])
 
   const product = getStorageListing(draft.productId) ?? getStorageListing('sm-b12')!
   const size = getStorageSize(product.sizeId)!
@@ -331,7 +359,7 @@ export function BookingWizardPage() {
             <label className="field-label">Ngày bắt đầu mong muốn<input type="date" min={new Date().toISOString().slice(0, 10)} name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
             <div className="period-mode-tabs" role="group" aria-label="Cách chọn thời gian"><button type="button" className={draft.periodMode === 'duration' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Theo thời hạn<small>Danh sách đã duyệt</small></button><button type="button" className={draft.periodMode === 'dates' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'dates', durationMonths: null })}>Theo ngày kết thúc<small>Cần xác nhận báo giá</small></button></div>
             {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">Thời hạn dưới một tháng chưa có chính sách giá, không tự tính đơn giá theo ngày.</small></label>}
-            <AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />
+            <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
             <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Chỉ các dịch vụ có giá và charging basis chính thức mới xuất hiện.</p></div></div>{approvedAddons.length === 0 ? <div className="addon-empty"><Info size={19} /><span><strong>Chưa có dịch vụ bổ sung được WDP duyệt</strong><small>Không có bảo hiểm, vận chuyển hoặc add-on giả lập trong prototype.</small></span></div> : <div>{approvedAddons.map(() => null)}</div>}</section>
             <label className="field-label">Ghi chú cho WDP, không bắt buộc<textarea rows={3} maxLength={500} value={draft.note} onChange={(event) => updateDraft({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để liên hệ" /></label>
 
@@ -351,13 +379,14 @@ export function BookingWizardPage() {
             {quoteLineItems(availability?.quote ?? null).map((item) => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><strong>{item.status === 'INCLUDED' ? 'Đã bao gồm' : quoteText(item.amount)}</strong></div>)}
             <p>{availability?.quote.message ?? 'Kiểm tra toàn kỳ để tạo snapshot báo giá. Khoản chưa có dữ liệu sẽ không được tính ngầm.'}</p>
           </div>
-          <AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />
+          <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
           <button type="button" className="button-primary mt-5 w-full justify-center" disabled={availabilityState !== 'available' || !availability?.available} onClick={() => goToStep(3)}>Tiếp tục <ArrowRight size={18} /></button>
         </aside>
       </div>}
 
       {step === 3 && <CheckoutStep draft={draft} quote={availability?.quote ?? null} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} />}
     </Container></section>
+    {popupOpen && availabilityState !== 'idle' && availabilityState !== 'checking' && <AvailabilityToast state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} onClose={() => setPopupOpen(false)} />}
   </div>
 }
 

@@ -514,3 +514,93 @@
   .booking-preview-heading { align-items: flex-start; }
   .booking-preview .booking-specs { margin-top: 13px; }
 }
+
+/* Availability Popup & Badge */
+@layer components {
+  .availability-badge {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    border-radius: 8px;
+    padding: 12px 15px;
+    font-size: 13px;
+    font-weight: 700;
+    transition: opacity 180ms, box-shadow 180ms;
+  }
+  .availability-badge[role="button"] { cursor: pointer; }
+  .availability-badge[role="button"]:hover { box-shadow: 0 2px 12px rgba(30, 58, 95, .12); }
+  .availability-badge[role="button"]:focus-visible { outline: 3px solid rgba(30, 58, 95, .35); outline-offset: 2px; }
+  .availability-badge.is-idle { background: #f8fafc; border: 1px solid var(--color-border); color: var(--color-slate); }
+  .availability-badge.is-checking { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+  .availability-badge.is-available { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+  .availability-badge.is-unavailable, .availability-badge.is-error { background: #fff7f7; border: 1px solid #fecaca; color: #991b1b; }
+  .availability-badge > span { flex: 1; }
+  .availability-badge > svg:last-child { opacity: .55; }
+
+  .availability-toast {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
+    padding: 0;
+    animation: toast-slide-in 380ms cubic-bezier(.22, 1, .36, 1);
+    box-shadow: 0 4px 24px rgba(17, 24, 39, .12);
+  }
+  .availability-toast.is-available { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-bottom: 2px solid #22c55e; }
+  .availability-toast.is-unavailable { background: linear-gradient(135deg, #fff7f7, #fee2e2); border-bottom: 2px solid #ef4444; }
+  .availability-toast.is-error { background: linear-gradient(135deg, #fffbeb, #fef3c7); border-bottom: 2px solid #f59e0b; }
+  .availability-toast-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 1152px;
+    margin: 0 auto;
+    padding: 14px 20px;
+  }
+  .availability-toast-inner > svg { flex: none; }
+  .availability-toast.is-available svg { color: #15803d; }
+  .availability-toast.is-unavailable svg { color: #b91c1c; }
+  .availability-toast.is-error svg { color: #b45309; }
+  .availability-toast-text { display: flex; flex: 1; min-width: 0; align-items: baseline; gap: 10px; }
+  .availability-toast-text strong { font-size: 14px; font-weight: 750; white-space: nowrap; color: var(--color-navy); }
+  .availability-toast-text span { font-size: 13px; line-height: 1.5; color: var(--color-slate); }
+  .availability-toast-action {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 750;
+    color: var(--color-navy);
+    background: rgba(255, 255, 255, .7);
+    border: 1px solid var(--color-border);
+  }
+  .availability-toast-action:hover { background: white; }
+  .availability-toast-close {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--color-slate);
+  }
+  .availability-toast-close:hover { background: rgba(0, 0, 0, .06); color: var(--color-ink); }
+}
+
+@keyframes toast-slide-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .availability-toast-inner { padding: 12px 16px; gap: 10px; }
+  .availability-toast-text { flex-direction: column; gap: 2px; }
+  .availability-toast-text strong { font-size: 13px; }
+  .availability-toast-text span { font-size: 12px; }
+  .availability-toast-action { display: none; }
+}

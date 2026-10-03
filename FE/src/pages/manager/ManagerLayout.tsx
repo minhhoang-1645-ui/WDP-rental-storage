@@ -6,7 +6,7 @@ export function ManagerLayout() {
   const { user, loading, logout } = useAuth()
   if (loading) return <main className="manager-shell-loading">Đang kiểm tra quyền truy cập…</main>
   if (!user) return <Navigate to="/portal/login" replace />
-  if (!['MANAGER', 'ADMIN'].includes(user.role)) return <Navigate to={user.role === 'CUSTOMER' ? '/account/reservations' : '/staff'} replace />
+  if (!['MANAGER', 'ADMIN'].includes(user.role)) return <Navigate to={user.role === 'CUSTOMER' ? '/customer' : '/staff'} replace />
   return <div className="manager-shell">
     <aside className="manager-sidebar">
       <div><span className="manager-brand">WDP</span><small>Manager Portal</small></div>

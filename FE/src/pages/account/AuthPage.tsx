@@ -10,8 +10,8 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [params] = useSearchParams()
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const returnTo = params.get('returnTo')?.startsWith('/') ? params.get('returnTo')! : '/account/reservations'
-  const roleDestination = user && ['MANAGER', 'STAFF', 'ADMIN'].includes(user.role) ? '/manager/inquiries' : returnTo
+  const returnTo = params.get('returnTo')?.startsWith('/') ? params.get('returnTo')! : '/customer'
+  const roleDestination = user?.role === 'MANAGER' ? '/manager/inquiries' : user?.role === 'STAFF' ? '/staff' : user?.role === 'ADMIN' ? '/admin' : returnTo
   if (user) return <Navigate to={roleDestination} replace />
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {

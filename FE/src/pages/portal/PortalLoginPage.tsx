@@ -7,7 +7,7 @@ function destination(role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN') {
   if (role === 'MANAGER') return '/manager/inquiries'
   if (role === 'STAFF') return '/staff'
   if (role === 'ADMIN') return '/admin'
-  return '/account/reservations'
+  return '/customer'
 }
 
 export function PortalLoginPage() {

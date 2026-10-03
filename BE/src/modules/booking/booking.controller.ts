@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { BookingService } from './booking.service.js';
@@ -37,11 +37,11 @@ export class BookingController {
   @Get('reservations/:id')
   @UseGuards(AuthGuard)
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
-    return this.bookingService.getReservation(request.user!.id, id);
+    return this.bookingService.getReservation(request.user!, id);
   }
 
   @Get('inquiries/:id')
-  getInquiry(@Param('id') id: string) {
-    return this.bookingService.getInquiry(id);
+  getInquiry(@Param('id') id: string, @Headers('x-inquiry-access-token') accessToken?: string) {
+    return this.bookingService.getInquiry(id, accessToken);
   }
 }

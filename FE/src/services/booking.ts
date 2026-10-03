@@ -1,4 +1,4 @@
-import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, PendingReservation, PublicUser } from '../types/booking'
+import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, ManagerInquiry, ManagerRequestStatus, PendingReservation, PublicUser } from '../types/booking'
 import { apiRequest } from './api'
 
 export const authApi = {
@@ -19,5 +19,14 @@ export const bookingApi = {
     apiRequest<GuestInquiry>('/inquiries', { method: 'POST', body: JSON.stringify({ ...draft, ...draft.customer, note: draft.note }) }),
   list: (signal?: AbortSignal) => apiRequest<PendingReservation[]>('/reservations', { signal }),
   getReservation: (id: string, signal?: AbortSignal) => apiRequest<PendingReservation>('/reservations/' + encodeURIComponent(id), { signal }),
-  getInquiry: (id: string, signal?: AbortSignal) => apiRequest<GuestInquiry>('/inquiries/' + encodeURIComponent(id), { signal }),
+  getInquiry: (id: string, accessToken: string, signal?: AbortSignal) => apiRequest<GuestInquiry>('/inquiries/' + encodeURIComponent(id), { signal, headers: { 'X-Inquiry-Access-Token': accessToken } }),
+}
+
+export const managerApi = {
+  listInquiries: (page = 1, limit = 20, signal?: AbortSignal) =>
+    apiRequest<{ page: number; limit: number; total: number; items: ManagerInquiry[] }>(`/manager/inquiries?page=${page}&limit=${limit}`, { signal }),
+  getInquiry: (id: string, signal?: AbortSignal) =>
+    apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { signal }),
+  updateInquiry: (id: string, input: { status: ManagerRequestStatus; internalNotes: string }) =>
+    apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(input) }),
 }

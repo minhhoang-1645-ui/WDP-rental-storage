@@ -10,6 +10,10 @@ import { ReservationPage } from '../pages/public/ReservationPage'
 import { SizeGuidePage } from '../pages/public/SizeGuideExperiencePage'
 import { StorageDetailPage } from '../pages/public/StorageDetailPage'
 import { StoragePage } from '../pages/public/StoragePage'
+import { ManagerInquiryDetailPage } from '../pages/manager/ManagerInquiryDetailPage'
+import { ManagerInquiriesPage } from '../pages/manager/ManagerInquiriesPage'
+import { ManagerLayout } from '../pages/manager/ManagerLayout'
+import { PortalLoginPage } from '../pages/portal/PortalLoginPage'
 
 export function AppRouter() {
   return <Routes>
@@ -26,10 +30,15 @@ export function AppRouter() {
       <Route path="account/register" element={<AuthPage mode="register" />} />
       <Route path="account/reservations" element={<MyReservationsPage />} />
     </Route>
+    <Route path="portal/login" element={<PortalLoginPage />} />
     <Route path="customer" element={<Navigate to="/account/reservations" replace />} />
     <Route path="customer/*" element={<Navigate to="/account/reservations" replace />} />
     <Route path="staff/*" element={<PortalPlaceholder role="Nhân viên" />} />
-    <Route path="manager/*" element={<PortalPlaceholder role="Quản lý" />} />
+    <Route path="manager" element={<ManagerLayout />}>
+      <Route index element={<Navigate to="inquiries" replace />} />
+      <Route path="inquiries" element={<ManagerInquiriesPage />} />
+      <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
+    </Route>
     <Route path="admin/*" element={<PortalPlaceholder role="Quản trị viên" />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

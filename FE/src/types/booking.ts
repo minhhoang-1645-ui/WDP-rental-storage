@@ -64,7 +64,7 @@ export interface AvailabilityResult {
   startDate: string
   endDateExclusive: string
   periodStatus: PricingEstimate['periodStatus']
-  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'DEMO_INVENTORY_UNCONFIGURED'
+  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'INSUFFICIENT_INVENTORY'
   message: string
   quote: PricingEstimate
 }
@@ -88,7 +88,7 @@ export interface PendingReservation extends BookingDraft {
   quote: PricingEstimate
   unitAssignment: null
   paymentStatus: 'NOT_STARTED'
-  persistence: 'DEMO_VOLATILE'
+  persistence: 'DATABASE'
 }
 
 export interface GuestInquiry extends BookingDraft {
@@ -100,5 +100,32 @@ export interface GuestInquiry extends BookingDraft {
   product: PendingReservation['product']
   quote: PricingEstimate
   inventoryGuarantee: false
-  persistence: 'DEMO_VOLATILE'
+  persistence: 'DATABASE'
+  accessToken?: string
+}
+
+export type InquiryStatus = 'PENDING_CONTACT' | 'CONTACTED' | 'IN_REVIEW' | 'CLOSED' | 'CANCELLED'
+export type ManagerRequestStatus = InquiryStatus | 'PENDING' | 'EXPIRED'
+
+export interface ManagerInquiry {
+  id: string
+  reference: string
+  requestType: 'INQUIRY' | 'RESERVATION'
+  customer: GuestContact
+  product: PendingReservation['product']
+  quantity: number
+  startDate: string
+  endDateExclusive: string
+  periodMode: PeriodMode
+  durationMonths: number | null
+  adjacencyPreference: boolean
+  availability: AvailabilityResult
+  quote: PricingEstimate
+  customerNotes: string | null
+  internalNotes: string | null
+  status: ManagerRequestStatus
+  contactedAt: string | null
+  processedBy: { id: string; fullName: string } | null
+  createdAt: string
+  updatedAt: string
 }

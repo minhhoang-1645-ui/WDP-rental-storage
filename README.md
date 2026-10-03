@@ -2,97 +2,125 @@
 
 Single-facility self-storage rental platform.
 
-## Backend account foundation
-
-Authentication now supports `USER_STORAGE=memory` (development without a DB) or
-`USER_STORAGE=prisma` (the existing Prisma User model). Sessions expire after eight
-hours and can be revoked with `POST /api/auth/logout`. `GET /api/users` is restricted
-to ADMIN. See [BE/README.md](BE/README.md) for setup, API details and limitations.
-Booking/inquiries remain in memory in both modes; PostgreSQL integration has not
-been verified against the team's existing database. No schema migration was made.
-
-The frontend now loads products, sizes and duration choices from the backend
-catalog. `GET /api/storage` filters by size/type and checks reservation overlaps
-when date and duration are provided. Search results and the customer's reservation
-list refresh on demand or window focus. Confirmation pages reload their records
-from the API. See [FE/README.md](FE/README.md) to run both servers without PostgreSQL.
-
 ## Project structure
 
-- `FE/`: React, TypeScript, Vite, Tailwind CSS, React Router, Lucide React and React Three Fiber.
-- `BE/`: NestJS, TypeScript, PostgreSQL and Prisma.
-- `screenshots/`: verified booking-wizard captures.
+- FE/: React, TypeScript, Vite, Tailwind CSS, React Router, Lucide React and React Three Fiber.
+- BE/: NestJS, TypeScript, Prisma and Supabase PostgreSQL.
+- BE/prisma/migrations/20261003000100_init_persistence/: initial WDP application migration.
 
-The public website, Size Guide, 3D viewer, storage catalog and three-step Quick Booking prototype are implemented. Staff, manager and admin areas remain route foundations.
+The public website, Size Guide, 3D viewer, storage catalog, three-step booking flow and minimum Manager inquiry portal are implemented.
 
-## Start
+## Environment
 
-Frontend:
+Create BE/.env from BE/.env.example and provide:
 
-```bash
-cd FE
-npm install
-npm run dev -- --host 127.0.0.1
-```
+- DATABASE_URL: runtime transaction-pooler connection.
+- DIRECT_URL: direct/session connection used by Prisma migrations.
+- INQUIRY_LOOKUP_SECRET: at least 32 random characters.
+- SEED_MANAGER_*: development-only Manager seed values.
 
-Open `http://127.0.0.1:5173`.
+Never commit .env. Prices that have not been approved remain null; the seed does not create invented prices.
 
-Backend:
+## Database setup
 
-```bash
+~~~bash
 cd BE
 npm install
 npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run prisma:seed
+~~~
+
+The seed is idempotent for catalog records. It creates one development facility, the six approved WDP products, 30 demo physical units and one development Manager account. Existing physical unit statuses are not overwritten on subsequent seed runs.
+
+## Start
+
+Backend:
+
+~~~bash
+cd BE
 npm run start:dev
-```
+~~~
 
-The API runs at `http://127.0.0.1:3000/api`. Health check: `GET /api/health`.
+The API runs at http://127.0.0.1:3000/api. Health check: GET /api/health.
 
-Prisma/PostgreSQL remain prepared for the production data layer. No Prisma schema or migration was added in this prototype. PostgreSQL is only connected at startup when `DATABASE_CONNECT_ON_STARTUP=true`.
+Frontend:
 
-## Quick Booking routes
+~~~bash
+cd FE
+npm install
+npm run dev -- --host 127.0.0.1
+~~~
 
-- `/booking`: three-step flow, storage, period/add-ons, contact/quote/payment choice.
-- `/booking/confirmation/:id`: confirmation for guest inquiry or authenticated reservation.
-- `/account/login`, `/account/register`: existing account links remain available.
-- `/account/reservations`: authenticated reservations only.
+Open http://127.0.0.1:5173.
 
-API:
+## Routes
 
-- `GET /api/booking/catalog`
-- `POST /api/booking/availability`
-- `POST /api/inquiries`: guest contact inquiry, returns `PENDING_CONTACT`.
-- `GET /api/inquiries/:id`
-- `POST /api/reservations`: authenticated formal reservation, returns `PENDING`.
-- `GET /api/reservations`
-- `GET /api/reservations/:id`
-- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+Customer:
+
+- /booking: three-step booking flow.
+- /booking/confirmation/:id: guest Inquiry or authenticated Reservation confirmation.
+- /account/login, /account/register: Customer authentication.
+- /account/reservations: the authenticated Customer's Reservations.
+
+Manager:
+
+- /portal/login: internal login using the shared authentication system.
+- /manager/inquiries: paginated Inquiry list.
+- /manager/inquiries/:id: Inquiry detail, operational status and internal note.
+
+There is no public Manager registration.
+
+## API
+
+Catalog and booking:
+
+- GET /api/booking/catalog
+- POST /api/booking/availability
+- GET /api/storage
+- GET /api/storage/:id
+- POST /api/inquiries
+- GET /api/inquiries/:id with the private X-Inquiry-Access-Token
+- POST /api/reservations with Customer authentication
+- GET /api/reservations
+- GET /api/reservations/:id
+
+Manager:
+
+- GET /api/manager/inquiries
+- GET /api/manager/inquiries/:id
+- PATCH /api/manager/inquiries/:id
+
+Manager endpoints require MANAGER or ADMIN. Customers can read only their own Reservations. Guest Inquiry details require the lookup token returned only when the Inquiry is submitted.
+
+## Persistence and availability
+
+- Users, catalog, physical units, Inquiries and Reservations persist in PostgreSQL.
+- Public registration always creates CUSTOMER; request bodies cannot elevate roles.
+- Passwords use salted scrypt hashes and are never returned.
+- Bearer sessions remain intentionally in process memory and expire after eight hours. A backend restart signs users out, but their accounts persist and can log in again.
+- Availability checks the complete requested interval and quantity.
+- MAINTENANCE, RESERVED and physically OCCUPIED units are unavailable.
+- An OCCUPIED unit is never released because a planned end date passed.
+- Only confirmed Reservation allocations block future intervals. PENDING does not assign or hold a physical unit.
+- Final Inquiry and Reservation submission revalidates availability in a database transaction. It does not create a temporary hold.
+- Deterministic idempotency keys prevent repeated identical submissions from creating duplicate records.
 
 ## Verification
 
-```bash
-cd FE
-npm run build
+~~~bash
+cd BE
 npm run lint
-node scripts/booking-three-step-smoke.mjs
-
-cd ../BE
 npm run build
+npm test
+
+cd ../FE
 npm run lint
-npm run test
-```
+npm run build
+~~~
 
-The browser smoke test covers the default selection, alternate Standard/AC product, quantity and adjacency preference, short date-range pricing state, invalidating availability after a date change, restoring a current availability snapshot after refresh, empty approved-add-on state, quote rendering, disabled Pay Now, guest inquiry confirmation, image loading and mobile overflow.
+Integration tests use the configured development database and clean up their isolated test records.
 
-## Prototype boundaries
+## Deferred business rules
 
-- Dimensions, products, conditions and storage illustrations reuse the approved WDP data.
-- No prices, deposit amounts, taxes, discounts, add-ons, daily rates, minimums or payment gateway are invented.
-- The approved add-on catalog is currently empty, so the UI explains why no add-on cards can be selected.
-- Duration choices of 1/3/6/12 months are approved. Date ranges below 28 days return `SHORT_DURATION_UNDECIDED` and remain quote-required.
-- Pay Later is the only active choice. Pay Now is disabled until a verified gateway and final amount exist.
-- Guest inquiries are not reservations, holds, paid orders, contracts or inventory guarantees.
-- Authenticated formal reservations still require the existing bearer authentication path and are rechecked server-side.
-- Reservation and inquiry records are process-memory demo records. Formal overlaps and a test-only in-memory physical-occupancy state are checked server-side, but both reset when the backend restarts; there is no Prisma-backed inventory transaction, staff check-in/check-out, renewal, cancellation or settlement workflow.
-- The Prisma schema was inspected and left unchanged because production inquiry/reservation policy and approved pricing are not finalized.
-- Image provenance is documented in `FE/public/images/booking/ATTRIBUTION.md`.
+This milestone does not implement payment, approved pricing, contracts, permanent physical-unit assignment, check-in/out, renewal, transfer, return inspection, settlement, support incidents or reporting. Inquiry is not a hold or contract. Reservation PENDING is not payment or physical allocation.

@@ -75,6 +75,14 @@ function AvailabilityToast({ state, availability, error, onRetry, onClose }: { s
     </div>
   </div>
 }
+
+function AvailabilityStatus({ state, availability, error, onRetry }: { state: AvailabilityState; availability: AvailabilityResult | null; error: string; onRetry: () => void }) {
+  if (state === 'checking') return <div className="booking-alert" role="status"><LoaderCircle className="availability-spinner" size={18} /> Đang kiểm tra tình trạng kho mới nhất…</div>
+  if (state === 'available') return <div className="booking-alert" role="status"><CheckCircle2 size={18} /><span><strong>Còn kho phù hợp</strong> {availability?.message}</span></div>
+  if (state === 'unavailable') return <div className="booking-alert is-error" role="alert"><Info size={18} /><span><strong>Không còn kho phù hợp</strong> {availability?.message}</span></div>
+  if (state === 'error') return <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{error || 'Không thể kiểm tra lúc này.'}</span><button type="button" onClick={onRetry}>Thử lại</button></div>
+  return <div className="booking-alert" role="status"><Info size={18} /> Chờ thông tin thời gian hợp lệ để kiểm tra kho.</div>
+}
 interface CheckoutStepProps {
   draft: BookingDraft
   quote: AvailabilityResult['quote'] | null
@@ -298,6 +306,9 @@ export function BookingWizardPage() {
       const result: PendingReservation | GuestInquiry = user
         ? await bookingApi.createReservation(payload)
         : await bookingApi.createInquiry(payload)
+      if ('accessToken' in result && result.accessToken) {
+        sessionStorage.setItem('wdp-inquiry-token:' + result.id, result.accessToken)
+      }
       clearBookingDraft()
       navigate('/booking/confirmation/' + result.id, { state: { record: result } })
     } catch (caught) {

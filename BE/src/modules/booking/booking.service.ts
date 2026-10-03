@@ -1,119 +1,309 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { Prisma } from '../../generated/prisma/client.js';
+import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { bookingProducts } from './booking.catalog.js';
-import { storageSizes } from '../storage/storage.catalog.js';
+import type { BookingProduct } from './booking.catalog.js';
 import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
+
+type DbClient = PrismaService | Prisma.TransactionClient;
+
+const sizeOrder = ['locker', 'small', 'medium', 'large'];
+const illustrationScale: Record<string, number> = { locker: 28, small: 44, medium: 66, large: 88 };
+const managerInquiryStatuses = ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'] as const;
+const managerReservationStatuses = ['PENDING', 'CANCELLED', 'EXPIRED'] as const;
 
 @Injectable()
 export class BookingService {
-  private readonly reservations: PendingReservation[] = [];
-  private readonly inquiries: GuestInquiry[] = [];
-  // Prototype inventory: a physical occupancy remains blocked until an operator clears it explicitly.
-  private readonly physicallyOccupiedProducts = new Set<string>();
+  constructor(private readonly prisma: PrismaService) {}
 
-  getCatalog() {
+  async getCatalog() {
+    const records = await this.prisma.storageType.findMany({ orderBy: { code: 'asc' } });
+    const products = records.map((record) => this.toProduct(record));
+    const sizes = [...new Map(records.map((record) => [record.sizeId, record])).values()]
+      .sort((a, b) => sizeOrder.indexOf(a.sizeId) - sizeOrder.indexOf(b.sizeId))
+      .map((record) => ({
+        id: record.sizeId,
+        name: record.sizeName,
+        kicker: record.kicker,
+        dimensions: this.dimensions(record),
+        floorArea: this.floorArea(record),
+        volume: this.volume(record),
+        illustrationScale: illustrationScale[record.sizeId] ?? 50,
+        roomEquivalent: record.roomEquivalent,
+        capacity: record.capacity,
+        boxCount: record.boxCount,
+        suitableItems: this.stringArray(record.suitableItems),
+        image: record.image,
+      }));
     return {
-      products: bookingProducts,
-      sizes: storageSizes,
+      products,
+      sizes,
       approvedDurations,
       addons: [],
       pricingPolicy: 'QUOTE_REQUIRED' as const,
-      inventoryPolicy: 'DEMO_SINGLE_UNIT' as const,
+      inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
   }
 
-  checkAvailability(input: Record<string, unknown>): AvailabilityResult {
-    const draft = this.validateDraft(input);
-    const endDateExclusive = this.getEndDateExclusive(draft);
-    const quote = this.buildQuote(draft, endDateExclusive);
-    if (draft.quantity > 1) {
-      return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'DEMO_INVENTORY_UNCONFIGURED', message: 'Dữ liệu prototype hiện chỉ xác minh được 1 kho vật lý cho mỗi mã sản phẩm. WDP cần kiểm tra thủ công yêu cầu nhiều kho và vị trí liền kề.', quote };
-    }
-    if (this.physicallyOccupiedProducts.has(draft.productId)) {
-      return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'OCCUPIED', message: 'Kho vật lý đang được ghi nhận là đã sử dụng. Chỉ nhân viên tại cơ sở mới có thể xác nhận đã trả kho và mở lại khả dụng.', quote };
-    }
-    const hasConflict = this.reservations.some((reservation) => reservation.product.id === draft.productId && draft.startDate < reservation.endDateExclusive && endDateExclusive > reservation.startDate);
-    if (hasConflict) {
-      return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'CONFLICT', message: 'Kho có reservation chính thức trùng toàn bộ hoặc một phần thời gian yêu cầu.', quote };
-    }
-    return { available: true, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'AVAILABLE', message: 'Không phát hiện kho đã chiếm dụng hoặc reservation chính thức trùng toàn bộ khoảng thuê trong dữ liệu prototype.', quote };
+  async checkAvailability(input: Record<string, unknown>): Promise<AvailabilityResult> {
+    const { draft } = await this.validateDraft(input);
+    return this.checkAvailabilityForDraft(this.prisma, draft);
   }
 
-  createReservation(user: PublicUser, input: Record<string, unknown>): PendingReservation {
-    const draft = this.validateDraft(input);
+  async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
+    const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
-    const availability = this.checkAvailability(input);
-    if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-    const product = bookingProducts.find((candidate) => candidate.id === draft.productId)!;
-    const reservation: PendingReservation = {
-      ...draft,
-      id: this.createId('WDP'),
-      status: 'PENDING',
-      createdAt: new Date().toISOString(),
-      endDateExclusive: availability.endDateExclusive,
-      customer: user,
-      product,
-      quote: availability.quote,
-      unitAssignment: null,
-      paymentStatus: 'NOT_STARTED',
-      persistence: 'DEMO_VOLATILE',
-    };
-    this.reservations.push(reservation);
-    return reservation;
+    const idempotencyKey = this.fingerprint('reservation', user.id, draft);
+    const existing = await this.prisma.reservation.findUnique({
+      where: { idempotencyKey },
+      include: { customer: true, storageType: true },
+    });
+    if (existing) return this.toReservation(existing);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const record = await this.prisma.$transaction(async (tx) => {
+          const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
+          if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+          const availability = await this.checkAvailabilityForDraft(tx, draft);
+          if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+          return tx.reservation.create({
+            data: {
+              reservationCode: this.createReference('WDP'),
+              customerId: user.id,
+              facilityId: product.facilityId,
+              storageTypeId: product.id,
+              quantity: draft.quantity,
+              startDate: this.date(draft.startDate),
+              endDate: this.date(availability.endDateExclusive),
+              periodMode: draft.periodMode === 'dates' ? 'CUSTOM_DATES' : 'DURATION',
+              durationMonths: draft.periodMode === 'duration' ? draft.durationMonths : null,
+              adjacentPreference: draft.adjacencyPreference,
+              availabilitySnapshot: availability as unknown as Prisma.InputJsonValue,
+              quoteSnapshot: availability.quote as unknown as Prisma.InputJsonValue,
+              status: 'PENDING',
+              notes: draft.note,
+              idempotencyKey,
+            },
+            include: { customer: true, storageType: true },
+          });
+        });
+        return this.toReservation(record);
+      } catch (error) {
+        if (this.isUniqueError(error)) {
+          const duplicate = await this.prisma.reservation.findUnique({
+            where: { idempotencyKey },
+            include: { customer: true, storageType: true },
+          });
+          if (duplicate) return this.toReservation(duplicate);
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException('Không thể tạo mã reservation duy nhất. Vui lòng thử lại.');
   }
 
-  createInquiry(input: Record<string, unknown>): GuestInquiry {
-    const draft = this.validateDraft(input);
+  async createInquiry(input: Record<string, unknown>): Promise<GuestInquiry> {
+    const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
     const customer = this.validateGuestContact(input);
-    const availability = this.checkAvailability(input);
-    if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-    const product = bookingProducts.find((candidate) => candidate.id === draft.productId)!;
-    const duplicate = this.inquiries.some((inquiry) => inquiry.customer.email === customer.email && inquiry.product.id === product.id && inquiry.startDate === draft.startDate && inquiry.endDateExclusive === availability.endDateExclusive && inquiry.quantity === draft.quantity);
-    if (duplicate) throw new ConflictException('Yêu cầu liên hệ giống nhau đã được gửi. Vui lòng chờ WDP phản hồi.');
-    const inquiry: GuestInquiry = {
-      ...draft,
-      id: this.createId('WDPQ'),
-      status: 'PENDING_CONTACT',
-      createdAt: new Date().toISOString(),
-      endDateExclusive: availability.endDateExclusive,
-      customer,
-      product,
-      quote: availability.quote,
-      inventoryGuarantee: false,
-      persistence: 'DEMO_VOLATILE',
-    };
-    this.inquiries.push(inquiry);
-    return inquiry;
+    const idempotencyKey = this.fingerprint('inquiry', customer.email, draft, customer.phone);
+    const accessToken = this.inquiryAccessToken(idempotencyKey);
+    const existing = await this.prisma.contactInquiry.findUnique({
+      where: { idempotencyKey },
+      include: { storageType: true },
+    });
+    if (existing) return this.toInquiry(existing, accessToken);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const record = await this.prisma.$transaction(async (tx) => {
+          const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
+          if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+          const availability = await this.checkAvailabilityForDraft(tx, draft);
+          if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+          return tx.contactInquiry.create({
+            data: {
+              inquiryCode: this.createReference('WDPQ'),
+              lookupTokenHash: this.tokenHash(accessToken),
+              facilityId: product.facilityId,
+              storageTypeId: product.id,
+              fullName: customer.fullName,
+              email: customer.email,
+              phone: customer.phone,
+              quantity: draft.quantity,
+              startDate: this.date(draft.startDate),
+              endDate: this.date(availability.endDateExclusive),
+              periodMode: draft.periodMode === 'dates' ? 'CUSTOM_DATES' : 'DURATION',
+              durationMonths: draft.periodMode === 'duration' ? draft.durationMonths : null,
+              adjacentPreference: draft.adjacencyPreference,
+              availabilitySnapshot: availability as unknown as Prisma.InputJsonValue,
+              quoteSnapshot: availability.quote as unknown as Prisma.InputJsonValue,
+              customerNotes: draft.note,
+              idempotencyKey,
+            },
+            include: { storageType: true },
+          });
+        });
+        return this.toInquiry(record, accessToken);
+      } catch (error) {
+        if (this.isUniqueError(error)) {
+          const duplicate = await this.prisma.contactInquiry.findUnique({
+            where: { idempotencyKey },
+            include: { storageType: true },
+          });
+          if (duplicate) return this.toInquiry(duplicate, accessToken);
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException('Không thể tạo mã yêu cầu duy nhất. Vui lòng thử lại.');
   }
 
-  /** Test-only hook; production staff workflows must own physical check-in and check-out. */
-  setPhysicalOccupancyForTesting(productId: string, occupied: boolean) {
-    if (!bookingProducts.some((product) => product.id === productId)) throw new NotFoundException('Không tìm thấy kho để cập nhật trạng thái vật lý.');
-    if (occupied) this.physicallyOccupiedProducts.add(productId);
-    else this.physicallyOccupiedProducts.delete(productId);
-  }
-  listReservations(userId: string) {
-    return this.reservations.filter((reservation) => reservation.customer.id === userId);
-  }
-
-  getReservation(userId: string, id: string) {
-    const reservation = this.reservations.find((candidate) => candidate.id === id && candidate.customer.id === userId);
-    if (!reservation) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
-    return reservation;
+  async listReservations(userId: string) {
+    const records = await this.prisma.reservation.findMany({
+      where: { customerId: userId },
+      include: { customer: true, storageType: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return records.map((record) => this.toReservation(record));
   }
 
-  getInquiry(id: string) {
-    const inquiry = this.inquiries.find((candidate) => candidate.id === id);
-    if (!inquiry) throw new NotFoundException('Không tìm thấy yêu cầu liên hệ.');
-    return inquiry;
+  async getReservation(user: PublicUser, id: string) {
+    const record = await this.prisma.reservation.findFirst({
+      where: { OR: [{ id }, { reservationCode: id }] },
+      include: { customer: true, storageType: true },
+    });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
+    if (record.customerId !== user.id && !['MANAGER', 'ADMIN'].includes(user.role)) {
+      throw new ForbiddenException('Bạn không có quyền xem yêu cầu đặt kho này.');
+    }
+    return this.toReservation(record);
   }
 
-  private validateDraft(input: Record<string, unknown>): ReservationDraft {
+  async getInquiry(id: string, accessToken: string | undefined) {
+    const record = await this.prisma.contactInquiry.findFirst({
+      where: { OR: [{ id }, { inquiryCode: id }] },
+      include: { storageType: true },
+    });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu liên hệ.');
+    if (!accessToken || !this.safeEqual(record.lookupTokenHash, this.tokenHash(accessToken))) {
+      throw new ForbiddenException('Mã truy cập yêu cầu không hợp lệ.');
+    }
+    return this.toInquiry(record);
+  }
+
+  async listManagerInquiries(page: number, limit: number) {
+    const [inquiries, reservations] = await Promise.all([
+      this.prisma.contactInquiry.findMany({ include: { storageType: true, processedBy: true }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.reservation.findMany({ include: { customer: true, storageType: true }, orderBy: { createdAt: 'desc' } }),
+    ]);
+    const items = [
+      ...inquiries.map((record) => this.toManagerInquiry(record)),
+      ...reservations.map((record) => this.toManagerReservation(record)),
+    ].sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+    const total = items.length;
+    return { page, limit, total, items: items.slice((page - 1) * limit, page * limit) };
+  }
+
+  async getManagerInquiry(id: string) {
+    const inquiry = await this.prisma.contactInquiry.findFirst({
+      where: { OR: [{ id }, { inquiryCode: id }] },
+      include: { storageType: true, processedBy: true },
+    });
+    if (inquiry) return this.toManagerInquiry(inquiry);
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { OR: [{ id }, { reservationCode: id }] },
+      include: { customer: true, storageType: true },
+    });
+    if (!reservation) throw new NotFoundException('Không tìm thấy yêu cầu.');
+    return this.toManagerReservation(reservation);
+  }
+
+  async updateManagerInquiry(id: string, input: Record<string, unknown>, manager: PublicUser) {
+    const status = typeof input.status === 'string' ? input.status : '';
+    const internalNotes = typeof input.internalNotes === 'string' ? input.internalNotes.trim().slice(0, 2000) : undefined;
+    const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { OR: [{ id }, { inquiryCode: id }] } });
+    if (currentInquiry) {
+      if (!managerInquiryStatuses.includes(status as (typeof managerInquiryStatuses)[number])) {
+        throw new BadRequestException('Trạng thái Inquiry không hợp lệ.');
+      }
+      const record = await this.prisma.contactInquiry.update({
+        where: { id: currentInquiry.id },
+        data: {
+          status: status as (typeof managerInquiryStatuses)[number],
+          ...(internalNotes !== undefined ? { internalNotes: internalNotes || null } : {}),
+          processedById: manager.id,
+          ...(status === 'CONTACTED' && !currentInquiry.contactedAt ? { contactedAt: new Date() } : {}),
+        },
+        include: { storageType: true, processedBy: true },
+      });
+      return this.toManagerInquiry(record);
+    }
+    const currentReservation = await this.prisma.reservation.findFirst({ where: { OR: [{ id }, { reservationCode: id }] } });
+    if (!currentReservation) throw new NotFoundException('Không tìm thấy yêu cầu.');
+    if (!managerReservationStatuses.includes(status as (typeof managerReservationStatuses)[number])) {
+      throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
+    }
+    const record = await this.prisma.reservation.update({
+      where: { id: currentReservation.id },
+      data: { status: status as (typeof managerReservationStatuses)[number], ...(internalNotes !== undefined ? { notes: internalNotes || null } : {}) },
+      include: { customer: true, storageType: true },
+    });
+    return this.toManagerReservation(record);
+  }
+
+  private async checkAvailabilityForDraft(db: DbClient, draft: ReservationDraft): Promise<AvailabilityResult> {
+    const endDateExclusive = this.getEndDateExclusive(draft);
+    const quote = this.buildQuote(draft, endDateExclusive);
+    const start = this.date(draft.startDate);
+    const end = this.date(endDateExclusive);
+    const units = await db.storageUnit.findMany({
+      where: { storageTypeId: draft.productId, status: 'AVAILABLE' },
+      select: { id: true },
+    });
+    const unitIds = units.map((unit) => unit.id);
+    const allocations = unitIds.length ? await db.reservationUnit.findMany({
+      where: {
+        storageUnitId: { in: unitIds },
+        releasedAt: null,
+        plannedStartDate: { lt: end },
+        plannedEndDate: { gt: start },
+        reservation: { status: 'CONFIRMED' },
+      },
+      select: { storageUnitId: true },
+    }) : [];
+    const blocked = new Set(allocations.map((allocation) => allocation.storageUnitId));
+    const availableUnits = unitIds.filter((id) => !blocked.has(id)).length;
+    if (availableUnits >= draft.quantity) {
+      return {
+        available: true,
+        startDate: draft.startDate,
+        endDateExclusive,
+        periodStatus: quote.periodStatus,
+        reasonCode: 'AVAILABLE',
+        message: `Còn ${availableUnits} kho vật lý phù hợp cho toàn bộ khoảng thuê. Kết quả này chưa giữ kho.`,
+        quote,
+      };
+    }
+    const occupiedCount = await db.storageUnit.count({ where: { storageTypeId: draft.productId, status: 'OCCUPIED' } });
+    const reasonCode = unitIds.length === 0 && occupiedCount > 0 ? 'OCCUPIED' : allocations.length > 0 ? 'CONFLICT' : 'INSUFFICIENT_INVENTORY';
+    const message = reasonCode === 'OCCUPIED'
+      ? 'Các kho vật lý phù hợp vẫn đang ở trạng thái OCCUPIED và chỉ được mở lại khi nhân viên xác nhận trả kho.'
+      : reasonCode === 'CONFLICT'
+        ? 'Không đủ kho cho toàn bộ khoảng thuê vì có reservation đã xác nhận bị trùng thời gian.'
+        : `Chỉ còn ${availableUnits} kho phù hợp, ít hơn số lượng ${draft.quantity} đang yêu cầu.`;
+    return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode, message, quote };
+  }
+
+  private async validateDraft(input: Record<string, unknown>) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu đặt kho không hợp lệ.');
     const productId = typeof input.productId === 'string' ? input.productId : '';
-    if (!bookingProducts.some((product) => product.id === productId)) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    const product = await this.prisma.storageType.findUnique({ where: { id: productId } });
+    if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
     if (!this.isDate(startDate) || startDate < new Date().toISOString().slice(0, 10)) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const periodMode = input.periodMode === 'dates' ? 'dates' as const : 'duration' as const;
@@ -128,7 +318,8 @@ export class BookingService {
     if (addonIds.length > 0) throw new BadRequestException('Chưa có dịch vụ bổ sung nào được WDP duyệt.');
     const note = typeof input.note === 'string' ? input.note.trim().slice(0, 500) : undefined;
     const paymentChoice = input.paymentChoice === 'pay-now' ? 'pay-now' as const : 'pay-later' as const;
-    return { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, ...(note ? { note } : {}), paymentChoice };
+    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, ...(note ? { note } : {}), paymentChoice };
+    return { draft, product };
   }
 
   private validateGuestContact(input: Record<string, unknown>): GuestContact {
@@ -145,8 +336,7 @@ export class BookingService {
   }
 
   private getEndDateExclusive(draft: ReservationDraft) {
-    if (draft.periodMode === 'dates') return draft.endDate!;
-    return this.addMonths(draft.startDate, draft.durationMonths!);
+    return draft.periodMode === 'dates' ? draft.endDate! : this.addMonths(draft.startDate, draft.durationMonths!);
   }
 
   private buildQuote(draft: ReservationDraft, endDateExclusive: string): QuoteSnapshot {
@@ -171,30 +361,174 @@ export class BookingService {
     };
   }
 
-  private createId(prefix: 'WDP' | 'WDPQ') {
-    let id = '';
-    do id = prefix + '-' + new Date().getUTCFullYear() + '-' + randomBytes(3).toString('hex').toUpperCase();
-    while (this.reservations.some((item) => item.id === id) || this.inquiries.some((item) => item.id === id));
-    return id;
+  private toProduct(record: any): BookingProduct & Record<string, unknown> {
+    return {
+      id: record.id,
+      code: record.code,
+      name: record.name,
+      sizeId: record.sizeId,
+      condition: record.condition === 'AIR_CONDITIONED' ? 'climate' : 'standard',
+      status: record.catalogStatus === 'LIMITED' ? 'limited' : 'available',
+      floor: record.floor,
+      access: record.access,
+      monthlyPrice: record.monthlyRate === null ? null : Number(record.monthlyRate),
+      depositMonths: record.depositMonths,
+      features: this.stringArray(record.features),
+      image: record.image,
+      dimensions: this.dimensions(record),
+      floorArea: this.floorArea(record),
+      volume: this.volume(record),
+    };
   }
 
+  private toReservation(record: any): PendingReservation {
+    const quote = record.quoteSnapshot as QuoteSnapshot;
+    return {
+      productId: record.storageTypeId,
+      startDate: this.isoDate(record.startDate),
+      endDate: this.isoDate(record.endDate),
+      periodMode: record.periodMode === 'CUSTOM_DATES' ? 'dates' : 'duration',
+      ...(record.durationMonths ? { durationMonths: record.durationMonths } : {}),
+      quantity: record.quantity,
+      adjacencyPreference: record.adjacentPreference,
+      addonIds: [],
+      ...(record.notes ? { note: record.notes } : {}),
+      paymentChoice: 'pay-later',
+      id: record.reservationCode,
+      status: 'PENDING',
+      createdAt: record.createdAt.toISOString(),
+      endDateExclusive: this.isoDate(record.endDate),
+      customer: { id: record.customer.id, fullName: record.customer.fullName, email: record.customer.email, phone: record.customer.phone ?? '', role: record.customer.role },
+      product: this.toProduct(record.storageType),
+      quote,
+      unitAssignment: null,
+      paymentStatus: 'NOT_STARTED',
+      persistence: 'DATABASE',
+    };
+  }
+
+  private toInquiry(record: any, accessToken?: string): GuestInquiry {
+    const quote = record.quoteSnapshot as QuoteSnapshot;
+    return {
+      productId: record.storageTypeId,
+      startDate: this.isoDate(record.startDate),
+      endDate: this.isoDate(record.endDate),
+      periodMode: record.periodMode === 'CUSTOM_DATES' ? 'dates' : 'duration',
+      ...(record.durationMonths ? { durationMonths: record.durationMonths } : {}),
+      quantity: record.quantity,
+      adjacencyPreference: record.adjacentPreference,
+      addonIds: [],
+      ...(record.customerNotes ? { note: record.customerNotes } : {}),
+      paymentChoice: 'pay-later',
+      id: record.inquiryCode,
+      status: 'PENDING_CONTACT',
+      createdAt: record.createdAt.toISOString(),
+      endDateExclusive: this.isoDate(record.endDate),
+      customer: { fullName: record.fullName, phone: record.phone, email: record.email, ...(record.customerNotes ? { note: record.customerNotes } : {}) },
+      product: this.toProduct(record.storageType),
+      quote,
+      inventoryGuarantee: false,
+      persistence: 'DATABASE',
+      ...(accessToken ? { accessToken } : {}),
+    };
+  }
+
+  private toManagerInquiry(record: any) {
+    return {
+      id: record.inquiryCode,
+      reference: record.inquiryCode,
+      requestType: 'INQUIRY',
+      customer: { fullName: record.fullName, email: record.email, phone: record.phone },
+      product: this.toProduct(record.storageType),
+      quantity: record.quantity,
+      startDate: this.isoDate(record.startDate),
+      endDateExclusive: this.isoDate(record.endDate),
+      periodMode: record.periodMode === 'CUSTOM_DATES' ? 'dates' : 'duration',
+      durationMonths: record.durationMonths,
+      adjacencyPreference: record.adjacentPreference,
+      availability: record.availabilitySnapshot,
+      quote: record.quoteSnapshot,
+      customerNotes: record.customerNotes,
+      internalNotes: record.internalNotes,
+      status: record.status,
+      contactedAt: record.contactedAt?.toISOString() ?? null,
+      processedBy: record.processedBy ? { id: record.processedBy.id, fullName: record.processedBy.fullName } : null,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  private toManagerReservation(record: any) {
+    return {
+      id: record.reservationCode,
+      reference: record.reservationCode,
+      requestType: 'RESERVATION',
+      customer: { fullName: record.customer.fullName, email: record.customer.email, phone: record.customer.phone ?? '' },
+      product: this.toProduct(record.storageType),
+      quantity: record.quantity,
+      startDate: this.isoDate(record.startDate),
+      endDateExclusive: this.isoDate(record.endDate),
+      periodMode: record.periodMode === 'CUSTOM_DATES' ? 'dates' : 'duration',
+      durationMonths: record.durationMonths,
+      adjacencyPreference: record.adjacentPreference,
+      availability: record.availabilitySnapshot,
+      quote: record.quoteSnapshot,
+      customerNotes: record.notes,
+      internalNotes: record.notes,
+      status: record.status,
+      contactedAt: null,
+      processedBy: null,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  private dimensions(record: { widthCm: number; lengthCm: number; heightCm: number }) {
+    return `${this.meters(record.widthCm)} × ${this.meters(record.lengthCm)} × ${this.meters(record.heightCm)} m`;
+  }
+
+  private floorArea(record: { widthCm: number; lengthCm: number }) {
+    return this.decimal(record.widthCm * record.lengthCm / 10000) + ' m²';
+  }
+
+  private volume(record: { widthCm: number; lengthCm: number; heightCm: number }) {
+    return 'Khoảng ' + this.decimal(record.widthCm * record.lengthCm * record.heightCm / 1000000) + ' m³';
+  }
+
+  private meters(value: number) { return (value / 100).toFixed(1).replace('.', ','); }
+  private decimal(value: number) { return Number.isInteger(value) ? String(value) : value.toFixed(1).replace('.', ','); }
+  private stringArray(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; }
+  private isoDate(value: Date) { return value.toISOString().slice(0, 10); }
+  private date(value: string) { return new Date(value + 'T00:00:00.000Z'); }
+  private createReference(prefix: 'WDP' | 'WDPQ') { return `${prefix}-${new Date().getUTCFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`; }
+  private fingerprint(...parts: unknown[]) { return createHash('sha256').update(JSON.stringify(parts)).digest('hex'); }
+  private tokenHash(value: string) { return createHash('sha256').update(value).digest('hex'); }
+  private inquiryAccessToken(idempotencyKey: string) {
+    const secret = process.env.INQUIRY_LOOKUP_SECRET;
+    if (!secret || secret.length < 32) throw new Error('INQUIRY_LOOKUP_SECRET must contain at least 32 characters.');
+    return createHmac('sha256', secret).update(idempotencyKey).digest('hex');
+  }
+  private safeEqual(first: string, second: string) {
+    const a = Buffer.from(first);
+    const b = Buffer.from(second);
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+  private isUniqueError(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'; }
   private isDate(value: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const parsed = new Date(value + 'T00:00:00.000Z');
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }
-
   private addMonths(startDate: string, months: number) {
-    const start = new Date(startDate + 'T00:00:00.000Z');
+    const start = this.date(startDate);
     const day = start.getUTCDate();
     const result = new Date(start);
     result.setUTCDate(1);
     result.setUTCMonth(result.getUTCMonth() + months);
     const daysInMonth = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
     result.setUTCDate(Math.min(day, daysInMonth));
-    return result.toISOString().slice(0, 10);
+    return this.isoDate(result);
   }
-
   private requiredText(value: unknown, label: string, minimumLength: number) {
     if (typeof value !== 'string' || value.trim().length < minimumLength) throw new BadRequestException(label + ' phải có ít nhất ' + minimumLength + ' ký tự.');
     return value.trim();

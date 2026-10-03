@@ -11,7 +11,8 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const returnTo = params.get('returnTo')?.startsWith('/') ? params.get('returnTo')! : '/account/reservations'
-  if (user) return <Navigate to={returnTo} replace />
+  const roleDestination = user && ['MANAGER', 'STAFF', 'ADMIN'].includes(user.role) ? '/manager/inquiries' : returnTo
+  if (user) return <Navigate to={roleDestination} replace />
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -53,7 +54,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       </div>
       <button className="button-primary mt-7 w-full justify-center" type="submit" disabled={submitting}>{submitting ? 'Đang xử lý...' : mode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'} <ArrowRight size={18} /></button>
       <p className="auth-switch">{mode === 'login' ? 'Chưa có tài khoản?' : 'Đã có tài khoản?'} <Link to={`${otherPath}?returnTo=${encodeURIComponent(returnTo)}`}>{mode === 'login' ? 'Đăng ký' : 'Đăng nhập'}</Link></p>
-      <p className="auth-disclosure">Xác thực hiện là bản demo trong bộ nhớ backend, chưa phải cơ chế tài khoản production.</p>
+      <p className="auth-disclosure">Tài khoản được lưu trong hệ thống; phiên đăng nhập hiện có thể hết hạn khi backend khởi động lại.</p>
     </form>
   </Container></section>
 }

@@ -52,7 +52,7 @@ export interface AvailabilityResult {
   startDate: string;
   endDateExclusive: string;
   periodStatus: QuoteSnapshot['periodStatus'];
-  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'DEMO_INVENTORY_UNCONFIGURED';
+  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'INSUFFICIENT_INVENTORY';
   message: string;
   quote: QuoteSnapshot;
 }
@@ -67,7 +67,7 @@ export interface PendingReservation extends ReservationDraft {
   quote: QuoteSnapshot;
   unitAssignment: null;
   paymentStatus: 'NOT_STARTED';
-  persistence: 'DEMO_VOLATILE';
+  persistence: 'DATABASE';
 }
 
 export interface GuestInquiry extends ReservationDraft {
@@ -79,5 +79,6 @@ export interface GuestInquiry extends ReservationDraft {
   product: BookingProduct;
   quote: QuoteSnapshot;
   inventoryGuarantee: false;
-  persistence: 'DEMO_VOLATILE';
+  persistence: 'DATABASE';
+  accessToken?: string;
 }

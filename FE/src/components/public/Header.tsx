@@ -10,8 +10,8 @@ export function Header() {
   const [open, setOpen] = useState(false)
   const { user } = useAuth()
   const isInternalUser = user?.role === 'MANAGER' || user?.role === 'STAFF' || user?.role === 'ADMIN'
-  const accountPath = !user ? '/account/login' : isInternalUser ? '/manager/inquiries' : '/account/reservations'
-  const accountLabel = !user ? 'Đăng nhập' : isInternalUser ? 'Quản lý yêu cầu' : 'Yêu cầu của tôi'
+  const accountPath = !user ? '/account/login' : isInternalUser ? '/manager/inquiries' : '/customer'
+  const accountLabel = !user ? 'Đăng nhập' : isInternalUser ? 'Quản lý yêu cầu' : 'Khu vực của tôi'
   return <header className="sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur-sm">
     <Container className="flex h-18 items-center justify-between">
       <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight" aria-label="WDP Storage - Trang chủ"><span className="grid size-9 place-items-center rounded-lg bg-navy text-white"><Warehouse size={19} /></span>WDP Storage</Link>

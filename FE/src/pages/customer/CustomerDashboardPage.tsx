@@ -6,20 +6,25 @@ import { PortalEmpty, PortalError, PortalLoading, PortalPageHeader, ReservationS
 import { formatPortalDate } from '../../components/customer/CustomerPortalHelpers'
 import { useApiResource } from '../../services/useApiResource'
 import type { PendingReservation } from '../../types/booking'
+import type { CustomerAppointment, CustomerRental, Paginated } from '../../types/customer'
 
 export function CustomerDashboardPage() {
   const { user } = useAuth()
-  const { data, error, status, loading, refresh } = useApiResource<PendingReservation[]>('/reservations', user?.id ?? '', true)
-  const reservations = data ?? []
+  const reservationResource = useApiResource<PendingReservation[]>('/reservations', user?.id ?? '', true)
+  const rentalResource = useApiResource<Paginated<CustomerRental>>('/customer/rentals?limit=100', user?.id ?? '', true)
+  const appointmentResource = useApiResource<Paginated<CustomerAppointment>>('/customer/appointments?limit=100', user?.id ?? '', true)
+  const reservations = reservationResource.data ?? []
   const pending = reservations.filter((item) => item.status === 'PENDING')
+  const upcomingAppointments = (appointmentResource.data?.items ?? []).filter(item => ['REQUESTED', 'CONFIRMED'].includes(item.status))
+  const refresh = () => { reservationResource.refresh(); rentalResource.refresh(); appointmentResource.refresh() }
 
   return <section className="customer-page">
     <PortalPageHeader eyebrow="Khu vực khách hàng" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Theo dõi yêu cầu đặt kho và các bước tiếp theo trong một nơi." action={<Link className="button-primary" to="/booking"><Plus size={17} /> Đặt kho mới</Link>} />
-    {status === 401 ? <CustomerSessionExpired /> : loading ? <PortalLoading label="Đang tải tổng quan của bạn…" /> : error ? <PortalError message={error} onRetry={refresh} /> : <>
+    {reservationResource.status === 401 ? <CustomerSessionExpired /> : reservationResource.loading ? <PortalLoading label="Đang tải tổng quan của bạn…" /> : reservationResource.error ? <PortalError message={reservationResource.error} onRetry={refresh} /> : <>
       <div className="customer-overview-grid">
         <article className="customer-overview-card"><ClipboardList size={20} /><span>Yêu cầu đang xử lý</span><strong>{pending.length}</strong><p>Dựa trên các reservation đang lưu trong hệ thống.</p></article>
-        <article className="customer-overview-card"><PackageOpen size={20} /><span>Kho đang thuê</span><strong>—</strong><p>Chưa có API để hiển thị hợp đồng hoặc kho đang sử dụng.</p></article>
-        <article className="customer-overview-card"><CalendarDays size={20} /><span>Lịch hẹn sắp tới</span><strong>—</strong><p>Chưa có API lịch hẹn để hiển thị dữ liệu này.</p></article>
+        <article className="customer-overview-card"><PackageOpen size={20} /><span>Kho đang thuê</span><strong>{rentalResource.loading || rentalResource.error ? '—' : rentalResource.data?.total ?? 0}</strong><p>Dựa trên hợp đồng đang hoạt động trong hệ thống.</p></article>
+        <article className="customer-overview-card"><CalendarDays size={20} /><span>Lịch hẹn sắp tới</span><strong>{appointmentResource.loading || appointmentResource.error ? '—' : upcomingAppointments.length}</strong><p>Các lịch đang chờ hoặc đã được WDP xác nhận.</p></article>
       </div>
       <div className="customer-dashboard-grid">
         <section className="customer-panel">

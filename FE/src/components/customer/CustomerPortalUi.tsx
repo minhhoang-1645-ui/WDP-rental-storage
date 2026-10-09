@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AlertCircle, Inbox, RefreshCw } from 'lucide-react'
+import { customerStatusLabel } from './CustomerPortalHelpers'
 
 export function ReservationStatus({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -9,6 +10,10 @@ export function ReservationStatus({ status }: { status: string }) {
     EXPIRED: 'Đã hết hạn',
   }
   return <span className={'customer-status customer-status--' + status.toLowerCase()}>{labels[status] ?? status}</span>
+}
+
+export function CustomerStatus({ status }: { status: string }) {
+  return <span className={'customer-status customer-status--' + status.toLowerCase()}>{customerStatusLabel(status)}</span>
 }
 
 export function PortalLoading({ label = 'Đang tải dữ liệu…' }: { label?: string }) {

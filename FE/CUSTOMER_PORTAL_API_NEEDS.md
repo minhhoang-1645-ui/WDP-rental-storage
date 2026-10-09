@@ -1,87 +1,32 @@
-# Customer Portal — Backend APIs needed
+# Customer Portal — API integration status
 
-The Customer Portal uses the existing `GET /api/reservations` and `GET /api/reservations/:id` APIs. The modules below deliberately show an empty state because no API contract exists for them yet.
+The Customer Portal sends the authenticated Customer bearer token through the shared API client.
 
-## NEED BACKEND API
+## Integrated
 
-Method: `GET`
+- `GET /api/reservations` and `GET /api/reservations/:id`: dashboard and reservation pages.
+- `GET /api/customer/rentals`: dashboard and active rentals page.
+- `GET /api/customer/contracts`: contracts page and appointment eligibility.
+- `GET /api/customer/invoices` and `GET /api/customer/payments`: billing page.
+- `GET, POST /api/customer/appointments`: handover appointment list and request form.
+- `GET, POST /api/customer/renewals`: renewal history and request form.
 
-Route: `/api/customer/rentals`
+Appointment and renewal creation include an `Idempotency-Key`. Prices, balances, eligibility and state transitions remain controlled by the backend.
 
-Purpose: Show storage units and rentals currently active for the authenticated customer.
+## Still needs backend API
 
-Expected request: Authenticated customer bearer token.
+### Storage transfer
 
-Expected response: Rental reference, reservation/contract reference, storage type, assigned unit when approved, start/end dates, rental status.
+Needed for `/customer/transfers`: list requests, validate eligible active rentals, create a request and expose its processing status.
 
-UI blocked: `/customer/rentals` dashboard active-rental information.
+### Customer support
 
-## NEED BACKEND API
+Needed for `/customer/support`: list customer tickets, create a ticket and expose replies/status without putting private operational notes in the Customer response.
 
-Method: `GET`
+### Profile update
 
-Route: `/api/customer/contracts`
+`PATCH /api/auth/me` is needed to update explicitly allowed fields such as `fullName` and `phone`. The current profile page remains read-only.
 
-Purpose: List contracts belonging to the authenticated customer.
+### Customer return page
 
-Expected request: Authenticated customer bearer token.
-
-Expected response: Contract reference, rental reference, status, signed date, document availability.
-
-UI blocked: `/customer/contracts`.
-
-## NEED BACKEND API
-
-Method: `GET`
-
-Route: `/api/customer/payments`
-
-Purpose: List approved invoices and payment state without inventing charges or amounts.
-
-Expected request: Authenticated customer bearer token.
-
-Expected response: Invoice reference, approved amount/currency, due date, payment status, payment URL only when valid.
-
-UI blocked: `/customer/payments` and payment action in reservation detail.
-
-## NEED BACKEND API
-
-Method: `GET`
-
-Route: `/api/customer/appointments`
-
-Purpose: List upcoming and past appointments for the authenticated customer.
-
-Expected request: Authenticated customer bearer token.
-
-Expected response: Appointment reference, date/time, purpose, facility, status, available customer actions.
-
-UI blocked: `/customer/appointments` and dashboard appointment information.
-
-## NEED BACKEND API
-
-Method: `GET, POST`
-
-Route: `/api/customer/renewals`, `/api/customer/transfers`, `/api/customer/support`
-
-Purpose: List and create customer requests for renewal, transfer, and support.
-
-Expected request: Authenticated customer bearer token; create requests must define server-side validation and permitted state transitions.
-
-Expected response: Request reference, relevant rental/reservation reference, status, created/updated dates, validated request fields.
-
-UI blocked: `/customer/renewals`, `/customer/transfers`, `/customer/support`.
-
-## NEED BACKEND API
-
-Method: `PATCH`
-
-Route: `/api/auth/me`
-
-Purpose: Update the authenticated customer's name and phone.
-
-Expected request: Authenticated customer bearer token and explicitly allowed fields.
-
-Expected response: Updated public user profile.
-
-UI blocked: Editing `/customer/profile`.
+The backend now exposes `GET, POST /api/customer/returns`, but the current Customer navigation has no return-storage page yet.

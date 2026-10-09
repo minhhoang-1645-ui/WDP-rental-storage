@@ -17,6 +17,11 @@ import { PortalLoginPage } from '../pages/portal/PortalLoginPage'
 import { CustomerLayout } from '../components/customer/CustomerLayout'
 import { CustomerDashboardPage } from '../pages/customer/CustomerDashboardPage'
 import { CustomerFutureModulePage } from '../pages/customer/CustomerFutureModulePage'
+import { CustomerAppointmentsPage } from '../pages/customer/CustomerAppointmentsPage'
+import { CustomerContractsPage } from '../pages/customer/CustomerContractsPage'
+import { CustomerPaymentsPage } from '../pages/customer/CustomerPaymentsPage'
+import { CustomerRenewalsPage } from '../pages/customer/CustomerRenewalsPage'
+import { CustomerRentalsPage } from '../pages/customer/CustomerRentalsPage'
 import { CustomerProfilePage } from '../pages/customer/CustomerProfilePage'
 import { CustomerReservationDetailPage } from '../pages/customer/CustomerReservationDetailPage'
 import { CustomerReservationsPage } from '../pages/customer/CustomerReservationsPage'
@@ -45,11 +50,11 @@ export function AppRouter() {
       <Route index element={<CustomerDashboardPage />} />
       <Route path="reservations" element={<CustomerReservationsPage />} />
       <Route path="reservations/:id" element={<CustomerReservationDetailPage />} />
-      <Route path="rentals" element={<CustomerFutureModulePage />} />
-      <Route path="contracts" element={<CustomerFutureModulePage />} />
-      <Route path="payments" element={<CustomerFutureModulePage />} />
-      <Route path="appointments" element={<CustomerFutureModulePage />} />
-      <Route path="renewals" element={<CustomerFutureModulePage />} />
+      <Route path="rentals" element={<CustomerRentalsPage />} />
+      <Route path="contracts" element={<CustomerContractsPage />} />
+      <Route path="payments" element={<CustomerPaymentsPage />} />
+      <Route path="appointments" element={<CustomerAppointmentsPage />} />
+      <Route path="renewals" element={<CustomerRenewalsPage />} />
       <Route path="transfers" element={<CustomerFutureModulePage />} />
       <Route path="support" element={<CustomerFutureModulePage />} />
       <Route path="profile" element={<CustomerProfilePage />} />

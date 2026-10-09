@@ -722,6 +722,38 @@
   .customer-profile-fields dd { margin-top: 7px; color: var(--color-navy); font-size: 14px; font-weight: 750; overflow-wrap: anywhere; }
   .customer-profile-readonly { display: grid; gap: 13px; }
   .customer-profile-readonly p { color: var(--color-slate); font-size: 13px; line-height: 1.6; }
+  .customer-card-list { display: grid; gap: 14px; }
+  .customer-record-card { display: grid; gap: 18px; }
+  .customer-record-card--compact { gap: 10px; border: 1px solid var(--color-border); border-radius: 8px; padding: 16px; }
+  .customer-record-card--compact p { color: var(--color-slate); font-size: 13px; line-height: 1.5; }
+  .customer-record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .customer-record-heading small { color: var(--color-slate); font-size: 12px; }
+  .customer-record-heading h2 { margin-top: 4px; color: var(--color-navy); font-size: 18px; }
+  .customer-record-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .customer-record-facts > div { border-left: 2px solid var(--color-border); padding-left: 12px; }
+  .customer-record-facts dt { color: var(--color-slate); font-size: 11px; font-weight: 750; text-transform: uppercase; }
+  .customer-record-facts dd { display: flex; align-items: center; gap: 6px; margin-top: 5px; color: var(--color-ink); font-size: 13px; font-weight: 750; }
+  .customer-unit-list { display: grid; gap: 8px; border-top: 1px solid var(--color-border); padding-top: 14px; }
+  .customer-unit-list > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .customer-unit-list span, .customer-unit-list strong, .customer-unit-list small { display: block; }
+  .customer-unit-list small { margin-top: 3px; color: var(--color-slate); font-size: 12px; }
+  .customer-inline-notice { border-radius: 6px; background: #fff7ed; padding: 11px 13px; color: #9a3412; font-size: 12px; line-height: 1.5; }
+  .customer-module-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, .75fr); gap: 20px; align-items: start; }
+  .customer-module-form-layout { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); gap: 20px; align-items: start; }
+  .customer-module-form { display: grid; gap: 17px; }
+  .customer-module-form > p { color: var(--color-slate); font-size: 13px; line-height: 1.55; }
+  .customer-module-form .button-primary { justify-content: center; }
+  .customer-module-form > small { color: var(--color-slate); font-size: 12px; line-height: 1.5; }
+  .customer-module-tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--color-border); }
+  .customer-module-tabs button { display: flex; min-height: 44px; align-items: center; gap: 8px; border-bottom: 2px solid transparent; padding: 0 15px; color: var(--color-slate); font-size: 13px; font-weight: 750; }
+  .customer-module-tabs button.is-active { border-color: var(--color-navy); color: var(--color-navy); }
+  .customer-form-message { border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  .customer-form-message.is-ok { color: #166534; background: #dcfce7; }
+  .customer-form-message.is-error { color: #991b1b; background: #fee2e2; }
+  .customer-status--active, .customer-status--paid, .customer-status--completed, .customer-status--confirmed { color: #166534; background: #dcfce7; }
+  .customer-status--overdue, .customer-status--rejected, .customer-status--cancelled { color: #991b1b; background: #fee2e2; }
+  .customer-status--ready_for_handover, .customer-status--partially_paid, .customer-status--approved_pending_payment { color: #155e75; background: #cffafe; }
+  .customer-status--pending_payment, .customer-status--open, .customer-status--requested { color: #854d0e; background: #fef3c7; }
   @keyframes customer-spin { to { transform: rotate(360deg); } }
 }
 
@@ -734,7 +766,7 @@
   .customer-overview-card > svg { grid-row: span 2; }
   .customer-overview-card > span { margin: 0; }
   .customer-overview-card > p { grid-column: 2 / -1; }
-  .customer-dashboard-grid, .customer-detail-grid, .customer-profile-layout { grid-template-columns: 1fr; }
+  .customer-dashboard-grid, .customer-detail-grid, .customer-profile-layout, .customer-module-layout, .customer-module-form-layout { grid-template-columns: 1fr; }
   .customer-detail-aside { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -771,6 +803,8 @@
   .customer-reservation-card dd { color: var(--color-ink); font-size: 12px; font-weight: 700; text-align: right; }
   .customer-reservation-card .button-secondary { justify-content: center; margin-top: 3px; }
   .customer-facts, .customer-profile-fields, .customer-detail-aside { grid-template-columns: 1fr; }
+  .customer-record-facts { grid-template-columns: 1fr; }
+  .customer-module-tabs button { flex: 1; justify-content: center; padding-inline: 8px; }
   .customer-facts { gap: 16px; }
   .customer-quote-list > div { align-items: flex-start; flex-direction: column; gap: 7px; }
   .customer-quote-list b { text-align: left; }

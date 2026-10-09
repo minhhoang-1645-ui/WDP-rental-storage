@@ -53,6 +53,8 @@ async function main() {
           features: product.features,
           monthlyRate: product.monthlyPrice,
           depositMonths: product.depositMonths,
+          minRentalDays: product.minRentalDays,
+          allowDailyRental: product.allowDailyRental,
         },
         create: {
           id: product.id,
@@ -78,6 +80,8 @@ async function main() {
           features: product.features,
           monthlyRate: product.monthlyPrice,
           depositMonths: product.depositMonths,
+          minRentalDays: product.minRentalDays,
+          allowDailyRental: product.allowDailyRental,
         },
       });
 

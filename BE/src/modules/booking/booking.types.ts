@@ -1,4 +1,5 @@
 import type { PublicUser } from '../auth/auth.types.js';
+import type { PaymentPlan, PricingQuote } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 
 export const approvedDurations = [1, 3, 6, 12] as const;
@@ -23,29 +24,10 @@ export interface ReservationDraft {
   addonIds: string[];
   note?: string;
   paymentChoice: PaymentChoice;
+  paymentPlan: PaymentPlan;
 }
 
-export interface QuoteLineItem {
-  code: string;
-  label: string;
-  basis: string;
-  amount: number | null;
-  status: 'QUOTE_REQUIRED' | 'INCLUDED';
-}
-
-export interface QuoteSnapshot {
-  status: 'QUOTE_REQUIRED';
-  periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_UNDECIDED' | 'DATE_RANGE_QUOTE_REQUIRED';
-  lineItems: QuoteLineItem[];
-  rentalSubtotal: null;
-  deposit: null;
-  applicableFees: null;
-  taxes: null;
-  discounts: null;
-  grandTotal: null;
-  amountPayableNow: null;
-  message: string;
-}
+export type QuoteSnapshot = PricingQuote;
 
 export interface AvailabilityResult {
   available: boolean;
@@ -59,7 +41,7 @@ export interface AvailabilityResult {
 
 export interface PendingReservation extends ReservationDraft {
   id: string;
-  status: 'PENDING';
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
   createdAt: string;
   endDateExclusive: string;
   customer: PublicUser;

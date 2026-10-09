@@ -50,7 +50,7 @@ describe('Shared storage catalog and database inventory', () => {
   it('does not block inventory for a guest contact inquiry', async () => {
     const email = `catalog-${randomUUID()}@example.test`;
     try {
-      await booking.createInquiry({ productId: 'sm-b12', startDate: start(), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', fullName: 'Catalog Guest', phone: '0900000002', email });
+      await booking.createInquiry({ productId: 'sm-b12', startDate: start(), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY', fullName: 'Catalog Guest', phone: '0900000002', email });
       const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '1' });
       expect(result.items.map((item) => item.id)).toContain('sm-b12');
     } finally {

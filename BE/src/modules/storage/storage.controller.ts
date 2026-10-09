@@ -14,7 +14,7 @@ export class StorageController {
   @ApiQuery({ name: 'type', required: false, enum: ['all', 'standard', 'climate'], example: 'standard' })
   @ApiQuery({ name: 'duration', required: false, enum: ['1', '3', '6', '12', 'flexible'], example: '3' })
   @ApiQuery({ name: 'date', required: false, example: '2026-11-01', description: 'Ngày bắt đầu; chỉ lọc theo availability khi duration không phải flexible.' })
-  @ApiOkResponse({ description: 'Catalog đã lọc.', schema: { example: { items: [{ id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' }], checkedPeriod: true, total: 1 } } })
+  @ApiOkResponse({ description: 'Catalog đã lọc, gồm quy tắc Pricing V1 cần cho frontend.', schema: { example: { items: [{ id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', monthlyPrice: 1500000, minRentalDays: 7, allowDailyRental: true, dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' }], checkedPeriod: true, total: 1 } } })
   @ApiBadRequestResponse({ description: 'Bộ lọc không hợp lệ.' })
   async list(@Query() query: Record<string, unknown>) {
     const catalog = await this.booking.getCatalog();
@@ -28,7 +28,7 @@ export class StorageController {
     }
     if (query.date !== undefined && typeof query.date !== 'string') throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const checkedPeriod = Boolean(query.date && duration !== 'flexible');
-    const draft = { startDate: query.date, periodMode: 'duration', durationMonths: duration === 'flexible' ? 1 : Number(duration), quantity: 1, addonIds: [], paymentChoice: 'pay-later' };
+    const draft = { startDate: query.date, periodMode: 'duration', durationMonths: duration === 'flexible' ? 1 : Number(duration), quantity: 1, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' };
     let items = catalog.products.filter((item) => (size === 'all' || item.sizeId === size) && (condition === 'all' || item.condition === condition));
     if (query.date && catalog.products[0]) await this.booking.checkAvailability({ ...draft, productId: catalog.products[0].id });
     if (checkedPeriod) {
@@ -44,7 +44,7 @@ export class StorageController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết một loại kho', description: 'Guest access.' })
   @ApiParam({ name: 'id', example: 'sm-b12', description: 'Product ID.' })
-  @ApiOkResponse({ description: 'Sản phẩm trong catalog.', schema: { example: { id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', status: 'available', monthlyPrice: null, dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' } } })
+  @ApiOkResponse({ description: 'Sản phẩm trong catalog cùng quy tắc thuê tối thiểu.', schema: { example: { id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', status: 'available', monthlyPrice: 1500000, minRentalDays: 7, allowDailyRental: true, dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' } } })
   @ApiNotFoundResponse({ description: 'Không tìm thấy kho.' })
   async get(@Param('id') id: string) {
     const catalog = await this.booking.getCatalog();

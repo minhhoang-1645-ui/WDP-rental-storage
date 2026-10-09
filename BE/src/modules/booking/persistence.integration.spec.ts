@@ -9,6 +9,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { PrismaUserRepository } from '../users/user.repository.js';
 import { BookingService } from './booking.service.js';
 import { ManagerInquiriesController } from './manager-inquiries.controller.js';
+import { ManagerReservationsController } from './manager-reservations.controller.js';
 
 const futureDate = () => {
   const date = new Date();
@@ -63,7 +64,7 @@ describe('Persistence and manager milestone', () => {
   it('persists an inquiry and lets a new service instance read it with its lookup token', async () => {
     const first = new BookingService(prisma);
     const email = `restart-inquiry-${randomUUID()}@example.test`;
-    const inquiry = await first.createInquiry({ productId: 'lk-a01', startDate: futureDate(), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', fullName: 'Restart Guest', phone: '0900000005', email });
+    const inquiry = await first.createInquiry({ productId: 'lk-a01', startDate: futureDate(), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY', fullName: 'Restart Guest', phone: '0900000005', email });
     const stored = await prisma.contactInquiry.findUniqueOrThrow({ where: { inquiryCode: inquiry.id } });
     createdInquiryIds.push(stored.id);
     const restarted = new BookingService(prisma);
@@ -74,7 +75,7 @@ describe('Persistence and manager milestone', () => {
     const manager = await prisma.user.findFirstOrThrow({ where: { role: 'MANAGER' } });
     const service = new BookingService(prisma);
     const email = `manager-flow-${randomUUID()}@example.test`;
-    const inquiry = await service.createInquiry({ productId: 'md-d04', startDate: futureDate(), periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', fullName: 'Manager Flow Guest', phone: '0900000006', email });
+    const inquiry = await service.createInquiry({ productId: 'md-d04', startDate: futureDate(), periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY', fullName: 'Manager Flow Guest', phone: '0900000006', email });
     const stored = await prisma.contactInquiry.findUniqueOrThrow({ where: { inquiryCode: inquiry.id } });
     createdInquiryIds.push(stored.id);
     expect((await service.listManagerInquiries(1, 100)).items.some((item) => item.id === inquiry.id)).toBe(true);
@@ -89,6 +90,16 @@ describe('Persistence and manager milestone', () => {
     const context = {
       getHandler: () => function managerInquiryList() {},
       getClass: () => ManagerInquiriesController,
+      switchToHttp: () => ({ getRequest: () => ({ user: { role: 'CUSTOMER' } }) }),
+    } as unknown as ExecutionContext;
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('blocks a CUSTOMER from Manager reservation status APIs through RolesGuard', () => {
+    const guard = new RolesGuard(new Reflector());
+    const context = {
+      getHandler: () => function managerReservationStatus() {},
+      getClass: () => ManagerReservationsController,
       switchToHttp: () => ({ getRequest: () => ({ user: { role: 'CUSTOMER' } }) }),
     } as unknown as ExecutionContext;
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);

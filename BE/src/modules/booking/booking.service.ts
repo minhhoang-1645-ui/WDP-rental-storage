@@ -1,8 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { Prisma } from '../../generated/prisma/client.js';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { BillingService } from '../billing/billing.service.js';
+import { PricingService } from '../pricing/pricing.service.js';
+import { ContractsService } from '../contracts/contracts.service.js';
+import type { PaymentPlan } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
 
@@ -11,11 +15,26 @@ type DbClient = PrismaService | Prisma.TransactionClient;
 const sizeOrder = ['locker', 'small', 'medium', 'large'];
 const illustrationScale: Record<string, number> = { locker: 28, small: 44, medium: 66, large: 88 };
 const managerInquiryStatuses = ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'] as const;
-const managerReservationStatuses = ['PENDING', 'CANCELLED', 'EXPIRED'] as const;
+const managerReservationStatuses = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const;
+type ManagerReservationStatus = (typeof managerReservationStatuses)[number];
+type LockedStorageUnit = { id: string; unitNumber: string; floor: string | null; zone: string | null; row: number | null; position: number | null };
+
+const reservationTransitions: Record<ManagerReservationStatus, readonly ManagerReservationStatus[]> = {
+  PENDING: ['CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+  CONFIRMED: ['CANCELLED'],
+  REJECTED: [],
+  CANCELLED: [],
+  EXPIRED: [],
+};
 
 @Injectable()
 export class BookingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricing: PricingService = new PricingService(prisma),
+    private readonly contracts: ContractsService = new ContractsService(prisma),
+    private readonly billing: BillingService = new BillingService(prisma),
+  ) {}
 
   async getCatalog() {
     const records = await this.prisma.storageType.findMany({ orderBy: { code: 'asc' } });
@@ -41,7 +60,7 @@ export class BookingService {
       sizes,
       approvedDurations,
       addons: [],
-      pricingPolicy: 'QUOTE_REQUIRED' as const,
+      pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
   }
@@ -66,7 +85,7 @@ export class BookingService {
         const record = await this.prisma.$transaction(async (tx) => {
           const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
-          const availability = await this.checkAvailabilityForDraft(tx, draft);
+          const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
           return tx.reservation.create({
             data: {
@@ -88,7 +107,7 @@ export class BookingService {
             },
             include: { customer: true, storageType: true },
           });
-        });
+        }, { maxWait: 10000, timeout: 20000 });
         return this.toReservation(record);
       } catch (error) {
         if (this.isUniqueError(error)) {
@@ -122,7 +141,7 @@ export class BookingService {
         const record = await this.prisma.$transaction(async (tx) => {
           const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
-          const availability = await this.checkAvailabilityForDraft(tx, draft);
+          const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
           return tx.contactInquiry.create({
             data: {
@@ -146,7 +165,7 @@ export class BookingService {
             },
             include: { storageType: true },
           });
-        });
+        }, { maxWait: 10000, timeout: 20000 });
         return this.toInquiry(record, accessToken);
       } catch (error) {
         if (this.isUniqueError(error)) {
@@ -182,6 +201,80 @@ export class BookingService {
       throw new ForbiddenException('Bạn không có quyền xem yêu cầu đặt kho này.');
     }
     return this.toReservation(record);
+  }
+
+  async listManagerReservations(page: number, limit: number) {
+    const [total, records] = await Promise.all([
+      this.prisma.reservation.count(),
+      this.prisma.reservation.findMany({
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    return { page, limit, total, items: records.map((record) => this.toManagerReservation(record)) };
+  }
+
+  async getManagerReservation(id: string) {
+    const record = await this.prisma.reservation.findFirst({
+      where: { OR: [{ id }, { reservationCode: id }] },
+      include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!record) throw new NotFoundException('Không tìm thấy reservation.');
+    return this.toManagerReservation(record);
+  }
+
+  async updateManagerReservationStatus(id: string, input: Record<string, unknown>, manager: PublicUser) {
+    if (!['MANAGER', 'ADMIN'].includes(manager.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được cập nhật reservation.');
+    const requestedStatus = typeof input.status === 'string' ? input.status : '';
+    if (!managerReservationStatuses.includes(requestedStatus as ManagerReservationStatus)) {
+      throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
+    }
+    const targetStatus = requestedStatus as ManagerReservationStatus;
+    const existing = await this.prisma.reservation.findFirst({ where: { OR: [{ id }, { reservationCode: id }] }, select: { id: true } });
+    if (!existing) throw new NotFoundException('Không tìm thấy reservation.');
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${existing.id} FOR UPDATE`);
+        const current = await tx.reservation.findUnique({
+          where: { id: existing.id },
+          include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+        });
+        if (!current) throw new NotFoundException('Không tìm thấy reservation.');
+        if (current.status === targetStatus) {
+          // Safely backfill legacy confirmed reservations only when their complete allocation exists.
+          if (targetStatus === 'CONFIRMED') {
+            await this.contracts.ensureForConfirmedReservation(tx, current.id);
+            await this.billing.ensureInitialInvoice(tx, current.id);
+          }
+          const refreshed = await tx.reservation.findUnique({
+            where: { id: current.id },
+            include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+          });
+          return this.toManagerReservation(refreshed!);
+        }
+        const allowed = reservationTransitions[current.status as ManagerReservationStatus] ?? [];
+        if (!allowed.includes(targetStatus)) {
+          throw new ConflictException(`Không thể chuyển reservation từ ${current.status} sang ${targetStatus}.`);
+        }
+        if (targetStatus === 'CONFIRMED') return this.confirmReservation(tx, current);
+
+        if (current.status === 'CONFIRMED' && targetStatus === 'CANCELLED') {
+          await tx.reservationUnit.updateMany({ where: { reservationId: current.id, releasedAt: null }, data: { releasedAt: new Date() } });
+        }
+        const updated = await tx.reservation.update({
+          where: { id: current.id },
+          data: { status: targetStatus },
+          include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+        });
+        return this.toManagerReservation(updated);
+      }, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 });
+    } catch (error) {
+      if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Reservation vừa được cập nhật bởi yêu cầu khác. Vui lòng tải lại và thử lại.');
+      throw error;
+    }
   }
 
   async getInquiry(id: string, accessToken: string | undefined) {
@@ -243,22 +336,117 @@ export class BookingService {
       });
       return this.toManagerInquiry(record);
     }
-    const currentReservation = await this.prisma.reservation.findFirst({ where: { OR: [{ id }, { reservationCode: id }] } });
+    const currentReservation = await this.prisma.reservation.findFirst({ where: { OR: [{ id }, { reservationCode: id }] }, select: { id: true } });
     if (!currentReservation) throw new NotFoundException('Không tìm thấy yêu cầu.');
-    if (!managerReservationStatuses.includes(status as (typeof managerReservationStatuses)[number])) {
-      throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
-    }
-    const record = await this.prisma.reservation.update({
-      where: { id: currentReservation.id },
-      data: { status: status as (typeof managerReservationStatuses)[number], ...(internalNotes !== undefined ? { notes: internalNotes || null } : {}) },
-      include: { customer: true, storageType: true },
-    });
-    return this.toManagerReservation(record);
+    return this.updateManagerReservationStatus(currentReservation.id, { status }, manager);
   }
 
-  private async checkAvailabilityForDraft(db: DbClient, draft: ReservationDraft): Promise<AvailabilityResult> {
+  private async confirmReservation(tx: Prisma.TransactionClient, reservation: any) {
+    if (!Number.isInteger(reservation.quantity) || reservation.quantity < 1) {
+      throw new BadRequestException('Số lượng reservation không hợp lệ.');
+    }
+    if (reservation.units.length > 0) {
+      throw new ConflictException('Reservation PENDING không được có allocation trước khi xác nhận.');
+    }
+
+    const draft = this.draftFromReservation(reservation);
+    const lockedUnits = await tx.$queryRaw<LockedStorageUnit[]>(Prisma.sql`
+      SELECT "id", "unitNumber", "floor", "zone", "row", "position"
+      FROM "StorageUnit"
+      WHERE "storageTypeId" = ${reservation.storageTypeId}
+        AND "status" = 'AVAILABLE'::"UnitStatus"
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+    const availability = await this.checkAvailabilityForDraft(tx, draft, reservation.quoteSnapshot as QuoteSnapshot);
+    if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+
+    const start = this.date(draft.startDate);
+    const end = this.date(availability.endDateExclusive);
+    const conflictingAllocations = lockedUnits.length ? await tx.reservationUnit.findMany({
+      where: {
+        storageUnitId: { in: lockedUnits.map((unit) => unit.id) },
+        releasedAt: null,
+        plannedStartDate: { lt: end },
+        plannedEndDate: { gt: start },
+        reservation: { status: 'CONFIRMED' },
+      },
+      select: { storageUnitId: true },
+    }) : [];
+    const blockedIds = new Set(conflictingAllocations.map((allocation) => allocation.storageUnitId));
+    for (const unitId of await this.approvedRenewalBlockedUnitIds(tx, lockedUnits.map((unit) => unit.id), start, end)) blockedIds.add(unitId);
+    const availableUnits = lockedUnits.filter((unit) => !blockedIds.has(unit.id));
+    if (availableUnits.length < reservation.quantity) {
+      throw new ConflictException('Không đủ kho vật lý cho toàn bộ khoảng thuê. Reservation vẫn ở trạng thái PENDING.');
+    }
+    const selectedUnits = this.selectPreferredUnits(availableUnits, reservation.quantity, reservation.adjacentPreference);
+    await tx.reservationUnit.createMany({
+      data: selectedUnits.map((unit) => ({
+        reservationId: reservation.id,
+        storageUnitId: unit.id,
+        plannedStartDate: start,
+        plannedEndDate: end,
+      })),
+    });
+    const updated = await tx.reservation.update({
+      where: { id: reservation.id },
+      data: { status: 'CONFIRMED', confirmedAt: new Date(), availabilitySnapshot: availability as unknown as Prisma.InputJsonValue },
+      include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    await this.contracts.ensureForConfirmedReservation(tx, updated.id);
+    await this.billing.ensureInitialInvoice(tx, updated.id);
+    return this.toManagerReservation(updated);
+  }
+
+  private draftFromReservation(record: any): ReservationDraft {
+    const periodMode = record.periodMode === 'CUSTOM_DATES' ? 'dates' as const : 'duration' as const;
+    const snapshot = record.quoteSnapshot as { paymentPlan?: PaymentPlan };
+    return {
+      productId: record.storageTypeId,
+      startDate: this.isoDate(record.startDate),
+      ...(periodMode === 'dates' ? { endDate: this.isoDate(record.endDate) } : { durationMonths: record.durationMonths }),
+      periodMode,
+      quantity: record.quantity,
+      adjacencyPreference: record.adjacentPreference,
+      addonIds: [],
+      paymentChoice: 'pay-later',
+      paymentPlan: snapshot.paymentPlan ?? 'PAY_MONTHLY',
+    };
+  }
+
+  private selectPreferredUnits(units: LockedStorageUnit[], quantity: number, adjacentPreference: boolean) {
+    const ordered = [...units].sort((first, second) => this.compareUnitLocation(first, second));
+    if (!adjacentPreference || quantity === 1) return ordered.slice(0, quantity);
+
+    const groups = new Map<string, LockedStorageUnit[]>();
+    for (const unit of ordered) {
+      const key = [unit.floor ?? '', unit.zone ?? '', unit.row ?? ''].join('|');
+      groups.set(key, [...(groups.get(key) ?? []), unit]);
+    }
+    let best: { units: LockedStorageUnit[]; score: number } | undefined;
+    for (const group of groups.values()) {
+      if (group.length < quantity) continue;
+      for (let index = 0; index <= group.length - quantity; index += 1) {
+        const window = group.slice(index, index + quantity);
+        const positions = window.map((unit) => unit.position).filter((position): position is number => position !== null);
+        const score = positions.length === quantity ? Math.max(...positions) - Math.min(...positions) : Number.MAX_SAFE_INTEGER;
+        if (!best || score < best.score) best = { units: window, score };
+      }
+    }
+    return best?.units ?? ordered.slice(0, quantity);
+  }
+
+  private compareUnitLocation(first: LockedStorageUnit, second: LockedStorageUnit) {
+    return (first.floor ?? '').localeCompare(second.floor ?? '')
+      || (first.zone ?? '').localeCompare(second.zone ?? '')
+      || (first.row ?? Number.MAX_SAFE_INTEGER) - (second.row ?? Number.MAX_SAFE_INTEGER)
+      || (first.position ?? Number.MAX_SAFE_INTEGER) - (second.position ?? Number.MAX_SAFE_INTEGER)
+      || first.unitNumber.localeCompare(second.unitNumber);
+  }
+
+  private async checkAvailabilityForDraft(db: DbClient, draft: ReservationDraft, historicalQuote?: QuoteSnapshot, knownStorageType?: any): Promise<AvailabilityResult> {
     const endDateExclusive = this.getEndDateExclusive(draft);
-    const quote = this.buildQuote(draft, endDateExclusive);
+    const quote = historicalQuote ?? await this.calculateCurrentQuote(db, draft, endDateExclusive, knownStorageType);
     const start = this.date(draft.startDate);
     const end = this.date(endDateExclusive);
     const units = await db.storageUnit.findMany({
@@ -277,6 +465,7 @@ export class BookingService {
       select: { storageUnitId: true },
     }) : [];
     const blocked = new Set(allocations.map((allocation) => allocation.storageUnitId));
+    for (const unitId of await this.approvedRenewalBlockedUnitIds(db, unitIds, start, end)) blocked.add(unitId);
     const availableUnits = unitIds.filter((id) => !blocked.has(id)).length;
     if (availableUnits >= draft.quantity) {
       return {
@@ -299,6 +488,32 @@ export class BookingService {
     return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode, message, quote };
   }
 
+  private async approvedRenewalBlockedUnitIds(db: DbClient, candidateUnitIds: string[], start: Date, end: Date) {
+    if (candidateUnitIds.length === 0) return [];
+    const renewals = await db.renewalRequest.findMany({
+      where: {
+        status: 'APPROVED_PENDING_PAYMENT',
+        previousEndDate: { lt: end },
+        requestedEndDate: { gt: start },
+        reservation: { units: { some: { storageUnitId: { in: candidateUnitIds }, releasedAt: null } } },
+      },
+      select: { reservation: { select: { units: { where: { storageUnitId: { in: candidateUnitIds }, releasedAt: null }, select: { storageUnitId: true } } } } },
+    });
+    return renewals.flatMap((renewal) => renewal.reservation.units.map((unit) => unit.storageUnitId));
+  }
+
+  private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string, knownStorageType?: any) {
+    const storageType = knownStorageType ?? await db.storageType.findUnique({ where: { id: draft.productId } });
+    if (!storageType) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    return this.pricing.calculate(storageType, {
+      storageTypeId: draft.productId,
+      quantity: draft.quantity,
+      startDate: draft.startDate,
+      endDate: endDateExclusive,
+      paymentPlan: draft.paymentPlan,
+    });
+  }
+
   private async validateDraft(input: Record<string, unknown>) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu đặt kho không hợp lệ.');
     const productId = typeof input.productId === 'string' ? input.productId : '';
@@ -318,7 +533,10 @@ export class BookingService {
     if (addonIds.length > 0) throw new BadRequestException('Chưa có dịch vụ bổ sung nào được WDP duyệt.');
     const note = typeof input.note === 'string' ? input.note.trim().slice(0, 500) : undefined;
     const paymentChoice = input.paymentChoice === 'pay-now' ? 'pay-now' as const : 'pay-later' as const;
-    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, ...(note ? { note } : {}), paymentChoice };
+    const paymentPlanInput = input.paymentPlan;
+    if (!['PAY_MONTHLY', 'PREPAID'].includes(paymentPlanInput as string)) throw new BadRequestException('paymentPlan phải là PAY_MONTHLY hoặc PREPAID.');
+    const paymentPlan = paymentPlanInput as PaymentPlan;
+    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, ...(note ? { note } : {}), paymentChoice, paymentPlan };
     return { draft, product };
   }
 
@@ -339,28 +557,6 @@ export class BookingService {
     return draft.periodMode === 'dates' ? draft.endDate! : this.addMonths(draft.startDate, draft.durationMonths!);
   }
 
-  private buildQuote(draft: ReservationDraft, endDateExclusive: string): QuoteSnapshot {
-    const days = Math.round((Date.parse(endDateExclusive + 'T00:00:00.000Z') - Date.parse(draft.startDate + 'T00:00:00.000Z')) / 86400000);
-    const periodStatus = draft.periodMode === 'duration' ? 'APPROVED_DURATION' as const : days < 28 ? 'SHORT_DURATION_UNDECIDED' as const : 'DATE_RANGE_QUOTE_REQUIRED' as const;
-    return {
-      status: 'QUOTE_REQUIRED',
-      periodStatus,
-      lineItems: [
-        { code: 'storage-rent', label: 'Tiền thuê kho', basis: draft.periodMode === 'duration' ? String(draft.durationMonths) + ' tháng' : String(days) + ' ngày', amount: null, status: 'QUOTE_REQUIRED' },
-        { code: 'deposit', label: 'Tiền đặt cọc', basis: 'Theo báo giá được xác nhận', amount: null, status: 'QUOTE_REQUIRED' },
-        { code: 'fees', label: 'Phí và thuế áp dụng', basis: 'Chưa có chính sách được duyệt', amount: null, status: 'QUOTE_REQUIRED' },
-      ],
-      rentalSubtotal: null,
-      deposit: null,
-      applicableFees: null,
-      taxes: null,
-      discounts: null,
-      grandTotal: null,
-      amountPayableNow: null,
-      message: periodStatus === 'SHORT_DURATION_UNDECIDED' ? 'Thời hạn dưới một tháng chưa có chính sách giá. WDP cần xác nhận báo giá, không thanh toán ngay.' : 'Giá thuê, tiền cọc, phí, thuế và chiết khấu chưa có chính sách được phê duyệt. WDP sẽ báo giá riêng.',
-    };
-  }
-
   private toProduct(record: any): BookingProduct & Record<string, unknown> {
     return {
       id: record.id,
@@ -373,6 +569,8 @@ export class BookingService {
       access: record.access,
       monthlyPrice: record.monthlyRate === null ? null : Number(record.monthlyRate),
       depositMonths: record.depositMonths,
+      minRentalDays: record.minRentalDays,
+      allowDailyRental: record.allowDailyRental,
       features: this.stringArray(record.features),
       image: record.image,
       dimensions: this.dimensions(record),
@@ -394,8 +592,9 @@ export class BookingService {
       addonIds: [],
       ...(record.notes ? { note: record.notes } : {}),
       paymentChoice: 'pay-later',
+      paymentPlan: quote.paymentPlan ?? 'PAY_MONTHLY',
       id: record.reservationCode,
-      status: 'PENDING',
+      status: record.status,
       createdAt: record.createdAt.toISOString(),
       endDateExclusive: this.isoDate(record.endDate),
       customer: { id: record.customer.id, fullName: record.customer.fullName, email: record.customer.email, phone: record.customer.phone ?? '', role: record.customer.role },
@@ -420,6 +619,7 @@ export class BookingService {
       addonIds: [],
       ...(record.customerNotes ? { note: record.customerNotes } : {}),
       paymentChoice: 'pay-later',
+      paymentPlan: quote.paymentPlan ?? 'PAY_MONTHLY',
       id: record.inquiryCode,
       status: 'PENDING_CONTACT',
       createdAt: record.createdAt.toISOString(),
@@ -478,6 +678,20 @@ export class BookingService {
       status: record.status,
       contactedAt: null,
       processedBy: null,
+      confirmedAt: record.confirmedAt?.toISOString() ?? null,
+      allocatedUnits: (record.units ?? []).map((allocation: any) => ({
+        id: allocation.id,
+        unitId: allocation.storageUnitId,
+        unitNumber: allocation.storageUnit.unitNumber,
+        floor: allocation.storageUnit.floor,
+        zone: allocation.storageUnit.zone,
+        row: allocation.storageUnit.row,
+        position: allocation.storageUnit.position,
+        physicalStatus: allocation.storageUnit.status,
+        plannedStartDate: this.isoDate(allocation.plannedStartDate),
+        plannedEndDate: this.isoDate(allocation.plannedEndDate),
+        releasedAt: allocation.releasedAt?.toISOString() ?? null,
+      })),
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
@@ -514,6 +728,7 @@ export class BookingService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
   private isUniqueError(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'; }
+  private isPrismaCode(error: unknown, code: string) { return typeof error === 'object' && error !== null && 'code' in error && error.code === code; }
   private isDate(value: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const parsed = new Date(value + 'T00:00:00.000Z');

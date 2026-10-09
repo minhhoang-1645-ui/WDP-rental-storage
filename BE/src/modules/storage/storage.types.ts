@@ -25,8 +25,10 @@ export interface StorageListing {
   status: 'available' | 'limited'
   floor: string
   access: string
-  monthlyPrice: null
+  monthlyPrice: number
   depositMonths: number | null
+  minRentalDays: number | null
+  allowDailyRental: boolean
   features: string[]
   image: string
 }

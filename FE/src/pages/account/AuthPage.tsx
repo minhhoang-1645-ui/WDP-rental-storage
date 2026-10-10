@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, LockKeyhole } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
 import { Container } from '../../components/ui/Container'
 
 export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
@@ -11,7 +12,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const returnTo = params.get('returnTo')?.startsWith('/') ? params.get('returnTo')! : '/customer'
-  const roleDestination = user?.role === 'MANAGER' ? '/manager/inquiries' : user?.role === 'STAFF' ? '/staff' : user?.role === 'ADMIN' ? '/admin' : returnTo
+  const roleDestination = user && user.role !== 'CUSTOMER' ? portalDestination(user.role) : returnTo
   if (user) return <Navigate to={roleDestination} replace />
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {

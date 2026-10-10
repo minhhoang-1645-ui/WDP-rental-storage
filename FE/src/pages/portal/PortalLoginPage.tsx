@@ -2,12 +2,10 @@ import { LockKeyhole, LogIn } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
 
 function destination(role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN') {
-  if (role === 'MANAGER') return '/manager/inquiries'
-  if (role === 'STAFF') return '/staff'
-  if (role === 'ADMIN') return '/admin'
-  return '/customer'
+  return portalDestination(role)
 }
 
 export function PortalLoginPage() {

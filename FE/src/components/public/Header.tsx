@@ -2,6 +2,7 @@ import { LogIn, Menu, Warehouse, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
 import { Container } from '../ui/Container'
 
 const links = [['Kho lưu trữ', '/storage'], ['Chọn kích thước', '/size-guide'], ['Tiện ích', '/#amenities'], ['Cách thuê', '/#how-it-works'], ['Cơ sở', '/#facility']]
@@ -10,7 +11,7 @@ export function Header() {
   const [open, setOpen] = useState(false)
   const { user } = useAuth()
   const isInternalUser = user?.role === 'MANAGER' || user?.role === 'STAFF' || user?.role === 'ADMIN'
-  const accountPath = !user ? '/account/login' : isInternalUser ? '/manager/inquiries' : '/customer'
+  const accountPath = !user ? '/account/login' : isInternalUser ? portalDestination(user.role) : '/customer'
   const accountLabel = !user ? 'Đăng nhập' : isInternalUser ? 'Quản lý yêu cầu' : 'Khu vực của tôi'
   return <header className="sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur-sm">
     <Container className="flex h-18 items-center justify-between">

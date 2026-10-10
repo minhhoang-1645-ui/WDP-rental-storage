@@ -105,6 +105,7 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
     email: user ? user.email : draft.customer.email,
   }
   const paymentChoice = draft.paymentChoice
+  const paymentPlan = draft.paymentPlan
 
   const updateCustomer = (field: keyof GuestContact, value: string) => {
     onUpdate({ customer: { ...customer, [field]: value } })
@@ -112,7 +113,7 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSubmit({ ...draft, customer, paymentChoice })
+    onSubmit({ ...draft, customer, paymentChoice, paymentPlan })
   }
 
   const lineItems = quote?.lineItems ?? [
@@ -145,6 +146,7 @@ function CheckoutStep({ draft, quote, productName, productCode, productSizeId, p
           <button type="button" className="payment-option is-disabled" disabled><span className="payment-option-mark">A</span><span><strong>Thanh toán ngay</strong><small>Sắp ra mắt, chưa có gateway được xác minh hoặc tổng tiền cuối.</small></span><em>Sắp ra mắt</em></button>
           <button type="button" className={paymentChoice === 'pay-later' ? 'payment-option is-selected' : 'payment-option'} onClick={() => onUpdate({ paymentChoice: 'pay-later' })} aria-pressed={paymentChoice === 'pay-later'}><span className="payment-option-mark">B</span><span><strong>Thanh toán sau</strong><small>WDP liên hệ để kiểm tra kho, báo giá và hướng dẫn thanh toán.</small></span>{paymentChoice === 'pay-later' && <Check size={18} />}</button>
         </div>
+        <label className="field-label mt-5">Kế hoạch thanh toán<select value={paymentPlan} onChange={(event) => onUpdate({ paymentPlan: event.target.value as BookingDraft['paymentPlan'] })}><option value="PAY_MONTHLY">Thanh toán hàng tháng</option><option value="PREPAID">Thanh toán trước</option></select></label>
         <Link className="consult-link" to="/#contact">C. Tư vấn giải pháp riêng tại cơ sở này <ArrowRight size={15} /></Link>
       </fieldset>
 
@@ -250,6 +252,7 @@ export function BookingWizardPage() {
       addonIds: draft.addonIds,
       note: '',
       paymentChoice: 'pay-later',
+      paymentPlan: draft.paymentPlan,
       customer: { fullName: '', phone: '', email: '' },
     }
 
@@ -275,7 +278,7 @@ export function BookingWizardPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [step, canCheckAvailability, draft.productId, draft.startDate, draft.endDate, draft.periodMode, draft.durationMonths, draft.quantity, draft.adjacencyPreference, draft.addonIds, availabilityRetry])
+  }, [step, canCheckAvailability, draft.productId, draft.startDate, draft.endDate, draft.periodMode, draft.durationMonths, draft.quantity, draft.adjacencyPreference, draft.addonIds, draft.paymentPlan, availabilityRetry])
 
   const selectSize = (sizeId: typeof product.sizeId) => {
     const category = bookingSizes.find((item) => item.id === sizeId)!

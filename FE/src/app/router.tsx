@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { PortalPlaceholder } from '../components/layout/PortalPlaceholder'
+import { RoleGuard } from '../components/layout/RoleGuard'
 import { PublicLayout } from '../components/layout/PublicLayout'
 import { CatalogRouteLayout } from '../components/layout/CatalogRouteLayout'
 import { AuthPage } from '../pages/account/AuthPage'
@@ -13,7 +13,25 @@ import { StoragePage } from '../pages/public/StoragePage'
 import { ManagerInquiryDetailPage } from '../pages/manager/ManagerInquiryDetailPage'
 import { ManagerInquiriesPage } from '../pages/manager/ManagerInquiriesPage'
 import { ManagerLayout } from '../pages/manager/ManagerLayout'
+import { ManagerUnitsPage } from '../pages/manager/ManagerUnitsPage'
+import { ManagerUnitDetailPage } from '../pages/manager/ManagerUnitDetailPage'
+import { ManagerCustomersPage } from '../pages/manager/ManagerCustomersPage'
+import { ManagerCustomerDetailPage } from '../pages/manager/ManagerCustomerDetailPage'
+import { ManagerReservationsPage } from '../pages/manager/ManagerReservationsPage'
+import { ManagerReservationDetailPage } from '../pages/manager/ManagerReservationDetailPage'
+import { ManagerReportsPage } from '../pages/manager/ManagerReportsPage'
+import { ManagerDashboardPage } from '../pages/manager/ManagerDashboardPage'
+import { ManagerResourcePage } from '../pages/manager/ManagerResourcePage'
+import { ManagerResourceDetailPage } from '../pages/manager/ManagerResourceDetailPage'
 import { PortalLoginPage } from '../pages/portal/PortalLoginPage'
+import { StaffLayout } from '../pages/staff/StaffLayout'
+import { StaffOperationsPage } from '../pages/staff/StaffOperationsPage'
+import { StaffAppointmentsPage } from '../pages/staff/StaffAppointmentsPage'
+import { StaffRentalsPage } from '../pages/staff/StaffRentalsPage'
+import { StaffReturnsPage } from '../pages/staff/StaffReturnsPage'
+import { AdminLayout } from '../pages/admin/AdminLayout'
+import { AdminUsersPage } from '../pages/admin/AdminUsersPage'
+import { AdminSettingsPage } from '../pages/admin/AdminSettingsPage'
 import { CustomerLayout } from '../components/customer/CustomerLayout'
 import { CustomerDashboardPage } from '../pages/customer/CustomerDashboardPage'
 import { CustomerFutureModulePage } from '../pages/customer/CustomerFutureModulePage'
@@ -59,14 +77,40 @@ export function AppRouter() {
       <Route path="support" element={<CustomerFutureModulePage />} />
       <Route path="profile" element={<CustomerProfilePage />} />
     </Route>
-    <Route path="staff/*" element={<PortalPlaceholder role="Nhân viên" />} />
-    <Route path="manager" element={<ManagerLayout />}>
-      <Route index element={<Navigate to="inquiries" replace />} />
-      <Route path="inquiries" element={<ManagerInquiriesPage />} />
-      <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
+    <Route element={<RoleGuard allowedRoles={['STAFF']} />}>
+      <Route path="staff" element={<StaffLayout />}>
+        <Route index element={<StaffOperationsPage />} />
+        <Route path="operations" element={<StaffOperationsPage />} />
+        <Route path="appointments" element={<StaffAppointmentsPage />} />
+        <Route path="check-in" element={<Navigate to="/staff/appointments" replace />} />
+        <Route path="rentals" element={<StaffRentalsPage />} />
+        <Route path="returns" element={<StaffReturnsPage />} />
+      </Route>
     </Route>
-    <Route path="admin/*" element={<PortalPlaceholder role="Quản trị viên" />} />
+    <Route element={<RoleGuard allowedRoles={['MANAGER', 'ADMIN']} />}>
+      <Route path="manager" element={<ManagerLayout />}>
+        <Route index element={<ManagerDashboardPage />} />
+        <Route path="inquiries" element={<ManagerInquiriesPage />} />
+        <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
+        <Route path="reservations" element={<ManagerReservationsPage />} />
+        <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
+        <Route path="units" element={<ManagerUnitsPage />} />
+        <Route path="units/:id" element={<ManagerUnitDetailPage />} />
+        <Route path="inventory" element={<Navigate to="/manager/units" replace />} />
+        <Route path="customers" element={<ManagerCustomersPage />} />
+        <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
+        <Route path="reports" element={<ManagerReportsPage />} />
+        <Route path="operations/:resource" element={<ManagerResourcePage />} />
+        <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
+      </Route>
+    </Route>
+    <Route element={<RoleGuard allowedRoles={['ADMIN']} />}>
+      <Route path="admin" element={<AdminLayout />}>
+        <Route index element={<Navigate to="users" replace />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
+      </Route>
+    </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
 }
-

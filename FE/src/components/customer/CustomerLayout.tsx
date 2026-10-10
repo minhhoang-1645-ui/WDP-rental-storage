@@ -2,6 +2,7 @@ import { CalendarClock, ChevronLeft, CircleHelp, ClipboardList, CreditCard, File
 import { useState } from 'react'
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
 
 const navigation = [
   { to: '/customer', label: 'Tổng quan', icon: LayoutDashboard, end: true },
@@ -15,13 +16,6 @@ const navigation = [
   { to: '/customer/support', label: 'Hỗ trợ', icon: CircleHelp },
 ] as const
 
-function destinationForRole(role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN') {
-  if (role === 'MANAGER') return '/manager/inquiries'
-  if (role === 'STAFF') return '/staff'
-  if (role === 'ADMIN') return '/admin'
-  return '/customer'
-}
-
 export function CustomerLayout() {
   const { user, loading, logout } = useAuth()
   const location = useLocation()
@@ -30,7 +24,7 @@ export function CustomerLayout() {
 
   if (loading) return <main className="customer-shell-loading" role="status">Đang kiểm tra phiên đăng nhập…</main>
   if (!user) return <Navigate to={`/account/login?returnTo=${encodeURIComponent(location.pathname)}`} replace />
-  if (user.role !== 'CUSTOMER') return <Navigate to={destinationForRole(user.role)} replace />
+  if (user.role !== 'CUSTOMER') return <Navigate to={portalDestination(user.role)} replace />
 
   const signOut = () => {
     logout()

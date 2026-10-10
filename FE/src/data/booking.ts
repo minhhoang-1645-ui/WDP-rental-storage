@@ -18,6 +18,7 @@ export const initialBookingDraft: BookingDraft = {
   addonIds: [],
   note: '',
   paymentChoice: 'pay-later',
+  paymentPlan: 'PAY_MONTHLY',
   customer: { fullName: '', phone: '', email: '' },
 }
 
@@ -51,6 +52,7 @@ export function readBookingDraft(catalog: Catalog): BookingDraft {
       addonIds: Array.isArray(saved.addonIds) ? [] : [],
       note: typeof saved.note === 'string' ? saved.note.slice(0, 500) : '',
       paymentChoice: saved.paymentChoice === 'pay-now' ? 'pay-now' : 'pay-later',
+      paymentPlan: saved.paymentPlan === 'PREPAID' ? 'PREPAID' : 'PAY_MONTHLY',
       customer: {
         fullName: typeof customer.fullName === 'string' ? customer.fullName : '',
         phone: typeof customer.phone === 'string' ? customer.phone : '',
@@ -73,6 +75,7 @@ export function bookingAvailabilityFingerprint(draft: BookingDraft) {
     quantity: draft.quantity,
     adjacencyPreference: draft.adjacencyPreference,
     addonIds: draft.addonIds,
+    paymentPlan: draft.paymentPlan,
   })
 }
 

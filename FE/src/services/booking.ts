@@ -29,4 +29,8 @@ export const managerApi = {
     apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { signal }),
   updateInquiry: (id: string, input: { status: ManagerRequestStatus; internalNotes: string }) =>
     apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(input) }),
+  getReservation: (id: string, signal?: AbortSignal) =>
+    apiRequest<ManagerInquiry>('/manager/reservations/' + encodeURIComponent(id), { signal }),
+  updateReservationStatus: (id: string, status: Extract<ManagerRequestStatus, 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'>) =>
+    apiRequest<ManagerInquiry>('/manager/reservations/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }),
 }

@@ -15,6 +15,7 @@ export interface AuthSession {
 
 export type PeriodMode = 'duration' | 'dates'
 export type PaymentChoice = 'pay-later' | 'pay-now'
+export type PaymentPlan = 'PAY_MONTHLY' | 'PREPAID'
 
 export interface GuestContact {
   fullName: string
@@ -34,6 +35,7 @@ export interface BookingDraft {
   addonIds: string[]
   note: string
   paymentChoice: PaymentChoice
+  paymentPlan: PaymentPlan
   customer: GuestContact
 }
 
@@ -46,17 +48,22 @@ export interface QuoteLineItem {
 }
 
 export interface PricingEstimate {
-  status: 'QUOTE_REQUIRED'
-  periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_UNDECIDED' | 'DATE_RANGE_QUOTE_REQUIRED'
+  status: 'PRICED' | 'QUOTE_REQUIRED'
+  periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_APPROVED' | 'SHORT_DURATION_UNDECIDED' | 'DATE_RANGE_QUOTE_REQUIRED'
   lineItems: QuoteLineItem[]
-  rentalSubtotal: null
-  deposit: null
+  rentalSubtotal: number | null
+  deposit: number | null
   applicableFees: null
   taxes: null
-  discounts: null
-  grandTotal: null
+  discounts: number | null
+  grandTotal: number | null
   amountPayableNow: null
   message: string
+  currency?: 'VND'
+  paymentPlan?: PaymentPlan
+  monthlyUnitPrice?: number
+  discountPercent?: number
+  quotedTotalAmount?: number
 }
 
 export interface AvailabilityResult {
@@ -76,7 +83,7 @@ export interface AvailabilitySnapshot {
 
 export interface PendingReservation extends BookingDraft {
   id: string
-  status: 'PENDING'
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'
   createdAt: string
   endDateExclusive: string
   customer: PublicUser
@@ -105,7 +112,7 @@ export interface GuestInquiry extends BookingDraft {
 }
 
 export type InquiryStatus = 'PENDING_CONTACT' | 'CONTACTED' | 'IN_REVIEW' | 'CLOSED' | 'CANCELLED'
-export type ManagerRequestStatus = InquiryStatus | 'PENDING' | 'EXPIRED'
+export type ManagerRequestStatus = InquiryStatus | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED'
 
 export interface ManagerInquiry {
   id: string
@@ -126,6 +133,8 @@ export interface ManagerInquiry {
   status: ManagerRequestStatus
   contactedAt: string | null
   processedBy: { id: string; fullName: string } | null
+  allocatedUnits?: Array<{ unitNumber: string; physicalStatus: string; floor?: string | null; zone?: string | null }>
+  confirmedAt?: string | null
   createdAt: string
   updatedAt: string
 }

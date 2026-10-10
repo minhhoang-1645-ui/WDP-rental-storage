@@ -14,6 +14,25 @@ enum UserRole {
   ADMIN
 }
 
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TransferStatus {
+  REQUESTED
+  APPROVED
+  COMPLETED
+  REJECTED
+}
+
+enum TransferReason {
+  UNIT_ISSUE
+  FACILITY_EQUIPMENT_FAILURE
+  OPERATIONAL_RELOCATION
+  OTHER
+}
+
 enum StorageCondition {
   STANDARD
   AIR_CONDITIONED
@@ -63,6 +82,7 @@ enum InvoiceType {
   INITIAL
   RECURRING
   RENEWAL
+  SETTLEMENT
 }
 
 enum InvoiceStatus {
@@ -99,6 +119,7 @@ enum ReturnStatus {
   REQUESTED
   INSPECTION_IN_PROGRESS
   ISSUE_FOUND
+  PENDING_SETTLEMENT
   COMPLETED
 }
 
@@ -108,6 +129,83 @@ enum InspectionResult {
   ISSUE_FOUND
 }
 
+enum InspectionIssueType {
+  NORMAL_WEAR
+  FACILITY_FAULT
+  CUSTOMER_DAMAGE
+  CLEANING_REQUIRED
+  LOST_KEY_OR_ACCESS_ITEM
+  OTHER
+}
+
+enum DepositSettlementStatus {
+  PENDING_REVIEW
+  APPROVED
+  AWAITING_OUTSTANDING_PAYMENT
+  SETTLED
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  AWAITING_VERIFICATION
+  COMPLETED
+}
+
+enum MaintenanceSource {
+  RETURN_INSPECTION
+  MANUAL
+}
+
+enum MaintenanceCategory {
+  UNIT_DAMAGE
+  CLEANING
+  LOCK_OR_ACCESS
+  FACILITY_EQUIPMENT
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SupportCategory {
+  UNIT_ISSUE
+  LOCK_OR_KEY_ISSUE
+  ACCESS_CODE_ISSUE
+  FACILITY_EQUIPMENT_FAILURE
+  PAYMENT_SUPPORT
+  STORED_ITEM_CONCERN
+  OTHER
+}
+
+enum SupportPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SupportStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  ESCALATED
+  RESOLVED
+}
+
+enum SupportResolutionType {
+  ON_SITE_RESOLVED
+  CUSTOMER_GUIDANCE
+  ACCESS_RESTORED
+  PAYMENT_GUIDANCE
+  MANAGER_RESOLVED
+  TRANSFER_RECOMMENDED
+  NO_ACTION_REQUIRED
+  OTHER
+}
+
 model User {
   id                 String           @id @default(cuid())
   email              String           @unique
@@ -115,6 +213,7 @@ model User {
   fullName           String
   phone              String?
   role               UserRole         @default(CUSTOMER)
+  accountStatus      AccountStatus    @default(ACTIVE)
   inquiries          ContactInquiry[] @relation("InquiryCustomer")
   processedInquiries ContactInquiry[] @relation("InquiryProcessor")
   reservations       Reservation[]
@@ -127,7 +226,21 @@ model User {
   requestedReturns    ReturnRequest[]   @relation("ReturnRequester")
   startedReturns      ReturnRequest[]   @relation("ReturnInspectionStarter")
   completedReturns    ReturnRequest[]   @relation("ReturnCompleter")
+  physicallyReturnedReturns ReturnRequest[] @relation("PhysicalReturnCompleter")
   returnInspections   ReturnInspection[] @relation("ReturnInspector")
+  reviewedDepositSettlements DepositSettlement[] @relation("DepositSettlementReviewer")
+  settledDepositSettlements DepositSettlement[] @relation("DepositSettlementCompleter")
+  reviewedSettlementIssues DepositSettlementIssue[] @relation("SettlementIssueReviewer")
+  reportedMaintenanceRequests MaintenanceRequest[] @relation("MaintenanceReporter")
+  assignedMaintenanceRequests MaintenanceRequest[] @relation("MaintenanceAssignee")
+  verifiedMaintenanceRequests MaintenanceRequest[] @relation("MaintenanceVerifier")
+  customerSupportRequests SupportRequest[] @relation("SupportCustomer")
+  assignedSupportRequests SupportRequest[] @relation("SupportAssignee")
+  escalatedSupportRequests SupportRequest[] @relation("SupportEscalator")
+  resolvedSupportRequests SupportRequest[] @relation("SupportResolver")
+  requestedTransfers TransferRequest[] @relation("TransferRequester")
+  approvedTransfers  TransferRequest[] @relation("TransferApprover")
+  completedTransfers TransferRequest[] @relation("TransferCompleter")
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 }
@@ -192,6 +305,10 @@ model StorageUnit {
   status           UnitStatus        @default(AVAILABLE)
   reservationUnits ReservationUnit[]
   returnInspections ReturnInspection[]
+  maintenanceRequests MaintenanceRequest[]
+  supportRequests SupportRequest[]
+  outgoingTransfers TransferRequest[] @relation("TransferSourceUnit")
+  incomingTransfers TransferRequest[] @relation("TransferDestinationUnit")
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -264,6 +381,8 @@ model Reservation {
   appointments       HandoverAppointment[]
   renewals           RenewalRequest[]
   returns            ReturnRequest[]
+  supportRequests    SupportRequest[]
+  transferRequests   TransferRequest[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -284,6 +403,8 @@ model ReservationUnit {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   contract         RentalContract?
+  outgoingTransfers TransferRequest[] @relation("TransferSourceAllocation")
+  incomingTransfer  TransferRequest?  @relation("TransferDestinationAllocation")
 
   @@unique([reservationId, storageUnitId])
   @@index([storageUnitId, plannedStartDate, plannedEndDate])
@@ -304,6 +425,8 @@ model RentalContract {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   returnInspections ReturnInspection[]
+  supportRequests   SupportRequest[]
+  transferRequests  TransferRequest[]
 
   @@index([reservationId, status])
   @@index([status, createdAt])
@@ -324,10 +447,14 @@ model ReturnRequest {
   completedAt           DateTime?
   completedByUserId     String?
   completedBy           User?               @relation("ReturnCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
+  physicallyReturnedAt  DateTime?
+  physicallyReturnedById String?
+  physicallyReturnedBy  User?               @relation("PhysicalReturnCompleter", fields: [physicallyReturnedById], references: [id], onDelete: Restrict)
   note                  String?
   idempotencyKey        String              @unique
   activeKey             String?             @unique
   inspections           ReturnInspection[]
+  depositSettlement     DepositSettlement?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -344,11 +471,14 @@ model ReturnInspection {
   storageUnitId     String
   storageUnit       StorageUnit      @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
   result            InspectionResult @default(PENDING)
+  issueType         InspectionIssueType?
   conditionNote     String?
   issueNote         String?
   inspectedByUserId String?
   inspectedBy       User?            @relation("ReturnInspector", fields: [inspectedByUserId], references: [id], onDelete: Restrict)
   inspectedAt       DateTime?
+  settlementIssue   DepositSettlementIssue?
+  maintenanceRequest MaintenanceRequest?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -356,6 +486,41 @@ model ReturnInspection {
   @@unique([returnRequestId, storageUnitId])
   @@index([storageUnitId, result])
   @@index([rentalContractId])
+}
+
+model MaintenanceRequest {
+  id                       String              @id @default(cuid())
+  maintenanceCode          String              @unique
+  storageUnitId            String
+  storageUnit              StorageUnit         @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  source                   MaintenanceSource
+  returnInspectionId       String?             @unique
+  returnInspection         ReturnInspection?   @relation(fields: [returnInspectionId], references: [id], onDelete: Restrict)
+  category                 MaintenanceCategory
+  priority                 MaintenancePriority @default(MEDIUM)
+  status                   MaintenanceStatus   @default(OPEN)
+  description              String
+  reportedByUserId         String
+  reportedBy               User                @relation("MaintenanceReporter", fields: [reportedByUserId], references: [id], onDelete: Restrict)
+  assignedStaffUserId      String?
+  assignedStaff            User?               @relation("MaintenanceAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+  startedAt                DateTime?
+  workCompletedAt          DateTime?
+  workNote                 String?
+  verificationNote         String?
+  verifiedByUserId         String?
+  verifiedBy               User?               @relation("MaintenanceVerifier", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
+  verifiedAt               DateTime?
+  activeKey                String?              @unique
+  createIdempotencyKey     String               @unique
+  lastAction               String?
+  lastActionIdempotencyKey String?              @unique
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  @@index([status, priority, createdAt])
+  @@index([storageUnitId, createdAt])
+  @@index([assignedStaffUserId, status])
 }
 
 model Invoice {
@@ -368,12 +533,15 @@ model Invoice {
   renewalRequestId String?
   renewalRequest   RenewalRequest? @relation(fields: [renewalRequestId], references: [id], onDelete: Restrict)
   renewalCycle     Int?
+  depositSettlementId String?          @unique
+  depositSettlement   DepositSettlement? @relation(fields: [depositSettlementId], references: [id], onDelete: Restrict)
   billingPeriodStart DateTime? @db.Date
   billingPeriodEnd   DateTime? @db.Date
   dueAt              DateTime? @db.Date
   status        InvoiceStatus @default(OPEN)
   rentalAmount  BigInt
   depositAmount BigInt
+  chargeAmount  BigInt        @default(0)
   totalAmount   BigInt
   amountPaid    BigInt        @default(0)
   balanceDue    BigInt
@@ -381,6 +549,7 @@ model Invoice {
   issuedAt      DateTime      @default(now())
   paidAt        DateTime?
   payments      Payment[]
+  supportRequests SupportRequest[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -389,6 +558,139 @@ model Invoice {
   @@index([status, issuedAt])
   @@index([type, dueAt])
   @@index([renewalRequestId, status])
+  @@index([depositSettlementId, status])
+}
+
+model SupportRequest {
+  id                       String                @id @default(cuid())
+  supportCode              String                @unique
+  customerUserId           String
+  customer                 User                  @relation("SupportCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  reservationId            String
+  reservation              Reservation           @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  rentalContractId         String?
+  rentalContract           RentalContract?       @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  storageUnitId            String?
+  storageUnit              StorageUnit?          @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  invoiceId                String?
+  invoice                  Invoice?              @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  category                 SupportCategory
+  priority                 SupportPriority       @default(MEDIUM)
+  status                   SupportStatus         @default(OPEN)
+  subject                  String
+  description              String
+  assignedStaffUserId      String?
+  assignedStaff            User?                 @relation("SupportAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+  startedAt                DateTime?
+  escalatedAt              DateTime?
+  escalatedByUserId        String?
+  escalatedBy              User?                 @relation("SupportEscalator", fields: [escalatedByUserId], references: [id], onDelete: Restrict)
+  escalationReason         String?
+  resolutionType           SupportResolutionType?
+  resolutionNote           String?
+  resolvedByUserId         String?
+  resolvedBy               User?                 @relation("SupportResolver", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+  resolvedAt               DateTime?
+  idempotencyKey           String                @unique
+  lastAction               String?
+  lastActionIdempotencyKey String?                @unique
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  transferRequests         TransferRequest[]
+
+  @@index([customerUserId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([assignedStaffUserId, status])
+  @@index([reservationId, createdAt])
+  @@index([storageUnitId, status])
+}
+
+model TransferRequest {
+  id                      String          @id @default(cuid())
+  transferCode            String          @unique
+  reservationId           String
+  reservation             Reservation     @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  rentalContractId        String
+  rentalContract          RentalContract  @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  fromStorageUnitId       String
+  fromStorageUnit         StorageUnit     @relation("TransferSourceUnit", fields: [fromStorageUnitId], references: [id], onDelete: Restrict)
+  toStorageUnitId         String?
+  toStorageUnit           StorageUnit?    @relation("TransferDestinationUnit", fields: [toStorageUnitId], references: [id], onDelete: Restrict)
+  fromReservationUnitId   String
+  fromReservationUnit     ReservationUnit @relation("TransferSourceAllocation", fields: [fromReservationUnitId], references: [id], onDelete: Restrict)
+  toReservationUnitId     String?         @unique
+  toReservationUnit       ReservationUnit? @relation("TransferDestinationAllocation", fields: [toReservationUnitId], references: [id], onDelete: Restrict)
+  supportRequestId        String?
+  supportRequest          SupportRequest? @relation(fields: [supportRequestId], references: [id], onDelete: Restrict)
+  reason                  TransferReason
+  status                  TransferStatus  @default(REQUESTED)
+  requestedByUserId       String
+  requestedBy             User            @relation("TransferRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  approvedByUserId        String?
+  approvedBy              User?           @relation("TransferApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  completedByUserId       String?
+  completedBy             User?           @relation("TransferCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
+  idempotencyKey          String           @unique
+  approvedAt              DateTime?
+  completedAt             DateTime?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([reservationId, createdAt])
+  @@index([fromStorageUnitId, status])
+  @@index([toStorageUnitId, status])
+}
+
+model DepositSettlement {
+  id                   String                  @id @default(cuid())
+  settlementCode       String                  @unique
+  returnRequestId      String                  @unique
+  returnRequest        ReturnRequest           @relation(fields: [returnRequestId], references: [id], onDelete: Restrict)
+  status               DepositSettlementStatus
+  depositAmount        BigInt
+  totalApprovedCharges BigInt                   @default(0)
+  deductionAmount      BigInt                   @default(0)
+  refundAmount         BigInt                   @default(0)
+  outstandingAmount    BigInt                   @default(0)
+  reviewedByUserId     String?
+  reviewedBy           User?                    @relation("DepositSettlementReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  reviewedAt           DateTime?
+  reviewNote           String?
+  reviewIdempotencyKey String?                  @unique
+  refundMethod         PaymentMethod?
+  refundReference      String?
+  refundNote           String?
+  refundIdempotencyKey String?                  @unique
+  refundedAt           DateTime?
+  settledByUserId      String?
+  settledBy            User?                    @relation("DepositSettlementCompleter", fields: [settledByUserId], references: [id], onDelete: Restrict)
+  settledAt            DateTime?
+  issues               DepositSettlementIssue[]
+  outstandingInvoice   Invoice?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model DepositSettlementIssue {
+  id                   String              @id @default(cuid())
+  depositSettlementId  String
+  depositSettlement    DepositSettlement   @relation(fields: [depositSettlementId], references: [id], onDelete: Cascade)
+  returnInspectionId   String              @unique
+  returnInspection     ReturnInspection    @relation(fields: [returnInspectionId], references: [id], onDelete: Restrict)
+  issueType            InspectionIssueType
+  approvedChargeAmount BigInt
+  reason               String?
+  reviewedByUserId     String
+  reviewedBy           User                @relation("SettlementIssueReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  reviewedAt           DateTime            @default(now())
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([depositSettlementId, returnInspectionId])
+  @@index([depositSettlementId, issueType])
 }
 
 model RenewalRequest {

@@ -23,7 +23,7 @@ export class ManagerBillingController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
   @ApiQuery({ name: 'status', required: false, enum: invoiceStatuses })
-  @ApiQuery({ name: 'type', required: false, enum: ['INITIAL', 'RECURRING', 'RENEWAL'] })
+  @ApiQuery({ name: 'type', required: false, enum: ['INITIAL', 'RECURRING', 'RENEWAL', 'SETTLEMENT'] })
   @ApiQuery({ name: 'billingCycle', required: false, example: 2, description: '1 là INITIAL; từ 2 trở lên là RECURRING.' })
   @ApiQuery({ name: 'renewalCycle', required: false, example: 1, description: 'Chu kỳ bên trong một RenewalRequest.' })
   @ApiOkResponse({ description: 'Danh sách Invoice và số dư.', schema: { example: { page: 1, limit: 20, total: 1, items: [{ invoiceCode: 'WDP-2026-AB12CD34-I01', type: 'INITIAL', status: 'PARTIALLY_PAID', totalAmount: 5800000, amountPaid: 3000000, balanceDue: 2800000 }] } } })
@@ -52,7 +52,7 @@ export class ManagerBillingController {
   }
 
   @Post('invoices/:invoiceId/payments')
-  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'MANAGER/ADMIN. Payment append-only và có thể trả recurring trước dueAt. Chỉ INITIAL được thanh toán đủ mới chuyển PENDING_PAYMENT → READY_FOR_HANDOVER; recurring payment giữ Contract ACTIVE và StorageUnit OCCUPIED.' })
+  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'MANAGER/ADMIN. Payment append-only. INITIAL paid mở handover; RENEWAL paid hoàn tất gia hạn; SETTLEMENT paid đủ tự đóng DepositSettlement khi không có refund.' })
   @ApiParam({ name: 'invoiceId', example: 'WDP-2026-AB12CD34-I01' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'payment-bank-ref-123', description: 'Khóa duy nhất 8–200 ký tự cho lần ghi nhận thanh toán.' })
   @ApiBody({ type: RecordPaymentRequestDto, examples: {
@@ -100,7 +100,7 @@ export class ManagerBillingController {
     const status = this.optional(query.status, 'status');
     if (status && !invoiceStatuses.includes(status as (typeof invoiceStatuses)[number])) throw new BadRequestException('Invoice status không hợp lệ.');
     const type = this.optional(query.type, 'type');
-    if (type && !['INITIAL', 'RECURRING', 'RENEWAL'].includes(type)) throw new BadRequestException('Invoice type không hợp lệ.');
+    if (type && !['INITIAL', 'RECURRING', 'RENEWAL', 'SETTLEMENT'].includes(type)) throw new BadRequestException('Invoice type không hợp lệ.');
     const billingCycle = query.billingCycle === undefined ? undefined : this.integer(query.billingCycle, 1, 120, 'billingCycle');
     const renewalCycle = query.renewalCycle === undefined ? undefined : this.integer(query.renewalCycle, 1, 120, 'renewalCycle');
     return { ...common, ...(status ? { status: status as InvoiceListQuery['status'] } : {}), ...(type ? { type: type as InvoiceListQuery['type'] } : {}), ...(billingCycle ? { billingCycle } : {}), ...(renewalCycle ? { renewalCycle } : {}) };

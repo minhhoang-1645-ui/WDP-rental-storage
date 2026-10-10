@@ -64,9 +64,11 @@ describe('Return and Inspection V1', () => {
   });
 
   afterEach(async () => {
-    await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
+    await prisma.depositSettlement.deleteMany({ where: { returnRequest: { reservation: { storageTypeId } } } });
+    await prisma.maintenanceRequest.deleteMany({ where: { storageUnit: { storageTypeId } } });
+    await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -75,9 +77,11 @@ describe('Return and Inspection V1', () => {
   });
 
   afterAll(async () => {
-    await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
+    await prisma.depositSettlement.deleteMany({ where: { returnRequest: { reservation: { storageTypeId } } } });
+    await prisma.maintenanceRequest.deleteMany({ where: { storageUnit: { storageTypeId } } });
+    await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
@@ -158,23 +162,37 @@ describe('Return and Inspection V1', () => {
     await expect(requestReturn(renewal.reservation.id)).rejects.toMatchObject({ response: { code: 'UNRESOLVED_RENEWAL_EXISTS' } });
   });
 
-  it('starts inspection, records actor identity, and transitions ISSUE_FOUND without releasing inventory', async () => {
-    const { reservation } = await activeRental({ quantity: 2 });
+  it('creates exactly one maintenance case per ISSUE_FOUND unit in a quantity-three return', async () => {
+    const { reservation } = await activeRental({ quantity: 3 });
     const requested = await requestReturn(reservation.id);
     const started = await returns.startInspection(requested.id, staff);
     expect(started).toMatchObject({ status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { id: staffId, role: 'STAFF' } });
-    const issue = await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'ISSUE_FOUND', conditionNote: 'Door dented', issueNote: 'Manager review required' }, staff);
+    const issue = await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', conditionNote: 'Door dented', issueNote: 'Manager review required' }, staff);
     expect(issue).toMatchObject({ status: 'ISSUE_FOUND', inspectionSummary: { issues: 1 } });
     expect(issue.inspections.find((inspection) => inspection.id === started.inspections[0].id)).toMatchObject({ result: 'ISSUE_FOUND', inspectedBy: { id: staffId } });
     const customerView = await returns.getCustomerReturn(customerId, requested.id);
     expect(JSON.stringify(customerView)).not.toContain('Manager review required');
     expect(JSON.stringify(customerView)).not.toContain('Door dented');
     expect(JSON.stringify(customerView)).not.toContain('Return Staff');
-    await expect(returns.finalize(requested.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_ISSUE_UNRESOLVED' } });
     await expect(returns.updateInspection(requested.id, started.inspections[0].id, { result: 'PASS' }, staff)).rejects.toBeInstanceOf(ConflictException);
-    expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE' } })).toBe(2);
-    expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'OCCUPIED' } })).toBe(2);
-  });
+    await returns.updateInspection(requested.id, started.inspections[1].id, { result: 'ISSUE_FOUND', issueType: 'CLEANING_REQUIRED', conditionNote: 'Cleaning required', issueNote: 'Deep cleaning required' }, staff);
+    await returns.updateInspection(requested.id, started.inspections[2].id, { result: 'PASS', conditionNote: 'Good condition' }, staff);
+    const finalized = await returns.finalize(requested.id, staff);
+    expect(finalized).toMatchObject({ status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspectionSummary: { issues: 2, passed: 1 } });
+    expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(3);
+    expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(3);
+    expect(await prisma.storageUnit.count({ where: { id: started.inspections[0].unit.id, status: 'MAINTENANCE' } })).toBe(1);
+    expect(await prisma.storageUnit.count({ where: { id: started.inspections[1].unit.id, status: 'MAINTENANCE' } })).toBe(1);
+    expect(await prisma.storageUnit.count({ where: { id: started.inspections[2].unit.id, status: 'AVAILABLE' } })).toBe(1);
+    expect(await prisma.maintenanceRequest.findUnique({ where: { returnInspectionId: started.inspections[0].id } })).toMatchObject({
+      source: 'RETURN_INSPECTION', category: 'UNIT_DAMAGE', status: 'OPEN', storageUnitId: started.inspections[0].unit.id,
+    });
+    expect(await prisma.maintenanceRequest.findUnique({ where: { returnInspectionId: started.inspections[1].id } })).toMatchObject({ category: 'CLEANING', status: 'OPEN' });
+    expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: started.inspections[2].unit.id } })).toBe(0);
+    expect(await prisma.maintenanceRequest.count({ where: { returnInspection: { returnRequestId: requested.id } } })).toBe(2);
+    await returns.finalize(requested.id, manager);
+    expect(await prisma.maintenanceRequest.count({ where: { returnInspection: { returnRequestId: requested.id } } })).toBe(2);
+  }, 60000);
 
   it('rejects finalization while any inspection remains PENDING', async () => {
     const { reservation } = await activeRental({ quantity: 2 });
@@ -189,12 +207,13 @@ describe('Return and Inspection V1', () => {
     const requested = await requestReturn(reservation.id);
     await passAll(requested.id);
     const completed = await returns.finalize(requested.id, staff);
-    expect(completed).toMatchObject({ status: 'COMPLETED', completedBy: { id: staffId, role: 'STAFF' }, inspectionSummary: { passed: 2 } });
+    expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED', completedAt: { not: null } } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null }, actualVacatedAt: { not: null } } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'AVAILABLE' } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id } })).toBe(2);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: reservation.id } })).quoteSnapshot).toEqual(quote);
+    expect(await prisma.depositSettlement.findUnique({ where: { returnRequestId: requested.id } })).toMatchObject({ status: 'APPROVED', depositAmount: 3000000n, totalApprovedCharges: 0n, deductionAmount: 0n, refundAmount: 3000000n, outstandingAmount: 0n });
     await expect(rentals.getCustomerRental(customerId, reservation.id)).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -219,9 +238,11 @@ describe('Return and Inspection V1', () => {
     ]);
     expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true);
     const retry = await returns.finalize(requested.id, manager);
-    expect(retry.status).toBe('COMPLETED');
+    expect(retry.status).toBe('PENDING_SETTLEMENT');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(1);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(1);
+    expect(await prisma.depositSettlement.count({ where: { returnRequestId: requested.id } })).toBe(1);
+    expect(await prisma.maintenanceRequest.count({ where: { returnInspection: { returnRequestId: requested.id } } })).toBe(0);
   });
 
   it('keeps future confirmed allocation unchanged and availability-aware after the current return', async () => {
@@ -252,7 +273,7 @@ describe('Return and Inspection V1', () => {
     expect((await returns.listCustomerReturns(customerId, { page: 1, limit: 20 })).total).toBe(1);
     expect((await returns.listCustomerReturns(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(returns.getCustomerReturn(otherCustomerId, requested.id)).rejects.toBeInstanceOf(NotFoundException);
-    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: 'Return Customer', status: 'REQUESTED', date: dateText(new Date()) });
+    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: customerId, status: 'REQUESTED', date: dateText(new Date()) });
     const staffList = await returns.listStaffReturns({ page: 1, limit: 20, search: unitCodes[0] });
     expect(managerList.total).toBe(1);
     expect(staffList.total).toBe(1);

@@ -22,6 +22,24 @@ export interface CustomerListQuery {
 export class ManagerService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async dashboardSummary() {
+    const now = new Date();
+    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
+    const [pendingReservations, activeRentalRows, overdueRows, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits] = await Promise.all([
+      this.prisma.reservation.count({ where: { status: 'PENDING' } }),
+      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE', endDate: { lt: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.handoverAppointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
+      this.prisma.renewalRequest.count({ where: { status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
+      this.prisma.supportRequest.count({ where: { status: { not: 'RESOLVED' } } }),
+      this.prisma.storageUnit.count({ where: { status: 'MAINTENANCE' } }),
+      this.prisma.depositSettlement.count({ where: { status: { not: 'SETTLED' } } }),
+      this.prisma.storageUnit.count({ where: { status: 'AVAILABLE' } }),
+      this.prisma.storageUnit.count({ where: { status: 'OCCUPIED' } }),
+    ]);
+    return { pendingReservations, activeRentals: activeRentalRows.length, overdueRentals: overdueRows.length, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits };
+  }
+
   async listUnits(query: UnitListQuery) {
     const where: Prisma.StorageUnitWhereInput = {
       ...(query.search ? { unitNumber: { contains: query.search, mode: 'insensitive' } } : {}),
@@ -48,6 +66,12 @@ export class ManagerService {
       orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
       include: {
         storageType: true,
+        maintenanceRequests: {
+          where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, maintenanceCode: true, status: true, priority: true },
+        },
         reservationUnits: {
           where: {
             releasedAt: null,
@@ -72,6 +96,12 @@ export class ManagerService {
       where: { OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
       include: {
         storageType: true,
+        maintenanceRequests: {
+          where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, maintenanceCode: true, status: true, priority: true },
+        },
         reservationUnits: {
           include: { reservation: { include: { customer: true } } },
           orderBy: [{ plannedStartDate: 'desc' }, { id: 'asc' }],
@@ -120,6 +150,7 @@ export class ManagerService {
         fullName: true,
         email: true,
         phone: true,
+        accountStatus: true,
         createdAt: true,
         _count: { select: { reservations: true } },
         reservations: {
@@ -138,7 +169,7 @@ export class ManagerService {
         fullName: customer.fullName,
         email: customer.email,
         phone: customer.phone ?? '',
-        accountStatus: 'ACTIVE' as const,
+        accountStatus: customer.accountStatus,
         createdAt: customer.createdAt.toISOString(),
         reservationCount: customer._count.reservations,
         latestReservation: customer.reservations[0] ? this.toReservationSummary(customer.reservations[0]) : null,
@@ -154,6 +185,7 @@ export class ManagerService {
         fullName: true,
         email: true,
         phone: true,
+        accountStatus: true,
         createdAt: true,
         updatedAt: true,
         reservations: {
@@ -171,7 +203,7 @@ export class ManagerService {
       fullName: customer.fullName,
       email: customer.email,
       phone: customer.phone ?? '',
-      accountStatus: 'ACTIVE' as const,
+      accountStatus: customer.accountStatus,
       createdAt: customer.createdAt.toISOString(),
       updatedAt: customer.updatedAt.toISOString(),
       reservationCount: customer.reservations.length,
@@ -207,6 +239,9 @@ export class ManagerService {
       row: unit.row,
       position: unit.position,
       status: unit.status,
+      activeMaintenance: unit.maintenanceRequests?.[0] ?? null,
+      maintenanceStatus: unit.maintenanceRequests?.[0]?.status ?? null,
+      maintenancePriority: unit.maintenanceRequests?.[0]?.priority ?? null,
       allocationSummary: {
         current: allocations.find((allocation: any) => this.date(allocation.startDate) <= today && this.date(allocation.endDate) > today) ?? null,
         future: allocations.filter((allocation: any) => this.date(allocation.startDate) > today),

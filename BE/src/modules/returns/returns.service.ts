@@ -5,7 +5,8 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type ViewMode = 'CUSTOMER' | 'MANAGER' | 'STAFF';
-type ReturnStatus = 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'COMPLETED';
+type ReturnStatus = 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED';
+type IssueType = 'NORMAL_WEAR' | 'FACILITY_FAULT' | 'CUSTOMER_DAMAGE' | 'CLEANING_REQUIRED' | 'LOST_KEY_OR_ACCESS_ITEM' | 'OTHER';
 
 export interface ReturnListQuery {
   page: number;
@@ -136,7 +137,7 @@ export class ReturnsService {
       if (inspection.result === 'ISSUE_FOUND' && parsed.result !== 'ISSUE_FOUND') {
         throw new ConflictException('Return V1 không cho phép tự xóa kết quả ISSUE_FOUND.');
       }
-      if (inspection.result === parsed.result && (inspection.conditionNote ?? null) === parsed.conditionNote && (inspection.issueNote ?? null) === parsed.issueNote) {
+      if (inspection.result === parsed.result && inspection.issueType === parsed.issueType && (inspection.conditionNote ?? null) === parsed.conditionNote && (inspection.issueNote ?? null) === parsed.issueNote) {
         return this.toReturn(current, 'STAFF');
       }
       const now = new Date();
@@ -144,6 +145,7 @@ export class ReturnsService {
         where: { id: inspection.id },
         data: {
           result: parsed.result,
+          issueType: parsed.issueType,
           conditionNote: parsed.conditionNote,
           issueNote: parsed.issueNote,
           inspectedByUserId: actor.id,
@@ -164,11 +166,13 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       let current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-      if (current.status === 'COMPLETED') return this.toReturn(current, 'STAFF');
-      if (current.status === 'ISSUE_FOUND') throw new ConflictException({ code: 'RETURN_ISSUE_UNRESOLVED', message: 'Không thể hoàn tất khi còn ISSUE_FOUND.' });
-      if (current.status !== 'INSPECTION_IN_PROGRESS') throw new ConflictException('Yêu cầu phải đang INSPECTION_IN_PROGRESS trước khi hoàn tất.');
-      if (current.inspections.length !== current.reservation.quantity || current.inspections.some((inspection) => inspection.result !== 'PASS')) {
-        throw new ConflictException({ code: 'RETURN_INSPECTIONS_INCOMPLETE', message: 'Tất cả kho phải có inspection PASS trước khi hoàn tất.' });
+      if (['PENDING_SETTLEMENT', 'COMPLETED'].includes(current.status)) return this.toReturn(current, 'STAFF');
+      if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Yêu cầu phải đang kiểm tra trước khi hoàn tất trả kho vật lý.');
+      if (current.inspections.length !== current.reservation.quantity || current.inspections.some((inspection) => inspection.result === 'PENDING')) {
+        throw new ConflictException({ code: 'RETURN_INSPECTIONS_INCOMPLETE', message: 'Tất cả kho phải được ghi kết quả kiểm tra trước khi hoàn tất.' });
+      }
+      if (current.inspections.some((inspection) => inspection.result === 'ISSUE_FOUND' && inspection.issueType === null)) {
+        throw new ConflictException({ code: 'RETURN_ISSUE_TYPE_REQUIRED', message: 'Mọi inspection ISSUE_FOUND phải có issueType.' });
       }
       const unitIds = current.inspections.map((inspection) => inspection.storageUnitId).sort();
       if (new Set(unitIds).size !== current.reservation.quantity) throw new ConflictException('Inspection không bao phủ đủ các StorageUnit riêng biệt.');
@@ -188,14 +192,67 @@ export class ReturnsService {
         data: { releasedAt: now, actualVacatedAt: now },
       });
       if (allocations.count !== current.reservation.quantity) throw new ConflictException('Không thể release một phần allocation.');
-      const units = await tx.storageUnit.updateMany({
-        where: { id: { in: unitIds }, status: 'OCCUPIED' },
+      const passUnitIds = current.inspections.filter((inspection) => inspection.result === 'PASS').map((inspection) => inspection.storageUnitId);
+      const issueUnitIds = current.inspections.filter((inspection) => inspection.result === 'ISSUE_FOUND').map((inspection) => inspection.storageUnitId);
+      const availableUnits = await tx.storageUnit.updateMany({
+        where: { id: { in: passUnitIds }, status: 'OCCUPIED' },
         data: { status: 'AVAILABLE' },
       });
-      if (units.count !== current.reservation.quantity) throw new ConflictException('Không thể mở lại một phần StorageUnit.');
+      const maintenanceUnits = await tx.storageUnit.updateMany({
+        where: { id: { in: issueUnitIds }, status: 'OCCUPIED' },
+        data: { status: 'MAINTENANCE' },
+      });
+      if (availableUnits.count !== passUnitIds.length || maintenanceUnits.count !== issueUnitIds.length) throw new ConflictException('Không thể cập nhật đầy đủ trạng thái vật lý StorageUnit.');
+
+      const issueInspections = current.inspections.filter((inspection) => inspection.result === 'ISSUE_FOUND');
+      for (const [index, inspection] of issueInspections.entries()) {
+        await tx.maintenanceRequest.create({
+          data: {
+            maintenanceCode: `${current.returnCode}-MNT${String(index + 1).padStart(2, '0')}`,
+            storageUnitId: inspection.storageUnitId,
+            source: 'RETURN_INSPECTION',
+            returnInspectionId: inspection.id,
+            category: this.maintenanceCategory(inspection.issueType!),
+            priority: 'MEDIUM',
+            status: 'OPEN',
+            description: inspection.issueNote ?? inspection.conditionNote ?? 'Return inspection requires maintenance.',
+            reportedByUserId: actor.id,
+            activeKey: `MAINTENANCE:${inspection.storageUnitId}`,
+            createIdempotencyKey: `RETURN_INSPECTION:${inspection.id}`,
+          },
+        });
+      }
+
+      const initialInvoices = current.reservation.invoices.filter((invoice) => invoice.type === 'INITIAL');
+      if (initialInvoices.length !== 1 || initialInvoices[0].status !== 'PAID') throw new ConflictException('Không xác định được Initial Invoice đã thanh toán để đối soát deposit.');
+      const depositAmount = initialInvoices[0].depositAmount;
+      const historicalDeposit = (current.reservation.quoteSnapshot as Record<string, unknown>).depositAmount;
+      if (!Number.isSafeInteger(historicalDeposit) || BigInt(Number(historicalDeposit)) !== depositAmount) {
+        throw new ConflictException({ code: 'DEPOSIT_HISTORY_MISMATCH', message: 'Deposit trong Initial Invoice không khớp quoteSnapshot lịch sử.' });
+      }
+      const allPass = issueUnitIds.length === 0;
+      const autoSettled = allPass && depositAmount === 0n;
+      await tx.depositSettlement.create({
+        data: {
+          settlementCode: `${current.returnCode}-DS01`,
+          returnRequestId: current.id,
+          status: allPass ? (autoSettled ? 'SETTLED' : 'APPROVED') : 'PENDING_REVIEW',
+          depositAmount,
+          totalApprovedCharges: 0n,
+          deductionAmount: 0n,
+          refundAmount: allPass ? depositAmount : 0n,
+          outstandingAmount: 0n,
+          ...(autoSettled ? { settledByUserId: actor.id, settledAt: now } : {}),
+        },
+      });
       const updated = await tx.returnRequest.update({
         where: { id: current.id },
-        data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, activeKey: null },
+        data: {
+          status: autoSettled ? 'COMPLETED' : 'PENDING_SETTLEMENT',
+          physicallyReturnedAt: now,
+          physicallyReturnedById: actor.id,
+          ...(autoSettled ? { completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
+        },
         include: this.include(),
       });
       return this.toReturn(updated, 'STAFF');
@@ -252,6 +309,8 @@ export class ReturnsService {
       requestedBy: { select: { id: true, fullName: true, role: true } },
       inspectionStartedBy: { select: { id: true, fullName: true, role: true } },
       completedBy: { select: { id: true, fullName: true, role: true } },
+      physicallyReturnedBy: { select: { id: true, fullName: true, role: true } },
+      depositSettlement: { select: { id: true, settlementCode: true, status: true } },
       inspections: {
         include: {
           inspectedBy: { select: { id: true, fullName: true, role: true } },
@@ -272,7 +331,7 @@ export class ReturnsService {
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
         units: { select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
-        invoices: { select: { id: true, invoiceCode: true, type: true, status: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
+        invoices: { select: { id: true, invoiceCode: true, type: true, status: true, rentalAmount: true, depositAmount: true, chargeAmount: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
         renewals: { select: { id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true }, orderBy: { createdAt: 'desc' as const } },
       } },
     };
@@ -307,6 +366,7 @@ export class ReturnsService {
       const base = {
         id: inspection.id,
         result: inspection.result,
+        issueType: inspection.issueType,
         inspectedAt: inspection.inspectedAt?.toISOString() ?? null,
         contract: {
           id: inspection.rentalContract.id,
@@ -339,6 +399,7 @@ export class ReturnsService {
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),
       inspectionStartedAt: record.inspectionStartedAt?.toISOString() ?? null,
+      physicallyReturnedAt: record.physicallyReturnedAt?.toISOString() ?? null,
       completedAt: record.completedAt?.toISOString() ?? null,
       note: record.note,
       reservation: {
@@ -361,6 +422,7 @@ export class ReturnsService {
       },
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
+      settlementStatus: record.depositSettlement?.status ?? null,
     };
     if (mode === 'CUSTOMER') return { ...base, requestedBy: record.requestedBy };
     const renewals = record.reservation.renewals.map((renewal: any) => ({
@@ -373,6 +435,7 @@ export class ReturnsService {
       ...base,
       requestedBy: record.requestedBy,
       inspectionStartedBy: record.inspectionStartedBy,
+      physicallyReturnedBy: record.physicallyReturnedBy,
       completedBy: record.completedBy,
     };
     if (mode === 'STAFF') return { ...operational, renewalHistory: renewals };
@@ -400,13 +463,27 @@ export class ReturnsService {
     return { reservationId, note, idempotencyKey: key };
   }
 
-  private inspectionInput(input: Record<string, unknown>): { result: 'PASS' | 'ISSUE_FOUND'; conditionNote: string | null; issueNote: string | null } {
+  private inspectionInput(input: Record<string, unknown>): { result: 'PASS' | 'ISSUE_FOUND'; issueType: IssueType | null; conditionNote: string | null; issueNote: string | null } {
+    if ('approvedChargeAmount' in input || 'approvedByUserId' in input || 'deductionAmount' in input) {
+      throw new BadRequestException('Staff không được gửi quyết định charge hoặc deduction trong inspection.');
+    }
     const result = input.result;
     if (result !== 'PASS' && result !== 'ISSUE_FOUND') throw new BadRequestException('result phải là PASS hoặc ISSUE_FOUND.');
     const conditionNote = this.optionalText(input.conditionNote, 2000, 'conditionNote');
     const issueNote = this.optionalText(input.issueNote, 2000, 'issueNote');
+    const issueType = typeof input.issueType === 'string' ? input.issueType : null;
+    const issueTypes: IssueType[] = ['NORMAL_WEAR', 'FACILITY_FAULT', 'CUSTOMER_DAMAGE', 'CLEANING_REQUIRED', 'LOST_KEY_OR_ACCESS_ITEM', 'OTHER'];
     if (result === 'ISSUE_FOUND' && (!issueNote || issueNote.length < 3)) throw new BadRequestException('issueNote phải dài ít nhất 3 ký tự khi có ISSUE_FOUND.');
-    return { result, conditionNote, issueNote: result === 'ISSUE_FOUND' ? issueNote : null };
+    if (result === 'ISSUE_FOUND' && (!issueType || !issueTypes.includes(issueType as IssueType))) throw new BadRequestException('issueType không hợp lệ hoặc còn thiếu.');
+    return { result, issueType: result === 'ISSUE_FOUND' ? issueType as IssueType : null, conditionNote, issueNote: result === 'ISSUE_FOUND' ? issueNote : null };
+  }
+
+  private maintenanceCategory(issueType: IssueType): 'UNIT_DAMAGE' | 'CLEANING' | 'LOCK_OR_ACCESS' | 'FACILITY_EQUIPMENT' | 'OTHER' {
+    if (issueType === 'CUSTOMER_DAMAGE') return 'UNIT_DAMAGE';
+    if (issueType === 'CLEANING_REQUIRED') return 'CLEANING';
+    if (issueType === 'LOST_KEY_OR_ACCESS_ITEM') return 'LOCK_OR_ACCESS';
+    if (issueType === 'FACILITY_FAULT') return 'FACILITY_EQUIPMENT';
+    return 'OTHER';
   }
 
   private assertMatchingRetry(record: any, customerId: string, reservationId: string, note: string | null) {

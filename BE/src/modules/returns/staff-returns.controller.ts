@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { ReturnsService, type ReturnListQuery } from './returns.service.js';
 
-const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'COMPLETED'] as const;
+const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'PENDING_SETTLEMENT', 'COMPLETED'] as const;
 
 @Controller('staff/returns')
 @UseGuards(AuthGuard, RolesGuard)
@@ -43,12 +43,12 @@ export class StaffReturnsController {
   start(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.returns.startInspection(id, request.user!); }
 
   @Patch(':returnId/inspections/:inspectionId')
-  @ApiOperation({ summary: 'Ghi kết quả kiểm tra một kho', description: 'PASS hoặc ISSUE_FOUND. ISSUE_FOUND không release unit và chưa tự tạo phí/maintenance.' })
+  @ApiOperation({ summary: 'Ghi kết quả kiểm tra một kho', description: 'PASS hoặc ISSUE_FOUND. ISSUE_FOUND bắt buộc issueType; Staff không được gửi hoặc duyệt charge.' })
   @ApiParam({ name: 'returnId', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiParam({ name: 'inspectionId', example: 'cm-return-inspection-id' })
   @ApiBody({ type: UpdateReturnInspectionRequestDto, examples: {
     pass: { value: { result: 'PASS', conditionNote: 'Kho sạch, cửa và khóa hoạt động bình thường.' } },
-    issue: { value: { result: 'ISSUE_FOUND', conditionNote: 'Có vết móp ở cửa.', issueNote: 'Cần Manager xử lý riêng; V1 chưa tính phí.' } },
+    issue: { value: { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', conditionNote: 'Có vết móp ở cửa.', issueNote: 'Cần Manager xác định trách nhiệm và approved cost.' } },
   } })
   @ApiOkResponse({ description: 'Inspection và summary mới nhất.' })
   @ApiBadRequestResponse({ description: 'result/note không hợp lệ.' })
@@ -59,10 +59,13 @@ export class StaffReturnsController {
   }
 
   @Post(':id/finalize')
-  @ApiOperation({ summary: 'Hoàn tất trả kho', description: 'Yêu cầu mọi inspection PASS. Transaction nguyên tử: Contract COMPLETED, allocation released, Unit AVAILABLE, Return COMPLETED. Không settlement deposit.' })
+  @ApiOperation({ summary: 'Hoàn tất trả kho vật lý', description: 'Yêu cầu mọi inspection đã ghi kết quả; ISSUE_FOUND được phép. Transaction nguyên tử: Contract COMPLETED, allocation released, PASS → AVAILABLE, ISSUE_FOUND → MAINTENANCE và tạo DepositSettlement.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
-  @ApiOkResponse({ schema: { example: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'COMPLETED', completedBy: { fullName: 'WDP Staff', role: 'STAFF' }, inspections: [{ result: 'PASS', contract: { status: 'COMPLETED' }, unit: { status: 'AVAILABLE' } }] } } })
-  @ApiConflictResponse({ description: 'RETURN_INSPECTIONS_INCOMPLETE, RETURN_ISSUE_UNRESOLVED, invalid contract/unit/allocation hoặc concurrency conflict.' })
+  @ApiOkResponse({ schema: { examples: {
+    pass: { value: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'PENDING_SETTLEMENT', settlementStatus: 'APPROVED', inspections: [{ result: 'PASS', contract: { status: 'COMPLETED' }, unit: { status: 'AVAILABLE' } }] } },
+    mixed: { value: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspections: [{ result: 'PASS', unit: { status: 'AVAILABLE' } }, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', unit: { status: 'MAINTENANCE' } }] } },
+  } } })
+  @ApiConflictResponse({ description: 'RETURN_INSPECTIONS_INCOMPLETE, RETURN_ISSUE_TYPE_REQUIRED, deposit history mismatch, invalid contract/unit/allocation hoặc concurrency conflict.' })
   finalize(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.returns.finalize(id, request.user!); }
 
   private query(input: Record<string, unknown>): ReturnListQuery {

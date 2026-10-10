@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronLeft, CircleHelp, ClipboardList, CreditCard, FileText, LayoutDashboard, LogOut, Menu, Repeat2, UserRound, Warehouse, X } from 'lucide-react'
+import { ArrowRightLeft, CalendarClock, CircleHelp, ClipboardList, CreditCard, FileText, LayoutDashboard, LogOut, Menu, Repeat2, RotateCcw, UserRound, Warehouse, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
@@ -11,7 +11,8 @@ const navigation = [
   { to: '/customer/payments', label: 'Thanh toán', icon: CreditCard },
   { to: '/customer/appointments', label: 'Lịch hẹn', icon: CalendarClock },
   { to: '/customer/renewals', label: 'Gia hạn', icon: Repeat2 },
-  { to: '/customer/transfers', label: 'Chuyển đổi kho', icon: ChevronLeft },
+  { to: '/customer/returns', label: 'Trả kho & tiền cọc', icon: RotateCcw },
+  { to: '/customer/transfers', label: 'Chuyển đổi kho', icon: ArrowRightLeft },
   { to: '/customer/support', label: 'Hỗ trợ', icon: CircleHelp },
 ] as const
 

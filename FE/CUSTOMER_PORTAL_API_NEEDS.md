@@ -10,23 +10,18 @@ The Customer Portal sends the authenticated Customer bearer token through the sh
 - `GET /api/customer/invoices` and `GET /api/customer/payments`: billing page.
 - `GET, POST /api/customer/appointments`: handover appointment list and request form.
 - `GET, POST /api/customer/renewals`: renewal history and request form.
+- `GET, POST /api/customer/support-requests`: support request list and request form.
+- `GET, POST /api/customer/returns`: return request list and request form.
+- `GET /api/customer/deposit-settlements`: customer-visible deposit settlement details.
 
-Appointment and renewal creation include an `Idempotency-Key`. Prices, balances, eligibility and state transitions remain controlled by the backend.
+Appointment, renewal, support and return creation include an `Idempotency-Key`. Prices, balances, eligibility and state transitions remain controlled by the backend.
 
 ## Still needs backend API
 
-### Storage transfer
+### Storage transfer visibility
 
-Needed for `/customer/transfers`: list requests, validate eligible active rentals, create a request and expose its processing status.
-
-### Customer support
-
-Needed for `/customer/support`: list customer tickets, create a ticket and expose replies/status without putting private operational notes in the Customer response.
+Customer starts this workflow through `/api/customer/support-requests`. Only Manager/Staff transfer endpoints currently exist, so `/customer/transfers` shows the related support request and WDP decision; it cannot display the internal TransferRequest record directly.
 
 ### Profile update
 
 `PATCH /api/auth/me` is needed to update explicitly allowed fields such as `fullName` and `phone`. The current profile page remains read-only.
-
-### Customer return page
-
-The backend now exposes `GET, POST /api/customer/returns`, but the current Customer navigation has no return-storage page yet.

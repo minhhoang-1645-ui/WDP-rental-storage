@@ -12,8 +12,8 @@ export function ReservationStatus({ status }: { status: string }) {
   return <span className={'customer-status customer-status--' + status.toLowerCase()}>{labels[status] ?? status}</span>
 }
 
-export function CustomerStatus({ status }: { status: string }) {
-  return <span className={'customer-status customer-status--' + status.toLowerCase()}>{customerStatusLabel(status)}</span>
+export function CustomerStatus({ status, label }: { status: string; label?: string }) {
+  return <span className={'customer-status customer-status--' + status.toLowerCase()}>{label ?? customerStatusLabel(status)}</span>
 }
 
 export function PortalLoading({ label = 'Đang tải dữ liệu…' }: { label?: string }) {

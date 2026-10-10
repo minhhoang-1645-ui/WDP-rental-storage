@@ -6,14 +6,18 @@ import { ActiveRentalsModule } from './modules/rentals-active/active-rentals.mod
 import { BookingModule } from './modules/booking/booking.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { ContractsModule } from './modules/contracts/contracts.module.js';
+import { DepositSettlementsModule } from './modules/deposit-settlements/deposit-settlements.module.js';
 import { FacilitiesModule } from './modules/facilities/facilities.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { ManagerModule } from './modules/manager/manager.module.js';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { RentalsModule } from './modules/rentals/rentals.module.js';
 import { RenewalsModule } from './modules/renewals/renewals.module.js';
 import { ReturnsModule } from './modules/returns/returns.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
+import { SupportModule } from './modules/support/support.module.js';
+import { TransfersModule } from './modules/transfers/transfers.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
@@ -23,6 +27,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PrismaModule,
     HealthModule,
     ManagerModule,
+    MaintenanceModule,
     PricingModule,
     AuthModule,
     AppointmentsModule,
@@ -30,9 +35,12 @@ import { PrismaModule } from './prisma/prisma.module.js';
     BookingModule,
     BillingModule,
     ContractsModule,
+    DepositSettlementsModule,
     UsersModule,
     FacilitiesModule,
     StorageModule,
+    SupportModule,
+    TransfersModule,
     RentalsModule,
     RenewalsModule,
     ReturnsModule,

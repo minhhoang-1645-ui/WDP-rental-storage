@@ -9,7 +9,7 @@ export interface InvoiceListQuery {
   limit: number;
   search?: string;
   status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID';
-  type?: 'INITIAL' | 'RECURRING' | 'RENEWAL';
+  type?: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT';
   billingCycle?: number;
   renewalCycle?: number;
 }
@@ -241,6 +241,20 @@ export class BillingService {
         if (paid && invoice.type === 'RENEWAL' && invoice.renewalRequestId) {
           await this.renewals.completeAfterPayment(tx, invoice.renewalRequestId);
         }
+        if (paid && invoice.type === 'SETTLEMENT' && invoice.depositSettlementId) {
+          await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${invoice.depositSettlementId} FOR UPDATE`);
+          const settlement = await tx.depositSettlement.findUnique({ where: { id: invoice.depositSettlementId } });
+          if (!settlement || settlement.status !== 'AWAITING_OUTSTANDING_PAYMENT' || settlement.refundAmount !== 0n) {
+            throw new ConflictException('Settlement Invoice không khớp trạng thái quyết toán hiện tại.');
+          }
+          const now = new Date();
+          await tx.depositSettlement.update({ where: { id: settlement.id }, data: { status: 'SETTLED', settledByUserId: actor.id, settledAt: now } });
+          const completed = await tx.returnRequest.updateMany({
+            where: { id: settlement.returnRequestId, status: 'PENDING_SETTLEMENT', physicallyReturnedAt: { not: null } },
+            data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, activeKey: null },
+          });
+          if (completed.count !== 1) throw new ConflictException('Không thể hoàn tất ReturnRequest sau khi thanh toán settlement.');
+        }
         const result = await tx.payment.findUniqueOrThrow({ where: { id: payment.id }, include: this.paymentInclude() });
         return this.paymentResult(result);
       }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
@@ -267,7 +281,7 @@ export class BillingService {
     const skipped: Array<{ reservation: string; reason: string }> = [];
     for (const reservation of reservations) {
       try {
-        await this.prisma.$transaction((tx) => this.ensureInitialInvoice(tx, reservation.id));
+        await this.prisma.$transaction((tx) => this.ensureInitialInvoice(tx, reservation.id), { maxWait: 10000, timeout: 20000 });
         created.push(reservation.reservationCode);
       } catch (error) {
         skipped.push({ reservation: reservation.reservationCode, reason: error instanceof Error ? error.message : 'Unknown error' });
@@ -286,7 +300,7 @@ export class BillingService {
     const skipped: Array<{ reservation: string; reason: string }> = [];
     for (const reservation of reservations) {
       try {
-        const invoices = await this.prisma.$transaction((tx) => this.ensureRecurringInvoices(tx, reservation.id));
+        const invoices = await this.prisma.$transaction((tx) => this.ensureRecurringInvoices(tx, reservation.id), { maxWait: 10000, timeout: 20000 });
         processed.push({ reservation: reservation.reservationCode, recurringInvoices: invoices.length });
       } catch (error) {
         skipped.push({ reservation: reservation.reservationCode, reason: error instanceof Error ? error.message : 'Unknown error' });
@@ -369,6 +383,7 @@ export class BillingService {
       } },
       payments: { include: { recordedBy: { select: { id: true, fullName: true, role: true } } }, orderBy: { receivedAt: 'asc' as const } },
       renewalRequest: { select: { id: true, renewalCode: true, status: true, quoteSnapshot: true } },
+      depositSettlement: { select: { id: true, settlementCode: true, status: true } },
     };
   }
 
@@ -391,6 +406,7 @@ export class BillingService {
       billingCycle: record.billingCycle,
       renewalCycle: record.renewalCycle,
       renewalRequest: record.renewalRequest ? { id: record.renewalRequest.id, renewalCode: record.renewalRequest.renewalCode, status: record.renewalRequest.status } : null,
+      depositSettlement: record.depositSettlement,
       billingPeriodStart: this.isoDate(record.billingPeriodStart),
       billingPeriodEnd: this.isoDate(record.billingPeriodEnd),
       dueAt: this.isoDate(record.dueAt),
@@ -406,13 +422,14 @@ export class BillingService {
       },
       rentalAmount: this.money(record.rentalAmount),
       depositAmount: this.money(record.depositAmount),
+      chargeAmount: this.money(record.chargeAmount),
       totalAmount: this.money(record.totalAmount),
       amountPaid: this.money(record.amountPaid),
       balanceDue: this.money(record.balanceDue),
       currency: record.currency,
       issuedAt: record.issuedAt.toISOString(),
       paidAt: record.paidAt?.toISOString() ?? null,
-      historicalPricing: record.type === 'RENEWAL' ? record.renewalRequest?.quoteSnapshot : reservation.quoteSnapshot,
+      historicalPricing: record.type === 'SETTLEMENT' ? null : record.type === 'RENEWAL' ? record.renewalRequest?.quoteSnapshot : reservation.quoteSnapshot,
       contracts: reservation.contracts.map((contract: any) => ({
         id: contract.id,
         contractCode: contract.contractCode,

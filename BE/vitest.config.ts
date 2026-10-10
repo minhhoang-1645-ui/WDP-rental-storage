@@ -10,7 +10,8 @@ export default defineConfig({
     root: './',
     include: ['**/*.spec.ts'],
     fileParallelism: false,
-    testTimeout: 15000,
-    hookTimeout: 30000,
+    // Integration suites use the remote Supabase development database.
+    testTimeout: 60000,
+    hookTimeout: 60000,
   },
 });

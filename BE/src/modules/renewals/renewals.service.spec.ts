@@ -172,7 +172,8 @@ describe('Renewal V1', () => {
     await addFutureConflict(first.reservation.id, first.units[0].id);
     await expect(request(first.reservation.id)).rejects.toMatchObject({ response: { code: 'RENEWAL_ALLOCATION_CONFLICT' } });
 
-    await prisma.reservationUnit.deleteMany({ where: { reservationId: { not: first.reservation.id } } });
+    await prisma.rentalContract.deleteMany({ where: { reservationId: { not: first.reservation.id }, reservation: { storageTypeId } } });
+    await prisma.reservationUnit.deleteMany({ where: { reservationId: { not: first.reservation.id }, reservation: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId, id: { not: first.reservation.id } } });
     const pending = await request(first.reservation.id);
     await addFutureConflict(first.reservation.id, first.units[0].id);

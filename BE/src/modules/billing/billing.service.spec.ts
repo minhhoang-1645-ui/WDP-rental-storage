@@ -245,7 +245,7 @@ describe('Invoice and Payment V1', () => {
     await expect(ensure(rejected.id)).rejects.toBeInstanceOf(ConflictException);
     const malformed = await confirmedReservation({ currency: 'VND' });
     await expect(ensure(malformed.id)).rejects.toBeInstanceOf(ConflictException);
-    expect(await prisma.invoice.count()).toBe(0);
+    expect(await prisma.invoice.count({ where: { reservation: { storageTypeId } } })).toBe(0);
   });
 
   it('supports partial then final payment and transitions all contracts only to READY_FOR_HANDOVER', async () => {

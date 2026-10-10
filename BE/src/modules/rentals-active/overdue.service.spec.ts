@@ -123,7 +123,7 @@ describe('Overdue Rental V1', () => {
   it('does not classify READY_FOR_HANDOVER or PENDING_PAYMENT contracts as overdue Active Rentals', async () => {
     await rental({ status: 'READY_FOR_HANDOVER' });
     await rental({ status: 'PENDING_PAYMENT' });
-    expect((await rentals.listManagerRentals({ page: 1, limit: 20, overdue: true })).total).toBe(0);
+    expect((await rentals.listManagerRentals({ page: 1, limit: 20, overdue: true, search: runId })).total).toBe(0);
   });
 
   it('uses completed-renewal effective endDate and keeps approved-pending-payment rental overdue at the old endDate', async () => {
@@ -162,8 +162,8 @@ describe('Overdue Rental V1', () => {
     const overdue = await rental({ quantity: 3 });
     await rental({ endDate: dateAt(30) });
     const customer = await rentals.listCustomerRentals(customerId, { page: 1, limit: 20, overdue: true });
-    const manager = await rentals.listManagerRentals({ page: 1, limit: 20, overdue: true });
-    const staff = await rentals.listStaffRentals({ page: 1, limit: 20, overdue: false });
+    const manager = await rentals.listManagerRentals({ page: 1, limit: 20, overdue: true, search: runId });
+    const staff = await rentals.listStaffRentals({ page: 1, limit: 20, overdue: false, search: runId });
     expect(customer.total).toBe(1);
     expect(customer.items[0]).toMatchObject({ reservationId: overdue.reservation.id, quantity: 3, contractCount: 3, unitCount: 3, isOverdue: true });
     expect(customer.items[0].contracts.every((contract: any) => contract.unit.status === 'OCCUPIED')).toBe(true);

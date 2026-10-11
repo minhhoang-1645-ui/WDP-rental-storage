@@ -117,3 +117,61 @@ export interface CustomerRenewal {
   rejectionReason: string | null
   requestedAt: string
 }
+
+export type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER'
+
+export interface CustomerSupportRequest {
+  id: string
+  supportCode: string
+  category: SupportCategory
+  priority: 'LOW' | 'MEDIUM' | 'HIGH'
+  status: 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED' | 'RESOLVED'
+  subject: string
+  description: string
+  reservation: { id: string; reference: string; status: string }
+  contract: { id: string; contractCode: string; status: string; startDate: string; endDate: string } | null
+  unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null; storageType: CustomerStorageType } | null
+  invoice: { id: string; invoiceCode: string; status: string } | null
+  startedAt: string | null
+  resolvedAt: string | null
+  resolutionType: string | null
+  resolutionNote: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerReturnRequest {
+  id: string
+  returnCode: string
+  status: 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED'
+  requestedAt: string
+  inspectionStartedAt: string | null
+  physicallyReturnedAt: string | null
+  completedAt: string | null
+  note: string | null
+  reservation: { id: string; reference: string; status: string; quantity: number; startDate: string; endDate: string; effectiveEndDate: string; storageType: CustomerStorageType }
+  inspections: Array<{ id: string; result: 'PENDING' | 'PASS' | 'ISSUE_FOUND'; issueType: string | null; hasIssue: boolean; contract: { id: string; contractCode: string; status: string; completedAt: string | null }; unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null } }>
+  inspectionSummary: { total: number; pending: number; passed: number; issues: number }
+  settlementStatus: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerDepositSettlement {
+  id: string
+  settlementCode: string
+  returnCode: string
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED'
+  depositAmount: number
+  totalApprovedCharges: number
+  deductionAmount: number
+  refundAmount: number
+  outstandingAmount: number
+  reservation: { id: string; reference: string; storageType: CustomerStorageType }
+  issues: Array<{ inspectionId: string; unit: { id: string; unitCode: string; status: string }; contract: { id: string; contractCode: string; status: string }; observedIssueType: string | null; approvedIssueType: string; approvedChargeAmount: number; reason: string | null }>
+  refundedAt: string | null
+  settledAt: string | null
+  outstandingInvoice: { id: string; invoiceCode: string; status: string; chargeAmount: number; totalAmount: number; amountPaid: number; balanceDue: number } | null
+  createdAt: string
+  updatedAt: string
+}

@@ -34,12 +34,14 @@ import { AdminUsersPage } from '../pages/admin/AdminUsersPage'
 import { AdminSettingsPage } from '../pages/admin/AdminSettingsPage'
 import { CustomerLayout } from '../components/customer/CustomerLayout'
 import { CustomerDashboardPage } from '../pages/customer/CustomerDashboardPage'
-import { CustomerFutureModulePage } from '../pages/customer/CustomerFutureModulePage'
 import { CustomerAppointmentsPage } from '../pages/customer/CustomerAppointmentsPage'
 import { CustomerContractsPage } from '../pages/customer/CustomerContractsPage'
 import { CustomerPaymentsPage } from '../pages/customer/CustomerPaymentsPage'
 import { CustomerRenewalsPage } from '../pages/customer/CustomerRenewalsPage'
 import { CustomerRentalsPage } from '../pages/customer/CustomerRentalsPage'
+import { CustomerReturnsPage } from '../pages/customer/CustomerReturnsPage'
+import { CustomerSupportPage } from '../pages/customer/CustomerSupportPage'
+import { CustomerTransfersPage } from '../pages/customer/CustomerTransfersPage'
 import { CustomerProfilePage } from '../pages/customer/CustomerProfilePage'
 import { CustomerReservationDetailPage } from '../pages/customer/CustomerReservationDetailPage'
 import { CustomerReservationsPage } from '../pages/customer/CustomerReservationsPage'
@@ -73,8 +75,9 @@ export function AppRouter() {
       <Route path="payments" element={<CustomerPaymentsPage />} />
       <Route path="appointments" element={<CustomerAppointmentsPage />} />
       <Route path="renewals" element={<CustomerRenewalsPage />} />
-      <Route path="transfers" element={<CustomerFutureModulePage />} />
-      <Route path="support" element={<CustomerFutureModulePage />} />
+      <Route path="returns" element={<CustomerReturnsPage />} />
+      <Route path="transfers" element={<CustomerTransfersPage />} />
+      <Route path="support" element={<CustomerSupportPage />} />
       <Route path="profile" element={<CustomerProfilePage />} />
     </Route>
     <Route element={<RoleGuard allowedRoles={['STAFF']} />}>

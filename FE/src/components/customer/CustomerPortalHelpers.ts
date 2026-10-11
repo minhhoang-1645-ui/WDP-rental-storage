@@ -20,6 +20,9 @@ export function customerStatusLabel(status: string) {
     OPEN: 'Chưa thanh toán', PARTIALLY_PAID: 'Thanh toán một phần', PAID: 'Đã thanh toán', VOID: 'Đã hủy',
     REQUESTED: 'Đã yêu cầu', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', PENDING: 'Chờ duyệt',
     APPROVED_PENDING_PAYMENT: 'Đã duyệt, chờ thanh toán', REJECTED: 'Bị từ chối',
+    ASSIGNED: 'Đã tiếp nhận', IN_PROGRESS: 'Đang xử lý', ESCALATED: 'Chuyển quản lý', RESOLVED: 'Đã giải quyết',
+    INSPECTION_IN_PROGRESS: 'Đang kiểm tra', ISSUE_FOUND: 'Có vấn đề', PENDING_SETTLEMENT: 'Chờ quyết toán',
+    PENDING_REVIEW: 'Chờ duyệt', APPROVED: 'Đã duyệt', AWAITING_OUTSTANDING_PAYMENT: 'Chờ thanh toán bổ sung', SETTLED: 'Đã quyết toán',
   }
   return labels[status] ?? status
 }

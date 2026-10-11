@@ -754,6 +754,11 @@
   .customer-status--overdue, .customer-status--rejected, .customer-status--cancelled { color: #991b1b; background: #fee2e2; }
   .customer-status--ready_for_handover, .customer-status--partially_paid, .customer-status--approved_pending_payment { color: #155e75; background: #cffafe; }
   .customer-status--pending_payment, .customer-status--open, .customer-status--requested { color: #854d0e; background: #fef3c7; }
+  .customer-status--assigned, .customer-status--in_progress, .customer-status--inspection_in_progress, .customer-status--approved { color: #155e75; background: #cffafe; }
+  .customer-status--escalated, .customer-status--pending_review, .customer-status--pending_settlement { color: #6b21a8; background: #f3e8ff; }
+  .customer-status--resolved, .customer-status--settled { color: #166534; background: #dcfce7; }
+  .customer-status--issue_found, .customer-status--awaiting_outstanding_payment { color: #991b1b; background: #fee2e2; }
+  .customer-transfer-note { margin-bottom: 18px; }
   @keyframes customer-spin { to { transform: rotate(360deg); } }
 }
 

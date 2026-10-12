@@ -47,7 +47,18 @@ export class TransfersService {
     const page = this.integer(query.page, 1, 100000, 'page'); const limit = this.integer(query.limit, 20, 100, 'limit');
     const status = typeof query.status === 'string' && query.status ? query.status : undefined;
     if (status && !statuses.includes(status as never)) throw new BadRequestException('Transfer status không hợp lệ.');
-    const where = status ? { status: status as (typeof statuses)[number] } : {};
+    const search = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : undefined;
+    if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
+    const where: Prisma.TransferRequestWhereInput = {
+      ...(status ? { status: status as (typeof statuses)[number] } : {}),
+      ...(search ? { OR: [
+        { transferCode: { contains: search, mode: 'insensitive' } },
+        { reservation: { reservationCode: { contains: search, mode: 'insensitive' } } },
+        { rentalContract: { contractCode: { contains: search, mode: 'insensitive' } } },
+        { fromStorageUnit: { unitNumber: { contains: search, mode: 'insensitive' } } },
+        { toStorageUnit: { unitNumber: { contains: search, mode: 'insensitive' } } },
+      ] } : {}),
+    };
     const [total, records] = await Promise.all([
       this.prisma.transferRequest.count({ where }),
       this.prisma.transferRequest.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() }),

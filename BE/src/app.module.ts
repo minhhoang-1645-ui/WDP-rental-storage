@@ -20,6 +20,8 @@ import { SupportModule } from './modules/support/support.module.js';
 import { TransfersModule } from './modules/transfers/transfers.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { GuestBookingModule } from './modules/guest-booking/guest-booking.module.js';
+import { AdditionalServicesModule } from './modules/additional-services/additional-services.module.js';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { PrismaModule } from './prisma/prisma.module.js';
     AppointmentsModule,
     ActiveRentalsModule,
     BookingModule,
+    GuestBookingModule,
+    AdditionalServicesModule,
     BillingModule,
     ContractsModule,
     DepositSettlementsModule,

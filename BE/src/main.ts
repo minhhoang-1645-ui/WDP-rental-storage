@@ -16,6 +16,14 @@ async function bootstrap() {
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'Bearer', description: 'Paste only the token value returned by login or register.' }, 'bearerAuth')
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig, { deepScanRoutes: true });
+  for (const pathItem of Object.values(swaggerDocument.paths)) {
+    for (const method of ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'] as const) {
+      const operation = pathItem?.[method];
+      if (!operation?.security?.length) continue;
+      operation.responses['401'] ??= { description: 'Thiếu, sai hoặc hết hạn bearer token.' };
+      operation.responses['403'] ??= { description: 'Tài khoản đã xác thực nhưng không có role/quyền phù hợp.' };
+    }
+  }
   SwaggerModule.setup('api/docs', app, swaggerDocument, {
     swaggerOptions: { persistAuthorization: true },
     customSiteTitle: 'WDP Storage API',

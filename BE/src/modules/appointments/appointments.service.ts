@@ -3,6 +3,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
+import { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
 
 export interface AppointmentListQuery {
   page: number;
@@ -17,6 +18,7 @@ export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: BillingService = new BillingService(prisma),
+    private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
   ) {}
 
   async createCustomerAppointment(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -141,6 +143,7 @@ export class AppointmentsService {
           data: { status: 'OCCUPIED' },
         });
         if (occupied.count !== current.reservation.quantity) throw new ConflictException('Không thể chuyển đầy đủ StorageUnit sang OCCUPIED.');
+        await this.inventory.fulfillPurchases(tx, current.reservation.id);
         await this.billing.ensureRecurringInvoices(tx, current.reservation.id);
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },

@@ -6,6 +6,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { ContractsService } from '../contracts/contracts.service.js';
+import { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
 import type { PaymentPlan } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
@@ -34,10 +35,14 @@ export class BookingService {
     private readonly pricing: PricingService = new PricingService(prisma),
     private readonly contracts: ContractsService = new ContractsService(prisma),
     private readonly billing: BillingService = new BillingService(prisma),
+    private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
   ) {}
 
   async getCatalog() {
-    const records = await this.prisma.storageType.findMany({ orderBy: { code: 'asc' } });
+    const [records, addons] = await Promise.all([
+      this.prisma.storageType.findMany({ orderBy: { code: 'asc' } }),
+      this.prisma.additionalService.findMany({ where: { isActive: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
+    ]);
     const products = records.map((record) => this.toProduct(record));
     const sizes = [...new Map(records.map((record) => [record.sizeId, record])).values()]
       .sort((a, b) => sizeOrder.indexOf(a.sizeId) - sizeOrder.indexOf(b.sizeId))
@@ -59,7 +64,7 @@ export class BookingService {
       products,
       sizes,
       approvedDurations,
-      addons: [],
+      addons: addons.map((addon) => ({ id: addon.id, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
       pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
@@ -67,7 +72,9 @@ export class BookingService {
 
   async checkAvailability(input: Record<string, unknown>): Promise<AvailabilityResult> {
     const { draft } = await this.validateDraft(input);
-    return this.checkAvailabilityForDraft(this.prisma, draft);
+    const result = await this.checkAvailabilityForDraft(this.prisma, draft);
+    if (result.available) await this.prisma.$transaction((tx) => this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : []));
+    return result;
   }
 
   async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
@@ -87,7 +94,8 @@ export class BookingService {
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-          return tx.reservation.create({
+          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
+          const reservation = await tx.reservation.create({
             data: {
               reservationCode: this.createReference('WDP'),
               customerId: user.id,
@@ -107,6 +115,8 @@ export class BookingService {
             },
             include: { customer: true, storageType: true },
           });
+          await this.createReservationServices(tx, reservation.id, availability.quote);
+          return reservation;
         }, { maxWait: 10000, timeout: 20000 });
         return this.toReservation(record);
       } catch (error) {
@@ -143,6 +153,7 @@ export class BookingService {
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
           return tx.contactInquiry.create({
             data: {
               inquiryCode: this.createReference('WDPQ'),
@@ -180,6 +191,59 @@ export class BookingService {
       }
     }
     throw new ConflictException('Không thể tạo mã yêu cầu duy nhất. Vui lòng thử lại.');
+  }
+
+  async createConfirmedReservationFromGuest(tx: Prisma.TransactionClient, guest: any, customer: PublicUser) {
+    const product = await tx.storageType.findUnique({ where: { id: guest.storageTypeId } });
+    if (!product) throw new NotFoundException({ code: 'STORAGE_TYPE_NOT_FOUND', message: 'Không tìm thấy loại kho.' });
+    const storedQuote = guest.quoteSnapshot as QuoteSnapshot;
+    const serviceSelections = Array.isArray(guest.services) ? guest.services.map((service: any) => ({ serviceId: service.additionalServiceId, quantity: service.quantity, ...(service.serviceStartDate ? { serviceStartDate: this.isoDate(service.serviceStartDate) } : {}), ...(service.serviceEndDate ? { serviceEndDate: this.isoDate(service.serviceEndDate) } : {}) })) : [];
+    const draft: ReservationDraft = {
+      productId: guest.storageTypeId,
+      startDate: this.isoDate(guest.startDate),
+      endDate: this.isoDate(guest.endDate),
+      periodMode: 'dates',
+      quantity: guest.quantity,
+      adjacencyPreference: false,
+      addonIds: serviceSelections.map((service: any) => service.serviceId),
+      serviceSelections,
+      paymentChoice: 'pay-later',
+      paymentPlan: guest.paymentPlan,
+    };
+    let currentQuote;
+    try {
+      currentQuote = await this.calculateCurrentQuote(tx, draft, this.isoDate(guest.endDate), product);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw new ConflictException({ code: 'ADDITIONAL_SERVICE_NO_LONGER_AVAILABLE', message: 'Một dịch vụ bổ sung đã bị tắt hoặc không còn hợp lệ. Vui lòng sửa booking.' });
+      throw error;
+    }
+    const immutableFields = ['currency', 'billingMode', 'paymentPlan', 'quantity', 'monthlyUnitPrice', 'rentalAmount', 'discountAmount', 'depositAmount', 'purchaseAddOnAmount', 'rentalAddOnAmount', 'addOnTotalAmount', 'quotedTotalAmount'] as const;
+    if (immutableFields.some((field) => JSON.stringify(storedQuote[field]) !== JSON.stringify(currentQuote[field]))) throw new ConflictException({ code: 'BOOKING_QUOTE_CHANGED', message: 'Báo giá đã thay đổi. Vui lòng tạo yêu cầu đặt kho mới.' });
+    const availability = await this.checkAvailabilityForDraft(tx, draft, storedQuote, product);
+    if (!availability.available) {
+      throw new ConflictException({ code: 'REQUESTED_STORAGE_NO_LONGER_AVAILABLE', message: availability.message, availability });
+    }
+    const reservation = await tx.reservation.create({
+      data: {
+        reservationCode: this.createReference('WDP'),
+        customerId: customer.id,
+        facilityId: product.facilityId,
+        storageTypeId: product.id,
+        quantity: guest.quantity,
+        startDate: guest.startDate,
+        endDate: guest.endDate,
+        periodMode: currentQuote.billingMode === 'MONTHLY' ? 'DURATION' : 'CUSTOM_DATES',
+        durationMonths: currentQuote.termMonths,
+        adjacentPreference: false,
+        availabilitySnapshot: availability as unknown as Prisma.InputJsonValue,
+        quoteSnapshot: guest.quoteSnapshot,
+        status: 'PENDING',
+        idempotencyKey: this.tokenHash(`guest-claim:${guest.id}`),
+      },
+      include: { customer: true, storageType: true, units: { include: { storageUnit: true } } },
+    });
+    await this.createReservationServices(tx, reservation.id, storedQuote);
+    return this.confirmReservation(tx, reservation);
   }
 
   async listReservations(userId: string) {
@@ -264,6 +328,7 @@ export class BookingService {
         if (current.status === 'CONFIRMED' && targetStatus === 'CANCELLED') {
           await tx.reservationUnit.updateMany({ where: { reservationId: current.id, releasedAt: null }, data: { releasedAt: new Date() } });
         }
+        if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(targetStatus)) await this.inventory.releasePurchases(tx, current.id);
         const updated = await tx.reservation.update({
           where: { id: current.id },
           data: { status: targetStatus },
@@ -360,6 +425,7 @@ export class BookingService {
     `);
     const availability = await this.checkAvailabilityForDraft(tx, draft, reservation.quoteSnapshot as QuoteSnapshot);
     if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+    await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
 
     const start = this.date(draft.startDate);
     const end = this.date(availability.endDateExclusive);
@@ -393,6 +459,7 @@ export class BookingService {
       data: { status: 'CONFIRMED', confirmedAt: new Date(), availabilitySnapshot: availability as unknown as Prisma.InputJsonValue },
       include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
     });
+    await this.inventory.reservePurchases(tx, updated.id);
     await this.contracts.ensureForConfirmedReservation(tx, updated.id);
     await this.billing.ensureInitialInvoice(tx, updated.id);
     return this.toManagerReservation(updated);
@@ -505,13 +572,16 @@ export class BookingService {
   private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string, knownStorageType?: any) {
     const storageType = knownStorageType ?? await db.storageType.findUnique({ where: { id: draft.productId } });
     if (!storageType) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    const selections = draft.serviceSelections ?? [];
+    const services = selections.length ? await db.additionalService.findMany({ where: { id: { in: selections.map((item) => item.serviceId) } } }) : [];
     return this.pricing.calculate(storageType, {
       storageTypeId: draft.productId,
       quantity: draft.quantity,
       startDate: draft.startDate,
       endDate: endDateExclusive,
       paymentPlan: draft.paymentPlan,
-    });
+      serviceSelections: selections,
+    }, services.map((service) => ({ ...service, unitPrice: service.unitPrice })) as any);
   }
 
   private async validateDraft(input: Record<string, unknown>) {
@@ -529,15 +599,21 @@ export class BookingService {
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 3) throw new BadRequestException('Số lượng phải từ 1 đến 3.');
     const adjacencyPreference = input.adjacencyPreference === true && quantity > 1;
-    const addonIds = Array.isArray(input.addonIds) ? input.addonIds.filter((value): value is string => typeof value === 'string') : [];
-    if (addonIds.length > 0) throw new BadRequestException('Chưa có dịch vụ bổ sung nào được WDP duyệt.');
+    const serviceSelections = this.pricing.parseServiceSelections(input);
+    const addonIds = serviceSelections.map((selection) => selection.serviceId);
     const note = typeof input.note === 'string' ? input.note.trim().slice(0, 500) : undefined;
     const paymentChoice = input.paymentChoice === 'pay-now' ? 'pay-now' as const : 'pay-later' as const;
     const paymentPlanInput = input.paymentPlan;
     if (!['PAY_MONTHLY', 'PREPAID'].includes(paymentPlanInput as string)) throw new BadRequestException('paymentPlan phải là PAY_MONTHLY hoặc PREPAID.');
     const paymentPlan = paymentPlanInput as PaymentPlan;
-    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, ...(note ? { note } : {}), paymentChoice, paymentPlan };
+    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, serviceSelections, ...(note ? { note } : {}), paymentChoice, paymentPlan };
     return { draft, product };
+  }
+
+  private async createReservationServices(tx: Prisma.TransactionClient, reservationId: string, quote: any) {
+    const services = Array.isArray(quote.services) ? quote.services : [];
+    if (services.length === 0) return;
+    await tx.reservationService.createMany({ data: services.map((service: any) => ({ reservationId, additionalServiceId: service.serviceId, serviceCodeSnapshot: service.code, serviceNameSnapshot: service.name, serviceKindSnapshot: service.kind, billingUnitSnapshot: service.billingUnit, unitPriceSnapshot: BigInt(service.unitPrice), quantity: service.quantity, serviceStartDate: service.serviceStartDate ? this.date(service.serviceStartDate) : null, serviceEndDate: service.serviceEndDate ? this.date(service.serviceEndDate) : null, amountSnapshot: BigInt(service.amount) })) });
   }
 
   private validateGuestContact(input: Record<string, unknown>): GuestContact {
@@ -660,6 +736,7 @@ export class BookingService {
 
   private toManagerReservation(record: any) {
     return {
+      databaseId: record.id,
       id: record.reservationCode,
       reference: record.reservationCode,
       requestType: 'RESERVATION',

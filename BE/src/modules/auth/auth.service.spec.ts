@@ -50,6 +50,13 @@ describe('Authentication without a database', () => {
     expect((await service.getUserByToken(second.token)).id).toBe(first.user.id);
   });
 
+  it('blocks login and an existing session immediately after the account is disabled', async () => {
+    const session = await service.register(registration);
+    await repository.updateStatus(session.user.id, 'DISABLED');
+    await expect(service.login(registration)).rejects.toThrow('vô hiệu hóa');
+    await expect(service.getUserByToken(session.token)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('expires sessions after eight hours', async () => {
     const session = await service.register(registration);
     const later = Date.now() + 8 * 60 * 60 * 1000 + 1;

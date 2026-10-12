@@ -22,6 +22,7 @@ export interface ReservationDraft {
   quantity: number;
   adjacencyPreference: boolean;
   addonIds: string[];
+  serviceSelections?: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>;
   note?: string;
   paymentChoice: PaymentChoice;
   paymentPlan: PaymentPlan;

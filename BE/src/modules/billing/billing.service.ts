@@ -18,7 +18,7 @@ export interface PaymentListQuery {
   page: number;
   limit: number;
   search?: string;
-  method?: 'BANK_TRANSFER' | 'CASH';
+  method?: 'BANK_TRANSFER' | 'CASH' | 'VNPAY';
 }
 
 type HistoricalQuote = {
@@ -42,17 +42,17 @@ export class BillingService {
   async ensureInitialInvoice(tx: Prisma.TransactionClient, reservationId: string) {
     const reservation = await tx.reservation.findUnique({
       where: { id: reservationId },
-      include: { contracts: { select: { id: true } }, units: { select: { id: true } } },
+      include: { contracts: { select: { id: true } }, units: { select: { id: true } }, services: true },
     });
     if (!reservation || reservation.status !== 'CONFIRMED') throw new ConflictException('Chỉ Reservation CONFIRMED mới được tạo Invoice.');
     if (reservation.units.length !== reservation.quantity || reservation.contracts.length !== reservation.quantity) {
       throw new ConflictException('Reservation phải có đủ allocation và RentalContract trước khi tạo Invoice.');
     }
     const snapshot = reservation.quoteSnapshot as HistoricalQuote;
-    const amounts = this.initialAmounts(snapshot);
     const initialPeriodEnd = snapshot.billingMode === 'MONTHLY' && snapshot.paymentPlan === 'PAY_MONTHLY'
       ? this.addCalendarMonths(reservation.startDate, 1)
       : reservation.endDate;
+    const amounts = this.initialAmounts(snapshot, reservation.services, reservation.startDate, initialPeriodEnd);
     return tx.invoice.upsert({
       where: { reservationId_billingCycle: { reservationId, billingCycle: 1 } },
       update: {},
@@ -67,6 +67,7 @@ export class BillingService {
         status: 'OPEN',
         rentalAmount: amounts.rental,
         depositAmount: amounts.deposit,
+        serviceAmount: amounts.services,
         totalAmount: amounts.total,
         amountPaid: 0n,
         balanceDue: amounts.total,
@@ -78,7 +79,7 @@ export class BillingService {
   async ensureRecurringInvoices(tx: Prisma.TransactionClient, reservationId: string) {
     const reservation = await tx.reservation.findUnique({
       where: { id: reservationId },
-      include: { contracts: { select: { status: true } } },
+      include: { contracts: { select: { status: true } }, services: true },
     });
     if (!reservation || reservation.status !== 'CONFIRMED') throw new ConflictException('Chỉ Reservation CONFIRMED mới được tạo recurring Invoice.');
     if (reservation.contracts.length !== reservation.quantity || reservation.contracts.some((contract) => contract.status !== 'ACTIVE')) {
@@ -97,6 +98,7 @@ export class BillingService {
       const periodStart = this.addCalendarMonths(reservation.startDate, cycle - 1);
       const calculatedEnd = this.addCalendarMonths(reservation.startDate, cycle);
       const periodEnd = cycle === termMonths ? reservation.endDate : calculatedEnd;
+      const monthlyServices = reservation.services.filter((service) => service.serviceKindSnapshot === 'RENTAL').reduce((sum, service) => sum + this.serviceChargeForPeriod(service, periodStart, periodEnd), 0n);
       if (periodStart >= reservation.endDate || periodEnd > reservation.endDate || periodEnd <= periodStart) throw new ConflictException('Kỳ recurring vượt quá ngày kết thúc Reservation.');
       invoices.push(await tx.invoice.upsert({
         where: { reservationId_billingCycle: { reservationId, billingCycle: cycle } },
@@ -112,9 +114,10 @@ export class BillingService {
           status: 'OPEN',
           rentalAmount: monthlyRental,
           depositAmount: 0n,
-          totalAmount: monthlyRental,
+          serviceAmount: monthlyServices,
+          totalAmount: monthlyRental + monthlyServices,
           amountPaid: 0n,
-          balanceDue: monthlyRental,
+          balanceDue: monthlyRental + monthlyServices,
           currency: 'VND',
         },
       }));
@@ -225,36 +228,7 @@ export class BillingService {
             idempotencyKey: parsed.idempotencyKey,
           },
         });
-        const amountPaid = invoice.amountPaid + parsed.amount;
-        const balanceDue = invoice.totalAmount - amountPaid;
-        const paid = balanceDue === 0n;
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: { amountPaid, balanceDue, status: paid ? 'PAID' : 'PARTIALLY_PAID', paidAt: paid ? new Date() : null },
-        });
-        if (paid && invoice.type === 'INITIAL') {
-          await tx.rentalContract.updateMany({
-            where: { reservationId: invoice.reservation.id, status: 'PENDING_PAYMENT' },
-            data: { status: 'READY_FOR_HANDOVER' },
-          });
-        }
-        if (paid && invoice.type === 'RENEWAL' && invoice.renewalRequestId) {
-          await this.renewals.completeAfterPayment(tx, invoice.renewalRequestId);
-        }
-        if (paid && invoice.type === 'SETTLEMENT' && invoice.depositSettlementId) {
-          await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${invoice.depositSettlementId} FOR UPDATE`);
-          const settlement = await tx.depositSettlement.findUnique({ where: { id: invoice.depositSettlementId } });
-          if (!settlement || settlement.status !== 'AWAITING_OUTSTANDING_PAYMENT' || settlement.refundAmount !== 0n) {
-            throw new ConflictException('Settlement Invoice không khớp trạng thái quyết toán hiện tại.');
-          }
-          const now = new Date();
-          await tx.depositSettlement.update({ where: { id: settlement.id }, data: { status: 'SETTLED', settledByUserId: actor.id, settledAt: now } });
-          const completed = await tx.returnRequest.updateMany({
-            where: { id: settlement.returnRequestId, status: 'PENDING_SETTLEMENT', physicallyReturnedAt: { not: null } },
-            data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, activeKey: null },
-          });
-          if (completed.count !== 1) throw new ConflictException('Không thể hoàn tất ReturnRequest sau khi thanh toán settlement.');
-        }
+        await this.applyInvoicePayment(tx, invoice, parsed.amount, actor.id);
         const result = await tx.payment.findUniqueOrThrow({ where: { id: payment.id }, include: this.paymentInclude() });
         return this.paymentResult(result);
       }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
@@ -268,6 +242,37 @@ export class BillingService {
       }
       if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
       throw error;
+    }
+  }
+
+  async recordVerifiedOnlinePayment(tx: Prisma.TransactionClient, invoice: any, transaction: any, providerTransactionId: string | null) {
+    if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
+    const existing = await tx.payment.findUnique({ where: { onlinePaymentTransactionId: transaction.id } });
+    if (existing) return existing;
+    if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
+    if (transaction.amount !== invoice.balanceDue) throw new ConflictException({ code: 'PAYMENT_AMOUNT_MISMATCH', message: 'Số tiền giao dịch không khớp số dư hóa đơn.' });
+    const sequence = await tx.payment.count({ where: { invoiceId: invoice.id } }) + 1;
+    const payment = await tx.payment.create({ data: { paymentCode: `${invoice.invoiceCode}-P${String(sequence).padStart(2, '0')}`, invoiceId: invoice.id, amount: transaction.amount, method: 'VNPAY', reference: providerTransactionId ?? transaction.merchantOrderRef, note: 'Verified automatically by VNPAY IPN.', recordedByUserId: null, onlinePaymentTransactionId: transaction.id, idempotencyKey: `vnpay:${transaction.id}` } });
+    await this.applyInvoicePayment(tx, invoice, transaction.amount, null);
+    return payment;
+  }
+
+  private async applyInvoicePayment(tx: Prisma.TransactionClient, invoice: any, amount: bigint, actorId: string | null) {
+    const amountPaid = BigInt(invoice.amountPaid) + amount;
+    const balanceDue = BigInt(invoice.totalAmount) - amountPaid;
+    const paid = balanceDue === 0n;
+    await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid, balanceDue, status: paid ? 'PAID' : 'PARTIALLY_PAID', paidAt: paid ? new Date() : null } });
+    if (paid && invoice.type === 'INITIAL') await tx.rentalContract.updateMany({ where: { reservationId: invoice.reservation.id, status: 'PENDING_PAYMENT' }, data: { status: 'READY_FOR_HANDOVER' } });
+    if (paid && invoice.type === 'RENEWAL' && invoice.renewalRequestId) await this.renewals.completeAfterPayment(tx, invoice.renewalRequestId);
+    if (paid && invoice.type === 'SETTLEMENT' && invoice.depositSettlementId) {
+      if (!actorId) throw new ConflictException('Settlement payment yêu cầu người ghi nhận nội bộ.');
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${invoice.depositSettlementId} FOR UPDATE`);
+      const settlement = await tx.depositSettlement.findUnique({ where: { id: invoice.depositSettlementId } });
+      if (!settlement || settlement.status !== 'AWAITING_OUTSTANDING_PAYMENT' || settlement.refundAmount !== 0n) throw new ConflictException('Settlement Invoice không khớp trạng thái quyết toán hiện tại.');
+      const now = new Date();
+      await tx.depositSettlement.update({ where: { id: settlement.id }, data: { status: 'SETTLED', settledByUserId: actorId, settledAt: now } });
+      const completed = await tx.returnRequest.updateMany({ where: { id: settlement.returnRequestId, status: 'PENDING_SETTLEMENT', physicallyReturnedAt: { not: null } }, data: { status: 'COMPLETED', completedAt: now, completedByUserId: actorId, activeKey: null } });
+      if (completed.count !== 1) throw new ConflictException('Không thể hoàn tất ReturnRequest sau khi thanh toán settlement.');
     }
   }
 
@@ -309,7 +314,7 @@ export class BillingService {
     return { candidates: reservations.length, processed, skipped };
   }
 
-  private initialAmounts(snapshot: HistoricalQuote) {
+  private initialAmounts(snapshot: HistoricalQuote, services: Array<{ serviceKindSnapshot: 'PURCHASE' | 'RENTAL'; billingUnitSnapshot: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPriceSnapshot: bigint; quantity: number; amountSnapshot: bigint; serviceStartDate: Date | null; serviceEndDate: Date | null }> = [], periodStart?: Date, periodEnd?: Date) {
     if (snapshot.currency !== 'VND') throw new ConflictException('quoteSnapshot thiếu currency VND hợp lệ.');
     const billingMode = snapshot.billingMode;
     const paymentPlan = snapshot.paymentPlan;
@@ -326,7 +331,29 @@ export class BillingService {
       if (!Number.isSafeInteger(quantity) || quantity < 1) throw new ConflictException('quoteSnapshot.quantity không hợp lệ.');
       rental = monthlyUnitPrice * BigInt(quantity);
     }
-    return { currency: 'VND', rental, deposit, total: rental + deposit };
+    const oneTime = services.filter((service) => service.billingUnitSnapshot === 'ONE_TIME').reduce((sum, service) => sum + service.amountSnapshot, 0n);
+    const rentals = services.filter((service) => service.billingUnitSnapshot === 'DAY' || service.billingUnitSnapshot === 'MONTH');
+    const serviceAmount = billingMode === 'DAILY' || paymentPlan === 'PREPAID'
+      ? oneTime + rentals.reduce((sum, service) => sum + service.amountSnapshot, 0n)
+      : oneTime + rentals.reduce((sum, service) => sum + this.serviceChargeForPeriod(service, periodStart!, periodEnd!), 0n);
+    return { currency: 'VND', rental, deposit, services: serviceAmount, total: rental + deposit + serviceAmount };
+  }
+
+  private serviceChargeForPeriod(service: { billingUnitSnapshot: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPriceSnapshot: bigint; quantity: number; serviceStartDate: Date | null; serviceEndDate: Date | null }, periodStart: Date, periodEnd: Date) {
+    if (!service.serviceStartDate || !service.serviceEndDate) return 0n;
+    if (service.billingUnitSnapshot === 'ONE_TIME') return 0n;
+    const start = service.serviceStartDate > periodStart ? service.serviceStartDate : periodStart;
+    const end = service.serviceEndDate < periodEnd ? service.serviceEndDate : periodEnd;
+    if (end <= start) return 0n;
+    if (service.billingUnitSnapshot === 'DAY') return service.unitPriceSnapshot * BigInt(service.quantity) * BigInt(Math.round((end.getTime() - start.getTime()) / 86400000));
+    let amount = 0n;
+    let cursor = service.serviceStartDate;
+    while (cursor < service.serviceEndDate) {
+      const next = this.addCalendarMonths(cursor, 1);
+      if (cursor >= periodStart && cursor < periodEnd) amount += service.unitPriceSnapshot * BigInt(service.quantity);
+      cursor = next;
+    }
+    return amount;
   }
 
   private snapshotMoney(value: unknown, field: string) {
@@ -379,6 +406,7 @@ export class BillingService {
       reservation: { include: {
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, condition: true } },
+        services: true,
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
       } },
       payments: { include: { recordedBy: { select: { id: true, fullName: true, role: true } } }, orderBy: { receivedAt: 'asc' as const } },
@@ -422,6 +450,7 @@ export class BillingService {
       },
       rentalAmount: this.money(record.rentalAmount),
       depositAmount: this.money(record.depositAmount),
+      serviceAmount: this.money(record.serviceAmount),
       chargeAmount: this.money(record.chargeAmount),
       totalAmount: this.money(record.totalAmount),
       amountPaid: this.money(record.amountPaid),
@@ -437,6 +466,7 @@ export class BillingService {
         storageUnit: { id: contract.reservationUnit.storageUnit.id, unitCode: contract.reservationUnit.storageUnit.unitNumber, physicalStatus: contract.reservationUnit.storageUnit.status },
       })),
       payments: record.payments.map((payment: any) => this.paymentSummary(payment)),
+      services: reservation.services?.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, unitPrice: this.money(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: this.isoDate(service.serviceStartDate), serviceEndDate: this.isoDate(service.serviceEndDate), amount: this.money(service.amountSnapshot) })) ?? [],
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };

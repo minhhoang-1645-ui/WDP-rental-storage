@@ -105,6 +105,7 @@ export class ContractsService {
         include: {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
+          services: true,
         },
       },
       reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
@@ -138,6 +139,7 @@ export class ContractsService {
         physicalStatus: storageUnit.status,
       },
       reservationPricing: reservation.quoteSnapshot,
+      services: reservation.services.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, unitPrice: Number(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: service.serviceStartDate?.toISOString().slice(0, 10) ?? null, serviceEndDate: service.serviceEndDate?.toISOString().slice(0, 10) ?? null, amount: Number(service.amountSnapshot) })),
       createdAt: contract.createdAt.toISOString(),
       updatedAt: contract.updatedAt.toISOString(),
       activatedAt: contract.activatedAt?.toISOString() ?? null,

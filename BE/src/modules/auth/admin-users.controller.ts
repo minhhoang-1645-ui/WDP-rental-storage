@@ -17,16 +17,24 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'Liệt kê tài khoản', description: 'ADMIN only. /api/users được giữ như alias tương thích.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'search', required: false, example: 'staff@test.com', description: 'Tìm tên, email hoặc số điện thoại.' })
+  @ApiQuery({ name: 'role', required: false, enum: ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] })
+  @ApiQuery({ name: 'accountStatus', required: false, enum: ['ACTIVE', 'DISABLED'] })
   @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER' }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ ADMIN được phép.' })
-  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20') {
+  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string) {
     const page = Number(pageInput);
     const limit = Number(limitInput);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new BadRequestException('page phải từ 1–100000, limit phải từ 1–100.');
     }
-    const [total, users] = await Promise.all([this.users.count(), this.users.list((page - 1) * limit, limit)]);
+    const search = searchInput?.trim();
+    if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
+    if (roleInput && !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(roleInput)) throw new BadRequestException('role không hợp lệ.');
+    if (statusInput && !['ACTIVE', 'DISABLED'].includes(statusInput)) throw new BadRequestException('accountStatus không hợp lệ.');
+    const filters = { ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
+    const [total, users] = await Promise.all([this.users.count(filters), this.users.list((page - 1) * limit, limit, filters)]);
     return { page, limit, total, items: users.map(user => this.publicUser(user)) };
   }
 

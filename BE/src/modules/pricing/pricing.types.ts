@@ -7,6 +7,7 @@ export interface PricingInput {
   startDate: string;
   endDate: string;
   paymentPlan: PaymentPlan;
+  serviceSelections?: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>;
 }
 
 export interface PricingQuote {
@@ -28,6 +29,13 @@ export interface PricingQuote {
   rentalAmount: number;
   depositAmount: number;
   quotedTotalAmount: number;
+  storageRentalAmount: number;
+  storageDiscountAmount: number;
+  purchaseAddOnAmount: number;
+  rentalAddOnAmount: number;
+  addOnTotalAmount: number;
+  estimatedInitialAmountDue: number;
+  services: Array<{ serviceId: string; code: string; name: string; kind: 'PURCHASE' | 'RENTAL'; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; quantity: number; serviceStartDate: string | null; serviceEndDate: string | null; amount: number }>;
   status: 'PRICED';
   periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_APPROVED';
   lineItems: Array<{ code: string; label: string; basis: string; amount: number; status: 'INCLUDED' }>;

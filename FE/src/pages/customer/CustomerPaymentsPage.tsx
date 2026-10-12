@@ -1,4 +1,4 @@
-import { CreditCard, FileText, History, RefreshCw, Wallet, X } from 'lucide-react'
+import { CreditCard, ExternalLink, FileText, History, RefreshCw, Wallet, X } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../auth/auth-context'
@@ -23,25 +23,51 @@ export function CustomerPaymentsPage() {
   const { user } = useAuth()
   const [view, setView] = useState<View>('invoices')
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
+  const [onlineInvoiceId, setOnlineInvoiceId] = useState('')
+  const [onlineError, setOnlineError] = useState('')
+  const onlineKeys = useRef(new Map<string, string>())
   const invoices = useApiResource<Paginated<CustomerInvoice>>('/customer/invoices?limit=100', user?.id ?? '', true)
   const payments = useApiResource<Paginated<CustomerPayment>>('/customer/payments?limit=100', user?.id ?? '', true)
   const submissions = useApiResource<Awaited<ReturnType<typeof customerBillingApi.submissions>>>('/customer/payment-submissions?limit=100', user?.id ?? '', true)
   const bank = useApiResource<BankTransferConfig>('/customer/payment-config', user?.id ?? '')
+  const refreshInvoices = invoices.refresh
+  const refreshPayments = payments.refresh
+  const refreshSubmissions = submissions.refresh
+  const refreshBank = bank.refresh
   const current = view === 'invoices' ? invoices : view === 'payments' ? payments : submissions
-  const refresh = () => { invoices.refresh(); payments.refresh(); submissions.refresh(); bank.refresh() }
+  const refresh = () => { refreshInvoices(); refreshPayments(); refreshSubmissions(); refreshBank() }
 
   useEffect(() => {
     if (!submissions.data?.items.some((item) => item.status === 'PENDING_VERIFICATION')) return
-    const timer = window.setInterval(() => { invoices.refresh(); payments.refresh(); submissions.refresh() }, 12000)
+    const timer = window.setInterval(() => { refreshInvoices(); refreshPayments(); refreshSubmissions() }, 12000)
     return () => window.clearInterval(timer)
-  }, [submissions.data, invoices.refresh, payments.refresh, submissions.refresh])
+  }, [submissions.data, refreshInvoices, refreshPayments, refreshSubmissions])
 
   const afterSubmission = () => {
     setSelectedInvoice(null)
-    invoices.refresh()
-    payments.refresh()
-    submissions.refresh()
+    refreshInvoices()
+    refreshPayments()
+    refreshSubmissions()
     setView('submissions')
+  }
+
+  const createOnlinePayment = async (invoice: CustomerInvoice) => {
+    if (onlineInvoiceId) return
+    setOnlineInvoiceId(invoice.id)
+    setOnlineError('')
+    let key = onlineKeys.current.get(invoice.id)
+    if (!key) {
+      key = `cust-vnpay-${crypto.randomUUID()}`
+      onlineKeys.current.set(invoice.id, key)
+    }
+    try {
+      const transaction = await customerBillingApi.createOnlinePayment(invoice.id, key)
+      window.location.assign(transaction.paymentUrl)
+    } catch (caught) {
+      onlineKeys.current.delete(invoice.id)
+      setOnlineError(caught instanceof Error ? caught.message : 'Không thể khởi tạo thanh toán VNPay.')
+      setOnlineInvoiceId('')
+    }
   }
 
   return <section className="customer-page">
@@ -51,21 +77,22 @@ export function CustomerPaymentsPage() {
       <button type="button" role="tab" aria-selected={view === 'payments'} className={view === 'payments' ? 'is-active' : ''} onClick={() => setView('payments')}><History size={17} /> Đã thanh toán ({payments.data?.total ?? 0})</button>
       <button type="button" role="tab" aria-selected={view === 'submissions'} className={view === 'submissions' ? 'is-active' : ''} onClick={() => setView('submissions')}><Wallet size={17} /> Yêu cầu xác nhận ({submissions.data?.total ?? 0})</button>
     </div>
+    {onlineError && <div className="booking-alert is-error payment-online-error" role="alert">{onlineError}</div>}
     {current.status === 401 ? <CustomerSessionExpired /> : current.loading ? <PortalLoading label="Đang tải dữ liệu thanh toán…" /> : current.error ? <PortalError message={current.error} onRetry={refresh} /> : view === 'invoices'
-      ? <InvoiceList items={invoices.data?.items ?? []} submissions={submissions.data?.items ?? []} onPay={setSelectedInvoice} />
+      ? <InvoiceList items={invoices.data?.items ?? []} submissions={submissions.data?.items ?? []} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} />
       : view === 'payments'
         ? <PaymentList items={payments.data?.items ?? []} />
         : <SubmissionList items={submissions.data?.items ?? []} />}
-    {selectedInvoice && <PaymentModal invoice={selectedInvoice} bank={bank.data ?? null} bankLoading={bank.loading} bankError={bank.error} onClose={() => setSelectedInvoice(null)} onSubmitted={afterSubmission} />}
+    {selectedInvoice && <PaymentModal invoice={selectedInvoice} bank={bank.data ?? null} bankLoading={bank.loading} bankError={bank.error} onClose={() => setSelectedInvoice(null)} onRefresh={() => { refreshInvoices(); refreshSubmissions() }} onSubmitted={afterSubmission} />}
   </section>
 }
 
-function InvoiceList({ items, submissions, onPay }: { items: CustomerInvoice[]; submissions: PaymentSubmission[]; onPay: (invoice: CustomerInvoice) => void }) {
+function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineInvoiceId }: { items: CustomerInvoice[]; submissions: PaymentSubmission[]; onBankTransfer: (invoice: CustomerInvoice) => void; onOnlinePay: (invoice: CustomerInvoice) => void; onlineInvoiceId: string }) {
   if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện sau khi WDP xác nhận reservation hoặc kỳ thanh toán.</span></PortalEmpty>
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
   return <div className="customer-table-wrap"><table className="customer-table"><thead><tr><th>Mã hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{items.map(invoice => <tr key={invoice.id}><td><strong>{invoice.invoiceCode}</strong><small>{invoice.reservation.reference}</small></td><td>{invoice.type}</td><td>{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td>{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td>{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td><CustomerStatus status={invoice.status} /></td><td>{invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status) ? pendingInvoiceIds.has(invoice.id)
     ? <span className="payment-pending-label">Đang chờ WDP xác nhận</span>
-    : <button type="button" className="button-primary payment-table-action" onClick={() => onPay(invoice)}><CreditCard size={15} /> Thanh toán</button> : '—'}</td></tr>)}</tbody></table></div>
+    : <div className="payment-actions"><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onBankTransfer(invoice)}><Wallet size={15} /> Chuyển khoản QR</button><button type="button" className="button-primary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onOnlinePay(invoice)}><ExternalLink size={15} /> {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button></div> : '—'}</td></tr>)}</tbody></table></div>
 }
 
 function SubmissionList({ items }: { items: PaymentSubmission[] }) {
@@ -78,7 +105,7 @@ function PaymentList({ items }: { items: CustomerPayment[] }) {
   return <div className="customer-table-wrap"><table className="customer-table"><thead><tr><th>Mã giao dịch</th><th>Hóa đơn</th><th>Số tiền</th><th>Phương thức</th><th>Thời gian</th></tr></thead><tbody>{items.map(payment => <tr key={payment.id}><td><strong>{payment.paymentCode}</strong><small>{payment.reference || 'Không có mã tham chiếu'}</small></td><td>{payment.invoice.invoiceCode}</td><td><strong>{moneyLabel(payment.amount)}</strong></td><td>{payment.method}</td><td>{formatPortalDate(payment.receivedAt, true)}</td></tr>)}</tbody></table></div>
 }
 
-function PaymentModal({ invoice, bank, bankLoading, bankError, onClose, onSubmitted }: { invoice: CustomerInvoice; bank: BankTransferConfig | null; bankLoading: boolean; bankError: string; onClose: () => void; onSubmitted: () => void }) {
+function PaymentModal({ invoice, bank, bankLoading, bankError, onClose, onRefresh, onSubmitted }: { invoice: CustomerInvoice; bank: BankTransferConfig | null; bankLoading: boolean; bankError: string; onClose: () => void; onRefresh: () => void; onSubmitted: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [submission, setSubmission] = useState<PaymentSubmission | null>(null)
@@ -98,7 +125,7 @@ function PaymentModal({ invoice, bank, bankLoading, bankError, onClose, onSubmit
     try {
       const result = await customerBillingApi.createSubmission(invoice.id, amount, key.current, transferReference.trim(), customerNote.trim())
       setSubmission(result)
-      onSubmitted()
+      onRefresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không gửi được yêu cầu xác nhận thanh toán.')
     } finally { setSubmitting(false) }

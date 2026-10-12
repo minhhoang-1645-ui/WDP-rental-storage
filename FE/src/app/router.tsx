@@ -50,6 +50,7 @@ import { CustomerDashboardPage } from "../pages/customer/CustomerDashboardPage";
 import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointmentsPage";
 import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
 import { CustomerPaymentsPage } from "../pages/customer/CustomerPaymentsPage";
+import { CustomerVnpayReturnPage } from "../pages/customer/CustomerVnpayReturnPage";
 import { CustomerRenewalsPage } from "../pages/customer/CustomerRenewalsPage";
 import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
 import { CustomerReturnsPage } from "../pages/customer/CustomerReturnsPage";
@@ -141,6 +142,7 @@ export function AppRouter() {
         <Route path="rentals" element={<CustomerRentalsPage />} />
         <Route path="contracts" element={<CustomerContractsPage />} />
         <Route path="payments" element={<CustomerPaymentsPage />} />
+        <Route path="payments/vnpay-return" element={<CustomerVnpayReturnPage />} />
         <Route path="appointments" element={<CustomerAppointmentsPage />} />
         <Route path="renewals" element={<CustomerRenewalsPage />} />
         <Route path="returns" element={<CustomerReturnsPage />} />

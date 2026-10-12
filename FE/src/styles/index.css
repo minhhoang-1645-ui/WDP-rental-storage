@@ -884,6 +884,8 @@
 .manager-empty p { margin-top: 8px; color: var(--color-slate); }
 
 .payment-table-action { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; font-size: 12px; white-space: nowrap; }
+.payment-actions { display: flex; flex-wrap: wrap; gap: 7px; min-width: 270px; }
+.payment-online-error { margin-bottom: 16px; }
 .payment-pending-label { color: #854d0e; font-size: 11px; font-weight: 750; }
 .payment-submission-status { display: inline-flex; align-items: center; border-radius: 999px; background: #fef3c7; padding: 5px 9px; color: #854d0e; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .payment-submission-status.is-verified { background: #dcfce7; color: #166534; }
@@ -912,6 +914,18 @@
 .payment-submit-success { display: grid; justify-items: center; gap: 12px; padding: 30px 10px 10px; color: var(--color-navy); text-align: center; }
 .payment-submit-success strong { font-size: 18px; }
 .payment-submit-success span { color: var(--color-slate); font-size: 12px; }
+.vnpay-return-page { display: grid; min-height: calc(100vh - 80px); place-items: center; }
+.vnpay-return-card { display: grid; width: min(100%, 570px); justify-items: center; gap: 12px; border: 1px solid var(--color-border); border-radius: 12px; background: white; padding: clamp(28px, 5vw, 52px); text-align: center; box-shadow: 0 18px 45px rgba(15, 23, 42, .08); }
+.vnpay-return-card h1 { color: var(--color-navy); font-size: clamp(26px, 4vw, 36px); font-weight: 850; }
+.vnpay-return-card > p:not(.eyebrow) { color: var(--color-slate); line-height: 1.65; }
+.vnpay-return-icon { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 50%; background: #fef3c7; color: #a16207; }
+.vnpay-return-card.is-success .vnpay-return-icon { background: #dcfce7; color: #166534; }
+.vnpay-return-card.is-error .vnpay-return-icon { background: #fee2e2; color: #991b1b; }
+.vnpay-return-card dl { width: 100%; margin-block: 8px; border-block: 1px solid var(--color-border); padding-block: 6px; }
+.vnpay-return-card dl > div { display: flex; justify-content: space-between; gap: 18px; padding-block: 8px; text-align: left; }
+.vnpay-return-card dt { color: var(--color-slate); }
+.vnpay-return-card dd { color: var(--color-navy); font-weight: 750; overflow-wrap: anywhere; text-align: right; }
+.vnpay-return-card .button-primary { display: inline-flex; align-items: center; gap: 7px; margin-top: 4px; text-decoration: none; }
 .manager-payment-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .manager-payment-summary > span { display: grid; gap: 5px; border: 1px solid var(--color-border); border-radius: 8px; background: white; padding: 15px; color: var(--color-navy); font-size: 24px; font-weight: 800; }
 .manager-payment-summary small { color: var(--color-slate); font-size: 11px; font-weight: 650; }

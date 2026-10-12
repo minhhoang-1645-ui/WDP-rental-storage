@@ -39,3 +39,32 @@ export interface PaymentSubmission {
 }
 
 export type PaymentSubmissionPage = Paginated<PaymentSubmission>
+
+export type OnlinePaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'
+
+export interface OnlinePaymentCreated {
+  transactionId: string
+  merchantOrderRef: string
+  status: OnlinePaymentStatus
+  amount: number
+  paymentUrl: string
+}
+
+export type VnpayReturnResult =
+  | {
+      valid: true
+      transaction: {
+        merchantOrderRef: string
+        status: OnlinePaymentStatus
+        amount: number
+      }
+      invoice: {
+        invoiceCode: string
+        status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+      }
+      providerResponseCode: string
+    }
+  | {
+      valid: false
+      status: 'NOT_FOUND' | 'INVALID_SIGNATURE'
+    }

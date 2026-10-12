@@ -173,6 +173,23 @@ function fixtures() {
           createdAt: when,
         },
       ],
+      transfers: [
+        {
+          id: "transfer-id",
+          transferCode: "TRF-APPROVED",
+          status: "APPROVED",
+          reason: "UNIT_ISSUE",
+          reservation,
+          contract: rentalContract,
+          fromUnit: { ...unit, unitCode: "A101", storageType },
+          toUnit: { ...unit, id: "unit-target", unitCode: "A102", status: "RESERVED", storageType },
+          approvedBy: user("MANAGER"),
+          completedBy: null,
+          approvedAt: when,
+          completedAt: null,
+          createdAt: when,
+        },
+      ],
     },
     customer: {
       contracts: Array.from({ length: 105 }, (_, i) => ({
@@ -223,6 +240,7 @@ function fixtures() {
           receivedAt: when,
         },
       ],
+      "payment-submissions": [],
       appointments: [
         {
           id: "past-id",
@@ -314,6 +332,38 @@ async function setup(initialRole, authenticated = true) {
         body,
         key: request.headers()["idempotency-key"],
       });
+      if (/^customer\/invoices\/[^/]+\/online-payment$/.test(path)) {
+        return send({
+          transactionId: "online-payment-id",
+          merchantOrderRef: "WDP-VNPAY-TEST",
+          status: "PENDING",
+          amount: 2000000,
+          paymentUrl: `${base}/customer/payments/vnpay-return?vnp_TxnRef=WDP-VNPAY-TEST&vnp_SecureHash=signed-test`,
+        }, 201);
+      }
+      if (/^customer\/invoices\/[^/]+\/payment-submissions$/.test(path)) {
+        const invoice = data.customer.invoices.find((item) => item.id === path.split("/")[2]);
+        const submission = {
+          id: "payment-submission-id",
+          submissionCode: "PS-TEST",
+          status: "PENDING_VERIFICATION",
+          amount: body.amount,
+          method: "BANK_TRANSFER",
+          transferReference: body.transferReference,
+          customerNote: body.customerNote,
+          submittedAt: when,
+          reviewedAt: null,
+          reviewedBy: null,
+          rejectionReason: null,
+          verifiedPayment: null,
+          customer: user("CUSTOMER"),
+          invoice,
+          createdAt: when,
+          updatedAt: when,
+        };
+        data.customer["payment-submissions"].push(submission);
+        return send(submission, 201);
+      }
       if (path.startsWith("staff/")) {
         assert.equal(role, "STAFF");
         const [, resource, id, action] = path.split("/");
@@ -406,6 +456,8 @@ async function setup(initialRole, authenticated = true) {
       return send(created);
     }
     reads.push({ role, path, page: Number(url.searchParams.get("page") ?? 1) });
+    if (path === "customer/payment-config") return send({ configured: true, bankName: "Ngân hàng kiểm thử", bankCode: "970436", accountNumber: "123456789", accountName: "WDP STORAGE" });
+    if (path === "payments/vnpay/return") return send({ valid: true, transaction: { merchantOrderRef: "WDP-VNPAY-TEST", status: "SUCCESS", amount: 2000000 }, invoice: { invoiceCode: "INV-0", status: "PAID" }, providerResponseCode: "00" });
     if (path === "reservations") return send(data.reservations);
     if (path.startsWith("reservations/"))
       return send(
@@ -702,11 +754,11 @@ try {
     .waitFor();
   await open(staff.page, "/staff/transfers");
   await staff.page
-    .getByLabel("Mã lệnh chuyển kho", { exact: true })
-    .fill("TRF-APPROVED");
+    .getByRole("link", { name: /Thực hiện/ })
+    .click();
   await staff.page
     .getByLabel(
-      "Đã hoàn tất chuyển thực tế từ kho nguồn sang đúng kho đích được duyệt",
+      "Đã hoàn tất chuyển thực tế và bàn giao kho đích",
       { exact: true },
     )
     .check();
@@ -715,7 +767,7 @@ try {
     .click();
   await staff.page
     .getByRole("status")
-    .filter({ hasText: "Đã ghi nhận hoàn tất chuyển kho thực tế." })
+    .filter({ hasText: "Đã hoàn tất chuyển kho thực tế." })
     .waitFor();
   staff.data.staff["support-requests"].push({
     ...structuredClone(staff.data.staff["support-requests"][0]),
@@ -799,6 +851,17 @@ try {
       path,
     );
   }
+  await open(customer.page, "/customer/payments");
+  await customer.page.getByRole("button", { name: "Chuyển khoản QR", exact: true }).first().click();
+  await customer.page.getByRole("button", { name: "Tôi đã chuyển khoản", exact: true }).click();
+  await customer.page.getByText("Mã yêu cầu: PS-TEST", { exact: true }).waitFor();
+  await customer.page.getByRole("button", { name: "Xem trạng thái yêu cầu", exact: true }).click();
+  customer.data.customer["payment-submissions"] = [];
+  await open(customer.page, "/customer/payments");
+  await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
+  await customer.page.waitForURL((url) => url.pathname === "/customer/payments/vnpay-return");
+  await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
+  assert.match(writes.findLast((item) => item.path.endsWith("/online-payment")).key, /^cust-vnpay-/);
   await open(customer.page, "/customer/contracts?page=6");
   await customer.page.getByText("CON-104", { exact: true }).waitFor();
   assert(

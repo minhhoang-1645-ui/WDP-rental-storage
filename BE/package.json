@@ -25,6 +25,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "npm run build && node dist/scripts/seed.js",
     "seed:test-users": "npm run build && node dist/scripts/seed-test-users.js",
+    "seed:additional-services": "npm run build && node dist/scripts/seed-additional-services.js",
     "billing:backfill": "npm run build && node dist/scripts/backfill-initial-invoices.js",
     "billing:backfill-recurring": "npm run build && node dist/scripts/backfill-recurring-invoices.js",
     "maintenance:backfill": "npm run build && node dist/scripts/backfill-maintenance.js"

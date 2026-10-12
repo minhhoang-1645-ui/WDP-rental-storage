@@ -21,8 +21,12 @@ it('permits only an admin on the user directory', () => {
 it('paginates users and strips password hashes', async () => {
   const repository = new MemoryUserRepository();
   await repository.create({ email: 'a@example.com', fullName: 'A', phone: '', passwordHash: 'secret', role: 'CUSTOMER' });
+  await repository.create({ email: 'staff@example.com', fullName: 'Demo Staff', phone: '0900000001', passwordHash: 'secret', role: 'STAFF', accountStatus: 'DISABLED' });
   const controller = new AdminUsersController(repository);
   expect((await controller.list()).items[0]).not.toHaveProperty('passwordHash');
-  expect((await controller.list('2', '1')).items).toHaveLength(0);
+  expect((await controller.list('3', '1')).items).toHaveLength(0);
+  expect((await controller.list('1', '20', 'staff@example.com', 'STAFF', 'DISABLED')).items).toEqual([
+    expect.objectContaining({ email: 'staff@example.com', role: 'STAFF', accountStatus: 'DISABLED' }),
+  ]);
   await expect(controller.list('0')).rejects.toThrow();
 });

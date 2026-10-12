@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:portal": "node scripts/portal-smoke.mjs",
+    "test:roles": "node scripts/roles-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

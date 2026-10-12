@@ -72,10 +72,10 @@ export function bookingAvailabilityFingerprint(draft: BookingDraft) {
     endDate: draft.endDate,
     periodMode: draft.periodMode,
     durationMonths: draft.durationMonths,
-    paymentPlan: draft.paymentPlan,
     quantity: draft.quantity,
     adjacencyPreference: draft.adjacencyPreference,
     addonIds: draft.addonIds,
+    paymentPlan: draft.paymentPlan,
   })
 }
 

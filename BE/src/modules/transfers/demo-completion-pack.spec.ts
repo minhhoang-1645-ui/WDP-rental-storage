@@ -8,18 +8,21 @@ import { AdminUsersController } from '../auth/admin-users.controller.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
 import { ManagerService } from '../manager/manager.service.js';
+import { BookingService } from '../booking/booking.service.js';
 import { TransfersService } from './transfers.service.js';
 
 describe('Demo Completion Pack smoke', () => {
   const prisma = new PrismaService();
   const transfers = new TransfersService(prisma);
   const managerService = new ManagerService(prisma);
+  const booking = new BookingService(prisma);
   const runId = randomUUID().slice(0, 8);
   const prefix = `DEMO-${runId}`;
   const manager = { id: '', role: 'MANAGER', fullName: 'Demo Manager', email: `${prefix}-manager@example.test`, phone: '' } satisfies PublicUser;
   const staff = { id: '', role: 'STAFF', fullName: 'Demo Staff', email: `${prefix}-staff@example.test`, phone: '' } satisfies PublicUser;
   let storageTypeId: string;
   let otherStorageTypeId: string;
+  let reservedStorageTypeId: string;
   let sequence = 0;
 
   beforeAll(async () => {
@@ -27,6 +30,9 @@ describe('Demo Completion Pack smoke', () => {
     const types = await prisma.storageType.findMany({ take: 2, orderBy: { id: 'asc' } });
     if (types.length < 2) throw new Error('Demo smoke tests require at least two seeded StorageTypes.');
     storageTypeId = types[0].id; otherStorageTypeId = types[1].id;
+    reservedStorageTypeId = `${prefix.toLowerCase()}-reserved-type`;
+    const { id: _id, code: _code, createdAt: _createdAt, updatedAt: _updatedAt, ...template } = types[0];
+    await prisma.storageType.create({ data: { ...template, id: reservedStorageTypeId, code: `${prefix}-RSV` } });
     const users = await Promise.all([
       prisma.user.create({ data: { email: manager.email, fullName: manager.fullName, role: 'MANAGER', passwordHash: 'test-only' } }),
       prisma.user.create({ data: { email: staff.email, fullName: staff.fullName, role: 'STAFF', passwordHash: 'test-only' } }),
@@ -43,17 +49,19 @@ describe('Demo Completion Pack smoke', () => {
     await prisma.reservationUnit.deleteMany({ where: { reservationId: { in: ids } } });
     await prisma.reservation.deleteMany({ where: { id: { in: ids } } });
     await prisma.storageUnit.deleteMany({ where: { unitNumber: { startsWith: prefix } } });
+    await prisma.storageType.deleteMany({ where: { id: reservedStorageTypeId } });
     await prisma.user.deleteMany({ where: { email: { startsWith: prefix.toLowerCase() } } });
     await prisma.$disconnect();
   });
 
-  async function activeRental(options: { contractStatus?: 'ACTIVE' | 'READY_FOR_HANDOVER'; destinationTypeId?: string } = {}) {
+  async function activeRental(options: { contractStatus?: 'ACTIVE' | 'READY_FOR_HANDOVER'; storageTypeId?: string; destinationTypeId?: string } = {}) {
     sequence += 1; const marker = `${prefix}-${sequence}`;
+    const sourceTypeId = options.storageTypeId ?? storageTypeId;
     const customer = await prisma.user.create({ data: { email: `${marker.toLowerCase()}@example.test`, fullName: marker, role: 'CUSTOMER', passwordHash: 'test-only' } });
     const startDate = new Date('2026-10-01T00:00:00.000Z'); const endDate = new Date('2027-10-01T00:00:00.000Z');
-    const reservation = await prisma.reservation.create({ data: { reservationCode: marker, customerId: customer.id, facilityId: (await prisma.storageType.findUniqueOrThrow({ where: { id: storageTypeId } })).facilityId, storageTypeId, quantity: 1, startDate, endDate, periodMode: 'DURATION', durationMonths: 12, availabilitySnapshot: {}, quoteSnapshot: { historicalAmount: 1234567 }, status: 'CONFIRMED', idempotencyKey: `${marker}-reservation` } });
-    const source = await prisma.storageUnit.create({ data: { storageTypeId, unitNumber: `${marker}-SRC`, status: 'OCCUPIED' } });
-    const destination = await prisma.storageUnit.create({ data: { storageTypeId: options.destinationTypeId ?? storageTypeId, unitNumber: `${marker}-DST`, status: 'AVAILABLE' } });
+    const reservation = await prisma.reservation.create({ data: { reservationCode: marker, customerId: customer.id, facilityId: (await prisma.storageType.findUniqueOrThrow({ where: { id: sourceTypeId } })).facilityId, storageTypeId: sourceTypeId, quantity: 1, startDate, endDate, periodMode: 'DURATION', durationMonths: 12, availabilitySnapshot: {}, quoteSnapshot: { historicalAmount: 1234567 }, status: 'CONFIRMED', idempotencyKey: `${marker}-reservation` } });
+    const source = await prisma.storageUnit.create({ data: { storageTypeId: sourceTypeId, unitNumber: `${marker}-SRC`, status: 'OCCUPIED' } });
+    const destination = await prisma.storageUnit.create({ data: { storageTypeId: options.destinationTypeId ?? sourceTypeId, unitNumber: `${marker}-DST`, status: 'AVAILABLE' } });
     const allocation = await prisma.reservationUnit.create({ data: { reservationId: reservation.id, storageUnitId: source.id, plannedStartDate: startDate, plannedEndDate: endDate } });
     const contract = await prisma.rentalContract.create({ data: { contractCode: `${marker}-C01`, reservationId: reservation.id, reservationUnitId: allocation.id, status: options.contractStatus ?? 'ACTIVE', startDate, endDate, activatedAt: options.contractStatus === 'READY_FOR_HANDOVER' ? null : new Date() } });
     const invoice = await prisma.invoice.create({ data: { invoiceCode: `${marker}-I01`, reservationId: reservation.id, type: 'INITIAL', billingCycle: 1, rentalAmount: 1000000n, depositAmount: 500000n, totalAmount: 1500000n, balanceDue: 1500000n } });
@@ -69,6 +77,13 @@ describe('Demo Completion Pack smoke', () => {
     await expect(requested(fixture)).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('supports stable paginated status/search listing', async () => {
+    const fixture = await activeRental(); const transfer = await requested(fixture);
+    const result = await transfers.list({ page: '1', limit: '10', status: 'REQUESTED', search: transfer.transferCode });
+    expect(result).toMatchObject({ page: 1, limit: 10, total: 1 });
+    expect(result.items[0]).toMatchObject({ id: transfer.id, status: 'REQUESTED' });
+  });
+
   it('rejects a destination with another StorageType', async () => {
     const fixture = await activeRental({ destinationTypeId: otherStorageTypeId }); const transfer = await requested(fixture);
     await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager)).rejects.toThrow('cùng StorageType');
@@ -79,6 +94,13 @@ describe('Demo Completion Pack smoke', () => {
     const blocker = await activeRental();
     await prisma.reservationUnit.create({ data: { reservationId: blocker.reservation.id, storageUnitId: fixture.destination.id, plannedStartDate: new Date('2027-01-01T00:00:00.000Z'), plannedEndDate: new Date('2027-02-01T00:00:00.000Z') } });
     await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager)).rejects.toThrow('trùng khoảng thuê');
+  });
+
+  it('excludes an approved transfer RESERVED destination from booking availability', async () => {
+    const fixture = await activeRental({ storageTypeId: reservedStorageTypeId }); const transfer = await requested(fixture);
+    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager);
+    const availability = await booking.checkAvailability({ productId: reservedStorageTypeId, startDate: new Date().toISOString().slice(0, 10), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' });
+    expect(availability.available).toBe(false); expect(await prisma.storageUnit.findUniqueOrThrow({ where: { id: fixture.destination.id } })).toMatchObject({ status: 'RESERVED' });
   });
 
   it('atomically moves OCCUPIED to AVAILABLE destination while preserving financial history', async () => {

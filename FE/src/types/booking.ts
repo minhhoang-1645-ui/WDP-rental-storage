@@ -47,7 +47,39 @@ export interface QuoteLineItem {
   status: 'QUOTE_REQUIRED' | 'INCLUDED'
 }
 
-export interface PricingQuote {
+export interface PricingEstimate {
+  status: 'PRICED' | 'QUOTE_REQUIRED'
+  periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_APPROVED' | 'SHORT_DURATION_UNDECIDED' | 'DATE_RANGE_QUOTE_REQUIRED'
+  lineItems: QuoteLineItem[]
+  rentalSubtotal: number | null
+  deposit: number | null
+  applicableFees: null
+  taxes: null
+  discounts: number | null
+  grandTotal: number | null
+  amountPayableNow: null
+  message: string
+  currency?: 'VND'
+  paymentPlan?: PaymentPlan
+  monthlyUnitPrice?: number
+  storageTypeId?: string
+  storageTypeName?: string
+  quantity?: number
+  startDate?: string
+  endDate?: string
+  billingMode?: 'DAILY' | 'MONTHLY'
+  billableDays?: number | null
+  termMonths?: number | null
+  dailyUnitPrice?: string | null
+  baseRentalAmount?: number | null
+  discountPercent?: number
+  discountAmount?: number | null
+  rentalAmount?: number | null
+  depositAmount?: number | null
+  quotedTotalAmount?: number
+}
+
+export interface PricingQuote extends PricingEstimate {
   currency: 'VND'
   storageTypeId: string
   storageTypeName: string
@@ -71,22 +103,18 @@ export interface PricingQuote {
   lineItems: Array<{ code: string; label: string; basis: string; amount: number; status: 'INCLUDED' }>
   rentalSubtotal: number
   deposit: number
-  applicableFees: null
-  taxes: null
   discounts: number
   grandTotal: number
-  amountPayableNow: null
-  message: string
 }
 
 export interface AvailabilityResult {
   available: boolean
   startDate: string
   endDateExclusive: string
-  periodStatus: PricingQuote['periodStatus']
+  periodStatus: PricingEstimate['periodStatus']
   reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'INSUFFICIENT_INVENTORY'
   message: string
-  quote: PricingQuote
+  quote: PricingEstimate
 }
 
 export interface AvailabilitySnapshot {
@@ -96,7 +124,7 @@ export interface AvailabilitySnapshot {
 
 export interface PendingReservation extends BookingDraft {
   id: string
-  status: 'PENDING'
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'
   createdAt: string
   endDateExclusive: string
   customer: PublicUser
@@ -105,7 +133,7 @@ export interface PendingReservation extends BookingDraft {
     floorArea: string
     volume: string
   }
-  quote: PricingQuote
+  quote: PricingEstimate
   unitAssignment: null
   paymentStatus: 'NOT_STARTED'
   persistence: 'DATABASE'
@@ -118,14 +146,14 @@ export interface GuestInquiry extends BookingDraft {
   endDateExclusive: string
   customer: GuestContact
   product: PendingReservation['product']
-  quote: PricingQuote
+  quote: PricingEstimate
   inventoryGuarantee: false
   persistence: 'DATABASE'
   accessToken?: string
 }
 
 export type InquiryStatus = 'PENDING_CONTACT' | 'CONTACTED' | 'IN_REVIEW' | 'CLOSED' | 'CANCELLED'
-export type ManagerRequestStatus = InquiryStatus | 'PENDING' | 'EXPIRED'
+export type ManagerRequestStatus = InquiryStatus | 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED'
 
 export interface ManagerInquiry {
   id: string
@@ -140,12 +168,14 @@ export interface ManagerInquiry {
   durationMonths: number | null
   adjacencyPreference: boolean
   availability: AvailabilityResult
-  quote: PricingQuote
+  quote: PricingEstimate
   customerNotes: string | null
   internalNotes: string | null
   status: ManagerRequestStatus
   contactedAt: string | null
   processedBy: { id: string; fullName: string } | null
+  allocatedUnits?: Array<{ unitNumber: string; physicalStatus: string; floor?: string | null; zone?: string | null }>
+  confirmedAt?: string | null
   createdAt: string
   updatedAt: string
 }

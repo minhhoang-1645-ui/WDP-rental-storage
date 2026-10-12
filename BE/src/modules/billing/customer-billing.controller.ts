@@ -1,5 +1,6 @@
-import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -11,7 +12,18 @@ import { BillingService } from './billing.service.js';
 @ApiTags('Customer Billing')
 @ApiBearerAuth('bearerAuth')
 export class CustomerBillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(private readonly billing: BillingService, private readonly config: ConfigService) {}
+
+  @Get('payment-config')
+  @ApiOperation({ summary: 'Thông tin công khai nhận chuyển khoản', description: 'Chỉ trả thông tin tài khoản dự kiến nhận tiền, không bao gồm thông tin xác thực hoặc bí mật ngân hàng.' })
+  @ApiOkResponse({ schema: { example: { configured: true, bankName: 'Vietcombank', bankCode: '970436', accountNumber: '0123456789', accountName: 'WDP STORAGE' } } })
+  getPaymentConfig() {
+    const bankName = this.config.get<string>('WDP_BANK_NAME')?.trim() ?? '';
+    const bankCode = this.config.get<string>('WDP_BANK_CODE')?.trim() ?? '';
+    const accountNumber = this.config.get<string>('WDP_BANK_ACCOUNT_NUMBER')?.trim() ?? '';
+    const accountName = this.config.get<string>('WDP_BANK_ACCOUNT_NAME')?.trim() ?? '';
+    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), bankName, bankCode, accountNumber, accountName };
+  }
 
   @Get('invoices')
   @ApiOperation({ summary: 'Danh sách hóa đơn của khách hàng', description: 'CUSTOMER chỉ xem Invoice thuộc Reservation của chính mình.' })
@@ -57,6 +69,37 @@ export class CustomerBillingController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc khách hàng.' })
   getPayment(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.billing.getCustomerPayment(request.user!.id, id);
+  }
+
+  @Post('invoices/:invoiceId/payment-submissions')
+  @ApiOperation({ summary: 'Gửi thông báo đã chuyển khoản', description: 'Tạo PaymentSubmission đang chờ xác minh. Đây KHÔNG phải Payment đã xác nhận và không cập nhật trạng thái tài chính của Invoice.' })
+  @ApiParam({ name: 'invoiceId', example: 'WDP-2026-AB12CD34-I01' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'customer-transfer-01-uuid' })
+  @ApiCreatedResponse({ description: 'PaymentSubmission PENDING_VERIFICATION; không tạo Payment.' })
+  @ApiBadRequestResponse({ description: 'Số tiền, phương thức hoặc Idempotency-Key không hợp lệ.' })
+  @ApiConflictResponse({ description: 'Hóa đơn đã trả đủ, không còn nhận thanh toán hoặc số dư đã thay đổi.' })
+  @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc khách hàng.' })
+  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được gửi thông báo.' })
+  createPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.billing.createCustomerPaymentSubmission(request.user!.id, invoiceId, body, idempotencyKey);
+  }
+
+  @Get('payment-submissions')
+  @ApiOperation({ summary: 'Danh sách thông báo chuyển khoản của khách hàng', description: 'Chỉ hiển thị yêu cầu thuộc CUSTOMER đang đăng nhập; Payment chưa xác minh không xuất hiện trong Payment history.' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiOkResponse({ description: 'PaymentSubmission của khách hàng.' })
+  listPaymentSubmissions(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20') {
+    const parsed = this.pagination(page, limit);
+    return this.billing.listCustomerPaymentSubmissions(request.user!.id, parsed.page, parsed.limit);
+  }
+
+  @Get('payment-submissions/:id')
+  @ApiOperation({ summary: 'Chi tiết thông báo chuyển khoản của khách hàng' })
+  @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-S01' })
+  @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc khách hàng.' })
+  getPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.billing.getCustomerPaymentSubmission(request.user!.id, id);
   }
 
   private pagination(pageInput: string, limitInput: string) {

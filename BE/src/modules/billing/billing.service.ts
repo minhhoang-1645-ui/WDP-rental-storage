@@ -193,14 +193,14 @@ export class BillingService {
     return this.toPayment(record, true);
   }
 
-  async recordPayment(invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined, actor: PublicUser) {
+  async recordPayment(invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined, actor: PublicUser, transaction?: Prisma.TransactionClient) {
     if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được ghi nhận thanh toán.');
     const parsed = this.paymentInput(input, idempotencyKey);
-    const invoiceIdentity = await this.prisma.invoice.findFirst({ where: { OR: [{ id: invoiceId }, { invoiceCode: invoiceId }] }, select: { id: true } });
+    const database = transaction ?? this.prisma;
+    const invoiceIdentity = await database.invoice.findFirst({ where: { OR: [{ id: invoiceId }, { invoiceCode: invoiceId }] }, select: { id: true } });
     if (!invoiceIdentity) throw new NotFoundException('Không tìm thấy hóa đơn.');
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
+    const apply = async (tx: Prisma.TransactionClient) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${invoiceIdentity.id} FOR UPDATE`);
         const duplicate = await tx.payment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentInclude() });
         if (duplicate) {
@@ -257,9 +257,11 @@ export class BillingService {
         }
         const result = await tx.payment.findUniqueOrThrow({ where: { id: payment.id }, include: this.paymentInclude() });
         return this.paymentResult(result);
-      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+    };
+    try {
+      return transaction ? await apply(transaction) : await this.prisma.$transaction(apply, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
     } catch (error) {
-      if (this.isPrismaCode(error, 'P2002')) {
+      if (!transaction && this.isPrismaCode(error, 'P2002')) {
         const duplicate = await this.prisma.payment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentInclude() });
         if (duplicate) {
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
@@ -269,6 +271,141 @@ export class BillingService {
       if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
       throw error;
     }
+  }
+
+  async createCustomerPaymentSubmission(customerId: string, invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    const parsed = this.paymentSubmissionInput(input, idempotencyKey);
+    const identity = await this.prisma.invoice.findFirst({ where: { OR: [{ id: invoiceId }, { invoiceCode: invoiceId }], reservation: { customerId } }, select: { id: true } });
+    if (!identity) throw new NotFoundException('Không tìm thấy hóa đơn.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${identity.id} FOR UPDATE`);
+        const duplicate = await tx.paymentSubmission.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentSubmissionInclude() });
+        if (duplicate) {
+          this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
+          return this.toPaymentSubmission(duplicate);
+        }
+        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true } });
+        if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
+        if (!['OPEN', 'PARTIALLY_PAID'].includes(invoice.status)) throw new ConflictException('Hóa đơn hiện không thể nhận yêu cầu thanh toán.');
+        if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền gửi xác nhận không được vượt quá số dư hiện tại.');
+        const sequence = await tx.paymentSubmission.count({ where: { invoiceId: invoice.id } }) + 1;
+        const record = await tx.paymentSubmission.create({
+          data: {
+            submissionCode: `${invoice.invoiceCode}-S${String(sequence).padStart(2, '0')}`,
+            invoiceId: invoice.id,
+            customerUserId: customerId,
+            amount: parsed.amount,
+            method: 'BANK_TRANSFER',
+            transferReference: parsed.transferReference,
+            customerNote: parsed.customerNote,
+            idempotencyKey: parsed.idempotencyKey,
+          },
+          include: this.paymentSubmissionInclude(),
+        });
+        return this.toPaymentSubmission(record);
+      }, { maxWait: 10000, timeout: 20000 });
+    } catch (error) {
+      if (this.isPrismaCode(error, 'P2002')) {
+        const duplicate = await this.prisma.paymentSubmission.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentSubmissionInclude() });
+        if (duplicate) {
+          this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
+          return this.toPaymentSubmission(duplicate);
+        }
+      }
+      if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
+      throw error;
+    }
+  }
+
+  async listCustomerPaymentSubmissions(customerId: string, page: number, limit: number) {
+    return this.paymentSubmissionPage({ customerUserId: customerId }, page, limit);
+  }
+
+  async getCustomerPaymentSubmission(customerId: string, id: string) {
+    const record = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }], customerUserId: customerId }, include: this.paymentSubmissionInclude() });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+    return this.toPaymentSubmission(record);
+  }
+
+  async listManagerPaymentSubmissions(query: { page: number; limit: number; status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED'; search?: string; invoiceCode?: string }) {
+    const where: Prisma.PaymentSubmissionWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.invoiceCode ? { invoice: { invoiceCode: { contains: query.invoiceCode, mode: 'insensitive' } } } : {}),
+      ...(query.search ? { OR: [
+        { submissionCode: { contains: query.search, mode: 'insensitive' } },
+        { transferReference: { contains: query.search, mode: 'insensitive' } },
+        { invoice: { invoiceCode: { contains: query.search, mode: 'insensitive' } } },
+        { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
+        { customer: { email: { contains: query.search, mode: 'insensitive' } } },
+      ] } : {}),
+    };
+    return this.paymentSubmissionPage(where, query.page, query.limit);
+  }
+
+  async getManagerPaymentSubmission(id: string) {
+    const record = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, include: this.paymentSubmissionInclude() });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+    return this.toPaymentSubmission(record);
+  }
+
+  async verifyPaymentSubmission(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xác nhận thanh toán.');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu xác nhận không hợp lệ.');
+    const details = { reference: this.optionalText(input.reference, 200, 'reference'), note: this.optionalText(input.note, 2000, 'note') };
+    if (!details.reference) throw new BadRequestException('reference giao dịch ngân hàng là bắt buộc để xác nhận.');
+    const identity = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, select: { id: true } });
+    if (!identity) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "PaymentSubmission" WHERE "id" = ${identity.id} FOR UPDATE`);
+        const submission = await tx.paymentSubmission.findUnique({ where: { id: identity.id }, include: this.paymentSubmissionInclude() });
+        if (!submission) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+        if (submission.status === 'VERIFIED') return this.toPaymentSubmission(submission);
+        if (submission.status !== 'PENDING_VERIFICATION') throw new ConflictException('Yêu cầu đã bị từ chối và không thể xác nhận.');
+        const invoice = await tx.invoice.findUnique({ where: { id: submission.invoiceId }, select: { status: true, balanceDue: true } });
+        if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
+        if (submission.amount > invoice.balanceDue) throw new ConflictException('Số tiền yêu cầu vượt quá số dư hiện tại của hóa đơn.');
+        const payment = await this.recordPayment(submission.invoiceId, {
+          amount: Number(submission.amount),
+          method: 'BANK_TRANSFER',
+          reference: details.reference ?? submission.transferReference,
+          note: details.note ?? submission.customerNote,
+        }, `payment-submission:${submission.id}`, actor, tx);
+        const updated = await tx.paymentSubmission.update({
+          where: { id: submission.id },
+          data: { status: 'VERIFIED', reviewedByUserId: actor.id, reviewedAt: new Date(), verifiedPaymentId: payment.payment.id },
+          include: this.paymentSubmissionInclude(),
+        });
+        return { ...this.toPaymentSubmission(updated), payment: payment.payment, invoice: payment.invoice, contracts: payment.contracts };
+      }, { maxWait: 10000, timeout: 20000 });
+    } catch (error) {
+      if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Yêu cầu hoặc hóa đơn vừa được cập nhật. Vui lòng tải lại.');
+      throw error;
+    }
+  }
+
+  async rejectPaymentSubmission(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được từ chối yêu cầu thanh toán.');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu từ chối không hợp lệ.');
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (!reason || reason.length > 1000) throw new BadRequestException('reason là bắt buộc và không được vượt quá 1000 ký tự.');
+    const identity = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, select: { id: true } });
+    if (!identity) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "PaymentSubmission" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const current = await tx.paymentSubmission.findUnique({ where: { id: identity.id } });
+      if (!current) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+      if (current.status === 'REJECTED' && current.rejectionReason === reason) {
+        const rejected = await tx.paymentSubmission.findUniqueOrThrow({ where: { id: current.id }, include: this.paymentSubmissionInclude() });
+        return this.toPaymentSubmission(rejected);
+      }
+      if (current.status !== 'PENDING_VERIFICATION') throw new ConflictException('Chỉ yêu cầu đang chờ xác nhận mới có thể bị từ chối.');
+      const updated = await tx.paymentSubmission.update({ where: { id: current.id }, data: { status: 'REJECTED', reviewedByUserId: actor.id, reviewedAt: new Date(), rejectionReason: reason }, include: this.paymentSubmissionInclude() });
+      return this.toPaymentSubmission(updated);
+    }, { maxWait: 10000, timeout: 20000 });
   }
 
   async backfillMissingInitialInvoices() {
@@ -288,6 +425,61 @@ export class BillingService {
       }
     }
     return { candidates: reservations.length, created, skipped };
+  }
+
+  private async paymentSubmissionPage(where: Prisma.PaymentSubmissionWhereInput, page: number, limit: number) {
+    const [total, records] = await Promise.all([
+      this.prisma.paymentSubmission.count({ where }),
+      this.prisma.paymentSubmission.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ submittedAt: 'desc' }, { id: 'asc' }], include: this.paymentSubmissionInclude() }),
+    ]);
+    return { page, limit, total, items: records.map((record) => this.toPaymentSubmission(record)) };
+  }
+
+  private paymentSubmissionInclude() {
+    return {
+      invoice: { include: { reservation: { include: {
+        customer: { select: { id: true, fullName: true, email: true, phone: true } },
+        storageType: { select: { id: true, code: true, name: true } },
+      } } } },
+      customer: { select: { id: true, fullName: true, email: true, phone: true } },
+      reviewedBy: { select: { id: true, fullName: true, role: true } },
+      verifiedPayment: { select: { id: true, paymentCode: true, amount: true, method: true, reference: true, receivedAt: true } },
+    };
+  }
+
+  private toPaymentSubmission(record: any) {
+    return {
+      id: record.id,
+      submissionCode: record.submissionCode,
+      status: record.status,
+      amount: this.money(record.amount),
+      method: record.method,
+      transferReference: record.transferReference,
+      customerNote: record.customerNote,
+      submittedAt: record.submittedAt.toISOString(),
+      reviewedAt: record.reviewedAt?.toISOString() ?? null,
+      reviewedBy: record.reviewedBy,
+      rejectionReason: record.rejectionReason,
+      verifiedPayment: record.verifiedPayment ? { ...record.verifiedPayment, amount: this.money(record.verifiedPayment.amount), receivedAt: record.verifiedPayment.receivedAt.toISOString() } : null,
+      customer: record.customer,
+      invoice: {
+        id: record.invoice.id,
+        invoiceCode: record.invoice.invoiceCode,
+        status: record.invoice.status,
+        totalAmount: this.money(record.invoice.totalAmount),
+        amountPaid: this.money(record.invoice.amountPaid),
+        balanceDue: this.money(record.invoice.balanceDue),
+        currency: record.invoice.currency,
+        reservation: {
+          id: record.invoice.reservation.id,
+          reference: record.invoice.reservation.reservationCode,
+          customer: record.invoice.reservation.customer,
+          storageType: record.invoice.reservation.storageType,
+        },
+      },
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
   }
 
   async backfillRecurringInvoices() {
@@ -346,6 +538,18 @@ export class BillingService {
     return { amount: BigInt(amount), method: method as 'BANK_TRANSFER' | 'CASH', reference, note, idempotencyKey: key };
   }
 
+  private paymentSubmissionInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu thông báo thanh toán không hợp lệ.');
+    const amount = Number(input.amount);
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw new BadRequestException('amount phải là số nguyên VND lớn hơn 0.');
+    if (input.method !== undefined && input.method !== 'BANK_TRANSFER') throw new BadRequestException('Khách hàng chỉ được gửi yêu cầu BANK_TRANSFER.');
+    const transferReference = this.optionalText(input.transferReference, 200, 'transferReference');
+    const customerNote = this.optionalText(input.customerNote, 1000, 'customerNote');
+    const key = idempotencyKey?.trim() ?? '';
+    if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự và chỉ chứa ký tự an toàn.');
+    return { amount: BigInt(amount), transferReference, customerNote, idempotencyKey: key };
+  }
+
   private optionalText(value: unknown, maximum: number, label: string) {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value !== 'string' || value.trim().length > maximum) throw new BadRequestException(`${label} không hợp lệ.`);
@@ -355,6 +559,12 @@ export class BillingService {
   private assertMatchingRetry(duplicate: any, invoiceId: string, parsed: { amount: bigint; method: 'BANK_TRANSFER' | 'CASH'; reference: string | null }) {
     if (duplicate.invoiceId !== invoiceId || duplicate.amount !== parsed.amount || duplicate.method !== parsed.method || (duplicate.reference ?? '') !== (parsed.reference ?? '')) {
       throw new ConflictException('Idempotency-Key đã được dùng cho một thanh toán khác.');
+    }
+  }
+
+  private assertMatchingSubmissionRetry(duplicate: any, invoiceId: string, customerId: string, parsed: { amount: bigint; transferReference: string | null; customerNote: string | null }) {
+    if (duplicate.invoiceId !== invoiceId || duplicate.customerUserId !== customerId || duplicate.amount !== parsed.amount || (duplicate.transferReference ?? '') !== (parsed.transferReference ?? '') || (duplicate.customerNote ?? '') !== (parsed.customerNote ?? '')) {
+      throw new ConflictException('Idempotency-Key đã được dùng cho một yêu cầu thanh toán khác.');
     }
   }
 

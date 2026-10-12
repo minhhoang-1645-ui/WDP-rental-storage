@@ -96,6 +96,16 @@ enum PaymentMethod {
   CASH
 }
 
+enum PaymentSubmissionStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+}
+
+enum PaymentSubmissionMethod {
+  BANK_TRANSFER
+}
+
 enum AppointmentStatus {
   REQUESTED
   CONFIRMED
@@ -218,6 +228,8 @@ model User {
   processedInquiries ContactInquiry[] @relation("InquiryProcessor")
   reservations       Reservation[]
   recordedPayments   Payment[]        @relation("PaymentRecorder")
+  paymentSubmissions PaymentSubmission[] @relation("PaymentSubmissionCustomer")
+  reviewedPaymentSubmissions PaymentSubmission[] @relation("PaymentSubmissionReviewer")
   requestedAppointments HandoverAppointment[] @relation("AppointmentRequester")
   confirmedAppointments HandoverAppointment[] @relation("AppointmentConfirmer")
   completedAppointments HandoverAppointment[] @relation("AppointmentCompleter")
@@ -549,6 +561,7 @@ model Invoice {
   issuedAt      DateTime      @default(now())
   paidAt        DateTime?
   payments      Payment[]
+  paymentSubmissions PaymentSubmission[]
   supportRequests SupportRequest[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -735,6 +748,7 @@ model Payment {
   receivedAt       DateTime      @default(now())
   recordedByUserId String
   recordedBy       User          @relation("PaymentRecorder", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  verifiedSubmission PaymentSubmission? @relation("VerifiedSubmissionPayment")
   idempotencyKey   String        @unique
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
@@ -742,6 +756,34 @@ model Payment {
   @@index([invoiceId, receivedAt])
   @@index([recordedByUserId, receivedAt])
   @@index([method, receivedAt])
+}
+
+model PaymentSubmission {
+  id                 String                   @id @default(cuid())
+  submissionCode     String                   @unique
+  invoiceId          String
+  invoice            Invoice                  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  customerUserId     String
+  customer           User                     @relation("PaymentSubmissionCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  amount             BigInt
+  method             PaymentSubmissionMethod  @default(BANK_TRANSFER)
+  transferReference  String?
+  status             PaymentSubmissionStatus @default(PENDING_VERIFICATION)
+  customerNote       String?
+  submittedAt        DateTime                 @default(now())
+  reviewedByUserId   String?
+  reviewedBy         User?                    @relation("PaymentSubmissionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  reviewedAt         DateTime?
+  rejectionReason    String?
+  idempotencyKey     String                   @unique
+  verifiedPaymentId  String?                  @unique
+  verifiedPayment    Payment?                 @relation("VerifiedSubmissionPayment", fields: [verifiedPaymentId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@index([invoiceId, status, submittedAt])
+  @@index([customerUserId, submittedAt])
+  @@index([status, submittedAt])
 }
 
 model HandoverAppointment {

@@ -1,4 +1,4 @@
-import { ClipboardList, LogOut } from 'lucide-react'
+import { ClipboardList, LogOut, Wallet } from 'lucide-react'
 import { NavLink, Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
 
@@ -10,7 +10,7 @@ export function ManagerLayout() {
   return <div className="manager-shell">
     <aside className="manager-sidebar">
       <div><span className="manager-brand">WDP</span><small>Manager Portal</small></div>
-      <nav><NavLink to="/manager/inquiries"><ClipboardList size={18} /> Yêu cầu liên hệ</NavLink></nav>
+      <nav><NavLink to="/manager/inquiries"><ClipboardList size={18} /> Yêu cầu liên hệ</NavLink><NavLink to="/manager/payment-submissions"><Wallet size={18} /> Chờ xác nhận thanh toán</NavLink></nav>
       <div className="manager-account"><span>{user.fullName}</span><small>{user.role}</small><button type="button" onClick={logout}><LogOut size={16} /> Đăng xuất</button></div>
     </aside>
     <main className="manager-main"><Outlet /></main>

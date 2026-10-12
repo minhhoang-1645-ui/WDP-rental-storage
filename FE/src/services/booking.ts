@@ -1,4 +1,4 @@
-import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, ManagerInquiry, ManagerRequestStatus, PendingReservation, PublicUser } from '../types/booking'
+import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, ManagerInquiry, ManagerRequestStatus, PendingReservation, PricingQuote, PublicUser } from '../types/booking'
 import { apiRequest } from './api'
 
 export const authApi = {
@@ -11,6 +11,8 @@ export const authApi = {
 }
 
 export const bookingApi = {
+  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: BookingDraft['paymentPlan'] }, signal?: AbortSignal) =>
+    apiRequest<PricingQuote>('/pricing/quote', { method: 'POST', body: JSON.stringify(input), signal }),
   availability: (draft: BookingDraft, signal?: AbortSignal) =>
     apiRequest<AvailabilityResult>('/booking/availability', { method: 'POST', body: JSON.stringify(draft), signal }),
   createReservation: (draft: BookingDraft) =>

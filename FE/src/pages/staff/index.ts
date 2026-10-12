@@ -1,1 +1,10 @@
-export const staffRoutes = ['/staff', '/staff/check-in', '/staff/operations'] as const
+export { StaffLayout } from './StaffLayout'
+export {
+  StaffAppointmentsPage,
+  StaffDashboardPage,
+  StaffMaintenancePage,
+  StaffRentalsPage,
+  StaffReturnsPage,
+  StaffSupportPage,
+  StaffTransfersPage,
+} from './StaffPages'

@@ -3,11 +3,13 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
 import { StorageIllustration } from '../../components/booking/StorageIllustration'
+import { AdditionalServicePicker } from '../../components/booking/AdditionalServicePicker'
 import { Container } from '../../components/ui/Container'
 import { bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
 import { useCatalog } from '../../catalog/catalog-context'
 import { ApiError } from '../../services/api'
 import { bookingApi } from '../../services/booking'
+import { guestBookingApi } from '../../services/guest-booking'
 import type { AvailabilityResult, BookingDraft, GuestContact, GuestInquiry, PendingReservation, PricingQuote } from '../../types/booking'
 
 const steps = [['01', 'Chọn kho'], ['02', 'Thời gian & dịch vụ'], ['03', 'Thông tin & xác nhận']] as const
@@ -99,12 +101,14 @@ interface CheckoutStepProps {
   user: ReturnType<typeof useAuth>['user']
   onUpdate: (patch: Partial<BookingDraft>) => void
   onBack: () => void
-  onSubmit: (draft: BookingDraft) => void
+  onSubmit: (draft: BookingDraft, emailBooking?: boolean) => void
   submitting: boolean
   canSubmit: boolean
 }
 
 function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productSizeId, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
+  const [emailBooking, setEmailBooking] = useState(false)
+  const supportsEmail = !draft.adjacencyPreference && !draft.note.trim()
   const customer: GuestContact = {
     fullName: user ? user.fullName : draft.customer.fullName,
     phone: user ? user.phone : draft.customer.phone,
@@ -119,7 +123,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSubmit({ ...draft, customer, paymentChoice, paymentPlan })
+    onSubmit({ ...draft, customer, paymentChoice, paymentPlan }, !user && emailBooking && supportsEmail)
   }
 
   return <div className="checkout-layout">
@@ -138,12 +142,13 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
           <label className="field-label sm:col-span-2">Ghi chú thêm, không bắt buộc<textarea rows={4} maxLength={500} value={draft.note} onChange={(event) => onUpdate({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để WDP liên hệ" /></label>
         </div>
         {user && <p className="checkout-auth-note"><UserRound size={16} /> Yêu cầu sử dụng thông tin của tài khoản {user.email} đang đăng nhập.</p>}
+        {!user && <label className="booking-checkbox"><input type="checkbox" checked={emailBooking && supportsEmail} disabled={submitting || !supportsEmail} onChange={event => setEmailBooking(event.target.checked)} /><span><strong>Xác minh email để nhận yêu cầu đặt kho</strong><small>{supportsEmail ? 'Bạn có thể tạo tài khoản sau khi xác minh email. Chưa giữ kho hoặc thanh toán.' : 'Luồng email chưa hỗ trợ ghi chú hoặc ưu tiên kho liền kề. Yêu cầu liên hệ giữ đầy đủ các thông tin này.'}</small></span></label>}
       </fieldset>
 
       <fieldset className="checkout-fieldset">
         <legend>Bạn muốn thanh toán như thế nào?</legend>
         <div className="payment-options">
-          <button type="button" className="payment-option is-disabled" disabled><span className="payment-option-mark">A</span><span><strong>Thanh toán ngay</strong><small>Sắp ra mắt, chưa có gateway được xác minh hoặc tổng tiền cuối.</small></span><em>Sắp ra mắt</em></button>
+          <button type="button" className="payment-option is-disabled" disabled><span className="payment-option-mark">A</span><span><strong>Thanh toán ngay</strong><small>Thanh toán QR hoặc VNPay tại hóa đơn sau khi yêu cầu đặt kho được xác nhận.</small></span><em>Chờ hóa đơn</em></button>
           <button type="button" className={paymentChoice === 'pay-later' ? 'payment-option is-selected' : 'payment-option'} onClick={() => onUpdate({ paymentChoice: 'pay-later' })} aria-pressed={paymentChoice === 'pay-later'}><span className="payment-option-mark">B</span><span><strong>Thanh toán sau</strong><small>WDP liên hệ để kiểm tra kho, báo giá và hướng dẫn thanh toán.</small></span>{paymentChoice === 'pay-later' && <Check size={18} />}</button>
         </div>
         <label className="field-label mt-5">Kế hoạch thanh toán<select value={paymentPlan} onChange={(event) => onUpdate({ paymentPlan: event.target.value as BookingDraft['paymentPlan'] })}><option value="PAY_MONTHLY">Thanh toán hàng tháng</option><option value="PREPAID">Thanh toán trước</option></select></label>
@@ -167,6 +172,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
           {quote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước ({quote.discountPercent}%)</strong><small>Không áp dụng cho tiền đặt cọc</small></span><b>−{quoteText(quote.discountAmount)}</b></div>}
           <div><span><strong>Tiền thuê sau chiết khấu</strong><small>{quote.paymentPlan === 'PREPAID' ? 'Trả trước' : 'Thanh toán hàng tháng'}</small></span><b>{quoteText(quote.rentalAmount)}</b></div>
           <div><span><strong>Tiền đặt cọc</strong><small>Không áp dụng chiết khấu</small></span><b>{quoteText(quote.depositAmount)}</b></div>
+          {quote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><b>{quoteText(item.amount)}</b></div>)}
         </div>
         <div className="quote-total"><span>Tổng giá trị hợp đồng dự kiến</span><strong>{quoteText(quote.quotedTotalAmount)}</strong></div>
         {quote.amountPayableNow !== null && <div className="quote-total is-payable"><span>Thanh toán ban đầu</span><strong>{quoteText(quote.amountPayableNow)}</strong></div>}
@@ -212,6 +218,7 @@ export function BookingWizardPage() {
   const quoteRequest = useRef(0)
   const quoteController = useRef<AbortController | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const submissionLock = useRef(false)
   const [error, setError] = useState('')
   const [popupOpen, setPopupOpen] = useState(false)
   const prevAvailabilityState = useRef<AvailabilityState>('idle')
@@ -230,6 +237,7 @@ export function BookingWizardPage() {
   const size = getStorageSize(product.sizeId)!
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
   const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations)
+  const pricingEndDate = endDateExclusive(draft)
 
   const invalidateAvailability = () => {
     availabilityRequest.current += 1
@@ -237,6 +245,11 @@ export function BookingWizardPage() {
     setAvailability(null)
     setAvailabilityState('idle')
     setAvailabilityError('')
+    quoteRequest.current += 1
+    quoteController.current?.abort()
+    setPricingQuote(null)
+    setQuoteError('')
+    setQuoteState('idle')
     clearBookingAvailability()
   }
 
@@ -267,6 +280,7 @@ export function BookingWizardPage() {
       quantity: draft.quantity,
       adjacencyPreference: draft.adjacencyPreference,
       addonIds: draft.addonIds,
+      services: draft.services ?? [],
       note: '',
       paymentChoice: 'pay-later',
       paymentPlan: draft.paymentPlan,
@@ -295,24 +309,20 @@ export function BookingWizardPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [step, canCheckAvailability, draft.productId, draft.startDate, draft.endDate, draft.periodMode, draft.durationMonths, draft.quantity, draft.paymentPlan, draft.adjacencyPreference, draft.addonIds, availabilityRetry])
+  }, [step, canCheckAvailability, draft.productId, draft.startDate, draft.endDate, draft.periodMode, draft.durationMonths, draft.quantity, draft.paymentPlan, draft.adjacencyPreference, draft.addonIds, draft.services, availabilityRetry])
 
   useEffect(() => {
     quoteRequest.current += 1
     const requestId = quoteRequest.current
     quoteController.current?.abort()
-    setPricingQuote(null)
-    setQuoteError('')
     if (!canCheckAvailability) {
-      setQuoteState('idle')
       return
     }
 
     const controller = new AbortController()
     quoteController.current = controller
-    const endDate = endDateExclusive(draft)
+    const endDate = pricingEndDate
     if (!endDate || endDate <= draft.startDate) {
-      setQuoteState('idle')
       return () => controller.abort()
     }
     const timer = window.setTimeout(async () => {
@@ -324,6 +334,7 @@ export function BookingWizardPage() {
           startDate: draft.startDate,
           endDate,
           paymentPlan: draft.paymentPlan,
+          services: draft.services,
         }, controller.signal)
         if (controller.signal.aborted || requestId !== quoteRequest.current) return
         setPricingQuote(quote)
@@ -339,7 +350,7 @@ export function BookingWizardPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [canCheckAvailability, product.id, draft.startDate, draft.endDate, draft.periodMode, draft.durationMonths, draft.quantity, draft.paymentPlan])
+  }, [canCheckAvailability, product.id, draft.startDate, pricingEndDate, draft.quantity, draft.paymentPlan, draft.services, availabilityRetry])
 
   const selectSize = (sizeId: typeof product.sizeId) => {
     const category = bookingSizes.find((item) => item.id === sizeId)!
@@ -361,12 +372,29 @@ export function BookingWizardPage() {
     if (!canCheckAvailability) return
     setAvailabilityRetry((current) => current + 1)
   }
-  const submitCheckout = async (checkoutDraft: BookingDraft) => {
-    if (submitting || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote) return
+  const submitCheckout = async (checkoutDraft: BookingDraft, emailBooking = false) => {
+    if (submissionLock.current || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote) return
+    submissionLock.current = true
     setSubmitting(true)
     setError('')
     try {
       const payload = { ...checkoutDraft, ...checkoutDraft.customer, note: checkoutDraft.note }
+      if (!user && emailBooking) {
+        const input = { ...checkoutDraft.customer, storageTypeId: checkoutDraft.productId, quantity: checkoutDraft.quantity, startDate: checkoutDraft.startDate, endDate: endDateExclusive(checkoutDraft), paymentPlan: checkoutDraft.paymentPlan, services: checkoutDraft.services ?? [] }
+        const fingerprint = JSON.stringify(input)
+        const saved = sessionStorage.getItem('wdp-guest-request-retry')
+        let retry: { fingerprint: string; key: string } | null = null
+        try { retry = saved ? JSON.parse(saved) : null } catch { /* Invalid browser data is replaced. */ }
+        const key = retry?.fingerprint === fingerprint ? retry.key : `guest-${crypto.randomUUID()}`
+        sessionStorage.setItem('wdp-guest-request-retry', JSON.stringify({ fingerprint, key }))
+        const result = await guestBookingApi.create(input, key)
+        sessionStorage.removeItem('wdp-guest-request-retry')
+        const safeResult = { bookingCode: result.bookingCode, status: result.status, storage: result.storage, quantity: result.quantity, startDate: result.startDate, endDate: result.endDate, quote: result.quote, message: result.message }
+        sessionStorage.setItem('wdp-guest-response:' + result.bookingCode, JSON.stringify(safeResult))
+        clearBookingDraft()
+        navigate('/booking/confirmation/' + result.bookingCode)
+        return
+      }
       const result: PendingReservation | GuestInquiry = user
         ? await bookingApi.createReservation(payload)
         : await bookingApi.createInquiry(payload)
@@ -386,6 +414,7 @@ export function BookingWizardPage() {
         setError(caught instanceof Error ? caught.message : 'Không thể gửi yêu cầu.')
       }
     } finally {
+      submissionLock.current = false
       setSubmitting(false)
     }
   }
@@ -396,7 +425,7 @@ export function BookingWizardPage() {
         <Link to="/storage" className="inline-flex items-center gap-2 text-sm font-semibold text-navy"><ArrowLeft size={17} /> Quay lại danh sách kho</Link>
         <div className="mt-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div><p className="eyebrow">Đặt kho nhanh</p><h1>Chọn đúng kho, gửi yêu cầu rõ ràng.</h1></div>
-          <p className="max-w-md text-sm leading-6 text-slate">Bản prototype hỗ trợ yêu cầu liên hệ và reservation PENDING. Không có thanh toán ngay, hợp đồng hay cam kết giữ kho.</p>
+          <p className="max-w-md text-sm leading-6 text-slate">Chọn kho, kiểm tra toàn kỳ và gửi yêu cầu. Kho được phân bổ và hóa đơn được tạo sau khi yêu cầu đặt kho được xác nhận.</p>
         </div>
         <ol className="booking-progress" aria-label="Tiến trình đặt kho">
           {steps.map(([number, label], index) => {
@@ -444,7 +473,7 @@ export function BookingWizardPage() {
               <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span><strong>Trả trước</strong><small>Chiết khấu theo thời hạn đủ điều kiện, do máy chủ xác định.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
             </div></fieldset>
             <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
-            <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Chỉ các dịch vụ có giá và charging basis chính thức mới xuất hiện.</p></div></div>{approvedAddons.length === 0 ? <div className="addon-empty"><Info size={19} /><span><strong>Chưa có dịch vụ bổ sung được WDP duyệt</strong><small>Không có bảo hiểm, vận chuyển hoặc add-on giả lập trong prototype.</small></span></div> : <div>{approvedAddons.map(() => null)}</div>}</section>
+            <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Giá và khả dụng được kiểm tra qua hệ thống WDP.</p></div></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
             <label className="field-label">Ghi chú cho WDP, không bắt buộc<textarea rows={3} maxLength={500} value={draft.note} onChange={(event) => updateDraft({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để liên hệ" /></label>
 
           </div>
@@ -471,6 +500,7 @@ export function BookingWizardPage() {
               {pricingQuote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước</strong><small>{pricingQuote.discountPercent}%</small></span><strong>−{quoteText(pricingQuote.discountAmount)}</strong></div>}
               <div><span><strong>Tiền thuê sau chiết khấu</strong></span><strong>{quoteText(pricingQuote.rentalAmount)}</strong></div>
               <div><span><strong>Tiền đặt cọc</strong><small>Không giảm theo chiết khấu</small></span><strong>{quoteText(pricingQuote.depositAmount)}</strong></div>
+              {pricingQuote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><strong>{quoteText(item.amount)}</strong></div>)}
               <div className="booking-pricing-total"><span><strong>Tổng giá trị hợp đồng</strong></span><strong>{quoteText(pricingQuote.quotedTotalAmount)}</strong></div>
               {pricingQuote.amountPayableNow !== null && <div><span><strong>Thanh toán ban đầu</strong></span><strong>{quoteText(pricingQuote.amountPayableNow)}</strong></div>}
               <p>{pricingQuote.message} Phí và thuế chưa có dữ liệu nên không hiển thị.</p>

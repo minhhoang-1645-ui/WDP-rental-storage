@@ -7,14 +7,14 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
 import { InternalPortalLayout } from "../../components/layout/InternalPortalLayout";
 import { operationsNavigation } from "../../components/manager/operations-navigation";
+import { OperationsWorkspace } from '../../components/manager/operations-workspace';
 export function AdminLayout() {
-  const inOperations = useLocation().pathname.startsWith("/admin/facility");
   return (
-    <InternalPortalLayout
+    <OperationsWorkspace.Provider value="/admin/facility"><InternalPortalLayout
       label="Quản trị hệ thống"
+      pageNavigation={operationsNavigation("/admin/facility")}
       navigation={[
         {
           to: "/admin",
@@ -59,8 +59,7 @@ export function AdminLayout() {
           icon: UserCheck,
           group: "Quản trị",
         },
-        ...(inOperations ? operationsNavigation("/admin/facility") : []),
       ]}
-    />
+    /></OperationsWorkspace.Provider>
   );
 }

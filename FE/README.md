@@ -1,5 +1,7 @@
 # Frontend WDP
 
+Đối chiếu chức năng theo mã nguồn mới và giới hạn BE: [FUNCTIONAL_AUDIT_2026-10-13.md](./FUNCTIONAL_AUDIT_2026-10-13.md). Lần cập nhật này giữ giao diện và chỉ sửa chức năng phía client web/mobile.
+
 Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 
 ## Chạy local
@@ -71,3 +73,5 @@ node node_modules/oxlint/bin/oxlint
 node scripts/portal-smoke.mjs
 node scripts/roles-smoke.mjs
 ```
+
+Ngày 14/10/2026 đã kiểm tra đăng nhập/API đọc thật và đăng xuất của hai tài khoản Admin/Manager mới do người dùng yêu cầu, trên FE, mobile web và Android. Các script, ảnh và dữ liệu UI tạo thêm để kiểm thử đã được dọn theo yêu cầu; giữ các bài kiểm thử portal/roles có sẵn trong repo. Mật khẩu không lưu vào mã nguồn.

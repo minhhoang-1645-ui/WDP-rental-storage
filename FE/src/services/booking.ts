@@ -3,15 +3,15 @@ import { apiRequest } from './api'
 
 export const authApi = {
   register: (input: { fullName: string; email: string; phone: string; password: string }) =>
-    apiRequest<AuthSession>('/auth/register', { method: 'POST', body: JSON.stringify(input) }),
+    apiRequest<AuthSession>('/auth/register', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
   login: (input: { email: string; password: string }) =>
-    apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
+    apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
   me: () => apiRequest<PublicUser>('/auth/me'),
   logout: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
 }
 
 export const bookingApi = {
-  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: BookingDraft['paymentPlan'] }, signal?: AbortSignal) =>
+  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: BookingDraft['paymentPlan']; services?: BookingDraft['services'] }, signal?: AbortSignal) =>
     apiRequest<PricingQuote>('/pricing/quote', { method: 'POST', body: JSON.stringify(input), signal }),
   availability: (draft: BookingDraft, signal?: AbortSignal) =>
     apiRequest<AvailabilityResult>('/booking/availability', { method: 'POST', body: JSON.stringify(draft), signal }),

@@ -1,13 +1,9 @@
 export { StaffLayout } from './StaffLayout'
-export {
-  StaffAppointmentsPage,
-  StaffDashboardPage,
-  StaffMaintenancePage,
-  StaffRentalsPage,
-  StaffReturnsPage,
-  StaffSupportPage,
-  StaffTransfersPage,
-} from './StaffPages'
+export { StaffAppointmentsPage } from './StaffAppointmentsPage'
+export { StaffOperationsPage } from './StaffOperationsPage'
+export { StaffRentalsPage } from './StaffRentalsPage'
+export { StaffReturnsPage } from './StaffReturnsPage'
+export { StaffTransfersPage } from './StaffTransfersPage'
 
 export const staffRoutes = [
   "/staff",

@@ -14,10 +14,12 @@ export async function allPages<T = Row>(
   const head = await apiRequest<Page<T>>(`${pathname}?${params}`, {
     signal,
   });
+  if (!head || !Array.isArray(head.items) || !Number.isSafeInteger(head.total) || head.total < 0 || !Number.isSafeInteger(head.limit) || head.limit < 1) throw new Error('Danh sách trả về không hợp lệ.');
   const items = [...head.items];
-  for (let page = 2; page <= Math.ceil(head.total / 100); page++) {
+  for (let page = 2; page <= Math.ceil(head.total / head.limit); page++) {
     params.set("page", String(page));
     const next = await apiRequest<Page<T>>(`${pathname}?${params}`, { signal });
+    if (!next || !Array.isArray(next.items)) throw new Error('Danh sách trả về không hợp lệ.');
     items.push(...next.items);
   }
   return { ...head, items };

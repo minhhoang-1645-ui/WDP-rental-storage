@@ -33,7 +33,7 @@ export function roleReturnPath(role: PublicUser["role"], value: unknown) {
   const ownWorkspace = pathname === root || pathname.startsWith(root + "/");
   const customerBooking =
     role === "CUSTOMER" &&
-    (pathname === "/booking" || pathname.startsWith("/booking/"));
+    (pathname === "/booking" || pathname.startsWith("/booking/") || pathname === '/claim-booking');
   return ownWorkspace || customerBooking
     ? pathname + destination.search + destination.hash
     : root;

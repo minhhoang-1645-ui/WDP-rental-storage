@@ -20,9 +20,12 @@ export interface InternalNavItem {
 export function InternalPortalLayout({
   label,
   navigation,
+  pageNavigation = [],
 }: {
   label: string;
   navigation: InternalNavItem[];
+  // Extra route names are used in the breadcrumb only, never added to either menu.
+  pageNavigation?: Pick<InternalNavItem, "to" | "label" | "end">[];
 }) {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -45,7 +48,7 @@ export function InternalPortalLayout({
     mobile.current?.close();
     window.scrollTo(0, 0);
   }, [location.pathname]);
-  const active = navigation
+  const active = [...navigation, ...pageNavigation]
     .filter((item) =>
       item.end
         ? location.pathname === item.to

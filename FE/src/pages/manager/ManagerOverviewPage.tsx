@@ -99,12 +99,12 @@ export function ManagerOverviewPage() {
               ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
               [
                 "Kho sẵn sàng",
-                Number(data.summary.availableUnits),
+                first(data.summary, 'availableUnits') || '—',
                 "/manager/units?status=AVAILABLE",
               ],
               [
                 "Kỳ thuê đang hoạt động",
-                Number(data.summary.activeRentals),
+                first(data.summary, 'activeRentals') || '—',
                 "/manager/operations/rentals",
               ],
             ].map(([title, value, to]) => (

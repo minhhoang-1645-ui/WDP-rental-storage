@@ -36,8 +36,8 @@ export interface CustomerRental {
 export interface CustomerInvoice {
   id: string;
   invoiceCode: string;
-  type: 'INITIAL' | 'RECURRING' | 'RENEWAL';
-  status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
+  type: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT';
+  status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID';
   balanceDue: number;
   totalAmount: number;
   currency: string;
@@ -50,8 +50,7 @@ export interface StaffAppointment {
   appointmentCode: string;
   status: string;
   scheduledAt: string;
-  customer: { fullName: string; phone: string | null };
-  reservation: { reference: string };
+  reservation: { reference: string; customer: { fullName: string; phone: string | null } };
   allocatedUnits: { unitCode: string }[];
 }
 

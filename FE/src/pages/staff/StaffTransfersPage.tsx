@@ -10,7 +10,7 @@ import { usePaginatedResource } from "../../services/usePaginatedResource";
 
 export function StaffTransfersPage() {
   const { id } = useParams();
-  return id ? <StaffTransferDetail id={id} /> : <StaffTransferList />;
+  return id ? <StaffTransferDetail key={id} id={id} /> : <StaffTransferList />;
 }
 
 function StaffTransferList() {

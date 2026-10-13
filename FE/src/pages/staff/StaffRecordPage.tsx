@@ -22,6 +22,12 @@ import { staffResources, type StaffResource } from "./staff-resources";
 import { StaffActions } from "./StaffActions";
 
 export function StaffRecordPage({ resource }: { resource: StaffResource }) {
+  const { id = '' } = useParams();
+  const { user } = useAuth();
+  return <StaffRecord key={`${user?.id}:${resource}:${id}`} resource={resource} />;
+}
+
+function StaffRecord({ resource }: { resource: StaffResource }) {
   const { user } = useAuth(),
     { id = "" } = useParams();
   const data = useApiResource<Row>(

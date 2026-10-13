@@ -1,6 +1,6 @@
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { apiRequest, setSessionExpiredHandler } from '@/services/api';
+import { ApiError, apiRequest, setSessionExpiredHandler } from '@/services/api';
 import { authStorage } from '@/services/auth-storage';
 import type { AuthSession, PublicUser } from '@/types/api';
 
@@ -16,10 +16,13 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const revision = useRef(0);
 
   const clearLocalSession = useCallback(async () => {
-    await authStorage.clearToken();
+    revision.current++;
     setUser(null);
+    setLoading(false);
+    await authStorage.clearToken();
   }, []);
 
   useEffect(() => {
@@ -29,27 +32,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const version = ++revision.current;
     authStorage.getToken()
       .then(async (token) => token ? apiRequest<PublicUser>('/auth/me') : null)
-      .then((currentUser) => { if (active) setUser(currentUser); })
-      .catch(() => { if (active) void clearLocalSession(); })
+      .then((currentUser) => {
+        if (currentUser && (!currentUser.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(currentUser.role))) throw new Error('Phiên đăng nhập không hợp lệ.');
+        if (active && version === revision.current) setUser(currentUser);
+      })
+      .catch(error => {
+        if (active && version === revision.current && error instanceof ApiError && [401, 403].includes(error.status)) void clearLocalSession();
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [clearLocalSession]);
 
   const login = useCallback(async (email: string, password: string) => {
+    const version = ++revision.current;
     const session = await apiRequest<AuthSession>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: email.trim(), password }),
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      authenticated: false,
     });
+    if (!session?.token || !session.user?.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(session.user.role)) throw new Error('Thông tin phiên đăng nhập không hợp lệ.');
+    if (version !== revision.current) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng thử lại.');
     await authStorage.setToken(session.token);
     setUser(session.user);
     return session.user;
   }, []);
 
   const logout = useCallback(async () => {
-    try { await apiRequest<void>('/auth/logout', { method: 'POST' }); } catch { /* Local logout must always finish. */ }
+    const token = await authStorage.getToken();
     await clearLocalSession();
+    if (token) void apiRequest<void>('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined);
   }, [clearLocalSession]);
 
   const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);

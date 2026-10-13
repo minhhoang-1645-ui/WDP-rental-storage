@@ -300,6 +300,7 @@ async function setup(initialRole, authenticated = true) {
     if (path === "auth/logout") return send({ ok: true });
     if (path === "health")
       return send({ status: "ok", service: "WDP", timestamp: when });
+    if (path === 'payments/vnpay/return') return send({ valid: true, transaction: { merchantOrderRef: 'WDP-VNPAY-TEST', status: 'SUCCESS', amount: 2000000 }, invoice: { invoiceCode: 'INV-0', status: 'PAID' }, providerResponseCode: '00' });
     if (path === "booking/catalog")
       return send({
         products: [
@@ -338,7 +339,7 @@ async function setup(initialRole, authenticated = true) {
           merchantOrderRef: "WDP-VNPAY-TEST",
           status: "PENDING",
           amount: 2000000,
-          paymentUrl: `${base}/customer/payments/vnpay-return?vnp_TxnRef=WDP-VNPAY-TEST&vnp_SecureHash=signed-test`,
+          paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?test=wdp',
         }, 201);
       }
       if (/^customer\/invoices\/[^/]+\/payment-submissions$/.test(path)) {
@@ -507,7 +508,7 @@ async function setup(initialRole, authenticated = true) {
   page.on("console", (message) => {
     if (
       message.type() === "error" &&
-      /unique|nesting|descendant/.test(message.text())
+        /unique|nesting|descendant|Received NaN/.test(message.text())
     )
       errors.push(message.text());
   });
@@ -828,6 +829,7 @@ try {
     "Staff lists/details, full pagination, assignment guards, maintenance report/repair, support resolve/escalation, handover, PASS/ISSUE inspection and physical transfer",
   );
   const customer = await setup("CUSTOMER");
+  await customer.context.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ status: 302, headers: { location: `${base}/customer/payments/vnpay-return?vnp_TxnRef=WDP-VNPAY-TEST&vnp_SecureHash=signed-test` } }));
   const customerPages = [
     "",
     "reservations",

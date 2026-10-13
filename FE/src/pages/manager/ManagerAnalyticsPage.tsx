@@ -149,7 +149,7 @@ export function ManagerAnalyticsPage() {
               <span>Đã thu cho hóa đơn trong kỳ</span>
               <strong>{money(paid)}</strong>
               <small>
-                {billed ? Math.round((paid / billed) * 100) : 0}% giá trị hóa
+                {Number.isFinite(billed) && Number.isFinite(paid) ? billed ? Math.round((paid / billed) * 100) : 0 : '—'}% giá trị hóa
                 đơn
               </small>
             </article>

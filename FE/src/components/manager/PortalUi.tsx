@@ -22,10 +22,12 @@ export function PageHeader({
   description?: string;
   children?: ReactNode;
 }) {
+  const { user } = useAuth();
+  const workspace = user?.role === 'ADMIN' ? 'QUẢN TRỊ' : user?.role === 'MANAGER' ? 'QUẢN LÝ' : user?.role === 'STAFF' ? 'NHÂN VIÊN' : 'TÀI KHOẢN';
   return (
     <header className="manager-page-header">
       <div>
-        <p className="eyebrow">WDP STORAGE / ĐIỀU HÀNH</p>
+        <p className="eyebrow">WDP STORAGE / {workspace}</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>

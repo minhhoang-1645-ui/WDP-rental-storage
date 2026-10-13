@@ -2,9 +2,9 @@ import { Check, RefreshCw, Search, Wallet, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../../auth/auth-context'
 import { formatPortalDate, moneyLabel } from '../../components/customer/CustomerPortalHelpers'
-import { useApiResource } from '../../services/useApiResource'
+import { usePaginatedResource } from '../../services/usePaginatedResource'
 import { managerBillingApi } from '../../services/billing'
-import type { Paginated, CustomerInvoice, CustomerPayment } from '../../types/customer'
+import type { CustomerInvoice, CustomerPayment } from '../../types/customer'
 import type { PaymentSubmission, PaymentSubmissionStatus } from '../../types/payment'
 
 const statusLabel: Record<PaymentSubmissionStatus, string> = { PENDING_VERIFICATION: 'Chờ xác nhận', VERIFIED: 'Đã xác nhận', REJECTED: 'Đã từ chối' }
@@ -25,9 +25,9 @@ export function ManagerPaymentSubmissionsPage() {
   const params = new URLSearchParams({ limit: '100' })
   if (status !== 'ALL') params.set('status', status)
   if (search) params.set('search', search)
-  const submissions = useApiResource<Paginated<PaymentSubmission>>(`/manager/payment-submissions?${params}`, user?.id ?? '')
-  const invoices = useApiResource<Paginated<CustomerInvoice>>('/manager/invoices?limit=100', user?.id ?? '')
-  const payments = useApiResource<Paginated<CustomerPayment>>('/manager/payments?limit=100', user?.id ?? '')
+  const submissions = usePaginatedResource<PaymentSubmission>(`/manager/payment-submissions?${params}`, user?.id ?? '')
+  const invoices = usePaginatedResource<CustomerInvoice>('/manager/invoices', user?.id ?? '')
+  const payments = usePaginatedResource<CustomerPayment>('/manager/payments', user?.id ?? '')
   const loading = submissions.loading || invoices.loading || payments.loading
   const refresh = () => { submissions.refresh(); invoices.refresh(); payments.refresh() }
 
@@ -52,7 +52,7 @@ export function ManagerPaymentSubmissionsPage() {
   return <section>
     <header className="manager-page-header"><div><p className="eyebrow">Tài chính</p><h1>Chờ xác nhận thanh toán</h1><p>Đối chiếu chuyển khoản thủ công. Chỉ xác nhận sau khi kiểm tra giao dịch ngân hàng.</p></div><button className="button-secondary" type="button" onClick={refresh} disabled={loading}><RefreshCw size={16} /> Làm mới</button></header>
     {message && <div className="manager-notice is-ok" role="status">{message}</div>}{error && !active && <div className="manager-notice is-error" role="alert">{error}</div>}
-    <div className="manager-payment-summary"><span>{submissions.data?.items.filter((item) => item.status === 'PENDING_VERIFICATION').length ?? 0}<small>Đang chờ trong danh sách</small></span><span>{invoices.data?.total ?? 0}<small>Hóa đơn đã tải</small></span><span>{payments.data?.total ?? 0}<small>Payment đã ghi nhận</small></span></div>
+    <div className="manager-payment-summary"><span>{submissions.data ? submissions.data.items.filter((item) => item.status === 'PENDING_VERIFICATION').length : '—'}<small>Đang chờ trong danh sách</small></span><span>{invoices.data?.total ?? '—'}<small>Hóa đơn đã tải</small></span><span>{payments.data?.total ?? '—'}<small>Payment đã ghi nhận</small></span></div>
     <form className="manager-filter-bar" onSubmit={applySearch}><label className="field-label">Trạng thái<select value={status} onChange={(event) => setStatus(event.target.value as PaymentSubmissionStatus | 'ALL')}><option value="PENDING_VERIFICATION">Chờ xác nhận</option><option value="VERIFIED">Đã xác nhận</option><option value="REJECTED">Đã từ chối</option><option value="ALL">Tất cả</option></select></label><label className="manager-payment-search"><Search size={16} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Mã hóa đơn, yêu cầu, khách hàng, tham chiếu" /></label><button className="button-secondary" type="submit">Tìm kiếm</button></form>
     {submissions.error ? <div className="booking-alert is-error" role="alert">{submissions.error}</div> : submissions.loading ? <p role="status">Đang tải yêu cầu xác nhận…</p> : !submissions.data?.items.length ? <div className="manager-empty"><Wallet size={28} /><h2>Không có yêu cầu xác nhận</h2><p>Thông báo chuyển khoản sẽ xuất hiện tại đây.</p></div> : <div className="manager-submission-list">{submissions.data.items.map((item) => <article className="manager-submission-card" key={item.id}>
       <div className="manager-submission-heading"><div><span className={'payment-submission-status is-' + item.status.toLowerCase()}>{statusLabel[item.status]}</span><h2>{item.invoice.invoiceCode}</h2><small>{item.submissionCode} · {formatPortalDate(item.submittedAt, true)}</small></div><strong>{moneyLabel(item.amount, item.invoice.currency)}</strong></div>

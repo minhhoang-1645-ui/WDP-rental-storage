@@ -6,6 +6,7 @@ import { CatalogRouteLayout } from "../components/layout/CatalogRouteLayout";
 import { AuthPage } from "../pages/account/AuthPage";
 import { BookingConfirmationPage } from "../pages/public/BookingConfirmationPage";
 import { BookingWizardPage } from "../pages/public/BookingWizardPage";
+import { ClaimBookingPage } from '../pages/public/ClaimBookingPage';
 import { LandingPage } from "../pages/public/LandingPage";
 import { ReservationPage } from "../pages/public/ReservationPage";
 import { SizeGuidePage } from "../pages/public/SizeGuideExperiencePage";
@@ -45,6 +46,7 @@ import { AdminRolesPage } from "../pages/admin/AdminRolesPage";
 import { AdminAssignmentsPage } from "../pages/admin/AdminAssignmentsPage";
 import { AdminActivityPage } from "../pages/admin/AdminActivityPage";
 import { ManagerCatalogPage } from "../pages/manager/ManagerCatalogPage";
+import { ManagerAdditionalServicesPage } from '../pages/manager/ManagerAdditionalServicesPage';
 import { CustomerLayout } from "../components/customer/CustomerLayout";
 import { CustomerDashboardPage } from "../pages/customer/CustomerDashboardPage";
 import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointmentsPage";
@@ -74,6 +76,7 @@ function operationalRoutes(base: string) {
       />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
+      <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
       <Route path="units/:id" element={<ManagerUnitDetailPage />} />
       <Route
         path="inventory"
@@ -96,6 +99,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route element={<PublicLayout />}>
+        <Route path="claim-booking" element={<ClaimBookingPage />} />
         <Route element={<CatalogRouteLayout />}>
           <Route index element={<LandingPage />} />
           <Route path="size-guide" element={<SizeGuidePage />} />

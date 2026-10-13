@@ -58,7 +58,7 @@ export interface CustomerRental {
 export interface CustomerInvoice {
   id: string
   invoiceCode: string
-  type: 'INITIAL' | 'RECURRING' | 'RENEWAL'
+  type: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT'
   billingCycle: number | null
   renewalCycle: number | null
   billingPeriodStart: string | null
@@ -69,6 +69,8 @@ export interface CustomerInvoice {
   reservation: { id: string; reference: string; status: string; quantity: number; storageType: CustomerStorageType }
   rentalAmount: number
   depositAmount: number
+  serviceAmount?: number
+  chargeAmount?: number
   totalAmount: number
   amountPaid: number
   balanceDue: number

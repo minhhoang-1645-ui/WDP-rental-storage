@@ -1,5 +1,5 @@
 import { Body, Controller, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { ClaimGuestBookingDto, CreateGuestBookingRequestDto, VerifyGuestBookingDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -13,12 +13,11 @@ export class GuestBookingController {
 
   @Post('guest/booking-requests')
   @ApiOperation({ summary: 'Tạo guest booking cần xác minh email', description: 'Public. Backend tự kiểm tra availability và pricing; chưa giữ unit, chưa tạo Reservation/Contract/Invoice/Payment.' })
-  @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'guest-booking-20261012-001' })
   @ApiBody({ type: CreateGuestBookingRequestDto })
   @ApiCreatedResponse({ description: 'PENDING_VERIFICATION. Production không trả claim token.' })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiConflictResponse({ description: 'Không còn đủ kho hoặc khóa idempotency xung đột.' })
-  create(@Body() body: Record<string, unknown>, @Headers('idempotency-key') key?: string) { return this.service.create(body, key); }
+  create(@Body() body: Record<string, unknown>, @Headers('Idempotency-Key') key?: string) { return this.service.create(body, key); }
 
   @Post('guest/booking-requests/verify')
   @ApiOperation({ summary: 'Xác minh email bằng claim token dùng một lần', description: 'Public. bookingCode không đủ để xác minh.' })

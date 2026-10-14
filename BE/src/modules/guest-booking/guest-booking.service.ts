@@ -36,7 +36,7 @@ export class GuestBookingService {
     if (!record) throw new ConflictException({ code: 'BOOKING_CODE_GENERATION_FAILED', message: 'Không thể tạo mã booking.' });
     const quote = record.quoteSnapshot as any;
     const initialAmountDue = quote.estimatedInitialAmountDue;
-    const delivery = await this.email.sendBookingClaim({ to: record.email, fullName: record.fullName, bookingCode: record.bookingCode, storageName: record.storageType.name, startDate: this.iso(record.startDate), endDate: this.iso(record.endDate), rentalAmount: quote.rentalAmount, discountAmount: quote.discountAmount, depositAmount: quote.depositAmount, initialAmountDue, claimToken: token });
+    const delivery = await this.email.sendBookingClaim({ to: record.email, fullName: record.fullName, bookingCode: record.bookingCode, storageName: record.storageType.name, startDate: this.iso(record.startDate), endDate: this.iso(record.endDate), rentalAmount: quote.rentalAmount, discountAmount: quote.discountAmount, depositAmount: quote.depositAmount, initialAmountDue, quantity: record.quantity, paymentPlan: record.paymentPlan as 'PAY_MONTHLY' | 'PREPAID', claimToken: token });
     return { ...this.view(record), message: delivery.delivered ? 'Vui lòng kiểm tra email để xác minh yêu cầu đặt kho.' : 'Development email adapter đang hoạt động; email thật chưa được gửi.', ...(delivery.adapter === 'development' ? { developmentClaimUrl: delivery.claimUrl } : {}) };
   }
 

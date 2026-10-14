@@ -1,4 +1,4 @@
-import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, ManagerInquiry, ManagerRequestStatus, PendingReservation, PublicUser } from '../types/booking'
+import type { AuthSession, AvailabilityResult, BookingDraft, GuestInquiry, ManagerInquiry, ManagerRequestStatus, PendingReservation, PricingQuote, PublicUser } from '../types/booking'
 import { apiRequest } from './api'
 
 export const authApi = {
@@ -11,6 +11,8 @@ export const authApi = {
 }
 
 export const bookingApi = {
+  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: BookingDraft['paymentPlan'] }, signal?: AbortSignal) =>
+    apiRequest<PricingQuote>('/pricing/quote', { method: 'POST', body: JSON.stringify(input), signal }),
   availability: (draft: BookingDraft, signal?: AbortSignal) =>
     apiRequest<AvailabilityResult>('/booking/availability', { method: 'POST', body: JSON.stringify(draft), signal }),
   createReservation: (draft: BookingDraft) =>
@@ -29,4 +31,8 @@ export const managerApi = {
     apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { signal }),
   updateInquiry: (id: string, input: { status: ManagerRequestStatus; internalNotes: string }) =>
     apiRequest<ManagerInquiry>('/manager/inquiries/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(input) }),
+  getReservation: (id: string, signal?: AbortSignal) =>
+    apiRequest<ManagerInquiry>('/manager/reservations/' + encodeURIComponent(id), { signal }),
+  updateReservationStatus: (id: string, status: Extract<ManagerRequestStatus, 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'>) =>
+    apiRequest<ManagerInquiry>('/manager/reservations/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }),
 }

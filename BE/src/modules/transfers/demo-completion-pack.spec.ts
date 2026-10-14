@@ -82,6 +82,12 @@ describe('Demo Completion Pack smoke', () => {
     const result = await transfers.list({ page: '1', limit: '10', status: 'REQUESTED', search: transfer.transferCode });
     expect(result).toMatchObject({ page: 1, limit: 10, total: 1 });
     expect(result.items[0]).toMatchObject({ id: transfer.id, status: 'REQUESTED' });
+    expect(await transfers.listForStaff({ search: transfer.transferCode })).toMatchObject({ total: 0, items: [] });
+    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager);
+    const staffResult = await transfers.listForStaff({ page: '1', limit: '10', status: 'APPROVED', search: transfer.transferCode });
+    expect(staffResult).toMatchObject({ page: 1, limit: 10, total: 1 });
+    expect(staffResult.items[0]).toMatchObject({ id: transfer.id, status: 'APPROVED' });
+    expect(await transfers.getForStaff(transfer.id)).toMatchObject({ id: transfer.id, status: 'APPROVED' });
   });
 
   it('rejects a destination with another StorageType', async () => {

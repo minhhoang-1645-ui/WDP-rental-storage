@@ -1,0 +1,175 @@
+import {
+  ArrowRight,
+  RefreshCw,
+  ShieldCheck,
+  Users,
+  Warehouse,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { OperationsLink as Link } from "../../components/manager/OperationsLink";
+import { useAuth } from "../../auth/auth-context";
+import { allPages } from "../../services/portal";
+import { first, label, type Page } from "../../components/manager/portal-data";
+import {
+  LoadState,
+  PageHeader,
+  Status,
+} from "../../components/manager/PortalUi";
+export function AdminDashboardPage() {
+  const { user } = useAuth();
+  const [revision, setRevision] = useState(0);
+  const [state, setState] = useState<{
+    key: string;
+    data?: Page;
+    error?: string;
+  }>();
+  const key = `${user?.id}:${revision}`;
+  useEffect(() => {
+    const controller = new AbortController();
+    allPages("/admin/users", controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setState({ key, data });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setState({
+            key,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Không thể tải thống kê.",
+          });
+      });
+    return () => controller.abort();
+  }, [key]);
+  const current = state?.key === key ? state : undefined;
+  return (
+    <section>
+      <PageHeader
+        title="Tổng quan quản trị"
+        description={`Xin chào ${user?.fullName ?? ""}. Quản lý tài khoản và truy cập vận hành cơ sở.`}
+      >
+        <button
+          className="button-secondary"
+          disabled={!current}
+          onClick={() => setRevision((v) => v + 1)}
+        >
+          <RefreshCw size={16} />
+          Làm mới
+        </button>
+      </PageHeader>
+      <LoadState
+        loading={!current}
+        error={current?.error ?? ""}
+        retry={() => setRevision((v) => v + 1)}
+      />
+      {current?.data && (
+        <>
+          <div className="portal-metrics">
+            {["CUSTOMER", "STAFF", "MANAGER", "ADMIN"].map((role) => (
+              <Link
+                className="portal-metric"
+                key={role}
+                to={`/admin/users?role=${role}`}
+              >
+                <span>{label(role)}</span>
+                <strong>
+                  {
+                    current.data!.items.filter((row) => row.role === role)
+                      .length
+                  }
+                </strong>
+                <small>
+                  {
+                    current.data!.items.filter(
+                      (row) =>
+                        row.role === role && row.accountStatus === "ACTIVE",
+                    ).length
+                  }{" "}
+                  đang hoạt động
+                </small>
+              </Link>
+            ))}
+          </div>
+          <div className="portal-overview-grid">
+            <section className="manager-section">
+              <h2>
+                <Users size={20} /> Quản lý tài khoản
+              </h2>
+              <p>
+                Cấp tài khoản nhân viên, quản lý; xem thông tin và bật/tắt quyền
+                truy cập.
+              </p>
+              <div className="portal-actions">
+                <Link className="button-primary" to="/admin/users">
+                  Mở danh sách <ArrowRight size={16} />
+                </Link>
+                <Link
+                  className="button-secondary"
+                  to="/admin/users?status=DISABLED"
+                >
+                  Tài khoản vô hiệu hóa
+                </Link>
+              </div>
+            </section>
+            <section className="manager-section">
+              <h2>
+                <Warehouse size={20} /> Điều hành cơ sở
+              </h2>
+              <p>
+                Xử lý nghiệp vụ và theo dõi cơ sở ngay trong khu vực quản trị.
+              </p>
+              <div className="portal-actions">
+                <Link className="button-primary" to="/manager">
+                  Tổng quan vận hành <ArrowRight size={16} />
+                </Link>
+                <Link className="button-secondary" to="/manager/reports">
+                  Báo cáo
+                </Link>
+              </div>
+            </section>
+          </div>
+          <section className="manager-section">
+            <h2>
+              <ShieldCheck size={20} /> Tài khoản nội bộ
+            </h2>
+            <div className="manager-table-wrap">
+              <table className="manager-table">
+                <thead>
+                  <tr>
+                    <th>Họ tên</th>
+                    <th>Email</th>
+                    <th>Vai trò</th>
+                    <th>Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {current.data.items
+                    .filter((row) => row.role !== "CUSTOMER")
+                    .slice(0, 8)
+                    .map((row) => (
+                      <tr key={first(row, "id")}>
+                        <td>
+                          <strong>{first(row, "fullName")}</strong>
+                        </td>
+                        <td>{first(row, "email")}</td>
+                        <td>
+                          <Status value={row.role} />
+                        </td>
+                        <td>
+                          <Status value={row.accountStatus} />
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <Link className="portal-record-link" to="/admin/users">
+              Xem toàn bộ tài khoản →
+            </Link>
+          </section>
+        </>
+      )}
+    </section>
+  );
+}

@@ -11,6 +11,8 @@ import { CustomerActiveRentalsController } from '../rentals-active/customer-acti
 import { ManagerActiveRentalsController } from '../rentals-active/manager-active-rentals.controller.js';
 import { StaffActiveRentalsController } from '../rentals-active/staff-active-rentals.controller.js';
 import { BillingService } from './billing.service.js';
+import { CustomerBillingController } from './customer-billing.controller.js';
+import { ManagerBillingController } from './manager-billing.controller.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `billing-facility-${runId}`;
@@ -52,6 +54,7 @@ describe('Invoice and Payment V1', () => {
   });
 
   afterEach(async () => {
+    await prisma.paymentSubmission.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -62,6 +65,7 @@ describe('Invoice and Payment V1', () => {
   });
 
   afterAll(async () => {
+    await prisma.paymentSubmission.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -103,7 +107,7 @@ describe('Invoice and Payment V1', () => {
   async function activate(reservationId: string) {
     await prisma.rentalContract.updateMany({ where: { reservationId }, data: { status: 'ACTIVE', activatedAt: new Date() } });
     await prisma.storageUnit.updateMany({ where: { reservationUnits: { some: { reservationId } } }, data: { status: 'OCCUPIED' } });
-    return prisma.$transaction((tx) => service.ensureRecurringInvoices(tx, reservationId));
+    return prisma.$transaction((tx) => service.ensureRecurringInvoices(tx, reservationId), { maxWait: 10000, timeout: 20000 });
   }
 
   it('creates one reservation-level INITIAL invoice for multiple contracts and is idempotent', async () => {
@@ -285,6 +289,80 @@ describe('Invoice and Payment V1', () => {
     expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
     expect((await prisma.payment.findFirstOrThrow({ where: { invoiceId: invoice.id } })).recordedByUserId).toBe(managerId);
     await expect(service.recordPayment(invoice.id, { amount: 2000000, method: 'BANK_TRANSFER', reference: 'IDEM' }, `idem-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('creates an idempotent customer transfer notice without creating a Payment or changing the Invoice', async () => {
+    const reservation = await confirmedReservation(quote());
+    const invoice = await ensure(reservation.id);
+    const payload = { amount: 3000000, method: 'BANK_TRANSFER', transferReference: 'CUST-TRANSFER-01', customerNote: 'Đã chuyển khoản.' };
+    const first = await service.createCustomerPaymentSubmission(customerId, invoice.id, payload, `customer-submit-${runId}`);
+    const retry = await service.createCustomerPaymentSubmission(customerId, invoice.id, payload, `customer-submit-${runId}`);
+    expect(first).toMatchObject({ status: 'PENDING_VERIFICATION', amount: 3000000, method: 'BANK_TRANSFER', invoice: { status: 'OPEN', amountPaid: 0, balanceDue: 5800000 } });
+    expect(retry.id).toBe(first.id);
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(0);
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).toMatchObject({ status: 'OPEN', amountPaid: 0n, balanceDue: 5800000n });
+    await expect(service.createCustomerPaymentSubmission(otherCustomerId, invoice.id, payload, `other-submit-${runId}`)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { ...payload, amount: 5800001 }, `over-submit-${runId}`)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { ...payload, method: 'CASH' }, `cash-submit-${runId}`)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { ...payload, amount: 2000000 }, `customer-submit-${runId}`)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('verifies partial and final submissions through existing payment logic exactly once', async () => {
+    const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1450000, rentalAmount: 17400000, depositAmount: 2900000 }), 2);
+    const invoice = await ensure(reservation.id);
+    const manager = actor(managerId, 'MANAGER');
+    const firstNotice = await service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 3000000 }, `partial-notice-${runId}`);
+    const [verified, retry] = await Promise.all([
+      service.verifyPaymentSubmission(firstNotice.id, { reference: 'BANK-TXN-PART-01', note: 'Đã đối chiếu.' }, manager),
+      service.verifyPaymentSubmission(firstNotice.id, { reference: 'BANK-TXN-PART-01', note: 'Đã đối chiếu.' }, manager),
+    ]);
+    expect(verified).toMatchObject({ status: 'VERIFIED', verifiedPayment: { paymentCode: expect.any(String) }, invoice: { status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 2800000 } });
+    expect(retry.id).toBe(verified.id);
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
+    const finalNotice = await service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 2800000 }, `final-notice-${runId}`);
+    const final = await service.verifyPaymentSubmission(finalNotice.id, { reference: 'BANK-TXN-FINAL-01' }, manager);
+    expect(final).toMatchObject({ status: 'VERIFIED', invoice: { status: 'PAID', amountPaid: 5800000, balanceDue: 0 }, contracts: [{ status: 'READY_FOR_HANDOVER' }, { status: 'READY_FOR_HANDOVER' }] });
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(2);
+  });
+
+  it('rejects a notice without recording Payment or changing invoice finance and allows safe status retry', async () => {
+    const reservation = await confirmedReservation(quote());
+    const invoice = await ensure(reservation.id);
+    const notice = await service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 1000000 }, `reject-notice-${runId}`);
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'MANAGER'))).resolves.toMatchObject({ status: 'REJECTED', rejectionReason: 'Không tìm thấy giao dịch tương ứng.' });
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'MANAGER'))).resolves.toMatchObject({ status: 'REJECTED' });
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(0);
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).toMatchObject({ status: 'OPEN', amountPaid: 0n, balanceDue: 5800000n });
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK-TXN' }, actor(managerId, 'MANAGER'))).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: '' }, actor(managerId, 'MANAGER'))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('blocks payment notices on paid invoices and restricts verification to managers and admins', async () => {
+    const reservation = await confirmedReservation(quote());
+    const invoice = await ensure(reservation.id);
+    const manager = actor(managerId, 'MANAGER');
+    await service.recordPayment(invoice.id, { amount: 5800000, method: 'BANK_TRANSFER' }, `paid-before-notice-${runId}`, manager);
+    await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 1 }, `paid-notice-${runId}`)).rejects.toBeInstanceOf(ConflictException);
+    const otherReservation = await confirmedReservation(quote(), 1);
+    const otherInvoice = await ensure(otherReservation.id);
+    const notice = await service.createCustomerPaymentSubmission(customerId, otherInvoice.id, { amount: 1 }, `role-notice-${runId}`);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(customerId, 'CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(staffId, 'STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('restricts Customer and Manager payment-submission endpoints by controller role', () => {
+    const guard = new RolesGuard(new Reflector());
+    const controllers: Array<[typeof CustomerBillingController | typeof ManagerBillingController, PublicUser['role'][]]> = [
+      [CustomerBillingController, ['CUSTOMER']],
+      [ManagerBillingController, ['MANAGER', 'ADMIN']],
+    ];
+    for (const [controller, allowedRoles] of controllers) {
+      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+        const context = { getHandler: () => function paymentSubmissionOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
+        if (allowedRoles.includes(role)) expect(guard.canActivate(context)).toBe(true);
+        else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+      }
+    }
   });
 
   it('enforces payment mutation roles while allowing ADMIN', async () => {

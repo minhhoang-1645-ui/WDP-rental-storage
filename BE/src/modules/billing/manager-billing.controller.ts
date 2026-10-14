@@ -95,6 +95,51 @@ export class ManagerBillingController {
     return this.billing.getManagerPayment(id);
   }
 
+  @Get('payment-submissions')
+  @ApiOperation({ summary: 'Danh sách thông báo chuyển khoản cần xác minh', description: 'PaymentSubmission đang chờ không phải Payment đã ghi nhận. Chỉ Manager/Admin.' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'status', required: false, enum: ['PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'] })
+  @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
+  @ApiQuery({ name: 'invoiceCode', required: false, example: 'WDP-2026-AB12CD34-I01' })
+  @ApiOkResponse({ description: 'Thông tin thông báo, hóa đơn hiện tại và khách hàng.' })
+  listPaymentSubmissions(@Query() query: Record<string, unknown>) {
+    const common = this.commonQuery(query);
+    const status = this.optional(query.status, 'status');
+    if (status && !['PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'].includes(status)) throw new BadRequestException('PaymentSubmission status không hợp lệ.');
+    const invoiceCode = this.optional(query.invoiceCode, 'invoiceCode');
+    return this.billing.listManagerPaymentSubmissions({ ...common, ...(status ? { status: status as 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED' } : {}), ...(invoiceCode ? { invoiceCode } : {}) });
+  }
+
+  @Get('payment-submissions/:id')
+  @ApiOperation({ summary: 'Chi tiết thông báo chuyển khoản cần xác minh' })
+  @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-S01' })
+  @ApiOkResponse({ description: 'Submission, hóa đơn/số dư, khách hàng và chi tiết chuyển khoản.' })
+  getPaymentSubmission(@Param('id') id: string) {
+    return this.billing.getManagerPaymentSubmission(id);
+  }
+
+  @Post('payment-submissions/:id/verify')
+  @ApiOperation({ summary: 'Xác nhận đã nhận chuyển khoản', description: 'Xác minh thủ công; tạo đúng một Payment qua BillingService và cập nhật Invoice trong cùng transaction.' })
+  @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-S01' })
+  @ApiBody({ schema: { type: 'object', required: ['reference'], properties: { reference: { type: 'string', example: 'BANK-TXN-123456' }, note: { type: 'string', example: 'Đã đối chiếu giao dịch ngân hàng.' } } } })
+  @ApiCreatedResponse({ description: 'PaymentSubmission VERIFIED cùng Payment thật vừa được ghi nhận.' })
+  @ApiConflictResponse({ description: 'Submission đã được xử lý, hóa đơn đã trả đủ hoặc số dư hiện tại thấp hơn khoản gửi.' })
+  verifyPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.billing.verifyPaymentSubmission(id, body, request.user!);
+  }
+
+  @Post('payment-submissions/:id/reject')
+  @ApiOperation({ summary: 'Từ chối thông báo chuyển khoản', description: 'Chuyển submission sang REJECTED; không tạo Payment và không thay đổi Invoice.' })
+  @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-S01' })
+  @ApiBody({ schema: { type: 'object', required: ['reason'], properties: { reason: { type: 'string', example: 'Không tìm thấy giao dịch phù hợp.' } } } })
+  @ApiOkResponse({ description: 'PaymentSubmission REJECTED.' })
+  @ApiBadRequestResponse({ description: 'reason là bắt buộc.' })
+  @ApiConflictResponse({ description: 'Submission đã được xử lý.' })
+  rejectPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.billing.rejectPaymentSubmission(id, body, request.user!);
+  }
+
   private invoiceQuery(query: Record<string, unknown>): InvoiceListQuery {
     const common = this.commonQuery(query);
     const status = this.optional(query.status, 'status');

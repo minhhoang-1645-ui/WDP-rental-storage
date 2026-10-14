@@ -44,13 +44,18 @@ export class TransfersService {
   }
 
   async list(query: Record<string, unknown>) {
+    return this.listFiltered(query);
+  }
+
+  private async listFiltered(query: Record<string, unknown>, allowedStatuses: readonly (typeof statuses)[number][] = []) {
     const page = this.integer(query.page, 1, 100000, 'page'); const limit = this.integer(query.limit, 20, 100, 'limit');
     const status = typeof query.status === 'string' && query.status ? query.status : undefined;
     if (status && !statuses.includes(status as never)) throw new BadRequestException('Transfer status không hợp lệ.');
+    if (status && allowedStatuses.length && !allowedStatuses.includes(status as (typeof statuses)[number])) throw new BadRequestException('Transfer status không hợp lệ cho vai trò hiện tại.');
     const search = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : undefined;
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
     const where: Prisma.TransferRequestWhereInput = {
-      ...(status ? { status: status as (typeof statuses)[number] } : {}),
+      ...(status ? { status: status as (typeof statuses)[number] } : allowedStatuses.length ? { status: { in: [...allowedStatuses] } } : {}),
       ...(search ? { OR: [
         { transferCode: { contains: search, mode: 'insensitive' } },
         { reservation: { reservationCode: { contains: search, mode: 'insensitive' } } },
@@ -69,6 +74,19 @@ export class TransfersService {
   async get(id: string) {
     const record = await this.prisma.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy TransferRequest.');
+    return this.toTransfer(record);
+  }
+
+  async listForStaff(query: Record<string, unknown>) {
+    return this.listFiltered(query, ['APPROVED', 'COMPLETED']);
+  }
+
+  async getForStaff(id: string) {
+    const record = await this.prisma.transferRequest.findFirst({
+      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] } },
+      include: this.include(),
+    });
+    if (!record) throw new NotFoundException('Không tìm thấy lệnh chuyển kho dành cho Staff.');
     return this.toTransfer(record);
   }
 

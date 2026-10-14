@@ -40,9 +40,9 @@ export function CustomerReservationsPage() {
   return (
     <section className="customer-page">
       <PortalPageHeader
-        eyebrow="Reservation"
+        eyebrow="Đặt kho"
         title="Yêu cầu đặt kho của tôi"
-        description="Theo dõi các reservation đã gửi. Báo giá và kho thực tế cần được WDP xác nhận."
+        description="Theo dõi yêu cầu đặt kho và trạng thái xác nhận từ WDP."
         action={
           <div className="customer-header-actions">
             <button
@@ -66,14 +66,16 @@ export function CustomerReservationsPage() {
       ) : error ? (
         <PortalError message={error} onRetry={refresh} />
       ) : reservations.length === 0 ? (
-        <PortalEmpty title="Bạn chưa có reservation">
-          <span>
-            Hãy bắt đầu từ trang đặt kho. Khi bạn gửi bằng tài khoản này,
-            reservation sẽ được hiển thị ở đây.
-          </span>
-          <Link className="button-primary" to="/booking">
-            Đặt kho mới
-          </Link>
+        <PortalEmpty
+          title="Bạn chưa có yêu cầu đặt kho"
+          action={
+            <Link className="button-primary" to="/booking">
+              <Plus size={17} /> Đặt kho mới
+            </Link>
+          }
+        >
+          Bắt đầu đặt kho để theo dõi báo giá, lịch thuê và trạng thái xác nhận
+          tại đây.
         </PortalEmpty>
       ) : (
         <>

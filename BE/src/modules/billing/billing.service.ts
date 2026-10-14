@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -247,8 +248,28 @@ export class BillingService {
     }
   }
 
-  async createCustomerPaymentSubmission(customerId: string, invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined) {
+  demoPaymentEnabled(actor: PublicUser) {
+    const email = actor.email.toLowerCase();
+    return process.env.DEMO_PAYMENT_ENABLED === 'true' && process.env.NODE_ENV !== 'production' && (email.endsWith('@wdp.test') || ['customer@test.com', 'manager@test.com', 'admin@test.com'].includes(email));
+  }
+
+  async createDemoPaymentSubmission(customer: PublicUser, invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    if (!this.demoPaymentEnabled(customer)) throw new ForbiddenException('Thanh toán demo không khả dụng cho tài khoản hoặc môi trường này.');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu thanh toán demo không hợp lệ.');
+    const key = idempotencyKey?.trim() ?? '';
+    if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key không hợp lệ.');
+    const reference = `WDP-DEMO-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+    return this.createCustomerPaymentSubmission(customer.id, invoiceId, {
+      amount: input.amount,
+      method: 'BANK_TRANSFER',
+      transferReference: reference,
+      customerNote: 'THANH TOÁN DEMO - KHÔNG CÓ TIỀN CHUYỂN KHOẢN THẬT.',
+    }, key, true);
+  }
+
+  async createCustomerPaymentSubmission(customerId: string, invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined, demo = false) {
     const parsed = this.paymentSubmissionInput(input, idempotencyKey);
+    if (!demo && parsed.transferReference?.startsWith('WDP-DEMO-')) throw new BadRequestException('Mã tham chiếu demo chỉ được tạo qua luồng demo.');
     const identity = await this.prisma.invoice.findFirst({ where: { OR: [{ id: invoiceId }, { invoiceCode: invoiceId }], reservation: { customerId } }, select: { id: true } });
     if (!identity) throw new NotFoundException('Không tìm thấy hóa đơn.');
     try {
@@ -328,7 +349,6 @@ export class BillingService {
     if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xác nhận thanh toán.');
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu xác nhận không hợp lệ.');
     const details = { reference: this.optionalText(input.reference, 200, 'reference'), note: this.optionalText(input.note, 2000, 'note') };
-    if (!details.reference) throw new BadRequestException('reference giao dịch ngân hàng là bắt buộc để xác nhận.');
     const identity = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, select: { id: true } });
     if (!identity) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
     try {
@@ -336,6 +356,9 @@ export class BillingService {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "PaymentSubmission" WHERE "id" = ${identity.id} FOR UPDATE`);
         const submission = await tx.paymentSubmission.findUnique({ where: { id: identity.id }, include: this.paymentSubmissionInclude() });
         if (!submission) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+        const demo = this.isDemoSubmission(submission);
+        if (demo && !this.demoPaymentEnabled(actor)) throw new ForbiddenException('Chỉ Manager demo trong môi trường phát triển được xác nhận giao dịch demo.');
+        if (!demo && !details.reference) throw new BadRequestException('reference giao dịch ngân hàng là bắt buộc để xác nhận.');
         if (submission.status === 'VERIFIED') return this.toPaymentSubmission(submission);
         if (submission.status !== 'PENDING_VERIFICATION') throw new ConflictException('Yêu cầu đã bị từ chối và không thể xác nhận.');
         const invoice = await tx.invoice.findUnique({ where: { id: submission.invoiceId }, select: { status: true, balanceDue: true } });
@@ -345,8 +368,8 @@ export class BillingService {
         const payment = await this.recordPayment(submission.invoiceId, {
           amount: Number(submission.amount),
           method: 'BANK_TRANSFER',
-          reference: details.reference ?? submission.transferReference,
-          note: details.note ?? submission.customerNote,
+          reference: demo ? submission.transferReference : details.reference ?? submission.transferReference,
+          note: demo ? 'THANH TOÁN DEMO - KHÔNG CÓ TIỀN THẬT.' : details.note ?? submission.customerNote,
         }, `payment-submission:${submission.id}`, actor, tx);
         const updated = await tx.paymentSubmission.update({
           where: { id: submission.id },
@@ -455,6 +478,7 @@ export class BillingService {
   private toPaymentSubmission(record: any) {
     return {
       id: record.id,
+      isDemo: this.isDemoSubmission(record),
       submissionCode: record.submissionCode,
       status: record.status,
       amount: this.money(record.amount),
@@ -575,6 +599,10 @@ export class BillingService {
     const key = idempotencyKey?.trim() ?? '';
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự và chỉ chứa ký tự an toàn.');
     return { amount: BigInt(amount), transferReference, customerNote, idempotencyKey: key };
+  }
+
+  private isDemoSubmission(record: { transferReference: string | null; customerNote: string | null }) {
+    return Boolean(record.transferReference?.startsWith('WDP-DEMO-') && record.customerNote?.startsWith('THANH TOÁN DEMO'));
   }
 
   private optionalText(value: unknown, maximum: number, label: string) {

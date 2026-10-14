@@ -84,7 +84,7 @@ export function PortalEmpty({
     <div className="customer-state customer-state--empty">
       <span className="customer-state-icon">{icon ?? <Inbox size={30} />}</span>
       <h2>{title}</h2>
-      <p>{children}</p>
+      <div className="customer-state-content">{children}</div>
       {action && <div className="customer-state-action">{action}</div>}
     </div>
   );

@@ -2,7 +2,6 @@ import { startTransition, useEffect, useRef, type ReactNode } from "react";
 import {
   LogOut,
   Menu,
-  ShieldCheck,
   Warehouse,
   X,
   type LucideIcon,
@@ -132,21 +131,6 @@ export function InternalPortalLayout({
             <strong>{active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
-            {user?.role === "ADMIN" && (
-              <Link
-                className="portal-admin-link"
-                to={
-                  location.pathname.startsWith("/admin/facility")
-                    ? "/admin"
-                    : "/admin/facility"
-                }
-              >
-                <ShieldCheck size={16} />
-                {location.pathname.startsWith("/admin/facility")
-                  ? "Quản trị hệ thống"
-                  : "Điều hành cơ sở"}
-              </Link>
-            )}
             <span className="portal-role">{roleLabel(user?.role)}</span>
           </div>
         </header>

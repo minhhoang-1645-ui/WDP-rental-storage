@@ -1,12 +1,6 @@
-import {
-  ArrowRight,
-  RefreshCw,
-  ShieldCheck,
-  Users,
-  Warehouse,
-} from "lucide-react";
+import { ArrowRight, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
-import { OperationsLink as Link } from "../../components/manager/OperationsLink";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { allPages } from "../../services/portal";
 import { first, label, type Page } from "../../components/manager/portal-data";
@@ -47,7 +41,7 @@ export function AdminDashboardPage() {
     <section>
       <PageHeader
         title="Tổng quan quản trị"
-        description={`Xin chào ${user?.fullName ?? ""}. Quản lý tài khoản và truy cập vận hành cơ sở.`}
+        description={`Xin chào ${user?.fullName ?? ""}. Quản lý tài khoản và quyền truy cập hệ thống.`}
       >
         <button
           className="button-secondary"
@@ -91,44 +85,26 @@ export function AdminDashboardPage() {
               </Link>
             ))}
           </div>
-          <div className="portal-overview-grid">
-            <section className="manager-section">
-              <h2>
-                <Users size={20} /> Quản lý tài khoản
-              </h2>
-              <p>
-                Cấp tài khoản nhân viên, quản lý; xem thông tin và bật/tắt quyền
-                truy cập.
-              </p>
-              <div className="portal-actions">
-                <Link className="button-primary" to="/admin/users">
-                  Mở danh sách <ArrowRight size={16} />
-                </Link>
-                <Link
-                  className="button-secondary"
-                  to="/admin/users?status=DISABLED"
-                >
-                  Tài khoản vô hiệu hóa
-                </Link>
-              </div>
-            </section>
-            <section className="manager-section">
-              <h2>
-                <Warehouse size={20} /> Điều hành cơ sở
-              </h2>
-              <p>
-                Xử lý nghiệp vụ và theo dõi cơ sở ngay trong khu vực quản trị.
-              </p>
-              <div className="portal-actions">
-                <Link className="button-primary" to="/manager">
-                  Tổng quan vận hành <ArrowRight size={16} />
-                </Link>
-                <Link className="button-secondary" to="/manager/reports">
-                  Báo cáo
-                </Link>
-              </div>
-            </section>
-          </div>
+          <section className="manager-section">
+            <h2>
+              <Users size={20} /> Quản lý tài khoản
+            </h2>
+            <p>
+              Cấp tài khoản nhân viên, quản lý; xem thông tin và bật/tắt quyền
+              truy cập.
+            </p>
+            <div className="portal-actions">
+              <Link className="button-primary" to="/admin/users">
+                Mở danh sách <ArrowRight size={16} />
+              </Link>
+              <Link
+                className="button-secondary"
+                to="/admin/users?status=DISABLED"
+              >
+                Tài khoản vô hiệu hóa
+              </Link>
+            </div>
+          </section>
           <section className="manager-section">
             <h2>
               <ShieldCheck size={20} /> Tài khoản nội bộ

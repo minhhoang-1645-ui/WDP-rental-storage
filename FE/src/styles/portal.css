@@ -1001,10 +1001,10 @@ a.portal-metric:hover {
   line-height: 1.55;
 }
 .customer-sidebar {
-  overflow-y: auto;
+  overflow: hidden;
 }
 .customer-sidebar .customer-nav {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 @media print {
   .portal-enhanced {

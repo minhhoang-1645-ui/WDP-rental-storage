@@ -8,6 +8,8 @@ import { OperationsWorkspace } from '../../components/manager/operations-workspa
 export function ManagerLayout() {
   const { user } = useAuth();
   const location = useLocation();
+  if (user?.role === "ADMIN" && location.pathname === "/manager/assignments")
+    return <Navigate replace to="/admin" />;
   if (user?.role === "ADMIN")
     return (
       <Navigate

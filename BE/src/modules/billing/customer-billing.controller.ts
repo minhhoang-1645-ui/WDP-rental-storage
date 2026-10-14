@@ -17,12 +17,12 @@ export class CustomerBillingController {
   @Get('payment-config')
   @ApiOperation({ summary: 'Thông tin công khai nhận chuyển khoản', description: 'Chỉ trả thông tin tài khoản dự kiến nhận tiền, không bao gồm thông tin xác thực hoặc bí mật ngân hàng.' })
   @ApiOkResponse({ schema: { example: { configured: true, bankName: 'Vietcombank', bankCode: '970436', accountNumber: '0123456789', accountName: 'WDP STORAGE' } } })
-  getPaymentConfig() {
+  getPaymentConfig(@Req() request: AuthenticatedRequest) {
     const bankName = this.config.get<string>('WDP_BANK_NAME')?.trim() ?? '';
     const bankCode = this.config.get<string>('WDP_BANK_CODE')?.trim() ?? '';
     const accountNumber = this.config.get<string>('WDP_BANK_ACCOUNT_NUMBER')?.trim() ?? '';
     const accountName = this.config.get<string>('WDP_BANK_ACCOUNT_NAME')?.trim() ?? '';
-    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), bankName, bankCode, accountNumber, accountName };
+    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), demoEnabled: this.billing.demoPaymentEnabled(request.user!), bankName, bankCode, accountNumber, accountName };
   }
 
   @Get('invoices')
@@ -82,6 +82,14 @@ export class CustomerBillingController {
   @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được gửi thông báo.' })
   createPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
     return this.billing.createCustomerPaymentSubmission(request.user!.id, invoiceId, body, idempotencyKey);
+  }
+
+  @Post('invoices/:invoiceId/demo-payment-submissions')
+  @ApiOperation({ summary: 'Gửi yêu cầu thanh toán mô phỏng', description: 'Chỉ dành cho tài khoản demo trong môi trường phát triển. Không có giao dịch ngân hàng; Manager phải xác nhận trước khi hóa đơn được cập nhật.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiCreatedResponse({ description: 'Yêu cầu demo đang chờ Manager xác nhận; chưa tạo Payment.' })
+  createDemoPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.billing.createDemoPaymentSubmission(request.user!, invoiceId, body, idempotencyKey);
   }
 
   @Get('payment-submissions')

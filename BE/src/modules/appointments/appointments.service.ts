@@ -38,7 +38,7 @@ export class AppointmentsService {
         const reservation = await tx.reservation.findUnique({ where: { id: reservationIdentity.id }, include: this.reservationReadinessInclude() });
         if (!reservation) throw new NotFoundException('Không tìm thấy Reservation.');
         this.assertHandoverReady(reservation);
-        if (reservation.contracts.some((contract) => parsed.scheduledAt < contract.startDate)) throw new BadRequestException('Lịch bàn giao không được trước ngày bắt đầu hợp đồng.');
+        this.assertAppointmentDate(reservation, parsed.scheduledAt);
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
         const sequence = await tx.handoverAppointment.count({ where: { reservationId: reservation.id } }) + 1;
@@ -100,6 +100,7 @@ export class AppointmentsService {
         if (current.status === 'CONFIRMED') return this.toAppointment(current, true);
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
+        this.assertAppointmentDate(current.reservation, current.scheduledAt);
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
           data: { status: 'CONFIRMED', confirmedByUserId: actor.id, confirmedAt: new Date() },
@@ -120,6 +121,7 @@ export class AppointmentsService {
         if (current.status === 'COMPLETED') return this.toAppointment(current, true);
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
+        this.assertAppointmentDate(current.reservation, current.scheduledAt);
 
         const contracts = current.reservation.contracts;
         const unitIds = contracts.map((contract: any) => contract.reservationUnit.storageUnit.id);
@@ -162,6 +164,28 @@ export class AppointmentsService {
     if (reservation.contracts.some((contract: any) => contract.status !== 'READY_FOR_HANDOVER')) throw new ConflictException('Tất cả RentalContract phải ở trạng thái READY_FOR_HANDOVER.');
     const allocationIds = new Set(reservation.units.map((unit: any) => unit.id));
     if (reservation.contracts.some((contract: any) => !allocationIds.has(contract.reservationUnitId))) throw new ConflictException('Contract không khớp allocation vật lý của Reservation.');
+  }
+
+  private assertAppointmentDate(reservation: any, scheduledAt: Date) {
+    const appointmentDay = this.vietnamDate(scheduledAt);
+    if (reservation.contracts.some((contract: any) => appointmentDay < this.isoDate(contract.startDate))) {
+      throw new ConflictException('Ngày nhận kho không được trước ngày bắt đầu thuê.');
+    }
+  }
+
+  private vietnamDate(value: Date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(value);
+    const date = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${date.year}-${date.month}-${date.day}`;
+  }
+
+  private isoDate(value: Date) {
+    return value.toISOString().slice(0, 10);
   }
 
   private async appointmentIdentity(id: string) {

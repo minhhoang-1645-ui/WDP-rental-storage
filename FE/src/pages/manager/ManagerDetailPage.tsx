@@ -539,6 +539,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
               ["Hạn thanh toán", date(row.dueAt)],
               ["Tiền thuê", money(row.rentalAmount)],
               ["Tiền cọc", money(row.depositAmount)],
+              ["Dịch vụ bổ sung", money(row.serviceAmount)],
               ["Phí được duyệt", money(row.chargeAmount)],
               ["Tổng hóa đơn", money(row.totalAmount)],
               ["Đã thu", money(row.amountPaid)],

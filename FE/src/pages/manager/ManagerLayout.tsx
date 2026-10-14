@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { operationPath } from "../../auth/portal-routing";
 import { operationsNavigation } from "../../components/manager/operations-navigation";
+import { OperationsWorkspace } from '../../components/manager/operations-workspace';
 
 export function ManagerLayout() {
   const { user } = useAuth();
@@ -18,9 +19,9 @@ export function ManagerLayout() {
       />
     );
   return (
-    <InternalPortalLayout
+    <OperationsWorkspace.Provider value="/manager"><InternalPortalLayout
       label="Quản lý cơ sở"
       navigation={operationsNavigation()}
-    />
+    /></OperationsWorkspace.Provider>
   );
 }

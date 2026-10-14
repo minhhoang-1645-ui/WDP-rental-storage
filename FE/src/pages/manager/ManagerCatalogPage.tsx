@@ -2,6 +2,8 @@ import { RefreshCw } from "lucide-react";
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
 import { ManagerAvailabilityForm } from "./ManagerAvailabilityForm";
+import { Link } from 'react-router-dom';
+import { operationPath } from '../../auth/portal-routing';
 import {
   first,
   label,
@@ -31,6 +33,7 @@ export function ManagerCatalogPage() {
         title="Loại kho & bảng giá"
         description="Danh mục, kích thước và chính sách giá đang được hệ thống áp dụng."
       >
+        <Link className="button-secondary" to={operationPath(user?.role, '/manager/catalog/additional-services')}>Dịch vụ bổ sung</Link>
         <button
           className="button-secondary"
           onClick={resource.refresh}

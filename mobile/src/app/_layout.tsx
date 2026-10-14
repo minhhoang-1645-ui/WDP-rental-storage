@@ -26,6 +26,7 @@ function RootNavigation() {
         <Stack.Screen name="staff" options={{ headerShown: false }} />
         <Stack.Screen name="manager" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
+        <Stack.Screen name="unsupported" options={{ title: 'WDP Storage' }} />
       </Stack>
     </ThemeProvider>
   );

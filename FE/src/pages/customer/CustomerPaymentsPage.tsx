@@ -7,9 +7,10 @@ import { formatPortalDate, moneyLabel } from '../../components/customer/Customer
 import { CustomerStatus, PortalEmpty, PortalError, PortalLoading, PortalPageHeader } from '../../components/customer/CustomerPortalUi'
 import { useApiResource } from '../../services/useApiResource'
 import { customerBillingApi } from '../../services/billing'
-import type { CustomerInvoice, CustomerPayment, Paginated } from '../../types/customer'
+import type { CustomerInvoice, CustomerPayment } from '../../types/customer'
 import type { BankTransferConfig, PaymentSubmission } from '../../types/payment'
 import { buildVietQrPayload } from '../../utils/vietqr'
+import { usePaginatedResource } from '../../services/usePaginatedResource'
 
 type View = 'invoices' | 'payments' | 'submissions'
 
@@ -25,10 +26,11 @@ export function CustomerPaymentsPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const [onlineInvoiceId, setOnlineInvoiceId] = useState('')
   const [onlineError, setOnlineError] = useState('')
+  const onlineLock = useRef(false)
   const onlineKeys = useRef(new Map<string, string>())
-  const invoices = useApiResource<Paginated<CustomerInvoice>>('/customer/invoices?limit=100', user?.id ?? '', true)
-  const payments = useApiResource<Paginated<CustomerPayment>>('/customer/payments?limit=100', user?.id ?? '', true)
-  const submissions = useApiResource<Awaited<ReturnType<typeof customerBillingApi.submissions>>>('/customer/payment-submissions?limit=100', user?.id ?? '', true)
+  const invoices = usePaginatedResource<CustomerInvoice>('/customer/invoices', user?.id ?? '', true)
+  const payments = usePaginatedResource<CustomerPayment>('/customer/payments', user?.id ?? '', true)
+  const submissions = usePaginatedResource<PaymentSubmission>('/customer/payment-submissions', user?.id ?? '', true)
   const bank = useApiResource<BankTransferConfig>('/customer/payment-config', user?.id ?? '')
   const refreshInvoices = invoices.refresh
   const refreshPayments = payments.refresh
@@ -52,7 +54,8 @@ export function CustomerPaymentsPage() {
   }
 
   const createOnlinePayment = async (invoice: CustomerInvoice) => {
-    if (onlineInvoiceId) return
+    if (onlineLock.current || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) return
+    onlineLock.current = true
     setOnlineInvoiceId(invoice.id)
     setOnlineError('')
     let key = onlineKeys.current.get(invoice.id)
@@ -62,11 +65,13 @@ export function CustomerPaymentsPage() {
     }
     try {
       const transaction = await customerBillingApi.createOnlinePayment(invoice.id, key)
+      const destination = new URL(transaction.paymentUrl)
+      if (destination.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)*vnpayment\.vn$/i.test(destination.hostname) || destination.username || destination.password) throw new Error('Đường dẫn thanh toán VNPay không hợp lệ.')
       window.location.assign(transaction.paymentUrl)
     } catch (caught) {
-      onlineKeys.current.delete(invoice.id)
       setOnlineError(caught instanceof Error ? caught.message : 'Không thể khởi tạo thanh toán VNPay.')
       setOnlineInvoiceId('')
+      onlineLock.current = false
     }
   }
 
@@ -92,7 +97,7 @@ function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineIn
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
   return <div className="customer-table-wrap"><table className="customer-table"><thead><tr><th>Mã hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{items.map(invoice => <tr key={invoice.id}><td><strong>{invoice.invoiceCode}</strong><small>{invoice.reservation.reference}</small></td><td>{invoice.type}</td><td>{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td>{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td>{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td><CustomerStatus status={invoice.status} /></td><td>{invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status) ? pendingInvoiceIds.has(invoice.id)
     ? <span className="payment-pending-label">Đang chờ WDP xác nhận</span>
-    : <div className="payment-actions"><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onBankTransfer(invoice)}><Wallet size={15} /> Chuyển khoản QR</button><button type="button" className="button-primary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onOnlinePay(invoice)}><ExternalLink size={15} /> {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button></div> : '—'}</td></tr>)}</tbody></table></div>
+    : <div className="payment-actions"><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onBankTransfer(invoice)}><Wallet size={15} /> Chuyển khoản QR</button>{['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) && <button type="button" className="button-primary payment-table-action" disabled={Boolean(onlineInvoiceId)} onClick={() => onOnlinePay(invoice)}><ExternalLink size={15} /> {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button>}</div> : '—'}</td></tr>)}</tbody></table></div>
 }
 
 function SubmissionList({ items }: { items: PaymentSubmission[] }) {
@@ -113,13 +118,15 @@ function PaymentModal({ invoice, bank, bankLoading, bankError, onClose, onRefres
   const [transferReference, setTransferReference] = useState('')
   const [customerNote, setCustomerNote] = useState('')
   const key = useRef(`cust-transfer-${crypto.randomUUID()}`)
+  const lock = useRef(false)
   const qrPayload = useMemo(() => {
     if (!bank?.configured) return ''
     try { return buildVietQrPayload(bank, amount, invoice.invoiceCode) } catch { return '' }
   }, [bank, amount, invoice.invoiceCode])
 
   const submit = async () => {
-    if (!bank?.configured || !qrPayload || submitting || !Number.isSafeInteger(amount) || amount <= 0 || amount > invoice.balanceDue) return
+    if (!bank?.configured || !qrPayload || lock.current || !Number.isSafeInteger(amount) || amount <= 0 || amount > invoice.balanceDue) return
+    lock.current = true
     setSubmitting(true)
     setError('')
     try {
@@ -128,21 +135,21 @@ function PaymentModal({ invoice, bank, bankLoading, bankError, onClose, onRefres
       onRefresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không gửi được yêu cầu xác nhận thanh toán.')
-    } finally { setSubmitting(false) }
+    } finally { lock.current = false; setSubmitting(false) }
   }
 
-  return <div className="payment-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+  return <div className="payment-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) onClose() }}>
     <section className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
-      <header><div><p className="eyebrow">Chuyển khoản ngân hàng</p><h2 id="payment-modal-title">Thanh toán hóa đơn</h2></div><button type="button" onClick={onClose} aria-label="Đóng"><X size={20} /></button></header>
+      <header><div><p className="eyebrow">Chuyển khoản ngân hàng</p><h2 id="payment-modal-title">Thanh toán hóa đơn</h2></div><button type="button" disabled={submitting} onClick={onClose} aria-label="Đóng"><X size={20} /></button></header>
       {submission ? <div className="payment-submit-success" role="status"><Wallet size={25} /><strong>Đang chờ xác nhận thanh toán</strong><span>Mã yêu cầu: {submission.submissionCode}</span><button className="button-primary" type="button" onClick={onSubmitted}>Xem trạng thái yêu cầu</button></div> : <>
         <div className="payment-invoice-summary"><span>Mã hóa đơn<strong>{invoice.invoiceCode}</strong></span><span>Số dư hiện tại<strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></span></div>
+        {bank?.configured && <label className="field-label payment-amount-field">Số tiền chuyển khoản (tối đa bằng số dư)<input disabled={submitting} type="number" min={1} max={invoice.balanceDue} step={1} value={amount} onChange={(event) => { setAmount(Number(event.target.value)); key.current = `cust-transfer-${crypto.randomUUID()}` }} /><small className="field-help">Có thể thanh toán một phần. WDP xác nhận xong, số dư hóa đơn sẽ cập nhật.</small></label>}
         {bankLoading ? <div className="payment-config-message">Đang tải thông tin chuyển khoản…</div> : bankError ? <div className="payment-config-message is-error" role="alert">Không tải được thông tin ngân hàng: {bankError}</div> : !bank?.configured ? <div className="payment-config-message is-error" role="alert">WDP chưa cấu hình đầy đủ thông tin tài khoản nhận chuyển khoản. Vui lòng liên hệ hỗ trợ.</div> : !qrPayload ? <div className="payment-config-message is-error" role="alert">Số tiền không hợp lệ nên chưa thể tạo QR. Hãy nhập số tiền nguyên dương nhỏ hơn hoặc bằng số dư.</div> : <>
-          <label className="field-label payment-amount-field">Số tiền chuyển khoản (tối đa bằng số dư)<input type="number" min={1} max={invoice.balanceDue} step={1} value={amount} onChange={(event) => { setAmount(Number(event.target.value)); key.current = `cust-transfer-${crypto.randomUUID()}` }} /><small className="field-help">Có thể thanh toán một phần. WDP xác nhận xong, số dư hóa đơn sẽ cập nhật.</small></label>
           <div className="payment-qr-wrap"><QRCodeSVG value={qrPayload} size={224} level="M" title={`QR chuyển khoản hóa đơn ${invoice.invoiceCode}`} /></div>
           <dl className="payment-bank-details"><div><dt>Ngân hàng</dt><dd>{bank.bankName}</dd></div><div><dt>Số tài khoản</dt><dd>{bank.accountNumber}</dd></div><div><dt>Chủ tài khoản</dt><dd>{bank.accountName}</dd></div><div><dt>Số tiền</dt><dd>{moneyLabel(amount, invoice.currency)}</dd></div><div><dt>Nội dung chuyển khoản</dt><dd>{invoice.invoiceCode}</dd></div></dl>
           <p className="payment-transfer-warning">Vui lòng chuyển đúng số tiền và nội dung để WDP dễ xác nhận giao dịch.</p>
-          <label className="field-label payment-amount-field">Mã giao dịch ngân hàng, nếu có<input maxLength={200} value={transferReference} onChange={(event) => { setTransferReference(event.target.value); key.current = `cust-transfer-${crypto.randomUUID()}` }} placeholder="Mã trên biên nhận chuyển khoản" /></label>
-          <label className="field-label payment-amount-field">Ghi chú cho WDP, không bắt buộc<textarea rows={2} maxLength={1000} value={customerNote} onChange={(event) => { setCustomerNote(event.target.value); key.current = `cust-transfer-${crypto.randomUUID()}` }} /></label>
+          <label className="field-label payment-amount-field">Mã giao dịch ngân hàng, nếu có<input disabled={submitting} maxLength={200} value={transferReference} onChange={(event) => { setTransferReference(event.target.value); key.current = `cust-transfer-${crypto.randomUUID()}` }} placeholder="Mã trên biên nhận chuyển khoản" /></label>
+          <label className="field-label payment-amount-field">Ghi chú cho WDP, không bắt buộc<textarea disabled={submitting} rows={2} maxLength={1000} value={customerNote} onChange={(event) => { setCustomerNote(event.target.value); key.current = `cust-transfer-${crypto.randomUUID()}` }} /></label>
           {error && <div className="booking-alert is-error" role="alert">{error}</div>}
           <button type="button" className="button-primary payment-submit-button" onClick={submit} disabled={submitting || !Number.isSafeInteger(amount) || amount <= 0 || amount > invoice.balanceDue}>{submitting ? 'Đang gửi yêu cầu…' : 'Tôi đã chuyển khoản'}</button>
         </>}

@@ -1,5 +1,5 @@
 import { ArrowRight, LockKeyhole } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
@@ -14,6 +14,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
       : "",
   );
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   const returnTo = roleReturnPath("CUSTOMER", params.get("returnTo"));
   if (loading)
     return (
@@ -31,7 +32,8 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitLock.current) return;
+    submitLock.current = true;
     setSubmitting(true);
     setError("");
     const data = new FormData(event.currentTarget);
@@ -40,12 +42,12 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
         await register({
           fullName: String(data.get("fullName")),
           phone: String(data.get("phone")),
-          email: String(data.get("email")),
+          email: String(data.get("email")).trim().toLowerCase(),
           password: String(data.get("password")),
         });
       } else {
         await login({
-          email: String(data.get("email")),
+          email: String(data.get("email")).trim().toLowerCase(),
           password: String(data.get("password")),
         });
       }
@@ -56,6 +58,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
           : "Không thể xác thực tài khoản.",
       );
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };
@@ -122,12 +125,13 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
                 autoComplete={
                   mode === "login" ? "current-password" : "new-password"
                 }
-                minLength={8}
+                minLength={mode === "register" ? 8 : 1}
+                maxLength={128}
                 aria-describedby="auth-password-help"
                 required
               />
             </label>
-            <small id="auth-password-help">Tối thiểu 8 ký tự.</small>
+            <small id="auth-password-help">{mode === "register" ? "Tối thiểu 8 ký tự." : "Nhập mật khẩu tài khoản của bạn."}</small>
           </div>
           <button
             className="button-primary mt-7 w-full justify-center"

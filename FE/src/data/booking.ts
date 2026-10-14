@@ -16,6 +16,7 @@ export const initialBookingDraft: BookingDraft = {
   quantity: 1,
   adjacencyPreference: false,
   addonIds: [],
+  services: [],
   note: '',
   paymentChoice: 'pay-later',
   paymentPlan: 'PAY_MONTHLY',
@@ -49,9 +50,18 @@ export function readBookingDraft(catalog: Catalog): BookingDraft {
       durationMonths: durationMonths ?? fallback.durationMonths,
       quantity,
       adjacencyPreference: saved.adjacencyPreference === true && quantity > 1,
-      addonIds: Array.isArray(saved.addonIds) ? [] : [],
+      addonIds: [],
+      services: Array.isArray(saved.services) ? saved.services.filter(selection =>
+        selection && catalog.addons.some(service => service.id === selection.serviceId) &&
+        Number.isSafeInteger(selection.quantity) && selection.quantity >= 1 && selection.quantity <= 100
+      ).slice(0, 20).map(selection => ({
+        serviceId: selection.serviceId,
+        quantity: selection.quantity,
+        ...(typeof selection.serviceStartDate === 'string' ? { serviceStartDate: selection.serviceStartDate } : {}),
+        ...(typeof selection.serviceEndDate === 'string' ? { serviceEndDate: selection.serviceEndDate } : {}),
+      })) : [],
       note: typeof saved.note === 'string' ? saved.note.slice(0, 500) : '',
-      paymentChoice: saved.paymentChoice === 'pay-now' ? 'pay-now' : 'pay-later',
+      paymentChoice: 'pay-later',
       paymentPlan: saved.paymentPlan === 'PREPAID' ? 'PREPAID' : 'PAY_MONTHLY',
       customer: {
         fullName: typeof customer.fullName === 'string' ? customer.fullName : '',
@@ -75,6 +85,7 @@ export function bookingAvailabilityFingerprint(draft: BookingDraft) {
     quantity: draft.quantity,
     adjacencyPreference: draft.adjacencyPreference,
     addonIds: draft.addonIds,
+    services: draft.services ?? [],
     paymentPlan: draft.paymentPlan,
   })
 }

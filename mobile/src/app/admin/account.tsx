@@ -1,1 +1,1 @@
-export { default } from '@/components/portal-account';
+export { OperationAccount as default } from '@/operations/home';

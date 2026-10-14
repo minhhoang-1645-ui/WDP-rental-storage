@@ -16,12 +16,12 @@ function crc16(payload: string) {
 }
 
 export function buildVietQrPayload(config: BankTransferConfig, amount: number, invoiceCode: string) {
-  if (!config.configured || !/^\d{6}$/.test(config.bankCode) || !config.accountNumber || !Number.isSafeInteger(amount) || amount <= 0) {
+  if (!config.configured || !/^\d{6}$/.test(config.bankCode) || !/^[A-Za-z0-9]{1,19}$/.test(config.accountNumber) || !Number.isSafeInteger(amount) || amount <= 0 || String(amount).length > 13 || !/^[\x20-\x7E]{1,50}$/.test(invoiceCode)) {
     throw new Error('Thiếu cấu hình ngân hàng hoặc số tiền chuyển khoản không hợp lệ.')
   }
-  const merchantAccount = tlv('00', 'A000000727') + tlv('01', config.bankCode) + tlv('02', config.accountNumber) + tlv('03', 'QRIBFTTA')
+  const beneficiary = tlv('00', config.bankCode) + tlv('01', config.accountNumber)
+  const merchantAccount = tlv('00', 'A000000727') + tlv('01', beneficiary) + tlv('02', 'QRIBFTTA')
   const additionalData = tlv('08', invoiceCode)
-  const merchantName = config.accountName.normalize('NFD').replace(/Đ/g, 'D').replace(/đ/g, 'd').replace(/[\u0300-\u036f]/g, '').toUpperCase().slice(0, 25)
-  const payload = '000201' + '010212' + tlv('38', merchantAccount) + tlv('52', '0000') + tlv('53', '704') + tlv('54', String(amount)) + tlv('58', 'VN') + tlv('59', merchantName) + tlv('60', 'VIETNAM') + tlv('62', additionalData) + '6304'
+  const payload = '000201' + '010212' + tlv('38', merchantAccount) + tlv('53', '704') + tlv('54', String(amount)) + tlv('58', 'VN') + tlv('62', additionalData) + '6304'
   return payload + crc16(payload)
 }

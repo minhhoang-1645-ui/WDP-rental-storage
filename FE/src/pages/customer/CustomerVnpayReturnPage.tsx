@@ -7,7 +7,10 @@ import type { VnpayReturnResult } from '../../types/payment'
 
 export function CustomerVnpayReturnPage() {
   const location = useLocation()
-  const query = location.search.slice(1)
+  return <ReturnResult key={location.search} query={location.search.slice(1)} />
+}
+
+function ReturnResult({ query }: { query: string }) {
   const [result, setResult] = useState<VnpayReturnResult>()
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -18,16 +21,16 @@ export function CustomerVnpayReturnPage() {
     }
     const controller = new AbortController()
     customerBillingApi.vnpayReturn(query, controller.signal)
-      .then((value) => { setResult(value); setError('') })
+      .then((value) => { if (!controller.signal.aborted) { setResult(value); setError('') } })
       .catch((caught) => { if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Không kiểm tra được kết quả VNPay.') })
     return () => controller.abort()
   }, [query, attempt])
 
   useEffect(() => {
-    if (!result?.valid || result.transaction.status !== 'PENDING' || attempt >= 15) return
+    if (error || !result?.valid || result.transaction.status !== 'PENDING' || attempt >= 15) return
     const timer = window.setTimeout(() => setAttempt((value) => value + 1), 2000)
     return () => window.clearTimeout(timer)
-  }, [result, attempt])
+  }, [result, attempt, error])
 
   const displayedResult: VnpayReturnResult | undefined = query ? result : { valid: false, status: 'NOT_FOUND' }
   const content = (() => {
@@ -44,6 +47,7 @@ export function CustomerVnpayReturnPage() {
     <p className="eyebrow">Thanh toán VNPay</p>
     <h1>{content.title}</h1>
     <p>{content.description}</p>
+    {(error || attempt >= 15) && <button className="button-secondary" onClick={() => { setError(''); setResult(undefined); setAttempt(value => value === 0 ? 1 : 0) }}>Kiểm tra lại</button>}
     {displayedResult?.valid && <dl><div><dt>Mã giao dịch</dt><dd>{displayedResult.transaction.merchantOrderRef}</dd></div><div><dt>Số tiền</dt><dd>{moneyLabel(displayedResult.transaction.amount)}</dd></div><div><dt>Hóa đơn</dt><dd>{displayedResult.invoice.invoiceCode}</dd></div></dl>}
     <Link className="button-primary" to="/customer/payments"><CreditCard size={17} /> Xem hóa đơn và thanh toán</Link>
   </div></section>

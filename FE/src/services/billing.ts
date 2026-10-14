@@ -15,7 +15,7 @@ export const customerBillingApi = {
       method: 'POST', signal, headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ locale: 'vn' }),
     }),
   vnpayReturn: (query: string, signal?: AbortSignal) =>
-    apiRequest<VnpayReturnResult>(`/payments/vnpay/return${query ? `?${query}` : ''}`, { signal }),
+    apiRequest<VnpayReturnResult>(`/payments/vnpay/return${query ? `?${query}` : ''}`, { signal, authenticated: false }),
 }
 
 export const managerBillingApi = {

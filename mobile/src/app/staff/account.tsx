@@ -1,6 +1,6 @@
 import { Button, Host } from '@expo/ui';
 import { router } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
@@ -8,8 +8,10 @@ import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 
 export default function StaffAccountScreen() {
   const { user, logout } = useAuth();
+  const { width } = useWindowDimensions();
+  const buttonStyle = { ...styles.button, width: Platform.OS === "web" ? "100%" as const : Math.max(1, width - 2 * WdpSpacing.md) };
   const signOut = async () => { await logout(); router.replace('/login'); };
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}><PageHeader eyebrow="Nhân viên" title={user?.fullName ?? 'Staff'} description="Tài khoản vận hành đang sử dụng trên thiết bị này." /><View style={styles.card}><Info label="Email" value={user?.email} /><Info label="Số điện thoại" value={user?.phone} /><Info label="Vai trò" value={user?.role} /></View><Host seedColor={WdpColors.navy}><Button label="Đăng xuất" variant="outlined" onPress={() => void signOut()} style={styles.button} /></Host></ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}><PageHeader eyebrow="Nhân viên" title={user?.fullName ?? 'Staff'} description="Tài khoản vận hành đang sử dụng trên thiết bị này." /><View style={styles.card}><Info label="Email" value={user?.email} /><Info label="Số điện thoại" value={user?.phone} /><Info label="Vai trò" value={user?.role} /></View><Host seedColor={WdpColors.navy}><Button label="Đăng xuất" variant="outlined" onPress={() => void signOut()} style={buttonStyle} /></Host></ScrollView>;
 }
 
 function Info({ label, value }: { label: string; value?: string | null }) { return <View style={styles.row}><Text style={styles.label}>{label}</Text><Text selectable style={styles.value}>{value || '—'}</Text></View>; }

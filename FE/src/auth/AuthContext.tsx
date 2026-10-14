@@ -40,7 +40,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const controller = new AbortController();
       activeController = controller;
       pending.current = controller;
-      apiRequest<PublicUser>("/auth/me", { signal: controller.signal })
+      apiRequest<PublicUser>("/auth/me", { signal: controller.signal, timeoutMs: 15000 })
         .then((value) => {
           if (
             !mounted ||
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const saveSession = (session: AuthSession) => {
-    if (!session.token || !validUser(session.user))
+    if (!session?.token || !validUser(session.user))
       throw new Error("Thông tin phiên đăng nhập không hợp lệ.");
     generation.current++;
     pending.current?.abort();

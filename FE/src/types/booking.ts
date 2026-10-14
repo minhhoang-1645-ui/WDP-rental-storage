@@ -1,4 +1,5 @@
 import type { StorageListing } from './storage'
+import type { ServiceSelection } from './additional-service'
 
 export interface PublicUser {
   id: string
@@ -33,6 +34,7 @@ export interface BookingDraft {
   quantity: number
   adjacencyPreference: boolean
   addonIds: string[]
+  services?: ServiceSelection[]
   note: string
   paymentChoice: PaymentChoice
   paymentPlan: PaymentPlan
@@ -77,6 +79,8 @@ export interface PricingEstimate {
   rentalAmount?: number | null
   depositAmount?: number | null
   quotedTotalAmount?: number
+  estimatedInitialAmountDue?: number
+  addOnTotalAmount?: number
 }
 
 export interface PricingQuote extends PricingEstimate {

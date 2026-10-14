@@ -1,5 +1,5 @@
 import { LockKeyhole, LogIn } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
@@ -16,6 +16,7 @@ export function PortalLoginPage() {
       : "",
   );
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
 
   useEffect(() => {
     if (user) {
@@ -40,16 +41,18 @@ export function PortalLoginPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitLock.current) return;
+    submitLock.current = true;
     setSubmitting(true);
     setError("");
     try {
-      await login({ email, password });
+      await login({ email: email.trim().toLowerCase(), password });
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Không thể đăng nhập.",
       );
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };

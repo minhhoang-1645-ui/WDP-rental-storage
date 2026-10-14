@@ -1,11 +1,12 @@
 import { createContext, useContext } from 'react'
 import type { StorageListing, StorageSize } from '../types/storage'
+import type { AdditionalService } from '../types/additional-service'
 
 export interface Catalog {
   products: StorageListing[]
   sizes: StorageSize[]
   approvedDurations: number[]
-  addons: never[]
+  addons: AdditionalService[]
 }
 
 export const CatalogContext = createContext<Catalog | null>(null)

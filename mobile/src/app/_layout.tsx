@@ -24,7 +24,8 @@ function RootNavigation() {
         <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
         <Stack.Screen name="customer" options={{ headerShown: false }} />
         <Stack.Screen name="staff" options={{ headerShown: false }} />
-        <Stack.Screen name="unsupported" options={{ title: 'WDP Storage' }} />
+        <Stack.Screen name="manager" options={{ headerShown: false }} />
+        <Stack.Screen name="admin" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );

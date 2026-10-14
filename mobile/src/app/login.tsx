@@ -5,13 +5,7 @@ import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-
 
 import { useAuth } from '@/auth/use-auth';
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
-import type { PublicUser } from '@/types/api';
-
-function destination(user: PublicUser) {
-  if (user.role === 'CUSTOMER') return '/customer' as const;
-  if (user.role === 'STAFF') return '/staff' as const;
-  return '/unsupported' as const;
-}
+import { roleHome } from '@/utils/role-home';
 
 export default function LoginScreen() {
   const { user, login } = useAuth();
@@ -19,7 +13,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  if (user) return <Redirect href={destination(user)} />;
+  if (user) return <Redirect href={roleHome(user.role)} />;
 
   const submit = async () => {
     if (submitting || !email.trim() || !password) return;
@@ -27,7 +21,7 @@ export default function LoginScreen() {
     setError('');
     try {
       const loggedInUser = await login(email, password);
-      router.replace(destination(loggedInUser));
+      router.replace(roleHome(loggedInUser.role));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không thể đăng nhập.');
     } finally {
@@ -39,7 +33,7 @@ export default function LoginScreen() {
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       <View style={styles.brand}><Text style={styles.logo}>WDP</Text><Text style={styles.brandCaption}>STORAGE MOBILE</Text></View>
       <View style={styles.card}>
-        <View style={styles.heading}><Text style={styles.eyebrow}>KHU VỰC VẬN HÀNH</Text><Text style={styles.title}>Đăng nhập</Text><Text style={styles.description}>Customer và Staff sử dụng cùng tài khoản với hệ thống WDP trên web.</Text></View>
+        <View style={styles.heading}><Text style={styles.eyebrow}>WDP STORAGE</Text><Text style={styles.title}>Đăng nhập</Text><Text style={styles.description}>Customer, Staff, Manager và Admin sử dụng cùng tài khoản với hệ thống WDP trên web.</Text></View>
         <Host seedColor={WdpColors.navy} style={styles.form}>
           <View style={styles.field}><Text style={styles.label}>Email</Text><TextInput defaultValue={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" placeholder="name@example.com" style={styles.input} /></View>
           <View style={styles.field}><Text style={styles.label}>Mật khẩu</Text><TextInput defaultValue={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoComplete="current-password" returnKeyType="done" onSubmitEditing={() => void submit()} placeholder="Nhập mật khẩu" style={styles.input} /></View>

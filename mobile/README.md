@@ -1,6 +1,6 @@
 # WDP Storage Mobile
 
-Ứng dụng React Native/Expo dành cho hai vai trò **Customer** và **Staff** của WDP Storage.
+Ứng dụng React Native/Expo dành cho **Customer**, **Staff**, **Manager** và **Admin** của WDP Storage.
 
 ## Chức năng hiện có
 
@@ -8,7 +8,10 @@
 - Lưu access token an toàn bằng Expo SecureStore trên thiết bị.
 - Customer: tổng quan, kho đang thuê, hóa đơn/thanh toán và tài khoản.
 - Staff: tổng quan công việc, lịch hẹn, danh sách nhiệm vụ và tài khoản.
-- Tự động đưa người dùng vào đúng khu vực theo vai trò.
+- Manager/Admin: dashboard vận hành; danh sách và hồ sơ đặt kho, kho vật lý, khách hàng, lịch bàn giao, kho đang thuê, hợp đồng, hóa đơn, thông báo chuyển khoản, gia hạn, bảo trì, hỗ trợ, chuyển kho, trả kho và quyết toán tiền cọc.
+- Manager: xác nhận/từ chối yêu cầu đặt kho, xác nhận lịch, duyệt/từ chối gia hạn, nghiệm thu bảo trì và đối soát thông báo chuyển khoản.
+- Admin: lọc/tìm tài khoản, tạo Staff/Manager, kích hoạt/vô hiệu hóa tài khoản và xem quyền theo vai trò.
+- Tự động đưa người dùng vào đúng khu vực theo vai trò; Admin cũng có thể mở dashboard vận hành.
 - Có trạng thái tải, lỗi, không có dữ liệu và thao tác tải lại cho các danh sách API.
 
 ## Cấu hình Backend
@@ -43,4 +46,4 @@ npx expo-doctor
 npx expo export --platform web
 ```
 
-Các route nằm trong `src/app`, phần gọi API nằm trong `src/services`, và dữ liệu đăng nhập được quản lý trong `src/auth`.
+Các route nằm trong `src/app`, cấu hình trường dữ liệu nghiệp vụ ở `src/services/operation-catalog.ts`, phần gọi API ở `src/services/api.ts`, và dữ liệu đăng nhập được quản lý trong `src/auth`.

@@ -26,8 +26,8 @@ export function ManagerAssignments() {
       <Navigation title="Về tổng quan quản lý" path="/manager" />
       <Button title="Làm mới phân công" onPress={refresh} disabled={loading} />
       <Field title="Tìm công việc, kho hoặc nhân viên" value={search} onChange={setSearch} maxLength={120} />
-      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì']].map(([value, title]) => <Button key={value} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
-      <View style={styles.row}>{[['', 'Tất cả phân công'], ['assigned', 'Đã phân công'], ['unassigned', 'Chưa phân công']].map(([value, title]) => <Button key={value} title={`${assignment === value ? '✓ ' : ''}${title}`} onPress={() => setAssignment(value)} />)}</View>
+      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì']].map(([value, title]) => <Button key={value} variant={kind === value ? 'primary' : 'secondary'} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
+      <View style={styles.row}>{[['', 'Tất cả phân công'], ['assigned', 'Đã phân công'], ['unassigned', 'Chưa phân công']].map(([value, title]) => <Button key={value} variant={assignment === value ? 'primary' : 'secondary'} title={`${assignment === value ? '✓ ' : ''}${title}`} onPress={() => setAssignment(value)} />)}</View>
       <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chưa hoàn tất' : 'Chỉ xem chưa hoàn tất · Xem cả lịch sử'} onPress={() => setHistory(value => !value)} />
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <Text style={styles.copy}>{tasks.length} công việc phù hợp</Text>}
     </View>}

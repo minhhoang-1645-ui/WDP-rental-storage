@@ -11,10 +11,10 @@ export function RecordCard({ code, title, detail, status, onPress }: { code: str
 }
 
 const styles = StyleSheet.create({
-  card: { gap: WdpSpacing.sm, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 16, borderCurve: 'continuous', backgroundColor: WdpColors.surface, padding: WdpSpacing.md },
+  card: { gap: WdpSpacing.sm, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 20, borderCurve: 'continuous', backgroundColor: WdpColors.surface, padding: 20, boxShadow: '0 3px 12px rgba(32, 62, 81, 0.025)' },
   pressed: { opacity: 0.72 },
   heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: WdpSpacing.sm },
-  code: { flex: 1, color: WdpColors.navy, fontSize: 15, fontWeight: '900' },
+  code: { flex: 1, color: WdpColors.navy, fontSize: 15, fontWeight: '700' },
   badge: { borderRadius: 999, backgroundColor: '#FFF4E8', paddingHorizontal: WdpSpacing.sm, paddingVertical: 5 },
   badgeText: { color: WdpColors.warning, fontSize: 11, fontWeight: '800' },
   title: { color: WdpColors.text, fontSize: 15, fontWeight: '700' },

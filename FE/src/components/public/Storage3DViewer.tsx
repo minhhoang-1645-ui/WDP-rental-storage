@@ -1,3 +1,4 @@
+import { StorageImage } from './StorageImage'
 import { ContactShadows, Line, OrbitControls, useGLTF } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
@@ -262,7 +263,7 @@ function Scene({ size, action }: { size: StorageSize, action: ControlAction }) {
 
 function StaticFallback({ size }: { size: StorageSize }) {
   return <div className="viewer-fallback" role="img" aria-label={`Ảnh minh họa cho ${size.name}`}>
-    <img src={size.image} alt="" />
+    <StorageImage src={size.image} alt="" />
     <div><Box size={22} /><strong>Đang dùng bản xem tĩnh</strong><span>Thiết bị này không hỗ trợ WebGL. Thông tin kích thước vẫn được giữ nguyên.</span></div>
   </div>
 }

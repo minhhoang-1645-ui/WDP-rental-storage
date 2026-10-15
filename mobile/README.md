@@ -2,6 +2,8 @@
 
 Ứng dụng React Native/Expo dành cho **Customer, Staff, Manager và Admin** của WDP Storage. BE và database được giữ nguyên.
 
+Giao diện được đồng bộ với web ngày 15/10/2026; xem [thiết kế và kiểm thử](../FE/UI_REFRESH_2026-10-15.md). Giữ nguyên API, ô nhập React Native và quyền của từng vai trò.
+
 ## Chức năng hiện có
 
 - Đăng nhập bằng API `POST /api/auth/login` và khôi phục phiên bằng `GET /api/auth/me`.

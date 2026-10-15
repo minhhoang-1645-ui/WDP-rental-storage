@@ -1,3 +1,4 @@
+import { StorageImage } from './StorageImage'
 import { ContactShadows, OrbitControls, RoundedBox, useGLTF } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -282,7 +283,7 @@ function ArchitectureScene({ size, action, onReady }: { size: StorageSize, actio
 }
 
 function StaticFallback({ size }: { size: StorageSize }) {
-  return <div className="viewer-fallback" role="img" aria-label={`Ảnh minh họa cho ${size.name}`}><img src={size.image} alt="" /><div><Box size={22} /><strong>Bản xem kiến trúc tĩnh</strong><span>Thiết bị này không hỗ trợ WebGL. Kích thước và thông tin sức chứa vẫn được giữ nguyên.</span></div></div>
+  return <div className="viewer-fallback" role="img" aria-label={`Ảnh minh họa cho ${size.name}`}><StorageImage src={size.image} alt="" /><div><Box size={22} /><strong>Bản xem kiến trúc tĩnh</strong><span>Thiết bị này không hỗ trợ WebGL. Kích thước và thông tin sức chứa vẫn được giữ nguyên.</span></div></div>
 }
 
 class ViewerErrorBoundary extends Component<{ children: ReactNode, fallback: ReactNode }, { hasError: boolean }> {

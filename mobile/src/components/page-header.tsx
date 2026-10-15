@@ -7,8 +7,8 @@ export function PageHeader({ eyebrow, title, description }: { eyebrow: string; t
 }
 
 const styles = StyleSheet.create({
-  header: { gap: WdpSpacing.xs },
-  eyebrow: { color: WdpColors.orange, fontSize: 12, fontWeight: '900', letterSpacing: 1.2, textTransform: 'uppercase' },
-  title: { color: WdpColors.navy, fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
-  description: { color: WdpColors.muted, fontSize: 15, lineHeight: 22 },
+  header: { gap: WdpSpacing.sm, paddingTop: 8, paddingBottom: 8 },
+  eyebrow: { color: WdpColors.orange, fontSize: 10, fontWeight: '700', letterSpacing: 1.3, textTransform: 'uppercase' },
+  title: { color: WdpColors.navy, fontSize: 28, lineHeight: 36, fontWeight: '700', letterSpacing: -0.7 },
+  description: { color: WdpColors.muted, fontSize: 14, lineHeight: 22 },
 });

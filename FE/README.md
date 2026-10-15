@@ -1,6 +1,6 @@
 # Frontend WDP
 
-Phạm vi hiện tại sau merge và xác nhận của người dùng ngày 15/10/2026: [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Giữ giao diện, chỉ sửa chức năng phía client web/mobile. Tài liệu ngày 13–14/10 là lịch sử; phạm vi Admin bảy mục trong đó đã được thay thế.
+Phạm vi hiện tại sau merge và xác nhận của người dùng ngày 15/10/2026: [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Giao diện web/mobile được làm mới theo yêu cầu bổ sung, giữ API và nghiệp vụ: [UI_REFRESH_2026-10-15.md](./UI_REFRESH_2026-10-15.md). Tài liệu ngày 13–14/10 là lịch sử; phạm vi Admin bảy mục trong đó đã được thay thế.
 
 Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 

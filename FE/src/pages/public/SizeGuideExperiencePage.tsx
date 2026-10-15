@@ -1,3 +1,4 @@
+import { StorageImage } from '../../components/public/StorageImage'
 import { lazy, Suspense } from 'react'
 import { ArrowRight, Box, Boxes, Check, Cuboid, Info, Ruler, ScanLine } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
@@ -17,7 +18,7 @@ const categoryNumbers: Record<StorageSizeId, string> = {
 
 function ViewerPlaceholder({ image, name }: { image: string, name: string }) {
   return <div className="viewer-module-placeholder" aria-label={`Đang tải mô phỏng ${name}`}>
-    <img src={image} alt="" />
+    <StorageImage src={image} alt="" />
     <div><span />Đang tải mô phỏng 3D...</div>
   </div>
 }

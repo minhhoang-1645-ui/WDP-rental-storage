@@ -36,17 +36,17 @@ export function Header() {
   const actionPath = isInternalUser ? accountPath : "/booking";
   const actionLabel = isInternalUser ? "Mở khu vực làm việc" : "Đặt kho nhanh";
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur-sm">
+    <header className="public-header sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur-sm">
       <Container className="flex h-18 items-center justify-between">
         <Link
           to="/"
-          className="flex items-center gap-2 text-lg font-bold tracking-tight"
+          className="public-brand flex items-center gap-2 text-lg font-bold tracking-tight"
           aria-label="WDP Storage - Trang chủ"
         >
           <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
             <Warehouse size={19} />
           </span>
-          WDP Storage
+          <span className="public-wordmark">WDP <em>Storage</em><small>Không gian vừa với bạn</small></span>
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"

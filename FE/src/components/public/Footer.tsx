@@ -8,7 +8,7 @@ export function Footer() {
   const { user } = useAuth();
   const accountPath = user ? portalDestination(user.role) : "/account/login";
   return (
-    <footer className="bg-ink py-14 text-white">
+    <footer className="public-footer bg-ink py-14 text-white">
       <Container>
         <div className="grid gap-10 border-b border-white/15 pb-12 md:grid-cols-2 lg:grid-cols-4">
           <div>

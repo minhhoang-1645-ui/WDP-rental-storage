@@ -36,7 +36,7 @@ function List({ resource }: { resource: string }) {
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); data.refresh(); }} />}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm" value={search} onChange={setSearch} maxLength={120} />
-    {config.statuses && <View style={styles.row}><Button title={!status ? '✓ Tất cả trạng thái' : 'Tất cả trạng thái'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} title={`${status === value ? '✓ ' : ''}${label(value)}`} onPress={() => setStatus(value)} />)}</View>}
+    {config.statuses && <View style={styles.row}><Button variant={!status ? 'primary' : 'secondary'} title={!status ? '✓ Tất cả trạng thái' : 'Tất cả trạng thái'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} variant={status === value ? 'primary' : 'secondary'} title={`${status === value ? '✓ ' : ''}${label(value)}`} onPress={() => setStatus(value)} />)}</View>}
     {resource === 'catalog' && <><Text style={styles.copy}>BE hiện chỉ cho xem loại kho, kích thước và giá. Chưa có API cập nhật các dữ liệu này.</Text><Availability catalog={data.data as Row | undefined} root={root} /></>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{shown.length} / {items.length} hồ sơ</Text>}
   </View>;

@@ -24,3 +24,10 @@ Files included in this project:
 The storage room shell, measuring grid, suitcase and bicycle are original Three.js geometry assembled in `src/components/public/Storage3DViewer.tsx`; they do not use external model files.
 
 The size guide does not claim that these illustrative objects or layouts depict the actual WDP facility. They are provided only to help customers estimate relative storage capacity.
+
+## Kenney Factory Kit
+
+- Source: https://kenney.nl/assets/factory-kit
+- Creator: Kenney; Creative Commons CC0 1.0 / public domain.
+- License text: `kenney-factory-kit/LICENSE.txt`.
+- The existing factory GLB models reference `Textures/colormap.png`. This texture was restored from the official `kenney_factory-kit_3.0.zip` (`Models/GLB format/Textures/colormap.png`) on 15 October 2026 so the viewer can load their materials without a missing-file error.

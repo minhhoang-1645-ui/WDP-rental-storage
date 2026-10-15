@@ -1,14 +1,17 @@
-import { ArrowRight, Check, Snowflake, Warehouse } from 'lucide-react'
+import { ArrowUpRight, Check, MapPin, Ruler, Snowflake, Warehouse } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useCatalog } from '../../catalog/catalog-context'
 import type { StorageListing } from '../../types/storage'
+import { StorageImage } from './StorageImage'
 
 export function StorageListingCard({ unit }: { unit: StorageListing }) {
   const { getStorageSize } = useCatalog()
   const location = useLocation()
-  const size = getStorageSize(unit.sizeId)!
+  const size = getStorageSize(unit.sizeId)
+  const path = `/storage/${encodeURIComponent(unit.id)}${location.search}`
+  const monthlyPrice = typeof unit.monthlyPrice === 'number' && Number.isFinite(unit.monthlyPrice) && unit.monthlyPrice >= 0 ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(unit.monthlyPrice) : null
   return <article className="storage-listing-card">
-    <div className="relative min-h-64 overflow-hidden"><img src={unit.image} alt={`Ảnh minh họa cho ${unit.name}`} className="absolute inset-0 h-full w-full object-cover" /><span className="illustration-label">Ảnh minh họa</span></div>
-    <div className="p-6 sm:p-7"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="eyebrow">{unit.code}</p><h2 className="mt-2 text-2xl font-semibold">{unit.name}</h2><p className="mt-2 text-sm text-slate">{size.dimensions} · {size.volume}</p></div><span className={unit.status === 'limited' ? 'status-warning' : 'status-success'}>{unit.status === 'limited' ? 'Sắp hết' : 'Đang nhận yêu cầu'}</span></div><div className="mt-6 grid grid-cols-2 gap-3 text-sm"><p><Warehouse size={17} /> {unit.floor}</p><p>{unit.condition === 'climate' ? <Snowflake size={17} /> : <Warehouse size={17} />} {unit.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</p></div><ul className="mt-5 space-y-2 text-sm text-slate">{unit.features.map(feature => <li key={feature}><Check size={15} /> {feature}</li>)}</ul><div className="mt-6 flex items-end justify-between gap-4 border-t border-border pt-5"><div><span className="text-xs font-bold uppercase tracking-wide text-slate">Chi phí thuê</span><p className="font-semibold text-ink">Liên hệ để nhận báo giá</p></div><Link className="button-primary shrink-0" to={`/storage/${unit.id}${location.search}`}>Xem chi tiết <ArrowRight size={17} /></Link></div></div>
+    <Link className="storage-card-image" to={path} aria-label={`Xem chi tiết ${unit.name}`}><StorageImage src={unit.image} loading="lazy" alt={`Ảnh minh họa cho ${unit.name}`} /><span className="storage-card-condition">{unit.condition === 'climate' ? <Snowflake size={13} /> : <Warehouse size={13} />}{unit.condition === 'climate' ? 'Điều hòa' : 'Tiêu chuẩn'}</span><span className="storage-card-image-note">Ảnh minh họa</span></Link>
+    <div className="storage-card-content"><div className="storage-card-heading"><p>{unit.code}</p><span className={unit.status === 'limited' ? 'status-warning' : 'status-success'}>{unit.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span></div><h2><Link to={path}>{unit.name}</Link></h2><div className="storage-card-facts"><span><Ruler size={15} /> {size?.floorArea || size?.dimensions || 'Xem thông số kho'}</span><span><MapPin size={15} /> {unit.floor || 'Cơ sở WDP'}</span></div><ul className="storage-card-features">{unit.features.slice(0, 3).map(feature => <li key={feature}><Check size={13} />{feature}</li>)}</ul><div className="storage-card-bottom"><div><small>{monthlyPrice ? 'Đơn giá thuê' : 'Chi phí thuê'}</small><p>{monthlyPrice ? <><strong>{monthlyPrice}</strong><span>/tháng</span></> : <strong>Liên hệ báo giá</strong>}</p></div><Link to={path} className="storage-card-link" aria-label={`Chi tiết ${unit.name}`}><ArrowUpRight size={20} /></Link></div><p className="storage-card-price-note">{monthlyPrice ? 'Chưa gồm cọc và dịch vụ. Xem báo giá theo kỳ thuê.' : 'Báo giá được xác nhận theo kỳ thuê.'}</p></div>
   </article>
 }

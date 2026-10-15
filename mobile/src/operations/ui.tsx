@@ -6,22 +6,29 @@ import { formatMoney } from '@/utils/format';
 
 export const styles = StyleSheet.create({
   page: { gap: WdpSpacing.md, padding: WdpSpacing.md, paddingBottom: WdpSpacing.xl },
-  card: { gap: WdpSpacing.sm, padding: WdpSpacing.md, borderRadius: 16, borderWidth: 1, borderColor: WdpColors.border, backgroundColor: WdpColors.surface },
-  title: { color: WdpColors.navy, fontSize: 19, fontWeight: '900' },
+  card: { gap: WdpSpacing.sm, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: WdpColors.border, backgroundColor: WdpColors.surface, boxShadow: '0 3px 12px rgba(32, 62, 81, 0.025)' },
+  title: { color: WdpColors.navy, fontSize: 18, fontWeight: '700', lineHeight: 26 },
   copy: { color: WdpColors.muted, fontSize: 14, lineHeight: 21 },
-  label: { color: WdpColors.text, fontSize: 13, fontWeight: '800' },
-  input: { minHeight: 48, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: WdpColors.text, backgroundColor: '#F8FAFC' },
+  label: { color: WdpColors.text, fontSize: 12, fontWeight: '600' },
+  input: { minHeight: 50, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, color: WdpColors.text, backgroundColor: '#FBFCFC', fontSize: 14 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: WdpSpacing.sm },
   error: { color: WdpColors.danger, fontSize: 14, lineHeight: 21 },
   success: { color: WdpColors.success, fontSize: 14, lineHeight: 21 },
-  button: { minHeight: 46, justifyContent: 'center', alignItems: 'center', borderRadius: 12, paddingHorizontal: WdpSpacing.md, backgroundColor: WdpColors.navy },
-  buttonText: { color: 'white', fontSize: 14, fontWeight: '800' },
+  button: { minHeight: 46, justifyContent: 'center', alignItems: 'center', borderRadius: 24, paddingVertical: 12, paddingHorizontal: WdpSpacing.md, backgroundColor: WdpColors.navy },
+  buttonText: { color: 'white', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  secondaryButton: { backgroundColor: WdpColors.surface, borderWidth: 1, borderColor: WdpColors.border },
+  secondaryButtonText: { color: WdpColors.navy },
+  navigation: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 76 },
+  navigationCopy: { flex: 1, gap: 5 },
+  navigationTitle: { color: WdpColors.navy, fontSize: 16, fontWeight: '700', lineHeight: 24 },
+  navigationArrow: { width: 30, height: 30, textAlign: 'center', lineHeight: 28, borderRadius: 15, backgroundColor: WdpColors.soft, color: WdpColors.navy, fontSize: 22 },
+  pressed: { opacity: 0.72, backgroundColor: WdpColors.soft },
 });
-export function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && { opacity: 0.5 }]}><Text style={styles.buttonText}>{title}</Text></Pressable>;
+export function Button({ title, onPress, disabled = false, variant = 'primary' }: { title: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, variant === 'secondary' && styles.secondaryButton, (disabled || pressed) && { opacity: disabled ? 0.5 : 0.8 }]}><Text style={[styles.buttonText, variant === 'secondary' && styles.secondaryButtonText]}>{title}</Text></Pressable>;
 }
 export function Navigation({ title, path, description }: { title: string; path: string; description?: string }) {
-  return <Pressable accessibilityRole="button" onPress={() => router.push(path as Href)} style={styles.card}><Text style={styles.title}>{title} ›</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${title} ›`} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, styles.navigation, pressed && styles.pressed]}><View style={styles.navigationCopy}><Text style={styles.navigationTitle}>{title}</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</View><Text accessibilityElementsHidden importantForAccessibility="no" style={styles.navigationArrow}>›</Text></Pressable>;
 }
 export function Panel({ title, children }: { title?: string; children: ReactNode }) { return <View style={styles.card}>{Boolean(title) && <Text style={styles.title}>{title}</Text>}{children}</View>; }
 export function Facts({ values }: { values: [string, unknown][] }) {

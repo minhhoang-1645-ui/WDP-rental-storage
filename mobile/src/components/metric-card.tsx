@@ -8,7 +8,7 @@ export function MetricCard({ label, value, tone = 'navy' }: { label: string; val
 }
 
 const styles = StyleSheet.create({
-  card: { flex: 1, minWidth: 140, gap: WdpSpacing.xs, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 16, borderCurve: 'continuous', backgroundColor: WdpColors.surface, padding: WdpSpacing.md, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.05)' },
+  card: { flex: 1, minWidth: 140, gap: WdpSpacing.sm, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 18, borderCurve: 'continuous', backgroundColor: WdpColors.surface, padding: 18, boxShadow: '0 3px 12px rgba(32, 62, 81, 0.025)' },
   label: { color: WdpColors.muted, fontSize: 12, fontWeight: '700' },
-  value: { fontSize: 25, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  value: { fontSize: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
 });

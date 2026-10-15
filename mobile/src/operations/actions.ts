@@ -38,6 +38,7 @@ export function createAction(resource: string): FormAction | undefined {
 }
 
 export function recordActions(resource: string, row: Row, role: string): FormAction[] {
+  if (role !== 'MANAGER') return [];
   const root = `/manager/${resource}/${encodeURIComponent(idOf(row))}`;
   const actions: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], method: 'POST' | 'PATCH' = 'POST', idempotent = false, description?: string) => actions.push({ title, path: root + suffix, method, fields: [...fields, confirm()], idempotent, description });
@@ -53,7 +54,7 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     select('method', 'Phương thức', ['BANK_TRANSFER', 'CASH'], 'BANK_TRANSFER'), { name: 'reference', title: 'Mã giao dịch thực tế', maxLength: 200 }, note('note', 'Ghi chú', false, 2000),
   ], 'POST', true, 'Chỉ ghi nhận khoản tiền đã nhận và đối chiếu thực tế. Không vượt số dư hóa đơn.');
   if (resource === 'payment-submissions' && row.status === 'PENDING_VERIFICATION') {
-    add('Xác nhận đã nhận chuyển khoản', '/verify', [{ name: 'reference', title: 'Mã giao dịch ngân hàng đã đối chiếu', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 1000)], 'POST', false, 'Chỉ xác nhận sau khi đã đối chiếu và nhận đủ khoản gửi.');
+    if (!row.isDemo) add('Xác nhận đã nhận chuyển khoản', '/verify', [{ name: 'reference', title: 'Mã giao dịch ngân hàng đã đối chiếu', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 1000)], 'POST', false, 'Chỉ xác nhận sau khi đã đối chiếu và nhận đủ khoản gửi.');
     add('Từ chối thông báo chuyển khoản', '/reject', [note('reason', 'Lý do từ chối', true, 1000)]);
   }
   if (['maintenance', 'support-requests'].includes(resource) && !['COMPLETED', 'RESOLVED'].includes(String(row.status))) {

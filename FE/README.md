@@ -1,6 +1,6 @@
 # Frontend WDP
 
-Đối chiếu chức năng theo mã nguồn mới và giới hạn BE: [FUNCTIONAL_AUDIT_2026-10-13.md](./FUNCTIONAL_AUDIT_2026-10-13.md). Lần cập nhật này giữ giao diện và chỉ sửa chức năng phía client web/mobile.
+Phạm vi hiện tại sau merge và xác nhận của người dùng ngày 15/10/2026: [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Giữ giao diện, chỉ sửa chức năng phía client web/mobile. Tài liệu ngày 13–14/10 là lịch sử; phạm vi Admin bảy mục trong đó đã được thay thế.
 
 Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 
@@ -38,13 +38,13 @@ FE mặc định gọi `http://localhost:3000/api`. Nếu cần đổi, tạo `.
 
 ## Portal manager và admin
 
-Đăng nhập tài khoản nội bộ tại `/portal/login`. Manager dùng `/manager`; admin dùng `/admin` và thao tác vận hành trong `/admin/facility`, luôn giữ menu quản trị. Nếu admin mở đường dẫn `/manager` cũ, frontend chuyển đến màn hình tương ứng trong khu vực admin và giữ bộ lọc.
+Đăng nhập tại `/account/login` hoặc `/portal/login`; đăng xuất luôn về `/account/login`. Manager dùng `/manager`; Admin dùng `/admin`. Mở URL khác vai trò sẽ về trang chủ của vai trò đang đăng nhập.
 
-Portal đã nối các API kho, khách hàng, tư vấn, đặt kho, bàn giao, hợp đồng, hóa đơn, khoản thu, gia hạn, kho đang thuê, trả kho, hỗ trợ, chuyển kho, bảo trì và quyết toán cọc. Admin có dashboard, tạo tài khoản STAFF/MANAGER, xem tài khoản và kích hoạt/vô hiệu hóa quyền truy cập.
+Manager đã nối các API kho, khách hàng, tư vấn, đặt kho, bàn giao, hợp đồng, hóa đơn, khoản thu, gia hạn, kho đang thuê, trả kho, hỗ trợ, chuyển kho, bảo trì và quyết toán cọc. Phân công nhân viên ở `/manager/assignments`, dùng nhiệm vụ hỗ trợ và bảo trì hiện có.
 
-Admin có 7 mục tiếng Việt theo phạm vi người dùng chốt: tài khoản, vai trò/quyền, phân công nhân viên, cấu hình cơ sở, tổng quan, nhật ký và trạng thái tài khoản. Các mục chưa có API ghi/nguồn dữ liệu được thông báo rõ; không coi đủ menu là đủ chức năng.
+Admin có đúng hai mục: Tổng quan và Quản lý tài khoản. Tạo STAFF/MANAGER, xem hồ sơ và kích hoạt/vô hiệu hóa nằm trong quản lý tài khoản. URL cũ `/admin/facility/*` về `/admin`; không mở menu vận hành Manager trong Admin.
 
-Đối chiếu yêu cầu và các phần còn thiếu nằm trong [MANAGER_ADMIN_REQUIREMENTS_AUDIT.md](./MANAGER_ADMIN_REQUIREMENTS_AUDIT.md). Mô tả 7 use case nằm trong [ADMIN_USE_CASES_VI.md](./ADMIN_USE_CASES_VI.md). Chi tiết tích hợp API và kết quả kiểm tra nằm trong [MANAGER_ADMIN_IMPLEMENTATION.md](./MANAGER_ADMIN_IMPLEMENTATION.md).
+Giới hạn API và kiểm tra sau merge nằm trong [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Các báo cáo Manager/Admin trước ngày này được giữ làm lịch sử, không dùng để khôi phục các mục Admin đã bỏ.
 
 ## Kiểm tra
 

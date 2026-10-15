@@ -20,7 +20,7 @@ export function ResourceList() {
 function List({ resource }: { resource: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined;
-  const allowed = ['MANAGER', 'ADMIN'].includes(user?.role ?? '');
+  const allowed = user?.role === 'MANAGER';
   const data = useResource<Row | Row[]>(allowed && config ? config.path : null, !config?.shape);
   const [search, setSearch] = useState(''), [status, setStatus] = useState('');
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');

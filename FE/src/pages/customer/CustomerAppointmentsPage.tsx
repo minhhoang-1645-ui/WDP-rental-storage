@@ -67,7 +67,7 @@ export function CustomerAppointmentsPage() {
         map.set(id, {
           id,
           reference: items[0].reservation.reference,
-          startDate: items[0].startDate.slice(0, 10),
+          startDate: items.map(item => item.startDate.slice(0, 10)).sort().at(-1)!,
         });
     return [...map.values()];
   }, [contracts.data, appointments.data]);

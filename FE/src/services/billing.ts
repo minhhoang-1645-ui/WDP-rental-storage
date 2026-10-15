@@ -10,10 +10,6 @@ export const customerBillingApi = {
       method: 'POST', signal, headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ amount, method: 'BANK_TRANSFER', transferReference: transferReference || null, customerNote: customerNote || null }),
     }),
-  createDemoSubmission: (invoiceId: string, amount: number, idempotencyKey: string, signal?: AbortSignal) =>
-    apiRequest<PaymentSubmission>(`/customer/invoices/${encodeURIComponent(invoiceId)}/demo-payment-submissions`, {
-      method: 'POST', signal, headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ amount }),
-    }),
   createOnlinePayment: (invoiceId: string, idempotencyKey: string, signal?: AbortSignal) =>
     apiRequest<OnlinePaymentCreated>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, {
       method: 'POST', signal, headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ locale: 'vn' }),

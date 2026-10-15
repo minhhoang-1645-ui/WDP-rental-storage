@@ -1,7 +1,6 @@
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdir } from "node:fs/promises";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.WDP_PLAYWRIGHT_MODULE || "playwright");
 const base = process.env.WDP_FE_URL || "http://127.0.0.1:5173";
@@ -822,231 +821,50 @@ try {
   assert(page.url().includes("/manager/units"));
   checks.push("390px mobile layout and navigation");
   const adminLogin = await setup("ADMIN", false);
-  await adminLogin.page.goto(
-    base + "/manager/operations/invoices?status=OPEN&page=2",
-  );
-  await adminLogin.page
-    .getByLabel("Email", { exact: true })
-    .fill("portal@example.test");
-  await adminLogin.page
-    .getByLabel("Mật khẩu", { exact: true })
-    .fill("TestingPassword123!");
-  await adminLogin.page
-    .getByRole("button", { name: "Đăng nhập", exact: true })
-    .click();
-  await adminLogin.page.waitForURL(
-    base + "/admin/facility/operations/invoices?status=OPEN&page=2",
-  );
-  assert.equal(
-    await adminLogin.page
-      .locator(".manager-sidebar .portal-brand small")
-      .innerText(),
-    "Quản trị hệ thống",
-  );
+  await adminLogin.page.goto(base + "/manager/operations/invoices?status=OPEN&page=2");
+  await adminLogin.page.getByLabel("Email", { exact: true }).fill("portal@example.test");
+  await adminLogin.page.getByLabel("Mật khẩu", { exact: true }).fill("TestingPassword123!");
+  await adminLogin.page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  await adminLogin.page.waitForURL(base + "/admin");
   await adminLogin.context.close();
-  checks.push("Admin login maps a saved manager URL into the admin workspace");
-
+  checks.push("Admin saved Manager URLs return to Admin summary, never expose operations");
   const admin = await setup("ADMIN");
-  await open(admin.page, "/admin");
-  await admin.page
-    .locator("main")
-    .getByRole("link", { name: "Tổng quan vận hành", exact: true })
-    .click();
-  await admin.page.waitForURL(base + "/admin/facility");
-  await admin.page.locator(".portal-loading").waitFor({ state: "hidden" });
-  assert.equal(
-    await admin.page
-      .locator(".manager-sidebar .portal-brand small")
-      .innerText(),
-    "Quản trị hệ thống",
-  );
-  assert.equal(
-    await admin.page.locator('a[href^="/manager"]').count(),
-    0,
-    "Admin must not expose links into the manager workspace",
-  );
-  await admin.page
-    .locator("main")
-    .getByRole("link", { name: "Theo dõi công nợ", exact: false })
-    .click();
-  await admin.page.waitForURL(base + "/admin/facility/operations/invoices");
-  await admin.page.locator(".portal-loading").waitFor({ state: "hidden" });
-  await admin.page.getByRole("link", { name: "INV-0", exact: true }).click();
-  await admin.page.waitForURL(
-    base + "/admin/facility/operations/invoices/invoice-0",
-  );
-  await admin.page.locator(".portal-loading").waitFor({ state: "hidden" });
-  await admin.page.getByRole("link", { name: "RES-TEST", exact: true }).click();
-  await admin.page.waitForURL(base + "/admin/facility/reservations/RES-TEST");
-  await admin.page.locator(".portal-loading").waitFor({ state: "hidden" });
-  await admin.page
-    .locator("main")
-    .getByRole("link", { name: "Yêu cầu đặt kho", exact: true })
-    .click();
-  await admin.page.waitForURL(base + "/admin/facility/reservations");
-  for (const resource of Object.keys(fixture)) {
-    const root = ["units", "customers", "reservations", "inquiries"].includes(
-      resource,
-    )
-      ? `/admin/facility/${resource}`
-      : `/admin/facility/operations/${resource}`;
-    await open(admin.page, root);
-    await open(
-      admin.page,
-      root +
-        "/" +
-        (fixture[resource][0].id || fixture[resource][0].reservationId),
-    );
-    assert.equal(
-      await admin.page.getByRole("alert").count(),
-      0,
-      `${resource} admin error`,
-    );
-    assert.equal(
-      await admin.page.locator('a[href^="/manager"]').count(),
-      0,
-      `${resource} must retain admin navigation`,
-    );
-    assert.equal(
-      await admin.page
-        .locator(".manager-sidebar .portal-brand small")
-        .innerText(),
-      "Quản trị hệ thống",
-    );
+  const adminLinks = ["/admin", "/admin/users"];
+  for (const path of ["/admin", "/admin/users", "/manager/assignments", "/manager/operations/invoices", "/admin/facility/reports", "/admin/facility/operations/returns", "/admin/assignments", "/admin/activity", "/admin/settings", "/admin/roles", "/admin/account-status"]) {
+    await open(admin.page, path);
+    const destination = ["/admin/users", "/admin/roles", "/admin/account-status"].includes(path) ? "/admin/users" : "/admin";
+    assert.equal(new URL(admin.page.url()).pathname, destination);
+    assert.deepEqual(await admin.page.locator('.manager-sidebar nav a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href'))), adminLinks);
+    assert.equal(await admin.page.locator('a[href^="/manager"], a[href^="/admin/facility"]').count(), 0);
   }
-  await open(admin.page, "/manager/operations/invoices?status=OPEN&page=2");
-  assert.equal(
-    new URL(admin.page.url()).pathname,
-    "/admin/facility/operations/invoices",
-  );
-  assert.equal(new URL(admin.page.url()).search, "?status=OPEN&page=2");
-  await admin.page.reload();
-  await admin.page.locator(".portal-loading").waitFor({ state: "hidden" });
-  assert.equal(
-    await admin.page
-      .locator(".manager-sidebar .portal-brand small")
-      .innerText(),
-    "Quản trị hệ thống",
-  );
-  await admin.page
-    .locator(".portal-topbar-actions")
-    .getByRole("link", { name: "Quản trị hệ thống", exact: true })
-    .click();
-  await admin.page.waitForURL(base + "/admin");
-  await open(page, "/admin/facility/operations/invoices");
-  assert.equal(
-    new URL(page.url()).pathname,
-    "/manager",
-    "Manager must not enter the admin workspace",
-  );
-  await context.close();
-  checks.push(
-    "Admin keeps its workspace for operational navigation, all related records, legacy links and refresh; manager cannot enter admin",
-  );
+  checks.push("Admin has exactly two menu items; legacy and Manager URLs cannot open operational screens");
   await open(admin.page, "/admin/users?search=customer102");
-  await admin.page
-    .getByRole("cell")
-    .filter({ hasText: "customer102@example.test" })
-    .waitFor();
+  await admin.page.getByRole("cell").filter({ hasText: "customer102@example.test" }).waitFor();
   await open(admin.page, "/admin/users");
-  await admin.page
-    .getByRole("button", { name: "Tạo tài khoản", exact: true })
-    .click();
-  await admin.page
-    .getByLabel("Họ và tên", { exact: true })
-    .fill("Nhân viên mới kiểm thử");
-  await admin.page
-    .getByLabel("Email", { exact: true })
-    .fill("new@example.test");
-  await admin.page
-    .getByLabel("Số điện thoại", { exact: true })
-    .fill("0900000009");
-  await admin.page
-    .getByLabel("Mật khẩu ban đầu", { exact: true })
-    .fill("TestingPassword123!");
-  await admin.page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Tạo tài khoản", exact: true })
-    .click();
+  await admin.page.getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
+  await admin.page.getByLabel("Họ và tên", { exact: true }).fill("Nhân viên mới kiểm thử");
+  await admin.page.getByLabel("Email", { exact: true }).fill("new@example.test");
+  await admin.page.getByLabel("Số điện thoại", { exact: true }).fill("0900000009");
+  await admin.page.getByLabel("Mật khẩu ban đầu", { exact: true }).fill("TestingPassword123!");
+  await admin.page.getByRole("dialog").getByRole("button", { name: "Tạo tài khoản", exact: true }).click();
   await admin.page.getByRole("dialog").waitFor({ state: "hidden" });
-  assert.equal(writes.at(-1).body.role, "STAFF");
-  assert.equal(writes.at(-1).path, "admin/users");
-  await admin.page
-    .getByRole("row")
-    .filter({ hasText: staff.fullName })
-    .getByRole("button", { name: "Xem tài khoản", exact: true })
-    .click();
-  await admin.page
-    .getByLabel("Xác nhận vô hiệu hóa tài khoản", { exact: true })
-    .check();
-  await admin.page
-    .getByRole("button", { name: "Vô hiệu hóa tài khoản", exact: true })
-    .click();
+  assert.equal(writes.at(-1).body.role, "STAFF");assert.equal(writes.at(-1).path, "admin/users");
+  await admin.page.getByRole("row").filter({ hasText: staff.fullName }).getByRole("button", { name: "Vô hiệu hóa", exact: true }).click();
+  await admin.page.getByLabel("Xác nhận vô hiệu hóa tài khoản", { exact: true }).check();
+  await admin.page.getByRole("button", { name: "Vô hiệu hóa tài khoản", exact: true }).click();
   assert.equal(writes.at(-1).body.accountStatus, "DISABLED");
   await admin.page.getByRole("button", { name: "Đóng", exact: true }).click();
-  await open(admin.page, "/admin/settings");
-  assert((await admin.page.locator("main").innerText()).includes("Đã kết nối"));
-  for (const [path, heading] of [
-    ["roles", "Vai trò và quyền truy cập"],
-    ["assignments", "Phân công nhân viên"],
-    ["activity", "Nhật ký hoạt động"],
-    ["account-status", "Trạng thái tài khoản"],
-  ]) {
-    await open(admin.page, `/admin/${path}`);
-    assert.equal(
-      await admin.page
-        .getByRole("heading", { name: heading, exact: true })
-        .count(),
-      1,
-    );
-    assert.equal(await admin.page.locator(".manager-sidebar nav a").count(), 7);
-    assert.equal(await admin.page.getByRole("alert").count(), 0);
-  }
-  assert.equal(
-    await admin.page
-      .getByRole("button", { name: "Tạo tài khoản", exact: true })
-      .count(),
-    0,
-  );
-  await open(admin.page, "/admin/assignments");
-  await admin.page
-    .getByRole("row")
-    .filter({ hasText: "SUP-TEST" })
-    .getByRole("link", { name: "Xem và phân công", exact: true })
-    .click();
-  await admin.page.waitForURL(
-    base + "/admin/facility/operations/support-requests/support-id",
-  );
-  assert.equal(await admin.page.locator('a[href^="/manager"]').count(), 0);
-  checks.push(
-    "Seven Vietnamese admin sections; status view omits creation; assignment opens real admin workflow",
-  );
-  await open(admin.page, "/manager/operations/support-requests/support-id");
-  await admin.page
-    .getByRole("combobox", { name: "Nhân viên phụ trách", exact: true })
-    .selectOption("staff-id");
-  await admin.page
-    .getByRole("button", { name: "Phân công nhân viên", exact: true })
-    .click();
-  await success(admin.page);
-  assert.equal(writes.at(-1).body.staffUserId, "staff-id");
-  checks.push(
-    "Admin search all pages, create user, status update, health, staff directory",
-  );
-  if (process.env.WDP_SCREENSHOTS_DIR) {
-    await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true });
-    await open(admin.page, "/admin");
-    await admin.page.screenshot({
-      path: process.env.WDP_SCREENSHOTS_DIR + "/admin-desktop.png",
-      fullPage: true,
-    });
-    await admin.page.setViewportSize({ width: 390, height: 844 });
-    await open(admin.page, "/manager");
-    await admin.page.screenshot({
-      path: process.env.WDP_SCREENSHOTS_DIR + "/manager-mobile.png",
-      fullPage: true,
-    });
-  }
+  checks.push("Admin search all pages, create STAFF/MANAGER, view account, update status and prevent self disable");
+  const assignment = await setup("MANAGER");
+  await open(assignment.page, "/manager/assignments?scope=all");
+  await assignment.page.getByRole("row").filter({hasText:"SUP-TEST"}).getByRole("button").click();
+  await assignment.page.getByLabel("Mã tài khoản Staff",{exact:true}).fill("different-staff-id");
+  await assignment.page.getByRole("dialog").getByRole("button",{name:/^(Phân công|Đổi nhân viên)$/}).click();
+  await assignment.page.getByRole("dialog").waitFor({state:"hidden"});
+  assert.equal(writes.at(-1).body.staffUserId,"different-staff-id");assert.match(writes.at(-1).path,/manager\/support-requests\/[^/]+\/assign/);assert.ok(writes.at(-1).key);
+  await assignment.context.close();
+  await context.close();
+  checks.push("Manager assignment screen filters work and submits to manager assign API with idempotency key");
   await admin.context.close();
   assert.deepEqual(errors, []);
   console.log(

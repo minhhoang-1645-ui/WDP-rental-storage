@@ -1,5 +1,7 @@
 # Đối chiếu chức năng mobile WDP
 
+> Báo cáo lịch sử. Phạm vi ngày 15/10/2026: Admin chỉ có Tổng quan và Quản lý tài khoản; phân công thuộc Manager. Các nội dung bảy mục Admin hoặc `/admin/facility/*` dưới đây không còn áp dụng. Xem [báo cáo sau merge](../FE/MERGE_AUDIT_2026-10-15.md).
+
 Nguồn: `WDP_STORAGE_MASTER_SPEC_FOR_AI.md`, bảy use case Admin do người dùng chốt, controllers/services/DTO/guards của BE ở commit `c70540a`. Không thay đổi BE source, schema hoặc seed. Ngày 14/10/2026, theo yêu cầu trực tiếp của người dùng, tạo đúng hai tài khoản ACTIVE mới: Admin và Manager; không sửa tài khoản/mật khẩu cũ hoặc dữ liệu nghiệp vụ. Dùng lại màu, kiểu chữ và bố cục card/form của mobile hiện có; web FE không được thiết kế lại trong lượt này.
 
 ## Manager và vận hành của Admin

@@ -1,5 +1,7 @@
 # Đối chiếu chức năng WDP ngày 13/10/2026
 
+> Báo cáo lịch sử. Ngày 15/10/2026, người dùng xác nhận theo merge mới: Admin chỉ có Tổng quan và Quản lý tài khoản; phân công thuộc Manager. Các nội dung bảy mục Admin hoặc `/admin/facility/*` dưới đây đã được thay thế bởi [báo cáo sau merge](./MERGE_AUDIT_2026-10-15.md).
+
 ## Phạm vi và kết luận
 
 Nguồn yêu cầu: `C:/Users/luanq/Downloads/WDP_STORAGE_MASTER_SPEC_FOR_AI.md`. Admin dùng **đúng 7 use case do người dùng bổ sung trong cuộc trò chuyện**; file gốc không định nghĩa Admin. Phiên bản mã nguồn hiện tại: `c70540a` (thêm mobile). Kiểm tra GitHub: nhánh Mobile và luan cùng commit này; dev ở `71fce14`. Không tự checkout, merge hoặc thay đổi BE.

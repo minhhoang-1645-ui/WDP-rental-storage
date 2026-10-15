@@ -4,7 +4,6 @@ export type PaymentSubmissionStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJ
 
 export interface BankTransferConfig {
   configured: boolean
-  demoEnabled: boolean
   bankName: string
   bankCode: string
   accountNumber: string
@@ -13,7 +12,7 @@ export interface BankTransferConfig {
 
 export interface PaymentSubmission {
   id: string
-  isDemo: boolean
+  isDemo?: boolean
   submissionCode: string
   status: PaymentSubmissionStatus
   amount: number

@@ -1,11 +1,14 @@
 # WDP Self Storage
 
+> Current merged scope (15 October 2026): Admin has Dashboard and User Accounts; staff assignment belongs to Manager. Web and mobile integration, role routes, checks and limitations are documented in [the merge audit](./FE/MERGE_AUDIT_2026-10-15.md), [FE guide](./FE/README.md) and [mobile guide](./mobile/README.md). The initial milestone notes below are historical and do not describe the complete current feature set. Existing databases do not need a seed or migration merely to run the clients.
+
 Single-facility self-storage rental platform.
 
 ## Project structure
 
 - FE/: React, TypeScript, Vite, Tailwind CSS, React Router, Lucide React and React Three Fiber.
 - BE/: NestJS, TypeScript, Prisma and Supabase PostgreSQL.
+- mobile/: React Native, Expo and Expo Router; shares the BE authentication and APIs.
 - BE/prisma/migrations/20261003000100_init_persistence/: initial WDP application migration.
 
 The public website, Size Guide, 3D viewer, storage catalog, three-step booking flow and minimum Manager inquiry portal are implemented.

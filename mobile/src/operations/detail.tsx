@@ -19,18 +19,19 @@ export function ResourceDetail() {
 function Detail({ resource, id }: { resource: string; id: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined, root = operationRoot(user?.role ?? '');
-  const allowed = ['MANAGER', 'ADMIN'].includes(user?.role ?? '');
+  const allowed = user?.role === 'MANAGER';
   const data = useResource<Row>(allowed && config && resource !== 'catalog' ? `${config.path}/${encodeURIComponent(id)}` : null);
   const stock = useResource<Row>(allowed && resource === 'additional-services' ? `/manager/additional-services/${encodeURIComponent(id)}/inventory` : null);
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const refresh = () => { data.refresh(); stock.refresh(); };
   if (!config || resource === 'catalog') return <EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." />;
-  const row = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
+  const row: Row | undefined = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description="Thông tin, lịch sử và thao tác nghiệp vụ." />
     <Navigation title="Về danh sách" path={`${root}/${resource}`} />
     <Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
+    {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>
       {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : recordActions(resource, row, user?.role ?? '').map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {Boolean(stock.error) && <ErrorState message={stock.error ?? ''} onRetry={stock.refresh} />}

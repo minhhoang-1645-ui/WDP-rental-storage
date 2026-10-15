@@ -10,21 +10,21 @@ import { RecordView } from './record-view';
 export function ManagerHome() {
   const { user } = useAuth();
   const root = operationRoot(user?.role ?? '');
-  const data = useResource<Row>(['MANAGER', 'ADMIN'].includes(user?.role ?? '') ? '/manager/dashboard/summary' : null);
+  const data = useResource<Row>(user?.role === 'MANAGER' ? '/manager/dashboard/summary' : null);
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow={user?.role === 'ADMIN' ? 'Quản trị viên · Vận hành' : 'Quản lý'} title={`Xin chào, ${user?.fullName ?? ''}`} description="Theo dõi và xử lý nghiệp vụ từ hệ thống WDP." />
+    <PageHeader eyebrow="Quản lý" title={`Xin chào, ${user?.fullName ?? ''}`} description="Theo dõi và xử lý nghiệp vụ từ hệ thống WDP." />
     <Button title="Làm mới tổng quan" onPress={data.refresh} disabled={data.loading} />
+    <Navigation title="Phân công nhân viên" path="/manager/assignments" />
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : data.data && <Panel title="Tổng quan vận hành"><RecordView row={data.data} root={root} /></Panel>}
     {Object.entries(resources).map(([key, config]) => <Navigation key={key} title={config.title} path={`${root}/${key}`} />)}
     <Navigation title="Báo cáo vận hành" path={`${root}/reports`} />
-    <Navigation title="Tài khoản và đăng xuất" path={user?.role === 'ADMIN' ? '/admin/account' : '/manager/account'} />
-    {user?.role === 'ADMIN' && <Navigation title="Về tổng quan quản trị" path="/admin" />}
+    <Navigation title="Tài khoản và đăng xuất" path="/manager/account" />
   </ScrollView>;
 }
 
 export function AdminHome() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Quản trị viên" title="Quản trị hệ thống WDP" description="Bảy nhóm chức năng quản trị đã được quy định." />
+    <PageHeader eyebrow="Quản trị viên" title="Quản trị hệ thống WDP" description="Tổng quan hệ thống và quản lý tài khoản người dùng." />
     {adminSections.map(([key, title]) => <Navigation key={key} title={title} path={`/admin/${key}`} />)}
     <Navigation title="Tài khoản và đăng xuất" path="/admin/account" />
   </ScrollView>;

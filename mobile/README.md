@@ -9,19 +9,19 @@
 - Customer: tổng quan, kho đang thuê, hóa đơn/thanh toán và tài khoản.
 - Staff: tổng quan công việc, lịch hẹn, danh sách nhiệm vụ và tài khoản.
 - Manager: tổng quan; 18 phân hệ danh sách/chi tiết; tìm/lọc dữ liệu; kiểm tra khả dụng; duyệt đặt kho, gia hạn và chuyển kho; xử lý tư vấn/hỗ trợ; tạo, phân công và nghiệm thu bảo trì; ghi nhận khoản thu, đối chiếu chuyển khoản, duyệt quyết toán/ghi nhận hoàn cọc; danh mục dịch vụ, giá và tồn kho; báo cáo vận hành.
-- Admin: đúng 7 nhóm chức năng đã chốt: tài khoản, vai trò/quyền, phân công, cấu hình cơ sở, tổng quan, nhật ký, trạng thái tài khoản. Tạo STAFF/MANAGER và cập nhật ACTIVE/DISABLED dùng API thật. Các phần BE chưa có API được thông báo rõ, không lưu giả trên thiết bị.
+- Admin: đúng hai nhóm theo bản merge mới và xác nhận ngày 15/10/2026: Tổng quan và Quản lý tài khoản. Tạo STAFF/MANAGER, xem hồ sơ và cập nhật ACTIVE/DISABLED dùng API thật trong quản lý tài khoản. Phân công nhân viên thuộc Manager.
 - Tự động đưa người dùng vào đúng khu vực theo vai trò.
 - Có trạng thái tải, lỗi, không có dữ liệu và thao tác tải lại cho các danh sách API.
 - Danh sách tải đủ trang theo limit BE trả về. Khi quay lại màn hình, tải lại dữ liệu để phản ánh thao tác vừa lưu. Thao tác tài chính cần xác nhận thực tế; retry giữ idempotency key; chặn gửi lặp.
 
-Phạm vi, API, quyền và giới hạn: [MOBILE_FUNCTIONAL_AUDIT.md](./MOBILE_FUNCTIONAL_AUDIT.md).
+Phạm vi hiện tại và kiểm tra sau merge: [MERGE_AUDIT_2026-10-15.md](../FE/MERGE_AUDIT_2026-10-15.md). [MOBILE_FUNCTIONAL_AUDIT.md](./MOBILE_FUNCTIONAL_AUDIT.md) giữ lịch sử tích hợp; phạm vi Admin bảy mục trong báo cáo cũ đã được thay thế.
 
 ## Đường dẫn theo vai trò
 
 - Customer: `/customer/*`; Staff: `/staff/*`.
 - Manager: `/manager`, `/manager/<phân-hệ>`, `/manager/<phân-hệ>/<id>`, `/manager/reports`.
-- Admin: `/admin`, bảy mục `/admin/users`, `/admin/roles`, `/admin/assignments`, `/admin/settings`, `/admin/dashboard`, `/admin/activity`, `/admin/account-status`.
-- Vận hành của Admin ở `/admin/facility/*`, không chuyển sang `/manager`.
+- Admin: `/admin`, `/admin/dashboard`, `/admin/users`, `/admin/users/new`, `/admin/users/:id`; `/admin/account` phục vụ tài khoản phiên và đăng xuất.
+- Manager có `/manager/assignments` để xem, lọc công việc và mở chi tiết phân công hỗ trợ/bảo trì. URL Admin cũ về `/admin` hoặc `/admin/users`, không mở vận hành.
 - Mở URL khác vai trò sẽ quay về khu vực của tài khoản; chưa đăng nhập thì về `/login`. Route `/unsupported` cũ chỉ chuyển về đúng role.
 
 ## Cấu hình Backend

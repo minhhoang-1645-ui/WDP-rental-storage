@@ -7,13 +7,13 @@ export function portalDestination(role: PublicUser["role"]) {
   return "/customer";
 }
 
-// API permissions are shared, but each role keeps its own frontend workspace.
+// Legacy operational links must not open a Manager screen for Admin.
 export function operationPath(
   role: PublicUser["role"] | undefined,
   path: string,
 ) {
   return role === "ADMIN"
-    ? path.replace(/^\/manager(?=\/|\?|#|$)/, "/admin/facility")
+    ? /^\/manager(?=\/|\?|#|$)/.test(path) ? '/admin' : path
     : path;
 }
 
@@ -26,11 +26,13 @@ export function roleReturnPath(role: PublicUser["role"], value: unknown) {
     [...value].some((character) => character.charCodeAt(0) <= 32)
   )
     return portalDestination(role);
-  const path = operationPath(role, value);
+  const path = value;
   const root = portalDestination(role);
   const destination = new URL(path, "https://portal.invalid");
   const pathname = destination.pathname;
-  const ownWorkspace = pathname === root || pathname.startsWith(root + "/");
+  const ownWorkspace = role === 'ADMIN'
+    ? pathname === '/admin' || pathname === '/admin/users'
+    : pathname === root || pathname.startsWith(root + "/");
   const customerBooking =
     role === "CUSTOMER" &&
     (pathname === "/booking" || pathname.startsWith("/booking/") || pathname === '/claim-booking');

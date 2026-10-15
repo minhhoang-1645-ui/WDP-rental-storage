@@ -557,10 +557,7 @@ try {
     const app = await setup(role);
     for (const target of roles) {
       await open(app.page, root(target));
-      const expected =
-        role === "ADMIN" && target === "MANAGER"
-          ? "/admin/facility"
-          : root(role);
+      const expected = root(role);
       assert.equal(
         new URL(app.page.url()).pathname,
         expected,
@@ -595,8 +592,8 @@ try {
       );
       assert.equal(new URL(app.page.url()).pathname, root(role));
     }
-    if (["MANAGER", "ADMIN"].includes(role)) {
-      const basePath = role === "ADMIN" ? "/admin/facility" : "/manager";
+    if (role === "MANAGER") {
+      const basePath = "/manager";
       await open(app.page, basePath + "/operations/constructor");
       assert.match(await app.page.locator("h1").innerText(), /Không tìm thấy/);
     }

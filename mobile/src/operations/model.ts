@@ -31,8 +31,7 @@ export const resources: Record<string, ResourceDefinition> = {
   'support-requests': { title: 'Hỗ trợ khách hàng', path: '/manager/support-requests', statuses: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED', 'RESOLVED'] },
 };
 export const adminSections = [
-  ['users', 'Quản lý tài khoản người dùng'], ['roles', 'Vai trò và quyền'], ['assignments', 'Phân công nhân viên'],
-  ['settings', 'Cấu hình cơ sở'], ['dashboard', 'Tổng quan hệ thống'], ['activity', 'Nhật ký hoạt động'], ['account-status', 'Trạng thái tài khoản'],
+  ['dashboard', 'Tổng quan hệ thống'], ['users', 'Quản lý tài khoản người dùng'],
 ] as const;
 const labels: Record<string, string> = {
   INITIAL: 'Hóa đơn ban đầu', RECURRING: 'Hóa đơn định kỳ', RENEWAL: 'Hóa đơn gia hạn', SETTLEMENT: 'Hóa đơn quyết toán', INCLUDED: 'Đã tính trong báo giá', PRICED: 'Đã có báo giá', QUOTE_REQUIRED: 'Cần xác nhận báo giá', dates: 'Chọn khoảng ngày', duration: 'Chọn số tháng', INQUIRY: 'Yêu cầu tư vấn', RESERVATION: 'Yêu cầu đặt kho', ok: 'Đã kết nối',
@@ -49,4 +48,4 @@ const labels: Record<string, string> = {
 };
 export const label = (value: unknown) => typeof value === 'string' ? labels[value] ?? value : '—';
 export const options = (values: string[]) => values.map(value => ({ value, label: label(value) }));
-export const operationRoot = (role: string) => role === 'ADMIN' ? '/admin/facility' : '/manager';
+export const operationRoot = (role: string) => role === 'ADMIN' ? '/admin' : '/manager';

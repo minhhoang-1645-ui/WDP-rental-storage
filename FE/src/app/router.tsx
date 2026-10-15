@@ -176,7 +176,7 @@ export function AppRouter() {
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>
-      <Route element={<RoleGuard allowedRoles={["MANAGER", "ADMIN"]} />}>
+      <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
           <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
             <Route path="assignments" element={<ManagerAssignmentsPage />} />
@@ -197,7 +197,7 @@ export function AppRouter() {
           />
           <Route path="settings" element={<Navigate to="/admin" replace />} />
           <Route path="facility/assignments" element={<Navigate to="/admin" replace />} />
-          <Route path="facility">{operationalRoutes("/admin/facility")}</Route>
+          <Route path="facility/*" element={<Navigate to="/admin" replace />} />
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>

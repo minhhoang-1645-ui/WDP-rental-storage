@@ -26,6 +26,7 @@ export function ManagerActions({
   refresh: () => void;
   onSuccess?: (message: string) => void;
 }) {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState(first(row, "status"));
@@ -549,7 +550,7 @@ export function ManagerActions({
         {["maintenance", "support-requests"].includes(resource) &&
           !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
             <>
-              <form
+              {user?.role === "MANAGER" && <form
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -568,7 +569,7 @@ export function ManagerActions({
                 >
                   Phân công nhân viên
                 </button>
-              </form>
+              </form>}
               <form
                 className="portal-form portal-form-divider"
                 onSubmit={(event) => {
@@ -812,7 +813,6 @@ function StaffPicker({
   const [known, setKnown] = useState<Row[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
-    if (user?.role === "ADMIN") return;
     const controller = new AbortController();
     Promise.all([
       allPages("/manager/maintenance", controller.signal),
@@ -837,23 +837,7 @@ function StaffPicker({
           );
       });
     return () => controller.abort();
-  }, [user?.id, user?.role]);
-  if (user?.role === "ADMIN")
-    return (
-      <RecordPicker
-        path="/admin/users"
-        local
-        title="Nhân viên phụ trách"
-        value={value}
-        onChange={onChange}
-        accept={(item) =>
-          item.role === "STAFF" && item.accountStatus === "ACTIVE"
-        }
-        describe={(item) =>
-          `${first(item, "fullName")} · ${first(item, "email")}`
-        }
-      />
-    );
+  }, [user?.id]);
   return (
     <div className="portal-form">
       {known.length > 0 && (

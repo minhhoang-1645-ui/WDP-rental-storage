@@ -46,7 +46,7 @@ export function CustomerAppointmentsPage() {
     .toISOString()
     .slice(0, 16);
   const eligibleReservations = useMemo(() => {
-    const map = new Map<string, { id: string; reference: string }>();
+    const map = new Map<string, { id: string; reference: string; startDate: string }>();
     const groups = new Map<string, CustomerContract[]>();
     for (const contract of contracts.data?.items ?? [])
       groups.set(contract.reservation.id, [
@@ -64,9 +64,23 @@ export function CustomerAppointmentsPage() {
         items.every((item) => item.status === "READY_FOR_HANDOVER") &&
         !active.has(id)
       )
-        map.set(id, { id, reference: items[0].reservation.reference });
+        map.set(id, {
+          id,
+          reference: items[0].reservation.reference,
+          startDate: items[0].startDate.slice(0, 10),
+        });
     return [...map.values()];
   }, [contracts.data, appointments.data]);
+  const selectedReservation = eligibleReservations.find(
+    (item) => item.id === reservationId,
+  );
+  const reservationStartMinimum = selectedReservation
+    ? `${selectedReservation.startDate}T00:00`
+    : earliestAppointment;
+  const minimumAppointment =
+    earliestAppointment > reservationStartMinimum
+      ? earliestAppointment
+      : reservationStartMinimum;
   const filteredAppointments = (appointments.data?.items ?? []).filter(
     (item) =>
       view === "upcoming"
@@ -94,6 +108,11 @@ export function CustomerAppointmentsPage() {
         requestedTime.getTime() <= Date.now()
       )
         throw new Error("Lịch hẹn phải ở thời điểm tương lai.");
+      if (
+        selectedReservation &&
+        scheduledAt.slice(0, 10) < selectedReservation.startDate
+      )
+        throw new Error("Ngày nhận kho không được trước ngày bắt đầu thuê.");
       await mutate<CustomerAppointment>(
         "/customer/appointments",
         "POST",
@@ -240,7 +259,19 @@ export function CustomerAppointmentsPage() {
                 aria-label="Reservation"
                 required
                 value={reservationId}
-                onChange={(event) => setReservationId(event.target.value)}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  const nextReservation = eligibleReservations.find(
+                    (item) => item.id === nextId,
+                  );
+                  setReservationId(nextId);
+                  if (
+                    nextReservation &&
+                    scheduledAt &&
+                    scheduledAt.slice(0, 10) < nextReservation.startDate
+                  )
+                    setScheduledAt("");
+                }}
               >
                 <option value="">Chọn reservation</option>
                 {eligibleReservations.map((item) => (
@@ -256,13 +287,17 @@ export function CustomerAppointmentsPage() {
                 required
                 type="datetime-local"
                 aria-describedby="appointment-timezone"
-                min={earliestAppointment}
+                min={minimumAppointment}
                 value={scheduledAt}
                 onChange={(event) => setScheduledAt(event.target.value)}
               />
             </label>
             <small id="appointment-timezone">
-              Ngày giờ tại cơ sở WDP (UTC+7).
+              Ngày giờ tại cơ sở WDP (UTC+7). Ngày nhận kho không thể trước
+              ngày bắt đầu thuê
+              {selectedReservation
+                ? ` (${formatPortalDate(selectedReservation.startDate)}).`
+                : "."}
             </small>
             <label className="field-label">
               Ghi chú

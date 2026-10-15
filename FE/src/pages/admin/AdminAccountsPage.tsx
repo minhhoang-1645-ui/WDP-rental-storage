@@ -5,6 +5,7 @@ import { useAuth } from "../../auth/auth-context";
 import { allPages, mutate } from "../../services/portal";
 import { apiRequest } from "../../services/api";
 import {
+  date,
   first,
   label,
   type Page,
@@ -20,11 +21,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 
-export function AdminAccountsPage({
-  statusOnly = false,
-}: {
-  statusOnly?: boolean;
-}) {
+export function AdminAccountsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [state, setState] = useState<{
@@ -34,7 +31,10 @@ export function AdminAccountsPage({
   }>();
   const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<string>();
+  const [selected, setSelected] = useState<{
+    id: string;
+    changeStatus: boolean;
+  }>();
   const [notice, setNotice] = useState("");
   const search = params.get("search") ?? "";
   const role = params.get("role") ?? "";
@@ -86,19 +86,13 @@ export function AdminAccountsPage({
   return (
     <section>
       <PageHeader
-        title={statusOnly ? "Trạng thái tài khoản" : "Quản lý tài khoản"}
-        description={
-          statusOnly
-            ? "Kích hoạt hoặc vô hiệu hóa quyền truy cập của tài khoản."
-            : "Cấp tài khoản nội bộ và xem thông tin người dùng."
-        }
+        title="Quản lý tài khoản"
+        description="Cấp tài khoản nội bộ, xem vai trò và quản lý quyền truy cập."
       >
-        {!statusOnly && (
-          <button className="button-primary" onClick={() => setCreating(true)}>
-            <Plus size={17} />
-            Tạo tài khoản
-          </button>
-        )}
+        <button className="button-primary" onClick={() => setCreating(true)}>
+          <Plus size={17} />
+          Tạo tài khoản
+        </button>
         <button
           className="button-secondary"
           onClick={refresh}
@@ -171,6 +165,7 @@ export function AdminAccountsPage({
                     <th>Liên hệ</th>
                     <th>Vai trò</th>
                     <th>Trạng thái</th>
+                    <th>Ngày tạo</th>
                     <th>Thao tác</th>
                   </tr>
                 </thead>
@@ -196,12 +191,39 @@ export function AdminAccountsPage({
                           <Status value={row.accountStatus} />
                         </td>
                         <td>
-                          <button
-                            className="button-secondary"
-                            onClick={() => setSelected(first(row, "id"))}
-                          >
-                            Xem tài khoản
-                          </button>
+                          {row.createdAt
+                            ? date(row.createdAt, true)
+                            : "Chưa có dữ liệu"}
+                        </td>
+                        <td>
+                          <div className="portal-actions">
+                            <button
+                              className="button-secondary"
+                              onClick={() =>
+                                setSelected({
+                                  id: first(row, "id"),
+                                  changeStatus: false,
+                                })
+                              }
+                            >
+                              Xem
+                            </button>
+                            {row.id !== user?.id && (
+                              <button
+                                className="button-secondary"
+                                onClick={() =>
+                                  setSelected({
+                                    id: first(row, "id"),
+                                    changeStatus: true,
+                                  })
+                                }
+                              >
+                                {row.accountStatus === "ACTIVE"
+                                  ? "Vô hiệu hóa"
+                                  : "Kích hoạt lại"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -231,7 +253,8 @@ export function AdminAccountsPage({
       )}
       {selected && (
         <AccountDetail
-          id={selected}
+          id={selected.id}
+          statusAction={selected.changeStatus}
           onClose={() => setSelected(undefined)}
           onSuccess={(message) => {
             setNotice(message);
@@ -369,10 +392,12 @@ function CreateUser({
 }
 function AccountDetail({
   id,
+  statusAction,
   onClose,
   onSuccess,
 }: {
   id: string;
+  statusAction: boolean;
   onClose: () => void;
   onSuccess: (message: string) => void;
 }) {
@@ -431,7 +456,13 @@ function AccountDetail({
     }
   };
   return (
-    <Modal title="Thông tin tài khoản" onClose={onClose} busy={busy}>
+    <Modal
+      title={
+        statusAction ? "Cập nhật trạng thái tài khoản" : "Thông tin tài khoản"
+      }
+      onClose={onClose}
+      busy={busy}
+    >
       <div className="portal-form">
         {error && (
           <div className="booking-alert is-error" role="alert">
@@ -458,6 +489,11 @@ function AccountDetail({
                 ["Email", first(row, "email")],
                 ["Số điện thoại", first(row, "phone") || "Chưa cập nhật"],
                 ["Vai trò", label(row.role)],
+                ["Trạng thái", label(row.accountStatus)],
+                [
+                  "Ngày tạo",
+                  row.createdAt ? date(row.createdAt, true) : "Chưa có dữ liệu",
+                ],
                 ["Mã tài khoản", first(row, "id")],
               ]}
             />

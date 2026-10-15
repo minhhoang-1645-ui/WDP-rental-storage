@@ -107,6 +107,12 @@ const managerNavigation: InternalNavItem[] = [
     icon: Headphones,
     group: "Kho & Cơ sở",
   },
+  {
+    to: "/manager/assignments",
+    label: "Phân công nhân viên",
+    icon: ClipboardCheck,
+    group: "Kho & Cơ sở",
+  },
 
   // Nhóm: Tài chính & Hợp đồng
   {

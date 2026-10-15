@@ -107,31 +107,28 @@ interface CheckoutStepProps {
 }
 
 function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productSizeId, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
-  const [emailBooking, setEmailBooking] = useState(false)
+  const [emailBooking, setEmailBooking] = useState(true)
   const supportsEmail = !draft.adjacencyPreference && !draft.note.trim()
   const customer: GuestContact = {
     fullName: user ? user.fullName : draft.customer.fullName,
     phone: user ? user.phone : draft.customer.phone,
     email: user ? user.email : draft.customer.email,
   }
-  const paymentChoice = draft.paymentChoice
-  const paymentPlan = draft.paymentPlan
-
   const updateCustomer = (field: keyof GuestContact, value: string) => {
     onUpdate({ customer: { ...customer, [field]: value } })
   }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onSubmit({ ...draft, customer, paymentChoice, paymentPlan }, !user && emailBooking && supportsEmail)
+    onSubmit({ ...draft, customer, paymentChoice: 'pay-later' }, !user && emailBooking && supportsEmail)
   }
 
   return <div className="checkout-layout">
     <form className="checkout-form" onSubmit={submit}>
       <button type="button" className="booking-back" onClick={onBack}><ArrowLeft size={16} /> Sửa thời gian và dịch vụ</button>
       <p className="eyebrow mt-7">Bước 3</p>
-      <h2 className="booking-title">Thông tin khách hàng và cách thanh toán</h2>
-      <p className="checkout-intro">Khách chưa đăng nhập có thể gửi yêu cầu liên hệ. Yêu cầu này không phải là giữ chỗ, thanh toán hay hợp đồng.</p>
+      <h2 className="booking-title">Thông tin khách hàng và xác nhận yêu cầu</h2>
+      <p className="checkout-intro">Kiểm tra thông tin liên hệ và báo giá trước khi gửi yêu cầu. Báo giá chưa phải hóa đơn hay giao dịch thanh toán.</p>
 
       <fieldset className="checkout-fieldset">
         <legend>Thông tin liên hệ</legend>
@@ -145,17 +142,8 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
         {!user && <label className="booking-checkbox"><input type="checkbox" checked={emailBooking && supportsEmail} disabled={submitting || !supportsEmail} onChange={event => setEmailBooking(event.target.checked)} /><span><strong>Xác minh email để nhận yêu cầu đặt kho</strong><small>{supportsEmail ? 'Bạn có thể tạo tài khoản sau khi xác minh email. Chưa giữ kho hoặc thanh toán.' : 'Luồng email chưa hỗ trợ ghi chú hoặc ưu tiên kho liền kề. Yêu cầu liên hệ giữ đầy đủ các thông tin này.'}</small></span></label>}
       </fieldset>
 
-      <fieldset className="checkout-fieldset">
-        <legend>Bạn muốn thanh toán như thế nào?</legend>
-        <div className="payment-options">
-          <button type="button" className="payment-option is-disabled" disabled><span className="payment-option-mark">A</span><span><strong>Thanh toán ngay</strong><small>Thanh toán QR hoặc VNPay tại hóa đơn sau khi yêu cầu đặt kho được xác nhận.</small></span><em>Chờ hóa đơn</em></button>
-          <button type="button" className={paymentChoice === 'pay-later' ? 'payment-option is-selected' : 'payment-option'} onClick={() => onUpdate({ paymentChoice: 'pay-later' })} aria-pressed={paymentChoice === 'pay-later'}><span className="payment-option-mark">B</span><span><strong>Thanh toán sau</strong><small>WDP liên hệ để kiểm tra kho, báo giá và hướng dẫn thanh toán.</small></span>{paymentChoice === 'pay-later' && <Check size={18} />}</button>
-        </div>
-        <label className="field-label mt-5">Kế hoạch thanh toán<select value={paymentPlan} onChange={(event) => onUpdate({ paymentPlan: event.target.value as BookingDraft['paymentPlan'] })}><option value="PAY_MONTHLY">Thanh toán hàng tháng</option><option value="PREPAID">Thanh toán trước</option></select></label>
-        <Link className="consult-link" to="/#contact">C. Tư vấn giải pháp riêng tại cơ sở này <ArrowRight size={15} /></Link>
-      </fieldset>
-
-      <button className="button-primary mt-7 w-full justify-center" type="submit" disabled={submitting || !canSubmit || paymentChoice !== 'pay-later'}>{submitting ? 'Đang kiểm tra và gửi...' : !canSubmit ? 'Đang xác minh kho…' : user ? 'Gửi yêu cầu đặt kho' : 'Gửi yêu cầu liên hệ'} <ChevronRight size={18} /></button>
+      <div className="booking-alert mt-7" role="note"><Info size={18} /><span><strong>Bạn chưa cần thanh toán ở bước này.</strong> {(!user && emailBooking && supportsEmail) ? 'Sau khi xác minh email và yêu cầu đặt kho được xác nhận, hệ thống sẽ tạo hóa đơn để bạn thanh toán.' : 'Hóa đơn chỉ được tạo sau khi yêu cầu đặt kho được xác nhận; bạn sẽ thanh toán theo hóa đơn đó.'}</span></div>
+      <button className="button-primary mt-5 w-full justify-center" type="submit" disabled={submitting || !canSubmit}>{submitting ? 'Đang kiểm tra và gửi...' : !canSubmit ? 'Đang xác minh kho…' : !user && (!emailBooking || !supportsEmail) ? 'Gửi yêu cầu liên hệ' : 'Gửi yêu cầu đặt kho'} <ChevronRight size={18} /></button>
     </form>
 
     <aside className="checkout-quote">
@@ -170,12 +158,12 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
           <div><span><strong>Thời hạn thuê</strong><small>{quote.billingMode === 'DAILY' ? `${quote.billableDays} ngày` : `${quote.termMonths} tháng`}</small></span><b>{quote.quantity} kho</b></div>
           <div><span><strong>Tiền thuê trước chiết khấu</strong><small>Giá theo thời hạn và số lượng</small></span><b>{quoteText(quote.baseRentalAmount)}</b></div>
           {quote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước ({quote.discountPercent}%)</strong><small>Không áp dụng cho tiền đặt cọc</small></span><b>−{quoteText(quote.discountAmount)}</b></div>}
-          <div><span><strong>Tiền thuê sau chiết khấu</strong><small>{quote.paymentPlan === 'PREPAID' ? 'Trả trước' : 'Thanh toán hàng tháng'}</small></span><b>{quoteText(quote.rentalAmount)}</b></div>
+          <div><span><strong>Tiền thuê sau chiết khấu</strong><small>{quote.paymentPlan === 'PREPAID' ? 'Trả trước toàn bộ kỳ' : 'Tổng tiền thuê cả kỳ; các tháng được lập hóa đơn riêng'}</small></span><b>{quoteText(quote.rentalAmount)}</b></div>
           <div><span><strong>Tiền đặt cọc</strong><small>Không áp dụng chiết khấu</small></span><b>{quoteText(quote.depositAmount)}</b></div>
           {quote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><b>{quoteText(item.amount)}</b></div>)}
         </div>
-        <div className="quote-total"><span>Tổng giá trị hợp đồng dự kiến</span><strong>{quoteText(quote.quotedTotalAmount)}</strong></div>
-        {quote.amountPayableNow !== null && <div className="quote-total is-payable"><span>Thanh toán ban đầu</span><strong>{quoteText(quote.amountPayableNow)}</strong></div>}
+        <div className="quote-total"><span>Tổng giá trị dự kiến</span><strong>{quoteText(quote.quotedTotalAmount)}</strong></div>
+        {typeof quote.estimatedInitialAmountDue === 'number' && <div className="quote-total is-payable"><span>Dự kiến thanh toán ban đầu<br /><small>Theo hóa đơn được tạo sau khi xác nhận</small></span><strong>{quoteText(quote.estimatedInitialAmountDue)}</strong></div>}
         <div className="booking-alert mt-5"><Info size={18} /><span>{quote.message}</span></div>
       </>}
       <p className="quote-disclosure">Phí và thuế chưa có trong báo giá của máy chủ nên không hiển thị.</p>
@@ -468,9 +456,9 @@ export function BookingWizardPage() {
             <label className="field-label">Ngày bắt đầu mong muốn<input type="date" min={new Date().toISOString().slice(0, 10)} name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
             <div className="period-mode-tabs" role="group" aria-label="Cách chọn thời gian"><button type="button" className={draft.periodMode === 'duration' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Theo thời hạn<small>Danh sách đã duyệt</small></button><button type="button" className={draft.periodMode === 'dates' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'dates', durationMonths: null })}>Theo ngày kết thúc<small>Cần xác nhận báo giá</small></button></div>
             {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">Thời hạn dưới một tháng chưa có chính sách giá, không tự tính đơn giá theo ngày.</small></label>}
-            <fieldset className="payment-plan-fieldset"><legend>Cách thanh toán hợp đồng</legend><div className="payment-options">
-              <button type="button" className={draft.paymentPlan === 'PAY_MONTHLY' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span><strong>Thanh toán hàng tháng</strong><small>Không áp dụng chiết khấu trả trước.</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
-              <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span><strong>Trả trước</strong><small>Chiết khấu theo thời hạn đủ điều kiện, do máy chủ xác định.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
+            <fieldset className="payment-plan-fieldset"><legend>Kế hoạch thanh toán</legend><div className="payment-options">
+              <button type="button" className={draft.paymentPlan === 'PAY_MONTHLY' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Thanh toán hàng tháng</strong><small>Thanh toán tiền thuê theo từng tháng. Hóa đơn đầu tiên gồm tiền thuê kỳ đầu và tiền đặt cọc. Các kỳ tiếp theo được thanh toán theo hóa đơn định kỳ.</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
+              <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. Kỳ thuê đủ điều kiện có thể được áp dụng chiết khấu trả trước. Tiền đặt cọc không được chiết khấu.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
             </div></fieldset>
             <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
             <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Giá và khả dụng được kiểm tra qua hệ thống WDP.</p></div></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
@@ -487,7 +475,7 @@ export function BookingWizardPage() {
             <div><dt>Ngày kết thúc sử dụng</dt><dd>{pricingQuote ? inclusiveEndDate(pricingQuote.endDate) : 'Chờ báo giá hợp lệ'}</dd></div>
             <div><dt>Thời hạn</dt><dd>{pricingQuote ? pricingQuote.billingMode === 'DAILY' ? `${pricingQuote.billableDays} ngày` : `${pricingQuote.termMonths} tháng` : (draft.periodMode === 'duration' ? draft.durationMonths + ' tháng' : 'Chờ ngày kết thúc')}</dd></div>
             <div><dt>Số lượng</dt><dd>{draft.quantity} kho</dd></div>
-            <div><dt>Thanh toán</dt><dd>{draft.paymentPlan === 'PREPAID' ? 'Trả trước' : 'Hàng tháng'}</dd></div>
+            <div><dt>Kế hoạch thanh toán</dt><dd>{draft.paymentPlan === 'PREPAID' ? 'Trả trước toàn bộ kỳ' : 'Thanh toán hàng tháng'}</dd></div>
           </dl>
           <div className="booking-pricing">
             <h3>Trạng thái báo giá</h3>
@@ -498,12 +486,12 @@ export function BookingWizardPage() {
               <div><span><strong>Giá tháng niêm yết</strong><small>{pricingQuote.quantity} kho</small></span><strong>{quoteText(pricingQuote.monthlyUnitPrice)}</strong></div>
               <div><span><strong>Tiền thuê trước chiết khấu</strong><small>{pricingQuote.billingMode === 'DAILY' ? `${pricingQuote.billableDays} ngày` : `${pricingQuote.termMonths} tháng`} × {pricingQuote.quantity} kho</small></span><strong>{quoteText(pricingQuote.baseRentalAmount)}</strong></div>
               {pricingQuote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước</strong><small>{pricingQuote.discountPercent}%</small></span><strong>−{quoteText(pricingQuote.discountAmount)}</strong></div>}
-              <div><span><strong>Tiền thuê sau chiết khấu</strong></span><strong>{quoteText(pricingQuote.rentalAmount)}</strong></div>
+              <div><span><strong>Tiền thuê sau chiết khấu</strong>{pricingQuote.paymentPlan === 'PAY_MONTHLY' && <small>Tổng tiền thuê cả kỳ; các tháng được lập hóa đơn riêng</small>}</span><strong>{quoteText(pricingQuote.rentalAmount)}</strong></div>
               <div><span><strong>Tiền đặt cọc</strong><small>Không giảm theo chiết khấu</small></span><strong>{quoteText(pricingQuote.depositAmount)}</strong></div>
               {pricingQuote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><strong>{quoteText(item.amount)}</strong></div>)}
-              <div className="booking-pricing-total"><span><strong>Tổng giá trị hợp đồng</strong></span><strong>{quoteText(pricingQuote.quotedTotalAmount)}</strong></div>
-              {pricingQuote.amountPayableNow !== null && <div><span><strong>Thanh toán ban đầu</strong></span><strong>{quoteText(pricingQuote.amountPayableNow)}</strong></div>}
-              <p>{pricingQuote.message} Phí và thuế chưa có dữ liệu nên không hiển thị.</p>
+              <div className="booking-pricing-total"><span><strong>Tổng giá trị dự kiến</strong></span><strong>{quoteText(pricingQuote.quotedTotalAmount)}</strong></div>
+              {typeof pricingQuote.estimatedInitialAmountDue === 'number' && <div><span><strong>Dự kiến thanh toán ban đầu</strong><small>Theo hóa đơn sau khi xác nhận yêu cầu</small></span><strong>{quoteText(pricingQuote.estimatedInitialAmountDue)}</strong></div>}
+              <p>{pricingQuote.paymentPlan === 'PAY_MONTHLY' ? 'Tiền thuê cả kỳ được lập hóa đơn theo từng tháng; tiền đặt cọc chỉ thu một lần. ' : ''}{pricingQuote.message} Phí và thuế chưa có dữ liệu nên không hiển thị.</p>
             </>}
           </div>
           <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />

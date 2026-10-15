@@ -24,6 +24,7 @@ import { ManagerReservationsPage } from "../pages/manager/ManagerReservationsPag
 import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservationDetailPage";
 import { ManagerReportsPage } from "../pages/manager/ManagerReportsPage";
 import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
+import { ManagerAssignmentsPage } from "../pages/manager/ManagerAssignmentsPage";
 import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
 import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
 import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
@@ -38,13 +39,8 @@ import {
 } from "../pages/staff/staff-resources";
 import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
 import { AdminLayout } from "../pages/admin/AdminLayout";
-import { AdminUsersPage } from "../pages/admin/AdminUsersPage";
-import { AdminSettingsPage } from "../pages/admin/AdminSettingsPage";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
 import { AdminAccountsPage } from "../pages/admin/AdminAccountsPage";
-import { AdminRolesPage } from "../pages/admin/AdminRolesPage";
-import { AdminAssignmentsPage } from "../pages/admin/AdminAssignmentsPage";
-import { AdminActivityPage } from "../pages/admin/AdminActivityPage";
 import { ManagerCatalogPage } from "../pages/manager/ManagerCatalogPage";
 import { ManagerAdditionalServicesPage } from '../pages/manager/ManagerAdditionalServicesPage';
 import { CustomerLayout } from "../components/customer/CustomerLayout";
@@ -182,21 +178,25 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["MANAGER", "ADMIN"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
+          <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
+            <Route path="assignments" element={<ManagerAssignmentsPage />} />
+          </Route>
           {operationalRoutes("/manager")}
         </Route>
       </Route>
       <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="roles" element={<AdminRolesPage />} />
-          <Route path="assignments" element={<AdminAssignmentsPage />} />
-          <Route path="activity" element={<AdminActivityPage />} />
+          <Route path="users" element={<AdminAccountsPage />} />
+          <Route path="roles" element={<Navigate to="/admin/users" replace />} />
+          <Route path="assignments" element={<Navigate to="/admin" replace />} />
+          <Route path="activity" element={<Navigate to="/admin" replace />} />
           <Route
             path="account-status"
-            element={<AdminAccountsPage statusOnly />}
+            element={<Navigate to="/admin/users" replace />}
           />
-          <Route path="settings" element={<AdminSettingsPage />} />
+          <Route path="settings" element={<Navigate to="/admin" replace />} />
+          <Route path="facility/assignments" element={<Navigate to="/admin" replace />} />
           <Route path="facility">{operationalRoutes("/admin/facility")}</Route>
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>

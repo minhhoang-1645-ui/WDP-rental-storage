@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED' }
+export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
 export interface UserListFilters { search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
 export abstract class UserRepository {
@@ -32,7 +32,7 @@ export class MemoryUserRepository extends UserRepository {
     if ([...this.users.values()].some(user => user.email === input.email)) {
       throw new ConflictException('Email này đã được đăng ký.');
     }
-    const user: StoredUser = { ...input, accountStatus: input.accountStatus ?? 'ACTIVE', id: randomUUID() };
+    const user: StoredUser = { ...input, accountStatus: input.accountStatus ?? 'ACTIVE', id: randomUUID(), createdAt: new Date() };
     this.users.set(user.id, user);
     return user;
   }

@@ -20,7 +20,7 @@ export class AdminUsersController {
   @ApiQuery({ name: 'search', required: false, example: 'staff@test.com', description: 'Tìm tên, email hoặc số điện thoại.' })
   @ApiQuery({ name: 'role', required: false, enum: ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] })
   @ApiQuery({ name: 'accountStatus', required: false, enum: ['ACTIVE', 'DISABLED'] })
-  @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER' }] } } })
+  @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER', accountStatus: 'ACTIVE', createdAt: '2026-10-14T00:00:00.000Z' }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ ADMIN được phép.' })
   async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string) {
@@ -65,7 +65,7 @@ export class AdminUsersController {
     return this.publicUser(user);
   }
 
-  private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string }) {
-    return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, accountStatus: user.accountStatus };
+  private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string; createdAt?: Date }) {
+    return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, accountStatus: user.accountStatus, createdAt: user.createdAt?.toISOString() ?? null };
   }
 }

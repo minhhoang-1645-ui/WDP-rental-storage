@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
@@ -31,10 +31,15 @@ export function Navigation({ title, path, description }: { title: string; path: 
   return <Pressable accessibilityRole="button" accessibilityLabel={`${title} ›`} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, styles.navigation, pressed && styles.pressed]}><View style={styles.navigationCopy}><Text style={styles.navigationTitle}>{title}</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</View><Text accessibilityElementsHidden importantForAccessibility="no" style={styles.navigationArrow}>›</Text></Pressable>;
 }
 export function Panel({ title, children }: { title?: string; children: ReactNode }) { return <View style={styles.card}>{Boolean(title) && <Text style={styles.title}>{title}</Text>}{children}</View>; }
+export function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return <View style={styles.card}><Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={styles.title}>{expanded ? '−' : '+'} {title}</Text></Pressable>{expanded && children}</View>;
+}
 export function Facts({ values }: { values: [string, unknown][] }) {
   return <View style={{ gap: WdpSpacing.sm }}>{values.map(([name, value]) => <View key={name}><Text style={styles.label}>{name}</Text><Text selectable style={styles.copy}>{value === null || value === undefined || value === '' ? '—' : String(value)}</Text></View>)}</View>;
 }
 export const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? formatMoney(value) : 'Cần xác nhận báo giá';
 export function Field({ title, value, onChange, numeric, secure, multiline, disabled, maxLength }: { title: string; value: string; onChange: (value: string) => void; numeric?: boolean; secure?: boolean; multiline?: boolean; disabled?: boolean; maxLength?: number }) {
-  return <View style={{ gap: WdpSpacing.xs }}><Text style={styles.label}>{title}</Text><TextInput accessibilityLabel={title} value={value} onChangeText={onChange} editable={!disabled} secureTextEntry={secure} multiline={multiline} keyboardType={numeric ? 'numeric' : 'default'} autoCapitalize="none" autoCorrect={false} maxLength={maxLength} style={[styles.input, multiline && { minHeight: 90, textAlignVertical: 'top' }]} /></View>;
+  const [visible, setVisible] = useState(false);
+  return <View style={{ gap: WdpSpacing.xs }}><Text style={styles.label}>{title}</Text><View style={{ position: 'relative' }}><TextInput accessibilityLabel={title} value={value} onChangeText={onChange} editable={!disabled} secureTextEntry={secure && !visible} multiline={multiline} keyboardType={numeric ? 'numeric' : 'default'} autoCapitalize="none" autoCorrect={false} maxLength={maxLength} style={[styles.input, multiline && { minHeight: 90, textAlignVertical: 'top' }, secure && { paddingRight: 66 }]} />{secure && <Pressable accessibilityRole="button" accessibilityLabel={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} disabled={disabled} onPress={() => setVisible(current => !current)} style={{ position: 'absolute', right: 4, top: 3, bottom: 3, minWidth: 56, alignItems: 'center', justifyContent: 'center' }}><Text style={styles.label}>{visible ? 'Ẩn' : 'Hiện'}</Text></Pressable>}</View></View>;
 }

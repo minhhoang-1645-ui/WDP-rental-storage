@@ -39,6 +39,13 @@ export function moneyLabel(
 
 export function customerStatusLabel(status: string) {
   const labels: Record<string, string> = {
+    INITIAL: 'Hóa đơn ban đầu',
+    RECURRING: 'Hóa đơn định kỳ',
+    RENEWAL: 'Hóa đơn gia hạn',
+    SETTLEMENT: 'Hóa đơn quyết toán',
+    BANK_TRANSFER: 'Chuyển khoản',
+    CASH: 'Tiền mặt',
+    VNPAY: 'VNPay',
     ACTIVE: "Đang thuê",
     OVERDUE: "Quá hạn",
     PENDING_PAYMENT: "Chờ thanh toán",

@@ -1,5 +1,9 @@
 # WDP Storage Mobile
 
+Rà soát UI/UX và bổ sung thao tác Customer/Staff ngày 16/10: [FULL_REVIEW_2026-10-16.md](../FE/FULL_REVIEW_2026-10-16.md). Giữ nguyên BE/database và hai mục Admin.
+
+Bổ sung đối chiếu trước duyệt gia hạn ngày 16/10: [góp ý giảng viên và giới hạn BE](../FE/TEACHER_REVIEW_2026-10-16.md). Các phần nhập/xuất hàng khách, phụ lục có ký và cấu hình Admin cần API/schema mới, chưa được lưu giả trên mobile.
+
 Ứng dụng React Native/Expo dành cho **Customer, Staff, Manager và Admin** của WDP Storage. BE và database được giữ nguyên.
 
 Giao diện được đồng bộ với web ngày 15/10/2026; xem [thiết kế và kiểm thử](../FE/UI_REFRESH_2026-10-15.md). Giữ nguyên API, ô nhập React Native và quyền của từng vai trò.
@@ -8,8 +12,8 @@ Giao diện được đồng bộ với web ngày 15/10/2026; xem [thiết kế 
 
 - Đăng nhập bằng API `POST /api/auth/login` và khôi phục phiên bằng `GET /api/auth/me`.
 - Lưu access token an toàn bằng Expo SecureStore trên thiết bị.
-- Customer: tổng quan, kho đang thuê, hóa đơn/thanh toán và tài khoản.
-- Staff: tổng quan công việc, lịch hẹn, danh sách nhiệm vụ và tài khoản.
+- Customer: tổng quan, yêu cầu đặt kho, hợp đồng/lịch bàn giao, kho đang thuê, yêu cầu gia hạn/trả kho/hỗ trợ, chuyển kho qua hỗ trợ, hóa đơn/chuyển khoản/VNPay, lịch sử thanh toán, quyết toán cọc và tài khoản. Đặt kho mới và đăng ký công khai sử dụng web hiện có.
+- Staff: tổng quan, kho đang thuê, chi tiết lịch bàn giao/công việc, xử lý hỗ trợ/bảo trì được giao, ghi kiểm tra/nhận kho trả, hoàn tất chuyển kho đã duyệt và tài khoản. Không duyệt tài chính.
 - Manager: tổng quan; 18 phân hệ danh sách/chi tiết; tìm/lọc dữ liệu; kiểm tra khả dụng; duyệt đặt kho, gia hạn và chuyển kho; xử lý tư vấn/hỗ trợ; tạo, phân công và nghiệm thu bảo trì; ghi nhận khoản thu, đối chiếu chuyển khoản, duyệt quyết toán/ghi nhận hoàn cọc; danh mục dịch vụ, giá và tồn kho; báo cáo vận hành.
 - Admin: đúng hai nhóm theo bản merge mới và xác nhận ngày 15/10/2026: Tổng quan và Quản lý tài khoản. Tạo STAFF/MANAGER, xem hồ sơ và cập nhật ACTIVE/DISABLED dùng API thật trong quản lý tài khoản. Phân công nhân viên thuộc Manager.
 - Tự động đưa người dùng vào đúng khu vực theo vai trò.

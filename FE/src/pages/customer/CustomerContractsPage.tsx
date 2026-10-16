@@ -55,7 +55,7 @@ export function CustomerContractsPage() {
           </span>
         </PortalEmpty>
       ) : (
-        <div className="customer-table-wrap">
+        <div className="customer-table-wrap customer-responsive-table">
           <table className="customer-table">
             <thead>
               <tr>
@@ -69,12 +69,12 @@ export function CustomerContractsPage() {
             <tbody>
               {contracts.map((contract) => (
                 <tr key={contract.id}>
-                  <td>
+                  <td data-label="Mã hợp đồng">
                     <strong>{contract.contractCode}</strong>
                     <small>{contract.reservation.reference}</small>
                   </td>
-                  <td>{contract.storageType.name}</td>
-                  <td>
+                  <td data-label="Loại kho">{contract.storageType.name}</td>
+                  <td data-label="Kho được cấp">
                     <strong>{contract.storageUnit.unitCode}</strong>
                     <small>
                       {[contract.storageUnit.floor, contract.storageUnit.zone]
@@ -82,11 +82,11 @@ export function CustomerContractsPage() {
                         .join(" · ")}
                     </small>
                   </td>
-                  <td>
+                  <td data-label="Thời hạn">
                     {formatPortalDate(contract.startDate)} –{" "}
                     {formatPortalDate(contract.endDate)}
                   </td>
-                  <td>
+                  <td data-label="Trạng thái">
                     <CustomerStatus status={contract.status} />
                   </td>
                 </tr>

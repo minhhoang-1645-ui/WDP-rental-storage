@@ -289,3 +289,25 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
   .public-header, .public-footer, .home-finder, .home-size-shortcuts { display: none; }
   .storage-listing-card { break-inside: avoid; box-shadow: none; }
 }
+
+.password-field { position: relative; display: block; width: 100%; }
+.password-field input { width: 100%; padding-right: 52px !important; }
+.password-field > button { position: absolute; right: 4px; top: 4px; bottom: 4px; width: 44px; border: 0; border-radius: 10px; display: grid; place-items: center; color: var(--color-navy); background: transparent; cursor: pointer; }
+.password-field > button:hover { background: #edf3f2; }
+.password-field > button:focus-visible { outline: 2px solid var(--color-navy); outline-offset: -2px; }
+.public-footer #contact p a { display: inline; margin: 0; overflow-wrap: anywhere; }
+.public-header nav a[aria-current] { color: var(--color-navy); font-weight: 700; }
+@media (max-width: 680px) {
+  .customer-responsive-table { display: block; overflow: visible; background: transparent; border: 0; box-shadow: none; }
+  .customer-responsive-table .customer-table { display: block; min-width: 0; width: 100%; }
+  .customer-responsive-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .customer-responsive-table tbody { display: grid; gap: 16px; }
+  .customer-responsive-table tr { display: block; min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: 16px; background: white; }
+  .customer-responsive-table .customer-table td { display: grid; grid-template-columns: minmax(90px, .8fr) minmax(0, 1.2fr); align-items: start; gap: 5px 12px; padding: 10px 0; border-bottom: 1px solid #edf1f3; overflow-wrap: anywhere; }
+  .customer-responsive-table td::before { content: attr(data-label); color: var(--color-slate); font-size: 12px; font-weight: 600; }
+  .customer-responsive-table td > * { grid-column: 2; min-width: 0; }
+  .customer-responsive-table td:last-child { border-bottom: 0; }
+  .customer-responsive-table .payment-actions { display: grid; gap: 8px; }
+  .customer-responsive-table .customer-status { white-space: normal; justify-self: start; max-width: 100%; }
+  .customer-responsive-table .payment-actions button { width: 100%; white-space: normal; justify-content: center; }
+}

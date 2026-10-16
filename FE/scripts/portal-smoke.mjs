@@ -139,7 +139,13 @@ const fixture = {
       paymentPlan: "PAY_MONTHLY",
       customer,
       reservation,
-      quoteSnapshot: quote,
+      quoteSnapshot: {
+        currency: 'VND', storageTypeId: storageType.id, storageTypeName: storageType.name,
+        quantity: 1, previousEndDate: '2027-01-01', renewalStartDate: '2027-01-01',
+        requestedEndDate: '2027-04-01', termMonths: 3, paymentPlan: 'PAY_MONTHLY',
+        monthlyUnitPrice: 1000000, baseRentalAmount: 3000000, discountPercent: 0,
+        discountAmount: 0, rentalAmount: 3000000, depositAmount: 0, totalAmount: 3000000,
+      },
       invoices: [],
       createdAt: when,
     },
@@ -568,6 +574,9 @@ try {
   await success(page);
   assert.equal(writes.at(-1).method, "PATCH");
   await open(page, "/manager/operations/renewals/renewal-id");
+  assert(await page.getByRole('button', { name: 'Duyệt gia hạn', exact: true }).isDisabled());
+  await page.getByRole('region', { name: 'Thông tin đối chiếu gia hạn' }).waitFor();
+  await page.getByLabel('Tôi đã đối chiếu thông tin và báo giá gia hạn', { exact: true }).check();
   await page
     .getByRole("button", { name: "Duyệt gia hạn", exact: true })
     .click();

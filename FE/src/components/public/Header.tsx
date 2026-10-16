@@ -1,6 +1,6 @@
 import { LogIn, Menu, Warehouse, X } from "lucide-react";
-import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import { Container } from "../ui/Container";
@@ -15,7 +15,15 @@ const links = [
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); menuTrigger.current?.focus(); } };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [open]);
   const { user } = useAuth();
+  const location = useLocation();
   const isInternalUser =
     user?.role === "MANAGER" ||
     user?.role === "STAFF" ||
@@ -52,7 +60,7 @@ export function Header() {
           className="hidden items-center gap-6 lg:flex"
           aria-label="Điều hướng chính"
         >
-          {links.map(([label, href]) => (
+          {links.map(([label, href]) => href.includes('#') ? <Link key={label} to={href} className="nav-link" aria-current={location.pathname === '/' && location.hash === href.slice(1) ? 'location' : undefined}>{label}</Link> : (
             <NavLink key={label} to={href} className="nav-link">
               {label}
             </NavLink>
@@ -70,6 +78,7 @@ export function Header() {
           </Link>
         </div>
         <button
+          ref={menuTrigger}
           className="icon-button lg:hidden"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
@@ -86,7 +95,7 @@ export function Header() {
           aria-label="Điều hướng di động"
         >
           <div className="mx-auto flex max-w-7xl flex-col">
-            {links.map(([label, href]) => (
+            {links.map(([label, href]) => href.includes('#') ? <Link key={label} to={href} onClick={() => setOpen(false)} className="border-b border-border py-3 font-medium" aria-current={location.pathname === '/' && location.hash === href.slice(1) ? 'location' : undefined}>{label}</Link> : (
               <NavLink
                 key={label}
                 to={href}

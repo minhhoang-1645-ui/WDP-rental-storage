@@ -991,6 +991,10 @@ a.portal-metric:hover {
   display: grid;
   gap: 14px;
 }
+.renewal-review .manager-facts { margin-bottom: 20px; }
+.renewal-review .manager-table-wrap { margin-top: 20px; }
+.renewal-review-details { margin-top: 18px; }
+.renewal-review-details > summary { color: var(--color-navy); font-size: 13px; font-weight: 650; padding-block: 10px; }
 .customer-next-actions .button-secondary {
   justify-content: flex-start;
 }

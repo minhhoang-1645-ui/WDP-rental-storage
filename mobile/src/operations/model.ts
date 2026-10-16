@@ -34,6 +34,8 @@ export const adminSections = [
   ['dashboard', 'Tổng quan hệ thống'], ['users', 'Quản lý tài khoản người dùng'],
 ] as const;
 const labels: Record<string, string> = {
+  VOID: 'Đã hủy', UNINSPECTED: 'Chưa kiểm tra',
+  LOCK_OR_KEY_ISSUE: 'Vấn đề khóa/chìa khóa', ACCESS_CODE_ISSUE: 'Vấn đề mã truy cập', PAYMENT_SUPPORT: 'Hỗ trợ thanh toán', STORED_ITEM_CONCERN: 'Vấn đề hàng đang gửi', DAILY: 'Theo ngày', MONTHLY: 'Theo tháng',
   INITIAL: 'Hóa đơn ban đầu', RECURRING: 'Hóa đơn định kỳ', RENEWAL: 'Hóa đơn gia hạn', SETTLEMENT: 'Hóa đơn quyết toán', INCLUDED: 'Đã tính trong báo giá', PRICED: 'Đã có báo giá', QUOTE_REQUIRED: 'Cần xác nhận báo giá', dates: 'Chọn khoảng ngày', duration: 'Chọn số tháng', INQUIRY: 'Yêu cầu tư vấn', RESERVATION: 'Yêu cầu đặt kho', ok: 'Đã kết nối',
   PENDING_CONTACT: 'Chờ liên hệ', CONTACTED: 'Đã liên hệ', IN_REVIEW: 'Đang xem xét', CLOSED: 'Đã đóng', PENDING: 'Chờ duyệt', CONFIRMED: 'Đã xác nhận', REJECTED: 'Đã từ chối', CANCELLED: 'Đã hủy', EXPIRED: 'Đã hết hạn',
   AVAILABLE: 'Sẵn sàng', RESERVED: 'Đã phân bổ', OCCUPIED: 'Đang sử dụng', MAINTENANCE: 'Đang bảo trì', ACTIVE: 'Đang hoạt động', DISABLED: 'Đã vô hiệu hóa', OVERDUE: 'Quá hạn', REQUESTED: 'Chờ xử lý', COMPLETED: 'Hoàn tất',

@@ -19,6 +19,7 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import type { CustomerRenewal, CustomerRental } from "../../types/customer";
+import { RenewalReview } from '../../components/manager/RenewalReview';
 
 export function CustomerRenewalsPage() {
   const { user } = useAuth();
@@ -42,6 +43,7 @@ export function CustomerRenewalsPage() {
     kind: "ok" | "error";
     text: string;
   } | null>(null);
+  const eligibleRentals = (rentals.data?.items ?? []).filter(item => !item.pendingRenewal && item.historicalPricing?.billingMode === 'MONTHLY');
 
   const { items: visibleRenewals, pagination } = useCustomerPagination(
     renewals.data?.items ?? [],
@@ -54,6 +56,7 @@ export function CustomerRenewalsPage() {
     setMessage(null);
     setSubmitting(true);
     try {
+      if (!eligibleRentals.some(item => item.reservationId === reservationId)) throw new Error('Chọn kho thuê theo tháng, chưa có yêu cầu gia hạn chờ xử lý.');
       await mutate<CustomerRenewal>(
         "/customer/renewals",
         "POST",
@@ -113,6 +116,7 @@ export function CustomerRenewalsPage() {
             }
           >
             <h2>Tạo yêu cầu mới</h2>
+            <p>Chỉ kho thuê theo tháng và chưa có yêu cầu gia hạn chờ xử lý được chọn.</p>
             <label className="field-label">
               Kho đang thuê
               <select
@@ -122,8 +126,7 @@ export function CustomerRenewalsPage() {
                 onChange={(event) => setReservationId(event.target.value)}
               >
                 <option value="">Chọn kho</option>
-                {(rentals.data?.items ?? [])
-                  .filter((item) => !item.pendingRenewal)
+                {eligibleRentals
                   .map((item) => (
                     <option key={item.reservationId} value={item.reservationId}>
                       {item.reservationReference} · {item.storageType.name} ·
@@ -216,7 +219,7 @@ export function CustomerRenewalsPage() {
                   </div>
                   <dl className="customer-record-facts">
                     <div>
-                      <dt>Thời hạn</dt>
+                      <dt>Kỳ gia hạn (không gồm ngày kết thúc)</dt>
                       <dd>
                         {formatPortalDate(item.previousEndDate)} –{" "}
                         {formatPortalDate(item.requestedEndDate)}
@@ -237,6 +240,7 @@ export function CustomerRenewalsPage() {
                       {item.rejectionReason}
                     </p>
                   )}
+                  <details className="renewal-review-details"><summary>Xem thông tin gia hạn và căn cứ lập phụ lục</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} /></details>
                 </article>
               ))}
             </div>

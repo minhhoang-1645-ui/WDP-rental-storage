@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth/use-auth';
@@ -11,8 +11,14 @@ import type { CustomerInvoice, CustomerRental, Paginated } from '@/types/api';
 import { formatMoney } from '@/utils/format';
 
 const menu = [
+  { href: '/customer/reservations' as const, title: 'Yêu cầu đặt kho', description: 'Theo dõi yêu cầu và trạng thái xác nhận.' },
   { href: '/customer/rentals' as const, title: 'Kho đang thuê', description: 'Xem unit, hợp đồng và thời hạn sử dụng.' },
-  { href: '/customer/payments' as const, title: 'Hóa đơn', description: 'Theo dõi số dư và trạng thái thanh toán.' },
+  { href: '/customer/contracts' as const, title: 'Hợp đồng và bàn giao', description: 'Xem hợp đồng, đặt và theo dõi lịch nhận kho.' },
+  { href: '/customer/invoices' as const, title: 'Hóa đơn và thanh toán', description: 'Chuyển khoản, VNPay và lịch sử thanh toán.' },
+  { href: '/customer/renewals' as const, title: 'Gia hạn', description: 'Theo dõi duyệt, báo giá và hóa đơn gia hạn.' },
+  { href: '/customer/returns' as const, title: 'Trả kho và tiền cọc', description: 'Theo dõi kiểm tra và quyết toán sau khi trả kho.' },
+  { href: '/customer/support-requests' as const, title: 'Hỗ trợ', description: 'Gửi và theo dõi phản hồi từ WDP.' },
+  { href: '/customer/transfers' as const, title: 'Yêu cầu chuyển kho', description: 'Đề nghị WDP xem xét chuyển kho qua hỗ trợ.' },
   { href: '/customer/account' as const, title: 'Tài khoản', description: 'Thông tin đăng nhập và đăng xuất.' },
 ];
 
@@ -26,11 +32,10 @@ export default function CustomerHomeScreen() {
   const outstanding = invoices.data?.items.reduce((sum, item) => sum + item.balanceDue, 0) ?? 0;
 
   return <ScrollView contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={WdpColors.orange} />} contentContainerStyle={styles.content}>
-    <PageHeader eyebrow="Customer portal" title={`Xin chào, ${user?.fullName ?? 'khách hàng'}`} description="Dữ liệu kho thuê và hóa đơn được đồng bộ trực tiếp từ WDP Backend." />
+    <PageHeader eyebrow="Tài khoản khách hàng" title={`Xin chào, ${user?.fullName ?? 'khách hàng'}`} description="Dữ liệu kho thuê và hóa đơn được đồng bộ trực tiếp từ WDP Backend." />
     {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <>
-      <View style={styles.metrics}><MetricCard label="Kho đang thuê" value={rentals.data?.total ?? 0} /><MetricCard label="Kho quá hạn" value={rentals.data?.items.filter((item) => item.isOverdue).length ?? 0} tone="danger" /><MetricCard label="Còn phải trả" value={formatMoney(outstanding)} tone="orange" /></View>
-      <View style={styles.section}><Text style={styles.sectionTitle}>Chức năng</Text>{menu.map((item) => <Link key={item.href} href={item.href} asChild><Pressable style={({ pressed }) => [styles.menuCard, pressed && styles.pressed]}><View><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuDescription}>{item.description}</Text></View><Text style={styles.arrow}>›</Text></Pressable></Link>)}</View>
-    </>}
+      <View style={styles.metrics}><MetricCard label="Kho đang thuê" value={rentals.data?.total ?? 0} /><MetricCard label="Kho quá hạn" value={rentals.data?.items.filter((item) => item.isOverdue).length ?? 0} tone="danger" /><MetricCard label="Còn phải trả" value={formatMoney(outstanding)} tone="orange" /></View></>}
+      <View style={styles.section}><Text style={styles.sectionTitle}>Chức năng</Text>{menu.map((item) => <Link key={item.href} href={item.href as Href} asChild><Pressable style={({ pressed }) => [styles.menuCard, pressed && styles.pressed]}><View><Text style={styles.menuTitle}>{item.title}</Text><Text style={styles.menuDescription}>{item.description}</Text></View><Text style={styles.arrow}>›</Text></Pressable></Link>)}</View>
   </ScrollView>;
 }
 

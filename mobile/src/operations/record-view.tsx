@@ -1,13 +1,15 @@
 import { Text, View } from 'react-native';
 import { codeOf, idOf, label, object, rows, text, type Row } from './model';
 import { Facts, Navigation, Panel, money, styles } from './ui';
+import { relatedResource } from '@/portals/resources';
+import { formatDate } from '@/utils/format';
 
 const names: Record<string, string> = {
   totalApprovedCharges: 'Tổng phí đã duyệt', deductionAmount: 'Khấu trừ cọc', settledAt: 'Hoàn tất quyết toán lúc', observedIssueType: 'Vấn đề được ghi nhận', approvedIssueType: 'Phân loại đã duyệt', conditionNote: 'Tình trạng kho', billingCycle: 'Kỳ hóa đơn', renewalCycle: 'Kỳ gia hạn', available: 'Khả dụng toàn kỳ', reasonCode: 'Kết quả kiểm tra', inventoryGuarantee: 'Đảm bảo giữ kho', amountPayableNow: 'Số tiền phải trả ngay',
   id: 'Mã dữ liệu', reference: 'Mã tham chiếu', reservationReference: 'Mã đặt kho', fullName: 'Họ tên', email: 'Email', phone: 'Số điện thoại', role: 'Vai trò', accountStatus: 'Trạng thái tài khoản', status: 'Trạng thái', rentalState: 'Trạng thái thuê',
   code: 'Mã', name: 'Tên', contractCode: 'Mã hợp đồng', invoiceCode: 'Mã hóa đơn', paymentCode: 'Mã khoản thu', appointmentCode: 'Mã lịch hẹn', renewalCode: 'Mã gia hạn', returnCode: 'Mã trả kho', settlementCode: 'Mã quyết toán', submissionCode: 'Mã thông báo', transferCode: 'Mã chuyển kho', maintenanceCode: 'Mã bảo trì', supportCode: 'Mã hỗ trợ', unitCode: 'Mã kho', unitNumber: 'Số kho',
   quantity: 'Số lượng', floor: 'Tầng', zone: 'Khu vực', row: 'Dãy', position: 'Vị trí', dimensions: 'Kích thước', floorArea: 'Diện tích sàn', volume: 'Thể tích', height: 'Chiều cao', area: 'Diện tích', condition: 'Điều kiện bảo quản', physicalStatus: 'Trạng thái kho',
-  startDate: 'Ngày bắt đầu', endDate: 'Ngày kết thúc', endDateExclusive: 'Ngày kết thúc (không bao gồm)', effectiveEndDate: 'Hạn thuê hiện tại', previousEndDate: 'Hạn trước gia hạn', requestedEndDate: 'Hạn đề nghị', scheduledAt: 'Lịch hẹn', dueAt: 'Hạn thanh toán', billingPeriodStart: 'Đầu kỳ', billingPeriodEnd: 'Cuối kỳ', durationMonths: 'Số tháng', termMonths: 'Số tháng', periodMode: 'Cách chọn thời hạn', billingMode: 'Cách tính phí', paymentPlan: 'Kế hoạch thanh toán', isOverdue: 'Quá hạn', overdueDays: 'Số ngày quá hạn', isPastDue: 'Quá hạn thanh toán',
+  currentEndDate: 'Hạn thuê hiện tại', renewalStartDate: 'Bắt đầu kỳ gia hạn', startDate: 'Ngày bắt đầu', endDate: 'Ngày kết thúc', endDateExclusive: 'Ngày kết thúc (không bao gồm)', effectiveEndDate: 'Hạn thuê hiện tại', previousEndDate: 'Hạn trước gia hạn', requestedEndDate: 'Hạn đề nghị', scheduledAt: 'Lịch hẹn', dueAt: 'Hạn thanh toán', billingPeriodStart: 'Đầu kỳ', billingPeriodEnd: 'Cuối kỳ', durationMonths: 'Số tháng', termMonths: 'Số tháng', periodMode: 'Cách chọn thời hạn', billingMode: 'Cách tính phí', paymentPlan: 'Kế hoạch thanh toán', isOverdue: 'Quá hạn', overdueDays: 'Số ngày quá hạn', isPastDue: 'Quá hạn thanh toán',
   priority: 'Ưu tiên', category: 'Hạng mục', description: 'Mô tả', subject: 'Tiêu đề', internalNotes: 'Ghi chú nội bộ', customerNotes: 'Ghi chú khách hàng', customerNote: 'Ghi chú khách hàng', note: 'Ghi chú', reason: 'Lý do', rejectionReason: 'Lý do từ chối', resolutionType: 'Hướng xử lý', resolutionNote: 'Nội dung xử lý', escalationReason: 'Lý do chuyển quản lý', issueType: 'Phân loại vấn đề', issueNote: 'Ghi nhận vấn đề', workNote: 'Kết quả sửa chữa', verificationNote: 'Nghiệm thu', reviewNote: 'Ghi chú duyệt', result: 'Kết quả kiểm tra', requestType: 'Loại yêu cầu',
   type: 'Loại', method: 'Phương thức', transferReference: 'Mã chuyển khoản', refundMethod: 'Cách hoàn cọc', refundReference: 'Mã giao dịch hoàn cọc', refundNote: 'Ghi chú hoàn cọc', currency: 'Tiền tệ', kind: 'Loại dịch vụ', billingUnit: 'Đơn vị tính', isActive: 'Đang hoạt động', stockOnHand: 'Tồn kho thực tế', rentalCapacity: 'Công suất thuê', reservedQuantity: 'Đã giữ', availableQuantity: 'Còn khả dụng', serviceStartDate: 'Ngày bắt đầu dịch vụ', serviceEndDate: 'Ngày kết thúc dịch vụ', imageUrl: 'URL ảnh', imageAlt: 'Mô tả ảnh',
   createdAt: 'Ngày tạo', updatedAt: 'Cập nhật lúc', requestedAt: 'Yêu cầu lúc', contactedAt: 'Liên hệ lúc', confirmedAt: 'Xác nhận lúc', activatedAt: 'Bắt đầu thuê lúc', startedAt: 'Bắt đầu xử lý lúc', workCompletedAt: 'Hoàn tất sửa chữa lúc', inspectionStartedAt: 'Bắt đầu kiểm tra lúc', physicallyReturnedAt: 'Nhận kho trả lúc', reviewedAt: 'Duyệt lúc', approvedAt: 'Duyệt lúc', rejectedAt: 'Từ chối lúc', verifiedAt: 'Xác minh lúc', escalatedAt: 'Chuyển quản lý lúc', resolvedAt: 'Giải quyết lúc', paidAt: 'Thanh toán đủ lúc', issuedAt: 'Phát hành lúc', receivedAt: 'Nhận tiền lúc', submittedAt: 'Gửi lúc', refundedAt: 'Hoàn cọc lúc', completedAt: 'Hoàn tất lúc', releasedAt: 'Giải phóng kho lúc',
@@ -28,7 +30,7 @@ function display(key: string, value: unknown) {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'Có' : 'Không';
   if (/Amount$|Price$|Subtotal$|^amount$|^balanceDue$|^deposit$|^grandTotal$|^total(Invoiced|Paid|Outstanding)$/.test(key)) return value === null ? 'Cần xác nhận báo giá' : money(typeof value === 'string' && value.trim() ? Number(value) : value);
-  if (key.endsWith('At') && typeof value === 'string') { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString('vi-VN'); }
+  if ((key.endsWith('At') || key.endsWith('Date') || key === 'endDateExclusive') && typeof value === 'string') return formatDate(value, key.endsWith('At'));
   return typeof value === 'string' ? label(value) : value;
 }
 
@@ -41,7 +43,7 @@ export function RecordView({ row, root, depth = 0 }: { row: Row; root: string; d
     if (!items.length) return [];
     return [<Panel key={key} title={title}>{items.map((item, index) => <View key={`${idOf(item) || codeOf(item)}:${index}`} style={{ gap: 8 }}>
       {items.length > 1 && <Text style={styles.label}>{codeOf(item) || `${title} ${index + 1}`}</Text>}
-      {related[key] && idOf(item) && <Navigation title={`Mở ${title.toLowerCase()}`} path={`${root}/${related[key]}/${encodeURIComponent(idOf(item))}`} />}
+      {related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation title={`Mở ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} />}
       <RecordView row={item} root={root} depth={depth + 1} />
     </View>)}</Panel>];
   })}</View>;

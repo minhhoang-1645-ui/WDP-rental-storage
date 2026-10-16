@@ -12,6 +12,7 @@ import {
   type Row,
 } from "../../components/manager/portal-data";
 import { RecordPicker } from "../../components/manager/PortalUi";
+import { renewalReviewIssue } from '../../utils/renewal-review';
 
 export function ManagerActions({
   resource,
@@ -36,6 +37,7 @@ export function ManagerActions({
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
+  const [renewalReviewed, setRenewalReviewed] = useState(false);
   const [staff, setStaff] = useState("");
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
   const [target, setTarget] = useState("");
@@ -71,6 +73,7 @@ export function ManagerActions({
       idempotent = false,
     ) => {
       if (lock.current) return;
+      if (resource === 'renewals' && path.endsWith('/approve') && (!renewalReviewed || renewalReviewIssue(row))) { setError(renewalReviewIssue(row) || 'Vui lòng đối chiếu hồ sơ trước khi duyệt.'); return; }
       lock.current = true;
       setBusy(true);
       setError("");
@@ -89,7 +92,7 @@ export function ManagerActions({
         setBusy(false);
       }
     },
-    [onSuccess, refresh],
+    [onSuccess, refresh, resource, row, renewalReviewed],
   );
   const paymentFields = (
     <>
@@ -275,9 +278,12 @@ export function ManagerActions({
                 Duyệt sẽ kiểm tra xung đột lịch và tạo hóa đơn gia hạn. Thời hạn
                 chỉ được cập nhật khi hoàn tất thanh toán theo backend.
               </p>
+              <p className="manager-action-copy">Đối chiếu khách hàng, hợp đồng/kho, hạn cũ–mới, báo giá chốt và kế hoạch hóa đơn ở mục “Thông tin đối chiếu gia hạn”.</p>
+              {renewalReviewIssue(row) && <p className="booking-alert is-error" role="alert">{renewalReviewIssue(row)}</p>}
+              <label className="portal-checkbox"><input type="checkbox" checked={renewalReviewed} onChange={event => setRenewalReviewed(event.target.checked)} />Tôi đã đối chiếu thông tin và báo giá gia hạn</label>
               <button
                 className="button-primary"
-                disabled={busy}
+                disabled={busy || !renewalReviewed || Boolean(renewalReviewIssue(row))}
                 onClick={() => run(`${root}/approve`, "POST")}
               >
                 Duyệt gia hạn

@@ -79,6 +79,7 @@ const rental = {
   unitCount: 1,
   contracts: [rentalContract],
   pendingRenewal: null,
+  historicalPricing: { ...quote, billingMode: 'MONTHLY' },
   billingSummary: { totalOutstanding: 0 },
 };
 const publicReservation = {
@@ -201,6 +202,7 @@ function fixtures() {
             ? { id: "ready-id", reference: "RES-READY", quantity: 1 }
             : { id: `book-${i}`, reference: `RES-${i}`, quantity: 1 },
         status: i === 0 ? "READY_FOR_HANDOVER" : "ACTIVE",
+        ...(i === 0 ? { startDate: '2030-11-01', endDate: '2030-12-01' } : {}),
         storageType,
         storageUnit: unit,
       })),
@@ -710,6 +712,9 @@ try {
     .getByText("Đã chuyển cho quản lý xem xét.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/appointments/handover-id");
+  assert(await staff.page.getByRole('button', { name: 'Hoàn tất bàn giao', exact: true }).isDisabled(), 'Future handover cannot be completed');
+  staff.data.staff.appointments[0].scheduledAt = when;
+  await open(staff.page, "/staff/appointments/handover-id");
   await staff.page
     .getByLabel("Đã bàn giao thực tế đầy đủ các kho trong lịch này", {
       exact: true,
@@ -918,6 +923,13 @@ try {
   await customer.page
     .getByLabel("Reservation", { exact: true })
     .selectOption("ready-id");
+  const appointmentInput = customer.page.getByLabel('Ngày giờ mong muốn', { exact: true });
+  assert.equal(await appointmentInput.getAttribute('max'), '2030-11-30T23:59');
+  const writesBeforeInvalidAppointment = writes.length;
+  await appointmentInput.fill('2030-12-01T10:00');
+  await customer.page.getByRole('button', { name: 'Gửi yêu cầu', exact: true }).click();
+  assert.equal(await appointmentInput.evaluate(input => input.validity.rangeOverflow), true);
+  assert.equal(writes.length, writesBeforeInvalidAppointment, 'No appointment may be sent on the exclusive rental end date');
   await customer.page
     .getByLabel("Ngày giờ mong muốn", { exact: true })
     .fill("2030-11-01T10:00");
@@ -1026,7 +1038,13 @@ try {
       });
     }
   }
-  checks.push("390px staff/customer layouts and mobile navigation");
+  await open(customer.page, '/customer/contracts');
+  assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Contracts must remain visible at 390px');
+  await open(customer.page, '/customer/payments');
+  assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Invoices must remain visible at 390px');
+  assert.equal(await customer.page.getByRole('button', { name: 'Chuyển khoản QR', exact: true }).count(), 20, 'Invoice actions remain visible with pagination');
+  assert(await customer.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  checks.push("390px staff/customer layouts, visible contract/invoice cards, payment pagination and mobile navigation");
   await staff.page.setViewportSize({ width: 1440, height: 1000 });
   const secondTab = await staff.context.newPage();
   await open(secondTab, "/staff");

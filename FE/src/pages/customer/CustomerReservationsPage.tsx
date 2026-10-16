@@ -112,7 +112,7 @@ export function CustomerReservationsPage() {
             </PortalEmpty>
           ) : (
             <>
-              <div className="customer-table-wrap">
+              <div className="customer-table-wrap customer-reservations-table">
                 <table className="customer-table">
                   <thead>
                     <tr>

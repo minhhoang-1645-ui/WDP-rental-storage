@@ -1,5 +1,6 @@
 import { idOf, label, options, rows, text, type Row } from './model';
 import type { FormAction, FormField } from './form';
+import { firstIssue as renewalReviewIssue } from './renewal-validation';
 
 const note = (name = 'note', title = 'Ghi chú', required = false, maxLength = 4000): FormField => ({ name, title, required, multiline: true, maxLength, ...(required ? { minLength: 3 } : {}) });
 const select = (name: string, title: string, values: string[], initial?: string): FormField => ({ name, title, required: true, choices: options(values), initial });
@@ -27,7 +28,7 @@ const staffField = (role: string): FormField => role === 'ADMIN'
 
 export function createAction(resource: string): FormAction | undefined {
   if (resource === 'additional-services') return { title: 'Tạo dịch vụ bổ sung', path: '/manager/additional-services', method: 'POST', fields: serviceFields(), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) };
-  if (resource === 'maintenance') return { title: 'Tạo yêu cầu bảo trì', path: '/manager/maintenance', method: 'POST', idempotent: true, description: 'Chỉ đưa kho AVAILABLE vào bảo trì. BE kiểm tra lại trước khi lưu.', fields: [
+  if (resource === 'maintenance') return { title: 'Tạo yêu cầu bảo trì', path: '/manager/maintenance', method: 'POST', idempotent: true, description: 'Chỉ đưa kho AVAILABLE vào bảo trì. Hệ thống kiểm tra lại trước khi lưu.', fields: [
     { name: 'storageUnitId', title: 'Kho cần bảo trì', required: true, optionsPath: '/manager/units?status=AVAILABLE', optionsAccept: row => row.status === 'AVAILABLE', optionLabel: row => text(row, 'unitCode', 'unitNumber', 'id') },
     select('category', 'Hạng mục', ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], 'UNIT_DAMAGE'), select('priority', 'Ưu tiên', priorities, 'MEDIUM'), note('description', 'Mô tả tình trạng', true), confirm(),
   ] };
@@ -46,7 +47,11 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
   if (resource === 'inquiries' && row.requestType !== 'RESERVATION') add('Cập nhật liên hệ', '', [select('status', 'Trạng thái liên hệ', ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'], text(row, 'status')), { ...note('internalNotes', 'Ghi chú nội bộ', false, 2000), initial: text(row, 'internalNotes') }], 'PATCH');
   if (resource === 'appointments' && row.status === 'REQUESTED') add('Xác nhận lịch bàn giao', '/confirm', [], 'PATCH');
   if (resource === 'renewals' && row.status === 'PENDING') {
-    add('Duyệt gia hạn', '/approve', [], 'POST', false, 'Hóa đơn được tạo khi duyệt; chỉ cập nhật thời hạn sau thanh toán theo BE.');
+    if (!renewalReviewIssue(row)) {
+      add('Duyệt gia hạn', '/approve', [], 'POST', false, 'Đối chiếu khách hàng, hợp đồng, hạn cũ–mới và tổng báo giá trước khi duyệt. Hóa đơn được tạo khi duyệt; thời hạn chỉ cập nhật sau khi thanh toán đủ hóa đơn kích hoạt.');
+      actions[actions.length - 1].fields[0].title = 'Tôi đã đối chiếu thông tin và báo giá gia hạn';
+      actions[actions.length - 1].validate = () => renewalReviewIssue(row) || undefined;
+    }
     add('Từ chối gia hạn', '/reject', [note('reason', 'Lý do từ chối', true, 2000)]);
   }
   if (resource === 'invoices' && ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0) add('Ghi nhận khoản thu', '/payments', [
@@ -58,11 +63,11 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     add('Từ chối thông báo chuyển khoản', '/reject', [note('reason', 'Lý do từ chối', true, 1000)]);
   }
   if (['maintenance', 'support-requests'].includes(resource) && !['COMPLETED', 'RESOLVED'].includes(String(row.status))) {
-    add('Phân công nhân viên', '/assign', [staffField(role)], 'PATCH', true, role === 'MANAGER' ? 'BE chưa có danh bạ nhân viên cho Manager; dùng mã do Admin cung cấp. BE kiểm tra quyền nhân viên.' : undefined);
+    add('Phân công nhân viên', '/assign', [staffField(role)], 'PATCH', true, role === 'MANAGER' ? 'Nhập mã tài khoản nhân viên do quản trị viên cung cấp. Hệ thống kiểm tra quyền trước khi phân công.' : undefined);
     add('Đổi mức ưu tiên', '/priority', [select('priority', 'Ưu tiên', priorities, text(row, 'priority'))], 'PATCH', true);
   }
   if (resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION') {
-    add('Nghiệm thu bảo trì', '/verify', [note()], 'POST', true, 'Xác nhận sửa chữa thực tế; BE đưa kho trở lại AVAILABLE.');
+    add('Nghiệm thu bảo trì', '/verify', [note()], 'POST', true, 'Xác nhận sửa chữa thực tế; Kho trở lại trạng thái sẵn sàng sau nghiệm thu.');
     add('Yêu cầu sửa lại', '/reject-verification', [note('note', 'Yêu cầu sửa lại', true)], 'POST', true);
   }
   if (resource === 'support-requests' && row.status === 'ESCALATED') add('Giải quyết hỗ trợ', '/resolve', [select('resolutionType', 'Hướng xử lý', ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], 'MANAGER_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true)], 'POST', true);
@@ -73,7 +78,7 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
   if (resource === 'additional-services') {
     actions.push({ title: 'Chỉnh sửa dịch vụ', path: root, method: 'PATCH', fields: serviceFields(row), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) });
     const purchase = row.kind === 'PURCHASE';
-    add('Cập nhật tồn kho', '/inventory', [{ name: purchase ? 'stockOnHand' : 'rentalCapacity', title: purchase ? 'Tồn kho thực tế' : 'Công suất cho thuê', numeric: true, minimum: 0, required: true, initial: text(row, purchase ? 'inventory.stockOnHand' : 'inventory.rentalCapacity') }], 'PATCH', false, 'BE từ chối giảm dưới số lượng đang giữ hoặc các đặt thuê đã có.');
+    add('Cập nhật tồn kho', '/inventory', [{ name: purchase ? 'stockOnHand' : 'rentalCapacity', title: purchase ? 'Tồn kho thực tế' : 'Công suất cho thuê', numeric: true, minimum: 0, required: true, initial: text(row, purchase ? 'inventory.stockOnHand' : 'inventory.rentalCapacity') }], 'PATCH', false, 'Không được giảm dưới số lượng đang giữ hoặc các đặt thuê đã có.');
   }
   if (resource === 'deposit-settlements' && row.status === 'APPROVED' && Number(row.refundAmount) > 0 && Number(row.outstandingAmount) === 0) add('Ghi nhận hoàn tiền cọc', '/refund', [select('method', 'Phương thức', ['BANK_TRANSFER', 'CASH'], 'BANK_TRANSFER'), { name: 'reference', title: 'Mã giao dịch hoàn tiền thực tế', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 2000)], 'POST', true, 'Chỉ lưu sau khi đã hoàn tiền thực tế. Thao tác này không chuyển tiền ngân hàng.');
   if (resource === 'deposit-settlements' && row.status === 'PENDING_REVIEW') {
@@ -85,7 +90,7 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     ] as FormField[]).concat([note('note', 'Ghi chú duyệt', false, 2000), confirm()]), transform: input => ({ note: input.note, issues: inspections.map((item, index) => ({ inspectionId: item.id, issueType: input[`type${index}`], approvedChargeAmount: input[`amount${index}`], reason: input[`reason${index}`] })) }), validate: input => {
       for (const item of rows(input.issues)) {
         if (['NORMAL_WEAR', 'FACILITY_FAULT'].includes(String(item.issueType)) && item.approvedChargeAmount !== 0) return `${label(item.issueType)} không thu phí khách.`;
-        if (item.issueType === 'LOST_KEY_OR_ACCESS_ITEM' && item.approvedChargeAmount !== 200000) return 'Phí mất khóa theo BE hiện tại là 200.000 VND.';
+        if (item.issueType === 'LOST_KEY_OR_ACCESS_ITEM' && item.approvedChargeAmount !== 200000) return 'Phí mất khóa hiện tại là 200.000 VND.';
         if ((Number(item.approvedChargeAmount) > 0 || item.issueType === 'OTHER') && String(item.reason ?? '').length < 3) return 'Cần nhập căn cứ duyệt ít nhất 3 ký tự cho vấn đề có phí hoặc loại Khác.';
       }
     } });

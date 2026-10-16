@@ -25,7 +25,7 @@ function List({ resource }: { resource: string }) {
   const [search, setSearch] = useState(''), [status, setStatus] = useState('');
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const root = operationRoot(user?.role ?? '');
-  if (!config) return <EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." />;
+  if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : (data.data as Row | undefined)?.[config.shape === 'catalog' ? 'products' : 'items']);
   const shown = items.filter(item => (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi-VN').includes(search.toLocaleLowerCase('vi-VN'))));
   const create = createAction(resource);
@@ -37,8 +37,8 @@ function List({ resource }: { resource: string }) {
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm" value={search} onChange={setSearch} maxLength={120} />
     {config.statuses && <View style={styles.row}><Button variant={!status ? 'primary' : 'secondary'} title={!status ? '✓ Tất cả trạng thái' : 'Tất cả trạng thái'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} variant={status === value ? 'primary' : 'secondary'} title={`${status === value ? '✓ ' : ''}${label(value)}`} onPress={() => setStatus(value)} />)}</View>}
-    {resource === 'catalog' && <><Text style={styles.copy}>BE hiện chỉ cho xem loại kho, kích thước và giá. Chưa có API cập nhật các dữ liệu này.</Text><Availability catalog={data.data as Row | undefined} root={root} /></>}
+    {resource === 'catalog' && <><Text style={styles.copy}>Xem loại kho, kích thước và bảng giá đã được phê duyệt.</Text><Availability catalog={data.data as Row | undefined} root={root} /></>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{shown.length} / {items.length} hồ sơ</Text>}
   </View>;
-  return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.error || data.loading ? [] : shown} keyExtractor={(item, index) => idOf(item) || String(index)} ListHeaderComponent={header} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => config.shape === 'catalog' ? <Panel title={codeOf(item)}><RecordView row={item} root={root} /></Panel> : <Navigation title={codeOf(item)} description={summary(item)} path={`${root}/${resource}/${encodeURIComponent(idOf(item))}`} />} />;
+  return <FlatList keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.error || data.loading ? [] : shown} keyExtractor={(item, index) => idOf(item) || String(index)} ListHeaderComponent={header} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => config.shape === 'catalog' ? <Panel title={codeOf(item)}><RecordView row={item} root={root} /></Panel> : <Navigation title={codeOf(item)} description={summary(item)} path={`${root}/${resource}/${encodeURIComponent(idOf(item))}`} />} />;
 }

@@ -4,7 +4,8 @@ import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 import { statusLabel } from '@/utils/format';
 
 export function RecordCard({ code, title, detail, status, onPress }: { code: string; title: string; detail?: string; status: string; onPress?: () => void }) {
-  const content = <><View style={styles.heading}><Text selectable style={styles.code}>{code}</Text><View style={styles.badge}><Text style={styles.badgeText}>{statusLabel(status)}</Text></View></View><Text style={styles.title}>{title}</Text>{detail ? <Text selectable style={styles.detail}>{detail}</Text> : null}</>;
+  const tone = ['PAID', 'COMPLETED', 'SETTLED', 'RESOLVED', 'VERIFIED', 'AVAILABLE', 'PASS'].includes(status) ? { color: '#28664b', backgroundColor: '#edf7f1' } : ['OVERDUE', 'REJECTED', 'ISSUE_FOUND'].includes(status) ? { color: '#a53d36', backgroundColor: '#fff0ee' } : ['CANCELLED', 'EXPIRED', 'DISABLED'].includes(status) ? { color: '#596976', backgroundColor: '#edf0f3' } : { color: WdpColors.warning, backgroundColor: '#FFF4E8' };
+  const content = <><View style={styles.heading}><Text selectable style={styles.code}>{code}</Text><View style={[styles.badge, { backgroundColor: tone.backgroundColor }]}><Text style={[styles.badgeText, { color: tone.color }]}>{statusLabel(status)}</Text></View></View><Text style={styles.title}>{title}</Text>{detail ? <Text selectable style={styles.detail}>{detail}</Text> : null}</>;
   return onPress
     ? <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>{content}</Pressable>
     : <View style={styles.card}>{content}</View>;

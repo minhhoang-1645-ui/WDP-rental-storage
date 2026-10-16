@@ -3,7 +3,7 @@ import { CustomerFormSources } from "../../components/customer/CustomerFormSourc
 import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { CalendarClock, CalendarPlus, History, RefreshCw } from "lucide-react";
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import { formatPortalDate } from "../../components/customer/CustomerPortalHelpers";
@@ -15,6 +15,7 @@ import {
   PortalPageHeader,
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
+import { handoverWindow, vietnamLocalMinute } from '../../utils/handover';
 import type {
   CustomerAppointment,
   CustomerContract,
@@ -41,12 +42,14 @@ export function CustomerAppointmentsPage() {
     kind: "ok" | "error";
     text: string;
   } | null>(null);
-  const [openedAt] = useState(() => Date.now());
-  const earliestAppointment = new Date(openedAt + 60000 + 7 * 60 * 60000)
-    .toISOString()
-    .slice(0, 16);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const earliestAppointment = vietnamLocalMinute(currentTime + 60000);
   const eligibleReservations = useMemo(() => {
-    const map = new Map<string, { id: string; reference: string; startDate: string }>();
+    const map = new Map<string, { id: string; reference: string; startDate: string; endDate: string }>();
     const groups = new Map<string, CustomerContract[]>();
     for (const contract of contracts.data?.items ?? [])
       groups.set(contract.reservation.id, [
@@ -58,19 +61,22 @@ export function CustomerAppointmentsPage() {
         .filter((item) => ["REQUESTED", "CONFIRMED"].includes(item.status))
         .map((item) => item.reservation.id),
     );
-    for (const [id, items] of groups)
+    for (const [id, items] of groups) {
+      const period = handoverWindow(items);
       if (
         items.length === items[0].reservation.quantity &&
         items.every((item) => item.status === "READY_FOR_HANDOVER") &&
-        !active.has(id)
+        !active.has(id) && period.start < period.end && `${period.end}T00:00` > vietnamLocalMinute(currentTime)
       )
         map.set(id, {
           id,
           reference: items[0].reservation.reference,
-          startDate: items.map(item => item.startDate.slice(0, 10)).sort().at(-1)!,
+          startDate: period.start,
+          endDate: period.end,
         });
+    }
     return [...map.values()];
-  }, [contracts.data, appointments.data]);
+  }, [contracts.data, appointments.data, currentTime]);
   const selectedReservation = eligibleReservations.find(
     (item) => item.id === reservationId,
   );
@@ -81,14 +87,15 @@ export function CustomerAppointmentsPage() {
     earliestAppointment > reservationStartMinimum
       ? earliestAppointment
       : reservationStartMinimum;
+  const maximumAppointment = selectedReservation ? vietnamLocalMinute(Date.parse(`${selectedReservation.endDate}T00:00:00+07:00`) - 60000) : undefined;
   const filteredAppointments = (appointments.data?.items ?? []).filter(
     (item) =>
       view === "upcoming"
         ? new Date(item.scheduledAt).getTime() >=
-            (appointments.asOf || openedAt) &&
+            (appointments.asOf || currentTime) &&
           !["COMPLETED", "CANCELLED"].includes(item.status)
         : new Date(item.scheduledAt).getTime() <
-            (appointments.asOf || openedAt) ||
+            (appointments.asOf || currentTime) ||
           ["COMPLETED", "CANCELLED"].includes(item.status),
   );
 
@@ -102,6 +109,7 @@ export function CustomerAppointmentsPage() {
     setMessage(null);
     setSubmitting(true);
     try {
+      if (!selectedReservation) throw new Error('Chọn yêu cầu đã thanh toán, đủ hợp đồng và còn trong kỳ thuê.');
       const requestedTime = new Date(`${scheduledAt}+07:00`);
       if (
         !Number.isFinite(requestedTime.getTime()) ||
@@ -113,6 +121,7 @@ export function CustomerAppointmentsPage() {
         scheduledAt.slice(0, 10) < selectedReservation.startDate
       )
         throw new Error("Ngày nhận kho không được trước ngày bắt đầu thuê.");
+      if (scheduledAt.slice(0, 10) >= selectedReservation.endDate) throw new Error('Ngày bàn giao phải trước ngày kết thúc kỳ thuê (không bao gồm ngày kết thúc).');
       await mutate<CustomerAppointment>(
         "/customer/appointments",
         "POST",
@@ -268,7 +277,7 @@ export function CustomerAppointmentsPage() {
                   if (
                     nextReservation &&
                     scheduledAt &&
-                    scheduledAt.slice(0, 10) < nextReservation.startDate
+                    (scheduledAt.slice(0, 10) < nextReservation.startDate || scheduledAt.slice(0, 10) >= nextReservation.endDate)
                   )
                     setScheduledAt("");
                 }}
@@ -288,16 +297,16 @@ export function CustomerAppointmentsPage() {
                 type="datetime-local"
                 aria-describedby="appointment-timezone"
                 min={minimumAppointment}
+                max={maximumAppointment}
                 value={scheduledAt}
                 onChange={(event) => setScheduledAt(event.target.value)}
               />
             </label>
             <small id="appointment-timezone">
-              Ngày giờ tại cơ sở WDP (UTC+7). Ngày nhận kho không thể trước
-              ngày bắt đầu thuê
+              Ngày giờ tại cơ sở WDP (UTC+7). Ngày nhận kho từ ngày bắt đầu thuê
               {selectedReservation
-                ? ` (${formatPortalDate(selectedReservation.startDate)}).`
-                : "."}
+                ? ` ${formatPortalDate(selectedReservation.startDate)} và trước ngày ${formatPortalDate(selectedReservation.endDate)} (không bao gồm ngày kết thúc).`
+                : ' và trước ngày kết thúc kỳ thuê.'}
             </small>
             <label className="field-label">
               Ghi chú

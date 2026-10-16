@@ -10,6 +10,7 @@ export default function LoginScreen() {
   const { user, login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
@@ -43,7 +44,7 @@ export default function LoginScreen() {
         <View style={styles.heading}><Text style={styles.eyebrow}>KHÔNG GIAN VỪA VỚI BẠN</Text><Text style={styles.title}>Chào mừng trở lại</Text><Text style={styles.description}>Đăng nhập để theo dõi kho thuê và công việc của bạn tại WDP.</Text></View>
         <View style={styles.form}>
           <View style={styles.field}><Text style={styles.label}>Email</Text><TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!submitting} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" submitBehavior="submit" onSubmitEditing={event => { setEmail(event.nativeEvent.text); passwordInput.current?.focus(); }} maxLength={254} placeholder="name@example.com" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /></View>
-          <View style={styles.field}><Text style={styles.label}>Mật khẩu</Text><TextInput ref={passwordInput} accessibilityLabel="Mật khẩu" value={password} onChangeText={setPassword} editable={!submitting} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" returnKeyType="done" submitBehavior="submit" maxLength={128} onSubmitEditing={event => void submit(event.nativeEvent.text)} placeholder="Nhập mật khẩu" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /></View>
+          <View style={styles.field}><Text style={styles.label}>Mật khẩu</Text><TextInput ref={passwordInput} accessibilityLabel="Mật khẩu" value={password} onChangeText={setPassword} editable={!submitting} secureTextEntry={!passwordVisible} autoCapitalize="none" autoCorrect={false} autoComplete="current-password" returnKeyType="done" submitBehavior="submit" maxLength={128} onSubmitEditing={event => void submit(event.nativeEvent.text)} placeholder="Nhập mật khẩu" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /><Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} disabled={submitting} onPress={() => setPasswordVisible(value => !value)} style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-end" }}><Text style={styles.label}>{passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</Text></Pressable></View>
           {error ? <Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Đăng nhập" accessibilityState={{ disabled: submitting || !email.trim() || !password, busy: submitting }} disabled={submitting || !email.trim() || !password} onPress={() => void submit()} style={styles.submit}><Text style={styles.submitText}>{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</Text></Pressable>
         </View>

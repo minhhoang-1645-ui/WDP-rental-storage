@@ -27,6 +27,7 @@ import {
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
+import { RenewalReview } from '../../components/manager/RenewalReview';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { id = "" } = useParams();
@@ -83,6 +84,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
           </PageHeader>
           <div className="manager-detail-grid">
             <div className="manager-detail-content">
+              {resource === 'renewals' && <RenewalReview row={row} />}
               <DetailContent row={row} resource={resource} />
               {resource === "contracts" && (
                 <ManagerContractTransfers

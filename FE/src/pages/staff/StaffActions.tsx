@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
@@ -8,6 +8,7 @@ import {
   type Row,
 } from "../../components/manager/portal-data";
 import type { StaffResource } from "./staff-resources";
+import { handoverCompletionIssue } from '../../utils/handover';
 
 export function StaffActions({
   resource,
@@ -26,6 +27,13 @@ export function StaffActions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    if (resource !== 'appointments' || row.status !== 'CONFIRMED') return;
+    const timer = window.setInterval(() => setCurrentTime(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, [resource, row.status]);
+  const handoverIssue = resource === 'appointments' ? handoverCompletionIssue(row.scheduledAt, currentTime) : '';
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
   const assigned = first(row, "assignedStaff.id") === user?.id;
   const run = async (
@@ -35,6 +43,10 @@ export function StaffActions({
     idempotent = false,
   ) => {
     if (lock.current || user?.role !== "STAFF") return;
+    if (resource === 'appointments' && suffix === '/complete-handover') {
+      const issue = handoverCompletionIssue(row.scheduledAt);
+      if (issue) { setError(issue); return; }
+    }
     lock.current = true;
     setBusy(true);
     setError("");
@@ -94,6 +106,7 @@ export function StaffActions({
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
+              {handoverIssue && <p className="booking-alert" role="status">{handoverIssue}</p>}
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={2000} rows={3} />
@@ -102,7 +115,7 @@ export function StaffActions({
                 <input name="received" type="checkbox" required />
                 Đã bàn giao thực tế đầy đủ các kho trong lịch này
               </label>
-              <button className="button-primary">Hoàn tất bàn giao</button>
+              <button className="button-primary" disabled={Boolean(handoverIssue)}>Hoàn tất bàn giao</button>
             </form>
           ) : (
             <p>

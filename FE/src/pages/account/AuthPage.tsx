@@ -4,6 +4,7 @@ import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
 import { Container } from "../../components/ui/Container";
+import { PasswordInput } from '../../components/ui/PasswordInput';
 
 export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { user, loading, login, register } = useAuth();
@@ -119,9 +120,8 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
             </label>
             <label className="field-label">
               Mật khẩu
-              <input
+              <PasswordInput
                 name="password"
-                type="password"
                 autoComplete={
                   mode === "login" ? "current-password" : "new-password"
                 }

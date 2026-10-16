@@ -6,7 +6,7 @@ import { operationMutate } from './mutate';
 import { useResource } from './use-resource';
 
 export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; checkbox?: boolean; clientOnly?: boolean }
-export interface FormAction { title: string; path: string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validate?: (input: Row) => string | undefined }
+export interface FormAction { title: string; path: string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
 
 function Input({ field, value, onChange, busy }: { field: FormField; value: string; onChange: (value: string) => void; busy: boolean }) {
   const resource = useResource<{ items: Row[] }>(field.optionsPath ?? null, true);
@@ -31,6 +31,8 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
       if (value && field.choices && !field.choices.some(choice => choice.value === value)) { setError(`Vui lòng chọn ${field.title.toLowerCase()} hợp lệ.`); return; }
       if (!field.clientOnly) data[field.name] = field.numeric ? value ? Number(value) : undefined : field.checkbox ? value === 'true' : value || undefined;
     }
+    const valuesIssue = action.validateValues?.(data);
+    if (valuesIssue) { setError(valuesIssue); return; }
     const input = action.transform ? action.transform(data) : data;
     const validation = action.validate?.(input);
     if (validation) { setError(validation); return; }

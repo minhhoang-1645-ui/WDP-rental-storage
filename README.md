@@ -1,5 +1,7 @@
 # WDP Self Storage
 
+> Current client review (16 October 2026): see [web/mobile UI, workflows, role coverage and verification](./FE/FULL_REVIEW_2026-10-16.md). Backend and database remain unchanged; unsupported backend features are documented explicitly.
+
 > Current merged scope (15 October 2026): Admin has Dashboard and User Accounts; staff assignment belongs to Manager. Web and mobile integration, role routes, checks and limitations are documented in [the merge audit](./FE/MERGE_AUDIT_2026-10-15.md), [FE guide](./FE/README.md) and [mobile guide](./mobile/README.md). The initial milestone notes below are historical and do not describe the complete current feature set. Existing databases do not need a seed or migration merely to run the clients.
 
 Single-facility self-storage rental platform.

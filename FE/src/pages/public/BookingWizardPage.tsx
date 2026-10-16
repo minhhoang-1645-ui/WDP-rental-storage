@@ -10,6 +10,7 @@ import { useCatalog } from '../../catalog/catalog-context'
 import { ApiError } from '../../services/api'
 import { bookingApi } from '../../services/booking'
 import { guestBookingApi } from '../../services/guest-booking'
+import { serviceSelectionIssue } from '../../utils/service-period'
 import type { AvailabilityResult, BookingDraft, GuestContact, GuestInquiry, PendingReservation, PricingQuote } from '../../types/booking'
 
 const steps = [['01', 'Chọn kho'], ['02', 'Thời gian & dịch vụ'], ['03', 'Thông tin & xác nhận']] as const
@@ -224,7 +225,7 @@ export function BookingWizardPage() {
   const product = getStorageListing(draft.productId) ?? getStorageListing('sm-b12')!
   const size = getStorageSize(product.sizeId)!
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
-  const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations)
+  const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
   const pricingEndDate = endDateExclusive(draft)
 
   const invalidateAvailability = () => {
@@ -347,7 +348,7 @@ export function BookingWizardPage() {
   }
 
   const goToStep = (next: 1 | 2 | 3) => {
-    if (next === 3 && (availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote)) {
+    if (next === 3 && (!canCheckAvailability || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote)) {
       setError(quoteState === 'error' ? 'Báo giá chưa hợp lệ. Vui lòng điều chỉnh thời gian hoặc lựa chọn kho.' : 'Vui lòng đợi báo giá và kết quả kiểm tra kho mới nhất trước khi tiếp tục.')
       return
     }
@@ -361,7 +362,7 @@ export function BookingWizardPage() {
     setAvailabilityRetry((current) => current + 1)
   }
   const submitCheckout = async (checkoutDraft: BookingDraft, emailBooking = false) => {
-    if (submissionLock.current || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote) return
+    if (submissionLock.current || !canCheckAvailability || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote) return
     submissionLock.current = true
     setSubmitting(true)
     setError('')
@@ -455,7 +456,7 @@ export function BookingWizardPage() {
           <div className="booking-form-panel">
             <label className="field-label">Ngày bắt đầu mong muốn<input type="date" min={new Date().toISOString().slice(0, 10)} name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
             <div className="period-mode-tabs" role="group" aria-label="Cách chọn thời gian"><button type="button" className={draft.periodMode === 'duration' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Theo thời hạn<small>Danh sách đã duyệt</small></button><button type="button" className={draft.periodMode === 'dates' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'dates', durationMonths: null })}>Theo ngày kết thúc<small>Cần xác nhận báo giá</small></button></div>
-            {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">Thời hạn dưới một tháng chưa có chính sách giá, không tự tính đơn giá theo ngày.</small></label>}
+            {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">{product.allowDailyRental ? `Kho này cho thuê ngắn ngày từ ${product.minRentalDays ?? 1} ngày. Giá theo báo giá hệ thống; không tính ngày kết thúc.` : 'Kho này yêu cầu ít nhất một tháng lịch. Ngày kết thúc không tính vào kỳ thuê.'}</small></label>}
             <fieldset className="payment-plan-fieldset"><legend>Kế hoạch thanh toán</legend><div className="payment-options">
               <button type="button" className={draft.paymentPlan === 'PAY_MONTHLY' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Thanh toán hàng tháng</strong><small>Thanh toán tiền thuê theo từng tháng. Hóa đơn đầu tiên gồm tiền thuê kỳ đầu và tiền đặt cọc. Các kỳ tiếp theo được thanh toán theo hóa đơn định kỳ.</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
               <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. Kỳ thuê đủ điều kiện có thể được áp dụng chiết khấu trả trước. Tiền đặt cọc không được chiết khấu.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
@@ -495,15 +496,12 @@ export function BookingWizardPage() {
             </>}
           </div>
           <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
-          <button type="button" className="button-primary mt-5 w-full justify-center" disabled={availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote} onClick={() => goToStep(3)}>Tiếp tục <ArrowRight size={18} /></button>
+          <button type="button" className="button-primary mt-5 w-full justify-center" disabled={!canCheckAvailability || availabilityState !== 'available' || !availability?.available || quoteState !== 'ready' || !pricingQuote} onClick={() => goToStep(3)}>Tiếp tục <ArrowRight size={18} /></button>
         </aside>
       </div>}
 
-      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={availabilityState === 'available' && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
+      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={canCheckAvailability && availabilityState === 'available' && Boolean(availability?.available) && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
     </Container></section>
     {popupOpen && availabilityState !== 'idle' && availabilityState !== 'checking' && <AvailabilityToast state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} onClose={() => setPopupOpen(false)} />}
   </div>
 }
-
-
-

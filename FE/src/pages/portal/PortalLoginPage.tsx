@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
+import { PasswordInput } from '../../components/ui/PasswordInput';
 
 export function PortalLoginPage() {
   const { user, loading, login } = useAuth();
@@ -86,8 +87,7 @@ export function PortalLoginPage() {
         </label>
         <label className="field-label">
           Mật khẩu
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}

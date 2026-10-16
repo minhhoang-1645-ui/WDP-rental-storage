@@ -3,6 +3,7 @@ import { portalDestination } from "../../auth/portal-routing";
 import { Mail, MapPin, Phone, Warehouse } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Container } from "../ui/Container";
+import { facility } from '../../config/facility';
 
 export function Footer() {
   const { user } = useAuth();
@@ -33,19 +34,21 @@ export function Footer() {
             <Link to="/#how-it-works">Cách thuê kho</Link>
             <Link to="/#faq">Câu hỏi thường gặp</Link>
             <Link to={accountPath}>Khu vực của bạn</Link>
-            <a href="#legal">Điều khoản & quyền riêng tư</a>
+            <a href="#legal">Thông tin dự án</a>
           </div>
           <div id="contact">
             <h2 className="footer-title">Thông tin liên hệ</h2>
             <p>
-              <MapPin size={16} /> Địa chỉ cơ sở đang cập nhật
+              <MapPin size={16} /> {facility.address}
             </p>
             <p>
-              <Phone size={16} /> Hotline đang cập nhật
+              <Phone size={16} /> {facility.phoneHref ? <a href={facility.phoneHref}>{facility.phone}</a> : facility.phone}
             </p>
             <p>
-              <Mail size={16} /> Email đang cập nhật
+              <Mail size={16} /> {facility.emailHref ? <a href={facility.emailHref}>{facility.email}</a> : facility.email}
             </p>
+            <p>{facility.hours}</p>
+            {facility.illustrative && <small className="text-slate-400">Thông tin liên hệ minh họa cho đồ án.</small>}
           </div>
         </div>
         <div

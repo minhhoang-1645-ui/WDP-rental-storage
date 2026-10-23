@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
-import { allPages, mutate } from "../../services/portal";
+import { mutate } from "../../services/portal";
 import {
   at,
   code,
@@ -13,6 +13,7 @@ import {
 } from "../../components/manager/portal-data";
 import { RecordPicker } from "../../components/manager/PortalUi";
 import { renewalReviewIssue } from '../../utils/renewal-review';
+import { StaffPicker } from '../../components/manager/StaffPicker';
 
 export function ManagerActions({
   resource,
@@ -568,7 +569,7 @@ export function ManagerActions({
                   );
                 }}
               >
-                <StaffPicker value={staff} onChange={setStaff} />
+                <StaffPicker value={staff} onChange={setStaff} disabled={busy} currentStaff={first(row, 'assignedStaff.id') ? { id: first(row, 'assignedStaff.id'), fullName: first(row, 'assignedStaff.fullName') } : undefined} />
                 <button
                   className="button-secondary"
                   disabled={busy || !staff.trim()}
@@ -805,78 +806,6 @@ export function ManagerActions({
         )}
       </fieldset>
       {busy && <p role="status">Đang lưu thao tác…</p>}
-    </div>
-  );
-}
-function StaffPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const { user } = useAuth();
-  const [known, setKnown] = useState<Row[]>([]);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([
-      allPages("/manager/maintenance", controller.signal),
-      allPages("/manager/support-requests", controller.signal),
-    ])
-      .then((pages) => {
-        const staff = new Map<string, Row>();
-        for (const item of pages.flatMap((page) => page.items))
-          for (const field of ["assignedStaff", "reportedBy"]) {
-            const person = item[field] as Row | undefined;
-            if (person?.role === "STAFF")
-              staff.set(first(person, "id"), person);
-          }
-        if (!controller.signal.aborted) setKnown([...staff.values()]);
-      })
-      .catch((caught) => {
-        if (!controller.signal.aborted)
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Không thể tải nhân viên.",
-          );
-      });
-    return () => controller.abort();
-  }, [user?.id]);
-  return (
-    <div className="portal-form">
-      {known.length > 0 && (
-        <label className="field-label">
-          Nhân viên đã có hồ sơ
-          <select
-            value={known.some((item) => item.id === value) ? value : ""}
-            onChange={(e) => onChange(e.target.value)}
-          >
-            <option value="">Chọn nhân viên</option>
-            {known.map((item) => (
-              <option key={first(item, "id")} value={first(item, "id")}>
-                {first(item, "fullName")}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label className="field-label">
-        Mã tài khoản nhân viên
-        <input
-          required
-          value={value}
-          maxLength={100}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Mã do quản trị viên cung cấp"
-        />
-      </label>
-      <small>
-        Quyền quản lý chưa có API danh bạ nhân viên. Có thể chọn từ lịch sử phân
-        công hoặc dùng mã tài khoản do quản trị viên cung cấp.
-      </small>
-      {error && <small role="alert">{error}</small>}
     </div>
   );
 }

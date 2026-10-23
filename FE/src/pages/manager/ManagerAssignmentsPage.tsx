@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useLiveRefresh } from '../../services/live-events';
 import { RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -18,6 +19,8 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { allPages, mutate } from "../../services/portal";
+import { StaffPicker } from '../../components/manager/StaffPicker';
+import { staffFromWork } from '../../utils/staff';
 
 type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
@@ -39,6 +42,8 @@ export function ManagerAssignmentsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  useLiveRefresh('/manager/*', refresh);
   const [selected, setSelected] = useState<Task>();
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
@@ -113,16 +118,7 @@ export function ManagerAssignmentsPage() {
     );
   });
   const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / 20)));
-  const knownStaff = new Map<string, string>();
-  for (const task of allTasks) {
-    for (const field of ["assignedStaff", "reportedBy"]) {
-      const staff = task.row[field] as Row | undefined;
-      if (staff?.role === "STAFF") {
-        const id = first(staff, "id");
-        if (id) knownStaff.set(id, first(staff, "fullName") || id);
-      }
-    }
-  }
+  const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {
@@ -366,38 +362,7 @@ function AssignmentDetail({
         )}
         {!finished(task) && (
           <form className="portal-form" onSubmit={assign}>
-            {knownStaff.size > 0 && (
-              <label className="field-label">
-                Nhân viên đã có hồ sơ
-                <select
-                  value={knownStaff.has(staffId) ? staffId : ""}
-                  onChange={(event) => setStaffId(event.target.value)}
-                  disabled={busy}
-                >
-                  <option value="">Chọn nhân viên</option>
-                  {[...knownStaff].map(([userId, name]) => (
-                    <option key={userId} value={userId}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className="field-label">
-              Mã tài khoản nhân viên
-              <input
-                value={staffId}
-                onChange={(event) => setStaffId(event.target.value)}
-                required
-                maxLength={100}
-                disabled={busy}
-                placeholder="Mã tài khoản do quản trị viên cung cấp"
-              />
-            </label>
-            <small>
-              Chọn nhân viên đã từng phụ trách hoặc nhập mã tài khoản nhân viên
-              đang hoạt động do quản trị viên cung cấp.
-            </small>
+            <StaffPicker value={staffId} onChange={value => { setStaffId(value); setError(''); }} knownStaff={knownStaff} disabled={busy} />
             <div className="portal-actions">
               <button
                 className="button-primary"

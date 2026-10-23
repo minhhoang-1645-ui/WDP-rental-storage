@@ -18,6 +18,12 @@ import { InvoicePayment } from './invoice-payment';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
 
+function portalStatus(role: PortalRole, resource: string, value: unknown) {
+  if (role === 'CUSTOMER' && value === 'OPEN') return resource === 'invoices' ? 'Chưa thanh toán' : 'Đang chờ tiếp nhận';
+  if (role === 'CUSTOMER' && resource === 'reservations' && value === 'PENDING') return 'Chờ xác nhận';
+  return label(value);
+}
+
 export function PortalList({ role, resource: fixed }: { role: PortalRole; resource?: string }) {
   const params = useLocalSearchParams<{ resource: string }>(), { user } = useAuth();
   return <List key={`${user?.id}:${fixed ?? params.resource}`} role={role} resource={fixed ?? String(params.resource)} />;
@@ -39,9 +45,9 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
     {role === 'CUSTOMER' && resource === 'invoices' && <><Navigation title="Lịch sử thanh toán" path="/customer/payment-history" /><Navigation title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm hồ sơ" value={search} onChange={setSearch} maxLength={120} />
-    {config.statuses && <View style={styles.row}><Button title={!status ? '✓ Tất cả' : 'Tất cả'} variant={!status ? 'primary' : 'secondary'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} title={`${status === value ? '✓ ' : ''}${label(value)}`} variant={status === value ? 'primary' : 'secondary'} onPress={() => setStatus(value)} />)}</View>}
+    {config.statuses && <View style={styles.row}><Button title={!status ? '✓ Tất cả' : 'Tất cả'} variant={!status ? 'primary' : 'secondary'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} title={`${status === value ? '✓ ' : ''}${portalStatus(role, resource, value)}`} variant={status === value ? 'primary' : 'secondary'} onPress={() => setStatus(value)} />)}</View>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{shown.length} / {items.length} hồ sơ</Text>}
-  </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => <Navigation title={codeOf(item)} description={summary(item)} path={`${root}/${resource}/${encodeURIComponent(idOf(item))}`} />} />;
+  </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => <Navigation title={codeOf(item)} description={summary(item, portalStatus(role, resource, item.status ?? item.rentalState))} path={`${root}/${resource}/${encodeURIComponent(idOf(item))}`} />} />;
 }
 export function PortalDetail({ role }: { role: PortalRole }) {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>(), { user } = useAuth();
@@ -71,8 +77,10 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
       {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
       <WorkflowHint text={workflowGuide(resource, row.status, role === 'CUSTOMER' ? 'customer' : 'staff')} />
+      {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'APPROVED_PENDING_PAYMENT' && <Navigation title="Xem hóa đơn & thanh toán gia hạn" path={rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)?.id ? `/customer/invoices/${encodeURIComponent(String(rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)!.id))}` : '/customer/invoices'} />}
+      {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'COMPLETED' && <Navigation title="Xem thời hạn thuê mới" path="/customer/rentals" />}
       <Panel title={role === 'CUSTOMER' ? 'Thông tin của bạn' : 'Thông tin đối chiếu'}><Facts values={[
-        ['Trạng thái', label(row.status ?? row.rentalState)], ['Khách hàng', text(row, 'customer.fullName', 'reservation.customer.fullName') || (role === 'CUSTOMER' ? user?.fullName : '')], ['Yêu cầu đặt kho', text(row, 'reservation.reference', 'reservationReference')], ['Hợp đồng', text(row, 'contractCode', 'contract.contractCode')], ['Kho', text(row, 'unit.unitCode', 'storageUnit.unitCode')], ['Kho nguồn', text(row, 'fromUnit.unitCode')], ['Kho đích', text(row, 'toUnit.unitCode')], ['Lịch hẹn', formatDate(text(row, 'scheduledAt'), true)], ['Nhân viên phụ trách', text(row, 'assignedStaff.fullName')], ['Tiêu đề', row.subject], ['Mô tả', row.description],
+        ['Trạng thái', portalStatus(role, resource, row.status ?? row.rentalState)], ['Khách hàng', text(row, 'customer.fullName', 'reservation.customer.fullName') || (role === 'CUSTOMER' ? user?.fullName : '')], ['Yêu cầu đặt kho', text(row, 'reservation.reference', 'reservationReference')], ['Hợp đồng', text(row, 'contractCode', 'contract.contractCode')], ['Kho', text(row, 'unit.unitCode', 'storageUnit.unitCode')], ['Kho nguồn', text(row, 'fromUnit.unitCode')], ['Kho đích', text(row, 'toUnit.unitCode')], ['Lịch hẹn', formatDate(text(row, 'scheduledAt'), true)], ['Nhân viên phụ trách', text(row, 'assignedStaff.fullName')], ['Tiêu đề', row.subject], ['Mô tả', row.description],
         ...rows(row.allocatedUnits).map((item, index) => [`Kho bàn giao ${index + 1}`, `${text(item, 'unitCode')} · ${text(item, 'contractCode')}`] as [string, unknown]),
         ...rows(row.inspections).map((item, index) => [`Kiểm tra ${text(item, 'unit.unitCode') || index + 1}`, label(item.result)] as [string, unknown]),
       ].filter(([, value]) => value && value !== '—') as [string, unknown][]} /></Panel>

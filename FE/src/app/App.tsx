@@ -1,6 +1,7 @@
 import { AuthProvider } from '../auth/AuthContext'
 import { AppRouter } from './router'
+import { ActivityProvider } from '../activity/ActivityProvider'
 
 export function App() {
-  return <AuthProvider><AppRouter /></AuthProvider>
+  return <AuthProvider><ActivityProvider><AppRouter /></ActivityProvider></AuthProvider>
 }

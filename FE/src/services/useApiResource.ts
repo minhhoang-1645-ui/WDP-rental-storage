@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, apiRequest } from './api'
+import { hasDraft, useLiveRefresh } from './live-events'
 
 /** Ignores superseded requests and never displays another route/account's result. */
 export function useApiResource<T>(path: string | null, identity = '', refreshOnFocus = false) {
@@ -7,10 +8,12 @@ export function useApiResource<T>(path: string | null, identity = '', refreshOnF
   const [result, setResult] = useState<{ key: string; revision: number; data: T | null; error: string; status: number | null } | null>(null)
   const key = identity + ':' + path
   const refresh = useCallback(() => setRevision(value => value + 1), [])
+  useLiveRefresh(path, refresh)
   useEffect(() => {
     if (!refreshOnFocus) return
-    window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
+    const focus = () => { if (!hasDraft()) refresh() }
+    window.addEventListener('focus', focus)
+    return () => window.removeEventListener('focus', focus)
   }, [refreshOnFocus, refresh])
   useEffect(() => {
     if (!path) return

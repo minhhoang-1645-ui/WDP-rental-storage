@@ -5,6 +5,7 @@ import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { code, first, date, type Row } from '../../components/manager/portal-data';
 import { LoadState, PageHeader, Status } from '../../components/manager/PortalUi';
 import { WorkHub, WorkflowHint } from '../../components/workspace/WorkHub';
+import { ActivitySummary } from '../../activity/ActivityCenter';
 
 export function StaffOperationsPage() {
   const { user } = useAuth();
@@ -29,6 +30,7 @@ export function StaffOperationsPage() {
     return rank(a.row) - rank(b.row) || Date.parse(first(a.row, 'scheduledAt', 'createdAt')) - Date.parse(first(b.row, 'scheduledAt', 'createdAt'));
   });
   return <section className="workspace-home"><PageHeader title="Công việc của tôi" description={`Chào ${user?.fullName ?? 'bạn'}. Mở công việc được giao, đối chiếu hồ sơ rồi thực hiện tại kho.`}><button className="button-secondary" disabled={sources.some(source => source.loading)} onClick={refresh}><RefreshCw size={16} />Làm mới</button></PageHeader>
+    <ActivitySummary />
     <section className="work-queue"><div className="work-hub-heading"><div><h2>Ưu tiên xử lý</h2><p>Công việc chưa hoàn tất; việc ưu tiên cao được đưa lên trước.</p></div></div>
       {sources.some(source => source.loading) && <p role="status" className="workspace-muted">Đang cập nhật công việc…</p>}
       {queue.length ? <div className="workspace-shortcuts">{queue.slice(0, 6).map(({ row, title, path }) => <Link key={path} to={path}><span className="work-queue-marker" /><div><strong>{code(row)}</strong><span>{title} · {first(row, 'customer.fullName', 'reservation.customer.fullName', 'subject', 'storageUnit.unitNumber') || 'Mở hồ sơ để đối chiếu'}{row.scheduledAt ? ` · ${date(row.scheduledAt, true)}` : ''}</span></div><Status value={row.status} /><ArrowRight size={16} /></Link>)}</div> : !sources.some(source => source.loading) && <p className="workspace-empty">{sources.some(source => source.error) ? 'Chưa tải đủ danh sách. Bạn vẫn có thể mở từng nhóm công việc bên dưới.' : 'Chưa có việc cần xử lý trong các nhóm đã tải. Lịch và công việc mới sẽ xuất hiện sau khi được xác nhận hoặc phân công.'}</p>}

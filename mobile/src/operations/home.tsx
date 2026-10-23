@@ -8,6 +8,7 @@ import { Button, Disclosure, Navigation, Panel, styles } from './ui';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
 import { RecordView } from './record-view';
 import { MetricCard } from '@/components/metric-card';
+import { ActivitySummary } from '@/activity/ActivityCenter';
 
 const operationGroups = [
   { title: 'Tiếp nhận & phân công', keys: ['reservations', 'inquiries', 'support-requests'] },
@@ -26,6 +27,7 @@ export function ManagerHome() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản lý cơ sở" title="Bàn làm việc" description={`Chào ${user?.fullName ?? ''}. Tiếp nhận, phân công và duyệt kết quả theo từng yêu cầu.`} />
     <Button title="Làm mới tổng quan" onPress={data.refresh} disabled={data.loading} />
+    <ActivitySummary />
     <WorkHub title="Việc cần xử lý" description="Đi thẳng đến nhóm hồ sơ, xem chi tiết trước khi xác nhận." actions={[
       { title: 'Duyệt yêu cầu đặt kho', path: '/manager/reservations', description: 'Đối chiếu khách hàng, kỳ thuê và báo giá.', count: count('pendingReservations') },
       { title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.' },
@@ -45,6 +47,7 @@ export function ManagerHome() {
 export function AdminHome() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản trị viên" title="Quản lý truy cập" description="Cấp tài khoản cho nhân viên, quản lý và kiểm tra ai đang được truy cập hệ thống." />
+    <ActivitySummary />
     <WorkHub title="Khu vực quản trị" description="Quản trị viên tập trung vào tổng quan và tài khoản. Quản lý phụ trách yêu cầu của khách hàng và phân công công việc." actions={adminSections.map(([key, title]) => ({ title, path: `/admin/${key}`, description: key === 'users' ? 'Tìm người dùng, tạo nhân viên/Quản lý, xem mã tài khoản và bật/tắt truy cập.' : 'Xem số lượng tài khoản và trạng thái hoạt động.' }))} />
     <Navigation title="Tài khoản và đăng xuất" path="/admin/account" />
   </ScrollView>;

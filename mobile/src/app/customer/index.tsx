@@ -7,6 +7,7 @@ import { useResource } from '@/operations/use-resource';
 import { Button, Navigation, Panel, styles } from '@/operations/ui';
 import { codeOf, label, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
+import { ActivitySummary } from '@/activity/ActivityCenter';
 
 const groups = [
   { title: 'Đặt kho & nhận kho', items: [
@@ -42,6 +43,7 @@ export default function CustomerHomeScreen() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Tài khoản của tôi" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Theo dõi kho thuê và mở ngay việc bạn cần làm." />
     <Button title="Làm mới tổng quan" onPress={refresh} disabled={sources.some(item => item.loading)} />
+    <ActivitySummary />
     <WorkHub title="Bạn muốn làm gì hôm nay?" description="Yêu cầu, thanh toán và nhận kho được đặt ở đầu để dễ theo dõi." actions={[
       { title: 'Theo dõi yêu cầu', path: '/customer/reservations', description: 'Xem WDP đã tiếp nhận và duyệt đến đâu.', count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
       { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: invoices.loading || invoices.error ? 'Xem hóa đơn và kết quả đối chiếu.' : payable.length ? `Còn ${formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))}. Mở để xem chi tiết.` : 'Xem hóa đơn, khoản đã trả và thông báo chuyển khoản.', count: count(invoices, payable.length) },

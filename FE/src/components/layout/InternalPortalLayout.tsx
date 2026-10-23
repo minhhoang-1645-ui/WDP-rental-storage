@@ -10,6 +10,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
 import { NavigationGroup } from '../workspace/NavigationGroup';
+import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
 const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
 export interface InternalNavItem {
   to: string;
@@ -139,10 +140,12 @@ export function InternalPortalLayout({
             <strong>{active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
+            <ActivityBell />
             <span className="portal-role">{roleLabel(user?.role)}</span>
           </div>
         </header>
         <main className="manager-main" id="portal-main">
+          <ActivityRefreshNote />
           <Outlet />
         </main>
       </div>

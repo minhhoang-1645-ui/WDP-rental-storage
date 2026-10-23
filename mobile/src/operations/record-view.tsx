@@ -48,4 +48,4 @@ export function RecordView({ row, root, depth = 0 }: { row: Row; root: string; d
     </View>)}</Panel>];
   })}</View>;
 }
-export function summary(row: Row) { return [text(row, 'customer.fullName', 'reservation.customer.fullName', 'fullName'), label(row.status ?? row.rentalState ?? row.accountStatus ?? (row.isOverdue ? 'OVERDUE' : undefined)), text(row, 'storageType.name', 'product.name', 'subject', 'email')].filter(value => value && value !== '—').join(' · '); }
+export function summary(row: Row, statusText?: string) { return [text(row, 'customer.fullName', 'reservation.customer.fullName', 'fullName'), statusText ?? label(row.status ?? row.rentalState ?? row.accountStatus ?? (row.isOverdue ? 'OVERDUE' : undefined)), text(row, 'storageType.name', 'product.name', 'subject', 'email')].filter(value => value && value !== '—').join(' · '); }

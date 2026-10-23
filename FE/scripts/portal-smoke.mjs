@@ -876,6 +876,7 @@ try {
   const assignment = await setup("MANAGER");
   await open(assignment.page, "/manager/assignments?scope=all");
   await assignment.page.getByRole("row").filter({hasText:"SUP-TEST"}).getByRole("button").click();
+  await assignment.page.getByRole('button', { name: 'Nhập mã nhân viên khác', exact: true }).click();
   await assignment.page.getByLabel("Mã tài khoản nhân viên",{exact:true}).fill("different-staff-id");
   await assignment.page.getByRole("dialog").getByRole("button",{name:/^(Phân công|Đổi nhân viên)$/}).click();
   await assignment.page.getByRole("dialog").waitFor({state:"hidden"});

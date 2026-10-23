@@ -117,6 +117,7 @@ export interface CustomerRenewal {
   paymentPlan: 'PAY_MONTHLY' | 'PREPAID'
   quoteSnapshot: { currency: string; totalAmount: number; discountAmount: number }
   billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number }
+  invoices?: Array<{ id: string; invoiceCode: string; renewalCycle: number; status: string; balanceDue: number }>
   rejectionReason: string | null
   requestedAt: string
 }

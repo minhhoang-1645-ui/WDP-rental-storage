@@ -15,6 +15,7 @@ import { stockCompleteInput, stockCreateInput } from './validation';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from './types';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
+import { useDraftGuard } from '@/services/live-events';
 
 const states = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 let sequence = 0;
@@ -38,6 +39,7 @@ export function StockList({ role }: { role: StockRole }) {
   </ScrollView>;
 }
 function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useDraftGuard();
   const contracts = useResource<Page<{ id: string; contractCode: string; status: string }>>('/customer/contracts', true);
   const [contract, setContract] = useState(''), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [scheduledAt, setScheduledAt] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false), lock = useRef(false);
   const items = useResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null);

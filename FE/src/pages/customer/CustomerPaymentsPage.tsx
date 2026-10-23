@@ -13,6 +13,8 @@ import type { CustomerInvoice, CustomerPayment } from '../../types/customer'
 import type { BankTransferConfig, PaymentSubmission } from '../../types/payment'
 import { buildVietQrPayload } from '../../utils/vietqr'
 import { usePaginatedResource } from '../../services/usePaginatedResource'
+import { useSearchParams } from 'react-router-dom'
+import { hasDraft } from '../../services/live-events'
 
 type View = 'invoices' | 'payments' | 'submissions'
 
@@ -24,7 +26,10 @@ const submissionStatus: Record<PaymentSubmission['status'], string> = {
 
 export function CustomerPaymentsPage() {
   const { user } = useAuth()
-  const [view, setView] = useState<View>('invoices')
+  const [params, setParams] = useSearchParams()
+  const view: View = params.get('view') === 'submissions' ? 'submissions' : params.get('view') === 'payments' ? 'payments' : 'invoices'
+  const setView = (next: View) => setParams(current => { const value = new URLSearchParams(current); value.set('view', next); return value }, { replace: true })
+  const invoiceFilter = params.get('invoice') ?? ''
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const [onlineInvoiceId, setOnlineInvoiceId] = useState('')
   const [onlineError, setOnlineError] = useState('')
@@ -39,11 +44,12 @@ export function CustomerPaymentsPage() {
   const refreshSubmissions = submissions.refresh
   const refreshBank = bank.refresh
   const current = view === 'invoices' ? invoices : view === 'payments' ? payments : submissions
+  const matchesInvoice = (invoice: { id?: string; invoiceCode: string }) => !invoiceFilter || invoice.id === invoiceFilter || invoice.invoiceCode === invoiceFilter
   const refresh = () => { refreshInvoices(); refreshPayments(); refreshSubmissions(); refreshBank() }
 
   useEffect(() => {
     if (!submissions.data?.items.some((item) => item.status === 'PENDING_VERIFICATION')) return
-    const timer = window.setInterval(() => { refreshInvoices(); refreshPayments(); refreshSubmissions() }, 12000)
+    const timer = window.setInterval(() => { if (!hasDraft()) { refreshInvoices(); refreshPayments(); refreshSubmissions() } }, 12000)
     return () => window.clearInterval(timer)
   }, [submissions.data, refreshInvoices, refreshPayments, refreshSubmissions])
 
@@ -85,11 +91,12 @@ export function CustomerPaymentsPage() {
       <button type="button" role="tab" aria-selected={view === 'submissions'} className={view === 'submissions' ? 'is-active' : ''} onClick={() => setView('submissions')}><Wallet size={17} /> Yêu cầu xác nhận ({submissions.data?.total ?? 0})</button>
     </div>
     {onlineError && <div className="booking-alert is-error payment-online-error" role="alert">{onlineError}</div>}
+    {invoiceFilter && <div className="activity-update-note"><span>Đang xem hóa đơn: {invoices.data?.items.find(matchesInvoice)?.invoiceCode ?? invoiceFilter}</span><button type="button" className="portal-text-button" onClick={() => setParams(current => { const next = new URLSearchParams(current); next.delete('invoice'); return next }, { replace: true })}>Xem tất cả hóa đơn</button></div>}
     {current.status === 401 ? <CustomerSessionExpired /> : current.loading ? <PortalLoading label="Đang tải dữ liệu thanh toán…" /> : current.error ? <PortalError message={current.error} onRetry={refresh} /> : view === 'invoices'
-      ? <InvoiceList items={invoices.data?.items ?? []} submissions={submissions.data?.items ?? []} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} />
+      ? <InvoiceList items={(invoices.data?.items ?? []).filter(matchesInvoice)} submissions={submissions.data?.items ?? []} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} />
       : view === 'payments'
-        ? <PaymentList items={payments.data?.items ?? []} />
-        : <SubmissionList items={submissions.data?.items ?? []} />}
+        ? <PaymentList items={(payments.data?.items ?? []).filter(item => matchesInvoice(item.invoice))} />
+        : <SubmissionList items={(submissions.data?.items ?? []).filter(item => matchesInvoice(item.invoice))} />}
     {selectedInvoice && <PaymentModal invoice={selectedInvoice} bank={bank.data ?? null} bankLoading={bank.loading} bankError={bank.error} onClose={() => setSelectedInvoice(null)} onRefresh={() => { refreshInvoices(); refreshSubmissions() }} onSubmitted={afterSubmission} />}
   </section>
 }

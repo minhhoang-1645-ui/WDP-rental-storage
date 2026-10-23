@@ -5,6 +5,9 @@ import { useEffect } from 'react';
 
 import { AuthProvider } from '@/auth/auth-context';
 import { useAuth } from '@/auth/use-auth';
+import { ActivityProvider } from '@/activity/ActivityProvider';
+import { ActivityRefreshNote } from '@/activity/ActivityCenter';
+import { View } from 'react-native';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -17,6 +20,7 @@ function RootNavigation() {
 
   return (
     <ThemeProvider value={DefaultTheme}>
+      <View style={{ flex: 1 }}><ActivityRefreshNote />
       <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
@@ -27,10 +31,11 @@ function RootNavigation() {
         <Stack.Screen name="unsupported" options={{ title: 'WDP Storage' }} />
         <Stack.Screen name="+not-found" options={{ title: 'Không tìm thấy trang' }} />
       </Stack>
+      </View>
     </ThemeProvider>
   );
 }
 
 export default function RootLayout() {
-  return <AuthProvider><RootNavigation /></AuthProvider>;
+  return <AuthProvider><ActivityProvider><RootNavigation /></ActivityProvider></AuthProvider>;
 }

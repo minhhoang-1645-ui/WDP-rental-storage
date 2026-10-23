@@ -26,6 +26,7 @@ import {
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import { NavigationGroup } from '../workspace/NavigationGroup';
+import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
 
 const navigation = [
   { to: "/customer", label: "Tổng quan", icon: LayoutDashboard, end: true },
@@ -218,6 +219,8 @@ export function CustomerLayout() {
             <UserRound size={20} />
           </NavLink>
         </header>
+        <div className="customer-updates-bar"><span>Yêu cầu & tiến độ của bạn</span><ActivityBell /></div>
+        <ActivityRefreshNote />
         <Outlet />
       </main>
     </div>

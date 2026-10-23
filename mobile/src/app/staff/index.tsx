@@ -7,6 +7,7 @@ import { useResource } from '@/operations/use-resource';
 import { Button, Navigation, Panel, styles } from '@/operations/ui';
 import { codeOf, text, label, type Row } from '@/operations/model';
 import { formatDate } from '@/utils/format';
+import { ActivitySummary } from '@/activity/ActivityCenter';
 
 export default function StaffHomeScreen() {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ export default function StaffHomeScreen() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Nhân viên kho" title="Công việc của tôi" description={`Chào ${user?.fullName ?? 'bạn'}. Mở việc được giao và cập nhật kết quả sau khi thực hiện.`} />
     <Button title="Làm mới công việc" onPress={refresh} disabled={sources.some(item => item.loading)} />
+    <ActivitySummary />
     <Panel title="Ưu tiên xử lý">{queue.slice(0,6).map(({item,path,title}) => <Navigation key={path} title={codeOf(item)} description={`${title} · ${label(item.status)}${item.scheduledAt ? ` · ${formatDate(String(item.scheduledAt),true)}` : ''}`} path={path} />)}{!queue.length && <Text style={styles.copy}>{sources.some(item => item.loading) ? 'Đang cập nhật công việc…' : sources.some(item => item.error) ? 'Chưa tải đủ dữ liệu. Bạn vẫn có thể mở từng nhóm bên dưới.' : 'Chưa có việc cần xử lý. Công việc mới sẽ xuất hiện khi được xác nhận hoặc phân công.'}</Text>}</Panel>
     {sources.filter(item => item.error).map((item,index) => <ErrorState key={index} message={item.error!} onRetry={item.refresh} />)}
     <WorkHub title="Nhóm công việc" description="Số hồ sơ chưa hoàn tất trong phạm vi công việc của bạn." actions={pending.map(group => ({title:group.title,path:group.path,description:group.description,count:group.source.loading || group.source.error ? '—' : group.items.length}))} />

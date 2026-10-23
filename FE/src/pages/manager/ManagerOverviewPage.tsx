@@ -12,6 +12,7 @@ import { OperationsLink as Link } from "../../components/manager/OperationsLink"
 import { useAuth } from "../../auth/auth-context";
 import { usePortalSnapshot } from "../../services/usePortalSnapshot";
 import { WorkHub } from '../../components/workspace/WorkHub';
+import { ActivitySummary } from '../../activity/ActivityCenter';
 import { code, date, first, money } from "../../components/manager/portal-data";
 import {
   Empty,
@@ -91,6 +92,7 @@ export function ManagerOverviewPage() {
           Làm mới
         </button>
       </PageHeader>
+      <ActivitySummary />
       <WorkHub title="Bàn làm việc" description="Tiếp nhận yêu cầu, giao việc và kiểm tra kết quả theo đúng thứ tự xử lý." actions={[
         { title: 'Duyệt yêu cầu đặt kho', description: 'Xem khách hàng, kỳ thuê và báo giá trước khi xác nhận.', to: '/manager/reservations?status=PENDING', icon: ClipboardCheck, count: data ? data.reservations.items.filter(row => row.status === 'PENDING').length : '—', tone: 'attention' },
         { title: 'Phân công nhân viên', description: 'Giao hỗ trợ, bảo trì và phiếu nhập – xuất cho nhân viên.', to: '/manager/assignments', icon: Headphones },

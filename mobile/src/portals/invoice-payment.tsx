@@ -10,12 +10,14 @@ import { Button, Facts, Field, Navigation, Panel, money, styles } from '@/operat
 import { buildVietQrPayload } from '@/utils/vietqr';
 import { useResource } from '@/operations/use-resource';
 import { customerSupportAction } from './actions';
+import { useDraftGuard } from '@/services/live-events';
 
 export function InvoicePayment({ invoice, refresh, onNotice }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void }) {
   const submissions = useResource<Row>('/customer/payment-submissions', true), bank = useResource<Row>('/customer/payment-config');
   const [form, setForm] = useState<FormAction>(), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const lock = useRef(false), invoiceId = idOf(invoice), balance = Number(invoice.balanceDue);
   const [qrAmount, setQrAmount] = useState(String(balance));
+  useDraftGuard(busy || qrAmount !== String(balance));
   let qrPayload = '';
   try {
     if (Number(qrAmount) <= balance) qrPayload = buildVietQrPayload({ configured: bank.data?.configured === true, bankCode: text(bank.data ?? {}, 'bankCode'), accountNumber: text(bank.data ?? {}, 'accountNumber') }, Number(qrAmount), String(invoice.invoiceCode));

@@ -176,6 +176,7 @@ export function AdminAccountsPage() {
                       <tr key={first(row, "id")}>
                         <td>
                           <strong>{first(row, "fullName")}</strong>
+                          <small>Mã tài khoản: <code>{first(row, 'id')}</code></small>
                           {row.id === user?.id && (
                             <small>Tài khoản của bạn</small>
                           )}

@@ -5,8 +5,11 @@ export function handoverWindow(contracts: Array<{ startDate: string; endDate: st
   const ends = contracts.map(item => item.endDate?.slice(0, 10)).filter(Boolean).sort()
   return { start: starts.at(-1) ?? '', end: ends[0] ?? '' }
 }
-export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now()) {
+export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: Array<{ contractStartDate?: string; contractEndDate?: string }> = []) {
   const planned = typeof scheduledAt === 'string' ? Date.parse(scheduledAt) : NaN
   if (!Number.isFinite(planned)) return 'Chưa có thời điểm bàn giao hợp lệ. Vui lòng kiểm tra lại lịch.'
-  return planned > now ? 'Chưa đến thời điểm hẹn. Chỉ ghi nhận khi đã bàn giao thực tế, không hoàn tất trước lịch.' : ''
+  if (planned > now) return 'Chưa đến thời điểm hẹn. Chỉ ghi nhận khi đã bàn giao thực tế, không hoàn tất trước lịch.'
+  const today = vietnamLocalMinute(now).slice(0, 10)
+  if (contracts.some(contract => (contract.contractStartDate && today < contract.contractStartDate) || (contract.contractEndDate && today >= contract.contractEndDate))) return 'Ngày bàn giao thực tế nằm ngoài kỳ thuê. Không thể kích hoạt hợp đồng đã hết hạn hoặc chưa bắt đầu.'
+  return ''
 }

@@ -19,19 +19,20 @@ import {
 } from "../../components/manager/PortalUi";
 import { allPages, mutate } from "../../services/portal";
 
-type WorkKind = "support-requests" | "maintenance";
+type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
 
 const workName = (kind: WorkKind) =>
-  kind === "maintenance" ? "Bảo trì" : "Hỗ trợ";
+  kind === "maintenance" ? "Bảo trì" : kind === 'stock-movements' ? 'Nhập – xuất hàng' : "Hỗ trợ";
 const finished = (task: Task) =>
-  task.row.status === "COMPLETED" || task.row.status === "RESOLVED";
+  task.row.status === "COMPLETED" || task.row.status === "RESOLVED" || task.row.status === 'CANCELLED';
 const relatedUnit = (row: Row) =>
   first(
     row,
     "storageUnit.unitNumber",
     "unit.unitCode",
     "reservation.reference",
+    'rentalContract.contractCode',
   ) || "—";
 
 export function ManagerAssignmentsPage() {
@@ -52,12 +53,14 @@ export function ManagerAssignmentsPage() {
     Promise.all([
       allPages("/manager/support-requests", controller.signal),
       allPages("/manager/maintenance", controller.signal),
+      allPages('/manager/stock-movements', controller.signal),
     ])
-      .then(([support, maintenance]) => {
+      .then(([support, maintenance, movements]) => {
         if (controller.signal.aborted) return;
         setState({
           key,
           tasks: [
+            ...movements.items.map(row => ({ kind: 'stock-movements' as const, row })),
             ...support.items.map((row) => ({
               kind: "support-requests" as const,
               row,
@@ -141,7 +144,7 @@ export function ManagerAssignmentsPage() {
     <section>
       <PageHeader
         title="Phân công nhân viên"
-        description="Phân công nhân viên phụ trách các yêu cầu hỗ trợ và công việc bảo trì tại cơ sở."
+        description="Phân công nhân viên phụ trách hỗ trợ, bảo trì và phiếu nhập – xuất hàng khách."
       >
         <button
           className="button-secondary"
@@ -175,6 +178,7 @@ export function ManagerAssignmentsPage() {
             <option value="all">Tất cả</option>
             <option value="support-requests">Hỗ trợ</option>
             <option value="maintenance">Bảo trì</option>
+            <option value="stock-movements">Nhập – xuất hàng</option>
           </select>
         </label>
         <label className="field-label">

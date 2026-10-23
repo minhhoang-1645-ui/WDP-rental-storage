@@ -12,7 +12,7 @@ import { RenewalReview } from '@/operations/renewal-review';
 import { useResource } from '@/operations/use-resource';
 import { Button, Disclosure, Facts, Field, Navigation, Panel, styles } from '@/operations/ui';
 import { formatDate } from '@/utils/format';
-import { customerAppointmentAction, customerRentalActions, customerSupportAction, staffMaintenanceCreate, staffRecordActions } from './actions';
+import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, staffMaintenanceCreate, staffRecordActions } from './actions';
 import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
 
@@ -78,6 +78,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
       {role === 'CUSTOMER' && resource === 'rentals' && Boolean(row.pendingRenewal) && <Navigation title="Xem yêu cầu gia hạn đang xử lý" path="/customer/renewals" />}
       {role === 'STAFF' && ['support-requests', 'maintenance'].includes(resource) && text(row, 'assignedStaff.id') !== user?.id && !['COMPLETED', 'RESOLVED'].includes(String(row.status)) && <Text style={styles.copy}>Chỉ nhân viên được phân công mới được xử lý công việc này.</Text>}
       {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && Date.parse(text(row, 'scheduledAt')) > clock && <Text style={styles.copy}>Chưa đến giờ hẹn. Chỉ hoàn tất khi đã bàn giao thực tế đầy đủ.</Text>}
+      {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && handoverWindowIssue(row, clock) && <Text style={styles.error}>Ngày bàn giao thực tế nằm ngoài kỳ thuê. Không thể kích hoạt hợp đồng.</Text>}
       {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : actions.map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {role === 'CUSTOMER' && resource === 'invoices' && <InvoicePayment key={`${id}:${row.status}:${row.balanceDue}`} invoice={row} refresh={refresh} onNotice={setNotice} />}
       <Disclosure title="Chi tiết và lịch sử hồ sơ"><RecordView row={row} root={root} /></Disclosure>

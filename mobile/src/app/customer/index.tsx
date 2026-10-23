@@ -11,6 +11,8 @@ import type { CustomerInvoice, CustomerRental, Paginated } from '@/types/api';
 import { formatMoney } from '@/utils/format';
 
 const menu = [
+  { href: '/customer/stock-movements' as const, title: 'Nhập – xuất hàng', description: 'Tạo phiếu và theo dõi kiểm đếm hàng khách.' },
+  { href: '/customer/stored-items' as const, title: 'Hàng đang lưu', description: 'Tồn hàng theo hợp đồng đã được nhân viên xác nhận.' },
   { href: '/customer/reservations' as const, title: 'Yêu cầu đặt kho', description: 'Theo dõi yêu cầu và trạng thái xác nhận.' },
   { href: '/customer/rentals' as const, title: 'Kho đang thuê', description: 'Xem unit, hợp đồng và thời hạn sử dụng.' },
   { href: '/customer/contracts' as const, title: 'Hợp đồng và bàn giao', description: 'Xem hợp đồng, đặt và theo dõi lịch nhận kho.' },

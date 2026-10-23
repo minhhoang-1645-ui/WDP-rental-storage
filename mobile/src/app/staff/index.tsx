@@ -10,6 +10,7 @@ import { useApiResource } from '@/hooks/use-api-resource';
 import type { Paginated, StaffAppointment, StaffTask } from '@/types/api';
 
 const menu = [
+  { href: '/staff/stock-movements' as const, title: 'Nhập – xuất hàng', description: 'Phiếu được giao, kiểm đếm và xác nhận giao nhận thực tế.' },
   { href: '/staff/appointments' as const, title: 'Lịch bàn giao', description: 'Xem lịch hẹn và unit cần bàn giao cho khách.' },
   { href: '/staff/tasks' as const, title: 'Công việc vận hành', description: 'Bảo trì, hỗ trợ, trả kho và chuyển kho.' },
   { href: '/staff/rentals' as const, title: 'Kho đang sử dụng', description: 'Đối chiếu hợp đồng và vị trí kho khi tác nghiệp.' },

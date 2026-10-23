@@ -311,3 +311,13 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
   .customer-responsive-table .customer-status { white-space: normal; justify-self: start; max-width: 100%; }
   .customer-responsive-table .payment-actions button { width: 100%; white-space: normal; justify-content: center; }
 }
+.stock-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px; margin-top: 18px; }
+.stock-card { min-width: 0; padding: 24px; border: 1px solid var(--color-border); border-radius: 18px; background: white; overflow-wrap: anywhere; }
+.stock-card > h2 { color: var(--color-navy); font-size: 19px; margin-bottom: 14px; }
+.stock-card > p { margin-block: 8px; color: var(--color-slate); }
+.stock-card .manager-facts { margin-block: 16px; }
+.stock-grid > *, .stock-form { min-width: 0; overflow-wrap: anywhere; }
+.stock-form { margin-block: 18px; }
+.stock-fields { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.stock-line { display: grid; gap: 12px; border: 1px solid var(--border, #dce3eb); border-radius: 14px; padding: 16px; min-width: 0; }
+.stock-fields input:not([type="checkbox"]), .stock-fields select, .stock-fields textarea { max-width: 100%; width: 100%; }

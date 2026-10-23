@@ -6,11 +6,18 @@ const confirmation = (title = 'Tôi xác nhận thông tin và thao tác này'):
 const note = (name = 'note', title = 'Ghi chú', required = false, limit = 2000): FormField => ({ name, title, required, multiline: true, maxLength: limit, ...(required ? { minLength: 3 } : {}) });
 const choice = (name: string, title: string, values: string[], initial?: string): FormField => ({ name, title, choices: options(values), required: true, initial });
 const issues = ['NORMAL_WEAR', 'FACILITY_FAULT', 'CUSTOMER_DAMAGE', 'CLEANING_REQUIRED', 'LOST_KEY_OR_ACCESS_ITEM', 'OTHER'];
+export function handoverWindowIssue(row: Row, now: number) {
+  const today = new Date(now + 25200000).toISOString().slice(0, 10);
+  return rows(row.allocatedUnits).some(item => (text(item, 'contractStartDate') && today < text(item, 'contractStartDate')) || (text(item, 'contractEndDate') && today >= text(item, 'contractEndDate')));
+}
 export function staffRecordActions(resource: string, row: Row, userId: string, now: number): FormAction[] {
   const root = `/staff/${resource}/${encodeURIComponent(idOf(row))}`, result: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], idempotent = false, description?: string) => result.push({ title, path: root + suffix, method: 'POST', fields: [...fields, confirmation()], idempotent, description });
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
-  if (resource === 'appointments' && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now) add('Hoàn tất bàn giao', '/complete-handover', [note('note', 'Ghi chú bàn giao')], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
+  if (resource === 'appointments' && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
+    add('Hoàn tất bàn giao', '/complete-handover', [note('note', 'Ghi chú bàn giao')], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
+    result[result.length - 1].validate = () => handoverWindowIssue(row, Date.now()) || Date.parse(String(row.scheduledAt)) > Date.now() ? 'Thời điểm bàn giao nằm ngoài kỳ thuê hoặc chưa đến giờ hẹn. Tải lại hồ sơ.' : undefined;
+  }
   if (resource === 'maintenance' && assigned) {
     if (row.status === 'OPEN') add('Bắt đầu bảo trì', '/start', [], true);
     if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi Manager nghiệm thu.');

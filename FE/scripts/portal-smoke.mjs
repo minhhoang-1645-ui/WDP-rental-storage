@@ -247,6 +247,14 @@ const fixture = {
       createdAt: when,
     },
   ],
+  'stock-movements': [{
+    id: 'movement-id', movementCode: 'MOV-TEST', type: 'IN', status: 'COMPLETED', customer,
+    rentalContract: { id: 'contract-id', contractCode: 'CONTRACT-TEST', status: 'ACTIVE' },
+    assignedStaff: staff, assignedBy: null, completedBy: staff, scheduledAt: null,
+    assignedAt: null, completedAt: '2026-10-23T03:00:00Z', createdAt: '2026-10-22T03:00:00Z', updatedAt: '2026-10-23T03:00:00Z',
+    note: null, completionNote: null,
+    lines: [{ id: 'line-id', requestedQty: 4, actualQty: 4, note: null, storedItem: { id: 'item-id', itemCode: 'ITEM-TEST', name: 'Thùng hồ sơ', unit: 'thùng', balance: 4 } }],
+  }],
   maintenance: [
     {
       id: "maintenance-id",

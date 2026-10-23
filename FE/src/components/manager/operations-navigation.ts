@@ -21,6 +21,7 @@ import {
 import type { InternalNavItem } from "../layout/InternalPortalLayout";
 
 const managerNavigation: InternalNavItem[] = [
+  { to: '/manager/operations/stock-movements', label: 'Nhập – xuất hàng', icon: ClipboardList, group: 'Vận hành thuê kho' },
   // Nhóm: Tổng quan & Báo cáo
   {
     to: "/manager",

@@ -33,6 +33,8 @@ const navigation = [
     icon: ClipboardList,
   },
   { to: "/customer/rentals", label: "Kho đang thuê", icon: Warehouse },
+  { to: '/customer/stock-movements', label: 'Nhập – xuất hàng', icon: ArrowRightLeft },
+  { to: '/customer/stored-items', label: 'Hàng đang lưu', icon: ClipboardList },
   { to: "/customer/contracts", label: "Hợp đồng", icon: FileText },
   { to: "/customer/payments", label: "Thanh toán", icon: CreditCard },
   { to: "/customer/appointments", label: "Lịch hẹn", icon: CalendarClock },

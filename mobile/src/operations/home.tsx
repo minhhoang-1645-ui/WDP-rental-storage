@@ -10,7 +10,7 @@ import { MetricCard } from '@/components/metric-card';
 
 const operationGroups = [
   { title: 'Khách hàng và đặt kho', keys: ['inquiries', 'reservations', 'customers', 'appointments', 'contracts'] },
-  { title: 'Kho thuê và vận hành', keys: ['units', 'rentals', 'renewals', 'transfers', 'returns', 'maintenance', 'support-requests'] },
+  { title: 'Kho thuê và vận hành', keys: ['units', 'rentals', 'stock-movements', 'renewals', 'transfers', 'returns', 'maintenance', 'support-requests'] },
   { title: 'Tài chính', keys: ['invoices', 'payments', 'payment-submissions', 'deposit-settlements'] },
   { title: 'Danh mục và dịch vụ', keys: ['catalog', 'additional-services'] },
 ];

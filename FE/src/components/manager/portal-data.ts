@@ -29,6 +29,7 @@ export function first(row: Row, ...paths: string[]): string {
 export function code(row: Row): string {
   return first(
     row,
+    "movementCode",
     "appointmentCode",
     "renewalCode",
     "invoiceCode",

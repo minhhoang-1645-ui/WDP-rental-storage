@@ -33,7 +33,8 @@ export function StaffActions({
     const timer = window.setInterval(() => setCurrentTime(Date.now()), 15000);
     return () => window.clearInterval(timer);
   }, [resource, row.status]);
-  const handoverIssue = resource === 'appointments' ? handoverCompletionIssue(row.scheduledAt, currentTime) : '';
+  const handoverContracts = rows(row.allocatedUnits);
+  const handoverIssue = resource === 'appointments' ? handoverCompletionIssue(row.scheduledAt, currentTime, handoverContracts) : '';
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
   const assigned = first(row, "assignedStaff.id") === user?.id;
   const run = async (
@@ -44,7 +45,7 @@ export function StaffActions({
   ) => {
     if (lock.current || user?.role !== "STAFF") return;
     if (resource === 'appointments' && suffix === '/complete-handover') {
-      const issue = handoverCompletionIssue(row.scheduledAt);
+      const issue = handoverCompletionIssue(row.scheduledAt, Date.now(), handoverContracts);
       if (issue) { setError(issue); return; }
     }
     lock.current = true;

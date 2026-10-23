@@ -5,6 +5,7 @@ import { EmailService } from './email.service.js';
 
 const smtpEnvironment = {
   EMAIL_PROVIDER: 'smtp',
+  EMAIL_TEST_RECIPIENT: 'development-sink@example.test',
   SMTP_HOST: 'smtp.gmail.com',
   SMTP_PORT: '587',
   SMTP_SECURE: 'false',
@@ -45,6 +46,7 @@ describe('EmailService SMTP', () => {
       from: { name: 'WDP Storage', address: 'sender@gmail.com' },
       html: expect.stringContaining('claim-booking?token=one-time-claim-token'),
     }));
+    expect(sendMail).not.toHaveBeenCalledWith(expect.objectContaining({ to: smtpEnvironment.EMAIL_TEST_RECIPIENT }));
     expect(result).toEqual({ delivered: true, adapter: 'smtp' });
     expect(JSON.stringify(result)).not.toContain(booking.claimToken);
   });
@@ -73,13 +75,14 @@ describe('EmailService SMTP', () => {
   });
 
   it('routes through the official Resend SDK with the configured sender and guest recipient', async () => {
-    const service = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_key', EMAIL_FROM_NAME: 'WDP Storage', EMAIL_FROM_ADDRESS: 'onboarding@example.com', FRONTEND_URL: 'http://localhost:5173' }));
+    const service = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_key', EMAIL_TEST_RECIPIENT: 'development-sink@example.test', EMAIL_FROM_NAME: 'WDP Storage', EMAIL_FROM_ADDRESS: 'onboarding@example.com', FRONTEND_URL: 'http://localhost:5173' }));
     const send = vi.fn().mockResolvedValue({ data: { id: 'resend-message-id' }, error: null });
     vi.spyOn(service as never, 'createResendClient' as never).mockReturnValue({ emails: { send } } as never);
 
     const result = await service.sendBookingClaim(booking);
 
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ from: 'WDP Storage <onboarding@example.com>', to: ['customer@gmail.com'], html: expect.stringContaining('claim-booking?token=one-time-claim-token') }));
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ to: ['development-sink@example.test'] }));
     expect(result).toEqual({ delivered: true, adapter: 'resend' });
   });
 

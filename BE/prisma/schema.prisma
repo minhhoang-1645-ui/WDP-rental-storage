@@ -254,6 +254,18 @@ enum SupportResolutionType {
   OTHER
 }
 
+enum StockMovementType {
+  IN
+  OUT
+}
+
+enum StockMovementStatus {
+  REQUESTED
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
 model AdditionalService {
   id            String                       @id @default(cuid())
   code          String                       @unique
@@ -305,6 +317,11 @@ model User {
   completedAppointments       HandoverAppointment[]      @relation("AppointmentCompleter")
   requestedRenewals           RenewalRequest[]           @relation("RenewalRequester")
   reviewedRenewals            RenewalRequest[]           @relation("RenewalReviewer")
+  storedItems                 StoredItem[]                @relation("StoredItemCustomer")
+  requestedStockMovements     StockMovement[]             @relation("StockMovementCustomer")
+  assignedStockMovements      StockMovement[]             @relation("StockMovementAssignee")
+  assignedByStockMovements    StockMovement[]             @relation("StockMovementAssigner")
+  completedStockMovements     StockMovement[]             @relation("StockMovementCompleter")
   requestedReturns            ReturnRequest[]            @relation("ReturnRequester")
   startedReturns              ReturnRequest[]            @relation("ReturnInspectionStarter")
   completedReturns            ReturnRequest[]            @relation("ReturnCompleter")
@@ -585,9 +602,76 @@ model RentalContract {
   returnInspections ReturnInspection[]
   supportRequests   SupportRequest[]
   transferRequests  TransferRequest[]
+  storedItems       StoredItem[]
+  stockMovements    StockMovement[]
 
   @@index([reservationId, status])
   @@index([status, createdAt])
+}
+
+model StoredItem {
+  id               String              @id @default(cuid())
+  itemCode         String              @unique
+  customerUserId   String
+  customer         User                @relation("StoredItemCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  rentalContractId String
+  rentalContract   RentalContract      @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  name             String
+  unit             String
+  balance          Int                 @default(0)
+  note             String?
+  movementLines    StockMovementLine[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([customerUserId, rentalContractId, name])
+  @@index([rentalContractId, balance])
+}
+
+model StockMovement {
+  id                    String              @id @default(cuid())
+  movementCode          String              @unique
+  type                  StockMovementType
+  status                StockMovementStatus @default(REQUESTED)
+  customerUserId        String
+  customer              User                @relation("StockMovementCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  rentalContractId      String
+  rentalContract        RentalContract      @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  scheduledAt           DateTime?
+  note                  String?
+  assignedStaffUserId   String?
+  assignedStaff         User?               @relation("StockMovementAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+  assignedByUserId      String?
+  assignedBy            User?               @relation("StockMovementAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt            DateTime?
+  completedByUserId     String?
+  completedBy           User?               @relation("StockMovementCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
+  completedAt           DateTime?
+  completionNote        String?
+  idempotencyKey        String              @unique
+  lines                 StockMovementLine[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([customerUserId, createdAt])
+  @@index([rentalContractId, createdAt])
+  @@index([assignedStaffUserId, status, scheduledAt])
+  @@index([status, scheduledAt, id])
+}
+
+model StockMovementLine {
+  id              String        @id @default(cuid())
+  stockMovementId String
+  stockMovement   StockMovement @relation(fields: [stockMovementId], references: [id], onDelete: Cascade)
+  storedItemId    String
+  storedItem      StoredItem    @relation(fields: [storedItemId], references: [id], onDelete: Restrict)
+  requestedQty    Int
+  actualQty       Int?
+  note            String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([stockMovementId, storedItemId])
+  @@index([storedItemId, createdAt])
 }
 
 model ReturnRequest {

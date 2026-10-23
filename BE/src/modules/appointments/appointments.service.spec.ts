@@ -113,6 +113,11 @@ describe('Appointment and Staff Handover V1', () => {
     return service.createCustomerAppointment(customer, { reservationId, scheduledAt: appointmentAt(), note: 'Morning preferred' }, key);
   }
 
+  async function makeAppointmentDue(reservationId: string, appointmentId: string) {
+    await prisma.rentalContract.updateMany({ where: { reservationId }, data: { startDate: new Date(`${dayAfter(-1)}T00:00:00.000Z`) } });
+    await prisma.handoverAppointment.update({ where: { id: appointmentId }, data: { scheduledAt: new Date(Date.now() - 60000) } });
+  }
+
   it('lets Customer request one idempotent appointment for their eligible Reservation without changing units or contracts', async () => {
     const { created } = await reservation({ quantity: 2 });
     const key = `create-${runId}-eligible`;
@@ -138,7 +143,19 @@ describe('Appointment and Staff Handover V1', () => {
   it('rejects past appointments and appointments before Contract startDate', async () => {
     const { created } = await reservation();
     await expect(service.createCustomerAppointment(customer, { reservationId: created.id, scheduledAt: '2025-01-01T09:30:00+07:00' }, `past-${runId}`)).rejects.toBeInstanceOf(BadRequestException);
-    await expect(service.createCustomerAppointment(customer, { reservationId: created.id, scheduledAt: `${dayAfter(4)}T09:30:00+07:00` }, `early-${runId}`)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createCustomerAppointment(customer, { reservationId: created.id, scheduledAt: `${dayAfter(4)}T09:30:00+07:00` }, `early-${runId}`)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects appointments on or after the exclusive Contract endDate', async () => {
+    const { created } = await reservation();
+    await expect(service.createCustomerAppointment(customer, { reservationId: created.id, scheduledAt: `${dayAfter(185)}T09:30:00+07:00` }, `late-${runId}`)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('does not complete handover before the confirmed appointment time', async () => {
+    const { created } = await reservation();
+    const requested = await requestAppointment(created.id);
+    await service.confirmAppointment(requested.id, manager);
+    await expect(service.completeHandover(requested.id, {}, staff)).rejects.toMatchObject({ response: { code: 'HANDOVER_BEFORE_APPOINTMENT_TIME' } });
   });
 
   it('allows Manager confirmation, records audit identity, and blocks Customer or Staff', async () => {
@@ -164,6 +181,7 @@ describe('Appointment and Staff Handover V1', () => {
     const { created, snapshot } = await reservation({ quantity: 2 });
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, manager);
+    await makeAppointmentDue(created.id, requested.id);
     const completed = await service.completeHandover(requested.id, { note: 'Units handed over successfully' }, staff);
     expect(completed.status).toBe('COMPLETED');
     expect(completed.completedAt).not.toBeNull();
@@ -184,6 +202,7 @@ describe('Appointment and Staff Handover V1', () => {
     const { created } = await reservation({ quantity: 2 });
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, manager);
+    await makeAppointmentDue(created.id, requested.id);
     const allocation = await prisma.reservationUnit.findFirstOrThrow({ where: { reservationId: created.id } });
     await prisma.storageUnit.update({ where: { id: allocation.storageUnitId }, data: { status: 'MAINTENANCE' } });
     await expect(service.completeHandover(requested.id, {}, staff)).rejects.toBeInstanceOf(ConflictException);
@@ -196,6 +215,7 @@ describe('Appointment and Staff Handover V1', () => {
     const { created } = await reservation({ quantity: 2 });
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, manager);
+    await makeAppointmentDue(created.id, requested.id);
     const contract = await prisma.rentalContract.findFirstOrThrow({ where: { reservationId: created.id } });
     await prisma.rentalContract.update({ where: { id: contract.id }, data: { status: 'PENDING_PAYMENT' } });
     await expect(service.completeHandover(requested.id, {}, staff)).rejects.toBeInstanceOf(ConflictException);
@@ -207,6 +227,7 @@ describe('Appointment and Staff Handover V1', () => {
     const { created } = await reservation();
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, manager);
+    await makeAppointmentDue(created.id, requested.id);
     const attempts = await Promise.allSettled([
       service.completeHandover(requested.id, { note: 'Done' }, staff),
       service.completeHandover(requested.id, { note: 'Done' }, user(adminId, 'ADMIN')),
@@ -225,7 +246,7 @@ describe('Appointment and Staff Handover V1', () => {
     expect((await service.listCustomerAppointments(customerId, { page: 1, limit: 20 })).total).toBe(1);
     expect((await service.listCustomerAppointments(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(service.getCustomerAppointment(otherCustomerId, requested.id)).rejects.toBeInstanceOf(NotFoundException);
-    const operational = await service.listOperationalAppointments({ page: 1, limit: 20, search: 'Appointment Customer', status: 'REQUESTED', date: dayAfter(6) });
+    const operational = await service.listOperationalAppointments({ page: 1, limit: 20, search: created.reservationCode, status: 'REQUESTED', date: dayAfter(6) });
     expect(operational.total).toBe(1);
     expect(JSON.stringify(operational.items[0])).not.toContain('secret-hash');
   });

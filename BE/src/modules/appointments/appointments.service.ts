@@ -122,6 +122,7 @@ export class AppointmentsService {
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
         this.assertAppointmentDate(current.reservation, current.scheduledAt);
+        this.assertHandoverExecutionTime(current.reservation, current.scheduledAt, new Date());
 
         const contracts = current.reservation.contracts;
         const unitIds = contracts.map((contract: any) => contract.reservationUnit.storageUnit.id);
@@ -170,6 +171,17 @@ export class AppointmentsService {
     const appointmentDay = this.vietnamDate(scheduledAt);
     if (reservation.contracts.some((contract: any) => appointmentDay < this.isoDate(contract.startDate))) {
       throw new ConflictException('Ngày nhận kho không được trước ngày bắt đầu thuê.');
+    }
+    if (reservation.contracts.some((contract: any) => appointmentDay >= this.isoDate(contract.endDate))) {
+      throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Ngày nhận kho phải nằm trước ngày kết thúc thuê.' });
+    }
+  }
+
+  private assertHandoverExecutionTime(reservation: any, scheduledAt: Date, now: Date) {
+    if (now < scheduledAt) throw new ConflictException({ code: 'HANDOVER_BEFORE_APPOINTMENT_TIME', message: 'Không thể hoàn tất bàn giao trước giờ hẹn.' });
+    const today = this.vietnamDate(now);
+    if (reservation.contracts.some((contract: any) => today < this.isoDate(contract.startDate) || today >= this.isoDate(contract.endDate))) {
+      throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Không thể kích hoạt hợp đồng ngoài kỳ thuê.' });
     }
   }
 
@@ -248,6 +260,8 @@ export class AppointmentsService {
       allocatedUnits: record.reservation.contracts.map((contract: any) => ({
         contractCode: contract.contractCode,
         contractStatus: contract.status,
+        contractStartDate: this.isoDate(contract.startDate),
+        contractEndDate: this.isoDate(contract.endDate),
         activatedAt: contract.activatedAt?.toISOString() ?? null,
         unitId: contract.reservationUnit.storageUnit.id,
         unitCode: contract.reservationUnit.storageUnit.unitNumber,

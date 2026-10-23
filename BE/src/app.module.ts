@@ -22,6 +22,7 @@ import { UsersModule } from './modules/users/users.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { GuestBookingModule } from './modules/guest-booking/guest-booking.module.js';
 import { AdditionalServicesModule } from './modules/additional-services/additional-services.module.js';
+import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AdditionalServicesModule } from './modules/additional-services/addition
     BookingModule,
     GuestBookingModule,
     AdditionalServicesModule,
+    StockMovementsModule,
     BillingModule,
     ContractsModule,
     DepositSettlementsModule,

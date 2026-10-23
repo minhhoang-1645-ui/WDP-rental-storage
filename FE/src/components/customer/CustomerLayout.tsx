@@ -17,6 +17,7 @@ import {
 import { startTransition, useEffect, useRef, useState } from "react";
 import {
   NavLink,
+  Link,
   Navigate,
   Outlet,
   useLocation,
@@ -24,6 +25,7 @@ import {
 } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
+import { NavigationGroup } from '../workspace/NavigationGroup';
 
 const navigation = [
   { to: "/customer", label: "Tổng quan", icon: LayoutDashboard, end: true },
@@ -43,6 +45,11 @@ const navigation = [
   { to: "/customer/transfers", label: "Chuyển đổi kho", icon: ArrowRightLeft },
   { to: "/customer/support", label: "Hỗ trợ", icon: CircleHelp },
 ] as const;
+const customerGroups = [
+  { title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
+  { title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/stock-movements', '/customer/stored-items'] },
+  { title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
+];
 
 export function CustomerLayout() {
   const { user, loading, logout } = useAuth();
@@ -150,7 +157,10 @@ export function CustomerLayout() {
           </button>
         </div>
         <nav className="customer-nav">
-          {navigation.map((item) => {
+          <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Chọn kho & đặt thuê</Link>
+          <NavLink to="/customer" end className="customer-nav-link" onClick={() => setMenuOpen(false)}><LayoutDashboard size={18} />Tổng quan</NavLink>
+          {customerGroups.map((group, index) => <NavigationGroup key={`${group.title}:${location.pathname}`} title={group.title} expanded={index === 0} active={group.paths.some(path => location.pathname.startsWith(path))}>
+          {group.paths.map(path => navigation.find(item => item.to === path)!).map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
@@ -165,6 +175,7 @@ export function CustomerLayout() {
               </NavLink>
             );
           })}
+          </NavigationGroup>)}
         </nav>
         <div className="customer-sidebar-bottom">
           <NavLink to="/customer/profile" className="customer-account">

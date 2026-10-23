@@ -51,7 +51,7 @@ function ConfirmationRecord() {
         if (!controller.signal.aborted) setRecord(result)
       } else {
         if (!user) {
-          setError('Bạn cần đăng nhập bằng tài khoản đã tạo reservation này.')
+          setError('Bạn cần đăng nhập bằng tài khoản đã tạo yêu cầu đặt kho này.')
           return
         }
         const result = await bookingApi.getReservation(id, controller.signal)
@@ -72,13 +72,13 @@ function ConfirmationRecord() {
   return <section className="section-space"><Container className="max-w-3xl">
     {record && record.id === id ? <div className="confirmation-panel">
       <CheckCircle2 className="text-success" size={48} />
-      <p className="eyebrow mt-6">{record.status === 'PENDING_CONTACT' ? 'Đã gửi yêu cầu liên hệ' : 'Đã tạo reservation'}</p>
+      <p className="eyebrow mt-6">{record.status === 'PENDING_CONTACT' ? 'Đã gửi yêu cầu liên hệ' : 'Yêu cầu của bạn đã được gửi'}</p>
       <h1>{record.status === 'PENDING_CONTACT' ? 'WDP sẽ liên hệ để xác nhận.' : record.status === 'CONFIRMED' ? 'Yêu cầu đặt kho đã được xác nhận.' : record.status === 'REJECTED' ? 'Yêu cầu đặt kho đã bị từ chối.' : record.status === 'CANCELLED' ? 'Yêu cầu đặt kho đã hủy.' : record.status === 'EXPIRED' ? 'Yêu cầu đặt kho đã hết hạn.' : 'Yêu cầu đặt kho đang chờ xác nhận.'}</h1>
       <p>Mã tham chiếu <strong>{record.id}</strong> đã được lưu. {record.status === 'CONFIRMED' ? 'Xem yêu cầu trong tài khoản để theo dõi kho, hợp đồng và hóa đơn thực tế.' : 'Yêu cầu chưa phải là thanh toán hoặc hợp đồng thuê đang hoạt động.'}</p>
       <div className="confirmation-product"><StorageIllustration sizeId={record.product.sizeId} /><div><strong>{record.product.name}</strong><span>{record.product.code} · {record.product.dimensions}</span><span>{record.quantity} kho · {record.periodMode === 'duration' ? record.durationMonths + ' tháng' : 'Từ ' + record.startDate + ' đến ' + record.endDate}</span></div></div>
       <div className="confirmation-facts"><div><Clock3 /><span><strong>Bước tiếp theo</strong>{record.status === 'CONFIRMED' ? 'Theo dõi hợp đồng, thanh toán và lịch bàn giao trong tài khoản.' : ['REJECTED', 'CANCELLED', 'EXPIRED'].includes(record.status) ? 'Chọn kho và gửi yêu cầu mới nếu bạn vẫn có nhu cầu.' : 'Nhân viên kiểm tra tình trạng, thông tin vận hành và liên hệ.'}</span></div><div><ReceiptText /><span><strong>Báo giá</strong>{record.status === 'CONFIRMED' ? 'Kiểm tra số tiền và trạng thái thanh toán trên hóa đơn trong tài khoản.' : 'Yêu cầu này chưa xác nhận việc thanh toán.'}</span></div></div>
       <div className="booking-alert mt-7"><span><strong>{record.status === 'CONFIRMED' ? 'Đã xác nhận đặt kho' : 'Chưa xác nhận giữ kho'}</strong>{record.status === 'PENDING_CONTACT' ? ' Yêu cầu liên hệ chỉ ghi nhận nhu cầu, không khóa kho.' : record.status === 'CONFIRMED' ? ' Xem phân bổ kho và hợp đồng thực tế trong tài khoản.' : ['REJECTED', 'CANCELLED', 'EXPIRED'].includes(record.status) ? ' Yêu cầu này đã kết thúc và không giữ kho.' : ' Yêu cầu đặt kho đang chờ xử lý theo quy trình vận hành.'} Dữ liệu đã được lưu trong hệ thống.</span></div>
-      <div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to={record.status === 'PENDING_CONTACT' ? '/storage' : '/customer/reservations/' + record.id}>{record.status === 'PENDING_CONTACT' ? 'Xem thêm kho' : 'Xem reservation của tôi'}</Link><Link className="button-secondary" to="/">Về trang chủ</Link></div>
+      <div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to={record.status === 'PENDING_CONTACT' ? '/storage' : '/customer/reservations/' + record.id}>{record.status === 'PENDING_CONTACT' ? 'Xem thêm kho' : 'Xem yêu cầu đặt kho của tôi'}</Link><Link className="button-secondary" to="/">Về trang chủ</Link></div>
     </div> : <div className="confirmation-panel"><h1>{error ? 'Chưa tải được yêu cầu' : 'Đang tải yêu cầu'}</h1><p>{error || (fetching ? 'Vui lòng đợi trong giây lát.' : 'Không tìm thấy dữ liệu yêu cầu.')}</p>{error && <div className="mt-6 flex gap-3"><button className="button-secondary" onClick={() => void load()}>Thử lại</button>{!user && !id?.startsWith('WDPQ-') && <Link className="button-primary" to={'/account/login?returnTo=' + encodeURIComponent('/booking/confirmation/' + id)}>Đăng nhập</Link>}</div>}</div>}
   </Container></section>
 }

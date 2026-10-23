@@ -8,6 +8,8 @@ import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from '../../types/stock';
 import { stockCompleteInput, stockCreateInput } from '../../utils/stock';
+import { WorkflowHint } from '../../components/workspace/WorkHub';
+import { workflowGuide } from '../../utils/workflow-guide';
 
 const statuses = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 const dateTime = (value: unknown) => date(value, true);
@@ -25,12 +27,12 @@ function StockList({ role }: { role: StockRole }) {
   const data = useApiResource<Page<StockMovement>>(`/${role.toLowerCase()}/stock-movements?${query}`, user?.id, true);
   const update = (key: string, value: string) => setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); return next; }, { replace: true });
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
-    <PageHeader title="Nhập – xuất hàng khách" description="Phiếu yêu cầu → phân công → kiểm đếm thực tế. Tồn hàng chỉ thay đổi khi hoàn tất phiếu.">
+    <PageHeader title="Nhập – xuất hàng khách" description={role === 'CUSTOMER' ? 'Gửi yêu cầu gửi/lấy hàng và theo dõi kết quả giao nhận của bạn.' : role === 'MANAGER' ? 'Theo dõi phiếu hàng của khách, phân công nhân viên và đối chiếu kết quả.' : 'Kiểm đếm từng mặt hàng và xác nhận giao nhận các phiếu được giao cho bạn.'}>
       <button className="button-secondary" disabled={data.loading || creating} onClick={data.refresh}>Làm mới</button>
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
     {notice && <p className="booking-alert" role="status">{notice}</p>}
-    {role === 'CUSTOMER' && <><Link className="button-secondary" to="/customer/stored-items">Hàng đang lưu</Link>{creating && <StockCreate onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setNotice('Đã gửi phiếu. Tồn hàng chưa thay đổi; WDP sẽ phân công nhân viên xử lý.'); data.refresh(); }} />}</>}
+    {role === 'CUSTOMER' && <><Link className="button-secondary" to="/customer/stored-items">Hàng đang lưu</Link>{creating && <StockCreate onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setNotice('Yêu cầu của bạn đã được gửi. Số lượng hàng sẽ được cập nhật sau khi giao nhận thực tế.'); data.refresh(); }} />}</>}
     <div className="portal-toolbar">
       <label className="field-label">Tìm mã phiếu / hợp đồng<input type="search" maxLength={100} value={params.get('search') ?? ''} onChange={event => update('search', event.target.value)} /></label>
       <label className="field-label">Trạng thái<select value={params.get('status') ?? ''} onChange={event => update('status', event.target.value)}><option value="">Tất cả</option>{Object.entries(statuses).map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
@@ -52,7 +54,7 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
   const submit = async (event: FormEvent) => {
     event.preventDefault(); if (lock.current) return; setError('');
     try {
-      if (!contracts.data?.items.some(row => row.id === contract && row.status === 'ACTIVE')) throw new Error('Chọn hợp đồng ACTIVE của bạn.');
+      if (!contracts.data?.items.some(row => row.id === contract && row.status === 'ACTIVE')) throw new Error('Vui lòng chọn hợp đồng đang hoạt động của bạn.');
       if (items.loading || items.error) throw new Error('Cần tải thành công danh sách hàng trước khi gửi.');
       const input = stockCreateInput(contract, type, lines, items.data ?? [], schedule, note);
       lock.current = true; setBusy(true); await mutate('/customer/stock-movements', 'POST', input, true); onSaved();
@@ -93,12 +95,13 @@ function StockRecord({ row, role, refresh }: { row: StockMovement; role: StockRo
   const submit = async (event: FormEvent) => { event.preventDefault(); if (lock.current) return; setError(''); try {
     if (!assignable && !completable) throw new Error('Bạn không có quyền thao tác ở trạng thái hiện tại.');
     const body = assignable ? { staffUserId: staff.trim() } : stockCompleteInput(row, quantities, note);
-    if (assignable && !staff.trim()) throw new Error('Nhập mã nhân viên STAFF đang hoạt động.');
+    if (assignable && !staff.trim()) throw new Error('Nhập mã tài khoản nhân viên đang hoạt động.');
     lock.current = true; setBusy(true); await mutate(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(row.id)}/${assignable ? 'assign' : 'complete'}`, assignable ? 'PATCH' : 'POST', body); refresh();
   } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được phiếu.'); } finally { lock.current = false; setBusy(false); } };
   return <article className="stock-card stock-form"><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Khách hàng', `${row.customer.fullName} · ${row.customer.email}`], ['Hợp đồng', `${row.rentalContract.contractCode} · ${label(row.rentalContract.status)}`], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công'], ['Người phân công', row.assignedBy?.fullName], ['Ngày phân công', dateTime(row.assignedAt)], ['Ngày hoàn tất', dateTime(row.completedAt)], ['Người hoàn tất', row.completedBy?.fullName], ['Ghi chú phiếu', row.note], ['Ghi chú hoàn tất', row.completionNote]]} />
+    <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>
     <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2>{row.lines.map(line => <div className="stock-line" key={line.id}><h3>{line.storedItem.name}</h3><p>{line.storedItem.itemCode} · Đơn vị: {line.storedItem.unit}</p><p>Yêu cầu: {line.requestedQty} · Thực tế: {line.actualQty ?? 'Chưa kiểm đếm'} · Tồn hiện tại: {line.storedItem.balance}</p>{line.note && <p>{line.note}</p>}{completable && <label className="field-label">Số lượng thực tế · {line.storedItem.name}<input required type="number" min={1} max={row.type === 'OUT' ? Math.min(1000000, line.storedItem.balance) : 1000000} step={1} value={quantities[line.id]} onChange={event => setQuantities(current => ({ ...current, [line.id]: event.target.value }))} /></label>}</div>)}
-      {assignable && <><h2>Phân công nhân viên</h2><p>BE chưa cung cấp danh bạ Staff cho Manager. Lấy mã tài khoản STAFF đang hoạt động từ Admin → Quản lý tài khoản; không dùng email thay mã.</p><label className="field-label">Mã tài khoản Staff<input required maxLength={200} value={staff} onChange={event => setStaff(event.target.value)} /></label></>}
+      {assignable && <><h2>Phân công nhân viên</h2><p>Nhập mã tài khoản nhân viên do quản trị viên cung cấp. Bạn có thể lấy mã trong danh sách tài khoản; mã này khác địa chỉ email.</p><label className="field-label">Mã tài khoản nhân viên<input required maxLength={200} value={staff} onChange={event => setStaff(event.target.value)} /></label></>}
       {completable && <><label className="field-label">Ghi chú kiểm đếm<textarea maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></label><p>Hoàn tất sẽ {row.type === 'IN' ? 'tăng' : 'giảm'} tồn theo số lượng thực tế, có thể khác số lượng yêu cầu.</p></>}
       {(assignable || completable) && <><label><input type="checkbox" required /> {assignable ? 'Tôi xác nhận nhân viên được giao' : 'Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế'}</label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<button className="button-primary">{busy ? 'Đang lưu…' : assignable ? 'Lưu phân công' : 'Hoàn tất phiếu'}</button></>}
     </fieldset></form>
@@ -108,6 +111,6 @@ export function StoredItemsPage() {
   const { user } = useAuth(), data = useApiResource<StoredItem[]>('/customer/stored-items', user?.id, true);
   const [search, setSearch] = useState('');
   const items = data.data?.filter(item => `${item.name} ${item.itemCode} ${item.rentalContract?.contractCode}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))) ?? [];
-  return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Tồn đã được Staff xác nhận; phiếu chờ xử lý chưa làm thay đổi số lượng."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;
+  return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Số lượng hàng của bạn đã được kiểm đếm. Yêu cầu đang chờ xử lý chưa làm thay đổi số lượng này."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;
 }
 

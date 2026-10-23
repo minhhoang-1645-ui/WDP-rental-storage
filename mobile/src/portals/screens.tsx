@@ -15,6 +15,8 @@ import { formatDate } from '@/utils/format';
 import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, staffMaintenanceCreate, staffRecordActions } from './actions';
 import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
+import { WorkflowHint } from '@/components/workspace-hub';
+import { workflowGuide } from '@/utils/workflow-guide';
 
 export function PortalList({ role, resource: fixed }: { role: PortalRole; resource?: string }) {
   const params = useLocalSearchParams<{ resource: string }>(), { user } = useAuth();
@@ -33,7 +35,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
     {role === 'STAFF' && resource === 'maintenance' && !action && <Button title="Báo tình trạng cần bảo trì" onPress={() => setAction(staffMaintenanceCreate())} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã gửi yêu cầu.'); data.refresh(); }} />}
     {role === 'CUSTOMER' && ['appointments', 'contracts'].includes(resource) && <Navigation title={resource === 'appointments' ? 'Đặt lịch từ hợp đồng đủ điều kiện' : 'Xem lịch bàn giao'} path={resource === 'appointments' ? '/customer/contracts' : '/customer/appointments'} />}
-    {role === 'CUSTOMER' && ['renewals', 'returns', 'support-requests', 'transfers'].includes(resource) && <><Navigation title="Gửi yêu cầu cho kho đang thuê" path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}{resource === 'support-requests' && <Navigation title="Hỗ trợ về hóa đơn" path="/customer/invoices" />}{resource === 'transfers' && <Text style={styles.copy}>Gửi nhu cầu chuyển kho qua hỗ trợ. Manager duyệt kho đích, Staff thực hiện chuyển thực tế.</Text>}</>}
+    {role === 'CUSTOMER' && ['renewals', 'returns', 'support-requests', 'transfers'].includes(resource) && <><Navigation title="Gửi yêu cầu cho kho đang thuê" path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}{resource === 'support-requests' && <Navigation title="Hỗ trợ về hóa đơn" path="/customer/invoices" />}{resource === 'transfers' && <Text style={styles.copy}>Bạn có thể gửi nhu cầu chuyển kho qua mục Hỗ trợ. WDP sẽ xác nhận kho mới và hướng dẫn bạn chuyển hàng.</Text>}</>}
     {role === 'CUSTOMER' && resource === 'invoices' && <><Navigation title="Lịch sử thanh toán" path="/customer/payment-history" /><Navigation title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm hồ sơ" value={search} onChange={setSearch} maxLength={120} />
@@ -64,11 +66,12 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
   if (role === 'CUSTOMER' && resource === 'reservations' && row) actions.push(customerSupportAction(idOf(row), { operational: false }));
   const refresh = () => { data.refresh(); sources.forEach(item => item.refresh()); };
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description="Đối chiếu thông tin trước khi thực hiện thao tác." /><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
+    <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={role === 'CUSTOMER' ? 'Theo dõi trạng thái, thông tin và hướng dẫn cho yêu cầu của bạn.' : 'Đối chiếu thông tin và cập nhật kết quả công việc tại đây.'} /><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
-      {resource === 'renewals' && <RenewalReview row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
-      <Panel title="Thông tin đối chiếu"><Facts values={[
+      {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
+      <WorkflowHint text={workflowGuide(resource, row.status, role === 'CUSTOMER' ? 'customer' : 'staff')} />
+      <Panel title={role === 'CUSTOMER' ? 'Thông tin của bạn' : 'Thông tin đối chiếu'}><Facts values={[
         ['Trạng thái', label(row.status ?? row.rentalState)], ['Khách hàng', text(row, 'customer.fullName', 'reservation.customer.fullName') || (role === 'CUSTOMER' ? user?.fullName : '')], ['Yêu cầu đặt kho', text(row, 'reservation.reference', 'reservationReference')], ['Hợp đồng', text(row, 'contractCode', 'contract.contractCode')], ['Kho', text(row, 'unit.unitCode', 'storageUnit.unitCode')], ['Kho nguồn', text(row, 'fromUnit.unitCode')], ['Kho đích', text(row, 'toUnit.unitCode')], ['Lịch hẹn', formatDate(text(row, 'scheduledAt'), true)], ['Nhân viên phụ trách', text(row, 'assignedStaff.fullName')], ['Tiêu đề', row.subject], ['Mô tả', row.description],
         ...rows(row.allocatedUnits).map((item, index) => [`Kho bàn giao ${index + 1}`, `${text(item, 'unitCode')} · ${text(item, 'contractCode')}`] as [string, unknown]),
         ...rows(row.inspections).map((item, index) => [`Kiểm tra ${text(item, 'unit.unitCode') || index + 1}`, label(item.result)] as [string, unknown]),

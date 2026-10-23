@@ -1,4 +1,5 @@
 import { AUTH_TOKEN_KEY } from "../data/booking";
+import { userMessage } from '../utils/user-message';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
@@ -38,7 +39,7 @@ export async function apiRequest<T>(
     if (!response.ok) {
       if (response.status === 401 && token && localStorage.getItem(AUTH_TOKEN_KEY) === token) window.dispatchEvent(new CustomEvent("wdp-session-expired"));
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
-      throw new ApiError(response.status, typeof message === "string" ? message : `Yêu cầu thất bại (${response.status})`, payload);
+      throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
     return payload as T;
   } catch (error) {

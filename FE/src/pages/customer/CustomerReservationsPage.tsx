@@ -62,7 +62,7 @@ export function CustomerReservationsPage() {
       {status === 401 ? (
         <CustomerSessionExpired />
       ) : loading ? (
-        <PortalLoading label="Đang tải reservation…" />
+        <PortalLoading label="Đang tải yêu cầu đặt kho…" />
       ) : error ? (
         <PortalError message={error} onRetry={refresh} />
       ) : reservations.length === 0 ? (
@@ -100,8 +100,8 @@ export function CustomerReservationsPage() {
             </select>
           </div>
           {visibleItems.length === 0 ? (
-            <PortalEmpty title="Không có reservation phù hợp">
-              <span>Không có reservation nào khớp với bộ lọc hiện tại.</span>
+            <PortalEmpty title="Không có yêu cầu đặt kho phù hợp">
+              <span>Không có yêu cầu đặt kho nào khớp với bộ lọc hiện tại.</span>
               <button
                 className="button-secondary"
                 type="button"
@@ -116,7 +116,7 @@ export function CustomerReservationsPage() {
                 <table className="customer-table">
                   <thead>
                     <tr>
-                      <th>Mã reservation</th>
+                      <th>Mã yêu cầu đặt kho</th>
                       <th>Kho</th>
                       <th>Thời gian thuê</th>
                       <th>Ưu tiên</th>

@@ -220,7 +220,7 @@ export function ManagerAssignmentsPage() {
                   <tr>
                     <th>Công việc</th>
                     <th>Nhóm</th>
-                    <th>Đối tượng / Unit</th>
+                    <th>Đối tượng / Kho</th>
                     <th>Nhân viên phụ trách</th>
                     <th>Ưu tiên</th>
                     <th>Trạng thái</th>
@@ -384,19 +384,19 @@ function AssignmentDetail({
               </label>
             )}
             <label className="field-label">
-              Mã tài khoản Staff
+              Mã tài khoản nhân viên
               <input
                 value={staffId}
                 onChange={(event) => setStaffId(event.target.value)}
                 required
                 maxLength={100}
                 disabled={busy}
-                placeholder="Mã tài khoản do Admin cung cấp"
+                placeholder="Mã tài khoản do quản trị viên cung cấp"
               />
             </label>
             <small>
-              Danh bạ Staff đầy đủ chưa được API Manager cung cấp. Bạn có thể
-              chọn nhân viên đã từng phụ trách hoặc nhập mã tài khoản.
+              Chọn nhân viên đã từng phụ trách hoặc nhập mã tài khoản nhân viên
+              đang hoạt động do quản trị viên cung cấp.
             </small>
             <div className="portal-actions">
               <button

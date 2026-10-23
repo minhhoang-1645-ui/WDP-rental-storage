@@ -149,7 +149,7 @@ export function CustomerSupportPage() {
       <PortalPageHeader
         eyebrow="Hỗ trợ"
         title="Yêu cầu hỗ trợ"
-        description="Gửi vấn đề gắn với reservation, kho hoặc hóa đơn và theo dõi tiến độ xử lý."
+        description="Gửi vấn đề gắn với yêu cầu đặt kho, kho hoặc hóa đơn và theo dõi tiến độ xử lý."
         action={
           <button
             className="button-secondary"
@@ -181,9 +181,9 @@ export function CustomerSupportPage() {
           >
             <h2>Gửi yêu cầu mới</h2>
             <label className="field-label">
-              Reservation
+              Yêu cầu đặt kho
               <select
-                aria-label="Reservation"
+                aria-label="Yêu cầu đặt kho"
                 required
                 value={reservationId}
                 onChange={(event) => {
@@ -193,7 +193,7 @@ export function CustomerSupportPage() {
                   setInvoiceId("");
                 }}
               >
-                <option value="">Chọn reservation</option>
+                <option value="">Chọn yêu cầu đặt kho</option>
                 {reservationOptions.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.reference}
@@ -369,7 +369,7 @@ export function CustomerSupportPage() {
                     </div>
                     <CustomerStatus
                       status={item.status}
-                      label={item.status === "OPEN" ? "Đang mở" : undefined}
+                      resource="support-requests"
                     />
                   </div>
                   <p>

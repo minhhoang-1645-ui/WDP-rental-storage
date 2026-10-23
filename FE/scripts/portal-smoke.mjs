@@ -830,6 +830,7 @@ try {
   await page
     .getByRole("button", { name: "Mở điều hướng", exact: true })
     .click();
+  await page.getByRole("dialog", { name: "Điều hướng nội bộ", exact: true }).getByRole("button", { name: "Kho & khách hàng", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Điều hướng nội bộ", exact: true })
     .getByRole("link", { name: "Kho vật lý", exact: true })
@@ -875,7 +876,7 @@ try {
   const assignment = await setup("MANAGER");
   await open(assignment.page, "/manager/assignments?scope=all");
   await assignment.page.getByRole("row").filter({hasText:"SUP-TEST"}).getByRole("button").click();
-  await assignment.page.getByLabel("Mã tài khoản Staff",{exact:true}).fill("different-staff-id");
+  await assignment.page.getByLabel("Mã tài khoản nhân viên",{exact:true}).fill("different-staff-id");
   await assignment.page.getByRole("dialog").getByRole("button",{name:/^(Phân công|Đổi nhân viên)$/}).click();
   await assignment.page.getByRole("dialog").waitFor({state:"hidden"});
   assert.equal(writes.at(-1).body.staffUserId,"different-staff-id");assert.match(writes.at(-1).path,/manager\/support-requests\/[^/]+\/assign/);assert.ok(writes.at(-1).key);

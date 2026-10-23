@@ -1,6 +1,7 @@
 import { fetch } from 'expo/fetch';
 
 import { authStorage } from '@/services/auth-storage';
+import { userMessage } from '@/utils/user-message';
 
 const fallbackUrl = process.env.EXPO_OS === 'android'
   ? 'http://10.0.2.2:3000/api'
@@ -70,7 +71,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
       : typeof rawMessage === 'string'
         ? rawMessage
         : `Yêu cầu thất bại (${response.status})`;
-    throw new ApiError(message, response.status, payload);
+    throw new ApiError(userMessage(message), response.status, payload);
   }
   return payload as T;
   } finally {

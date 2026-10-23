@@ -20,6 +20,8 @@ import {
 } from "../../components/manager/PortalUi";
 import { staffResources, type StaffResource } from "./staff-resources";
 import { StaffActions } from "./StaffActions";
+import { WorkflowHint } from '../../components/workspace/WorkHub';
+import { workflowGuide } from '../../utils/workflow-guide';
 
 export function StaffRecordPage({ resource }: { resource: StaffResource }) {
   const { id = '' } = useParams();
@@ -71,6 +73,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
             </button>
           </PageHeader>
           <div className="manager-detail-grid">
+            {workflowGuide(resource, row.status, 'staff') && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status, 'staff')}</WorkflowHint></div>}
             <div className="manager-detail-content">
               <section className="manager-section">
                 <h2>Thông tin tác nghiệp</h2>

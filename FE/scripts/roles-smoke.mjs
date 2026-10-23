@@ -911,7 +911,7 @@ try {
     "No duplicate database ID/reference options",
   );
   await customer.page
-    .getByLabel("Reservation", { exact: true })
+    .getByLabel("Yêu cầu đặt kho", { exact: true })
     .selectOption("RES-ACTIVE");
   await customer.page
     .getByLabel("Hợp đồng liên quan", { exact: true })
@@ -947,7 +947,7 @@ try {
   assert.equal(writes.at(-1).role, "CUSTOMER");
   await open(customer.page, "/customer/appointments");
   await customer.page
-    .getByLabel("Reservation", { exact: true })
+    .getByLabel("Yêu cầu đặt kho", { exact: true })
     .selectOption("ready-id");
   const appointmentInput = customer.page.getByLabel('Ngày giờ mong muốn', { exact: true });
   assert.equal(await appointmentInput.getAttribute('max'), '2030-11-30T23:59');
@@ -1007,7 +1007,7 @@ try {
     .filter({ hasText: "Không thể tải hồ sơ kiểm thử" })
     .waitFor();
   assert(
-    await customer.page.getByLabel("Reservation", { exact: true }).isDisabled(),
+    await customer.page.getByLabel("Yêu cầu đặt kho", { exact: true }).isDisabled(),
   );
   failSource = "";
   checks.push(

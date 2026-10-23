@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import { formatPortalDate } from "../../components/customer/CustomerPortalHelpers";
+import { WorkflowHint } from '../../components/workspace/WorkHub';
+import { workflowGuide } from '../../utils/workflow-guide';
 import {
   CustomerStatus,
   PortalEmpty,
@@ -91,12 +93,8 @@ export function CustomerAppointmentsPage() {
   const filteredAppointments = (appointments.data?.items ?? []).filter(
     (item) =>
       view === "upcoming"
-        ? new Date(item.scheduledAt).getTime() >=
-            (appointments.asOf || currentTime) &&
-          !["COMPLETED", "CANCELLED"].includes(item.status)
-        : new Date(item.scheduledAt).getTime() <
-            (appointments.asOf || currentTime) ||
-          ["COMPLETED", "CANCELLED"].includes(item.status),
+        ? ['REQUESTED', 'CONFIRMED'].includes(item.status)
+        : ["COMPLETED", "CANCELLED"].includes(item.status),
   );
 
   const { items: visible, pagination } =
@@ -156,7 +154,7 @@ export function CustomerAppointmentsPage() {
       <PortalPageHeader
         eyebrow="Lịch hẹn"
         title="Lịch bàn giao của tôi"
-        description="Theo dõi và gửi yêu cầu lịch bàn giao cho reservation đủ điều kiện."
+        description="Đặt lịch khi hợp đồng đủ điều kiện. WDP xác nhận lịch và bố trí nhân viên bàn giao kho cho bạn."
         action={
           <button
             className="button-secondary"
@@ -178,7 +176,7 @@ export function CustomerAppointmentsPage() {
               className={view === "upcoming" ? "is-active" : ""}
               onClick={() => setView("upcoming")}
             >
-              <CalendarClock size={17} /> Sắp tới
+              <CalendarClock size={17} /> Chờ nhận kho
             </button>
             <button
               type="button"
@@ -187,7 +185,7 @@ export function CustomerAppointmentsPage() {
               className={view === "past" ? "is-active" : ""}
               onClick={() => setView("past")}
             >
-              <History size={17} /> Đã qua
+              <History size={17} /> Đã hoàn tất / hủy
             </button>
           </div>
           {appointments.status === 401 ? (
@@ -204,7 +202,7 @@ export function CustomerAppointmentsPage() {
               icon={<CalendarClock size={30} />}
               title={
                 view === "upcoming"
-                  ? "Chưa có lịch hẹn sắp tới"
+                  ? "Chưa có lịch chờ nhận kho"
                   : "Chưa có lịch sử hẹn"
               }
             >
@@ -225,7 +223,7 @@ export function CustomerAppointmentsPage() {
                     <CustomerStatus status={item.status} />
                   </div>
                   <p>
-                    Reservation: <strong>{item.reservation.reference}</strong>
+                    Yêu cầu đặt kho: <strong>{item.reservation.reference}</strong>
                   </p>
                   {item.allocatedUnits.length > 0 && (
                     <p>
@@ -236,6 +234,7 @@ export function CustomerAppointmentsPage() {
                     </p>
                   )}
                   {item.note && <p>Ghi chú: {item.note}</p>}
+                  {workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
                 </article>
               ))}
             </div>
@@ -259,13 +258,13 @@ export function CustomerAppointmentsPage() {
           >
             <h2>Yêu cầu lịch bàn giao</h2>
             <p>
-              Chỉ reservation đã thanh toán và có hợp đồng chờ bàn giao mới được
+              Chỉ yêu cầu đã thanh toán và có hợp đồng chờ bàn giao mới được
               đặt lịch.
             </p>
             <label className="field-label">
-              Reservation
+              Yêu cầu đặt kho
               <select
-                aria-label="Reservation"
+                aria-label="Yêu cầu đặt kho"
                 required
                 value={reservationId}
                 onChange={(event) => {
@@ -282,7 +281,7 @@ export function CustomerAppointmentsPage() {
                     setScheduledAt("");
                 }}
               >
-                <option value="">Chọn reservation</option>
+                <option value="">Chọn yêu cầu đặt kho</option>
                 {eligibleReservations.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.reference}
@@ -334,7 +333,7 @@ export function CustomerAppointmentsPage() {
               {submitting ? "Đang gửi…" : "Gửi yêu cầu"}
             </button>
             {!contracts.loading && eligibleReservations.length === 0 && (
-              <small>Hiện chưa có reservation đủ điều kiện đặt lịch.</small>
+              <small>Hiện chưa có yêu cầu đặt kho đủ điều kiện đặt lịch.</small>
             )}
           </fieldset>
         </form>

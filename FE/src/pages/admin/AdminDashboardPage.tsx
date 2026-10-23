@@ -2,6 +2,7 @@ import { ArrowRight, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { WorkHub } from '../../components/workspace/WorkHub';
 import { allPages } from "../../services/portal";
 import { first, label, type Page } from "../../components/manager/portal-data";
 import {
@@ -52,6 +53,10 @@ export function AdminDashboardPage() {
           Làm mới
         </button>
       </PageHeader>
+      <WorkHub title="Quản lý truy cập" description="Tìm tài khoản, cấp nhân viên/Quản lý và kiểm tra trạng thái truy cập trong cùng một nơi." actions={[
+        { title: 'Quản lý tài khoản', description: 'Tìm tên hoặc email; xem hồ sơ, tạo tài khoản nội bộ và bật/tắt truy cập.', to: '/admin/users', icon: Users },
+        { title: 'Tra cứu nhân viên kho', description: 'Tìm nhân viên đang hoạt động, lấy mã tài khoản để quản lý phân công.', to: '/admin/users?role=STAFF', icon: ShieldCheck },
+      ]} />
       <LoadState
         loading={!current}
         error={current?.error ?? ""}

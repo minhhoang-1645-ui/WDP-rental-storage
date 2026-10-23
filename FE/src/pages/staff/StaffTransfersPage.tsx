@@ -34,12 +34,12 @@ function StaffTransferList() {
       <button className="button-secondary" onClick={resource.refresh} disabled={resource.loading}><RefreshCw size={16} /> Làm mới</button>
     </PageHeader>
     <div className="portal-toolbar">
-      <label className="field-label portal-search">Tìm lệnh chuyển<input type="search" value={search} onChange={(event) => change("search", event.target.value)} placeholder="Mã lệnh, reservation, hợp đồng hoặc kho" /></label>
+      <label className="field-label portal-search">Tìm lệnh chuyển<input type="search" value={search} onChange={(event) => change("search", event.target.value)} placeholder="Mã lệnh, yêu cầu đặt kho, hợp đồng hoặc kho" /></label>
       <label className="field-label">Trạng thái<select value={status} onChange={(event) => change("status", event.target.value)}><option value="APPROVED">Chờ thực hiện</option><option value="COMPLETED">Đã hoàn tất</option><option value="ALL">Tất cả</option></select></label>
     </div>
     <LoadState loading={resource.loading} error={resource.error} retry={resource.refresh} />
-    {resource.data && !items.length && <Empty title="Không có lệnh chuyển phù hợp" description="Lệnh chuyển sẽ xuất hiện sau khi Manager duyệt kho đích." />}
-    {items.length > 0 && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Lệnh chuyển</th><th>Reservation / Hợp đồng</th><th>Kho nguồn</th><th>Kho đích</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+    {resource.data && !items.length && <Empty title="Không có lệnh chuyển phù hợp" description="Lệnh chuyển sẽ xuất hiện sau khi quản lý duyệt kho đích." />}
+    {items.length > 0 && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Lệnh chuyển</th><th>Yêu cầu đặt kho / Hợp đồng</th><th>Kho nguồn</th><th>Kho đích</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
       {items.map((item) => <tr key={recordId(item)}><td><strong>{code(item)}</strong><small>{date(item.createdAt, true)}</small></td><td>{first(item, "reservation.reference")}<small>{first(item, "contract.contractCode")}</small></td><td>{first(item, "fromUnit.unitCode")}</td><td>{first(item, "toUnit.unitCode")}</td><td><Status value={item.status} /></td><td><Link className="manager-table-link" to={`/staff/transfers/${encodeURIComponent(recordId(item))}`}>{item.status === "APPROVED" ? "Thực hiện" : "Xem"}<ArrowRight size={15} /></Link></td></tr>)}
     </tbody></table></div>}
   </section>;
@@ -70,7 +70,7 @@ function StaffTransferDetail({ id }: { id: string }) {
     <PageHeader title={item ? code(item) : "Chi tiết chuyển kho"} description="Đối chiếu đúng kho nguồn và kho đích trước khi xác nhận.">{item && <Status value={item.status} />}</PageHeader>
     <LoadState loading={resource.loading} error={resource.error} retry={resource.refresh} />
     {item && <div className="manager-detail-grid"><section className="manager-section"><h2>Thông tin lệnh chuyển</h2><Facts items={[
-      ["Reservation", first(item, "reservation.reference")], ["Hợp đồng", first(item, "contract.contractCode")], ["Lý do", label(item.reason)],
+      ["Yêu cầu đặt kho", first(item, "reservation.reference")], ["Hợp đồng", first(item, "contract.contractCode")], ["Lý do", label(item.reason)],
       ["Kho nguồn", first(item, "fromUnit.unitCode")], ["Kho đích", first(item, "toUnit.unitCode")], ["Loại kho", first(item, "toUnit.storageType.name")],
       ["Người duyệt", first(item, "approvedBy.fullName")], ["Thời điểm duyệt", date(item.approvedAt, true)], ["Người hoàn tất", first(item, "completedBy.fullName")], ["Thời điểm hoàn tất", date(item.completedAt, true)],
     ]} /></section><aside className="manager-section"><h2>Hoàn tất tại cơ sở</h2>

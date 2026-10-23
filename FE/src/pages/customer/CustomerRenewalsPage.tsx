@@ -240,7 +240,7 @@ export function CustomerRenewalsPage() {
                       {item.rejectionReason}
                     </p>
                   )}
-                  <details className="renewal-review-details"><summary>Xem thông tin gia hạn và căn cứ lập phụ lục</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} /></details>
+                  <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ))}
             </div>

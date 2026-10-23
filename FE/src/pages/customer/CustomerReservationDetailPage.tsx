@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
+import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
   PortalError,
@@ -39,7 +40,7 @@ export function CustomerReservationDetailPage() {
   if (loading)
     return (
       <section className="customer-page">
-        <PortalLoading label="Đang tải chi tiết reservation…" />
+        <PortalLoading label="Đang tải chi tiết yêu cầu đặt kho…" />
       </section>
     );
   if (error || !reservation)
@@ -49,7 +50,7 @@ export function CustomerReservationDetailPage() {
           <ArrowLeft size={16} /> Quay lại danh sách
         </Link>
         <PortalError
-          message={error || "Không tìm thấy reservation này."}
+          message={error || "Không tìm thấy yêu cầu đặt kho này."}
           onRetry={refresh}
         />
       </section>
@@ -67,6 +68,7 @@ export function CustomerReservationDetailPage() {
         action={<ReservationStatus status={reservation.status} />}
       />
       <div className="customer-detail-grid">
+        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'Yêu cầu của bạn đã được gửi và đang chờ WDP xác nhận. Kết quả sẽ được cập nhật tại đây.' : reservation.status === 'CONFIRMED' ? 'Yêu cầu đặt kho của bạn đã được chấp thuận. Vui lòng kiểm tra hóa đơn trong Thanh toán; sau khi thanh toán được xác nhận, bạn có thể đặt lịch nhận kho.' : 'Yêu cầu đã kết thúc xử lý. Xem trạng thái và nội dung hồ sơ; gửi hỗ trợ nếu bạn cần WDP giải thích.'}</WorkflowHint></div>
         <div className="customer-detail-content">
           <section className="customer-panel">
             <h2>Thông tin kho</h2>

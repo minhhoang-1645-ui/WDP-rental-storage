@@ -51,7 +51,7 @@ export function CustomerAppointmentsPage() {
   }, []);
   const earliestAppointment = vietnamLocalMinute(currentTime + 60000);
   const eligibleReservations = useMemo(() => {
-    const map = new Map<string, { id: string; reference: string; startDate: string; endDate: string }>();
+    const map = new Map<string, { id: string; reference: string; startDate: string; pickupStart: string; endDate: string }>();
     const groups = new Map<string, CustomerContract[]>();
     for (const contract of contracts.data?.items ?? [])
       groups.set(contract.reservation.id, [
@@ -74,6 +74,7 @@ export function CustomerAppointmentsPage() {
           id,
           reference: items[0].reservation.reference,
           startDate: period.start,
+          pickupStart: period.pickupStart,
           endDate: period.end,
         });
     }
@@ -83,7 +84,7 @@ export function CustomerAppointmentsPage() {
     (item) => item.id === reservationId,
   );
   const reservationStartMinimum = selectedReservation
-    ? `${selectedReservation.startDate}T00:00`
+    ? `${selectedReservation.pickupStart}T00:00`
     : earliestAppointment;
   const minimumAppointment =
     earliestAppointment > reservationStartMinimum
@@ -116,9 +117,9 @@ export function CustomerAppointmentsPage() {
         throw new Error("Lịch hẹn phải ở thời điểm tương lai.");
       if (
         selectedReservation &&
-        scheduledAt.slice(0, 10) < selectedReservation.startDate
+        scheduledAt.slice(0, 10) < selectedReservation.pickupStart
       )
-        throw new Error("Ngày nhận kho không được trước ngày bắt đầu thuê.");
+        throw new Error("Lịch nhận chìa khóa chỉ được đặt sớm tối đa 3 ngày trước ngày bắt đầu thuê.");
       if (scheduledAt.slice(0, 10) >= selectedReservation.endDate) throw new Error('Ngày bàn giao phải trước ngày kết thúc kỳ thuê (không bao gồm ngày kết thúc).');
       await mutate<CustomerAppointment>(
         "/customer/appointments",
@@ -276,7 +277,7 @@ export function CustomerAppointmentsPage() {
                   if (
                     nextReservation &&
                     scheduledAt &&
-                    (scheduledAt.slice(0, 10) < nextReservation.startDate || scheduledAt.slice(0, 10) >= nextReservation.endDate)
+                    (scheduledAt.slice(0, 10) < nextReservation.pickupStart || scheduledAt.slice(0, 10) >= nextReservation.endDate)
                   )
                     setScheduledAt("");
                 }}
@@ -302,10 +303,10 @@ export function CustomerAppointmentsPage() {
               />
             </label>
             <small id="appointment-timezone">
-              Ngày giờ tại cơ sở WDP (UTC+7). Ngày nhận kho từ ngày bắt đầu thuê
+              Ngày giờ tại cơ sở WDP (UTC+7). Có thể hẹn nhận chìa khóa sớm từ
               {selectedReservation
-                ? ` ${formatPortalDate(selectedReservation.startDate)} và trước ngày ${formatPortalDate(selectedReservation.endDate)} (không bao gồm ngày kết thúc).`
-                : ' và trước ngày kết thúc kỳ thuê.'}
+                ? ` ${formatPortalDate(selectedReservation.pickupStart)}, đến trước ngày ${formatPortalDate(selectedReservation.endDate)}. Quyền sử dụng kho chỉ bắt đầu từ ${formatPortalDate(selectedReservation.startDate)}.`
+                : ' tối đa 3 ngày trước khi bắt đầu thuê và trước ngày kết thúc kỳ thuê.'}
             </small>
             <label className="field-label">
               Ghi chú

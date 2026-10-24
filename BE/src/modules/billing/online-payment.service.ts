@@ -64,6 +64,58 @@ export class OnlinePaymentService {
     }
   }
 
+  async getCustomerStatus(transactionIdentity: string, customer: PublicUser) {
+    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ CUSTOMER được xem giao dịch thanh toán của mình.');
+    const transaction = await this.prisma.onlinePaymentTransaction.findFirst({
+      where: {
+        customerUserId: customer.id,
+        OR: [{ id: transactionIdentity }, { merchantOrderRef: transactionIdentity }],
+      },
+      select: {
+        id: true,
+        merchantOrderRef: true,
+        status: true,
+        amount: true,
+        paidAt: true,
+        updatedAt: true,
+        invoice: {
+          select: {
+            id: true,
+            invoiceCode: true,
+            status: true,
+            amountPaid: true,
+            balanceDue: true,
+            paidAt: true,
+          },
+        },
+        payment: {
+          select: {
+            id: true,
+            paymentCode: true,
+            amount: true,
+            receivedAt: true,
+          },
+        },
+      },
+    });
+    if (!transaction) throw new NotFoundException('Không tìm thấy giao dịch thanh toán thuộc tài khoản này.');
+    return {
+      transactionId: transaction.id,
+      merchantOrderRef: transaction.merchantOrderRef,
+      status: transaction.status === 'PENDING' ? 'PENDING' : transaction.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+      providerStatus: transaction.status,
+      amount: this.money(transaction.amount),
+      paidAt: transaction.paidAt,
+      updatedAt: transaction.updatedAt,
+      invoice: {
+        ...transaction.invoice,
+        amountPaid: this.money(transaction.invoice.amountPaid),
+        balanceDue: this.money(transaction.invoice.balanceDue),
+      },
+      payment: transaction.payment ? { ...transaction.payment, amount: this.money(transaction.payment.amount) } : null,
+    };
+  }
+
   async returnStatus(query: Record<string, unknown>) {
     try {
       const payload = this.vnpay.verify(query);

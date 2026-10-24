@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://wdp-rental-storage.onrender.com/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

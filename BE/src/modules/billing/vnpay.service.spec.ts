@@ -10,6 +10,7 @@ describe('VnpayService', () => {
     const url = new URL(service.paymentUrl({ orderRef: 'WDPTEST0001', amount: 1250000n, ipAddress: '127.0.0.1', createdAt: new Date('2026-10-21T01:00:00.000Z') }));
     expect(url.origin).toBe('https://sandbox.vnpayment.vn');
     expect(url.searchParams.get('vnp_Amount')).toBe('125000000');
+    expect(url.searchParams.get('vnp_ReturnUrl')).toBe('http://localhost:5173/customer/payments/vnpay-return');
     url.searchParams.set('vnp_ResponseCode', '00'); url.searchParams.set('vnp_TransactionStatus', '00');
     // Provider callbacks sign the complete callback payload, so a modified unsigned URL must fail.
     expect(() => service.verify(Object.fromEntries(url.searchParams))).toThrow(BadRequestException);

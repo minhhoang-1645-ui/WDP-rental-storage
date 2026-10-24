@@ -324,6 +324,17 @@ async function setup(initialRole, authenticated = true) {
       forbidden.push({ path, role });
       return send({ message: "Forbidden" }, 403);
     }
+    if (path === "customer/online-payments/online-payment-id" || path === "customer/online-payments/WDP-VNPAY-TEST") return send({
+      transactionId: "online-payment-id",
+      merchantOrderRef: "WDP-VNPAY-TEST",
+      status: "SUCCESS",
+      providerStatus: "SUCCESS",
+      amount: 2000000,
+      paidAt: when,
+      updatedAt: when,
+      invoice: { id: "invoice-0", invoiceCode: "INV-0", status: "PAID", amountPaid: 2000000, balanceDue: 0, paidAt: when },
+      payment: { id: "payment-0", paymentCode: "PAY-0", amount: 2000000, receivedAt: when },
+    });
     if (path === failSource)
       return send({ message: "Không thể tải hồ sơ kiểm thử" }, 503);
     if (method !== "GET") {
@@ -888,10 +899,12 @@ try {
   await customer.page.getByRole("button", { name: "Xem trạng thái yêu cầu", exact: true }).click();
   customer.data.customer["payment-submissions"] = [];
   await open(customer.page, "/customer/payments");
-  await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
+  await customer.page.getByRole("button", { name: "Quét VNPay QR", exact: true }).first().click();
   await customer.page.waitForURL((url) => url.pathname === "/customer/payments/vnpay-return");
   await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
-  assert.match(writes.findLast((item) => item.path.endsWith("/online-payment")).key, /^cust-vnpay-/);
+  const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));
+  assert.match(onlinePaymentWrite.key, /^cust-vnpay-/);
+  assert.equal(onlinePaymentWrite.body.bankCode, "VNPAYQR");
   await open(customer.page, "/customer/contracts?page=6");
   await customer.page.getByText("CON-104", { exact: true }).waitFor();
   assert(

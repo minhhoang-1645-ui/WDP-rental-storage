@@ -26,6 +26,17 @@ export class OnlinePaymentController {
   @ApiConflictResponse({ description: 'Invoice đã PAID hoặc không hỗ trợ thanh toán online.' })
   create(@Param('invoiceId') invoiceId: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest & Request) { return this.service.create(invoiceId, body, key, request.user!, request.ip ?? request.socket.remoteAddress ?? '127.0.0.1'); }
 
+  @Get('customer/online-payments/:transactionId')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('CUSTOMER')
+  @ApiBearerAuth('bearerAuth')
+  @ApiOperation({ summary: 'Trạng thái giao dịch VNPay của Customer', description: 'Read-only polling endpoint. Chỉ trả giao dịch thuộc Customer đang đăng nhập; không xác nhận hoặc ghi nhận thanh toán.' })
+  @ApiOkResponse({ schema: { example: { transactionId: 'transaction-id', merchantOrderRef: 'WDP...', status: 'PENDING', providerStatus: 'PENDING', amount: 3000000, paidAt: null, updatedAt: '2026-10-24T02:00:00.000Z', invoice: { id: 'invoice-id', invoiceCode: 'WDP-2026-AB12-I01', status: 'OPEN', amountPaid: 0, balanceDue: 3000000, paidAt: null }, payment: null } } })
+  @ApiUnauthorizedResponse({ description: 'Thiếu/sai bearer token.' })
+  @ApiForbiddenResponse({ description: 'Không phải CUSTOMER.' })
+  @ApiNotFoundResponse({ description: 'Giao dịch không tồn tại hoặc không thuộc Customer.' })
+  status(@Param('transactionId') transactionId: string, @Req() request: AuthenticatedRequest) { return this.service.getCustomerStatus(transactionId, request.user!); }
+
   @Get('payments/vnpay/ipn')
   @ApiOperation({ summary: 'VNPay IPN', description: 'Public provider callback. Xác minh checksum, order và amount; retry an toàn. Không dùng endpoint này từ UI.' })
   @ApiOkResponse({ schema: { example: { RspCode: '00', Message: 'Confirm Success' } } })

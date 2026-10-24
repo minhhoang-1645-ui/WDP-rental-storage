@@ -41,7 +41,8 @@ export interface PaymentSubmission {
 
 export type PaymentSubmissionPage = Paginated<PaymentSubmission>
 
-export type OnlinePaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'
+export type OnlinePaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED'
+export type OnlinePaymentPollingStatus = 'PENDING' | 'SUCCESS' | 'FAILED'
 
 export interface OnlinePaymentCreated {
   transactionId: string
@@ -49,6 +50,30 @@ export interface OnlinePaymentCreated {
   status: OnlinePaymentStatus
   amount: number
   paymentUrl: string
+}
+
+export interface OnlinePaymentStatusResult {
+  transactionId: string
+  merchantOrderRef: string
+  status: OnlinePaymentPollingStatus
+  providerStatus: OnlinePaymentStatus
+  amount: number
+  paidAt: string | null
+  updatedAt: string
+  invoice: {
+    id: string
+    invoiceCode: string
+    status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+    amountPaid: number
+    balanceDue: number
+    paidAt: string | null
+  }
+  payment: {
+    id: string
+    paymentCode: string
+    amount: number
+    receivedAt: string
+  } | null
 }
 
 export type VnpayReturnResult =

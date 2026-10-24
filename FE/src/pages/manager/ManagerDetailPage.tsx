@@ -1,6 +1,8 @@
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
 import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { WorkflowHint } from '../../components/workspace/WorkHub';
+import { workflowGuide } from '../../utils/workflow-guide';
 import { useParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
@@ -83,6 +85,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             </button>
           </PageHeader>
           <div className="manager-detail-grid">
+            {workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}
               <DetailContent row={row} resource={resource} />

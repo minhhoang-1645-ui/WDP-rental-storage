@@ -1,6 +1,8 @@
 import { fetch } from 'expo/fetch';
 
 import { authStorage } from '@/services/auth-storage';
+import { userMessage } from '@/utils/user-message';
+import { notifyDataChanged } from './live-events';
 
 const fallbackUrl = process.env.EXPO_OS === 'android'
   ? 'http://10.0.2.2:3000/api'
@@ -25,9 +27,10 @@ export function setSessionExpiredHandler(handler?: () => void) {
   onSessionExpired = handler;
 }
 
-export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean } = {}): Promise<T> {
-  const { authenticated = true, signal, ...request } = options;
+export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null } = {}): Promise<T> {
+  const { authenticated = true, signal, expectedToken, ...request } = options;
   const token = authenticated ? await authStorage.getToken() : null;
+  if (expectedToken !== undefined && token !== expectedToken) throw new Error('Phiên đăng nhập đã thay đổi.');
   const controller = new AbortController();
   let timedOut = false;
   const abort = () => controller.abort();
@@ -49,10 +52,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   } catch (error) {
     if (signal?.aborted) throw error;
     if (timedOut) throw new ApiError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.', 408);
-    throw new ApiError(
-      error instanceof Error ? `Không kết nối được Backend: ${error.message}` : 'Không kết nối được Backend.',
-      0,
-    );
+    throw new ApiError('Không kết nối được hệ thống WDP. Vui lòng kiểm tra mạng và thử lại.', 0);
   }
 
   const payload = response.status === 204 ? null : await response.json().catch((error: unknown) => {
@@ -70,8 +70,9 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
       : typeof rawMessage === 'string'
         ? rawMessage
         : `Yêu cầu thất bại (${response.status})`;
-    throw new ApiError(message, response.status, payload);
+    throw new ApiError(userMessage(message), response.status, payload);
   }
+  if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path)) notifyDataChanged(path);
   return payload as T;
   } finally {
     clearTimeout(timer);
@@ -79,17 +80,18 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   }
 }
 
-export async function apiAllPages<T>(path: string, signal?: AbortSignal): Promise<T> {
+export async function apiAllPages<T>(path: string, signal?: AbortSignal, expectedToken?: string | null): Promise<T> {
+  const sessionToken = expectedToken === undefined ? await authStorage.getToken() : expectedToken;
   const [pathname, search = ''] = path.split('?', 2);
   const query = new URLSearchParams(search);
   query.set('limit', '100'); query.set('page', '1');
   type Page = { items: unknown[]; total: number; limit: number; page: number };
-  const head = await apiRequest<Page>(`${pathname}?${query}`, { signal });
+  const head = await apiRequest<Page>(`${pathname}?${query}`, { signal, expectedToken: sessionToken });
   if (!head || !Array.isArray(head.items) || !Number.isSafeInteger(head.total) || head.total < 0 || !Number.isSafeInteger(head.limit) || head.limit < 1) throw new ApiError('Danh sách trả về không hợp lệ.', 502);
   const items = [...head.items];
   for (let page = 2; page <= Math.ceil(head.total / head.limit); page++) {
     query.set('page', String(page));
-    const next = await apiRequest<Page>(`${pathname}?${query}`, { signal });
+    const next = await apiRequest<Page>(`${pathname}?${query}`, { signal, expectedToken: sessionToken });
     if (!next || !Array.isArray(next.items)) throw new ApiError('Danh sách trả về không hợp lệ.', 502);
     items.push(...next.items);
   }

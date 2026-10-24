@@ -11,6 +11,8 @@ import {
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { usePortalSnapshot } from "../../services/usePortalSnapshot";
+import { WorkHub } from '../../components/workspace/WorkHub';
+import { ActivitySummary } from '../../activity/ActivityCenter';
 import { code, date, first, money } from "../../components/manager/portal-data";
 import {
   Empty,
@@ -90,9 +92,19 @@ export function ManagerOverviewPage() {
           Làm mới
         </button>
       </PageHeader>
+      <ActivitySummary />
+      <WorkHub title="Bàn làm việc" description="Tiếp nhận yêu cầu, giao việc và kiểm tra kết quả theo đúng thứ tự xử lý." actions={[
+        { title: 'Duyệt yêu cầu đặt kho', description: 'Xem khách hàng, kỳ thuê và báo giá trước khi xác nhận.', to: '/manager/reservations?status=PENDING', icon: ClipboardCheck, count: data ? data.reservations.items.filter(row => row.status === 'PENDING').length : '—', tone: 'attention' },
+        { title: 'Phân công nhân viên', description: 'Giao hỗ trợ, bảo trì và phiếu nhập – xuất cho nhân viên.', to: '/manager/assignments', icon: Headphones },
+        { title: 'Xác nhận lịch bàn giao', description: 'Xem lịch khách đề xuất để nhân viên chuẩn bị nhận khách.', to: '/manager/operations/appointments?status=REQUESTED', icon: CalendarClock, count: data ? data.appointments.items.filter(row => row.status === 'REQUESTED').length : '—' },
+        { title: 'Đối chiếu thanh toán', description: 'Kiểm tra khoản tiền thực nhận và thông báo chuyển khoản.', to: '/manager/payment-submissions', icon: ClipboardCheck },
+        { title: 'Duyệt gia hạn', description: 'Đối chiếu hạn cũ – mới và báo giá trước khi duyệt.', to: '/manager/operations/renewals', icon: Warehouse, count: data ? first(data.summary, 'pendingRenewals') || '0' : '—' },
+        { title: 'Nghiệm thu bảo trì', description: 'Nhân viên đã sửa xong: đối chiếu kết quả trước khi mở lại kho.', to: '/manager/operations/maintenance?status=AWAITING_VERIFICATION', icon: HardHat },
+      ]} />
       <LoadState loading={loading} error={error} retry={refresh} />
       {data && (
         <>
+          <details className="workspace-summary"><summary>Thống kê cơ sở & công việc cần theo dõi</summary>
           <div className="portal-metrics">
             {[
               ["Tổng kho vật lý", total, "/manager/units"],
@@ -189,6 +201,7 @@ export function ManagerOverviewPage() {
               </div>
             </section>
           </div>
+          </details>
           <div className="portal-overview-grid">
             <section className="manager-section">
               <div className="portal-section-title">

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useLiveRefresh } from '../../services/live-events';
 import { RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -18,26 +19,31 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { allPages, mutate } from "../../services/portal";
+import { StaffPicker } from '../../components/manager/StaffPicker';
+import { staffFromWork } from '../../utils/staff';
 
-type WorkKind = "support-requests" | "maintenance";
+type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
 
 const workName = (kind: WorkKind) =>
-  kind === "maintenance" ? "Bảo trì" : "Hỗ trợ";
+  kind === "maintenance" ? "Bảo trì" : kind === 'stock-movements' ? 'Nhập – xuất hàng' : "Hỗ trợ";
 const finished = (task: Task) =>
-  task.row.status === "COMPLETED" || task.row.status === "RESOLVED";
+  task.row.status === "COMPLETED" || task.row.status === "RESOLVED" || task.row.status === 'CANCELLED';
 const relatedUnit = (row: Row) =>
   first(
     row,
     "storageUnit.unitNumber",
     "unit.unitCode",
     "reservation.reference",
+    'rentalContract.contractCode',
   ) || "—";
 
 export function ManagerAssignmentsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  useLiveRefresh('/manager/*', refresh);
   const [selected, setSelected] = useState<Task>();
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
@@ -52,12 +58,14 @@ export function ManagerAssignmentsPage() {
     Promise.all([
       allPages("/manager/support-requests", controller.signal),
       allPages("/manager/maintenance", controller.signal),
+      allPages('/manager/stock-movements', controller.signal),
     ])
-      .then(([support, maintenance]) => {
+      .then(([support, maintenance, movements]) => {
         if (controller.signal.aborted) return;
         setState({
           key,
           tasks: [
+            ...movements.items.map(row => ({ kind: 'stock-movements' as const, row })),
             ...support.items.map((row) => ({
               kind: "support-requests" as const,
               row,
@@ -110,16 +118,7 @@ export function ManagerAssignmentsPage() {
     );
   });
   const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / 20)));
-  const knownStaff = new Map<string, string>();
-  for (const task of allTasks) {
-    for (const field of ["assignedStaff", "reportedBy"]) {
-      const staff = task.row[field] as Row | undefined;
-      if (staff?.role === "STAFF") {
-        const id = first(staff, "id");
-        if (id) knownStaff.set(id, first(staff, "fullName") || id);
-      }
-    }
-  }
+  const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {
@@ -141,7 +140,7 @@ export function ManagerAssignmentsPage() {
     <section>
       <PageHeader
         title="Phân công nhân viên"
-        description="Phân công nhân viên phụ trách các yêu cầu hỗ trợ và công việc bảo trì tại cơ sở."
+        description="Phân công nhân viên phụ trách hỗ trợ, bảo trì và phiếu nhập – xuất hàng khách."
       >
         <button
           className="button-secondary"
@@ -175,6 +174,7 @@ export function ManagerAssignmentsPage() {
             <option value="all">Tất cả</option>
             <option value="support-requests">Hỗ trợ</option>
             <option value="maintenance">Bảo trì</option>
+            <option value="stock-movements">Nhập – xuất hàng</option>
           </select>
         </label>
         <label className="field-label">
@@ -216,7 +216,7 @@ export function ManagerAssignmentsPage() {
                   <tr>
                     <th>Công việc</th>
                     <th>Nhóm</th>
-                    <th>Đối tượng / Unit</th>
+                    <th>Đối tượng / Kho</th>
                     <th>Nhân viên phụ trách</th>
                     <th>Ưu tiên</th>
                     <th>Trạng thái</th>
@@ -362,38 +362,7 @@ function AssignmentDetail({
         )}
         {!finished(task) && (
           <form className="portal-form" onSubmit={assign}>
-            {knownStaff.size > 0 && (
-              <label className="field-label">
-                Nhân viên đã có hồ sơ
-                <select
-                  value={knownStaff.has(staffId) ? staffId : ""}
-                  onChange={(event) => setStaffId(event.target.value)}
-                  disabled={busy}
-                >
-                  <option value="">Chọn nhân viên</option>
-                  {[...knownStaff].map(([userId, name]) => (
-                    <option key={userId} value={userId}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className="field-label">
-              Mã tài khoản Staff
-              <input
-                value={staffId}
-                onChange={(event) => setStaffId(event.target.value)}
-                required
-                maxLength={100}
-                disabled={busy}
-                placeholder="Mã tài khoản do Admin cung cấp"
-              />
-            </label>
-            <small>
-              Danh bạ Staff đầy đủ chưa được API Manager cung cấp. Bạn có thể
-              chọn nhân viên đã từng phụ trách hoặc nhập mã tài khoản.
-            </small>
+            <StaffPicker value={staffId} onChange={value => { setStaffId(value); setError(''); }} knownStaff={knownStaff} disabled={busy} />
             <div className="portal-actions">
               <button
                 className="button-primary"

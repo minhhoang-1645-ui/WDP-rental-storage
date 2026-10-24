@@ -57,6 +57,7 @@ import { CustomerTransfersPage } from "../pages/customer/CustomerTransfersPage";
 import { CustomerProfilePage } from "../pages/customer/CustomerProfilePage";
 import { CustomerReservationDetailPage } from "../pages/customer/CustomerReservationDetailPage";
 import { CustomerReservationsPage } from "../pages/customer/CustomerReservationsPage";
+import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovementsPage';
 
 function operationalRoutes(base: string) {
   return (
@@ -81,6 +82,8 @@ function operationalRoutes(base: string) {
       <Route path="customers" element={<ManagerCustomersPage />} />
       <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
       <Route path="reports" element={<ManagerReportsPage />} />
+      <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
+      <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
       <Route path="operations/:resource" element={<ManagerResourcePage />} />
       <Route
         path="operations/:resource/:id"
@@ -140,6 +143,9 @@ export function AppRouter() {
           element={<CustomerReservationDetailPage />}
         />
         <Route path="rentals" element={<CustomerRentalsPage />} />
+        <Route path="stock-movements" element={<StockMovementsPage role="CUSTOMER" />} />
+        <Route path="stock-movements/:id" element={<StockMovementsPage role="CUSTOMER" />} />
+        <Route path="stored-items" element={<StoredItemsPage />} />
         <Route path="contracts" element={<CustomerContractsPage />} />
         <Route path="payments" element={<CustomerPaymentsPage />} />
         <Route path="payments/vnpay-return" element={<CustomerVnpayReturnPage />} />
@@ -154,6 +160,8 @@ export function AppRouter() {
       <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
         <Route path="staff" element={<StaffLayout />}>
           <Route index element={<StaffOperationsPage />} />
+          <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
           {(Object.keys(staffResources) as StaffResource[]).map((resource) => (
             <Route key={resource} path={resource}>

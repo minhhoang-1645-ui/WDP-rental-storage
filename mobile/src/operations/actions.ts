@@ -24,7 +24,7 @@ function serviceValidation(input: Row) {
 }
 const staffField = (role: string): FormField => role === 'ADMIN'
   ? { name: 'staffUserId', title: 'Nhân viên phụ trách', required: true, optionsPath: '/admin/users?role=STAFF&accountStatus=ACTIVE', optionsAccept: row => row.role === 'STAFF' && row.accountStatus === 'ACTIVE', optionLabel: row => `${text(row, 'fullName')} · ${text(row, 'email')}` }
-  : { name: 'staffUserId', title: 'Mã tài khoản nhân viên do Admin cung cấp', required: true, maxLength: 100 };
+  : { name: 'staffUserId', title: 'Mã tài khoản nhân viên do quản trị viên cung cấp', required: true, maxLength: 100 };
 
 export function createAction(resource: string): FormAction | undefined {
   if (resource === 'additional-services') return { title: 'Tạo dịch vụ bổ sung', path: '/manager/additional-services', method: 'POST', fields: serviceFields(), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) };

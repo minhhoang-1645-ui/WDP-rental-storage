@@ -1,4 +1,6 @@
 import { AUTH_TOKEN_KEY } from "../data/booking";
+import { userMessage } from '../utils/user-message';
+import { DATA_CHANGED } from './live-events';
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
@@ -15,10 +17,14 @@ export class ApiError extends Error {
 
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit & { authenticated?: boolean; timeoutMs?: number } = {},
+  options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null } = {},
 ): Promise<T> {
-  const { authenticated = true, timeoutMs = 30000, signal, ...request } = options;
+  const { authenticated = true, timeoutMs = 30000, signal, expectedToken, ...request } = options;
   const token = authenticated ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+  if (expectedToken !== undefined && token !== expectedToken) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
+  const mutation = /^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path);
+  const submittedForm = mutation ? document.activeElement?.closest('form') ?? document.querySelector('form[data-wdp-submitting="true"]') : null;
+  const submittedVersion = submittedForm?.getAttribute('data-wdp-edit-version');
   const controller = new AbortController();
   let timedOut = false;
   const abort = () => controller.abort(signal?.reason);
@@ -38,16 +44,18 @@ export async function apiRequest<T>(
     if (!response.ok) {
       if (response.status === 401 && token && localStorage.getItem(AUTH_TOKEN_KEY) === token) window.dispatchEvent(new CustomEvent("wdp-session-expired"));
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
-      throw new ApiError(response.status, typeof message === "string" ? message : `Yêu cầu thất bại (${response.status})`, payload);
+      throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
+    if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: path })); }
     return payload as T;
   } catch (error) {
     if (signal?.aborted) throw error;
     if (timedOut) throw new ApiError(408, "Máy chủ phản hồi quá lâu. Vui lòng thử lại.");
-    if (error instanceof TypeError) throw new ApiError(0, "Không kết nối được máy chủ. Vui lòng kiểm tra BE và thử lại.");
+    if (error instanceof TypeError) throw new ApiError(0, "Không kết nối được hệ thống WDP. Vui lòng kiểm tra mạng và thử lại.");
     throw error;
   } finally {
     window.clearTimeout(timer);
     signal?.removeEventListener("abort", abort);
+    submittedForm?.removeAttribute('data-wdp-submitting');
   }
 }

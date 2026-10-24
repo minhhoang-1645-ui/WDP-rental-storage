@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { AppState } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { apiAllPages, apiRequest } from '@/services/api';
+import { hasDraft, useLiveRefresh } from '@/services/live-events';
 
 export function useResource<T>(path: string | null, paginated = false) {
   const { user } = useAuth();
@@ -10,15 +11,16 @@ export function useResource<T>(path: string | null, paginated = false) {
   const [result, setResult] = useState<{ key: string; data?: T; error?: string }>();
   const key = `${user?.id ?? ''}:${path}:${paginated}:${revision}`;
   const refresh = useCallback(() => setRevision(value => value + 1), []);
+  useLiveRefresh(path, refresh);
   useEffect(() => {
     let previous = AppState.currentState;
     const subscription = AppState.addEventListener('change', state => {
-      if (path && state === 'active' && previous !== 'active') refresh();
+      if (path && state === 'active' && previous !== 'active' && !hasDraft()) refresh();
       previous = state;
     });
     return () => subscription.remove();
   }, [path, refresh]);
-  useFocusEffect(useCallback(() => { if (path) refresh(); }, [path, refresh]));
+  useFocusEffect(useCallback(() => { if (path && !hasDraft()) refresh(); }, [path, refresh]));
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();

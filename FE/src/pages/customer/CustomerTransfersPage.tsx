@@ -33,7 +33,7 @@ export function CustomerTransfersPage() {
       <PortalPageHeader
         eyebrow="Chuyển đổi kho"
         title="Yêu cầu chuyển kho"
-        description="Customer báo nhu cầu qua hỗ trợ; WDP kiểm tra và Manager tạo lệnh chuyển kho khi phù hợp."
+        description="Bạn muốn chuyển sang kho khác? Hãy gửi yêu cầu để WDP kiểm tra và sắp xếp kho phù hợp cho bạn."
         action={
           <Link
             className="button-primary"
@@ -44,9 +44,9 @@ export function CustomerTransfersPage() {
         }
       />
       <div className="customer-inline-notice customer-transfer-note">
-        <strong>Quy trình:</strong> Gửi yêu cầu hỗ trợ → WDP kiểm tra kho hiện
-        tại → Manager duyệt kho đích → Staff hoàn tất chuyển kho. Customer không
-        tự đổi kho vật lý trực tiếp.
+        <strong>Các bước chuyển kho:</strong> Bạn gửi yêu cầu → WDP kiểm tra
+        kho hiện tại và xác nhận kho mới → Nhân viên hỗ trợ bạn chuyển kho.
+        Hãy chờ xác nhận trước khi chuyển hàng sang kho khác.
       </div>
       {requests.status === 401 ? (
         <CustomerSessionExpired />
@@ -87,7 +87,7 @@ export function CustomerTransfersPage() {
                 </div>
                 <CustomerStatus
                   status={item.status}
-                  label={item.status === "OPEN" ? "Đang mở" : undefined}
+                  resource="support-requests"
                 />
               </div>
               <p>

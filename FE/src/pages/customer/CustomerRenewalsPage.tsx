@@ -20,6 +20,9 @@ import {
 import { ApiError } from "../../services/api";
 import type { CustomerRenewal, CustomerRental } from "../../types/customer";
 import { RenewalReview } from '../../components/manager/RenewalReview';
+import { Link } from 'react-router-dom';
+import { WorkflowHint } from '../../components/workspace/WorkHub';
+import { workflowGuide } from '../../utils/workflow-guide';
 
 export function CustomerRenewalsPage() {
   const { user } = useAuth();
@@ -186,7 +189,7 @@ export function CustomerRenewalsPage() {
           <div className="customer-panel-heading">
             <div>
               <h2>Lịch sử gia hạn</h2>
-              <p>Giá và trạng thái lấy trực tiếp từ backend.</p>
+              <p>Theo dõi kết quả xét duyệt, thanh toán và thời hạn mới của bạn.</p>
             </div>
             <CalendarRange size={20} />
           </div>
@@ -240,7 +243,10 @@ export function CustomerRenewalsPage() {
                       {item.rejectionReason}
                     </p>
                   )}
-                  <details className="renewal-review-details"><summary>Xem thông tin gia hạn và căn cứ lập phụ lục</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} /></details>
+                  <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>
+                  {item.status === 'APPROVED_PENDING_PAYMENT' && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
+                  {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
+                  <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ))}
             </div>

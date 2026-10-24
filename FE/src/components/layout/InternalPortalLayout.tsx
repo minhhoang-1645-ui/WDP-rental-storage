@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, type ReactNode } from "react";
+import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LogOut,
   Menu,
@@ -9,6 +9,9 @@ import {
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
+import { NavigationGroup } from '../workspace/NavigationGroup';
+import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
+const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
 export interface InternalNavItem {
   to: string;
   label: string;
@@ -29,6 +32,8 @@ export function InternalPortalLayout({
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [navigationFilter, setNavigationFilter] = useState({ path: location.pathname, value: '' });
+  const navigationSearch = navigationFilter.path === location.pathname ? navigationFilter.value : '';
   const signOut = () => {
     startTransition(() => {
       logout();
@@ -78,17 +83,21 @@ export function InternalPortalLayout({
   );
   const nav = (
     <nav aria-label={`Điều hướng ${label}`}>
-      {groups.map(({ group, items }) => (
-        <div key={group}>
-          <div className="manager-nav-header">{group}</div>
-          {items.map(({ to, label: itemLabel, icon: Icon, end }) => (
+      {navigation.length > 8 && <label className="workspace-nav-search"><span>Tìm chức năng</span><input type="search" value={navigationSearch} onChange={event => setNavigationFilter({ path: location.pathname, value: event.target.value })} placeholder="Đặt kho, bàn giao, hóa đơn…" /></label>}
+      {groups.map(({ group, items }, index) => {
+        const matching = items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
+        if (!matching.length) return null;
+        const active = items.some(item => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
+          {matching.map(({ to, label: itemLabel, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}>
               <Icon size={17} />
               <span>{itemLabel}</span>
             </NavLink>
           ))}
-        </div>
-      ))}
+        </NavigationGroup>;
+      })}
+      {navigationSearch && !navigation.some(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim()))) && <p className="workspace-nav-empty">Không có mục phù hợp. Đổi từ khóa để tìm lại.</p>}
     </nav>
   );
   const account = (
@@ -131,10 +140,12 @@ export function InternalPortalLayout({
             <strong>{active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
+            <ActivityBell />
             <span className="portal-role">{roleLabel(user?.role)}</span>
           </div>
         </header>
         <main className="manager-main" id="portal-main">
+          <ActivityRefreshNote />
           <Outlet />
         </main>
       </div>

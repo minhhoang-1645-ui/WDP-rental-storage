@@ -11,6 +11,8 @@ import { RecordView } from './record-view';
 import { useResource } from './use-resource';
 import { Button, Navigation, styles } from './ui';
 import { RenewalReview } from './renewal-review';
+import { WorkflowHint } from '@/components/workspace-hub';
+import { workflowGuide } from '@/utils/workflow-guide';
 
 export function ResourceDetail() {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>();
@@ -35,6 +37,7 @@ function Detail({ resource, id }: { resource: string; id: string }) {
     {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>
       {resource === 'renewals' && <RenewalReview row={row} />}
+      <WorkflowHint text={workflowGuide(resource, row.status)} />
       {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : recordActions(resource, row, user?.role ?? '').map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {Boolean(stock.error) && <ErrorState message={stock.error ?? ''} onRetry={stock.refresh} />}
       <RecordView row={row} root={root} />

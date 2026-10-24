@@ -4,6 +4,7 @@ import { object, type Row } from './model';
 import { Button, Field, styles } from './ui';
 import { operationMutate } from './mutate';
 import { useResource } from './use-resource';
+import { useDraftGuard } from '@/services/live-events';
 
 export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; checkbox?: boolean; clientOnly?: boolean }
 export interface FormAction { title: string; path: string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
@@ -17,6 +18,7 @@ function Input({ field, value, onChange, busy }: { field: FormField; value: stri
 }
 
 export function OperationForm({ action, onSaved, onClose }: { action: FormAction; onSaved: (result: Row) => void; onClose: () => void }) {
+  useDraftGuard();
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(action.fields.map(field => [field.name, field.initial ?? ''])));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const lock = useRef(false);
@@ -31,13 +33,15 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
       if (value && field.choices && !field.choices.some(choice => choice.value === value)) { setError(`Vui lòng chọn ${field.title.toLowerCase()} hợp lệ.`); return; }
       if (!field.clientOnly) data[field.name] = field.numeric ? value ? Number(value) : undefined : field.checkbox ? value === 'true' : value || undefined;
     }
-    const valuesIssue = action.validateValues?.(data);
-    if (valuesIssue) { setError(valuesIssue); return; }
-    const input = action.transform ? action.transform(data) : data;
-    const validation = action.validate?.(input);
-    if (validation) { setError(validation); return; }
-    lock.current = true; setBusy(true); setError('');
-    try { const result = await operationMutate(action.path, action.method, object(input), action.idempotent); onSaved(result); }
+    try {
+      const valuesIssue = action.validateValues?.(data);
+      if (valuesIssue) { setError(valuesIssue); return; }
+      const input = action.transform ? action.transform(data) : data;
+      const validation = action.validate?.(input);
+      if (validation) { setError(validation); return; }
+      lock.current = true; setBusy(true); setError('');
+      const result = await operationMutate(action.path, action.method, object(input), action.idempotent); onSaved(result);
+    }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thực hiện được thao tác.'); }
     finally { lock.current = false; setBusy(false); }
   };

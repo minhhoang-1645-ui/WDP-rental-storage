@@ -50,7 +50,7 @@ export function CustomerContractsPage() {
       ) : contracts.length === 0 ? (
         <PortalEmpty icon={<FileText size={30} />} title="Chưa có hợp đồng">
           <span>
-            Hợp đồng sẽ xuất hiện sau khi reservation được WDP xác nhận và cấp
+            Hợp đồng sẽ xuất hiện sau khi yêu cầu đặt kho được WDP xác nhận và cấp
             kho.
           </span>
         </PortalEmpty>

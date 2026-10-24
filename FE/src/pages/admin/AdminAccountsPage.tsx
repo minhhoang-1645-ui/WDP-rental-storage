@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useLiveRefresh } from '../../services/live-events';
 import { Eye, EyeOff, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -41,7 +42,8 @@ export function AdminAccountsPage() {
   const status = params.get("status") ?? "";
   const page = Math.max(1, Math.floor(Number(params.get("page")) || 1));
   const key = `${user?.id}:${revision}`;
-  const refresh = () => setRevision((v) => v + 1);
+  const refresh = useCallback(() => setRevision((v) => v + 1), []);
+  useLiveRefresh('/admin/users', refresh);
   useEffect(() => {
     const controller = new AbortController();
     allPages("/admin/users", controller.signal)
@@ -176,6 +178,7 @@ export function AdminAccountsPage() {
                       <tr key={first(row, "id")}>
                         <td>
                           <strong>{first(row, "fullName")}</strong>
+                          <small>Mã tài khoản: <code>{first(row, 'id')}</code></small>
                           {row.id === user?.id && (
                             <small>Tài khoản của bạn</small>
                           )}

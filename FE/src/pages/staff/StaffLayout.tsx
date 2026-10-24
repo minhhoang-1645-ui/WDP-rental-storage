@@ -17,6 +17,7 @@ export function StaffLayout() {
         { to: "/staff", label: "Tác nghiệp", icon: ClipboardCheck, end: true },
         { to: "/staff/appointments", label: "Bàn giao", icon: CalendarClock },
         { to: "/staff/rentals", label: "Kho đang thuê", icon: Warehouse },
+        { to: '/staff/stock-movements', label: 'Nhập – xuất hàng', icon: ClipboardCheck },
         { to: "/staff/returns", label: "Trả kho", icon: RotateCcw },
         { to: "/staff/maintenance", label: "Bảo trì", icon: HardHat },
         {

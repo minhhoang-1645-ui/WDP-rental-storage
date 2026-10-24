@@ -7,10 +7,11 @@ export function text(row: Row, ...paths: string[]): string {
   return '';
 }
 export const idOf = (row: Row) => text(row, 'databaseId', 'id', 'reservationId');
-export const codeOf = (row: Row) => text(row, 'reference', 'contractCode', 'invoiceCode', 'paymentCode', 'appointmentCode', 'renewalCode', 'returnCode', 'transferCode', 'maintenanceCode', 'supportCode', 'settlementCode', 'submissionCode', 'unitCode', 'code', 'reservationReference', 'email', 'id');
+export const codeOf = (row: Row) => text(row, 'movementCode', 'reference', 'contractCode', 'invoiceCode', 'paymentCode', 'appointmentCode', 'renewalCode', 'returnCode', 'transferCode', 'maintenanceCode', 'supportCode', 'settlementCode', 'submissionCode', 'unitCode', 'code', 'reservationReference', 'email', 'id');
 
 export interface ResourceDefinition { title: string; path: string; shape?: 'catalog' | 'array'; statuses?: string[] }
 export const resources: Record<string, ResourceDefinition> = {
+  'stock-movements': { title: 'Nhập – xuất hàng', path: '/manager/stock-movements', statuses: ['REQUESTED', 'ASSIGNED', 'COMPLETED', 'CANCELLED'] },
   inquiries: { title: 'Yêu cầu tư vấn', path: '/manager/inquiries', statuses: ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'] },
   reservations: { title: 'Yêu cầu đặt kho', path: '/manager/reservations', statuses: ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'] },
   units: { title: 'Kho vật lý', path: '/manager/units', statuses: ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'] },

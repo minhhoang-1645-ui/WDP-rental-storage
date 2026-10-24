@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "./api";
 import { allPages } from "./portal";
 import type { Page } from "../components/manager/portal-data";
+import { hasDraft, useLiveRefresh } from './live-events';
 
 export function usePaginatedResource<T>(
   path: string,
@@ -18,10 +19,12 @@ export function usePaginatedResource<T>(
     asOf: number;
   }>();
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  useLiveRefresh(path, refresh);
   useEffect(() => {
     if (!refreshOnFocus) return;
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    const focus = () => { if (!hasDraft()) refresh(); };
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
   }, [refreshOnFocus, refresh]);
   useEffect(() => {
     const controller = new AbortController();

@@ -566,6 +566,32 @@ async function savedLogin(role, entry, loginPage) {
   await app.context.close();
 }
 try {
+  const stockValidation = await setup('CUSTOMER');
+  await open(stockValidation.page, '/customer/contracts');
+  const stockChecks = await stockValidation.page.evaluate(async () => {
+    const { stockCreateInput, stockCompleteInput } = await import('/src/utils/stock.ts');
+    const { handoverCompletionIssue } = await import('/src/utils/handover.ts');
+    const item = { id: 'item', itemCode: 'ITEM', name: 'Thùng', unit: 'thùng', balance: 4, rentalContract: { id: 'contract', contractCode: 'CONTRACT' } };
+    const line = { key: '1', storedItemId: 'item', name: '', unit: '', quantity: '2', note: '' };
+    const rejects = fn => { try { fn(); return false; } catch { return true; } };
+    const create = (lines, type = 'OUT', items = [item], schedule = '') => stockCreateInput('contract', type, lines, items, schedule, '');
+    const row = { type: 'OUT', lines: [{ id: 'line', storedItem: item, requestedQty: 2 }] };
+    return {
+      quantities: ['0', '', '-1', '1.5', '1000001'].every(quantity => rejects(() => create([{ ...line, quantity }]))),
+      duplicates: rejects(() => create([line, { ...line, key: '2' }])),
+      ownership: rejects(() => create([line], 'OUT', [{ ...item, rentalContract: { id: 'other' } }])),
+      overBalance: rejects(() => create([{ ...line, quantity: '5' }])),
+      actualQuantity: rejects(() => stockCompleteInput(row, { line: '0' }, '')) && stockCompleteInput(row, { line: '3' }, '').lines[0].actualQty === 3,
+      invalidDate: rejects(() => create([line], 'OUT', [item], '2026-02-31T10:00')),
+      utc7: create([line], 'OUT', [item], '2026-10-24T10:00').scheduledAt === '2026-10-24T03:00:00.000Z',
+      multipleLines: create([line, { ...line, key: '2', storedItemId: '', name: 'Ghế', unit: 'cái' }], 'IN').lines.length === 2,
+      expiredHandover: Boolean(handoverCompletionIssue('2026-10-20T03:00:00Z', Date.parse('2026-10-23T03:00:00Z'), [{ contractStartDate: '2026-10-01', contractEndDate: '2026-10-23' }])),
+      validHandover: !handoverCompletionIssue('2026-10-20T03:00:00Z', Date.parse('2026-10-23T03:00:00Z'), [{ contractStartDate: '2026-10-01', contractEndDate: '2026-11-01' }]),
+    };
+  });
+  assert.ok(Object.values(stockChecks).every(Boolean), JSON.stringify(stockChecks));
+  await stockValidation.context.close();
+  checks.push('Stock movement validation: quantity, ownership, duplicates, current balance, actual count, UTC+7 and handover contract window');
   for (const role of roles) {
     const app = await setup(role);
     for (const target of roles) {
@@ -898,7 +924,7 @@ try {
     "No duplicate database ID/reference options",
   );
   await customer.page
-    .getByLabel("Reservation", { exact: true })
+    .getByLabel("Yêu cầu đặt kho", { exact: true })
     .selectOption("RES-ACTIVE");
   await customer.page
     .getByLabel("Hợp đồng liên quan", { exact: true })
@@ -934,7 +960,7 @@ try {
   assert.equal(writes.at(-1).role, "CUSTOMER");
   await open(customer.page, "/customer/appointments");
   await customer.page
-    .getByLabel("Reservation", { exact: true })
+    .getByLabel("Yêu cầu đặt kho", { exact: true })
     .selectOption("ready-id");
   const appointmentInput = customer.page.getByLabel('Ngày giờ mong muốn', { exact: true });
   assert.equal(await appointmentInput.getAttribute('max'), '2030-11-30T23:59');
@@ -994,7 +1020,7 @@ try {
     .filter({ hasText: "Không thể tải hồ sơ kiểm thử" })
     .waitFor();
   assert(
-    await customer.page.getByLabel("Reservation", { exact: true }).isDisabled(),
+    await customer.page.getByLabel("Yêu cầu đặt kho", { exact: true }).isDisabled(),
   );
   failSource = "";
   checks.push(

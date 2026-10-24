@@ -3,6 +3,7 @@ import { useAuth } from "../auth/auth-context";
 import { apiRequest } from "./api";
 import { allPages } from "./portal";
 import type { Page, Row } from "../components/manager/portal-data";
+import { hasDraft, useLiveRefresh } from './live-events';
 export type PortalSnapshot = {
   asOf: number;
   summary: Row;
@@ -21,6 +22,7 @@ export function usePortalSnapshot() {
     error?: string;
   }>();
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
+  useLiveRefresh('/manager/*', refresh);
   const key = `${user?.id}:${revision}`;
   useEffect(() => {
     const controller = new AbortController();
@@ -62,8 +64,9 @@ export function usePortalSnapshot() {
     return () => controller.abort();
   }, [key]);
   useEffect(() => {
-    window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    const focus = () => { if (!hasDraft()) refresh(); };
+    window.addEventListener("focus", focus);
+    return () => window.removeEventListener("focus", focus);
   }, [refresh]);
   const current = state?.key === key ? state : undefined;
   return {

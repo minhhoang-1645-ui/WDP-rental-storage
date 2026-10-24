@@ -4,7 +4,7 @@ import { customerStatusLabel } from "./CustomerPortalHelpers";
 
 export function ReservationStatus({ status }: { status: string }) {
   const labels: Record<string, string> = {
-    PENDING: "Chờ xử lý",
+    PENDING: "Chờ xác nhận",
     CONFIRMED: "Đã xác nhận",
     CANCELLED: "Đã hủy",
     EXPIRED: "Đã hết hạn",
@@ -22,15 +22,17 @@ export function ReservationStatus({ status }: { status: string }) {
 export function CustomerStatus({
   status,
   label,
+  resource,
 }: {
   status: string;
   label?: string;
+  resource?: string;
 }) {
   return (
     <span
       className={"customer-status customer-status--" + status.toLowerCase()}
     >
-      {label ?? customerStatusLabel(status)}
+      {label ?? (resource === 'support-requests' && status === 'OPEN' ? 'Đang chờ tiếp nhận' : customerStatusLabel(status))}
     </span>
   );
 }

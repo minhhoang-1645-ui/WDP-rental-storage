@@ -9,24 +9,26 @@ import { Button, Field, Navigation, styles } from './ui';
 export function ManagerAssignments() {
   const support = useResource<Row>('/manager/support-requests', true);
   const maintenance = useResource<Row>('/manager/maintenance', true);
+  const movements = useResource<Row>('/manager/stock-movements', true);
   const [search, setSearch] = useState(''), [kind, setKind] = useState(''), [assignment, setAssignment] = useState(''), [history, setHistory] = useState(false);
-  const loading = support.loading || maintenance.loading, error = support.error || maintenance.error;
-  const refresh = () => { support.refresh(); maintenance.refresh(); };
+  const loading = support.loading || maintenance.loading || movements.loading, error = support.error || maintenance.error || movements.error;
+  const refresh = () => { support.refresh(); maintenance.refresh(); movements.refresh(); };
   const tasks: Row[] = [
+    ...rows(movements.data?.items).map(row => ({ ...row, resource: 'stock-movements' })),
     ...rows(support.data?.items).map(row => ({ ...row, resource: 'support-requests' })),
     ...rows(maintenance.data?.items).map(row => ({ ...row, resource: 'maintenance' })),
-  ].filter(row => (history || !['RESOLVED', 'COMPLETED'].includes(text(row, 'status')))
+  ].filter(row => (history || !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(text(row, 'status')))
     && (!kind || row.resource === kind)
     && (!assignment || Boolean(text(row, 'assignedStaff.id')) === (assignment === 'assigned'))
     && [codeOf(row), text(row, 'subject', 'description'), text(row, 'assignedStaff.fullName'), text(row, 'unit.unitCode', 'storageUnit.unitNumber')].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')));
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}
     data={loading || error ? [] : tasks} keyExtractor={row => `${row.resource}:${idOf(row)}`}
     ListHeaderComponent={<View style={{ gap: 12 }}>
-      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Mở hồ sơ hỗ trợ hoặc bảo trì để giao và đổi nhân viên phụ trách." />
+      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Mở hồ sơ hỗ trợ, bảo trì hoặc nhập – xuất hàng để giao và đổi nhân viên phụ trách." />
       <Navigation title="Về tổng quan quản lý" path="/manager" />
       <Button title="Làm mới phân công" onPress={refresh} disabled={loading} />
       <Field title="Tìm công việc, kho hoặc nhân viên" value={search} onChange={setSearch} maxLength={120} />
-      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì']].map(([value, title]) => <Button key={value} variant={kind === value ? 'primary' : 'secondary'} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
+      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì'], ['stock-movements', 'Nhập – xuất hàng']].map(([value, title]) => <Button key={value} variant={kind === value ? 'primary' : 'secondary'} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
       <View style={styles.row}>{[['', 'Tất cả phân công'], ['assigned', 'Đã phân công'], ['unassigned', 'Chưa phân công']].map(([value, title]) => <Button key={value} variant={assignment === value ? 'primary' : 'secondary'} title={`${assignment === value ? '✓ ' : ''}${title}`} onPress={() => setAssignment(value)} />)}</View>
       <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chưa hoàn tất' : 'Chỉ xem chưa hoàn tất · Xem cả lịch sử'} onPress={() => setHistory(value => !value)} />
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <Text style={styles.copy}>{tasks.length} công việc phù hợp</Text>}

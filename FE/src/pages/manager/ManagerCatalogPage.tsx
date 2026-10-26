@@ -54,8 +54,8 @@ export function ManagerCatalogPage() {
             <ManagerAvailabilityForm key={user?.id} products={products} />
           )}
           <div className="booking-alert">
-            Danh mục hiện chỉ hỗ trợ xem. Backend chưa có API chỉnh sửa loại
-            kho, kích thước hoặc giá.
+            Đối chiếu loại kho, kích thước và bảng giá hiện hành. Danh mục này
+            đang ở chế độ chỉ xem.
           </div>
           {products.length ? (
             <div className="portal-catalog-grid">

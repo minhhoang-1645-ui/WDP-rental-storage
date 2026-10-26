@@ -438,3 +438,7 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 .activity-update-note { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-block: 12px; padding: 12px 16px; border: 1px solid #d3e5e8; background: #edf6f7; border-radius: 12px; color: #335c6b; font-size: 12px; line-height: 1.7; }
 .activity-update-note > span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }
 @media (max-width: 680px) { .activity-bell-label { display: none; } .activity-panel { padding: 18px 14px; } .activity-summary { padding: 16px; } .activity-summary h2 { font-size: 18px; } .customer-updates-bar { margin-top: 12px; } }
+.workspace-waiting { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #f5f7fa; color: #526879; font-size: 13px; line-height: 1.7; }
+.portal-finance-strip small { display: block; margin-top: 6px; color: var(--color-slate); font-size: 12px; line-height: 1.7; }
+.workspace-home .portal-metrics { margin-block: 22px; }
+.workspace-home .portal-overview-grid { margin-block: 22px; }

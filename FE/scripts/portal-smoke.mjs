@@ -1,15 +1,8 @@
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.WDP_PLAYWRIGHT_MODULE || "playwright");
+import { launchTestBrowser } from "./browser-test.mjs";
 const base = process.env.WDP_FE_URL || "http://127.0.0.1:5173";
-const browser = await chromium.launch({
-  headless: true,
-  ...(process.env.WDP_BROWSER_PATH
-    ? { executablePath: process.env.WDP_BROWSER_PATH }
-    : {}),
-});
+const browser = await launchTestBrowser();
 const customer = {
   id: "customer-id",
   fullName: "Khách kiểm thử",
@@ -50,6 +43,7 @@ const quote = {
   paymentPlan: "PAY_MONTHLY",
   lineItems: [],
 };
+const moved = new Set(['reservations', 'inquiries', 'appointments', 'renewals', 'returns', 'transfers', 'maintenance', 'support-requests', 'stock-movements']);
 const when = "2026-10-11T03:00:00.000Z";
 const fixture = {
   units: [
@@ -347,9 +341,10 @@ async function setup(role, authenticated = true) {
   await context.route(/\/api\//, async (route) => {
     const request = route.request(),
       url = new URL(request.url()),
-      path = url.pathname.replace(/^\/api\//, "");
+      actualPath = url.pathname.replace(/^\/api\//, ""),
+      path = actualPath.replace(/^staff\/management\//, "manager/");
     requests.push({
-      path,
+      path: actualPath,
       query: Object.fromEntries(url.searchParams),
       method: request.method(),
     });
@@ -359,7 +354,7 @@ async function setup(role, authenticated = true) {
       return respond({
         token: "test-token",
         user: {
-          id: role === "ADMIN" ? "admin-id" : "manager-id",
+          id: role === "ADMIN" ? "admin-id" : role === "STAFF" ? "staff-id" : "manager-id",
           fullName: "Tài khoản kiểm thử",
           email: "portal@example.test",
           role,
@@ -367,7 +362,7 @@ async function setup(role, authenticated = true) {
       });
     if (path === "auth/me")
       return respond({
-        id: role === "ADMIN" ? "admin-id" : "manager-id",
+        id: role === "ADMIN" ? "admin-id" : role === "STAFF" ? "staff-id" : "manager-id",
         fullName: "Tài khoản kiểm thử",
         email: "portal@example.test",
         role,
@@ -428,7 +423,7 @@ async function setup(role, authenticated = true) {
     if (request.method() !== "GET") {
       const body = request.postDataJSON();
       writes.push({
-        path,
+        path: actualPath,
         body,
         method: request.method(),
         key: request.headers()["idempotency-key"],
@@ -460,6 +455,7 @@ async function setup(role, authenticated = true) {
         items: userRows.slice((page - 1) * limit, page * limit),
       });
     }
+    if (path === "manager/staff") return respond({ page: 1, limit: 100, total: 1, items: [staff] });
     const [, resource, id] = path.split("/");
     if (!(resource in fixture))
       return respond({ message: `Unmocked endpoint ${path}` }, 500);
@@ -506,7 +502,7 @@ async function setup(role, authenticated = true) {
 async function open(page, path) {
   await page.goto(base + path, { waitUntil: "domcontentloaded" });
   await page.locator("h1").waitFor();
-  await page.locator(".portal-loading").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => !document.querySelector('.portal-loading'));
 }
 async function success(page) {
   await page
@@ -516,9 +512,12 @@ async function success(page) {
 }
 const checks = [];
 try {
-  const { context, page } = await setup("MANAGER");
+  const managerApp = await setup("MANAGER"), staffApp = await setup("STAFF");
+  const context = managerApp.context;
+  let page = managerApp.page;
   for (const resource of Object.keys(fixture)) {
-    const root = ["units", "customers", "reservations", "inquiries"].includes(
+    page = moved.has(resource) ? staffApp.page : managerApp.page;
+    const root = moved.has(resource) ? `/staff/${resource}` : ["units", "customers", "reservations", "inquiries"].includes(
       resource,
     )
       ? `/manager/${resource}`
@@ -540,48 +539,52 @@ try {
       0,
       `${resource} detail error`,
     );
+    assert.doesNotMatch(await page.locator("h1").innerText(), /Không tìm thấy/);
     checks.push(`${resource}: list and detail`);
     console.log(`PASS ${resource}: list and detail`);
   }
-  await open(page, "/manager/reservations?search=RES-104");
+  page = staffApp.page;
+  await open(page, "/staff/reservations?search=RES-104");
   await page.getByRole("link", { name: "RES-104", exact: true }).waitFor();
   assert.equal(await page.locator(".manager-table tbody tr").count(), 1);
   checks.push("Search includes records beyond page 100");
-  await open(page, "/manager/inquiries");
+  await open(page, "/staff/inquiries");
   await page.getByRole("link", { name: "INQ-TEST", exact: true }).waitFor();
   assert.equal(
     await page.getByRole("link", { name: "RES-TEST", exact: true }).count(),
     0,
   );
+  page = managerApp.page;
   await open(page, "/manager/operations/rentals?status=true");
   assert(
     requests.some(
       (row) => row.path === "manager/rentals" && row.query.overdue === "true",
     ),
   );
-  await open(page, "/manager/operations/returns?status=PENDING_SETTLEMENT");
+  page = staffApp.page;
+  await open(page, "/staff/returns?status=PENDING_SETTLEMENT");
   await page.getByRole("link", { name: "RET-TEST", exact: true }).waitFor();
   checks.push("Correct inquiry separation and backend filter contracts");
-  await open(page, "/manager/reservations/reservation-0");
+  await open(page, "/staff/reservations/reservation-0");
   await page.getByLabel("Quyết định").selectOption("CONFIRMED");
   await page
     .getByRole("button", { name: "Lưu quyết định", exact: true })
     .click();
   await success(page);
   assert.equal(writes.at(-1).body.status, "CONFIRMED");
-  await open(page, "/manager/inquiries/inquiry-id");
+  await open(page, "/staff/inquiries/inquiry-id");
   await page.getByLabel("Trạng thái liên hệ").selectOption("CONTACTED");
   await page.getByLabel("Ghi chú nội bộ").fill("Đã gọi khách kiểm thử");
   await page.getByRole("button", { name: "Lưu cập nhật", exact: true }).click();
   await success(page);
   assert.equal(writes.at(-1).body.internalNotes, "Đã gọi khách kiểm thử");
-  await open(page, "/manager/operations/appointments/appointment-id");
+  await open(page, "/staff/appointments/appointment-id");
   await page
     .getByRole("button", { name: "Xác nhận lịch bàn giao", exact: true })
     .click();
   await success(page);
   assert.equal(writes.at(-1).method, "PATCH");
-  await open(page, "/manager/operations/renewals/renewal-id");
+  await open(page, "/staff/renewals/renewal-id");
   assert(await page.getByRole('button', { name: 'Duyệt gia hạn', exact: true }).isDisabled());
   await page.getByRole('region', { name: 'Thông tin đối chiếu gia hạn' }).waitFor();
   await page.getByLabel('Tôi đã đối chiếu thông tin và báo giá gia hạn', { exact: true }).check();
@@ -589,8 +592,8 @@ try {
     .getByRole("button", { name: "Duyệt gia hạn", exact: true })
     .click();
   await success(page);
-  assert.equal(writes.at(-1).path, "manager/renewals/renewal-id/approve");
-  await open(page, "/manager/operations/renewals/renewal-id");
+  assert.equal(writes.at(-1).path, "staff/management/renewals/renewal-id/approve");
+  await open(page, "/staff/renewals/renewal-id");
   await page
     .getByLabel("Lý do từ chối")
     .fill("Không phù hợp lịch thuê kiểm thử");
@@ -602,7 +605,7 @@ try {
   checks.push(
     "Reservation decision, inquiry notes, appointment confirmation, renewal approve and reject",
   );
-  await open(page, "/manager/operations/support-requests/support-id");
+  await open(page, "/staff/support-requests/support-id");
   assert.equal(
     await page
       .getByRole("button", { name: "Hoàn tất hỗ trợ", exact: true })
@@ -610,7 +613,7 @@ try {
     0,
   );
   supportStatus = "ESCALATED";
-  await open(page, "/manager/operations/support-requests/support-id");
+  await open(page, "/staff/support-requests/support-id");
   await page
     .getByLabel("Nội dung giải quyết")
     .fill("Quản lý giải quyết yêu cầu kiểm thử");
@@ -619,7 +622,8 @@ try {
     .click();
   await success(page);
   assert.equal(writes.at(-1).body.resolutionType, "MANAGER_RESOLVED");
-  checks.push("Manager resolves only ESCALATED support");
+  checks.push("Staff resolves only ESCALATED support");
+  page = managerApp.page;
   await open(page, "/manager/operations/deposit-settlements/settlement-id");
   await page
     .getByLabel("Căn cứ duyệt")
@@ -653,6 +657,7 @@ try {
   const settlement = fixture["deposit-settlements"][0];
   settlement.status = "APPROVED";
   settlement.refundAmount = 800000;
+  page = managerApp.page;
   await open(page, "/manager/operations/deposit-settlements/settlement-id");
   await page.getByLabel("Mã tham chiếu giao dịch").fill("REFUND-TEST");
   await page.getByLabel("Tôi đã hoàn tiền thực tế cho khách.").check();
@@ -669,7 +674,8 @@ try {
   checks.push(
     "Refund records require approved settlement and real-payment acknowledgment",
   );
-  await open(page, "/manager/operations/transfers/transfer-id");
+  page = staffApp.page;
+  await open(page, "/staff/transfers/transfer-id");
   await page
     .getByRole("combobox", { name: "Kho đích", exact: true })
     .selectOption("unit-id");
@@ -681,11 +687,11 @@ try {
   assert(
     requests.some(
       (row) =>
-        row.path === "manager/units" && row.query.storageType === "type-id",
+        row.path === "staff/management/units" && row.query.storageType === "type-id",
     ),
   );
   checks.push("Transfer chooses actual destination ID of same storage type");
-  await open(page, "/manager/operations/transfers");
+  await open(page, "/staff/transfers");
   await page
     .getByRole("button", { name: "Tạo chuyển kho", exact: true })
     .click();
@@ -709,7 +715,7 @@ try {
     id: `unit-page-${i}`,
     unitCode: `PAGE-${i}`,
   }));
-  await open(page, "/manager/operations/maintenance");
+  await open(page, "/staff/maintenance");
   await page.getByRole("button", { name: "Tạo bảo trì", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Kho cần bảo trì", exact: true })
@@ -735,14 +741,15 @@ try {
   assert.equal(writes.at(-1).body.storageUnitId, "unit-page-20");
   assert(writes.at(-1).key);
   fixture.units = originalUnits;
-  await open(page, "/manager/operations/maintenance/maintenance-id");
+  await open(page, "/staff/maintenance/maintenance-id");
   await page.getByLabel("Ghi chú nghiệm thu").fill("Nghiệm thu kiểm thử");
   await page
     .getByRole("button", { name: "Nghiệm thu hoàn tất", exact: true })
     .click();
   await success(page);
-  assert.equal(writes.at(-1).path, "manager/maintenance/maintenance-id/verify");
+  assert.equal(writes.at(-1).path, "staff/management/maintenance/maintenance-id/verify");
   checks.push("Maintenance create and verify");
+  page = managerApp.page;
   await open(page, "/manager/reports");
   assert(
     requests.some(
@@ -758,6 +765,7 @@ try {
     .click();
   assert((await download).suggestedFilename().endsWith(".csv"));
   invoiceFail = true;
+  page = managerApp.page;
   await open(page, "/manager/reports");
   await page
     .getByRole("alert")
@@ -804,8 +812,10 @@ try {
   checks.push(
     "Full-period availability uses read-only API and clears stale results on input change",
   );
-  await open(page, "/manager/operations/returns/return-id");
+  page = staffApp.page;
+  await open(page, "/staff/returns/return-id");
   assert((await page.locator("main").innerText()).includes(staff.fullName));
+  page = managerApp.page;
   await open(page, "/manager/operations/contracts/contract-id");
   await page
     .getByRole("heading", {
@@ -813,10 +823,7 @@ try {
       exact: true,
     })
     .waitFor();
-  await page
-    .locator("main")
-    .getByRole("link", { name: "TRF-TEST", exact: true })
-    .waitFor();
+  await page.locator("main").getByText("TRF-TEST", { exact: true }).waitFor();
   checks.push(
     "Inspection reviewer metadata and existing contract transfer history",
   );
@@ -883,6 +890,7 @@ try {
   assert.equal(writes.at(-1).body.staffUserId,"different-staff-id");assert.match(writes.at(-1).path,/manager\/support-requests\/[^/]+\/assign/);assert.ok(writes.at(-1).key);
   await assignment.context.close();
   await context.close();
+  await staffApp.context.close();
   checks.push("Manager assignment screen filters work and submits to manager assign API with idempotency key");
   await admin.context.close();
   assert.deepEqual(errors, []);

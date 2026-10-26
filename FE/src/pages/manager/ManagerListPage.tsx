@@ -5,7 +5,7 @@ import { OperationsLink as Link } from "../../components/manager/OperationsLink"
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
 import { allPages } from "../../services/portal";
-import { useLiveRefresh } from '../../services/live-events';
+import { hasDraft, useLiveRefresh } from '../../services/live-events';
 import {
   code,
   customer,
@@ -92,7 +92,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
     };
   }, [key, path, local, config]);
   useEffect(() => {
-    const refresh = () => setRevision((v) => v + 1);
+    const refresh = () => { if (!hasDraft()) setRevision((v) => v + 1); };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, []);

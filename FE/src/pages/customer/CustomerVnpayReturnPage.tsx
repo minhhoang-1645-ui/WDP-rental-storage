@@ -75,7 +75,7 @@ function ReturnResult({ query }: { query: string }) {
       ? { icon: <CheckCircle2 size={38} />, tone: 'is-success', title: 'Thanh toán thành công', description: `Hóa đơn ${result.invoice.invoiceCode} đã ghi nhận ${moneyLabel(result.amount)}.` }
       : failed
         ? { icon: <AlertCircle size={38} />, tone: 'is-error', title: 'Thanh toán không thành công', description: 'Hóa đơn chưa được ghi nhận thanh toán. Bạn có thể quay lại và thử lại.' }
-        : { icon: <Clock3 size={38} />, tone: 'is-pending', title: 'Đang chờ VNPay xác nhận', description: 'WDP chỉ hiển thị thành công sau khi backend nhận và xác minh IPN từ VNPay.' }
+        : { icon: <Clock3 size={38} />, tone: 'is-pending', title: 'Đang chờ VNPay xác nhận', description: 'WDP đang kiểm tra kết quả từ VNPay. Bạn chỉ cần thanh toán một lần; kết quả và hóa đơn sẽ được cập nhật sau khi giao dịch được xác nhận.' }
 
   return <section className="customer-page vnpay-return-page"><div className={`vnpay-return-card ${content.tone}`}>
     <span className="vnpay-return-icon">{content.icon}</span>

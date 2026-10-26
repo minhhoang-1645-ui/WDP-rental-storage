@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
+import { hasDraft } from '../../services/live-events';
 import {
   at,
   code,
@@ -81,7 +82,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             <button
               className="button-secondary"
               aria-label="Làm mới hồ sơ"
-              onClick={data.refresh}
+              onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu thao tác hoặc tải lại sau khi đã đối chiếu để tránh mất nội dung.'); return; } data.refresh(); }}
             >
               <RefreshCw size={16} />
             </button>

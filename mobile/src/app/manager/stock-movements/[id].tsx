@@ -1,3 +1,3 @@
-import { StockDetail } from '@/stock/screens';
-export default function Screen() { return <StockDetail role="MANAGER" />; }
+import { Redirect } from 'expo-router';
+export default function Screen() { return <Redirect href="/manager/assignments" />; }
 

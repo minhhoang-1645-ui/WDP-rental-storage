@@ -8,7 +8,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/reservations', label: 'Yêu cầu đặt kho', icon: ClipboardCheck, group: 'Tiếp nhận & phân công' },
   { to: '/manager/inquiries', label: 'Yêu cầu tư vấn', icon: ClipboardList, group: 'Tiếp nhận & phân công' },
   { to: '/manager/operations/support-requests', label: 'Hỗ trợ khách hàng', icon: Headphones, group: 'Tiếp nhận & phân công' },
-  { to: '/manager/assignments', label: 'Phân công nhân viên', icon: ClipboardCheck, group: 'Tiếp nhận & phân công' },
+  { to: '/manager/assignments', label: 'Phân công nhân viên', icon: ClipboardCheck, group: 'Nhân sự' },
   { to: '/manager/operations/appointments', label: 'Lịch bàn giao', icon: CalendarClock, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/stock-movements', label: 'Nhập – xuất hàng', icon: ClipboardList, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/renewals', label: 'Gia hạn kho', icon: Undo2, group: 'Giao nhận & thay đổi' },
@@ -30,5 +30,5 @@ export function operationsNavigation(base = '/manager'): InternalNavItem[] {
 }
 
 export function staffNavigation(): InternalNavItem[] {
-  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label }));
+  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));
 }

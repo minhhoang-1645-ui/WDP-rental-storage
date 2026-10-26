@@ -49,7 +49,6 @@ function Detail({ resource, id }: { resource: string; id: string }) {
       {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : [...recordActions(resource, row, user?.role ?? ''), ...(user?.role === 'STAFF' ? staffRecordActions(resource, row, user.id, now) : [])].map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {Boolean(stock.error) && <ErrorState message={stock.error ?? ''} onRetry={stock.refresh} />}
       <RecordView row={row} root={root} />
-      {resource === 'contracts' && <Navigation title="Lịch sử chuyển kho" path={`${root}/transfers`} />}
       {resource === 'units' && <Text style={styles.copy}>Thông tin kho hiện chỉ xem. Trạng thái cập nhật qua bàn giao, trả kho và nghiệm thu.</Text>}
     </>}
   </ScrollView>;

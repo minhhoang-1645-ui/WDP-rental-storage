@@ -2,21 +2,24 @@ import { OperationForm, type FormAction } from './form';
 import { assignmentAction } from './actions';
 import { useAuth } from '@/auth/use-auth';
 import { useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { FlatList, Text, View } from 'react-native';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { codeOf, idOf, label, rows, text, type Row } from './model';
 import { useResource } from './use-resource';
 import { Button, Field, Navigation, styles } from './ui';
+import { assignmentWorkRank } from '@/utils/work-queue';
 
 export function ManagerAssignments() {
+  const params = useLocalSearchParams<{ search?: string; kind?: string; assignment?: string }>();
   const { user } = useAuth();
   const allowed = user?.role === 'MANAGER';
   const support = useResource<Row>(allowed ? '/manager/support-requests' : null, true);
   const maintenance = useResource<Row>(allowed ? '/manager/maintenance' : null, true);
   const movements = useResource<Row>(allowed ? '/manager/stock-movements' : null, true);
   const [action, setAction] = useState<FormAction>();
-  const [search, setSearch] = useState(''), [kind, setKind] = useState(''), [assignment, setAssignment] = useState(''), [history, setHistory] = useState(false);
+  const [search, setSearch] = useState(params.search ?? ''), [kind, setKind] = useState(params.kind ?? ''), [assignment, setAssignment] = useState(params.assignment ?? ''), [history, setHistory] = useState(false);
   const loading = support.loading || maintenance.loading || movements.loading, error = support.error || maintenance.error || movements.error;
   const refresh = () => { support.refresh(); maintenance.refresh(); movements.refresh(); };
   const tasks: Row[] = [
@@ -27,6 +30,7 @@ export function ManagerAssignments() {
     && (!kind || row.resource === kind)
     && (!assignment || Boolean(text(row, 'assignedStaff.id')) === (assignment === 'assigned'))
     && [codeOf(row), text(row, 'subject', 'description'), text(row, 'assignedStaff.fullName'), text(row, 'unit.unitCode', 'storageUnit.unitNumber')].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')));
+  tasks.sort((a, b) => assignmentWorkRank(a) - assignmentWorkRank(b) || (Date.parse(text(a, 'requestedAt', 'createdAt')) || 0) - (Date.parse(text(b, 'requestedAt', 'createdAt')) || 0));
   if (!allowed) return <View style={styles.page}><EmptyState title="Phân công thuộc khu vực quản lý" message="Mở đúng khu vực theo tài khoản của bạn." /><Navigation title="Về tổng quan" path="/manager" /></View>;
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}
     data={loading || error ? [] : tasks} keyExtractor={row => `${row.resource}:${idOf(row)}`}

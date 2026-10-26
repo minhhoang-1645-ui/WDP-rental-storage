@@ -28,10 +28,11 @@ function ActivityStatus() {
   return <View><Text style={styles.copy}>{activity.checkedAt ? `Lần kiểm tra: ${formatDate(new Date(activity.checkedAt).toISOString(), true)}` : 'Đang kết nối'} · Tự kiểm tra mỗi 30 giây</Text>{activity.failed.length > 0 && <Text accessibilityRole="alert" style={styles.error}>Chưa tải được: {activity.failed.join(', ')}. Thông tin cũ được giữ lại; hãy kiểm tra mới khi có kết nối.</Text>}</View>;
 }
 export function ActivitySummary() {
+  const [expanded, setExpanded] = useState(false);
   const activity = useActivity(), todo = activity.entries.filter(item => item.action), unread = activity.entries.filter(item => !activity.read.includes(item.token));
   const urgent = todo.slice(0, 1), updates = [...unread].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0)).filter(item => !urgent.some(entry => entry.id === item.id));
-  const shown = [...urgent, ...updates, ...todo].filter((item, index, items) => items.findIndex(entry => entry.id === item.id) === index).slice(0, 3);
-  return <Panel title="Cần thực hiện & cập nhật mới"><Text style={styles.copy}>{todo.length} hồ sơ cần thực hiện · {unread.length} cập nhật chưa đọc</Text><ActivityBell /><ActivityStatus />{shown.map(item => <ActivityItem key={item.id} item={item} />)}{!activity.loading && !todo.length && !unread.length && <Text style={styles.copy}>Chưa có việc cần thực hiện hoặc cập nhật chưa đọc trong dữ liệu đã tải.</Text>}</Panel>;
+  const shown = [...urgent, ...updates, ...todo].filter((item, index, items) => items.findIndex(entry => entry.id === item.id) === index).slice(0, expanded ? 8 : 1);
+  return <Panel title="Cần thực hiện & cập nhật mới"><Text style={styles.copy}>{activity.loading ? 'Đang tải công việc và thông báo…' : `${todo.length} hồ sơ cần thực hiện · ${unread.length} cập nhật chưa đọc`}</Text><ActivityBell /><ActivityStatus />{shown.map(item => <ActivityItem key={item.id} item={item} />)}{!activity.loading && !todo.length && !unread.length && <Text style={styles.copy}>Chưa có việc cần thực hiện hoặc cập nhật chưa đọc trong dữ liệu đã tải.</Text>}{new Set([...todo, ...unread].map(item => item.id)).size > 1 && <Button title={expanded ? 'Thu gọn' : 'Xem thêm việc & cập nhật'} variant="secondary" onPress={() => setExpanded(value => !value)} />}</Panel>;
 }
 export function ActivityRefreshNote() {
   const activity = useActivity(), [message, setMessage] = useState('');

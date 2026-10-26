@@ -1,16 +1,9 @@
 // All /api/ calls are intercepted, including writes. No real database mutations.
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
+import { launchTestBrowser } from "./browser-test.mjs";
 import { mkdir } from "node:fs/promises";
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.WDP_PLAYWRIGHT_MODULE || "playwright");
 const base = process.env.WDP_FE_URL || "http://127.0.0.1:5173";
-const browser = await chromium.launch({
-  headless: true,
-  ...(process.env.WDP_BROWSER_PATH
-    ? { executablePath: process.env.WDP_BROWSER_PATH }
-    : {}),
-});
+const browser = await launchTestBrowser();
 const roles = ["MANAGER", "STAFF", "ADMIN", "CUSTOMER"];
 const root = (role) => `/${role.toLowerCase()}`;
 const user = (role) => ({
@@ -287,7 +280,8 @@ async function setup(initialRole, authenticated = true) {
   await context.route(/\/api\//, async (route) => {
     const request = route.request(),
       url = new URL(request.url()),
-      path = url.pathname.replace(/^\/api\//, ""),
+      actualPath = url.pathname.replace(/^\/api\//, ""),
+      path = actualPath.replace(/^staff\/management\//, "staff/"),
       method = request.method();
     const role =
       request.headers().authorization?.replace("Bearer token-", "") ?? "";
@@ -318,7 +312,7 @@ async function setup(initialRole, authenticated = true) {
         : prefix === "manager"
           ? ["MANAGER", "ADMIN"].includes(role)
           : prefix === "staff"
-            ? ["STAFF", "MANAGER", "ADMIN"].includes(role)
+            ? role === "STAFF"
             : role === "CUSTOMER";
     if (!allowed) {
       forbidden.push({ path, role });
@@ -469,7 +463,7 @@ async function setup(initialRole, authenticated = true) {
       data.customer[resource].push(created);
       return send(created);
     }
-    reads.push({ role, path, page: Number(url.searchParams.get("page") ?? 1) });
+    reads.push({ role, path: actualPath, page: Number(url.searchParams.get("page") ?? 1) });
     if (path === "customer/payment-config") return send({ configured: true, bankName: "Ngân hàng kiểm thử", bankCode: "970436", accountNumber: "123456789", accountName: "WDP STORAGE" });
     if (path === "payments/vnpay/return") return send({ valid: true, transaction: { merchantOrderRef: "WDP-VNPAY-TEST", status: "SUCCESS", amount: 2000000 }, invoice: { invoiceCode: "INV-0", status: "PAID" }, providerResponseCode: "00" });
     if (path === "reservations") return send(data.reservations);
@@ -500,6 +494,8 @@ async function setup(initialRole, authenticated = true) {
               ? [{ ...unit, storageType }]
               : data.customer[resource]) ?? [];
     }
+    if (prefix === "staff" && path.split("/")[1] === "contracts") items = data.customer.contracts;
+    if (prefix === "staff" && path.split("/")[1] === "units") items = [{ ...unit, storageType }];
     const id = path.split("/")[2];
     if (id)
       return send(
@@ -507,6 +503,9 @@ async function setup(initialRole, authenticated = true) {
           (row) => (row.id ?? row.reservationId) === decodeURIComponent(id),
         ) ?? items[0],
       );
+    const search = url.searchParams.get("search")?.toLocaleLowerCase("vi");
+    if (search) items = items.filter(row => JSON.stringify(row).toLocaleLowerCase("vi").includes(search));
+    if (url.searchParams.get("date")) items = items.filter(row => row.scheduledAt?.slice(0, 10) === url.searchParams.get("date"));
     const page = Number(url.searchParams.get("page") || 1),
       limit = Number(url.searchParams.get("limit") || 20);
     return send({
@@ -662,20 +661,16 @@ try {
     await open(staff.page, `/staff/${resource}/${row.id ?? row.reservationId}`);
     assert.equal(await staff.page.getByRole("alert").count(), 0);
     await ownLinks(staff.page, "STAFF");
-    assert(
-      !/Còn phải trả|Tổng tiền|Duyệt charge|Duyệt gia hạn/.test(
-        await staff.page.locator("main").innerText(),
-      ),
-    );
+    assert.equal(await staff.page.getByRole("button", { name: /Ghi nhận thanh toán|Duyệt quyết toán|Ghi nhận hoàn tiền|Lưu phân công/ }).count(), 0);
   }
   await open(staff.page, "/staff/maintenance?search=MNT-104");
   await staff.page
-    .getByRole("cell", { name: "MNT-104", exact: true })
+    .getByRole("link", { name: "MNT-104", exact: true })
     .waitFor();
   await open(staff.page, "/staff/appointments?date=2030-11-01");
   await staff.page.getByText("APP-STAFF", { exact: true }).waitFor();
   await staff.page
-    .getByLabel("Ngày bàn giao", { exact: true })
+    .getByLabel("Ngày", { exact: true })
     .fill("2030-11-02");
   await staff.page
     .getByText("Không tìm thấy dữ liệu", { exact: true })
@@ -684,7 +679,7 @@ try {
     reads.some(
       (item) =>
         item.role === "STAFF" &&
-        item.path === "staff/maintenance" &&
+        item.path === "staff/management/maintenance" &&
         item.page === 2,
     ),
   );
@@ -725,7 +720,7 @@ try {
     .getByRole("button", { name: "Gửi kết quả để nghiệm thu", exact: true })
     .click();
   await staff.page
-    .getByText("Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.", {
+    .getByText("Đang chờ nhân viên phụ trách nghiệm thu. Kho vẫn ở trạng thái bảo trì.", {
       exact: true,
     })
     .waitFor();
@@ -740,13 +735,13 @@ try {
     0,
   );
   await staff.page
-    .getByLabel("Lý do chuyển quản lý", { exact: true })
+    .getByLabel("Lý do chuyển bộ phận phụ trách", { exact: true })
     .fill("Cần quản lý đánh giá trách nhiệm.");
   await staff.page
-    .getByRole("button", { name: "Chuyển quản lý xem xét", exact: true })
+    .getByRole("button", { name: "Chuyển bộ phận phụ trách xem xét", exact: true })
     .click();
   await staff.page
-    .getByText("Đã chuyển cho quản lý xem xét.", { exact: true })
+    .getByText("Đã chuyển đến bộ phận phụ trách xem xét.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/appointments/handover-id");
   assert(await staff.page.getByRole('button', { name: 'Hoàn tất bàn giao', exact: true }).isDisabled(), 'Future handover cannot be completed');
@@ -792,13 +787,10 @@ try {
       { exact: true },
     )
     .waitFor();
-  await open(staff.page, "/staff/transfers");
-  await staff.page
-    .getByRole("link", { name: /Thực hiện/ })
-    .click();
+  await open(staff.page, "/staff/transfers/transfer-id");
   await staff.page
     .getByLabel(
-      "Đã hoàn tất chuyển thực tế và bàn giao kho đích",
+      "Tôi đã đối chiếu và hoàn tất chuyển kho thực tế",
       { exact: true },
     )
     .check();
@@ -807,7 +799,7 @@ try {
     .click();
   await staff.page
     .getByRole("status")
-    .filter({ hasText: "Đã hoàn tất chuyển kho thực tế." })
+    .filter({ hasText: "Đã lưu thao tác thành công." })
     .waitFor();
   staff.data.staff["support-requests"].push({
     ...structuredClone(staff.data.staff["support-requests"][0]),
@@ -829,18 +821,11 @@ try {
     .getByText("Yêu cầu đã được giải quyết.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/maintenance");
-  await staff.page
-    .getByLabel("Mã định danh kho", { exact: true })
-    .fill("available-unit-id");
-  await staff.page
-    .getByLabel("Mô tả sự cố", { exact: true })
-    .fill("Kho cần kiểm tra khóa trước khi cho thuê.");
-  await staff.page
-    .getByRole("button", { name: "Gửi báo cáo sự cố", exact: true })
-    .click();
-  await staff.page
-    .getByText("Đã ghi nhận sự cố bảo trì.", { exact: true })
-    .waitFor();
+  await staff.page.getByRole("button", { name: "Tạo bảo trì", exact: true }).click();
+  await staff.page.getByRole("combobox", { name: "Kho cần bảo trì", exact: true }).selectOption("unit-id");
+  await staff.page.getByLabel("Mô tả tình trạng").fill("Kho cần kiểm tra khóa trước khi cho thuê.");
+  await staff.page.getByRole("button", { name: "Tạo yêu cầu", exact: true }).click();
+  await staff.page.getByRole("dialog").waitFor({ state: "hidden" });
   const issueReturn = structuredClone(staff.data.staff.returns[0]);
   issueReturn.id = "return-issue";
   issueReturn.status = "INSPECTION_IN_PROGRESS";
@@ -893,18 +878,12 @@ try {
     );
   }
   await open(customer.page, "/customer/payments");
-  await customer.page.getByRole("button", { name: "Chuyển khoản QR", exact: true }).first().click();
-  await customer.page.getByRole("button", { name: "Tôi đã chuyển khoản", exact: true }).click();
-  await customer.page.getByText("Mã yêu cầu: PS-TEST", { exact: true }).waitFor();
-  await customer.page.getByRole("button", { name: "Xem trạng thái yêu cầu", exact: true }).click();
-  customer.data.customer["payment-submissions"] = [];
-  await open(customer.page, "/customer/payments");
-  await customer.page.getByRole("button", { name: "Quét VNPay QR", exact: true }).first().click();
+  await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
   await customer.page.waitForURL((url) => url.pathname === "/customer/payments/vnpay-return");
   await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));
   assert.match(onlinePaymentWrite.key, /^cust-vnpay-/);
-  assert.equal(onlinePaymentWrite.body.bankCode, "VNPAYQR");
+  assert.equal(onlinePaymentWrite.body.locale, "vn");
   await open(customer.page, "/customer/contracts?page=6");
   await customer.page.getByText("CON-104", { exact: true }).waitFor();
   assert(
@@ -1081,7 +1060,7 @@ try {
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Contracts must remain visible at 390px');
   await open(customer.page, '/customer/payments');
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Invoices must remain visible at 390px');
-  assert.equal(await customer.page.getByRole('button', { name: 'Chuyển khoản QR', exact: true }).count(), 20, 'Invoice actions remain visible with pagination');
+  assert.equal(await customer.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 20, 'Invoice actions remain visible with pagination');
   assert(await customer.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   checks.push("390px staff/customer layouts, visible contract/invoice cards, payment pagination and mobile navigation");
   await staff.page.setViewportSize({ width: 1440, height: 1000 });

@@ -22,6 +22,7 @@ import {
 import { allPages, mutate } from "../../services/portal";
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
+import { assignmentWorkRank } from '../../utils/work-queue';
 
 type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
@@ -118,6 +119,7 @@ export function ManagerAssignmentsPage() {
         .includes(search.trim().toLocaleLowerCase("vi"))
     );
   });
+  tasks.sort((a, b) => assignmentWorkRank(a.row) - assignmentWorkRank(b.row) || (Date.parse(first(a.row, 'requestedAt', 'createdAt')) || 0) - (Date.parse(first(b.row, 'requestedAt', 'createdAt')) || 0));
   const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / 20)));
   const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const change = (name: string, value: string) =>

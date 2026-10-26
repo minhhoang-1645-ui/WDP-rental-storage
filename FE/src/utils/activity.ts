@@ -1,4 +1,5 @@
 import { workflowGuide } from './workflow-guide';
+import { awaitingAssignment, isOverdueInvoice, staffNeedsAction } from './work-queue';
 
 export type ActivityRole = 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN';
 export type ActivityRow = Record<string, unknown>;
@@ -20,7 +21,7 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   const kinds = role === 'CUSTOMER'
     ? ['reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
     : role === 'STAFF' ? ['reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['payment-submissions', 'deposit-settlements', 'support-requests', 'maintenance', 'stock-movements'];
+      : ['payment-submissions', 'deposit-settlements', 'support-requests', 'maintenance', 'stock-movements', 'invoices'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   return kinds.map(kind => ({ kind, title: names[kind], path: role === 'CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${role.toLowerCase()}/${kind}`, array: role === 'CUSTOMER' && kind === 'reservations' }));
 }
@@ -75,6 +76,11 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         message = action ? 'Hợp đồng đã đủ điều kiện. Chọn lịch phù hợp để WDP xác nhận và bàn giao kho cho bạn.' : 'Bạn có thể đặt lịch sau khi toàn bộ hợp đồng của yêu cầu đủ điều kiện và còn trong kỳ thuê. Mở hồ sơ để xem thông tin.';
         if (!action) title = 'Nhận kho · Xem điều kiện bàn giao';
       }
+      if (kind === 'contracts' && status === 'ACTIVE') {
+        const unitCode = get('storageUnit.unitCode') || get('unit.unitCode');
+        title = unitCode ? `Hợp đồng · Kho ${unitCode} đang sử dụng` : 'Hợp đồng · Đang sử dụng kho';
+        message = 'Xem vị trí kho và thời hạn hiện tại trong hợp đồng. Thông tin được cập nhật sau khi hoàn tất gia hạn hoặc chuyển kho.';
+      }
       if (kind === 'support-requests' && status === 'OPEN') title = 'Hỗ trợ · Đang chờ tiếp nhận';
       if (kind === 'deposit-settlements' && status === 'AWAITING_OUTSTANDING_PAYMENT') { action = true; message = 'Xem các khoản được đối chiếu khi trả kho và hóa đơn còn lại trước khi hoàn tất quyết toán.'; }
       if (kind === 'reservations' && status === 'PENDING') message = 'Yêu cầu đặt kho của bạn đã được gửi. WDP đang kiểm tra kho và sẽ cập nhật kết quả tại đây.';
@@ -90,18 +96,23 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         if (kind === 'payment-submissions') web = '/manager/payment-submissions';
         const assignment = ['support-requests', 'maintenance', 'stock-movements'].includes(kind);
         if (assignment) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
-        action = (kind === 'payment-submissions' && status === 'PENDING_VERIFICATION') || (kind === 'deposit-settlements' && ['PENDING_REVIEW', 'APPROVED'].includes(status)) || (assignment && !get('assignedStaff.id') && ['OPEN', 'REQUESTED'].includes(status));
-      } else action = (kind === 'reservations' && status === 'PENDING') || (kind === 'inquiries' && ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW'].includes(status)) || (kind === 'renewals' && status === 'PENDING') || (kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)) || (kind === 'stock-movements' && status === 'ASSIGNED' && get('assignedStaff.id') === userId) || (kind === 'returns' && ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(status)) || (kind === 'maintenance' && (status === 'AWAITING_VERIFICATION' || (['OPEN', 'IN_PROGRESS'].includes(status) && get('assignedStaff.id') === userId))) || (kind === 'support-requests' && (status === 'ESCALATED' || (['ASSIGNED', 'IN_PROGRESS'].includes(status) && get('assignedStaff.id') === userId))) || (kind === 'transfers' && ['REQUESTED', 'APPROVED'].includes(status));
+        action = (kind === 'payment-submissions' && status === 'PENDING_VERIFICATION') || (kind === 'deposit-settlements' && ['PENDING_REVIEW', 'APPROVED'].includes(status)) || awaitingAssignment(kind, row) || (kind === 'invoices' && isOverdueInvoice(row));
+        if (kind === 'invoices' && !action) continue;
+      } else action = staffNeedsAction(kind, row, userId);
       title = `${source.title} · ${action ? 'Cần xử lý' : 'Theo dõi tiến độ'}`;
       message = workflowGuide(kind, status, role === 'STAFF' ? 'staff' : 'internal') || (action ? 'Mở hồ sơ, đối chiếu thông tin và thực hiện thao tác trong phạm vi của bạn.' : 'Mở hồ sơ để xem kết quả và người phụ trách hiện tại.');
       if (kind === 'payment-submissions') message = status === 'PENDING_VERIFICATION' ? 'Khách đã gửi thông báo chuyển khoản. Đối chiếu tiền thực nhận trước khi xác nhận.' : 'Xem kết quả đối chiếu thông báo chuyển khoản.';
+      if (role === 'MANAGER' && awaitingAssignment(kind, row)) message = 'Chưa có nhân viên phụ trách. Mở Phân công nhân viên để chọn người xử lý và theo dõi tiến độ.';
+      if (role === 'MANAGER' && kind === 'invoices') { title = 'Hóa đơn · Quá hạn thanh toán'; message = 'Kiểm tra số dư, hạn thanh toán và lịch sử thu tiền trước khi liên hệ khách hàng.'; }
+      if (role === 'STAFF' && awaitingAssignment(kind, row)) { title = `${source.title} · Chờ quản lý phân công`; message = 'Hồ sơ đã được tiếp nhận và đang chờ quản lý giao người phụ trách. Bạn có thể theo dõi; chưa thực hiện thay nhân viên được giao.'; }
+      if (role === 'STAFF' && !action && get('assignedStaff.id') && !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(status)) message = `Nhân viên phụ trách: ${get('assignedStaff.fullName') || 'đã được phân công'}. Bạn có thể theo dõi trạng thái; thao tác thực hiện dành cho người được giao.`;
     }
     if (role === 'CUSTOMER' && get('rejectionReason')) message += ` Lý do: ${get('rejectionReason')}`;
     if (role === 'CUSTOMER' && kind === 'support-requests' && get('resolutionNote')) message += ` Phản hồi: ${get('resolutionNote')}`;
     if (action) priority = 1;
     if (action && (row.priority === 'HIGH' || status === 'ESCALATED' || status === 'PENDING_VERIFICATION')) priority = 0;
     const at = ['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'updatedAt', 'submittedAt', 'requestedAt', 'createdAt'].map(get).filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
-    const fingerprint = JSON.stringify([status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName')]);
+    const fingerprint = JSON.stringify([status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName'), get('storageUnit.id'), get('storageUnit.unitCode'), get('unit.id'), get('unit.unitCode')]);
     const entryId = `${kind}:${id}`, token = activityHash(`${entryId}:${fingerprint}`);
     result.push({ id: entryId, token, kind, code, title, message, web, mobile, action, priority, at });
   }

@@ -51,7 +51,7 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
       if (controller.signal.aborted) return;
       initialized = true; running = false;
       setState(current => ({ data: { ...snapshot }, checkedAt: Date.now(), failed, checking: false, changed: current.changed || changed.length > 0 }));
-      if (changed.length) window.dispatchEvent(new CustomEvent(LIVE_REFRESH));
+      if (changed.length) window.dispatchEvent(new CustomEvent(LIVE_REFRESH, { detail: changed }));
       if (queued) { queued = false; void load(); }
     };
     const schedule = () => { clearTimeout(timer); if (!controller.signal.aborted) timer = setTimeout(() => { void load().finally(schedule); }, 30000); };
@@ -65,5 +65,5 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     void load().finally(schedule);
     return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('input', dirty, true); document.removeEventListener('change', dirty, true); document.removeEventListener('submit', submit, true); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('offline', resume); window.removeEventListener('focus', resume); window.removeEventListener(DATA_CHANGED, mutation); };
   }, [role]);
-  return <ActivityContext.Provider value={{ entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, changed: state.changed, refresh, markRead, acknowledge: () => setState(current => ({ ...current, changed: false })) }}>{children}</ActivityContext.Provider>;
+  return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, changed: state.changed, refresh, markRead, acknowledge: () => setState(current => ({ ...current, changed: false })) }}>{children}</ActivityContext.Provider>;
 }

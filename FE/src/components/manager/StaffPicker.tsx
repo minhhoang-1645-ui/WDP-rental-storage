@@ -18,10 +18,10 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
   useEffect(() => {
     if (!['MANAGER', 'ADMIN'].includes(user?.role ?? '')) return;
     const controller = new AbortController();
-    apiRequest<{ items: Array<{ id: string; fullName: string }> }>('/manager/staff?limit=100', { authenticated: true, signal: controller.signal })
+    apiRequest<{ items: Array<{ id: string; fullName: string; email?: string }> }>('/manager/staff?limit=100', { authenticated: true, signal: controller.signal })
       .then(response => {
         if (controller.signal.aborted) return;
-        setResult({ key, staff: new Map(response.items.map(staff => [staff.id, staff.fullName])), error: false });
+        setResult({ key, staff: new Map(response.items.map(staff => [staff.id, staff.fullName + (staff.email ? ` · ${staff.email}` : '')])), error: false });
       })
       .catch(async () => {
         try {
@@ -42,11 +42,11 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
     <label className="field-label">Nhân viên phụ trách
       <select aria-label="Nhân viên phụ trách" aria-describedby={hintId} value={options.has(value) && !manual ? value : ''} disabled={disabled || !options.size} required={!showManual} onChange={event => { setManual(false); onChange(event.target.value); }}>
         <option value="">{loading && !options.size ? 'Đang tải danh sách nhân viên…' : options.size ? 'Chọn nhân viên' : 'Chưa có nhân viên đang hoạt động'}</option>
-        {[...options].sort((a, b) => a[1].localeCompare(b[1], 'vi')).map(([id, name]) => <option key={id} value={id}>{name} · {id}</option>)}
+        {[...options].sort((a, b) => a[1].localeCompare(b[1], 'vi')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select>
     </label>
     <p id={hintId} className="staff-assignee-hint">Chọn nhân viên kho đang hoạt động để giao việc.</p>
-    {current?.error && <div className="staff-assignee-hint" role="status">Không tải được danh sách Staff mới nhất. Bạn có thể chọn dữ liệu đang có hoặc <button type="button" className="portal-text-button" disabled={disabled} onClick={() => setRevision(value => value + 1)}>Tải lại danh sách</button>.</div>}
+    {current?.error && <div className="staff-assignee-hint" role="status">Không tải được danh sách nhân viên mới nhất. Bạn có thể chọn dữ liệu đang có hoặc <button type="button" className="portal-text-button" disabled={disabled} onClick={() => setRevision(value => value + 1)}>Tải lại danh sách</button>.</div>}
     {showManual ? <div><label className="field-label">Mã tài khoản nhân viên<input required maxLength={100} autoComplete="off" spellCheck={false} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} placeholder="Dán mã tài khoản khi cần" /></label><small>Chỉ dùng khi cần giữ nguyên người đã được phân công trong hồ sơ cũ.</small></div> : <button className="portal-text-button" type="button" disabled={disabled} onClick={() => { setManual(true); onChange(''); }}>Nhập mã nhân viên khác</button>}
   </div>;
 }

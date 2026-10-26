@@ -62,5 +62,5 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     void load().finally(schedule);
     return () => { controller.abort(); clearTimeout(timer); subscription.remove(); unsubscribe(); };
   }, [role]);
-  return <ActivityContext.Provider value={{ entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, changed: state.changed, refresh, markRead, acknowledge: () => setState(current => ({ ...current, changed: false })) }}>{children}</ActivityContext.Provider>;
+  return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, changed: state.changed, refresh, markRead, acknowledge: () => setState(current => ({ ...current, changed: false })) }}>{children}</ActivityContext.Provider>;
 }

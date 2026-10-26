@@ -1,160 +1,192 @@
-import { isStaffWorkflow } from '../../utils/operation-access';
 import {
-  AlertTriangle,
   ArrowRight,
-  CalendarClock,
+  BarChart3,
   ClipboardCheck,
-  HardHat,
+  FileText,
   Headphones,
   RefreshCw,
   Warehouse,
+  WalletCards,
 } from "lucide-react";
-import { OperationsLink as Link } from "../../components/manager/OperationsLink";
+import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { usePortalSnapshot } from "../../services/usePortalSnapshot";
-import { WorkHub } from '../../components/workspace/WorkHub';
-import { ActivitySummary } from '../../activity/ActivityCenter';
-import { code, date, first, money } from "../../components/manager/portal-data";
+import { ActivitySummary } from "../../activity/ActivityCenter";
+import { useActivity } from "../../activity/context";
 import {
-  Empty,
-  LoadState,
   PageHeader,
+  LoadState,
   Status,
 } from "../../components/manager/PortalUi";
+import { money, type Row } from "../../components/manager/portal-data";
+import { WorkHub } from "../../components/workspace/WorkHub";
+import { useApiResource } from "../../services/useApiResource";
+import { usePaginatedResource } from "../../services/usePaginatedResource";
+import { useLiveRefresh } from "../../services/live-events";
+import { awaitingAssignment, isOverdueInvoice } from "../../utils/work-queue";
+import { activitySources } from "../../utils/activity";
 
-const work = [
-  {
-    key: "pendingReservations",
-    name: "Đặt kho chờ xử lý",
-    path: "/manager/reservations?status=PENDING",
-    icon: ClipboardCheck,
-  },
-  {
-    key: "overdueRentals",
-    name: "Kỳ thuê quá hạn",
-    path: "/manager/operations/rentals?status=true",
-    icon: AlertTriangle,
-  },
-  {
-    key: "pendingRenewals",
-    name: "Gia hạn chưa hoàn tất",
-    path: "/manager/operations/renewals",
-    icon: CalendarClock,
-  },
-  {
-    key: "openSupportRequests",
-    name: "Yêu cầu hỗ trợ đang mở",
-    path: "/manager/operations/support-requests",
-    icon: Headphones,
-  },
-  {
-    key: "maintenanceUnits",
-    name: "Kho đang bảo trì",
-    path: "/manager/operations/maintenance",
-    icon: HardHat,
-  },
-  {
-    key: "pendingDepositSettlements",
-    name: "Quyết toán chưa hoàn tất",
-    path: "/manager/operations/deposit-settlements",
-    icon: Warehouse,
-  },
-];
 export function ManagerOverviewPage() {
   const { user } = useAuth();
-  const { data, loading, error, refresh } = usePortalSnapshot();
-  const total = data?.units.total ?? 0;
-  const occupied =
-    data?.units.items.filter((row) => row.status === "OCCUPIED").length ?? 0;
-  const reservations =
-    data?.reservations.items
-      .filter((row) => row.status === "PENDING")
-      .slice(0, 5) ?? [];
-  const appointments =
-    data?.appointments.items
-      .filter(
-        (row) =>
-          ["REQUESTED", "CONFIRMED"].includes(first(row, "status")) &&
-          new Date(first(row, "scheduledAt")).getTime() >= data.asOf,
-      )
-      .slice(0, 5) ?? [];
+  const activity = useActivity();
+  const summary = useApiResource<Row>(
+    "/manager/dashboard/summary",
+    user?.id,
+    true,
+  );
+  const units = usePaginatedResource<Row>("/manager/units", user?.id, true);
+  useLiveRefresh("/manager/*", summary.refresh);
+  const refresh = () => {
+    summary.refresh();
+    units.refresh();
+    activity.refresh();
+  };
+  const invoices = activity.data.invoices ?? [];
+  const overdueInvoices = invoices.filter((row) => isOverdueInvoice(row));
+  const submissions = (activity.data["payment-submissions"] ?? []).filter(
+    (row) => row.status === "PENDING_VERIFICATION",
+  );
+  const assignments = [
+    "support-requests",
+    "maintenance",
+    "stock-movements",
+  ].flatMap((kind) =>
+    (activity.data[kind] ?? []).filter((row) => awaitingAssignment(kind, row)),
+  );
+  const unsettled = (activity.data["deposit-settlements"] ?? []).filter((row) =>
+    ["PENDING_REVIEW", "APPROVED"].includes(String(row.status)),
+  );
+  const available = units.data ? units.data.items.filter(row => row.status === 'AVAILABLE').length : summary.data?.availableUnits;
+  const occupied = units.data ? units.data.items.filter(row => row.status === 'OCCUPIED').length : summary.data?.occupiedUnits;
+  const count = (kinds: string[], value: number) =>
+    activity.loading ||
+    kinds.some(
+      (kind) =>
+        !activity.data[kind] ||
+        activity.failed.includes(
+          activitySources("MANAGER").find((source) => source.kind === kind)!
+            .title,
+        ),
+    )
+      ? "—"
+      : value;
+  const financeReady =
+    Boolean(activity.data.invoices) && !activity.failed.includes("Hóa đơn");
   return (
-    <section>
+    <section className="workspace-home">
       <PageHeader
         title="Tổng quan vận hành"
-        description={`Xin chào ${user?.fullName ?? ""}. Theo dõi kho và công việc cần xử lý tại cơ sở.`}
+        description={`Chào ${user?.fullName ?? "bạn"}. Theo dõi cơ sở, phân công công việc và đối chiếu tài chính.`}
       >
         <button
           className="button-secondary"
+          disabled={summary.loading || units.loading || activity.checking}
           onClick={refresh}
-          disabled={loading}
         >
           <RefreshCw size={16} />
           Làm mới
         </button>
       </PageHeader>
       <ActivitySummary />
-      <WorkHub title="Bàn làm việc" description="Theo dõi cơ sở, hợp đồng và xử lý các khoản thanh toán." actions={[
-        { title: 'Đối chiếu thanh toán', description: 'Kiểm tra khoản tiền thực nhận và thông báo chuyển khoản.', to: '/manager/payment-submissions', icon: ClipboardCheck },
-        { title: 'Phân công nhân viên', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.', to: '/manager/assignments', icon: Headphones },
-      ]} />
-      <LoadState loading={loading} error={error} retry={refresh} />
-      {data && (
-        <>
-          <details className="workspace-summary"><summary>Thống kê cơ sở & công việc cần theo dõi</summary>
-          <div className="portal-metrics">
-            {[
-              ["Tổng kho vật lý", total, "/manager/units"],
-              ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
-              [
-                "Kho sẵn sàng",
-                first(data.summary, 'availableUnits') || '—',
-                "/manager/units?status=AVAILABLE",
-              ],
-              [
-                "Kỳ thuê đang hoạt động",
-                first(data.summary, 'activeRentals') || '—',
-                "/manager/operations/rentals",
-              ],
-            ].map(([title, value, to]) => (
-              <Link className="portal-metric" key={title} to={String(to)}>
-                <span>{title}</span>
-                <strong>{value}</strong>
-                <small>
-                  Xem chi tiết <ArrowRight size={14} />
-                </small>
-              </Link>
-            ))}
+      <WorkHub
+        title="Việc quản lý cần xử lý"
+        description="Ưu tiên hồ sơ chưa có người phụ trách và các khoản cần đối chiếu."
+        actions={[
+          {
+            title: "Phân công nhân viên",
+            description:
+              "Giao người phụ trách hỗ trợ, bảo trì và nhập – xuất hàng.",
+            to: "/manager/assignments?assignment=unassigned",
+            icon: Headphones,
+            count: count(
+              ["support-requests", "maintenance", "stock-movements"],
+              assignments.length,
+            ),
+            tone: assignments.length ? "attention" : "normal",
+          },
+          {
+            title: "Chờ xác nhận thanh toán",
+            description: "Đối chiếu tiền thực nhận với thông báo khách gửi.",
+            to: "/manager/payment-submissions",
+            icon: ClipboardCheck,
+            count: count(["payment-submissions"], submissions.length),
+            tone: submissions.length ? "attention" : "normal",
+          },
+          {
+            title: "Hóa đơn & công nợ",
+            description: financeReady
+              ? `${overdueInvoices.length} hóa đơn quá hạn. Kiểm tra số dư và lịch sử thu tiền.`
+              : "Xem số tiền còn phải thu và hạn thanh toán.",
+            to: "/manager/operations/invoices",
+            icon: WalletCards,
+            count: count(["invoices"], overdueInvoices.length),
+            tone: overdueInvoices.length ? "attention" : "normal",
+          },
+          {
+            title: "Quyết toán cọc",
+            description:
+              "Đối chiếu kết quả trả kho và các khoản cần thu hoặc hoàn.",
+            to: "/manager/operations/deposit-settlements",
+            icon: FileText,
+            count: count(["deposit-settlements"], unsettled.length),
+            tone: unsettled.length ? "attention" : "normal",
+          },
+        ]}
+      />
+      <LoadState
+        loading={summary.loading}
+        error={summary.error}
+        retry={summary.refresh}
+      />
+      <div className="portal-metrics" aria-label="Tình hình cơ sở">
+        {[
+          ["Tổng kho vật lý", units.data?.total, "/manager/units"],
+          ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
+          ["Kho sẵn sàng", available, "/manager/units?status=AVAILABLE"],
+          [
+            "Kỳ thuê quá hạn",
+            summary.data?.overdueRentals,
+            "/manager/operations/rentals?status=true",
+          ],
+        ].map(([title, value, path]) => (
+          <Link className="portal-metric" key={String(title)} to={String(path)}>
+            <span>{String(title)}</span>
+            <strong>{typeof value === "number" ? value : "—"}</strong>
+            <small>
+              Xem chi tiết <ArrowRight size={14} />
+            </small>
+          </Link>
+        ))}
+      </div>
+      <div className="portal-overview-grid">
+        <section className="manager-section">
+          <div className="portal-section-title">
+            <h2>Tình trạng kho</h2>
+            <Link to="/manager/units">
+              Xem kho <ArrowRight size={14} />
+            </Link>
           </div>
-          <div className="portal-overview-grid">
-            <section className="manager-section">
-              <div className="portal-section-title">
-                <h2>Tình trạng kho</h2>
-                <strong>
-                  {total ? Math.round((occupied / total) * 100) : 0}% đang sử
-                  dụng
-                </strong>
-              </div>
+          <LoadState
+            loading={units.loading}
+            error={units.error}
+            retry={units.refresh}
+          />
+          {units.data && (
+            <>
               <div
                 className="portal-capacity"
                 role="img"
-                aria-label={`Kho đang sử dụng ${occupied} trên ${total}`}
+                aria-label={`${units.data.total} kho vật lý`}
               >
                 {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
-                  (status) => {
-                    const count = data.units.items.filter(
-                      (row) => row.status === status,
-                    ).length;
-                    return (
-                      <div
-                        key={status}
-                        className={`is-${status.toLowerCase()}`}
-                        style={{
-                          width: `${total ? (count / total) * 100 : 0}%`,
-                        }}
-                      />
-                    );
-                  },
+                  (status) => (
+                    <div
+                      key={status}
+                      className={`is-${status.toLowerCase()}`}
+                      style={{
+                        width: `${units.data!.total ? (units.data!.items.filter((row) => row.status === status).length / units.data!.total) * 100 : 0}%`,
+                      }}
+                    />
+                  ),
                 )}
               </div>
               <div className="portal-capacity-legend">
@@ -164,7 +196,7 @@ export function ManagerOverviewPage() {
                       <Status value={status} />
                       <strong>
                         {
-                          data.units.items.filter(
+                          units.data!.items.filter(
                             (row) => row.status === status,
                           ).length
                         }
@@ -173,117 +205,72 @@ export function ManagerOverviewPage() {
                   ),
                 )}
               </div>
-              <p className="manager-action-copy">
-                Khả dụng theo kỳ thuê còn phụ thuộc lịch phân bổ. Kho quá hạn
-                vẫn được giữ cho đến khi khách trả thực tế.
-              </p>
-            </section>
-            <section className="manager-section">
-              <h2>Công việc cần theo dõi</h2>
-              <div className="portal-work-list">
-                {work.filter(item => !isStaffWorkflow(item.path.split('?')[0].split('/').at(-1) ?? '')).map(({ key, name, path, icon: Icon }) => (
-                  <Link key={key} to={path}>
-                    <Icon size={18} />
-                    <span>{name}</span>
-                    <strong
-                      className={
-                        Number(data.summary[key]) > 0 ? "portal-work-count" : ""
-                      }
-                    >
-                      {first(data.summary, key)}
-                    </strong>
-                    <ArrowRight size={15} />
-                  </Link>
-                ))}
-              </div>
-            </section>
+            </>
+          )}
+          <p className="manager-action-copy">
+            Khả dụng cho khách đặt mới còn phụ thuộc lịch phân bổ trong toàn bộ
+            kỳ thuê. Kho quá hạn vẫn được giữ đến khi khách trả thực tế.
+          </p>
+        </section>
+        <section className="manager-section">
+          <div className="portal-section-title">
+            <h2>Hồ sơ & báo cáo</h2>
           </div>
-          </details>
-          <div className="portal-overview-grid">
-            <section className="manager-section">
-              <div className="portal-section-title">
-                <h2>Đặt kho chờ duyệt</h2>
-                <Link to="/manager/reservations?status=PENDING">
-                  Xem tất cả →
-                </Link>
+          <div className="workspace-shortcuts">
+            <Link to="/manager/reports">
+              <BarChart3 size={20} />
+              <div>
+                <strong>Báo cáo vận hành</strong>
+                <span>Hóa đơn, khoản thu và tình hình sử dụng kho.</span>
               </div>
-              {reservations.length ? (
-                <div className="portal-work-list">
-                  {reservations.map((row) => (
-                    <Link
-                      key={code(row)}
-                      to={`/manager/reservations/${encodeURIComponent(first(row, "id"))}`}
-                    >
-                      <div>
-                        <strong>{first(row, "customer.fullName")}</strong>
-                        <small>
-                          {code(row)} · {row.quantity as number} kho ·{" "}
-                          {first(row, "product.name")}
-                        </small>
-                      </div>
-                      <ArrowRight size={18} />
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  title="Đã xử lý hết yêu cầu đặt kho"
-                  description="Các yêu cầu mới sẽ xuất hiện tại đây."
-                />
-              )}
-            </section>
-            <section className="manager-section">
-              <div className="portal-section-title">
-                <h2>Lịch bàn giao sắp tới</h2>
-                <Link to="/manager/operations/appointments">Xem lịch →</Link>
+              <ArrowRight size={16} />
+            </Link>
+            <Link to="/manager/operations/contracts">
+              <FileText size={20} />
+              <div>
+                <strong>Hợp đồng thuê</strong>
+                <span>Đối chiếu kỳ thuê, khách hàng và kho đã phân bổ.</span>
               </div>
-              {appointments.length ? (
-                <div className="portal-work-list">
-                  {appointments.map((row) => (
-                    <Link
-                      key={code(row)}
-                      to={`/manager/operations/appointments/${encodeURIComponent(first(row, "id"))}`}
-                    >
-                      <div>
-                        <strong>{date(row.scheduledAt, true)}</strong>
-                        <small>
-                          {first(row, "reservation.customer.fullName")} ·{" "}
-                          {code(row)}
-                        </small>
-                      </div>
-                      <Status value={row.status} />
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <Empty
-                  title="Chưa có lịch bàn giao sắp tới"
-                  description="Lịch nhận kho của khách sẽ hiển thị tại đây."
-                />
-              )}
-            </section>
+              <ArrowRight size={16} />
+            </Link>
+            <Link to="/manager/operations/rentals">
+              <Warehouse size={20} />
+              <div>
+                <strong>Kho đang thuê</strong>
+                <span>Theo dõi sử dụng kho, thời hạn và công nợ.</span>
+              </div>
+              <ArrowRight size={16} />
+            </Link>
           </div>
-          <section className="portal-finance-strip">
-            <div>
-              <span>Tổng dư nợ hóa đơn</span>
-              <strong>
-                {money(
-                  data.invoices.items.reduce(
-                    (sum, row) => sum + Number(row.balanceDue),
+          <p className="manager-action-copy">
+            Nhân viên tiếp nhận và xử lý yêu cầu đặt kho, tư vấn, hỗ trợ, bàn
+            giao, hàng hóa, gia hạn, chuyển kho, trả kho và bảo trì.
+          </p>
+        </section>
+      </div>
+      <section className="portal-finance-strip">
+        <div>
+          <span>Tổng dư nợ hóa đơn</span>
+          <strong>
+            {financeReady
+              ? money(
+                  invoices.reduce(
+                    (sum, row) => sum + Number(row.balanceDue || 0),
                     0,
                   ),
-                )}
-              </strong>
-            </div>
-            <Link
-              className="button-secondary"
-              to="/manager/operations/invoices"
-            >
-              Theo dõi công nợ <ArrowRight size={16} />
-            </Link>
-          </section>
-        </>
-      )}
+                )
+              : "—"}
+          </strong>
+          <small>
+            {financeReady
+              ? `${overdueInvoices.length} hóa đơn quá hạn · ${money(overdueInvoices.reduce((sum, row) => sum + Number(row.balanceDue), 0))}`
+              : "Chưa tải đủ hóa đơn để tổng hợp."}
+          </small>
+        </div>
+        <Link className="button-secondary" to="/manager/operations/invoices">
+          Theo dõi công nợ <ArrowRight size={16} />
+        </Link>
+      </section>
     </section>
   );
 }

@@ -260,7 +260,7 @@ export const resources: Record<
   },
   maintenance: {
     title: "Bảo trì kho",
-    description: "Phân công sửa chữa, theo dõi công việc và nghiệm thu.",
+    description: "Theo dõi người phụ trách, kết quả sửa chữa và nghiệm thu.",
     statuses: ["OPEN", "IN_PROGRESS", "AWAITING_VERIFICATION", "COMPLETED"],
   },
   "support-requests": {

@@ -91,7 +91,7 @@ export class AppointmentsService {
   }
 
   async confirmAppointment(id: string, actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xác nhận lịch bàn giao.');
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xác nhận lịch bàn giao.');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
@@ -111,7 +111,7 @@ export class AppointmentsService {
   }
 
   async completeHandover(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (!['STAFF', 'MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Customer không được hoàn tất bàn giao.');
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được hoàn tất bàn giao.');
     const handoverNote = this.optionalText(input.note, 2000, 'note');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { staffRecordActions } from '@/portals/actions';
+import { isStaffWorkflow } from '@/utils/operation-access';
+import { useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
@@ -22,12 +24,18 @@ export function ResourceDetail() {
 function Detail({ resource, id }: { resource: string; id: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined, root = operationRoot(user?.role ?? '');
-  const allowed = user?.role === 'MANAGER';
+  const allowed = user?.role === 'MANAGER' ? !isStaffWorkflow(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
   const data = useResource<Row>(allowed && config && resource !== 'catalog' ? `${config.path}/${encodeURIComponent(id)}` : null);
   const stock = useResource<Row>(allowed && resource === 'additional-services' ? `/manager/additional-services/${encodeURIComponent(id)}/inventory` : null);
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (resource !== 'appointments') return;
+    const timer = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, [resource]);
   const refresh = () => { data.refresh(); stock.refresh(); };
-  if (!config || resource === 'catalog') return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
+  if (!allowed || !config || resource === 'catalog') return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
   const row: Row | undefined = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description="Thông tin, lịch sử và thao tác nghiệp vụ." />
@@ -38,7 +46,7 @@ function Detail({ resource, id }: { resource: string; id: string }) {
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>
       {resource === 'renewals' && <RenewalReview row={row} />}
       <WorkflowHint text={workflowGuide(resource, row.status)} />
-      {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : recordActions(resource, row, user?.role ?? '').map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
+      {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : [...recordActions(resource, row, user?.role ?? ''), ...(user?.role === 'STAFF' ? staffRecordActions(resource, row, user.id, now) : [])].map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {Boolean(stock.error) && <ErrorState message={stock.error ?? ''} onRetry={stock.refresh} />}
       <RecordView row={row} root={root} />
       {resource === 'contracts' && <Navigation title="Lịch sử chuyển kho" path={`${root}/transfers`} />}

@@ -28,7 +28,7 @@ export const staffResources = {
   "support-requests": {
     title: "Hỗ trợ khách hàng",
     description:
-      "Xử lý yêu cầu được giao hoặc chuyển vấn đề cần quản lý xem xét.",
+      "Tiếp nhận và xử lý phần việc hỗ trợ được quản lý giao.",
     statuses: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ESCALATED", "RESOLVED"],
   },
 } as const;

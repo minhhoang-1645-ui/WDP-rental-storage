@@ -61,6 +61,7 @@ export class StockMovementsService {
   }
 
   async assign(id: string, staffUserId: string, actor: PublicUser) {
+    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ quản lý được phân công nhân viên.');
     const staff = await this.prisma.user.findFirst({ where: { id: staffUserId, role: 'STAFF', accountStatus: 'ACTIVE' }, select: { id: true } });
     if (!staff) throw new BadRequestException('Nhân viên được giao phải là STAFF đang hoạt động.');
     return this.serializable(async (tx) => {

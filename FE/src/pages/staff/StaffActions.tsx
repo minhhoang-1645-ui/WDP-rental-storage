@@ -121,7 +121,7 @@ export function StaffActions({
           ) : (
             <p>
               {row.status === "REQUESTED"
-                ? "Chờ quản lý xác nhận lịch trước khi bàn giao."
+                ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
                 : "Lịch này không còn thao tác bàn giao."}
             </p>
           ))}
@@ -222,7 +222,7 @@ export function StaffActions({
               </form>
             )}
             {row.status === "AWAITING_VERIFICATION" && (
-              <p>Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
+              <p>Đang chờ nhân viên phụ trách nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
             )}
             {row.status === "COMPLETED" && (
               <p>Đã nghiệm thu và hoàn tất bảo trì.</p>
@@ -299,7 +299,7 @@ export function StaffActions({
                   }
                 >
                   <label className="field-label">
-                    Lý do chuyển quản lý
+                    Lý do chuyển bộ phận phụ trách
                     <textarea
                       name="reason"
                       required
@@ -309,13 +309,13 @@ export function StaffActions({
                     />
                   </label>
                   <button className="button-secondary">
-                    Chuyển quản lý xem xét
+                    Chuyển bộ phận phụ trách xem xét
                   </button>
                 </form>
               </>
             )}
             {row.status === "ESCALATED" && (
-              <p>Đã chuyển cho quản lý xem xét.</p>
+              <p>Đã chuyển đến bộ phận phụ trách xem xét.</p>
             )}
             {row.status === "RESOLVED" && <p>Yêu cầu đã được giải quyết.</p>}
           </>

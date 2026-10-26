@@ -10,7 +10,6 @@ import type { StockDraftLine, StockMovement, StockRole, StoredItem } from '../..
 import { stockCompleteInput, stockCreateInput } from '../../utils/stock';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
-import { StaffPicker } from '../../components/manager/StaffPicker';
 
 const statuses = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 const dateTime = (value: unknown) => date(value, true);
@@ -28,7 +27,7 @@ function StockList({ role }: { role: StockRole }) {
   const data = useApiResource<Page<StockMovement>>(`/${role.toLowerCase()}/stock-movements?${query}`, user?.id, true);
   const update = (key: string, value: string) => setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); return next; }, { replace: true });
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
-    <PageHeader title="Nhập – xuất hàng khách" description={role === 'CUSTOMER' ? 'Gửi yêu cầu gửi/lấy hàng và theo dõi kết quả giao nhận của bạn.' : role === 'MANAGER' ? 'Theo dõi phiếu hàng của khách, phân công nhân viên và đối chiếu kết quả.' : 'Kiểm đếm từng mặt hàng và xác nhận giao nhận các phiếu được giao cho bạn.'}>
+    <PageHeader title="Nhập – xuất hàng khách" description={role === 'CUSTOMER' ? 'Gửi yêu cầu gửi/lấy hàng và theo dõi kết quả giao nhận của bạn.' : role === 'MANAGER' ? 'Theo dõi phiếu hàng của khách, phân công nhân viên và đối chiếu kết quả.' : 'Theo dõi phiếu hàng; kiểm đếm và hoàn tất những phiếu được quản lý giao cho bạn.'}>
       <button className="button-secondary" disabled={data.loading || creating} onClick={data.refresh}>Làm mới</button>
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
@@ -92,25 +91,22 @@ function StockDetail({ role, id }: { role: StockRole; id: string }) {
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}><PageHeader title={data.data?.movementCode ?? 'Chi tiết nhập – xuất hàng'}><Link className="button-secondary" to={roleRoot(role)}>Về danh sách</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader>{notice && <p role="status" className="booking-alert">{notice}</p>}<LoadState loading={data.loading} error={data.error} retry={data.refresh} />{data.data && <StockRecord key={data.data.updatedAt ?? `${data.data.status}:${data.data.assignedStaff?.id}`} row={data.data} role={role} onSaved={message => { setNotice(message); data.refresh(); }} />}</section>;
 }
 function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRole; onSaved: (message: string) => void }) {
-  const { user } = useAuth(), [staff, setStaff] = useState(row.assignedStaff?.id ?? ''), [note, setNote] = useState(''), [quantities, setQuantities] = useState(Object.fromEntries(row.lines.map(line => [line.id, String(line.requestedQty)]))), [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
+  const { user } = useAuth(), [note, setNote] = useState(''), [quantities, setQuantities] = useState(Object.fromEntries(row.lines.map(line => [line.id, String(line.requestedQty)]))), [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
   const [confirmed, setConfirmed] = useState(false);
-  const assignable = role === 'MANAGER' && ['REQUESTED', 'ASSIGNED'].includes(row.status), completable = role === 'STAFF' && row.status === 'ASSIGNED' && row.assignedStaff?.id === user?.id;
+  const completable = role === 'STAFF' && row.status === 'ASSIGNED' && row.assignedStaff?.id === user?.id;
   const submit = async (event: FormEvent) => { event.preventDefault(); if (lock.current) return; setError(''); try {
-    if (!assignable && !completable) throw new Error('Bạn không có quyền thao tác ở trạng thái hiện tại.');
+    if (!completable) throw new Error('Bạn không có quyền thao tác ở trạng thái hiện tại.');
     if (!confirmed) throw new Error('Vui lòng xác nhận trước khi lưu.');
-    const body = assignable ? { staffUserId: staff.trim() } : stockCompleteInput(row, quantities, note);
-    if (assignable && !staff.trim()) throw new Error('Nhập mã tài khoản nhân viên đang hoạt động.');
-    if (assignable && staff.trim() === row.assignedStaff?.id) throw new Error('Nhân viên này đã được phân công. Hãy chọn người khác nếu cần thay đổi.');
+    const body = stockCompleteInput(row, quantities, note);
     lock.current = true; setBusy(true);
-    const saved = await mutate<StockMovement>(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(row.id)}/${assignable ? 'assign' : 'complete'}`, assignable ? 'PATCH' : 'POST', body);
-    setConfirmed(false); onSaved(assignable ? `Đã phân công${saved.assignedStaff?.fullName ? ` cho ${saved.assignedStaff.fullName}` : ' nhân viên'} thành công.` : 'Đã hoàn tất phiếu và cập nhật số lượng hàng.');
+    await mutate<StockMovement>(`/staff/stock-movements/${encodeURIComponent(row.id)}/complete`, 'POST', body);
+    setConfirmed(false); onSaved('Đã hoàn tất phiếu và cập nhật số lượng hàng.');
   } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được phiếu.'); } finally { lock.current = false; setBusy(false); } };
   return <article className="stock-card stock-form"><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Khách hàng', `${row.customer.fullName} · ${row.customer.email}`], ['Hợp đồng', `${row.rentalContract.contractCode} · ${label(row.rentalContract.status)}`], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công'], ['Người phân công', row.assignedBy?.fullName], ['Ngày phân công', dateTime(row.assignedAt)], ['Ngày hoàn tất', dateTime(row.completedAt)], ['Người hoàn tất', row.completedBy?.fullName], ['Ghi chú phiếu', row.note], ['Ghi chú hoàn tất', row.completionNote]]} />
     <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>
     <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2>{row.lines.map(line => <div className="stock-line" key={line.id}><h3>{line.storedItem.name}</h3><p>{line.storedItem.itemCode} · Đơn vị: {line.storedItem.unit}</p><p>Yêu cầu: {line.requestedQty} · Thực tế: {line.actualQty ?? 'Chưa kiểm đếm'} · Tồn hiện tại: {line.storedItem.balance}</p>{line.note && <p>{line.note}</p>}{completable && <label className="field-label">Số lượng thực tế · {line.storedItem.name}<input required type="number" min={1} max={row.type === 'OUT' ? Math.min(1000000, line.storedItem.balance) : 1000000} step={1} value={quantities[line.id]} onChange={event => setQuantities(current => ({ ...current, [line.id]: event.target.value }))} /></label>}</div>)}
-      {assignable && <section className="stock-assignment"><h2>{row.assignedStaff ? 'Đổi nhân viên phụ trách' : 'Phân công nhân viên'}</h2><StaffPicker value={staff} currentStaff={row.assignedStaff} disabled={busy} onChange={value => { setStaff(value); setConfirmed(false); setError(''); }} /></section>}
       {completable && <><label className="field-label">Ghi chú kiểm đếm<textarea maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></label><p>Hoàn tất sẽ {row.type === 'IN' ? 'tăng' : 'giảm'} tồn theo số lượng thực tế, có thể khác số lượng yêu cầu.</p></>}
-      {(assignable || completable) && <><label className="stock-confirmation"><input type="checkbox" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>{assignable ? 'Tôi xác nhận giao phiếu này cho nhân viên đã chọn' : 'Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế'}</span></label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<div className="portal-actions"><button className="button-primary" disabled={busy || !confirmed || (assignable && (!staff.trim() || staff.trim() === row.assignedStaff?.id))}>{busy ? 'Đang lưu…' : assignable ? row.assignedStaff ? 'Lưu thay đổi phân công' : 'Lưu phân công' : 'Hoàn tất phiếu'}</button></div></>}
+      {completable && <><label className="stock-confirmation"><input type="checkbox" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế</span></label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<div className="portal-actions"><button className="button-primary" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Hoàn tất phiếu'}</button></div></>}
     </fieldset></form>
   </article>;
 }

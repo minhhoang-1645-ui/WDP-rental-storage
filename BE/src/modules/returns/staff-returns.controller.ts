@@ -10,7 +10,7 @@ const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'PENDING
 
 @Controller('staff/returns')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF')
 @ApiTags('Staff Return Inspection')
 @ApiBearerAuth('bearerAuth')
 export class StaffReturnsController {

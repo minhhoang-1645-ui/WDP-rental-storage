@@ -493,7 +493,7 @@ export class ReturnsService {
   }
 
   private assertOperational(actor: PublicUser) {
-    if (!['STAFF', 'MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Staff, Manager hoặc Admin được xử lý kiểm tra trả kho.');
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý kiểm tra trả kho.');
   }
 
   private async identity(id: string) {

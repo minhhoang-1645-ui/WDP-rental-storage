@@ -1,3 +1,4 @@
+import { StaffWorkflow, ManagerAssignment } from '../auth/operation-access.js';
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AssignMaintenanceRequestDto, CreateMaintenanceRequestDto, RejectMaintenanceVerificationDto, UpdateMaintenancePriorityDto, VerifyMaintenanceRequestDto } from '../../openapi/api-dtos.js';
@@ -7,9 +8,10 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseMaintenanceQuery } from './maintenance-query.js';
 import { MaintenanceService } from './maintenance.service.js';
 
-@Controller('manager/maintenance')
+@Controller(['manager/maintenance', 'staff/management/maintenance'])
+@StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Maintenance')
 @ApiBearerAuth('bearerAuth')
 export class ManagerMaintenanceController {
@@ -22,13 +24,13 @@ export class ManagerMaintenanceController {
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.createManual(body, key, request.user!); }
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách maintenance cho Manager/Admin' })
+  @ApiOperation({ summary: 'Danh sách maintenance cho nhân viên' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION', 'COMPLETED'] })
   @ApiQuery({ name: 'priority', required: false, enum: ['LOW', 'MEDIUM', 'HIGH'] })
   @ApiQuery({ name: 'category', required: false, enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'] })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-MNT' })
-  @ApiOkResponse({ description: 'Danh sách maintenance phân trang.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiOkResponse({ description: 'Danh sách maintenance phân trang.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
   list(@Query() query: Record<string, unknown>) { return this.maintenance.listManager(parseMaintenanceQuery(query)); }
 
   @Get(':id')
@@ -36,7 +38,7 @@ export class ManagerMaintenanceController {
   @ApiOkResponse({ description: 'Bao gồm ReturnInspection context và next confirmed allocation; không thay đổi allocation.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
   get(@Param('id') id: string) { return this.maintenance.getManager(id); }
 
-  @Patch(':id/assign')
+  @ManagerAssignment() @Patch(':id/assign')
   @ApiOperation({ summary: 'Giao/reassign case chưa hoàn tất cho STAFF' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-assign-001' }) @ApiBody({ type: AssignMaintenanceRequestDto })
   @ApiCreatedResponse({ description: 'Assignment được cập nhật; status/unit không đổi.' }) @ApiBadRequestResponse({ description: 'Target không phải STAFF.' }) @ApiConflictResponse({ description: 'Case đã hoàn tất/concurrent update.' })
   assign(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.assign(id, body, key, request.user!); }

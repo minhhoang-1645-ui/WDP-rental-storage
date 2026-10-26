@@ -1,6 +1,13 @@
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import { userMessage } from '../utils/user-message';
 import { DATA_CHANGED } from './live-events';
+import { operationApiPath } from '../utils/operation-access';
+
+const verifiedRoles = new Map<string, string>();
+function rememberRole(token: string, role: string) {
+  verifiedRoles.set(token, role);
+  if (verifiedRoles.size > 8) verifiedRoles.delete(verifiedRoles.keys().next().value!);
+}
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
@@ -36,7 +43,8 @@ export async function apiRequest<T>(
     headers.set("Accept", "application/json");
     if (request.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const response = await fetch(`${API_URL.replace(/\/$/, "")}${path}`, { ...request, signal: controller.signal, headers });
+    const apiPath = operationApiPath(path, token ? verifiedRoles.get(token) : undefined, request.method ?? 'GET');
+    const response = await fetch(`${API_URL.replace(/\/$/, "")}${apiPath}`, { ...request, signal: controller.signal, headers });
     const payload = response.status === 204 ? null : await response.json().catch((error: unknown) => {
       if (controller.signal.aborted) throw error;
       return null;
@@ -46,6 +54,8 @@ export async function apiRequest<T>(
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
       throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
+    if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
+    if (['/auth/login', '/auth/register'].includes(path) && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
     if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: path })); }
     return payload as T;
   } catch (error) {

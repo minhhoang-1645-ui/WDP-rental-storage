@@ -1,3 +1,4 @@
+import { StaffWorkflow } from '../auth/operation-access.js';
 import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { ApproveTransferDto, CreateTransferDto } from '../../openapi/api-dtos.js';
@@ -6,9 +7,10 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { TransfersService } from './transfers.service.js';
 
-@Controller('manager/transfers')
+@Controller(['manager/transfers', 'staff/management/transfers'])
+@StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Transfers')
 @ApiBearerAuth('bearerAuth')
 export class ManagerTransfersController {
@@ -19,7 +21,7 @@ export class ManagerTransfersController {
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20, description: '1–100.' })
   @ApiQuery({ name: 'status', required: false, enum: ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-TRF', description: 'Tìm transfer, reservation, contract hoặc unit code.' })
-  @ApiOkResponse({ description: 'Danh sách có phân trang và stable sorting.' }) @ApiBadRequestResponse({ description: 'Pagination/filter/search không hợp lệ.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ MANAGER/ADMIN.' })
+  @ApiOkResponse({ description: 'Danh sách có phân trang và stable sorting.' }) @ApiBadRequestResponse({ description: 'Pagination/filter/search không hợp lệ.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ STAFF.' })
   list(@Query() query: Record<string, unknown>) { return this.transfers.list(query); }
   @Get(':id') @ApiOperation({ summary: 'Chi tiết TransferRequest' }) @ApiNotFoundResponse({ description: 'Không tìm thấy TransferRequest.' }) get(@Param('id') id: string) { return this.transfers.get(id); }
   @Post(':id/approve') @ApiOperation({ summary: 'Duyệt và reserve unit đích cùng StorageType' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })

@@ -1,3 +1,4 @@
+import { isStaffWorkflow } from '../../utils/operation-access';
 import {
   AlertTriangle,
   ArrowRight,
@@ -93,13 +94,9 @@ export function ManagerOverviewPage() {
         </button>
       </PageHeader>
       <ActivitySummary />
-      <WorkHub title="Bàn làm việc" description="Tiếp nhận yêu cầu, giao việc và kiểm tra kết quả theo đúng thứ tự xử lý." actions={[
-        { title: 'Duyệt yêu cầu đặt kho', description: 'Xem khách hàng, kỳ thuê và báo giá trước khi xác nhận.', to: '/manager/reservations?status=PENDING', icon: ClipboardCheck, count: data ? data.reservations.items.filter(row => row.status === 'PENDING').length : '—', tone: 'attention' },
-        { title: 'Phân công nhân viên', description: 'Giao hỗ trợ, bảo trì và phiếu nhập – xuất cho nhân viên.', to: '/manager/assignments', icon: Headphones },
-        { title: 'Xác nhận lịch bàn giao', description: 'Xem lịch khách đề xuất để nhân viên chuẩn bị nhận khách.', to: '/manager/operations/appointments?status=REQUESTED', icon: CalendarClock, count: data ? data.appointments.items.filter(row => row.status === 'REQUESTED').length : '—' },
+      <WorkHub title="Bàn làm việc" description="Theo dõi cơ sở, hợp đồng và xử lý các khoản thanh toán." actions={[
         { title: 'Đối chiếu thanh toán', description: 'Kiểm tra khoản tiền thực nhận và thông báo chuyển khoản.', to: '/manager/payment-submissions', icon: ClipboardCheck },
-        { title: 'Duyệt gia hạn', description: 'Đối chiếu hạn cũ – mới và báo giá trước khi duyệt.', to: '/manager/operations/renewals', icon: Warehouse, count: data ? first(data.summary, 'pendingRenewals') || '0' : '—' },
-        { title: 'Nghiệm thu bảo trì', description: 'Nhân viên đã sửa xong: đối chiếu kết quả trước khi mở lại kho.', to: '/manager/operations/maintenance?status=AWAITING_VERIFICATION', icon: HardHat },
+        { title: 'Phân công nhân viên', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.', to: '/manager/assignments', icon: Headphones },
       ]} />
       <LoadState loading={loading} error={error} retry={refresh} />
       {data && (
@@ -184,7 +181,7 @@ export function ManagerOverviewPage() {
             <section className="manager-section">
               <h2>Công việc cần theo dõi</h2>
               <div className="portal-work-list">
-                {work.map(({ key, name, path, icon: Icon }) => (
+                {work.filter(item => !isStaffWorkflow(item.path.split('?')[0].split('/').at(-1) ?? '')).map(({ key, name, path, icon: Icon }) => (
                   <Link key={key} to={path}>
                     <Icon size={18} />
                     <span>{name}</span>

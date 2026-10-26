@@ -118,7 +118,7 @@ export const labels: Record<string, string> = {
   IN_PROGRESS: "Đang xử lý",
   AWAITING_VERIFICATION: "Chờ nghiệm thu",
   ASSIGNED: "Đã phân công",
-  ESCALATED: "Chuyển quản lý",
+  ESCALATED: "Chuyển bộ phận phụ trách",
   RESOLVED: "Đã giải quyết",
   LOW: "Thấp",
   MEDIUM: "Trung bình",
@@ -158,7 +158,7 @@ export const labels: Record<string, string> = {
   ACCESS_CODE_ISSUE: "Sự cố mã truy cập",
   PAYMENT_SUPPORT: "Hỗ trợ thanh toán",
   STORED_ITEM_CONCERN: "Vấn đề đồ lưu trữ",
-  MANAGER_RESOLVED: "Quản lý đã giải quyết",
+  MANAGER_RESOLVED: "Đã xử lý sau chuyển tiếp",
   TRANSFER_RECOMMENDED: "Đề xuất chuyển kho",
   NO_ACTION_REQUIRED: "Không cần xử lý thêm",
   MANUAL: "Tạo thủ công",
@@ -265,7 +265,7 @@ export const resources: Record<
   },
   "support-requests": {
     title: "Hỗ trợ khách hàng",
-    description: "Phân công hỗ trợ và xử lý vấn đề chuyển lên quản lý.",
+    description: "Tiếp nhận và giải quyết phần việc hỗ trợ của khách hàng.",
     statuses: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ESCALATED", "RESOLVED"],
   },
   "deposit-settlements": {

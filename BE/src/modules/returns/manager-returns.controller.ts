@@ -1,3 +1,4 @@
+import { StaffWorkflow } from '../auth/operation-access.js';
 import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -6,16 +7,17 @@ import { ReturnsService, type ReturnListQuery } from './returns.service.js';
 
 const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'COMPLETED'] as const;
 
-@Controller('manager/returns')
+@Controller(['manager/returns', 'staff/management/returns'])
+@StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Return')
 @ApiBearerAuth('bearerAuth')
 export class ManagerReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho Manager/Admin', description: 'Có customer, billing summary, renewal context và future allocation risk.' })
+  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho nhân viên', description: 'Có customer, billing summary, renewal context và future allocation risk.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
@@ -23,11 +25,11 @@ export class ManagerReturnsController {
   @ApiQuery({ name: 'date', required: false, example: '2026-10-08', description: 'Ngày tạo theo múi giờ Asia/Bangkok, YYYY-MM-DD.' })
   @ApiOkResponse({ description: 'Stable pagination theo createdAt desc, id asc.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
   list(@Query() input: Record<string, unknown>) { return this.returns.listManagerReturns(this.query(input)); }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết yêu cầu trả kho cho Manager/Admin' })
+  @ApiOperation({ summary: 'Chi tiết yêu cầu trả kho cho nhân viên' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiOkResponse({ description: 'Customer, rental, inspections, billing, renewals và future allocations.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu trả kho.' })

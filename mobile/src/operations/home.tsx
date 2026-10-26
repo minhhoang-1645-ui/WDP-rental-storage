@@ -1,3 +1,4 @@
+import { isStaffWorkflow } from '@/utils/operation-access';
 import { ScrollView, Text, View } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
@@ -25,19 +26,15 @@ export function ManagerHome() {
   const data = useResource<Row>(user?.role === 'MANAGER' ? '/manager/dashboard/summary' : null);
   const count = (key: string) => typeof data.data?.[key] === 'number' ? data.data[key] as number : '—';
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Quản lý cơ sở" title="Bàn làm việc" description={`Chào ${user?.fullName ?? ''}. Tiếp nhận, phân công và duyệt kết quả theo từng yêu cầu.`} />
+    <PageHeader eyebrow="Quản lý cơ sở" title="Bàn làm việc" description={`Chào ${user?.fullName ?? ''}. Theo dõi cơ sở, hợp đồng và xử lý các khoản thanh toán.`} />
     <Button title="Làm mới tổng quan" onPress={data.refresh} disabled={data.loading} />
     <ActivitySummary />
     <WorkHub title="Việc cần xử lý" description="Đi thẳng đến nhóm hồ sơ, xem chi tiết trước khi xác nhận." actions={[
-      { title: 'Duyệt yêu cầu đặt kho', path: '/manager/reservations', description: 'Đối chiếu khách hàng, kỳ thuê và báo giá.', count: count('pendingReservations') },
-      { title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.' },
-      { title: 'Lịch bàn giao', path: '/manager/appointments', description: 'Xác nhận lịch để nhân viên chuẩn bị bàn giao.' },
       { title: 'Đối chiếu thanh toán', path: '/manager/payment-submissions', description: 'Kiểm tra thông báo chuyển khoản và khoản tiền thực nhận.' },
-      { title: 'Duyệt gia hạn', path: '/manager/renewals', description: 'Đối chiếu hạn cũ – mới và báo giá.', count: count('pendingRenewals') },
-      { title: 'Nghiệm thu bảo trì', path: '/manager/maintenance', description: 'Xem kết quả nhân viên gửi và quyết định nghiệm thu.' },
+      { title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.' },
     ]} />
     {data.error && <ErrorState message={data.error} onRetry={data.refresh} />}
-    <FunctionMenu groups={operationGroups.map(group => ({ title: group.title, items: group.keys.map(key => ({ title: resources[key].title, path: `/manager/${key}`, description: group.title })) }))} />
+    <FunctionMenu groups={operationGroups.map(group => ({ ...group, keys: group.keys.filter(key => !isStaffWorkflow(key)) })).filter(group => group.keys.length).map(group => ({ title: group.title, items: group.keys.map(key => ({ title: resources[key].title, path: `/manager/${key}`, description: group.title })) }))} />
     <Disclosure title="Thống kê cơ sở">{data.loading ? <LoadingState /> : data.data && <View style={styles.row}>{summaryMetrics.map(([key, title]) => <MetricCard key={key} label={title} value={count(key)} tone={key === 'overdueRentals' ? 'danger' : 'navy'} />)}</View>}</Disclosure>
     <Navigation title="Báo cáo vận hành" path="/manager/reports" />
     <Navigation title="Tài khoản và đăng xuất" path="/manager/account" />

@@ -27,7 +27,8 @@ Phạm vi hiện tại và kiểm tra sau merge: [MERGE_AUDIT_2026-10-15.md](../
 - Customer: `/customer/*`; Staff: `/staff/*`.
 - Manager: `/manager`, `/manager/<phân-hệ>`, `/manager/<phân-hệ>/<id>`, `/manager/reports`.
 - Admin: `/admin`, `/admin/dashboard`, `/admin/users`, `/admin/users/new`, `/admin/users/:id`; `/admin/account` phục vụ tài khoản phiên và đăng xuất.
-- Manager có `/manager/assignments` để xem, lọc công việc và mở chi tiết phân công hỗ trợ/bảo trì. URL Admin cũ về `/admin` hoặc `/admin/users`, không mở vận hành.
+- Staff tiếp nhận đặt kho, tư vấn, hỗ trợ; xác nhận bàn giao; xử lý nhập–xuất hàng, gia hạn, chuyển/trả kho và bảo trì tại `/staff/<phân-hệ>`. Phân công nhân viên giữ tại `/manager/assignments`; Staff không có màn hình hoặc quyền phân công.
+- Manager giữ báo cáo, kho/bảng giá, khách hàng, hợp đồng, thanh toán và quyết toán cọc. URL Admin cũ về `/admin` hoặc `/admin/users`, không mở vận hành.
 - Mở URL khác vai trò sẽ quay về khu vực của tài khoản; chưa đăng nhập thì về `/login`. Route `/unsupported` cũ chỉ chuyển về đúng role.
 
 ## Cấu hình Backend

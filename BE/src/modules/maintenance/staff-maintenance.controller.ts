@@ -29,7 +29,7 @@ export class StaffMaintenanceController {
   }
 
   @Get()
-  @Roles('STAFF', 'MANAGER', 'ADMIN')
+  @Roles('STAFF')
   @ApiOperation({ summary: 'Danh sách maintenance vận hành', description: 'STAFF, MANAGER hoặc ADMIN. Không chứa dữ liệu tài chính.' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION', 'COMPLETED'] })
@@ -40,7 +40,7 @@ export class StaffMaintenanceController {
   list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.maintenance.listStaff(parseMaintenanceQuery(query), request.user!); }
 
   @Get(':id')
-  @Roles('STAFF', 'MANAGER', 'ADMIN')
+  @Roles('STAFF')
   @ApiOperation({ summary: 'Chi tiết maintenance vận hành cho Staff' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiOkResponse({ description: 'Unit, assignment và work fields; không chứa financial history.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
   get(@Param('id') id: string) { return this.maintenance.getStaff(id); }

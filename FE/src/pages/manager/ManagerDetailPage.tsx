@@ -29,6 +29,8 @@ import {
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
+import { StaffActions } from '../staff/StaffActions';
+import { staffResources, type StaffResource } from '../staff/staff-resources';
 import { RenewalReview } from '../../components/manager/RenewalReview';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
@@ -89,6 +91,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}
               <DetailContent row={row} resource={resource} />
+              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
                   key={`${user?.id}:${id}:${row.updatedAt ?? ""}`}
@@ -166,7 +169,7 @@ const timelineLabels: Record<string, string> = {
   approvedAt: "Phê duyệt",
   rejectedAt: "Từ chối",
   verifiedAt: "Nghiệm thu",
-  escalatedAt: "Chuyển quản lý",
+  escalatedAt: "Chuyển bộ phận phụ trách",
   resolvedAt: "Giải quyết",
   paidAt: "Thanh toán đủ",
   refundedAt: "Ghi nhận hoàn tiền",
@@ -838,7 +841,7 @@ const noteLabels: Record<string, string> = {
   handoverNote: "Biên bản bàn giao",
   workNote: "Kết quả công việc",
   verificationNote: "Ghi chú nghiệm thu",
-  escalationReason: "Lý do chuyển quản lý",
+  escalationReason: "Lý do chuyển bộ phận phụ trách",
   resolutionNote: "Kết quả xử lý",
   rejectionReason: "Lý do từ chối",
   reviewNote: "Ghi chú duyệt",

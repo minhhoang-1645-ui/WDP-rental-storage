@@ -13,7 +13,7 @@ import {
 } from "../../components/manager/portal-data";
 import { RecordPicker } from "../../components/manager/PortalUi";
 import { renewalReviewIssue } from '../../utils/renewal-review';
-import { StaffPicker } from '../../components/manager/StaffPicker';
+import { canOperateResource } from '../../utils/operation-access';
 
 export function ManagerActions({
   resource,
@@ -39,7 +39,6 @@ export function ManagerActions({
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
-  const [staff, setStaff] = useState("");
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
   const [target, setTarget] = useState("");
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
@@ -136,6 +135,7 @@ export function ManagerActions({
       </label>
     </>
   );
+  if (!canOperateResource(user?.role ?? '', resource)) return null;
   return (
     <div className="portal-form">
       {error && (
@@ -144,6 +144,7 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
+        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <form className="portal-form" onSubmit={event => { event.preventDefault(); void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST'); }}><p>Chỉ xác nhận sau khi đã chuyển hàng thực tế sang kho đích.</p><label className="portal-checkbox"><input type="checkbox" required />Tôi đã đối chiếu và hoàn tất chuyển kho thực tế</label><button className="button-primary" disabled={busy}>Hoàn tất chuyển kho</button></form>}
         {resource === "reservations" &&
           (row.status === "PENDING" ? (
             <form
@@ -277,7 +278,7 @@ export function ManagerActions({
             <>
               <p>
                 Duyệt sẽ kiểm tra xung đột lịch và tạo hóa đơn gia hạn. Thời hạn
-                chỉ được cập nhật khi hoàn tất thanh toán theo backend.
+                chỉ được cập nhật khi hoàn tất thanh toán theo quy định.
               </p>
               <p className="manager-action-copy">Đối chiếu khách hàng, hợp đồng/kho, hạn cũ–mới, báo giá chốt và kế hoạch hóa đơn ở mục “Thông tin đối chiếu gia hạn”.</p>
               {renewalReviewIssue(row) && <p className="booking-alert is-error" role="alert">{renewalReviewIssue(row)}</p>}
@@ -557,26 +558,7 @@ export function ManagerActions({
         {["maintenance", "support-requests"].includes(resource) &&
           !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
             <>
-              {user?.role === "MANAGER" && <form
-                className="portal-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run(
-                    `${root}/assign`,
-                    "PATCH",
-                    { staffUserId: staff.trim() },
-                    true,
-                  );
-                }}
-              >
-                <StaffPicker value={staff} onChange={setStaff} disabled={busy} currentStaff={first(row, 'assignedStaff.id') ? { id: first(row, 'assignedStaff.id'), fullName: first(row, 'assignedStaff.fullName') } : undefined} />
-                <button
-                  className="button-secondary"
-                  disabled={busy || !staff.trim()}
-                >
-                  Phân công nhân viên
-                </button>
-              </form>}
+
               <form
                 className="portal-form portal-form-divider"
                 onSubmit={(event) => {
@@ -714,7 +696,7 @@ export function ManagerActions({
         {resource === "support-requests" &&
           !["RESOLVED", "ESCALATED"].includes(first(row, "status")) && (
             <p>
-              Nhân viên phụ trách xử lý yêu cầu. Quản lý giải quyết khi yêu cầu
+              Nhân viên phụ trách xử lý yêu cầu và xem xét khi yêu cầu
               được chuyển lên.
             </p>
           )}

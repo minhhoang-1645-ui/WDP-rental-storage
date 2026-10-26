@@ -10,7 +10,7 @@ const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 
 @Controller('staff/appointments')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF')
 @ApiTags('Staff Handover')
 @ApiBearerAuth('bearerAuth')
 export class StaffAppointmentsController {

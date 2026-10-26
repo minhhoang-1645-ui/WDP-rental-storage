@@ -29,14 +29,12 @@ import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
 import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
 import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
 import { StaffLayout } from "../pages/staff/StaffLayout";
-import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
-import { StaffTransfersPage } from "../pages/staff/StaffTransfersPage";
-import {
-  staffResources,
-  type StaffResource,
-} from "../pages/staff/staff-resources";
+import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
+import { ManagerListPage } from "../pages/manager/ManagerListPage";
+import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
+import { staffWorkflows } from "../utils/operation-access";
 import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
 import { AdminLayout } from "../pages/admin/AdminLayout";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
@@ -63,14 +61,7 @@ function operationalRoutes(base: string) {
   return (
     <>
       <Route index element={<ManagerDashboardPage />} />
-      <Route path="inquiries" element={<ManagerInquiriesPage />} />
-      <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
       <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
-      <Route path="reservations" element={<ManagerReservationsPage />} />
-      <Route
-        path="reservations/:id"
-        element={<ManagerReservationDetailPage />}
-      />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
@@ -82,8 +73,6 @@ function operationalRoutes(base: string) {
       <Route path="customers" element={<ManagerCustomersPage />} />
       <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
       <Route path="reports" element={<ManagerReportsPage />} />
-      <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
-      <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
       <Route path="operations/:resource" element={<ManagerResourcePage />} />
       <Route
         path="operations/:resource/:id"
@@ -163,32 +152,27 @@ export function AppRouter() {
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
-          {(Object.keys(staffResources) as StaffResource[]).map((resource) => (
-            <Route key={resource} path={resource}>
-              <Route
-                index
-                element={<StaffListPage key={resource} resource={resource} />}
-              />
-              <Route
-                path=":id"
-                element={<StaffRecordPage key={resource} resource={resource} />}
-              />
-            </Route>
-          ))}
-          <Route
-            path="check-in"
-            element={<Navigate to="/staff/appointments" replace />}
-          />
-          <Route path="transfers" element={<StaffTransfersPage />} />
-          <Route path="transfers/:id" element={<StaffTransfersPage />} />
+          <Route path="inquiries" element={<ManagerInquiriesPage />} />
+          <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
+          <Route path="reservations" element={<ManagerReservationsPage />} />
+          <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
+          {staffWorkflows.filter(resource => !['inquiries', 'reservations', 'stock-movements'].includes(resource)).map(resource => <Route key={resource} path={resource}>
+            <Route index element={<ManagerListPage key={resource} resource={resource} />} />
+            <Route path=":id" element={<ManagerDetailPage key={resource} resource={resource} />} />
+          </Route>)}
+          <Route path="rentals" element={<StaffListPage resource="rentals" />} />
+          <Route path="rentals/:id" element={<StaffRecordPage resource="rentals" />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations/:resource" element={<ManagerResourcePage />} />
+          <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
+          <Route path="check-in" element={<Navigate to="/staff/appointments" replace />} />
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>
       <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
-          <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
-            <Route path="assignments" element={<ManagerAssignmentsPage />} />
-          </Route>
+          <Route path="assignments" element={<ManagerAssignmentsPage />} />
           {operationalRoutes("/manager")}
         </Route>
       </Route>

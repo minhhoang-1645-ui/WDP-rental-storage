@@ -251,6 +251,7 @@
   font-size: 11px;
 }
 .portal-enhanced .manager-table-wrap {
+  position: relative;
   border: 1px solid #e0e7ef;
   border-radius: 9px;
   background: #fff;

@@ -106,7 +106,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
                     ["Ghi chú bàn giao", first(row, "handoverNote")],
                     ["Kết quả sửa chữa", first(row, "workNote")],
                     ["Kết quả hỗ trợ", first(row, "resolutionNote")],
-                    ["Lý do chuyển quản lý", first(row, "escalationReason")],
+                    ["Lý do chuyển bộ phận phụ trách", first(row, "escalationReason")],
                   ]}
                 />
               </section>

@@ -45,7 +45,7 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
         {[...options].sort((a, b) => a[1].localeCompare(b[1], 'vi')).map(([id, name]) => <option key={id} value={id}>{name} · {id}</option>)}
       </select>
     </label>
-    <p id={hintId} className="staff-assignee-hint">Chỉ hiển thị tài khoản Staff đang hoạt động, để Manager giao đúng người thực hiện.</p>
+    <p id={hintId} className="staff-assignee-hint">Chọn nhân viên kho đang hoạt động để giao việc.</p>
     {current?.error && <div className="staff-assignee-hint" role="status">Không tải được danh sách Staff mới nhất. Bạn có thể chọn dữ liệu đang có hoặc <button type="button" className="portal-text-button" disabled={disabled} onClick={() => setRevision(value => value + 1)}>Tải lại danh sách</button>.</div>}
     {showManual ? <div><label className="field-label">Mã tài khoản nhân viên<input required maxLength={100} autoComplete="off" spellCheck={false} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} placeholder="Dán mã tài khoản khi cần" /></label><small>Chỉ dùng khi cần giữ nguyên người đã được phân công trong hồ sơ cũ.</small></div> : <button className="portal-text-button" type="button" disabled={disabled} onClick={() => { setManual(true); onChange(''); }}>Nhập mã nhân viên khác</button>}
   </div>;

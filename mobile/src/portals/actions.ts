@@ -20,13 +20,13 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   }
   if (resource === 'maintenance' && assigned) {
     if (row.status === 'OPEN') add('Bắt đầu bảo trì', '/start', [], true);
-    if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi quản lý nghiệm thu.');
+    if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi nhân viên phụ trách nghiệm thu.');
   }
   if (resource === 'support-requests' && assigned) {
     if (row.status === 'ASSIGNED') add('Bắt đầu hỗ trợ', '/start', [], true);
     if (row.status === 'IN_PROGRESS') {
       add('Hoàn tất hỗ trợ', '/resolve', [choice('resolutionType', 'Kết quả hỗ trợ', ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'], 'ON_SITE_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true, 4000)], true);
-      add('Chuyển quản lý xem xét', '/escalate', [note('reason', 'Lý do chuyển quản lý', true, 4000)], true);
+      add('Chuyển bộ phận phụ trách xem xét', '/escalate', [note('reason', 'Lý do chuyển bộ phận phụ trách', true, 4000)], true);
     }
   }
   if (resource === 'transfers' && row.status === 'APPROVED') add('Hoàn tất chuyển kho', '/complete', [], false, 'Đối chiếu kho nguồn, kho đích và hợp đồng. Chỉ xác nhận sau khi đã chuyển thực tế.');

@@ -26,7 +26,7 @@ export class MaintenanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   createManual(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    if (!['STAFF', 'MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Bạn không có quyền báo maintenance.');
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
     const parsed = this.manualInput(input, key);
     return this.createManualTransaction(parsed, actor);
   }
@@ -177,7 +177,7 @@ export class MaintenanceService {
     actor: PublicUser,
     role: 'STAFF' | 'MANAGER',
   ) {
-    if (role === 'MANAGER' && !['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được thực hiện thao tác này.');
+    if (action === 'ASSIGN' ? !['MANAGER', 'ADMIN'].includes(actor.role) : actor.role !== 'STAFF') throw new ForbiddenException(action === 'ASSIGN' ? 'Chỉ quản lý được phân công nhân viên.' : 'Chỉ nhân viên được thực hiện thao tác này.');
     const safeKey = this.idempotencyKey(key);
     const identity = await this.identity(id);
     return this.serializable(async (tx) => {

@@ -1,3 +1,4 @@
+import { canOperateResource } from '@/utils/operation-access';
 import { idOf, label, options, rows, text, type Row } from './model';
 import type { FormAction, FormField } from './form';
 import { firstIssue as renewalReviewIssue } from './renewal-validation';
@@ -22,9 +23,11 @@ function serviceValidation(input: Row) {
   if (!/^[A-Za-z0-9_]{2,50}$/.test(String(input.code))) return 'Mã dịch vụ chỉ gồm chữ, số và dấu gạch dưới.';
   if (input.kind === 'PURCHASE' ? input.billingUnit !== 'ONE_TIME' : !['DAY', 'MONTH'].includes(String(input.billingUnit))) return 'Dịch vụ mua dùng Một lần; dịch vụ thuê dùng Ngày hoặc Tháng.';
 }
-const staffField = (role: string): FormField => role === 'ADMIN'
-  ? { name: 'staffUserId', title: 'Nhân viên phụ trách', required: true, optionsPath: '/admin/users?role=STAFF&accountStatus=ACTIVE', optionsAccept: row => row.role === 'STAFF' && row.accountStatus === 'ACTIVE', optionLabel: row => `${text(row, 'fullName')} · ${text(row, 'email')}` }
-  : { name: 'staffUserId', title: 'Mã tài khoản nhân viên do quản trị viên cung cấp', required: true, maxLength: 100 };
+export function assignmentAction(resource: string, row: Row): FormAction {
+  return { title: 'Phân công nhân viên', path: `/manager/${resource}/${encodeURIComponent(idOf(row))}/assign`, method: 'PATCH', idempotent: resource !== 'stock-movements', fields: [
+    { name: 'staffUserId', title: 'Nhân viên phụ trách', required: true, optionsPath: '/manager/staff', initial: text(row, 'assignedStaff.id'), optionLabel: item => `${text(item, 'fullName')} · ${text(item, 'email')}` }, confirm(),
+  ] };
+}
 
 export function createAction(resource: string): FormAction | undefined {
   if (resource === 'additional-services') return { title: 'Tạo dịch vụ bổ sung', path: '/manager/additional-services', method: 'POST', fields: serviceFields(), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) };
@@ -39,7 +42,7 @@ export function createAction(resource: string): FormAction | undefined {
 }
 
 export function recordActions(resource: string, row: Row, role: string): FormAction[] {
-  if (role !== 'MANAGER') return [];
+  if (!canOperateResource(role, resource)) return [];
   const root = `/manager/${resource}/${encodeURIComponent(idOf(row))}`;
   const actions: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], method: 'POST' | 'PATCH' = 'POST', idempotent = false, description?: string) => actions.push({ title, path: root + suffix, method, fields: [...fields, confirm()], idempotent, description });
@@ -63,7 +66,6 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     add('Từ chối thông báo chuyển khoản', '/reject', [note('reason', 'Lý do từ chối', true, 1000)]);
   }
   if (['maintenance', 'support-requests'].includes(resource) && !['COMPLETED', 'RESOLVED'].includes(String(row.status))) {
-    add('Phân công nhân viên', '/assign', [staffField(role)], 'PATCH', true, role === 'MANAGER' ? 'Nhập mã tài khoản nhân viên do quản trị viên cung cấp. Hệ thống kiểm tra quyền trước khi phân công.' : undefined);
     add('Đổi mức ưu tiên', '/priority', [select('priority', 'Ưu tiên', priorities, text(row, 'priority'))], 'PATCH', true);
   }
   if (resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION') {

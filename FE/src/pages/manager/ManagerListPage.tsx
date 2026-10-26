@@ -5,6 +5,7 @@ import { OperationsLink as Link } from "../../components/manager/OperationsLink"
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
 import { allPages } from "../../services/portal";
+import { useLiveRefresh } from '../../services/live-events';
 import {
   code,
   customer,
@@ -113,6 +114,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const total = local ? items.length : (current?.data?.total ?? 0);
   const visible = local ? items.slice((page - 1) * 20, page * 20) : items;
   const refresh = () => setRevision((v) => v + 1);
+  useLiveRefresh(path, refresh);
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {

@@ -359,7 +359,7 @@ export class RenewalsService {
   }
 
   private assertManager(actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý gia hạn.');
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý gia hạn.');
   }
 
   private lockUnits(tx: Prisma.TransactionClient, unitIds: string[]) {

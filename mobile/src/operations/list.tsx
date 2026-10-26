@@ -1,3 +1,4 @@
+import { isStaffWorkflow } from '@/utils/operation-access';
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -12,24 +13,24 @@ import { Button, Field, Navigation, Panel, styles } from './ui';
 import { RecordView, summary } from './record-view';
 import { Availability } from './availability';
 
-export function ResourceList() {
+export function ResourceList({ resource: preset }: { resource?: string } = {}) {
   const params = useLocalSearchParams<{ resource: string }>();
   const { user } = useAuth();
-  return <List key={`${user?.id}:${params.resource}`} resource={String(params.resource)} />;
+  return <List key={`${user?.id}:${params.resource}`} resource={preset ?? String(params.resource)} />;
 }
 function List({ resource }: { resource: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined;
-  const allowed = user?.role === 'MANAGER';
+  const allowed = user?.role === 'MANAGER' ? !isStaffWorkflow(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
   const data = useResource<Row | Row[]>(allowed && config ? config.path : null, !config?.shape);
   const [search, setSearch] = useState(''), [status, setStatus] = useState('');
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const root = operationRoot(user?.role ?? '');
-  if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." /><Navigation title="Về tổng quan" path={root} /></View>;
+  if (!allowed || !config) return <View style={styles.page}><EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : (data.data as Row | undefined)?.[config.shape === 'catalog' ? 'products' : 'items']);
-  const shown = items.filter(item => (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi-VN').includes(search.toLocaleLowerCase('vi-VN'))));
-  const create = createAction(resource);
-  const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'ADMIN' ? 'Quản trị · Vận hành' : 'Quản lý'} title={config.title} description="Dữ liệu thực tế và thao tác theo quyền hiện có." />
+  const shown = items.filter(item => (resource !== 'inquiries' || item.requestType === 'INQUIRY') && (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi-VN').includes(search.toLocaleLowerCase('vi-VN'))));
+  const create = (user?.role === 'STAFF' ? isStaffWorkflow(resource) : !isStaffWorkflow(resource)) ? createAction(resource) : undefined;
+  const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={config.title} description="Dữ liệu thực tế và thao tác theo quyền hiện có." />
     <Navigation title="Về tổng quan" path={root} />
     <Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading} />
     {create && !action && <Button title={create.title} onPress={() => { setNotice(''); setAction(create); }} />}

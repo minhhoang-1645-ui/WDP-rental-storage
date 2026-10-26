@@ -3,6 +3,13 @@ import { fetch } from 'expo/fetch';
 import { authStorage } from '@/services/auth-storage';
 import { userMessage } from '@/utils/user-message';
 import { notifyDataChanged } from './live-events';
+import { operationApiPath } from '@/utils/operation-access';
+
+const verifiedRoles = new Map<string, string>();
+function rememberRole(token: string, role: string) {
+  verifiedRoles.set(token, role);
+  if (verifiedRoles.size > 8) verifiedRoles.delete(verifiedRoles.keys().next().value!);
+}
 
 const fallbackUrl = process.env.EXPO_OS === 'android'
   ? 'http://10.0.2.2:3000/api'
@@ -39,7 +46,8 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   try {
   let response: Response;
   try {
-    response = await fetch(`${apiUrl}${path}`, {
+    const apiPath = operationApiPath(path, token ? verifiedRoles.get(token) : undefined, request.method ?? 'GET');
+    response = await fetch(`${apiUrl}${apiPath}`, {
       ...request,
       signal: controller.signal,
       headers: {
@@ -72,6 +80,8 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
         : `Yêu cầu thất bại (${response.status})`;
     throw new ApiError(userMessage(message), response.status, payload);
   }
+  if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
+  if (path === '/auth/login' && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
   if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path)) notifyDataChanged(path);
   return payload as T;
   } finally {

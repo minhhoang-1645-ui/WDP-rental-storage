@@ -1,4 +1,5 @@
 import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, CircleDollarSign, Wallet } from 'lucide-react';
+import { isStaffWorkflow } from '../../utils/operation-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
 
 const managerNavigation: InternalNavItem[] = [
@@ -25,5 +26,9 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/customers', label: 'Danh bạ khách hàng', icon: Users, group: 'Kho & khách hàng' },
 ];
 export function operationsNavigation(base = '/manager'): InternalNavItem[] {
-  return managerNavigation.map(item => ({ ...item, to: base + item.to.slice('/manager'.length), label: item.end && base !== '/manager' ? 'Tổng quan vận hành' : item.label }));
+  return managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({ ...item, to: base + item.to.slice('/manager'.length), label: item.end && base !== '/manager' ? 'Tổng quan vận hành' : item.label }));
+}
+
+export function staffNavigation(): InternalNavItem[] {
+  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label }));
 }

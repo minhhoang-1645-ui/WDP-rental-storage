@@ -261,7 +261,7 @@ export class BookingService {
       include: { customer: true, storageType: true },
     });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
-    if (record.customerId !== user.id && !['MANAGER', 'ADMIN'].includes(user.role)) {
+    if (record.customerId !== user.id && !['STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) {
       throw new ForbiddenException('Bạn không có quyền xem yêu cầu đặt kho này.');
     }
     return this.toReservation(record);
@@ -290,7 +290,7 @@ export class BookingService {
   }
 
   async updateManagerReservationStatus(id: string, input: Record<string, unknown>, manager: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(manager.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được cập nhật reservation.');
+    if (manager.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được cập nhật yêu cầu đặt kho.');
     const requestedStatus = typeof input.status === 'string' ? input.status : '';
     if (!managerReservationStatuses.includes(requestedStatus as ManagerReservationStatus)) {
       throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
@@ -382,6 +382,7 @@ export class BookingService {
   }
 
   async updateManagerInquiry(id: string, input: Record<string, unknown>, manager: PublicUser) {
+    if (manager.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý yêu cầu tư vấn.');
     const status = typeof input.status === 'string' ? input.status : '';
     const internalNotes = typeof input.internalNotes === 'string' ? input.internalNotes.trim().slice(0, 2000) : undefined;
     const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { OR: [{ id }, { inquiryCode: id }] } });

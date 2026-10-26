@@ -1,3 +1,4 @@
+import { isStaffWorkflow } from '@/utils/operation-access';
 import { resources, type ResourceDefinition } from '@/operations/model';
 
 export type PortalRole = 'CUSTOMER' | 'STAFF';
@@ -12,8 +13,9 @@ export function portalResource(role: PortalRole, key: string): ResourceDefinitio
   return config ? { ...config, path: `/${role.toLowerCase()}/${key}`, shape: undefined } : undefined;
 }
 export function relatedResource(root: string, key: string): string | undefined {
-  if (root === '/manager') return Object.hasOwn(resources, key) ? key : undefined;
+  if (root === '/manager') return Object.hasOwn(resources, key) && !isStaffWorkflow(key) ? key : undefined;
+  if (root === '/staff') return isStaffWorkflow(key) || key === 'rentals' ? key : undefined;
   if (root === '/admin') return key === 'users' ? key : undefined;
   if (root === '/customer' && key === 'payments') return 'payment-history';
-  if (root === '/customer' || root === '/staff') return portalResource(root === '/customer' ? 'CUSTOMER' : 'STAFF', key) ? key : undefined;
+  if (root === '/customer') return portalResource('CUSTOMER', key) ? key : undefined;
 }

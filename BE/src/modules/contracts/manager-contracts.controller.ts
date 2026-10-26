@@ -1,3 +1,4 @@
+import { StaffLookup } from '../auth/operation-access.js';
 import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -6,16 +7,17 @@ import { ContractsService, type ContractListQuery } from './contracts.service.js
 
 const statuses = ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE', 'COMPLETED'] as const;
 
-@Controller('manager/contracts')
+@Controller(['manager/contracts', 'staff/management/contracts'])
+@StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Contract')
 @ApiBearerAuth('bearerAuth')
 export class ManagerContractsController {
   constructor(private readonly contracts: ContractsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách RentalContract', description: 'MANAGER hoặc ADMIN. Read-only trong milestone này.' })
+  @ApiOperation({ summary: 'Danh sách RentalContract', description: 'STAFF. Read-only trong milestone này.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20, description: '1–100.' })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001', description: 'Tìm contract code, reservation reference, tên/email khách hoặc unit code.' })
@@ -23,17 +25,17 @@ export class ManagerContractsController {
   @ApiOkResponse({ description: 'Danh sách sắp xếp ổn định theo createdAt mới nhất.', schema: { example: { page: 1, limit: 20, total: 2, items: [{ contractCode: 'WDP-2026-AB12CD34-C01', status: 'PENDING_PAYMENT', reservation: { reference: 'WDP-2026-AB12CD34', quantity: 2, customer: { fullName: 'Nguyen Van A' } }, storageUnit: { unitCode: 'SM-B12-001' } }, { contractCode: 'WDP-2026-AB12CD34-C02', status: 'PENDING_PAYMENT', reservation: { reference: 'WDP-2026-AB12CD34', quantity: 2, customer: { fullName: 'Nguyen Van A' } }, storageUnit: { unitCode: 'SM-B12-002' } }] } } })
   @ApiBadRequestResponse({ description: 'Pagination, search hoặc status không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER và STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   list(@Query() query: Record<string, unknown>) {
     return this.contracts.listManagerContracts(this.parseQuery(query));
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết RentalContract', description: 'MANAGER hoặc ADMIN. Trả Reservation pricing lịch sử; không tính lại giá.' })
+  @ApiOperation({ summary: 'Chi tiết RentalContract', description: 'STAFF. Trả Reservation pricing lịch sử; không tính lại giá.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-C01' })
   @ApiOkResponse({ description: 'Hợp đồng, customer, reservation, unit vật lý và reservationPricing.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER và STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy hợp đồng.' })
   get(@Param('id') id: string) {
     return this.contracts.getManagerContract(id);

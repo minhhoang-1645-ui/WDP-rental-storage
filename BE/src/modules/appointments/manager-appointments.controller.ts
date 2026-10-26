@@ -1,3 +1,4 @@
+import { StaffWorkflow } from '../auth/operation-access.js';
 import { BadRequestException, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -7,16 +8,17 @@ import { AppointmentsService, type AppointmentListQuery } from './appointments.s
 
 const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 
-@Controller('manager/appointments')
+@Controller(['manager/appointments', 'staff/management/appointments'])
+@StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Appointment')
 @ApiBearerAuth('bearerAuth')
 export class ManagerAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách lịch bàn giao cho Manager/Admin' })
+  @ApiOperation({ summary: 'Danh sách lịch bàn giao cho nhân viên' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
@@ -25,17 +27,17 @@ export class ManagerAppointmentsController {
   @ApiOkResponse({ description: 'Stable sorting theo scheduledAt và id.' })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
   list(@Query() query: Record<string, unknown>) {
     return this.appointments.listOperationalAppointments(this.query(query));
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết lịch bàn giao cho Manager/Admin' })
+  @ApiOperation({ summary: 'Chi tiết lịch bàn giao cho nhân viên' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
   @ApiOkResponse({ description: 'Customer, Reservation, Contracts và allocated units.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
   get(@Param('id') id: string) {
     return this.appointments.getOperationalAppointment(id);

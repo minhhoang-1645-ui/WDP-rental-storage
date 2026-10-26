@@ -1,3 +1,4 @@
+import { StaffWorkflow } from '../auth/operation-access.js';
 import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { ManagerReservationStatusRequestDto } from '../../openapi/api-dtos.js';
@@ -6,22 +7,23 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { BookingService } from './booking.service.js';
 
-@Controller('manager/reservations')
+@Controller(['manager/reservations', 'staff/management/reservations'])
+@StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER', 'ADMIN')
 @ApiTags('Manager Reservation')
 @ApiBearerAuth('bearerAuth')
 export class ManagerReservationsController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách Reservation', description: 'MANAGER hoặc ADMIN. PENDING không giữ unit; CONFIRMED có allocatedUnits.' })
+  @ApiOperation({ summary: 'Danh sách Reservation', description: 'STAFF. PENDING không giữ unit; CONFIRMED có allocatedUnits.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiOkResponse({ description: 'Danh sách Reservation có phân trang.', schema: { example: { page: 1, limit: 20, total: 1, items: [{ id: 'WDP-2026-AB12CD34', reference: 'WDP-2026-AB12CD34', requestType: 'RESERVATION', status: 'PENDING', quantity: 1, allocatedUnits: [] }] } } })
   @ApiBadRequestResponse({ description: 'page hoặc limit không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ MANAGER hoặc ADMIN được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
   list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20') {
     const page = Number(pageInput);
     const limit = Number(limitInput);
@@ -32,11 +34,11 @@ export class ManagerReservationsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'MANAGER hoặc ADMIN. Nhận reservation reference hoặc database id.' })
+  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'STAFF. Nhận reservation reference hoặc database id.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Reservation cùng customer, quote, availability snapshot và allocatedUnits.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ MANAGER hoặc ADMIN được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Reservation.' })
   get(@Param('id') id: string) {
     return this.bookingService.getManagerReservation(id);
@@ -45,7 +47,7 @@ export class ManagerReservationsController {
   @Patch(':id/status')
   @ApiOperation({
     summary: 'Cập nhật trạng thái Reservation',
-    description: 'MANAGER hoặc ADMIN. CONFIRMED khóa và cấp đủ unit trong một transaction; nếu không đủ, toàn bộ thao tác rollback và Reservation vẫn PENDING.',
+    description: 'STAFF. CONFIRMED khóa và cấp đủ unit trong một transaction; nếu không đủ, toàn bộ thao tác rollback và Reservation vẫn PENDING.',
   })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34' })
   @ApiBody({
@@ -61,7 +63,7 @@ export class ManagerReservationsController {
   @ApiBadRequestResponse({ description: 'Status không hợp lệ.' })
   @ApiConflictResponse({ description: 'Transition không hợp lệ, inventory không đủ hoặc có allocation trùng kỳ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ MANAGER hoặc ADMIN được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Reservation.' })
   updateStatus(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.bookingService.updateManagerReservationStatus(id, body, request.user!);

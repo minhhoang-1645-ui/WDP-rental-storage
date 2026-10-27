@@ -131,7 +131,7 @@ export function CustomerAppointmentsPage() {
         },
         true,
       );
-      setMessage({ kind: "ok", text: "Đã gửi yêu cầu lịch bàn giao." });
+      setMessage({ kind: "ok", text: "Lịch nhận kho hợp lệ đã được xác nhận tự động." });
       setReservationId("");
       setScheduledAt("");
       setNote("");
@@ -155,7 +155,7 @@ export function CustomerAppointmentsPage() {
       <PortalPageHeader
         eyebrow="Lịch hẹn"
         title="Lịch bàn giao của tôi"
-        description="Đặt lịch khi hợp đồng đủ điều kiện. WDP xác nhận lịch và bố trí nhân viên bàn giao kho cho bạn."
+        description="Đặt lịch khi hợp đồng đủ điều kiện. Lịch hợp lệ được xác nhận tự động và chuyển cho nhân viên bàn giao kho."
         action={
           <button
             className="button-secondary"
@@ -257,7 +257,7 @@ export function CustomerAppointmentsPage() {
               )
             }
           >
-            <h2>Yêu cầu lịch bàn giao</h2>
+            <h2>Đặt lịch nhận kho</h2>
             <p>
               Chỉ yêu cầu đã thanh toán và có hợp đồng chờ bàn giao mới được
               đặt lịch.

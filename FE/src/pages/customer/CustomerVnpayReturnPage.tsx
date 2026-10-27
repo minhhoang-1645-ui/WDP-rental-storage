@@ -69,6 +69,11 @@ function ReturnResult({ query }: { query: string }) {
 
   const successful = result?.status === 'SUCCESS' && result.invoice.status === 'PAID'
   const failed = result?.status === 'FAILED'
+  const nextStep = result?.invoice.type === 'INITIAL'
+    ? { to: '/customer/appointments?payment=success', label: 'Đặt lịch nhận kho' }
+    : result?.invoice.type === 'RENEWAL'
+      ? { to: '/customer/renewals?payment=success', label: 'Xem gia hạn' }
+      : { to: '/customer/payments?view=payments&payment=success', label: 'Xem giao dịch đã ghi nhận' }
   const content = displayedFatalError
     ? { icon: <AlertCircle size={38} />, tone: 'is-error', title: 'Kết quả thanh toán không hợp lệ', description: displayedFatalError }
     : successful
@@ -85,6 +90,6 @@ function ReturnResult({ query }: { query: string }) {
     {networkError && !displayedFatalError && <div className="booking-alert is-error" role="alert">{networkError} Hệ thống sẽ tiếp tục thử lại.</div>}
     {(displayedFatalError || networkError) && <button className="button-secondary" onClick={() => { setFatalError(''); setNetworkError(''); setResult(undefined); setRetry((value) => value + 1) }}>Kiểm tra lại</button>}
     {result && <dl><div><dt>Mã giao dịch</dt><dd>{result.merchantOrderRef}</dd></div><div><dt>Số tiền</dt><dd>{moneyLabel(result.amount)}</dd></div><div><dt>Hóa đơn</dt><dd>{result.invoice.invoiceCode}</dd></div></dl>}
-    <Link className="button-primary" to="/customer/payments"><CreditCard size={17} /> Xem hóa đơn và thanh toán</Link>
+    <Link className="button-primary" to={successful ? nextStep.to : '/customer/payments'}><CreditCard size={17} /> {successful ? nextStep.label : 'Xem hóa đơn và thanh toán'}</Link>
   </div></section>
 }

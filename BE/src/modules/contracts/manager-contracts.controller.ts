@@ -5,7 +5,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { ContractsService, type ContractListQuery } from './contracts.service.js';
 
-const statuses = ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE', 'COMPLETED'] as const;
+const statuses = ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const;
 
 @Controller(['manager/contracts', 'staff/management/contracts'])
 @StaffLookup()

@@ -6,7 +6,7 @@ export interface ContractListQuery {
   page: number;
   limit: number;
   search?: string;
-  status?: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED';
+  status?: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 }
 
 @Injectable()

@@ -42,7 +42,7 @@ export function CustomerReservationsPage() {
       <PortalPageHeader
         eyebrow="Đặt kho"
         title="Yêu cầu đặt kho của tôi"
-        description="Theo dõi yêu cầu đặt kho và trạng thái xác nhận từ WDP."
+        description="Yêu cầu đủ điều kiện được xác nhận tự động; trường hợp ngoại lệ sẽ được nhân viên kiểm tra."
         action={
           <div className="customer-header-actions">
             <button

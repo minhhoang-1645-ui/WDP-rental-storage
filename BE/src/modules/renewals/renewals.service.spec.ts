@@ -31,6 +31,7 @@ describe('Renewal V1', () => {
   let activeRentals: ActiveRentalsService;
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
   const manager = actor(managerId, 'MANAGER');
+  const staff = actor(staffId, 'STAFF');
 
   beforeAll(async () => {
     prisma = new PrismaService();
@@ -116,6 +117,11 @@ describe('Renewal V1', () => {
   const request = (reservationId: string, termMonths = 3, paymentPlan: 'PAY_MONTHLY' | 'PREPAID' = 'PREPAID', key = `renew-key-${randomUUID()}`) =>
     renewals.createCustomerRenewal(customerId, { reservationId, termMonths, paymentPlan }, key);
 
+  async function resetRenewalToPending(id: string) {
+    await prisma.invoice.deleteMany({ where: { renewalRequestId: id } });
+    await prisma.renewalRequest.update({ where: { id }, data: { status: 'PENDING', reviewedByUserId: null, reviewedAt: null, approvedAt: null } });
+  }
+
   async function addFutureConflict(reservationId: string, storageUnitId: string) {
     const future = await prisma.reservation.create({ data: {
       reservationCode: `WDP-FUTURE-${randomUUID().slice(0, 8)}`, customerId: otherCustomerId, facilityId, storageTypeId, quantity: 1,
@@ -133,7 +139,8 @@ describe('Renewal V1', () => {
     const first = await request(reservation.id, 3, 'PREPAID', key);
     const retry = await request(reservation.id, 3, 'PREPAID', key);
     expect(retry.id).toBe(first.id);
-    expect(first).toMatchObject({ status: 'PENDING', previousEndDate: '2027-01-31', requestedEndDate: '2027-04-30', termMonths: 3, paymentPlan: 'PREPAID' });
+    expect(first).toMatchObject({ status: 'APPROVED_PENDING_PAYMENT', previousEndDate: '2027-01-31', requestedEndDate: '2027-04-30', termMonths: 3, paymentPlan: 'PREPAID' });
+    expect(first.invoices).toHaveLength(1);
     expect(first.quoteSnapshot).toMatchObject({ monthlyUnitPrice: 3100000, quantity: 2, discountPercent: 5, baseRentalAmount: 18600000, discountAmount: 930000, rentalAmount: 17670000, depositAmount: 0, totalAmount: 17670000 });
     await prisma.storageType.update({ where: { id: storageTypeId }, data: { monthlyRate: 3300000 } });
     expect((await renewals.getCustomerRenewal(customerId, first.id)).quoteSnapshot).toEqual(first.quoteSnapshot);
@@ -176,20 +183,22 @@ describe('Renewal V1', () => {
     await prisma.reservationUnit.deleteMany({ where: { reservationId: { not: first.reservation.id }, reservation: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId, id: { not: first.reservation.id } } });
     const pending = await request(first.reservation.id);
+    await resetRenewalToPending(pending.id);
     await addFutureConflict(first.reservation.id, first.units[0].id);
-    await expect(renewals.approve(pending.id, manager)).rejects.toMatchObject({ response: { code: 'RENEWAL_ALLOCATION_CONFLICT' } });
+    await expect(renewals.approve(pending.id, staff)).rejects.toMatchObject({ response: { code: 'RENEWAL_ALLOCATION_CONFLICT' } });
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('PENDING');
   });
 
   it('makes PENDING non-blocking, APPROVED_PENDING_PAYMENT blocking, and REJECTED non-blocking', async () => {
     const { reservation, units } = await activeRental();
     const pending = await request(reservation.id);
+    await resetRenewalToPending(pending.id);
     await prisma.storageUnit.updateMany({ where: { storageTypeId }, data: { status: 'MAINTENANCE' } });
     await prisma.storageUnit.update({ where: { id: units[0].id }, data: { status: 'AVAILABLE' } });
     const draft = { productId: storageTypeId, startDate: '2027-05-10', periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' };
     expect((await booking.checkAvailability(draft)).available).toBe(true);
     await prisma.storageUnit.update({ where: { id: units[0].id }, data: { status: 'OCCUPIED' } });
-    await renewals.approve(pending.id, manager);
+    await renewals.approve(pending.id, staff);
     await prisma.storageUnit.update({ where: { id: units[0].id }, data: { status: 'AVAILABLE' } });
     expect((await booking.checkAvailability(draft)).available).toBe(false);
 
@@ -201,8 +210,8 @@ describe('Renewal V1', () => {
   it('approves PREPAID idempotently and creates one discounted invoice without deposit', async () => {
     const { reservation } = await activeRental({ quantity: 2 });
     const pending = await request(reservation.id, 3, 'PREPAID');
-    const approved = await renewals.approve(pending.id, manager);
-    const retry = await renewals.approve(pending.id, actor(adminId, 'ADMIN'));
+    const approved = await renewals.approve(pending.id, staff);
+    const retry = await renewals.approve(pending.id, staff);
     expect(approved.status).toBe('APPROVED_PENDING_PAYMENT');
     expect(retry.invoices).toHaveLength(1);
     expect(retry.invoices[0]).toMatchObject({ type: 'RENEWAL', renewalCycle: 1, rentalAmount: 17670000, depositAmount: 0, totalAmount: 17670000, status: 'OPEN' });
@@ -213,7 +222,7 @@ describe('Renewal V1', () => {
   it('creates PAY_MONTHLY calendar periods and completes extension after the first renewal invoice is paid', async () => {
     const { reservation, units } = await activeRental({ quantity: 2 });
     const pending = await request(reservation.id, 3, 'PAY_MONTHLY');
-    const approved = await renewals.approve(pending.id, manager);
+    const approved = await renewals.approve(pending.id, staff);
     expect(approved.invoices.map((invoice: any) => [invoice.renewalCycle, invoice.billingPeriodStart, invoice.billingPeriodEnd, invoice.dueAt, invoice.totalAmount, invoice.depositAmount])).toEqual([
       [1, '2027-05-10', '2027-06-10', '2027-05-10', 6200000, 0],
       [2, '2027-06-10', '2027-07-10', '2027-06-10', 6200000, 0],
@@ -240,7 +249,7 @@ describe('Renewal V1', () => {
   it('requires full PREPAID payment, then extends all contracts atomically and safely ignores later completion retries', async () => {
     const { reservation } = await activeRental({ quantity: 3 });
     const pending = await request(reservation.id, 3, 'PREPAID');
-    const approved = await renewals.approve(pending.id, manager);
+    const approved = await renewals.approve(pending.id, staff);
     const invoice = approved.invoices[0];
     await billing.recordPayment(invoice.id, { amount: 1000000, method: 'CASH' }, `prepaid-part-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('APPROVED_PENDING_PAYMENT');
@@ -253,13 +262,14 @@ describe('Renewal V1', () => {
   it('supports rejection, ownership-safe reads, manager search and role authorization', async () => {
     const { reservation } = await activeRental();
     const pending = await request(reservation.id);
-    await expect(renewals.reject(pending.id, { reason: 'No' }, manager)).rejects.toThrow();
-    const rejected = await renewals.reject(pending.id, { reason: 'Customer requested a different date.' }, manager);
+    await resetRenewalToPending(pending.id);
+    await expect(renewals.reject(pending.id, { reason: 'No' }, staff)).rejects.toThrow();
+    const rejected = await renewals.reject(pending.id, { reason: 'Customer requested a different date.' }, staff);
     expect(rejected).toMatchObject({ status: 'REJECTED', rejectionReason: 'Customer requested a different date.' });
     expect((await renewals.listCustomerRenewals(customerId, 1, 20)).total).toBe(1);
     expect((await renewals.listManagerRenewals({ page: 1, limit: 20, search: 'Renewal Customer', status: 'REJECTED' })).total).toBe(1);
     expect(JSON.stringify(await renewals.getManagerRenewal(pending.id))).not.toContain('secret-hash');
-    await expect(renewals.approve(pending.id, actor(staffId, 'STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(renewals.approve(pending.id, manager)).rejects.toBeInstanceOf(ForbiddenException);
 
     const guard = new RolesGuard(new Reflector());
     const matrix: Array<[typeof CustomerRenewalsController | typeof ManagerRenewalsController, PublicUser['role'][]]> = [

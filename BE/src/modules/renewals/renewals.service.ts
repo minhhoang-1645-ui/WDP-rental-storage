@@ -53,11 +53,11 @@ export class RenewalsService {
     const duplicate = await this.prisma.renewalRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
     if (duplicate) {
       this.assertMatchingRetry(duplicate, customerId, parsed.termMonths, parsed.paymentPlan, identity.id);
-      return this.toRenewal(duplicate, false);
+      return this.tryAutomaticRenewalApproval(duplicate.id);
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${identity.id} FOR UPDATE`);
         const reservation = await tx.reservation.findUnique({ where: { id: identity.id }, include: this.activeRentalInclude() });
         const rental = this.assertActiveRental(reservation, customerId);
@@ -90,14 +90,15 @@ export class RenewalsService {
           },
           include: this.include(),
         });
-        return this.toRenewal(created, false);
+        return created;
       }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      return this.tryAutomaticRenewalApproval(created.id);
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const retry = await this.prisma.renewalRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
         if (retry) {
           this.assertMatchingRetry(retry, customerId, parsed.termMonths, parsed.paymentPlan, identity.id);
-          return this.toRenewal(retry, false);
+          return this.tryAutomaticRenewalApproval(retry.id);
         }
         throw new ConflictException({ code: 'ACTIVE_RENEWAL_EXISTS', message: 'Rental này đã có yêu cầu gia hạn chưa được xử lý.' });
       }
@@ -114,6 +115,33 @@ export class RenewalsService {
     const record = await this.prisma.renewalRequest.findFirst({ where: { OR: [{ id }, { renewalCode: id }], reservation: { customerId } }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
     return this.toRenewal(record, false);
+  }
+
+  private async tryAutomaticRenewalApproval(renewalId: string) {
+    try {
+      const record = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${renewalId} FOR UPDATE`);
+        const current = await tx.renewalRequest.findUnique({ where: { id: renewalId }, include: this.include() });
+        if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+        if (current.status !== 'PENDING') return current;
+        const rental = this.assertActiveRental(current.reservation);
+        this.assertExpectedEnd(current, rental.endDate);
+        await this.lockUnits(tx, rental.unitIds);
+        await this.assertNoAllocationConflict(tx, current.reservationId, rental.unitIds, current.previousEndDate, current.requestedEndDate);
+        const snapshot = this.snapshot(current);
+        this.assertSnapshot(current, snapshot);
+        await this.createInvoices(tx, current, snapshot);
+        return tx.renewalRequest.update({
+          where: { id: current.id },
+          data: { status: 'APPROVED_PENDING_PAYMENT', reviewedByUserId: null, reviewedAt: new Date(), approvedAt: new Date() },
+          include: this.include(),
+        });
+      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      return this.toRenewal(record, false);
+    } catch (error) {
+      if (!(error instanceof ConflictException) && !(error instanceof BadRequestException) && !this.isPrismaCode(error, 'P2034')) throw error;
+      return this.toRenewal(await this.find(renewalId, this.prisma), false);
+    }
   }
 
   listManagerRenewals(query: RenewalListQuery) {

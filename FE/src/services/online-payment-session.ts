@@ -5,6 +5,7 @@ export type PendingOnlinePayment = {
   transactionId: string
   merchantOrderRef: string
   amount: number
+  expiresAt: string
   mode: 'VNPAY' | 'VNPAYQR'
   createdAt: string
 }
@@ -25,6 +26,7 @@ function valid(value: unknown): value is PendingOnlinePayment {
     && typeof item.merchantOrderRef === 'string'
     && Number.isSafeInteger(item.amount)
     && Number(item.amount) > 0
+    && typeof item.expiresAt === 'string'
     && (item.mode === 'VNPAY' || item.mode === 'VNPAYQR')
     && typeof item.createdAt === 'string'
 }

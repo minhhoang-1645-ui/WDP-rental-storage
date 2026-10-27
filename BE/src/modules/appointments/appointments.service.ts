@@ -48,6 +48,8 @@ export class AppointmentsService {
             reservationId: reservation.id,
             scheduledAt: parsed.scheduledAt,
             requestedByUserId: customer.id,
+            status: 'CONFIRMED',
+            confirmedAt: new Date(),
             note: parsed.note,
             activeKey: this.activeKey(reservation.id),
             idempotencyKey: parsed.idempotencyKey,
@@ -169,8 +171,11 @@ export class AppointmentsService {
 
   private assertAppointmentDate(reservation: any, scheduledAt: Date) {
     const appointmentDay = this.vietnamDate(scheduledAt);
-    if (reservation.contracts.some((contract: any) => appointmentDay < this.isoDate(contract.startDate))) {
-      throw new ConflictException('Ngày nhận kho không được trước ngày bắt đầu thuê.');
+    if (reservation.contracts.some((contract: any) => appointmentDay < this.keyPickupStartDate(contract.startDate))) {
+      throw new ConflictException({
+        code: 'HANDOVER_BEFORE_PICKUP_WINDOW',
+        message: 'Lịch nhận chìa khóa chỉ được đặt sớm tối đa 3 ngày trước ngày bắt đầu thuê.',
+      });
     }
     if (reservation.contracts.some((contract: any) => appointmentDay >= this.isoDate(contract.endDate))) {
       throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Ngày nhận kho phải nằm trước ngày kết thúc thuê.' });
@@ -198,6 +203,12 @@ export class AppointmentsService {
 
   private isoDate(value: Date) {
     return value.toISOString().slice(0, 10);
+  }
+
+  private keyPickupStartDate(startDate: Date) {
+    const date = new Date(`${this.isoDate(startDate)}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() - 3);
+    return date.toISOString().slice(0, 10);
   }
 
   private async appointmentIdentity(id: string) {

@@ -68,7 +68,7 @@ export function CustomerReservationDetailPage() {
         action={<ReservationStatus status={reservation.status} />}
       />
       <div className="customer-detail-grid">
-        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'Yêu cầu của bạn đã được gửi và đang chờ WDP xác nhận. Kết quả sẽ được cập nhật tại đây.' : reservation.status === 'CONFIRMED' ? 'Yêu cầu đặt kho của bạn đã được chấp thuận. Vui lòng kiểm tra hóa đơn trong Thanh toán; sau khi thanh toán được xác nhận, bạn có thể đặt lịch nhận kho.' : 'Yêu cầu đã kết thúc xử lý. Xem trạng thái và nội dung hồ sơ; gửi hỗ trợ nếu bạn cần WDP giải thích.'}</WorkflowHint></div>
+        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'Hệ thống chưa thể xác nhận tự động và đã chuyển hồ sơ cho nhân viên kiểm tra ngoại lệ.' : reservation.status === 'CONFIRMED' ? 'Yêu cầu đặt kho đã được xác nhận. Vui lòng kiểm tra hóa đơn trong Thanh toán; sau khi thanh toán được xác nhận, bạn có thể đặt lịch nhận kho.' : 'Yêu cầu đã kết thúc xử lý. Xem trạng thái và nội dung hồ sơ; gửi hỗ trợ nếu bạn cần WDP giải thích.'}</WorkflowHint></div>
         <div className="customer-detail-content">
           <section className="customer-panel">
             <h2>Thông tin kho</h2>
@@ -198,7 +198,7 @@ export function CustomerReservationDetailPage() {
             <h2>Bước tiếp theo</h2>
             <p>
               {reservation.status === "PENDING"
-                ? "WDP đang xem xét yêu cầu. Hóa đơn và hợp đồng sẽ xuất hiện sau khi yêu cầu được xác nhận."
+                ? "Yêu cầu có ngoại lệ đang được nhân viên kiểm tra. Hóa đơn và hợp đồng sẽ xuất hiện sau khi được xác nhận."
                 : reservation.status === "CONFIRMED"
                   ? "Xem hóa đơn và hợp đồng. Bạn có thể yêu cầu lịch bàn giao khi các hợp đồng đã đủ điều kiện."
                   : "Yêu cầu này không còn chờ xử lý. Bạn có thể gửi yêu cầu đặt kho mới khi cần."}

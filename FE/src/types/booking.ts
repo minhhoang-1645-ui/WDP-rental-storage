@@ -130,6 +130,7 @@ export interface PendingReservation extends BookingDraft {
   id: string
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'
   createdAt: string
+  expiresAt: string | null
   endDateExclusive: string
   customer: PublicUser
   product: Pick<StorageListing, 'id' | 'code' | 'name' | 'sizeId' | 'condition' | 'status'> & {

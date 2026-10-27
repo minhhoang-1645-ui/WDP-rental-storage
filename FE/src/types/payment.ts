@@ -28,7 +28,7 @@ export interface PaymentSubmission {
   invoice: {
     id: string
     invoiceCode: string
-    status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+    status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
     totalAmount: number
     amountPaid: number
     balanceDue: number
@@ -49,6 +49,7 @@ export interface OnlinePaymentCreated {
   merchantOrderRef: string
   status: OnlinePaymentStatus
   amount: number
+  expiresAt: string
   paymentUrl: string
 }
 
@@ -58,12 +59,14 @@ export interface OnlinePaymentStatusResult {
   status: OnlinePaymentPollingStatus
   providerStatus: OnlinePaymentStatus
   amount: number
+  expiresAt: string
   paidAt: string | null
   updatedAt: string
   invoice: {
     id: string
     invoiceCode: string
-    status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+    type: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT'
+    status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
     amountPaid: number
     balanceDue: number
     paidAt: string | null
@@ -86,7 +89,7 @@ export type VnpayReturnResult =
       }
       invoice: {
         invoiceCode: string
-        status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+        status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
       }
       providerResponseCode: string
     }

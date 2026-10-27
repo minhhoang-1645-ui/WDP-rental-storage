@@ -44,6 +44,7 @@ export interface PendingReservation extends ReservationDraft {
   id: string;
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
   createdAt: string;
+  expiresAt: string | null;
   endDateExclusive: string;
   customer: PublicUser;
   product: BookingProduct;

@@ -76,6 +76,7 @@ enum ContractStatus {
   READY_FOR_HANDOVER
   ACTIVE
   COMPLETED
+  CANCELLED
 }
 
 enum InvoiceType {
@@ -89,6 +90,7 @@ enum InvoiceStatus {
   OPEN
   PARTIALLY_PAID
   PAID
+  VOID
 }
 
 enum PaymentMethod {

@@ -15,10 +15,10 @@ export class CustomerAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Yêu cầu lịch bàn giao', description: 'Chỉ tạo khi Reservation CONFIRMED, Initial Invoice PAID và tất cả contracts READY_FOR_HANDOVER. Không kích hoạt contract.' })
+  @ApiOperation({ summary: 'Yêu cầu lịch bàn giao', description: 'Lịch hợp lệ được xác nhận tự động khi Reservation CONFIRMED, Initial Invoice PAID và tất cả contracts READY_FOR_HANDOVER. Có thể hẹn nhận chìa khóa sớm tối đa 3 ngày; không kích hoạt contract trước ngày bắt đầu thuê.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'appointment-wdp-ab12cd34' })
   @ApiBody({ type: CreateHandoverAppointmentRequestDto, examples: { paid: { summary: 'Customer đã thanh toán đủ', value: { reservationId: 'WDP-2026-AB12CD34', scheduledAt: '2026-11-10T09:30:00+07:00', note: 'Ưu tiên buổi sáng.' } } } })
-  @ApiCreatedResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'REQUESTED', scheduledAt: '2026-11-10T02:30:00.000Z', reservation: { reference: 'WDP-2026-AB12CD34', contractCount: 2 }, allocatedUnits: [{ contractCode: 'WDP-2026-AB12CD34-C01', contractStatus: 'READY_FOR_HANDOVER', unitCode: 'SM-B12-001', unitStatus: 'AVAILABLE' }] } } })
+  @ApiCreatedResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', scheduledAt: '2026-11-10T02:30:00.000Z', reservation: { reference: 'WDP-2026-AB12CD34', contractCount: 2 }, allocatedUnits: [{ contractCode: 'WDP-2026-AB12CD34-C01', contractStatus: 'READY_FOR_HANDOVER', unitCode: 'SM-B12-001', unitStatus: 'AVAILABLE' }] } } })
   @ApiBadRequestResponse({ description: 'Timestamp, startDate hoặc payload không hợp lệ.' })
   @ApiConflictResponse({ description: 'Chưa thanh toán đủ, contract chưa sẵn sàng hoặc đã có active appointment.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })

@@ -17,7 +17,7 @@ export interface CustomerStorageType {
 export interface CustomerContract {
   id: string
   contractCode: string
-  status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED'
+  status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   startDate: string
   endDate: string
   reservation: { id: string; reference: string; status: string; quantity: number }
@@ -67,7 +67,7 @@ export interface CustomerInvoice {
   dueAt: string | null
   isPastDue: boolean
   status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
-  reservation: { id: string; reference: string; status: string; quantity: number; storageType: CustomerStorageType }
+  reservation: { id: string; reference: string; status: string; expiresAt: string | null; quantity: number; storageType: CustomerStorageType }
   rentalAmount: number
   depositAmount: number
   serviceAmount?: number

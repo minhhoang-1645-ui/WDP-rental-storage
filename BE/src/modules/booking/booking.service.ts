@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -15,6 +15,7 @@ type DbClient = PrismaService | Prisma.TransactionClient;
 
 const sizeOrder = ['locker', 'small', 'medium', 'large'];
 const illustrationScale: Record<string, number> = { locker: 28, small: 44, medium: 66, large: 88 };
+const AUTOMATIC_RESERVATION_HOLD_MS = 24 * 60 * 60_000;
 const managerInquiryStatuses = ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'] as const;
 const managerReservationStatuses = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const;
 type ManagerReservationStatus = (typeof managerReservationStatuses)[number];
@@ -29,7 +30,9 @@ const reservationTransitions: Record<ManagerReservationStatus, readonly ManagerR
 };
 
 @Injectable()
-export class BookingService {
+export class BookingService implements OnModuleInit, OnModuleDestroy {
+  private expirationTimer: ReturnType<typeof setInterval> | undefined;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService = new PricingService(prisma),
@@ -37,6 +40,18 @@ export class BookingService {
     private readonly billing: BillingService = new BillingService(prisma),
     private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
   ) {}
+
+  onModuleInit() {
+    this.expirationTimer = setInterval(() => {
+      void this.runExpirationSweep().catch(() => undefined);
+    }, 60_000);
+    this.expirationTimer.unref?.();
+    void this.runExpirationSweep().catch(() => undefined);
+  }
+
+  onModuleDestroy() {
+    if (this.expirationTimer) clearInterval(this.expirationTimer);
+  }
 
   async getCatalog() {
     const [records, addons] = await Promise.all([
@@ -72,9 +87,12 @@ export class BookingService {
 
   async checkAvailability(input: Record<string, unknown>): Promise<AvailabilityResult> {
     const { draft } = await this.validateDraft(input);
-    const result = await this.checkAvailabilityForDraft(this.prisma, draft);
-    if (result.available) await this.prisma.$transaction((tx) => this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : []));
-    return result;
+    return this.prisma.$transaction(async (tx) => {
+      await this.expireUnpaidAutomaticReservations(tx, draft.productId);
+      const result = await this.checkAvailabilityForDraft(tx, draft);
+      if (result.available) await this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : []);
+      return result;
+    }, { maxWait: 10000, timeout: 20000 });
   }
 
   async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
@@ -85,11 +103,12 @@ export class BookingService {
       where: { idempotencyKey },
       include: { customer: true, storageType: true },
     });
-    if (existing) return this.toReservation(existing);
+    if (existing) return this.tryAutomaticReservationConfirmation(existing.id);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const record = await this.prisma.$transaction(async (tx) => {
+          await this.expireUnpaidAutomaticReservations(tx, draft.productId);
           const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
@@ -118,14 +137,14 @@ export class BookingService {
           await this.createReservationServices(tx, reservation.id, availability.quote);
           return reservation;
         }, { maxWait: 10000, timeout: 20000 });
-        return this.toReservation(record);
+        return this.tryAutomaticReservationConfirmation(record.id);
       } catch (error) {
         if (this.isUniqueError(error)) {
           const duplicate = await this.prisma.reservation.findUnique({
             where: { idempotencyKey },
             include: { customer: true, storageType: true },
           });
-          if (duplicate) return this.toReservation(duplicate);
+          if (duplicate) return this.tryAutomaticReservationConfirmation(duplicate.id);
           continue;
         }
         throw error;
@@ -253,6 +272,27 @@ export class BookingService {
       orderBy: { createdAt: 'desc' },
     });
     return records.map((record) => this.toReservation(record));
+  }
+
+  private async tryAutomaticReservationConfirmation(reservationId: string): Promise<PendingReservation> {
+    try {
+      const record = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${reservationId} FOR UPDATE`);
+        const current = await tx.reservation.findUnique({
+          where: { id: reservationId },
+          include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+        });
+        if (!current) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
+        if (current.status === 'PENDING') await this.confirmReservation(tx, current);
+        return tx.reservation.findUniqueOrThrow({ where: { id: reservationId }, include: { customer: true, storageType: true } });
+      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      return this.toReservation(record);
+    } catch (error) {
+      if (!(error instanceof ConflictException) && !(error instanceof BadRequestException) && !this.isPrismaCode(error, 'P2034')) throw error;
+      const pending = await this.prisma.reservation.findUnique({ where: { id: reservationId }, include: { customer: true, storageType: true } });
+      if (!pending) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
+      return this.toReservation(pending);
+    }
   }
 
   async getReservation(user: PublicUser, id: string) {
@@ -436,7 +476,7 @@ export class BookingService {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED' },
+        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
       },
       select: { storageUnitId: true },
     }) : [];
@@ -457,7 +497,7 @@ export class BookingService {
     });
     const updated = await tx.reservation.update({
       where: { id: reservation.id },
-      data: { status: 'CONFIRMED', confirmedAt: new Date(), availabilitySnapshot: availability as unknown as Prisma.InputJsonValue },
+      data: { status: 'CONFIRMED', confirmedAt: new Date(), expiresAt: new Date(Date.now() + AUTOMATIC_RESERVATION_HOLD_MS), availabilitySnapshot: availability as unknown as Prisma.InputJsonValue },
       include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
     });
     await this.inventory.reservePurchases(tx, updated.id);
@@ -480,6 +520,49 @@ export class BookingService {
       paymentChoice: 'pay-later',
       paymentPlan: snapshot.paymentPlan ?? 'PAY_MONTHLY',
     };
+  }
+
+  private runExpirationSweep() {
+    return this.prisma.$transaction((tx) => this.expireUnpaidAutomaticReservations(tx));
+  }
+
+  private async expireUnpaidAutomaticReservations(tx: Prisma.TransactionClient, storageTypeId?: string) {
+    const now = new Date();
+    const activePaymentCutoff = new Date(now.getTime() - 15 * 60_000);
+    const stale = await tx.reservation.findMany({
+      where: {
+        ...(storageTypeId ? { storageTypeId } : {}),
+        status: 'CONFIRMED',
+        expiresAt: { lte: now },
+        invoices: {
+          none: { type: 'INITIAL', amountPaid: { gt: 0n } },
+          every: { onlinePaymentTransactions: { none: { status: 'PENDING', createdAt: { gt: activePaymentCutoff } } } },
+        },
+      },
+      select: { id: true },
+    });
+    for (const reservation of stale) {
+      const expired = await tx.reservation.updateMany({ where: { id: reservation.id, status: 'CONFIRMED', expiresAt: { lte: now } }, data: { status: 'EXPIRED' } });
+      if (expired.count !== 1) continue;
+      await tx.reservationUnit.updateMany({ where: { reservationId: reservation.id, releasedAt: null }, data: { releasedAt: now } });
+      await this.inventory.releasePurchases(tx, reservation.id);
+      await tx.onlinePaymentTransaction.updateMany({
+        where: { invoice: { reservationId: reservation.id }, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      });
+      await tx.paymentSubmission.updateMany({
+        where: { invoice: { reservationId: reservation.id }, status: 'PENDING_VERIFICATION' },
+        data: { status: 'REJECTED', reviewedAt: now, rejectionReason: 'Yêu cầu đặt kho đã hết thời hạn thanh toán.' },
+      });
+      await tx.invoice.updateMany({
+        where: { reservationId: reservation.id, type: 'INITIAL', status: 'OPEN', amountPaid: 0n },
+        data: { status: 'VOID', balanceDue: 0n },
+      });
+      await tx.rentalContract.updateMany({
+        where: { reservationId: reservation.id, status: 'PENDING_PAYMENT' },
+        data: { status: 'CANCELLED' },
+      });
+    }
   }
 
   private selectPreferredUnits(units: LockedStorageUnit[], quantity: number, adjacentPreference: boolean) {
@@ -528,7 +611,7 @@ export class BookingService {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED' },
+        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
       },
       select: { storageUnitId: true },
     }) : [];
@@ -673,6 +756,7 @@ export class BookingService {
       id: record.reservationCode,
       status: record.status,
       createdAt: record.createdAt.toISOString(),
+      expiresAt: record.expiresAt?.toISOString() ?? null,
       endDateExclusive: this.isoDate(record.endDate),
       customer: { id: record.customer.id, fullName: record.customer.fullName, email: record.customer.email, phone: record.customer.phone ?? '', role: record.customer.role },
       product: this.toProduct(record.storageType),
@@ -757,6 +841,7 @@ export class BookingService {
       contactedAt: null,
       processedBy: null,
       confirmedAt: record.confirmedAt?.toISOString() ?? null,
+      expiresAt: record.expiresAt?.toISOString() ?? null,
       allocatedUnits: (record.units ?? []).map((allocation: any) => ({
         id: allocation.id,
         unitId: allocation.storageUnitId,

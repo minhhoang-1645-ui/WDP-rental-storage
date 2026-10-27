@@ -9,7 +9,7 @@ export interface InvoiceListQuery {
   page: number;
   limit: number;
   search?: string;
-  status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID';
+  status?: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
   type?: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT';
   billingCycle?: number;
   renewalCycle?: number;
@@ -64,7 +64,7 @@ export class BillingService {
         billingCycle: 1,
         billingPeriodStart: reservation.startDate,
         billingPeriodEnd: initialPeriodEnd,
-        dueAt: reservation.startDate,
+        dueAt: reservation.expiresAt ?? reservation.startDate,
         status: 'OPEN',
         rentalAmount: amounts.rental,
         depositAmount: amounts.deposit,
@@ -422,7 +422,10 @@ export class BillingService {
     const balanceDue = BigInt(invoice.totalAmount) - amountPaid;
     const paid = balanceDue === 0n;
     await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid, balanceDue, status: paid ? 'PAID' : 'PARTIALLY_PAID', paidAt: paid ? new Date() : null } });
-    if (paid && invoice.type === 'INITIAL') await tx.rentalContract.updateMany({ where: { reservationId: invoice.reservation.id, status: 'PENDING_PAYMENT' }, data: { status: 'READY_FOR_HANDOVER' } });
+    if (paid && invoice.type === 'INITIAL') {
+      await tx.rentalContract.updateMany({ where: { reservationId: invoice.reservation.id, status: 'PENDING_PAYMENT' }, data: { status: 'READY_FOR_HANDOVER' } });
+      await tx.reservation.update({ where: { id: invoice.reservation.id }, data: { expiresAt: null } });
+    }
     if (paid && invoice.type === 'RENEWAL' && invoice.renewalRequestId) await this.renewals.completeAfterPayment(tx, invoice.renewalRequestId);
     if (paid && invoice.type === 'SETTLEMENT' && invoice.depositSettlementId) {
       if (!actorId) throw new ConflictException('Settlement payment yêu cầu người ghi nhận nội bộ.');
@@ -682,6 +685,7 @@ export class BillingService {
         id: reservation.id,
         reference: reservation.reservationCode,
         status: reservation.status,
+        expiresAt: reservation.expiresAt?.toISOString() ?? null,
         quantity: reservation.quantity,
         storageType: reservation.storageType,
         ...(includeCustomer ? { customer: reservation.customer } : {}),

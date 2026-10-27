@@ -6,7 +6,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { RecordPaymentRequestDto } from '../../openapi/api-dtos.js';
 import { BillingService, type InvoiceListQuery, type PaymentListQuery } from './billing.service.js';
 
-const invoiceStatuses = ['OPEN', 'PARTIALLY_PAID', 'PAID'] as const;
+const invoiceStatuses = ['OPEN', 'PARTIALLY_PAID', 'PAID', 'VOID'] as const;
 const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
 
 @Controller('manager')

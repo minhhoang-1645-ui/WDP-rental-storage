@@ -60,13 +60,18 @@ export function CustomerRenewalsPage() {
     setSubmitting(true);
     try {
       if (!eligibleRentals.some(item => item.reservationId === reservationId)) throw new Error('Chọn kho thuê theo tháng, chưa có yêu cầu gia hạn chờ xử lý.');
-      await mutate<CustomerRenewal>(
+      const created = await mutate<CustomerRenewal>(
         "/customer/renewals",
         "POST",
         { reservationId, termMonths: Number(termMonths), paymentPlan },
         true,
       );
-      setMessage({ kind: "ok", text: "Đã gửi yêu cầu gia hạn." });
+      setMessage({
+        kind: "ok",
+        text: created.status === 'APPROVED_PENDING_PAYMENT'
+          ? "Gia hạn hợp lệ đã được duyệt tự động. Bạn có thể thanh toán hóa đơn gia hạn."
+          : "Đã ghi nhận yêu cầu gia hạn để nhân viên kiểm tra ngoại lệ.",
+      });
       setReservationId("");
       renewals.refresh();
       rentals.refresh();
@@ -89,7 +94,7 @@ export function CustomerRenewalsPage() {
       <PortalPageHeader
         eyebrow="Gia hạn"
         title="Yêu cầu gia hạn"
-        description="Gửi yêu cầu cho kho đang thuê và theo dõi kết quả xử lý."
+        description="Yêu cầu hợp lệ được duyệt tự động; trường hợp có xung đột sẽ được nhân viên kiểm tra."
         action={
           <button
             className="button-secondary"

@@ -414,7 +414,7 @@ export function BookingWizardPage() {
         <Link to="/storage" className="inline-flex items-center gap-2 text-sm font-semibold text-navy"><ArrowLeft size={17} /> Quay lại danh sách kho</Link>
         <div className="mt-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div><p className="eyebrow">Đặt kho nhanh</p><h1>Chọn đúng kho, gửi yêu cầu rõ ràng.</h1></div>
-          <p className="max-w-md text-sm leading-6 text-slate">Chọn kho, kiểm tra toàn kỳ và gửi yêu cầu. Kho được phân bổ và hóa đơn được tạo sau khi yêu cầu đặt kho được xác nhận.</p>
+          <p className="max-w-md text-sm leading-6 text-slate">Chọn kho, kiểm tra toàn kỳ và gửi yêu cầu. Hồ sơ đủ điều kiện được phân bổ kho và tạo hóa đơn tự động; ngoại lệ được chuyển cho nhân viên kiểm tra.</p>
         </div>
         <ol className="booking-progress" aria-label="Tiến trình đặt kho">
           {steps.map(([number, label], index) => {

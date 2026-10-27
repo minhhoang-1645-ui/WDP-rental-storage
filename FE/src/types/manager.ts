@@ -142,7 +142,7 @@ export interface ManagerInvoiceDetail {
   billingPeriodEnd?: string
   dueAt?: string
   isPastDue: boolean
-  status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID'
+  status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
   rentalAmount: number
   depositAmount: number
   chargeAmount?: number
@@ -199,7 +199,7 @@ export interface ManagerPaymentDetail {
 export interface ManagerContractDetail {
   id: string
   contractCode: string
-  status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED'
+  status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   startDate: string
   endDate: string
   activatedAt?: string

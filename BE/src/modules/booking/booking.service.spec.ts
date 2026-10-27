@@ -36,7 +36,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     fullName: 'Test Manager',
     email: `manager-${runId}@example.test`,
     phone: '0900000099',
-    role: 'MANAGER',
+    role: 'STAFF',
   };
 
   beforeAll(async () => {
@@ -76,6 +76,14 @@ describe('BookingService with PostgreSQL persistence', () => {
     user = { id: stored.id, fullName: stored.fullName, email: stored.email, phone: stored.phone ?? '', role: stored.role };
     service = new BookingService(prisma);
   });
+
+  async function resetToPending(reference: string) {
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: reference } });
+    await prisma.invoice.deleteMany({ where: { reservationId: reservation.id } });
+    await prisma.rentalContract.deleteMany({ where: { reservationId: reservation.id } });
+    await prisma.reservationUnit.deleteMany({ where: { reservationId: reservation.id } });
+    await prisma.reservation.update({ where: { id: reservation.id }, data: { status: 'PENDING', confirmedAt: null, expiresAt: null } });
+  }
 
   afterEach(async () => {
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId: productId } } } });
@@ -153,25 +161,27 @@ describe('BookingService with PostgreSQL persistence', () => {
     await expect(service.createInquiry({ ...baseDraft(), paymentChoice: 'pay-now', fullName: 'Guest Test', phone: '0900000001', email: `pay-${runId}@example.test` })).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('creates an idempotent authenticated PENDING reservation without allocating a unit', async () => {
+  it('creates and automatically confirms an idempotent authenticated reservation', async () => {
     const first = await service.createReservation(user, { ...baseDraft(), monthlyUnitPrice: 1, depositAmount: 1, quotedTotalAmount: 1 });
     const second = await service.createReservation(user, baseDraft());
     expect(first.id).toMatch(/^WDP-/);
     expect(second.id).toBe(first.id);
+    expect(first.status).toBe('CONFIRMED');
+    expect(first.expiresAt).not.toBeNull();
     expect(first.unitAssignment).toBeNull();
     expect(first.persistence).toBe('DATABASE');
     expect(first.quote).toMatchObject({ monthlyUnitPrice: 1500000, billingMode: 'MONTHLY', termMonths: 3, rentalAmount: 4500000, depositAmount: 1500000, quotedTotalAmount: 6000000 });
     expect((await service.checkAvailability(baseDraft())).available).toBe(true);
   });
 
-  it('lets a manager list and view PENDING reservations without allocating units', async () => {
+  it('lets operations list and view automatically confirmed reservations', async () => {
     const created = await service.createReservation(user, { ...baseDraft(), note: 'manager-list' });
     const list = await service.listManagerReservations(1, 20);
     expect(list.items.some((item) => item.id === created.id)).toBe(true);
     const detail = await service.getManagerReservation(created.id);
-    expect(detail.status).toBe('PENDING');
-    expect(detail.allocatedUnits).toHaveLength(0);
-    expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id } } })).toBe(0);
+    expect(detail.status).toBe('CONFIRMED');
+    expect(detail.allocatedUnits).toHaveLength(1);
+    expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id } } })).toBe(1);
   });
 
   it('confirms atomically and allocates multiple nearby physical units', async () => {
@@ -219,6 +229,7 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('rechecks availability and rolls back without partial allocation when inventory became insufficient', async () => {
     const created = await service.createReservation(user, { ...baseDraft(), quantity: 2, note: 'rollback-insufficient' });
+    await resetToPending(created.id);
     await prisma.storageUnit.updateMany({
       where: { storageTypeId: productId, unitNumber: { in: unitNumbers.slice(0, 2) } },
       data: { status: 'MAINTENANCE' },
@@ -233,6 +244,7 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('never allocates OCCUPIED or MAINTENANCE units during confirmation', async () => {
     const created = await service.createReservation(user, { ...baseDraft(), note: 'physical-status-filter' });
+    await resetToPending(created.id);
     await prisma.storageUnit.update({ where: { unitNumber: unitNumbers[0] }, data: { status: 'OCCUPIED' } });
     await prisma.storageUnit.update({ where: { unitNumber: unitNumbers[1] }, data: { status: 'MAINTENANCE' } });
     const confirmed = await service.updateManagerReservationStatus(created.id, { status: 'CONFIRMED' }, manager);
@@ -242,7 +254,9 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('rejects an overlapping confirmation and preserves the second reservation as PENDING', async () => {
     const first = await service.createReservation(user, { ...baseDraft(), quantity: 2, note: 'conflict-first' });
+    await resetToPending(first.id);
     const second = await service.createReservation(user, { ...baseDraft(), quantity: 2, note: 'conflict-second' });
+    await resetToPending(second.id);
     await service.updateManagerReservationStatus(first.id, { status: 'CONFIRMED' }, manager);
     await expect(service.updateManagerReservationStatus(second.id, { status: 'CONFIRMED' }, manager)).rejects.toBeInstanceOf(ConflictException);
     const stored = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: second.id }, include: { units: true } });
@@ -252,6 +266,7 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('blocks non-manager status changes and supports the normalized terminal flow', async () => {
     const rejected = await service.createReservation(user, { ...baseDraft(), note: 'reject-me' });
+    await resetToPending(rejected.id);
     await expect(service.updateManagerReservationStatus(rejected.id, { status: 'REJECTED' }, user)).rejects.toBeInstanceOf(ForbiddenException);
     expect((await service.updateManagerReservationStatus(rejected.id, { status: 'REJECTED' }, manager)).status).toBe('REJECTED');
     await expect(service.updateManagerReservationStatus(rejected.id, { status: 'CONFIRMED' }, manager)).rejects.toBeInstanceOf(ConflictException);
@@ -259,6 +274,7 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('blocks overlapping confirmed allocations for the complete interval', async () => {
     const created = await service.createReservation(user, baseDraft());
+    await resetToPending(created.id);
     const reservation = await prisma.reservation.update({ where: { reservationCode: created.id }, data: { status: 'CONFIRMED', confirmedAt: new Date() } });
     const units = await prisma.storageUnit.findMany({ where: { storageTypeId: productId }, take: 2, orderBy: { unitNumber: 'asc' } });
     await prisma.reservationUnit.createMany({ data: units.map((unit) => ({ reservationId: reservation.id, storageUnitId: unit.id, plannedStartDate: new Date(created.startDate), plannedEndDate: new Date(created.endDateExclusive) })) });

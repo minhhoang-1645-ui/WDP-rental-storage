@@ -222,7 +222,7 @@ export const resources: Record<
   invoices: {
     title: "Hóa đơn",
     description: "Theo dõi kỳ thu, số tiền đã nhận và dư nợ.",
-    statuses: ["OPEN", "PARTIALLY_PAID", "PAID"],
+    statuses: ["OPEN", "PARTIALLY_PAID", "PAID", "VOID"],
   },
   payments: {
     title: "Lịch sử thanh toán",
@@ -233,7 +233,7 @@ export const resources: Record<
   contracts: {
     title: "Hợp đồng thuê",
     description: "Mỗi kho vật lý có một hợp đồng riêng.",
-    statuses: ["PENDING_PAYMENT", "READY_FOR_HANDOVER", "ACTIVE", "COMPLETED"],
+    statuses: ["PENDING_PAYMENT", "READY_FOR_HANDOVER", "ACTIVE", "COMPLETED", "CANCELLED"],
   },
   rentals: {
     title: "Kho đang thuê",

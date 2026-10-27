@@ -38,7 +38,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
   const guides: Record<string, Record<string, string>> = {
     appointments: {
       REQUESTED: 'Lịch chưa thể xác nhận tự động. Nhân viên kiểm tra điều kiện và xử lý ngoại lệ trước khi bàn giao.',
-      CONFIRMED: 'Nhân viên phụ trách đã xác nhận. Khách hàng đến kho đúng hẹn; nhân viên bàn giao thực tế và bấm Hoàn tất bàn giao. Chỉ thực hiện khi đã đến giờ hẹn và còn trong kỳ thuê.',
+      CONFIRMED: 'Lịch đã được xác nhận. Có thể hẹn nhận chìa khóa sớm tối đa 3 ngày; chỉ kích hoạt hợp đồng từ ngày bắt đầu thuê. Khách hàng đến kho đúng hẹn; nhân viên bàn giao thực tế và bấm Hoàn tất bàn giao. Chỉ thực hiện khi đã đến giờ hẹn và còn trong kỳ thuê.',
       COMPLETED: 'Nhân viên đã hoàn tất bàn giao, hợp đồng được kích hoạt. Khách hàng có thể tạo phiếu nhập hàng trong mục Nhập – xuất hàng.',
       CANCELLED: 'Lịch đã hủy. Khách hàng có thể đặt lại lịch khi hợp đồng còn đủ điều kiện.',
     },

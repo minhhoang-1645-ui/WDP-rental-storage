@@ -476,7 +476,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        reservation: { status: 'CONFIRMED' },
       },
       select: { storageUnitId: true },
     }) : [];
@@ -611,7 +611,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        reservation: { status: 'CONFIRMED' },
       },
       select: { storageUnitId: true },
     }) : [];

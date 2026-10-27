@@ -6,13 +6,13 @@ export function keyCollectionStartDate(value: string, daysBefore = 3) {
   date.setUTCDate(date.getUTCDate() - daysBefore)
   return date.toISOString().slice(0, 10)
 }
-export function handoverWindow(contracts: Array<{ startDate: string; endDate: string }>) {
+export function handoverWindow(contracts: { startDate: string; endDate: string }[]) {
   const starts = contracts.map(item => item.startDate?.slice(0, 10)).filter(Boolean).sort()
   const ends = contracts.map(item => item.endDate?.slice(0, 10)).filter(Boolean).sort()
   const start = starts.at(-1) ?? ''
   return { start, pickupStart: keyCollectionStartDate(start), end: ends[0] ?? '' }
 }
-export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: Array<{ contractStartDate?: string; contractEndDate?: string }> = []) {
+export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: { contractStartDate?: string; contractEndDate?: string }[] = []) {
   const planned = typeof scheduledAt === 'string' ? Date.parse(scheduledAt) : NaN
   if (!Number.isFinite(planned)) return 'Chưa có thời điểm bàn giao hợp lệ. Vui lòng kiểm tra lại lịch.'
   if (planned > now) return 'Chưa đến thời điểm hẹn. Chỉ ghi nhận khi đã bàn giao thực tế, không hoàn tất trước lịch.'

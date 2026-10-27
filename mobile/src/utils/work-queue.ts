@@ -4,7 +4,7 @@ export const staffWorkGroups = [
   {
     resource: "reservations",
     title: "Yêu cầu đặt kho",
-    description: "Đối chiếu báo giá và khả dụng trước khi duyệt.",
+    description: "Theo dõi đặt kho tự xác nhận; kiểm tra hồ sơ chưa đủ điều kiện.",
   },
   {
     resource: "inquiries",
@@ -121,7 +121,7 @@ export function isOverdueInvoice(row: WorkRow, now = Date.now()) {
   return (
     ["OPEN", "PARTIALLY_PAID"].includes(String(row.status)) &&
     Number(row.balanceDue) > 0 &&
-    Date.parse(String(row.dueAt)) < now
+    Date.parse(String(row.type === "INITIAL" && row.reservation && typeof row.reservation === "object" && (row.reservation as WorkRow).expiresAt || row.dueAt)) < now
   );
 }
 

@@ -61,6 +61,7 @@ export function customerStatusLabel(status: string) {
     PENDING: "Chờ duyệt",
     APPROVED_PENDING_PAYMENT: "Đã duyệt, chờ thanh toán",
     REJECTED: "Chưa được chấp thuận",
+    EXPIRED: "Đã hết hạn",
     ASSIGNED: "Đã tiếp nhận",
     IN_PROGRESS: "Đang xử lý",
     ESCALATED: "Chuyển quản lý",

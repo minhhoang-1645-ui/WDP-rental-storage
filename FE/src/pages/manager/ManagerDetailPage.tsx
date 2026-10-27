@@ -545,7 +545,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
                 "Kỳ thu",
                 `${date(row.billingPeriodStart)} → ${date(row.billingPeriodEnd)}`,
               ],
-              ["Hạn thanh toán", date(row.dueAt)],
+              ["Hạn thanh toán", first(row, "type") === "INITIAL" && first(row, "reservation.expiresAt") ? date(first(row, "reservation.expiresAt"), true) : date(row.dueAt)],
               ["Tiền thuê", money(row.rentalAmount)],
               ["Tiền cọc", money(row.depositAmount)],
               ["Dịch vụ bổ sung", money(row.serviceAmount)],

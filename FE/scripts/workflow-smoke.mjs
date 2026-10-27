@@ -17,7 +17,7 @@ async function moduleUrl(file) {
   }).outputText;
   for (const match of [...source.matchAll(/from ['"]([^'"]+)['"]/g)]) {
     const specifier = match[1];
-    const resolved = specifier.startsWith(".")
+    const resolved = specifier.startsWith("@/") ? await moduleUrl(new URL(`../../mobile/src/${specifier.slice(2)}.ts`, import.meta.url)) : specifier.startsWith(".")
       ? await moduleUrl(new URL(`${specifier}.ts`, file))
       : pathToFileURL(require.resolve(specifier)).href;
     source = source.replace(match[0], `from '${resolved}'`);
@@ -244,6 +244,8 @@ for (const name of [
   "workflow-guide",
   "work-queue",
   "operation-access",
+  "payment-state",
+  "handover",
 ])
   assert.equal(
     await readFile(new URL(`../src/utils/${name}.ts`, import.meta.url), "utf8"),
@@ -256,4 +258,23 @@ for (const name of [
 checks.push(
   "Web and mobile use identical workflow, notification and permission rules",
 );
+const { paymentWindowClosed, paymentExpiry, paymentTimeLeft } = await import(await moduleUrl(new URL('../src/utils/payment-state.ts', import.meta.url)));
+const { customerAppointmentAction } = await import(await moduleUrl(new URL('../../mobile/src/portals/actions.ts', import.meta.url)));
+const clock = Date.parse('2050-01-01T00:00:00Z');
+assert(paymentWindowClosed({ type: 'INITIAL', reservation: { expiresAt: '2050-01-01T00:00:00Z' } }, clock));
+assert(!paymentWindowClosed({ type: 'INITIAL', reservation: { expiresAt: '2050-01-01T00:00:01Z' } }, clock));
+assert(!paymentWindowClosed({ type: 'RENEWAL', reservation: { expiresAt: '2000-01-01' } }, clock));
+assert(paymentWindowClosed({ reservation: { status: 'EXPIRED' } }));
+assert.equal(paymentExpiry(undefined, '2050-01-01T00:00:00Z'), '2050-01-01T00:15:00.000Z');
+assert(!paymentTimeLeft('invalid').includes('NaN'));
+assert(!isOverdueInvoice({ type: 'INITIAL', status: 'OPEN', balanceDue: 100, dueAt: '2050-01-01', reservation: { expiresAt: '2050-01-01T14:00:00Z' } }, clock + 1000));
+const scheduledContract = { id: 'c', status: 'READY_FOR_HANDOVER', startDate: '2050-02-01', endDate: '2050-03-01', reservation: { id: 'r', quantity: 1 } };
+const appointment = customerAppointmentAction(scheduledContract, [scheduledContract], [], clock);
+assert(appointment);
+assert.equal(appointment.validateValues({ scheduledAt: '2050-01-29 10:00' }), undefined);
+assert(appointment.validateValues({ scheduledAt: '2050-01-28 23:59' }));
+assert(appointment.validateValues({ scheduledAt: '2050-03-01 00:00' }));
+assert(appointment.validateValues({ scheduledAt: '2050-02-30 10:00' }));
+assert.equal(appointment.transform({ scheduledAt: '2050-01-29 10:00' }).scheduledAt, '2050-01-29T03:00:00.000Z');
+checks.push('Hold deadlines, legacy payment session migration, exact hourly debt and mobile three-day appointment boundaries');
 console.log(JSON.stringify({ passed: checks, realDatabaseWrites: 0 }, null, 2));

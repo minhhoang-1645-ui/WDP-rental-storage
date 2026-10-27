@@ -1,6 +1,7 @@
 import { idOf, object, options, rows, text, type Row } from '@/operations/model';
 import type { FormAction, FormField } from '@/operations/form';
 import { formatDate } from '@/utils/format';
+import { keyCollectionStartDate } from '@/utils/handover';
 
 const confirmation = (title = 'Tôi xác nhận thông tin và thao tác này'): FormField => ({ name: '_confirmed', title, checkbox: true, required: true, clientOnly: true });
 const note = (name = 'note', title = 'Ghi chú', required = false, limit = 2000): FormField => ({ name, title, required, multiline: true, maxLength: limit, ...(required ? { minLength: 3 } : {}) });
@@ -56,7 +57,7 @@ export function customerRentalActions(row: Row, returns: Row[], now: number): Fo
   const reservationId = text(row, 'reservationId'), actions: FormAction[] = [];
   if (!reservationId) return actions;
   if (!row.pendingRenewal) {
-    if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Gia hạn có hiệu lực sau duyệt và thanh toán hóa đơn kích hoạt; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '1'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PAY_MONTHLY'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
+    if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Yêu cầu hợp lệ được duyệt tự động; thanh toán hóa đơn kích hoạt để cập nhật thời hạn; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '1'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PAY_MONTHLY'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
     if (Date.parse(text(row, 'effectiveEndDate')) <= now && !returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED')) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Trả kho từ ngày kết thúc kỳ thuê. Nhân viên sẽ kiểm tra thực tế; quyết toán cọc được xử lý sau.' });
   }
   actions.push(customerSupportAction(reservationId), customerSupportAction(reservationId, { transfer: true }));
@@ -68,12 +69,13 @@ export function customerAppointmentAction(contract: Row, contracts: Row[], appoi
   if (!id || !group.length || group.length !== reservation.quantity || group.some(item => item.status !== 'READY_FOR_HANDOVER') || appointments.some(item => text(item, 'reservation.id') === id && ['REQUESTED', 'CONFIRMED'].includes(String(item.status)))) return;
   const start = group.map(item => text(item, 'startDate')).sort().at(-1)!, end = group.map(item => text(item, 'endDate')).sort()[0];
   if (!start || !end || start >= end || Date.parse(`${end}T00:00:00+07:00`) <= now) return;
-  return { title: 'Yêu cầu lịch bàn giao', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(start)} đến trước ${formatDate(end)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
+  const pickupStart = keyCollectionStartDate(start.slice(0, 10));
+  return { title: 'Đặt lịch nhận kho', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(pickupStart)} đến trước ${formatDate(end)}. Lịch hợp lệ được xác nhận tự động; chỉ sử dụng kho từ ${formatDate(start)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
     const value = String(input.scheduledAt ?? '');
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(value)) return 'Nhập ngày giờ theo dạng YYYY-MM-DD HH:mm.';
     const instant = Date.parse(`${value.replace(' ', 'T')}+07:00`), normalized = new Date(instant + 25200000);
     if (!Number.isFinite(instant) || normalized.toISOString().slice(0, 16) !== value.replace(' ', 'T')) return 'Ngày giờ không hợp lệ.';
     if (instant <= Date.now()) return 'Lịch hẹn phải ở tương lai.';
-    if (value.slice(0, 10) < start || value.slice(0, 10) >= end) return 'Ngày bàn giao phải nằm trong kỳ thuê, không bao gồm ngày kết thúc.';
+    if (value.slice(0, 10) < pickupStart || value.slice(0, 10) >= end) return 'Chỉ đặt sớm tối đa 3 ngày trước kỳ thuê và trước ngày kết thúc.';
   }, transform: input => ({ ...input, reservationId: id, scheduledAt: new Date(`${String(input.scheduledAt).replace(' ', 'T')}+07:00`).toISOString() }) };
 }

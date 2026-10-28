@@ -13,7 +13,7 @@ import {
 } from "../../components/manager/portal-data";
 import { RecordPicker } from "../../components/manager/PortalUi";
 import { renewalReviewIssue } from '../../utils/renewal-review';
-import { canOperateResource } from '../../utils/operation-access';
+import { canAccessManagerReview } from '../../utils/manager-review-access';
 
 export function ManagerActions({
   resource,
@@ -135,7 +135,8 @@ export function ManagerActions({
       </label>
     </>
   );
-  if (!canOperateResource(user?.role ?? '', resource)) return null;
+  if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
+  if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
   return (
     <div className="portal-form">
       {error && (

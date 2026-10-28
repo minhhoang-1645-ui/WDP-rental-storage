@@ -25,7 +25,7 @@ export interface CustomerContract {
   storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string }
   activatedAt: string | null
   completedAt: string | null
-  terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null }
+  terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null; document: Record<string, unknown>; snapshotHash: string; signatureImage: string | null }
 }
 
 export interface RentalContractSummary {
@@ -121,7 +121,7 @@ export interface CustomerRenewal {
   invoices?: Array<{ id: string; invoiceCode: string; renewalCycle: number; status: string; balanceDue: number }>
   rejectionReason: string | null
   requestedAt: string
-  appendix: { code: string; version: string | null; snapshot: unknown; acceptedAt: string | null; acceptanceName: string | null } | null
+  appendix: { code: string; version: string | null; snapshot: unknown; snapshotHash: string; acceptedAt: string | null; acceptanceName: string | null; signatureImage: string | null } | null
 }
 
 export type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER'

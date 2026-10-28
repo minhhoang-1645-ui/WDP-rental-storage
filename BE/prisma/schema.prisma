@@ -614,6 +614,8 @@ model RentalContract {
   termsAcceptedBy   User?              @relation("ContractAcceptor", fields: [termsAcceptedByUserId], references: [id], onDelete: Restrict)
   acceptanceName    String?
   acceptanceNote    String?
+  signedSnapshot    Json?
+  signatureImage    String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   returnInspections ReturnInspection[]
@@ -983,6 +985,7 @@ model RenewalRequest {
   appendixAcceptedByUserId String?
   appendixAcceptedBy User?             @relation("RenewalAppendixAcceptor", fields: [appendixAcceptedByUserId], references: [id], onDelete: Restrict)
   appendixAcceptanceName String?
+  appendixSignatureImage String?
   activeKey         String?            @unique
   idempotencyKey    String             @unique
   invoices          Invoice[]

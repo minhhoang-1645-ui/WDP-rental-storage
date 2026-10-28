@@ -46,7 +46,7 @@ export class CustomerRenewalsController {
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.renewals.getCustomerRenewal(request.user!.id, id); }
 
   @Post(':id/appendix/accept')
-  @ApiOperation({ summary: 'Customer xác nhận phụ lục gia hạn', description: 'Phụ lục được tạo bất biến khi hóa đơn kích hoạt gia hạn đã thanh toán. Customer xác nhận bằng họ tên sau khi đọc nội dung.' })
+  @ApiOperation({ summary: 'Customer xác nhận phụ lục gia hạn', description: 'Phụ lục được tạo khi yêu cầu gia hạn được duyệt; Customer đọc và xác nhận trước khi thanh toán.' })
   @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
   @ApiOkResponse({ description: 'Đã lưu thời điểm và tên xác nhận phụ lục.' })
   @ApiConflictResponse({ description: 'Gia hạn chưa hoàn tất hoặc phụ lục đã được xác nhận bởi tài khoản khác.' })

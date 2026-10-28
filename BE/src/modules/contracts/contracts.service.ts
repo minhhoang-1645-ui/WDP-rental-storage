@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { snapshotHash, validateSignature } from './signature.js';
 
 export interface ContractListQuery {
   page: number;
@@ -82,11 +83,12 @@ export class ContractsService {
       if (contract.termsAcceptedByUserId !== customer.id) throw new ConflictException('Hợp đồng đã được xác nhận bởi tài khoản khác.');
       return this.toContract(contract, true);
     }
-    const updated = await this.prisma.rentalContract.update({
-      where: { id: contract.id },
-      data: { termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null },
-      include: this.contractInclude(),
-    });
+    const signatureImage = validateSignature(input);
+    const snapshot = this.documentSnapshot(contract);
+    if (input.snapshotHash !== snapshotHash(snapshot)) throw new ConflictException('Nội dung hợp đồng đã thay đổi. Vui lòng tải lại và kiểm tra trước khi ký.');
+    const changed = await this.prisma.rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: snapshot as Prisma.InputJsonValue, signatureImage } });
+    if (changed.count !== 1) throw new ConflictException('Hợp đồng vừa được cập nhật. Vui lòng tải lại.');
+    const updated = await this.prisma.rentalContract.findUniqueOrThrow({ where: { id: contract.id }, include: this.contractInclude() });
     return this.toContract(updated, true);
   }
 
@@ -173,11 +175,26 @@ export class ContractsService {
         acceptedAt: contract.termsAcceptedAt?.toISOString() ?? null,
         acceptanceName: contract.acceptanceName ?? null,
         acceptanceNote: contract.acceptanceNote ?? null,
+        document: contract.signedSnapshot ?? this.documentSnapshot(contract),
+        snapshotHash: snapshotHash(contract.signedSnapshot ?? this.documentSnapshot(contract)),
+        signatureImage: contract.signatureImage ?? null,
       },
     };
   }
 
   private isoDate(value: Date) {
     return value.toISOString().slice(0, 10);
+  }
+
+  private documentSnapshot(contract: any) {
+    const reservation = contract.reservation;
+    return {
+      documentType: 'RENTAL_CONTRACT', version: contract.termsVersion, contractCode: contract.contractCode,
+      reservationReference: reservation.reservationCode, customer: { fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? null },
+      storage: { name: reservation.storageType.name, unitCode: contract.reservationUnit.storageUnit.unitNumber },
+      startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate),
+      quantity: reservation.quantity, pricing: reservation.quoteSnapshot,
+      services: reservation.services.map((service: any) => ({ name: service.serviceNameSnapshot, billingUnit: service.billingUnitSnapshot, quantity: service.quantity, amount: Number(service.amountSnapshot) })),
+    };
   }
 }

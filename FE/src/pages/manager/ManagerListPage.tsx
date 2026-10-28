@@ -130,7 +130,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   return (
     <section>
       <PageHeader title={config.title} description={config.description}>
-        {["maintenance", "transfers"].includes(resource) && (
+        {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
             {resource === "maintenance" ? "Tạo bảo trì" : "Tạo chuyển kho"}

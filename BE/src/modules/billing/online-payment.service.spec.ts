@@ -30,7 +30,7 @@ function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' = 'PENDING
     },
     $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
   };
-  const billing = { recordVerifiedOnlinePayment: vi.fn().mockResolvedValue({}) };
+  const billing = { recordVerifiedOnlinePayment: vi.fn().mockResolvedValue({}), assertSignedBeforePayment: vi.fn().mockResolvedValue(undefined) };
   const vnpay = {
     assertConfigured: vi.fn(),
     paymentUrl: vi.fn().mockReturnValue('https://sandbox.vnpayment.vn/test'),

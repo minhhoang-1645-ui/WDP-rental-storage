@@ -141,8 +141,9 @@ export class SupportService {
   }
 
   private async transition(id: string, key: string | undefined, action: string, actor: PublicUser, role: 'STAFF' | 'MANAGER', operation: (tx: Prisma.TransactionClient, current: any, key: string) => Promise<any>) {
-    if (role === 'STAFF' && actor.role !== 'STAFF') throw new ForbiddenException('Chỉ Staff được thực hiện thao tác này.');
-    if (action === 'ASSIGN' ? !['MANAGER', 'ADMIN'].includes(actor.role) : actor.role !== 'STAFF') throw new ForbiddenException(action === 'ASSIGN' ? 'Chỉ quản lý được phân công nhân viên.' : 'Chỉ nhân viên được thực hiện thao tác này.');
+    const managerAction = role === 'MANAGER';
+    const permitted = managerAction ? ['MANAGER', 'ADMIN'].includes(actor.role) : actor.role === 'STAFF';
+    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ Manager hoặc Admin được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
     const safeKey = this.key(key); const identity = await this.identity(id);
     return this.serializable(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);

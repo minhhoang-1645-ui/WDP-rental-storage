@@ -16,6 +16,7 @@ import { StoragePage } from "../pages/public/StoragePage";
 import { ManagerInquiryDetailPage } from "../pages/manager/ManagerInquiryDetailPage";
 import { ManagerInquiriesPage } from "../pages/manager/ManagerInquiriesPage";
 import { ManagerPaymentSubmissionsPage } from "../pages/manager/ManagerPaymentSubmissionsPage";
+import { ManagerOnlinePaymentReconciliationsPage } from "../pages/manager/ManagerOnlinePaymentReconciliationsPage";
 import { ManagerLayout } from "../pages/manager/ManagerLayout";
 import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
@@ -65,6 +66,7 @@ function operationalRoutes(base: string) {
       <Route index element={<ManagerDashboardPage />} />
       <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
       <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
+      <Route path="online-payment-reconciliations" element={<ManagerOnlinePaymentReconciliationsPage />} />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />

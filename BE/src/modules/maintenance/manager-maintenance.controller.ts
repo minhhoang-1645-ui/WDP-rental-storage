@@ -43,18 +43,18 @@ export class ManagerMaintenanceController {
   @ApiCreatedResponse({ description: 'Assignment được cập nhật; status/unit không đổi.' }) @ApiBadRequestResponse({ description: 'Target không phải STAFF.' }) @ApiConflictResponse({ description: 'Case đã hoàn tất/concurrent update.' })
   assign(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.assign(id, body, key, request.user!); }
 
-  @Patch(':id/priority')
+  @ManagerAssignment() @Patch(':id/priority')
   @ApiOperation({ summary: 'Đổi priority của case chưa hoàn tất' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-priority-001' }) @ApiBody({ type: UpdateMaintenancePriorityDto })
   @ApiCreatedResponse({ description: 'Priority đổi; unit status không đổi.' })
   priority(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.updatePriority(id, body, key, request.user!); }
 
-  @Post(':id/verify')
+  @ManagerAssignment() @Post(':id/verify')
   @ApiOperation({ summary: 'Xác minh sửa chữa và đưa unit trở lại AVAILABLE', description: 'Thao tác Maintenance V1 duy nhất được MAINTENANCE → AVAILABLE.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-verify-001' }) @ApiBody({ type: VerifyMaintenanceRequestDto })
   @ApiCreatedResponse({ description: 'Case COMPLETED và unit AVAILABLE trong cùng transaction.' }) @ApiConflictResponse({ description: 'Sai state, unit không MAINTENANCE hoặc concurrent action.' })
   verify(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.verify(id, body, key, request.user!); }
 
-  @Post(':id/reject-verification')
+  @ManagerAssignment() @Post(':id/reject-verification')
   @ApiOperation({ summary: 'Từ chối xác minh và trả case về làm tiếp' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-reject-001' }) @ApiBody({ type: RejectMaintenanceVerificationDto })
   @ApiCreatedResponse({ description: 'AWAITING_VERIFICATION → IN_PROGRESS; unit vẫn MAINTENANCE.' }) @ApiBadRequestResponse({ description: 'note trống.' }) @ApiConflictResponse({ description: 'Sai state.' })
   reject(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.rejectVerification(id, body, key, request.user!); }

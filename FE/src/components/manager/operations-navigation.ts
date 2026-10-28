@@ -1,5 +1,6 @@
-import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
+import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldAlert, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
 import { isStaffWorkflow } from '../../utils/operation-access';
+import { isManagerReviewWorkflow } from '../../utils/manager-review-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
 
 const managerNavigation: InternalNavItem[] = [
@@ -16,6 +17,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/returns', label: 'Trả kho', icon: RefreshCcw, group: 'Giao nhận & thay đổi' },
   { to: '/manager/payment-submissions', label: 'Chờ xác nhận thanh toán', icon: Wallet, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/early-returns', label: 'Đề nghị trả trước hạn', icon: Undo2, group: 'Thanh toán & hợp đồng' },
+  { to: '/manager/online-payment-reconciliations', label: 'Đối soát VNPay', icon: ShieldAlert, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: WalletCards, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/contracts', label: 'Hợp đồng thuê', icon: FileText, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/payments', label: 'Lịch sử thanh toán', icon: Receipt, group: 'Thanh toán & hợp đồng' },
@@ -26,7 +28,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/customers', label: 'Danh bạ khách hàng', icon: Users, group: 'Kho & khách hàng' },
 ];
 export function operationsNavigation(base = '/manager'): InternalNavItem[] {
-  return managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({ ...item, to: base + item.to.slice('/manager'.length), label: item.end && base !== '/manager' ? 'Tổng quan vận hành' : item.label }));
+  return managerNavigation.filter(item => { const resource = item.to.split('/').at(-1) ?? ''; return !isStaffWorkflow(resource) || isManagerReviewWorkflow(resource); }).map(item => ({ ...item, to: base + item.to.slice('/manager'.length), label: item.end && base !== '/manager' ? 'Tổng quan vận hành' : item.label }));
 }
 
 export function staffNavigation(): InternalNavItem[] {

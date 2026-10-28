@@ -1,5 +1,5 @@
-import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -34,6 +34,15 @@ export class CustomerContractsController {
   @ApiNotFoundResponse({ description: 'Không tìm thấy hợp đồng hoặc hợp đồng không thuộc khách hàng.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.contracts.getCustomerContract(request.user!.id, id);
+  }
+
+  @Post(':id/accept')
+  @ApiOperation({ summary: 'Customer xác nhận điều khoản hợp đồng', description: 'Lưu thời điểm, tên xác nhận và phiên bản điều khoản. Việc xác nhận là bắt buộc trước khi bàn giao kho.' })
+  @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-C01' })
+  @ApiOkResponse({ description: 'Hợp đồng đã được Customer xác nhận.' })
+  @ApiConflictResponse({ description: 'Hợp đồng đã hủy hoặc được xác nhận bởi tài khoản khác.' })
+  accept(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.contracts.acceptCustomerContract(request.user!, id, body);
   }
 
   private pagination(pageInput: string, limitInput: string) {

@@ -1,15 +1,21 @@
-import { ScrollView, Text } from 'react-native';
+import { RefreshControl, ScrollView, Text } from 'react-native';
+import { router } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
+import { ReservationTimeline, SectionHeader, StorageUnitCard } from '@/components/customer-ui';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState } from '@/components/screen-state';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
 import { useResource } from '@/operations/use-resource';
 import { Button, Navigation, Panel, styles } from '@/operations/ui';
-import { codeOf, label, type Row } from '@/operations/model';
+import { codeOf, idOf, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
 import { ActivitySummary } from '@/activity/ActivityCenter';
 
 const groups = [
+  { title: 'Tìm và đặt kho', items: [
+    { title: 'Tìm kho', path: '/customer/discover', description: 'Xem loại kho và kiểm tra khả dụng theo ngày thuê.' },
+    { title: 'Tìm kích thước kho', path: '/customer/size-finder', description: 'Ước tính nhóm kho theo đồ dùng của bạn.' },
+  ] },
   { title: 'Đặt kho & nhận kho', items: [
     { title: 'Yêu cầu đặt kho', path: '/customer/reservations', description: 'Xem trạng thái và kết quả duyệt yêu cầu.' },
     { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: 'QR, VNPay và số tiền còn phải trả.' },
@@ -39,20 +45,28 @@ export default function CustomerHomeScreen() {
   const appointments = useResource<{items: Row[]}>('/customer/appointments', true);
   const sources = [rentals, invoices, reservations, appointments], refresh = () => sources.forEach(item => item.refresh());
   const payable = invoices.data?.items.filter(item => ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0) ?? [];
+  const activeRental = rentals.data?.items[0];
+  const latestReservation = reservations.data?.slice().sort((a, b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)))[0];
+  const upcomingAppointment = appointments.data?.items.find(item => ['REQUESTED', 'CONFIRMED'].includes(String(item.status)));
   const count = (source: {loading: boolean; error?: string}, value: number) => source.loading || source.error ? '—' : value;
-  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Tài khoản của tôi" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Theo dõi kho thuê và mở ngay việc bạn cần làm." />
-    <Button title="Làm mới tổng quan" onPress={refresh} disabled={sources.some(item => item.loading)} />
+  const opening = sources.some(item => item.loading) && !rentals.data && !invoices.data && !reservations.data && !appointments.data;
+  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={!opening && sources.some(item => item.loading)} onRefresh={refresh} tintColor="#187D78" />} contentContainerStyle={styles.page}>
+    <PageHeader eyebrow="Trang chủ" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Thông tin quan trọng cho kho thuê của bạn, được cập nhật từ hệ thống WDP." />
+    <Button title={sources.some(item => item.loading) ? 'Đang cập nhật…' : 'Làm mới tổng quan'} onPress={refresh} disabled={sources.some(item => item.loading)} />
     <ActivitySummary />
-    <WorkHub title="Bạn muốn làm gì hôm nay?" description="Yêu cầu, thanh toán và nhận kho được đặt ở đầu để dễ theo dõi." actions={[
-      { title: 'Theo dõi yêu cầu', path: '/customer/reservations', description: 'Xem WDP đã tiếp nhận và duyệt đến đâu.', count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
-      { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: invoices.loading || invoices.error ? 'Xem hóa đơn và kết quả đối chiếu.' : payable.length ? `Còn ${formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))}. Mở để xem chi tiết.` : 'Xem hóa đơn, khoản đã trả và thông báo chuyển khoản.', count: count(invoices, payable.length) },
-      { title: 'Lịch nhận kho', path: '/customer/appointments', description: 'Xem giờ hẹn đã xác nhận và hướng dẫn nhận kho của bạn.', count: count(appointments, appointments.data?.items.filter(item => ['REQUESTED','CONFIRMED'].includes(String(item.status))).length ?? 0) },
-      { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Xem kho hoạt động, gia hạn và gửi hỗ trợ.', count: count(rentals, rentals.data?.total ?? 0) },
-    ]} />
+    {opening ? <LoadingState label="Đang tải tổng quan của bạn…" /> : <>
+      {activeRental ? <><SectionHeader title="Kho của bạn" action={{ label: 'Xem tất cả', path: '/customer/rentals' }} /><StorageUnitCard rental={activeRental} onPress={() => router.push(`/customer/rentals/${encodeURIComponent(idOf(activeRental))}`)} /></> : <Panel title="Bắt đầu thuê kho"><Text style={styles.copy}>Bạn chưa có kỳ thuê đang hoạt động. Sau khi WDP xác nhận yêu cầu, tiến trình thanh toán và bàn giao sẽ hiển thị tại đây.</Text><Navigation title="Theo dõi yêu cầu đặt kho" description="Xem yêu cầu gần nhất và việc cần làm tiếp theo." path="/customer/reservations" /></Panel>}
+      {payable.length > 0 && <Panel title="Cần thanh toán"><Text style={styles.copy}>Bạn còn {formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))} cần được xử lý. Trạng thái chỉ cập nhật sau khi WDP xác nhận giao dịch.</Text><Navigation title="Mở hóa đơn và thanh toán" description={`${payable.length} hóa đơn đang chờ thanh toán.`} path="/customer/invoices" /></Panel>}
+      {upcomingAppointment && <Panel title="Lịch bàn giao"><Text style={styles.copy}>Bạn có một lịch bàn giao đang chờ xử lý hoặc đã xác nhận.</Text><Navigation title="Xem lịch bàn giao" description={codeOf(upcomingAppointment)} path="/customer/appointments" /></Panel>}
+      {latestReservation && <><SectionHeader title="Tiến trình yêu cầu gần nhất" action={{ label: 'Xem tất cả', path: '/customer/reservations' }} /><ReservationTimeline reservation={latestReservation} /></>}
+    </>}
     {sources.filter(item => item.error).map((item, index) => <ErrorState key={index} message={item.error!} onRetry={item.refresh} />)}
-    <Panel title="Quy trình thuê kho"><Text style={styles.copy}>Chọn kho trên website → chờ xác nhận → thanh toán → đặt lịch nhận kho → nhận kho và gửi hàng.</Text><Text style={styles.copy}>Mỗi hồ sơ có tiến độ riêng. Gia hạn, trả kho và hỗ trợ nằm trong các nhóm chức năng bên dưới.</Text></Panel>
-    <Panel title="Yêu cầu gần đây">{reservations.loading ? <LoadingState /> : !reservations.error && (reservations.data?.length ? [...reservations.data].sort((a,b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt))).slice(0,3).map(item => <Navigation key={String(item.id)} title={codeOf(item)} description={`${label(item.status)} · ${String((item.product as Row)?.name ?? 'Yêu cầu đặt kho')}`} path={`/customer/reservations/${encodeURIComponent(String(item.id))}`} />) : <Text style={styles.copy}>Chưa có yêu cầu. Bạn có thể chọn loại kho và gửi yêu cầu trên website WDP.</Text>)}</Panel>
+    {!opening && <WorkHub title="Việc bạn cần làm" description="Mở đúng hồ sơ để xem hướng dẫn và thao tác được hệ thống cho phép." actions={[
+      { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: payable.length ? `Còn ${formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))}.` : 'Xem hóa đơn, giao dịch và thông báo chuyển khoản.', count: count(invoices, payable.length) },
+      { title: 'Lịch nhận kho', path: '/customer/appointments', description: 'Xem giờ hẹn đã xác nhận và hướng dẫn nhận kho.', count: count(appointments, appointments.data?.items.filter(item => ['REQUESTED', 'CONFIRMED'].includes(String(item.status))).length ?? 0) },
+      { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Xem kỳ thuê, gia hạn, trả kho và gửi hỗ trợ.', count: count(rentals, rentals.data?.total ?? 0) },
+    ]} />}
+    <SectionHeader title="Dịch vụ khác" />
     <FunctionMenu groups={groups} />
     <Navigation title="Tài khoản và đăng xuất" path="/customer/account" />
   </ScrollView>;

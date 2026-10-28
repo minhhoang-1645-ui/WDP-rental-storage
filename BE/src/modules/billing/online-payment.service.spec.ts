@@ -15,6 +15,9 @@ function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' = 'PENDING
       update: vi.fn().mockResolvedValue({ ...transaction, status: 'SUCCESS' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
+    onlinePaymentReconciliation: {
+      upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
+    },
     invoice: {
       findUnique: vi.fn().mockResolvedValue({ id: 'invoice-1', type: 'INITIAL', status: 'OPEN', balanceDue: 650000n, reservation: { id: 'reservation-1', customerId: 'customer-1', status: 'CONFIRMED', expiresAt: new Date(Date.now() + 60_000) } }),
     },
@@ -115,9 +118,10 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
       id: 'invoice-1', type: 'INITIAL', status: 'VOID', balanceDue: 0n,
       reservation: { id: 'reservation-1', status: 'EXPIRED', expiresAt: new Date(Date.now() - 60_000) },
     });
-    await expect(service.processIpn({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toEqual({ RspCode: '02', Message: 'Reservation expired' });
+    await expect(service.processIpn({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toEqual({ RspCode: '00', Message: 'Confirm Success - reconciliation required' });
     expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
     expect(tx.onlinePaymentTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }));
+    expect(tx.onlinePaymentReconciliation.upsert).toHaveBeenCalledOnce();
   });
 
   it('reuses the active payment session for the same invoice', async () => {

@@ -81,7 +81,16 @@ export class OnlinePaymentService {
             where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED'] } },
             data: { status: 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode },
           });
-          return { RspCode: '02', Message: 'Reservation expired' };
+          await tx.onlinePaymentReconciliation.upsert({
+            where: { onlinePaymentTransactionId: transaction.id },
+            update: { providerTransactionId: payload.providerTransactionId, amount: transaction.amount },
+            create: {
+              reconciliationCode: this.reconciliationCode(), onlinePaymentTransactionId: transaction.id,
+              reason: invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.' : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.',
+              providerTransactionId: payload.providerTransactionId, amount: transaction.amount,
+            },
+          });
+          return { RspCode: '00', Message: 'Confirm Success - reconciliation required' };
         }
         if (invoice.balanceDue !== transaction.amount) return { RspCode: '04', Message: 'Invalid amount' };
         await this.billing.recordVerifiedOnlinePayment(tx, invoice, transaction, payload.providerTransactionId);
@@ -128,6 +137,7 @@ export class OnlinePaymentService {
             receivedAt: true,
           },
         },
+        reconciliation: { select: { reconciliationCode: true, status: true, reason: true, resolutionNote: true, reviewedAt: true } },
       },
     });
     if (!transaction) throw new NotFoundException('Không tìm thấy giao dịch thanh toán thuộc tài khoản này.');
@@ -151,6 +161,7 @@ export class OnlinePaymentService {
         balanceDue: this.money(transaction.invoice.balanceDue),
       },
       payment: transaction.payment ? { ...transaction.payment, amount: this.money(transaction.payment.amount) } : null,
+      reconciliation: transaction.reconciliation,
     };
   }
 
@@ -163,11 +174,36 @@ export class OnlinePaymentService {
     } catch { return { valid: false, status: 'INVALID_SIGNATURE' }; }
   }
 
+  async listManagerReconciliations(page: number, limit: number, status?: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED') {
+    const where = status ? { status } : {};
+    const [total, items] = await Promise.all([
+      this.prisma.onlinePaymentReconciliation.count({ where }),
+      this.prisma.onlinePaymentReconciliation.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.reconciliationInclude() }),
+    ]);
+    return { page, limit, total, items: items.map((item) => this.toReconciliation(item)) };
+  }
+
+  async resolveReconciliation(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý đối soát VNPay.');
+    const resolution = typeof input.resolution === 'string' ? input.resolution : '';
+    const resolutionNote = typeof input.resolutionNote === 'string' ? input.resolutionNote.trim() : '';
+    if (!['REFUND_REQUIRED', 'RECONCILED'].includes(resolution)) throw new BadRequestException('resolution phải là REFUND_REQUIRED hoặc RECONCILED.');
+    if (resolutionNote.length < 3 || resolutionNote.length > 2000) throw new BadRequestException('resolutionNote phải dài 3–2000 ký tự.');
+    const record = await this.prisma.onlinePaymentReconciliation.findFirst({ where: { OR: [{ id }, { reconciliationCode: id }] }, include: this.reconciliationInclude() });
+    if (!record) throw new NotFoundException('Không tìm thấy hồ sơ đối soát VNPay.');
+    if (record.status !== 'PENDING_REVIEW') return this.toReconciliation(record);
+    const updated = await this.prisma.onlinePaymentReconciliation.update({ where: { id: record.id }, data: { status: resolution as 'REFUND_REQUIRED' | 'RECONCILED', reviewedByUserId: actor.id, reviewedAt: new Date(), resolutionNote }, include: this.reconciliationInclude() });
+    return this.toReconciliation(updated);
+  }
+
   private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string) { return { transactionId: transaction.id, merchantOrderRef: transaction.merchantOrderRef, status: transaction.status, amount: this.money(transaction.amount), expiresAt: this.expiresAt(transaction.createdAt).toISOString(), paymentUrl: this.vnpay.paymentUrl({ orderRef: transaction.merchantOrderRef, amount: transaction.amount, ipAddress, bankCode, locale, createdAt: transaction.createdAt }) }; }
   private expiresAt(createdAt: Date) { return new Date(createdAt.getTime() + ONLINE_PAYMENT_TTL_MS); }
   private isExpired(transaction: { status: string; createdAt: Date }) { return transaction.status === 'PENDING' && this.expiresAt(transaction.createdAt).getTime() <= Date.now(); }
   private key(value?: string) { const key = value?.trim() ?? ''; if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự.'); return key; }
   private optionalCode(value: unknown, label: string) { if (value === undefined || value === null || value === '') return undefined; if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{2,20}$/.test(value)) throw new BadRequestException(`${label} không hợp lệ.`); return value; }
   private orderRef() { return `WDP${Date.now()}${randomBytes(4).toString('hex').toUpperCase()}`; }
+  private reconciliationCode() { return `WDPRC-${new Date().getUTCFullYear()}-${randomBytes(5).toString('hex').toUpperCase()}`; }
+  private reconciliationInclude() { return { onlinePaymentTransaction: { include: { invoice: { include: { reservation: { include: { customer: { select: { id: true, fullName: true, email: true } } } } } } } }, reviewedBy: { select: { id: true, fullName: true, role: true } } }; }
+  private toReconciliation(record: any) { return { id: record.id, reconciliationCode: record.reconciliationCode, status: record.status, reason: record.reason, providerTransactionId: record.providerTransactionId, amount: this.money(record.amount), createdAt: record.createdAt.toISOString(), reviewedAt: record.reviewedAt?.toISOString() ?? null, resolutionNote: record.resolutionNote ?? null, reviewedBy: record.reviewedBy, transaction: { id: record.onlinePaymentTransaction.id, merchantOrderRef: record.onlinePaymentTransaction.merchantOrderRef, invoice: { id: record.onlinePaymentTransaction.invoice.id, invoiceCode: record.onlinePaymentTransaction.invoice.invoiceCode, status: record.onlinePaymentTransaction.invoice.status, reservation: { reference: record.onlinePaymentTransaction.invoice.reservation.reservationCode, customer: record.onlinePaymentTransaction.invoice.reservation.customer } } } }; }
   private money(value: bigint) { if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new ConflictException('Số tiền vượt giới hạn hỗ trợ.'); return Number(value); }
 }

@@ -1,6 +1,7 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { PublicUser } from '../auth/auth.types.js';
 
 export interface ContractListQuery {
   page: number;
@@ -64,6 +65,29 @@ export class ContractsService {
     });
     if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng.');
     return this.toContract(contract, true);
+  }
+
+  async acceptCustomerContract(customer: PublicUser, id: string, input: Record<string, unknown>) {
+    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận hợp đồng của mình.');
+    const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
+    const acceptanceNote = typeof input.acceptanceNote === 'string' ? input.acceptanceNote.trim() : '';
+    if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
+    if (acceptanceNote.length > 500) throw new BadRequestException('Ghi chú xác nhận không được vượt quá 500 ký tự.');
+    const identity = await this.prisma.rentalContract.findFirst({ where: { OR: [{ id }, { contractCode: id }], reservation: { customerId: customer.id } }, select: { id: true } });
+    if (!identity) throw new NotFoundException('Không tìm thấy hợp đồng thuộc tài khoản này.');
+    const contract = await this.prisma.rentalContract.findUnique({ where: { id: identity.id }, include: this.contractInclude() });
+    if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng.');
+    if (contract.status === 'CANCELLED') throw new ConflictException('Không thể xác nhận hợp đồng đã hủy.');
+    if (contract.termsAcceptedAt) {
+      if (contract.termsAcceptedByUserId !== customer.id) throw new ConflictException('Hợp đồng đã được xác nhận bởi tài khoản khác.');
+      return this.toContract(contract, true);
+    }
+    const updated = await this.prisma.rentalContract.update({
+      where: { id: contract.id },
+      data: { termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null },
+      include: this.contractInclude(),
+    });
+    return this.toContract(updated, true);
   }
 
   async listManagerContracts(query: ContractListQuery) {
@@ -144,6 +168,12 @@ export class ContractsService {
       updatedAt: contract.updatedAt.toISOString(),
       activatedAt: contract.activatedAt?.toISOString() ?? null,
       completedAt: contract.completedAt?.toISOString() ?? null,
+      terms: {
+        version: contract.termsVersion,
+        acceptedAt: contract.termsAcceptedAt?.toISOString() ?? null,
+        acceptanceName: contract.acceptanceName ?? null,
+        acceptanceNote: contract.acceptanceNote ?? null,
+      },
     };
   }
 

@@ -45,6 +45,15 @@ export class CustomerRenewalsController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.renewals.getCustomerRenewal(request.user!.id, id); }
 
+  @Post(':id/appendix/accept')
+  @ApiOperation({ summary: 'Customer xác nhận phụ lục gia hạn', description: 'Phụ lục được tạo bất biến khi hóa đơn kích hoạt gia hạn đã thanh toán. Customer xác nhận bằng họ tên sau khi đọc nội dung.' })
+  @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
+  @ApiOkResponse({ description: 'Đã lưu thời điểm và tên xác nhận phụ lục.' })
+  @ApiConflictResponse({ description: 'Gia hạn chưa hoàn tất hoặc phụ lục đã được xác nhận bởi tài khoản khác.' })
+  acceptAppendix(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.renewals.acceptCustomerAppendix(request.user!, id, body);
+  }
+
   private pagination(pageValue: string, limitValue: string) {
     const page = Number(pageValue); const limit = Number(limitValue);
     if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Pagination không hợp lệ.');

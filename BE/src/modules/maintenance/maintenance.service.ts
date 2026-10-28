@@ -177,7 +177,9 @@ export class MaintenanceService {
     actor: PublicUser,
     role: 'STAFF' | 'MANAGER',
   ) {
-    if (action === 'ASSIGN' ? !['MANAGER', 'ADMIN'].includes(actor.role) : actor.role !== 'STAFF') throw new ForbiddenException(action === 'ASSIGN' ? 'Chỉ quản lý được phân công nhân viên.' : 'Chỉ nhân viên được thực hiện thao tác này.');
+    const managerAction = role === 'MANAGER';
+    const permitted = managerAction ? ['MANAGER', 'ADMIN'].includes(actor.role) : actor.role === 'STAFF';
+    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ Manager hoặc Admin được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
     const safeKey = this.idempotencyKey(key);
     const identity = await this.identity(id);
     return this.serializable(async (tx) => {

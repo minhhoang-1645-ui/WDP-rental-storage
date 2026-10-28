@@ -46,6 +46,7 @@ export function CustomerRenewalsPage() {
     kind: "ok" | "error";
     text: string;
   } | null>(null);
+  const [acceptingAppendixId, setAcceptingAppendixId] = useState('');
   const eligibleRentals = (rentals.data?.items ?? []).filter(item => !item.pendingRenewal && item.historicalPricing?.billingMode === 'MONTHLY');
 
   const { items: visibleRenewals, pagination } = useCustomerPagination(
@@ -87,6 +88,18 @@ export function CustomerRenewalsPage() {
       submitLock.current = false;
       setSubmitting(false);
     }
+  };
+  const acceptAppendix = async (item: CustomerRenewal) => {
+    if (!user || !item.appendix || acceptingAppendixId) return;
+    if (!window.confirm(`Bạn xác nhận đã đọc và đồng ý phụ lục ${item.appendix.code}?`)) return;
+    setAcceptingAppendixId(item.id); setMessage(null);
+    try {
+      await mutate(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/accept`, 'POST', { acceptanceName: user.fullName });
+      setMessage({ kind: 'ok', text: `Đã xác nhận phụ lục ${item.appendix.code}.` });
+      renewals.refresh();
+    } catch (error) {
+      setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Không thể xác nhận phụ lục.' });
+    } finally { setAcceptingAppendixId(''); }
   };
 
   return (
@@ -251,6 +264,9 @@ export function CustomerRenewalsPage() {
                   <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>
                   {item.status === 'APPROVED_PENDING_PAYMENT' && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
+                  {item.status === 'COMPLETED' && item.appendix && (item.appendix.acceptedAt
+                    ? <p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p>
+                    : <button type="button" className="button-primary" disabled={acceptingAppendixId === item.id} onClick={() => acceptAppendix(item)}>{acceptingAppendixId === item.id ? 'Đang lưu…' : `Xác nhận phụ lục ${item.appendix.code}`}</button>)}
                   <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ))}

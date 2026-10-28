@@ -70,6 +70,7 @@ export function CustomerPaymentsPage() {
           return
         }
         if (result.status === 'FAILED') {
+          if (result.reconciliation) setPollError(`VNPay đã xác nhận giao dịch nhưng hóa đơn không còn hiệu lực. WDP đã tạo hồ sơ ${result.reconciliation.reconciliationCode} để đối soát; không cần thanh toán lại.`)
           setOnlineStatus('FAILED')
           onlineLock.current = false
           return
@@ -157,7 +158,7 @@ export function CustomerPaymentsPage() {
 
 function paymentSuccessPath(type: OnlinePaymentStatusResult['invoice']['type'], transactionId: string) {
   const query = `payment=success&transactionId=${encodeURIComponent(transactionId)}`
-  if (type === 'INITIAL') return `/customer/appointments?${query}`
+  if (type === 'INITIAL') return `/customer/contracts?${query}`
   if (type === 'RENEWAL') return `/customer/renewals?${query}`
   return `/customer/payments?view=payments&${query}`
 }
@@ -174,7 +175,7 @@ function OnlinePaymentWaiting({ payment, status, providerStatus, networkError, o
   const failureTitle = providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn' : providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán VNPay' : 'Thanh toán VNPay không thành công'
   return <div className={`vnpay-waiting-panel ${failed ? 'is-error' : ''}`} role={failed ? 'alert' : 'status'}>
     <span className="vnpay-waiting-icon">{failed ? <X size={23} /> : <span className="customer-spinner" />}</span>
-    <div><strong>{failed ? failureTitle : 'Đang chờ VNPay xác nhận'}</strong><span>{payment.invoiceCode} · {moneyLabel(payment.amount)} · {payment.mode === 'VNPAYQR' ? 'VNPay QR' : 'VNPay'}</span>{!failed && <small>Phiên còn {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}. Hệ thống tự kiểm tra kết quả, không cần quản lý xác nhận.</small>}{networkError && !failed && <small>{networkError} Hệ thống sẽ tự thử lại.</small>}</div>
+    <div><strong>{failed ? failureTitle : 'Đang chờ VNPay xác nhận'}</strong><span>{payment.invoiceCode} · {moneyLabel(payment.amount)} · {payment.mode === 'VNPAYQR' ? 'VNPay QR' : 'VNPay'}</span>{!failed && <small>Phiên còn {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}. Hệ thống tự kiểm tra kết quả, không cần quản lý xác nhận.</small>}{networkError && <small>{networkError}{!failed ? ' Hệ thống sẽ tự thử lại.' : ''}</small>}</div>
     {failed && <button type="button" className="button-secondary" onClick={onRetry}>Thử thanh toán lại</button>}
   </div>
 }

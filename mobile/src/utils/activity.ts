@@ -1,3 +1,4 @@
+import { paymentWindowClosed } from './payment-state';
 import { workflowGuide } from './workflow-guide';
 import { awaitingAssignment, isOverdueInvoice, staffNeedsAction } from './work-queue';
 
@@ -47,9 +48,10 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (pages[kind]) web = `/customer/${pages[kind]}`;
       if (kind === 'invoices') {
         web += `?invoice=${encodeURIComponent(id)}`;
-        action = ['OPEN', 'PARTIALLY_PAID'].includes(status) && Number(row.balanceDue) > 0 && !pendingInvoiceIds.has(id);
+        action = ['OPEN', 'PARTIALLY_PAID'].includes(status) && Number(row.balanceDue) > 0 && !pendingInvoiceIds.has(id) && !paymentWindowClosed({ type: row.type, reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } });
         if (renewalActivationIds.has(id)) action = false;
         if (pendingInvoiceIds.has(id)) { title = 'Chuyển khoản đang chờ xác nhận'; message = 'WDP đang đối chiếu khoản bạn đã thông báo. Bạn chưa cần gửi thêm thông báo cho cùng hóa đơn.'; }
+        else if (paymentWindowClosed({ type: row.type, reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } })) message = 'Đã hết hạn giữ kho. Kiểm tra lại trạng thái và gửi hỗ trợ nếu bạn đã chuyển tiền.';
         else if (action) message = 'Mở hóa đơn để xem số tiền còn lại, hạn thanh toán và phương thức thanh toán.';
       }
       if (kind === 'payment-submissions') {
@@ -73,7 +75,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const group = (data.contracts ?? []).filter(item => activityText(item, 'reservation.id') === reservationId);
         action = group.length === Number(get('reservation.quantity')) && group.every(item => item.status === 'READY_FOR_HANDOVER' && Date.parse(`${activityText(item, 'endDate').slice(0, 10)}T00:00:00+07:00`) > Date.now());
         web = '/customer/appointments'; mobile = '/customer/contracts';
-        message = action ? 'Hợp đồng đã đủ điều kiện. Chọn lịch phù hợp để WDP xác nhận và bàn giao kho cho bạn.' : 'Bạn có thể đặt lịch sau khi toàn bộ hợp đồng của yêu cầu đủ điều kiện và còn trong kỳ thuê. Mở hồ sơ để xem thông tin.';
+        message = action ? 'Hợp đồng đã đủ điều kiện. Đặt lịch nhận kho; lịch hợp lệ được xác nhận tự động. Bạn có thể hẹn nhận chìa khóa sớm tối đa 3 ngày trước kỳ thuê.' : 'Bạn có thể đặt lịch sau khi toàn bộ hợp đồng của yêu cầu đủ điều kiện và còn trong kỳ thuê. Mở hồ sơ để xem thông tin.';
         if (!action) title = 'Nhận kho · Xem điều kiện bàn giao';
       }
       if (kind === 'contracts' && status === 'ACTIVE') {
@@ -84,7 +86,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (kind === 'support-requests' && status === 'OPEN') title = 'Hỗ trợ · Đang chờ tiếp nhận';
       if (kind === 'deposit-settlements' && status === 'AWAITING_OUTSTANDING_PAYMENT') { action = true; message = 'Xem các khoản được đối chiếu khi trả kho và hóa đơn còn lại trước khi hoàn tất quyết toán.'; }
       if (kind === 'reservations' && status === 'PENDING') message = 'Yêu cầu đặt kho của bạn đã được gửi. WDP đang kiểm tra kho và sẽ cập nhật kết quả tại đây.';
-      if (kind === 'reservations' && status === 'CONFIRMED') message = 'Yêu cầu đặt kho đã được chấp thuận. Xem hợp đồng, thanh toán và các bước nhận kho trong tài khoản.';
+      if (kind === 'reservations' && status === 'CONFIRMED') message = get('expiresAt') ? `Đặt kho đã xác nhận. Thanh toán trước ${new Date(get('expiresAt')).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })} (UTC+7) để tiếp tục giữ kho.` : 'Đặt kho đã xác nhận. Xem hợp đồng, thanh toán và các bước nhận kho trong tài khoản.';
+      if (kind === 'reservations' && status === 'EXPIRED') message = 'Thời hạn giữ kho đã kết thúc. Kiểm tra hóa đơn và đặt kho mới nếu bạn vẫn có nhu cầu; nếu đã chuyển tiền, hãy gửi hỗ trợ.';
     } else if (role === 'ADMIN') {
       title = `${get('fullName') || 'Tài khoản'} · ${status === 'DISABLED' ? 'Đã vô hiệu hóa' : 'Đang hoạt động'}`;
       message = `${get('email')} · ${{ CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên' }[get('role')] ?? 'Người dùng'}`;
@@ -112,7 +115,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     if (action) priority = 1;
     if (action && (row.priority === 'HIGH' || status === 'ESCALATED' || status === 'PENDING_VERIFICATION')) priority = 0;
     const at = ['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'updatedAt', 'submittedAt', 'requestedAt', 'createdAt'].map(get).filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
-    const fingerprint = JSON.stringify([status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName'), get('storageUnit.id'), get('storageUnit.unitCode'), get('unit.id'), get('unit.unitCode')]);
+    const fingerprint = JSON.stringify([status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('expiresAt'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName'), get('storageUnit.id'), get('storageUnit.unitCode'), get('unit.id'), get('unit.unitCode')]);
     const entryId = `${kind}:${id}`, token = activityHash(`${entryId}:${fingerprint}`);
     result.push({ id: entryId, token, kind, code, title, message, web, mobile, action, priority, at });
   }

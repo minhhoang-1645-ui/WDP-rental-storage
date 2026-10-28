@@ -2,7 +2,7 @@
 export function workflowGuide(resource: string, status: unknown, audience: 'internal' | 'staff' | 'customer' = 'internal'): string {
   const customerGuides: Record<string, Record<string, string>> = {
     appointments: {
-      REQUESTED: 'Yêu cầu đặt lịch của bạn đã được gửi. WDP sẽ xác nhận thời gian nhận kho và cập nhật tại đây.',
+      REQUESTED: 'Lịch cần nhân viên kiểm tra ngoại lệ trước khi xác nhận thời gian nhận kho.',
       CONFIRMED: 'Lịch nhận kho của bạn đã được xác nhận. Bạn hãy đến kho đúng hẹn; nhân viên WDP sẽ kiểm tra thông tin và bàn giao kho cho bạn.',
       COMPLETED: 'Bạn đã nhận kho. Bạn có thể gửi yêu cầu nhập hàng và xem số lượng hàng đang lưu trong tài khoản.',
       CANCELLED: 'Lịch nhận kho này đã hủy. Bạn có thể chọn lịch khác nếu hợp đồng vẫn đủ điều kiện nhận kho.',
@@ -14,7 +14,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       CANCELLED: 'Yêu cầu giao nhận này đã hủy. Vui lòng liên hệ WDP nếu bạn cần hỗ trợ.',
     },
     renewals: {
-      PENDING: 'Yêu cầu gia hạn của bạn đã được gửi và đang chờ xét duyệt. Kết quả sẽ được cập nhật tại đây.',
+      PENDING: 'Yêu cầu gia hạn có ngoại lệ và đang được nhân viên kiểm tra. Kết quả sẽ được cập nhật tại đây.',
       APPROVED_PENDING_PAYMENT: 'Yêu cầu gia hạn của bạn đã được duyệt. Vui lòng thanh toán hóa đơn gia hạn để hoàn tất và cập nhật thời hạn thuê.',
       COMPLETED: 'Gia hạn của bạn đã hoàn tất. Bạn có thể xem thời hạn mới trong Kho đang thuê.',
       REJECTED: 'Yêu cầu gia hạn chưa được chấp thuận. Vui lòng xem lý do trong hồ sơ hoặc gửi yêu cầu hỗ trợ.',
@@ -37,8 +37,8 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
   if (audience === 'customer') return typeof status === 'string' ? customerGuides[resource]?.[status] ?? '' : '';
   const guides: Record<string, Record<string, string>> = {
     appointments: {
-      REQUESTED: 'Khách hàng đã đề xuất lịch. Nhân viên phụ trách xác nhận lịch trước khi nhân viên thực hiện bàn giao.',
-      CONFIRMED: 'Nhân viên phụ trách đã xác nhận. Khách hàng đến kho đúng hẹn; nhân viên bàn giao thực tế và bấm Hoàn tất bàn giao. Chỉ thực hiện khi đã đến giờ hẹn và còn trong kỳ thuê.',
+      REQUESTED: 'Lịch chưa thể xác nhận tự động. Nhân viên kiểm tra điều kiện và xử lý ngoại lệ trước khi bàn giao.',
+      CONFIRMED: 'Lịch đã được xác nhận. Có thể hẹn nhận chìa khóa sớm tối đa 3 ngày; chỉ kích hoạt hợp đồng từ ngày bắt đầu thuê. Khách hàng đến kho đúng hẹn; nhân viên bàn giao thực tế và bấm Hoàn tất bàn giao. Chỉ thực hiện khi đã đến giờ hẹn và còn trong kỳ thuê.',
       COMPLETED: 'Nhân viên đã hoàn tất bàn giao, hợp đồng được kích hoạt. Khách hàng có thể tạo phiếu nhập hàng trong mục Nhập – xuất hàng.',
       CANCELLED: 'Lịch đã hủy. Khách hàng có thể đặt lại lịch khi hợp đồng còn đủ điều kiện.',
     },
@@ -49,7 +49,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       CANCELLED: 'Phiếu đã hủy; không có bước kiểm đếm hoặc hoàn tất tiếp theo.',
     },
     renewals: {
-      PENDING: 'Nhân viên phụ trách đối chiếu hợp đồng, hạn cũ – mới và báo giá trước khi duyệt hoặc từ chối.',
+      PENDING: 'Hệ thống không thể duyệt tự động. Nhân viên đối chiếu hợp đồng, hạn cũ – mới và xung đột kho trước khi xử lý.',
       APPROVED_PENDING_PAYMENT: 'Đã duyệt gia hạn. Khách hàng cần thanh toán hóa đơn kích hoạt; chỉ sau khi hệ thống xác nhận thanh toán thì kỳ gia hạn mới hoàn tất.',
       COMPLETED: 'Gia hạn đã hoàn tất. Xem kỳ thuê cập nhật trong hồ sơ kho đang thuê.',
       REJECTED: 'Yêu cầu đã bị từ chối. Khách hàng xem lý do và gửi hỗ trợ nếu cần giải thích.',

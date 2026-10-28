@@ -69,6 +69,7 @@ export function CustomerReservationDetailPage() {
       />
       <div className="customer-detail-grid">
         <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'Hệ thống chưa thể xác nhận tự động và đã chuyển hồ sơ cho nhân viên kiểm tra ngoại lệ.' : reservation.status === 'CONFIRMED' ? 'Yêu cầu đặt kho đã được xác nhận. Vui lòng kiểm tra hóa đơn trong Thanh toán; sau khi thanh toán được xác nhận, bạn có thể đặt lịch nhận kho.' : 'Yêu cầu đã kết thúc xử lý. Xem trạng thái và nội dung hồ sơ; gửi hỗ trợ nếu bạn cần WDP giải thích.'}</WorkflowHint></div>
+        {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
         <div className="customer-detail-content">
           <section className="customer-panel">
             <h2>Thông tin kho</h2>

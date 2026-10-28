@@ -17,6 +17,7 @@ import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
+import { paymentWindowClosed } from '@/utils/payment-state';
 
 function portalStatus(role: PortalRole, resource: string, value: unknown) {
   if (role === 'CUSTOMER' && value === 'OPEN') return resource === 'invoices' ? 'Chưa thanh toán' : 'Đang chờ tiếp nhận';
@@ -55,7 +56,7 @@ export function PortalDetail({ role }: { role: PortalRole }) {
 }
 function Detail({ role, resource, id }: { role: PortalRole; resource: string; id: string }) {
   const { user } = useAuth(), config = portalResource(role, resource), allowed = user?.role === role, root = `/${role.toLowerCase()}`;
-  const data = useResource<Row>(allowed && config ? `${config.path}/${encodeURIComponent(id)}` : null);
+  const data = useResource<Row>(allowed && config ? `${config.path}/${encodeURIComponent(id)}` : null, false, role === 'CUSTOMER' && resource === 'invoices');
   const contracts = useResource<Row>(allowed && role === 'CUSTOMER' && resource === 'contracts' ? '/customer/contracts' : null, true);
   const appointments = useResource<Row>(allowed && role === 'CUSTOMER' && resource === 'contracts' ? '/customer/appointments' : null, true);
   const returns = useResource<Row>(allowed && role === 'CUSTOMER' && resource === 'rentals' ? '/customer/returns' : null, true);
@@ -75,6 +76,8 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
     <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={role === 'CUSTOMER' ? 'Theo dõi trạng thái, thông tin và hướng dẫn cho yêu cầu của bạn.' : 'Đối chiếu thông tin và cập nhật kết quả công việc tại đây.'} /><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
+      {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && Boolean(row.expiresAt) && <WorkflowHint text={paymentWindowClosed({ type: 'INITIAL', reservation: row }, clock) ? 'Đã đến hạn giữ kho. Hãy kiểm tra lại trạng thái; nếu đã chuyển tiền, gửi hỗ trợ để WDP đối chiếu.' : `Thanh toán trước ${formatDate(String(row.expiresAt), true)} (UTC+7) để giữ kho.`} />}
+      {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && <Navigation title="Xem hóa đơn và thanh toán" path="/customer/invoices" />}
       {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
       <WorkflowHint text={workflowGuide(resource, row.status, role === 'CUSTOMER' ? 'customer' : 'staff')} />
       {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'APPROVED_PENDING_PAYMENT' && <Navigation title="Xem hóa đơn & thanh toán gia hạn" path={rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)?.id ? `/customer/invoices/${encodeURIComponent(String(rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)!.id))}` : '/customer/invoices'} />}
@@ -91,7 +94,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
       {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && Date.parse(text(row, 'scheduledAt')) > clock && <Text style={styles.copy}>Chưa đến giờ hẹn. Chỉ hoàn tất khi đã bàn giao thực tế đầy đủ.</Text>}
       {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && handoverWindowIssue(row, clock) && <Text style={styles.error}>Ngày bàn giao thực tế nằm ngoài kỳ thuê. Không thể kích hoạt hợp đồng.</Text>}
       {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : actions.map(item => <Button key={item.title} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
-      {role === 'CUSTOMER' && resource === 'invoices' && <InvoicePayment key={`${id}:${row.status}:${row.balanceDue}`} invoice={row} refresh={refresh} onNotice={setNotice} />}
+      {role === 'CUSTOMER' && resource === 'invoices' && <InvoicePayment key={id} invoice={row} refresh={refresh} onNotice={setNotice} />}
       <Disclosure title="Chi tiết và lịch sử hồ sơ"><RecordView row={row} root={root} /></Disclosure>
     </>}
   </ScrollView>;

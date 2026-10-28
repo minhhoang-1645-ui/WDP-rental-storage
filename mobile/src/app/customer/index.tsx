@@ -45,13 +45,13 @@ export default function CustomerHomeScreen() {
     <Button title="Làm mới tổng quan" onPress={refresh} disabled={sources.some(item => item.loading)} />
     <ActivitySummary />
     <WorkHub title="Bạn muốn làm gì hôm nay?" description="Yêu cầu, thanh toán và nhận kho được đặt ở đầu để dễ theo dõi." actions={[
-      { title: 'Theo dõi yêu cầu', path: '/customer/reservations', description: 'Xem WDP đã tiếp nhận và duyệt đến đâu.', count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
+      { title: 'Theo dõi yêu cầu', path: '/customer/reservations', description: 'Xem kết quả xác nhận và hạn giữ kho của bạn.', count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
       { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: invoices.loading || invoices.error ? 'Xem hóa đơn và kết quả đối chiếu.' : payable.length ? `Còn ${formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))}. Mở để xem chi tiết.` : 'Xem hóa đơn, khoản đã trả và thông báo chuyển khoản.', count: count(invoices, payable.length) },
       { title: 'Lịch nhận kho', path: '/customer/appointments', description: 'Xem giờ hẹn đã xác nhận và hướng dẫn nhận kho của bạn.', count: count(appointments, appointments.data?.items.filter(item => ['REQUESTED','CONFIRMED'].includes(String(item.status))).length ?? 0) },
       { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Xem kho hoạt động, gia hạn và gửi hỗ trợ.', count: count(rentals, rentals.data?.total ?? 0) },
     ]} />
     {sources.filter(item => item.error).map((item, index) => <ErrorState key={index} message={item.error!} onRetry={item.refresh} />)}
-    <Panel title="Quy trình thuê kho"><Text style={styles.copy}>Chọn kho trên website → chờ xác nhận → thanh toán → đặt lịch nhận kho → nhận kho và gửi hàng.</Text><Text style={styles.copy}>Mỗi hồ sơ có tiến độ riêng. Gia hạn, trả kho và hỗ trợ nằm trong các nhóm chức năng bên dưới.</Text></Panel>
+    <Panel title="Quy trình thuê kho"><Text style={styles.copy}>Chọn kho trên website → xác nhận tự động khi đủ điều kiện → thanh toán trong hạn giữ kho → đặt lịch nhận kho → nhận kho và gửi hàng.</Text><Text style={styles.copy}>Mỗi hồ sơ có tiến độ riêng. Gia hạn, trả kho và hỗ trợ nằm trong các nhóm chức năng bên dưới.</Text></Panel>
     <Panel title="Yêu cầu gần đây">{reservations.loading ? <LoadingState /> : !reservations.error && (reservations.data?.length ? [...reservations.data].sort((a,b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt))).slice(0,3).map(item => <Navigation key={String(item.id)} title={codeOf(item)} description={`${label(item.status)} · ${String((item.product as Row)?.name ?? 'Yêu cầu đặt kho')}`} path={`/customer/reservations/${encodeURIComponent(String(item.id))}`} />) : <Text style={styles.copy}>Chưa có yêu cầu. Bạn có thể chọn loại kho và gửi yêu cầu trên website WDP.</Text>)}</Panel>
     <FunctionMenu groups={groups} />
     <Navigation title="Tài khoản và đăng xuất" path="/customer/account" />

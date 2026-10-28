@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
@@ -28,10 +28,12 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
+import { TransferRequests } from '../../components/manager/TransferRequests';
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const search = params.get("search") ?? "";
   const status = params.get("status") ?? "";
@@ -41,6 +43,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
   );
   const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [transferSource, setTransferSource] = useState<Row>();
+  const [createdMaintenance, setCreatedMaintenance] = useState<{ owner: string; row: Row }>();
   const [state, setState] = useState<{
     key: string;
     data?: Page;
@@ -130,7 +134,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   return (
     <section>
       <PageHeader title={config.title} description={config.description}>
-        {["maintenance", "transfers"].includes(resource) && (
+        {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
             {resource === "maintenance" ? "Tạo bảo trì" : "Tạo chuyển kho"}
@@ -145,6 +149,9 @@ export function ManagerListPage({ resource }: { resource: string }) {
           Làm mới
         </button>
       </PageHeader>
+      {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
+      {resource === 'maintenance' && <section className="manager-section"><h2>Bảo trì đúng tình trạng kho</h2><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></section>}
+      {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
       <div className="portal-toolbar">
         <label className="field-label portal-search">
           Tìm kiếm
@@ -315,10 +322,14 @@ export function ManagerListPage({ resource }: { resource: string }) {
       {creating && (
         <ManagerCreateDialog
           resource={resource}
-          onClose={() => setCreating(false)}
-          onSuccess={() => {
+          source={transferSource}
+          onClose={() => { setCreating(false); setTransferSource(undefined); }}
+          onSuccess={created => {
             setCreating(false);
+            setTransferSource(undefined);
             refresh();
+            if (resource === 'maintenance') setCreatedMaintenance({ owner: user?.id ?? '', row: created });
+            if (resource === 'transfers' && user?.role === 'STAFF' && first(created, 'id')) navigate(`/staff/transfers/${encodeURIComponent(first(created, 'id'))}`);
           }}
         />
       )}

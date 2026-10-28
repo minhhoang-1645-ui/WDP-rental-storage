@@ -27,7 +27,7 @@ export function InvoicePayment({ invoice, refresh, onNotice }: { invoice: Row; r
   const holdExpired = paymentWindowClosed(invoice, now);
   const payable = !holdExpired && balance > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(String(invoice.status));
   useDraftGuard(busy || (payable && qrAmount !== String(balance)));
-  const transfer = (): FormAction => ({ title: 'Thông báo đã chuyển khoản', path: `/customer/invoices/${encodeURIComponent(invoiceId)}/payment-submissions`, method: 'POST', idempotent: true, description: 'Chỉ gửi sau khi đã chuyển tiền thực tế. Thông báo đang chờ WDP đối chiếu, chưa phải khoản thu đã xác nhận.', fields: [
+  const transfer = (): FormAction => ({ title: 'Thông báo đã chuyển khoản', path: `/customer/invoices/${encodeURIComponent(invoiceId)}/payment-submissions`, method: 'POST', idempotent: true, description: 'Chỉ gửi sau khi đã chuyển tiền thực tế. Thông báo đang chờ NestBox đối chiếu, chưa phải khoản thu đã xác nhận.', fields: [
     { name: 'amount', title: 'Số tiền đã chuyển (VND)', numeric: true, minimum: 1, maximum: balance, required: true, initial: qrAmount },
     { name: 'transferReference', title: 'Mã giao dịch ngân hàng (nếu có)', maxLength: 200 }, { name: 'customerNote', title: 'Ghi chú chuyển khoản', multiline: true, maxLength: 1000 }, { name: '_confirmed', title: 'Tôi đã chuyển khoản thực tế cho hóa đơn này', checkbox: true, required: true, clientOnly: true },
   ], transform: input => ({ ...input, method: 'BANK_TRANSFER', transferReference: input.transferReference ?? null, customerNote: input.customerNote ?? null }) });
@@ -35,7 +35,7 @@ export function InvoicePayment({ invoice, refresh, onNotice }: { invoice: Row; r
     <Facts values={[["Còn phải thanh toán", money(invoice.balanceDue)]]} />
     <Navigation title="Xem thông báo chuyển khoản" path="/customer/payment-submissions" />
     {Boolean(text(invoice, 'reservation.expiresAt')) && <Text style={styles.copy}>Hạn giữ kho: {new Date(text(invoice, 'reservation.expiresAt')).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })} (UTC+7).</Text>}
-    {holdExpired && <Text accessibilityRole="alert" style={styles.error}>Đã hết hạn giữ kho. Kiểm tra trạng thái yêu cầu; nếu đã chuyển tiền, gửi hỗ trợ để WDP đối chiếu.</Text>}
+    {holdExpired && <Text accessibilityRole="alert" style={styles.error}>Đã hết hạn giữ kho. Kiểm tra trạng thái yêu cầu; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.</Text>}
     <OnlinePayment paid={invoice.status === 'PAID'} invoiceType={String(invoice.type)} invoiceId={invoiceId} eligible={payable && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type))} disabled={pending || submissions.loading || Boolean(submissions.error) || Boolean(form)} refresh={refresh} onWaitingChange={setOnlinePending} />
     {submissions.loading ? <LoadingState /> : submissions.error ? <ErrorState message={submissions.error} onRetry={submissions.refresh} /> : pending ? <Text style={styles.copy}>Đang có thông báo chuyển khoản chờ đối chiếu cho hóa đơn này.</Text> : onlinePending ? <Text style={styles.copy}>Đang theo dõi phiên VNPay. Vui lòng không chuyển khoản thêm cho cùng hóa đơn.</Text> : payable && <>
       {bank.loading ? <LoadingState /> : bank.error ? <ErrorState message={bank.error} onRetry={bank.refresh} /> : bank.data?.configured ? <>
@@ -44,7 +44,7 @@ export function InvoicePayment({ invoice, refresh, onNotice }: { invoice: Row; r
         {qrPayload ? <View accessible accessibilityLabel={`QR chuyển khoản hóa đơn ${invoice.invoiceCode}, số tiền ${qrAmount} đồng`} style={{ alignItems: 'center', padding: 12, backgroundColor: 'white', borderRadius: 12 }}><QRCode value={qrPayload} size={208} quietZone={12} ecl="M" /><Text style={styles.copy}>{money(Number(qrAmount))}</Text></View> : <Text accessibilityRole="alert" style={styles.error}>Chưa thể tạo QR. Kiểm tra số tiền nguyên dương không vượt số dư và thông tin ngân hàng.</Text>}
         <Text style={styles.copy}>Kiểm tra người nhận, số tiền và nội dung trong ứng dụng ngân hàng. Quét QR chưa đồng nghĩa đã thanh toán.</Text>
         {!form && <Button title="Tôi đã chuyển khoản" disabled={busy || !qrPayload} onPress={() => setForm(transfer())} />}
-      </> : <Text style={styles.copy}>Chưa có thông tin ngân hàng nhận tiền. Vui lòng gửi yêu cầu hỗ trợ để WDP hướng dẫn.</Text>}
+      </> : <Text style={styles.copy}>Chưa có thông tin ngân hàng nhận tiền. Vui lòng gửi yêu cầu hỗ trợ để NestBox hướng dẫn.</Text>}
     </>}
     {form ? <OperationForm key={form.title} action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); onNotice('Đã gửi yêu cầu. Xem thông báo chuyển khoản hoặc hỗ trợ để theo dõi trạng thái.'); refresh(); }} /> : Boolean(text(invoice, 'reservation.id')) && <Button title="Hỗ trợ về hóa đơn" variant="secondary" onPress={() => setForm(customerSupportAction(text(invoice, 'reservation.id'), { invoiceId }))} />}
   </Panel>;

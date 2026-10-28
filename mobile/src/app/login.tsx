@@ -39,9 +39,9 @@ export default function LoginScreen() {
 
   return <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.content}>
-      <View style={styles.brand}><View style={styles.wordmark}><View style={styles.brandMark}><Text style={styles.brandMarkText}>W</Text></View><Text style={styles.logo}>WDP <Text style={styles.logoLight}>Storage</Text></Text></View><Text style={styles.brandCaption}>KHO TỰ QUẢN · MỘT CƠ SỞ</Text></View>
+      <View style={styles.brand}><View style={styles.wordmark}><View style={styles.brandMark}><Text style={styles.brandMarkText}>N</Text></View><Text style={styles.logo}>NestBox <Text style={styles.logoLight}>Storage</Text></Text></View><Text style={styles.brandCaption}>KHO TỰ QUẢN · MỘT CƠ SỞ</Text></View>
       <View style={styles.card}>
-        <View style={styles.heading}><Text style={styles.eyebrow}>KHÔNG GIAN VỪA VỚI BẠN</Text><Text style={styles.title}>Chào mừng trở lại</Text><Text style={styles.description}>Đăng nhập để theo dõi kho thuê và công việc của bạn tại WDP.</Text></View>
+        <View style={styles.heading}><Text style={styles.eyebrow}>KHÔNG GIAN VỪA VỚI BẠN</Text><Text style={styles.title}>Chào mừng trở lại</Text><Text style={styles.description}>Đăng nhập để theo dõi kho thuê và công việc của bạn tại NestBox.</Text></View>
         <View style={styles.form}>
           <View style={styles.field}><Text style={styles.label}>Email</Text><TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!submitting} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" submitBehavior="submit" onSubmitEditing={event => { setEmail(event.nativeEvent.text); passwordInput.current?.focus(); }} maxLength={254} placeholder="name@example.com" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /></View>
           <View style={styles.field}><Text style={styles.label}>Mật khẩu</Text><TextInput ref={passwordInput} accessibilityLabel="Mật khẩu" value={password} onChangeText={setPassword} editable={!submitting} secureTextEntry={!passwordVisible} autoCapitalize="none" autoCorrect={false} autoComplete="current-password" returnKeyType="done" submitBehavior="submit" maxLength={128} onSubmitEditing={event => void submit(event.nativeEvent.text)} placeholder="Nhập mật khẩu" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /><Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} disabled={submitting} onPress={() => setPasswordVisible(value => !value)} style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-end" }}><Text style={styles.label}>{passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</Text></Pressable></View>
@@ -49,7 +49,7 @@ export default function LoginScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel="Đăng nhập" accessibilityState={{ disabled: submitting || !email.trim() || !password, busy: submitting }} disabled={submitting || !email.trim() || !password} onPress={() => void submit()} style={styles.submit}><Text style={styles.submitText}>{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</Text></Pressable>
         </View>
       </View>
-      <Text style={styles.hint}>Dùng cùng tài khoản WDP trên web và điện thoại. Bạn sẽ được đưa đến đúng khu vực theo vai trò.</Text>
+      <Text style={styles.hint}>Dùng cùng tài khoản NestBox trên web và điện thoại. Bạn sẽ được đưa đến đúng khu vực theo vai trò.</Text>
     </ScrollView>
   </KeyboardAvoidingView>;
 }

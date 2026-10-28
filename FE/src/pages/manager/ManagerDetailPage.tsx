@@ -3,7 +3,7 @@ import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
@@ -33,12 +33,17 @@ import { ManagerContractTransfers } from "./ManagerContractTransfers";
 import { StaffActions } from '../staff/StaffActions';
 import { staffResources, type StaffResource } from '../staff/staff-resources';
 import { RenewalReview } from '../../components/manager/RenewalReview';
+import { ManagerCreateDialog } from './ManagerCreateDialog';
+import { isTransferRequest } from '../../utils/transfer-request';
+import { TransferSupportAction, CompletedTransferSync } from '../../components/manager/TransferRequests';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { id = "" } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const config = resources[resource];
   const [notice, setNotice] = useState("");
+  const [creatingTransfer, setCreatingTransfer] = useState(false);
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
     user?.id ?? "",
@@ -92,6 +97,8 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}
               <DetailContent row={row} resource={resource} />
+              {resource === 'support-requests' && user?.role === 'STAFF' && isTransferRequest(row) && <TransferSupportAction row={row} onCreate={() => setCreatingTransfer(true)} />}
+              {resource === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
               {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
@@ -152,6 +159,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
           </div>
         </>
       )}
+      {creatingTransfer && row && <ManagerCreateDialog resource="transfers" source={row} onClose={() => setCreatingTransfer(false)} onSuccess={created => { setCreatingTransfer(false); if (first(created, 'id')) navigate(`/staff/transfers/${encodeURIComponent(first(created, 'id'))}`); else data.refresh(); }} />}
     </section>
   );
 }

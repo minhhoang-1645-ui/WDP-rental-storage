@@ -152,7 +152,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
             </Link>
           </p>
           <p className="auth-disclosure">
-            Dùng cùng tài khoản WDP trên web và điện thoại. Nếu phiên hết hạn,
+            Dùng cùng tài khoản NestBox trên web và điện thoại. Nếu phiên hết hạn,
             hãy đăng nhập lại để tiếp tục.
           </p>
         </form>

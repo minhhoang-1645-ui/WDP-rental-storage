@@ -33,7 +33,7 @@ export function AdditionalServicePicker({ services, selections, startDate, endDa
   }, [key, validSelections]);
   const change = (serviceId: string, patch: Partial<ServiceSelection>) => onChange(selections.map(item => item.serviceId === serviceId ? { ...item, ...patch } : item));
   const removedSelections = selections.filter(selection => !services.some(service => service.id === selection.serviceId));
-  if (!services.length) return <div className="addon-empty">Chưa có dịch vụ bổ sung được WDP duyệt{selections.length > 0 && <button type="button" className="button-secondary" onClick={() => onChange([])}>Xóa dịch vụ không còn trong danh mục</button>}</div>;
+  if (!services.length) return <div className="addon-empty">Chưa có dịch vụ bổ sung được NestBox duyệt{selections.length > 0 && <button type="button" className="button-secondary" onClick={() => onChange([])}>Xóa dịch vụ không còn trong danh mục</button>}</div>;
   const groups = [
     { kind: 'DAY', title: 'Thiết bị thuê theo ngày', description: 'Tính theo số ngày sử dụng thực tế; đây là thiết bị, không gồm nhân công bốc xếp.' },
     { kind: 'MONTH', title: 'Thiết bị thuê theo tháng', description: 'Tính theo tháng trọn kỳ của dịch vụ.' },

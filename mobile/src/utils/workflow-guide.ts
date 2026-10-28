@@ -3,15 +3,15 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
   const customerGuides: Record<string, Record<string, string>> = {
     appointments: {
       REQUESTED: 'Lịch cần nhân viên kiểm tra ngoại lệ trước khi xác nhận thời gian nhận kho.',
-      CONFIRMED: 'Lịch nhận kho của bạn đã được xác nhận. Bạn hãy đến kho đúng hẹn; nhân viên WDP sẽ kiểm tra thông tin và bàn giao kho cho bạn.',
+      CONFIRMED: 'Lịch nhận kho của bạn đã được xác nhận. Bạn hãy đến kho đúng hẹn; nhân viên NestBox sẽ kiểm tra thông tin và bàn giao kho cho bạn.',
       COMPLETED: 'Bạn đã nhận kho. Bạn có thể gửi yêu cầu nhập hàng và xem số lượng hàng đang lưu trong tài khoản.',
       CANCELLED: 'Lịch nhận kho này đã hủy. Bạn có thể chọn lịch khác nếu hợp đồng vẫn đủ điều kiện nhận kho.',
     },
     'stock-movements': {
-      REQUESTED: 'Yêu cầu của bạn đã được gửi. WDP đang sắp xếp nhân viên tiếp nhận; số lượng hàng đang lưu chưa thay đổi.',
+      REQUESTED: 'Yêu cầu của bạn đã được gửi. NestBox đang sắp xếp nhân viên tiếp nhận; số lượng hàng đang lưu chưa thay đổi.',
       ASSIGNED: 'Nhân viên đã được sắp xếp để hỗ trợ bạn giao nhận hàng. Số lượng thực tế sẽ được cập nhật sau khi kiểm đếm xong.',
       COMPLETED: 'Hàng của bạn đã được giao nhận và cập nhật số lượng thực tế. Bạn có thể mở Hàng đang lưu để kiểm tra.',
-      CANCELLED: 'Yêu cầu giao nhận này đã hủy. Vui lòng liên hệ WDP nếu bạn cần hỗ trợ.',
+      CANCELLED: 'Yêu cầu giao nhận này đã hủy. Vui lòng liên hệ NestBox nếu bạn cần hỗ trợ.',
     },
     renewals: {
       PENDING: 'Yêu cầu gia hạn có ngoại lệ và đang được nhân viên kiểm tra. Kết quả sẽ được cập nhật tại đây.',
@@ -20,17 +20,17 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       REJECTED: 'Yêu cầu gia hạn chưa được chấp thuận. Vui lòng xem lý do trong hồ sơ hoặc gửi yêu cầu hỗ trợ.',
     },
     returns: {
-      REQUESTED: 'Yêu cầu trả kho của bạn đã được gửi. Nhân viên WDP sẽ kiểm tra kho trước khi đối chiếu tiền cọc.',
+      REQUESTED: 'Yêu cầu trả kho của bạn đã được gửi. Nhân viên NestBox sẽ kiểm tra kho trước khi đối chiếu tiền cọc.',
       INSPECTION_IN_PROGRESS: 'Nhân viên đang kiểm tra kho của bạn. Kết quả và các khoản cần đối chiếu sẽ được cập nhật tại đây.',
-      ISSUE_FOUND: 'Có vấn đề cần đối chiếu sau kiểm tra. Vui lòng xem ghi nhận trong hồ sơ và chờ WDP xác nhận kết quả.',
-      PENDING_SETTLEMENT: 'Kho đã được kiểm tra. WDP đang đối chiếu tiền cọc và các khoản còn lại; bạn có thể theo dõi ở mục Trả kho & tiền cọc.',
+      ISSUE_FOUND: 'Có vấn đề cần đối chiếu sau kiểm tra. Vui lòng xem ghi nhận trong hồ sơ và chờ NestBox xác nhận kết quả.',
+      PENDING_SETTLEMENT: 'Kho đã được kiểm tra. NestBox đang đối chiếu tiền cọc và các khoản còn lại; bạn có thể theo dõi ở mục Trả kho & tiền cọc.',
       COMPLETED: 'Yêu cầu trả kho đã hoàn tất. Bạn có thể xem hồ sơ quyết toán để đối chiếu tiền cọc và các khoản cuối cùng.',
     },
     'support-requests': {
-      OPEN: 'Yêu cầu hỗ trợ của bạn đã được gửi. WDP sẽ tiếp nhận và cập nhật phản hồi tại đây.',
-      ASSIGNED: 'WDP đã tiếp nhận yêu cầu và sắp xếp nhân viên hỗ trợ bạn.',
+      OPEN: 'Yêu cầu hỗ trợ của bạn đã được gửi. NestBox sẽ tiếp nhận và cập nhật phản hồi tại đây.',
+      ASSIGNED: 'NestBox đã tiếp nhận yêu cầu và sắp xếp nhân viên hỗ trợ bạn.',
       IN_PROGRESS: 'Yêu cầu của bạn đang được xử lý. Bạn có thể theo dõi phản hồi trong hồ sơ này.',
-      ESCALATED: 'Yêu cầu của bạn đã được chuyển đến bộ phận phụ trách để xem xét. WDP sẽ cập nhật kết quả sau khi xử lý.',
+      ESCALATED: 'Yêu cầu của bạn đã được chuyển đến bộ phận phụ trách để xem xét. NestBox sẽ cập nhật kết quả sau khi xử lý.',
       RESOLVED: 'Yêu cầu của bạn đã được giải quyết. Vui lòng xem kết quả xử lý bên dưới.',
     },
   };

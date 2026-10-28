@@ -1,3 +1,4 @@
+import { EARLY_RETURN_SUBJECT, isEarlyReturnRequest, isCurrentEarlyReturnApproval } from '@/utils/early-return';
 import { idOf, object, options, rows, text, type Row } from '@/operations/model';
 import type { FormAction, FormField } from '@/operations/form';
 import { formatDate } from '@/utils/format';
@@ -23,7 +24,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
     if (row.status === 'OPEN') add('Bắt đầu bảo trì', '/start', [], true);
     if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi nhân viên phụ trách nghiệm thu.');
   }
-  if (resource === 'support-requests' && assigned) {
+  if (resource === 'support-requests' && !isEarlyReturnRequest(row) && assigned) {
     if (row.status === 'ASSIGNED') add('Bắt đầu hỗ trợ', '/start', [], true);
     if (row.status === 'IN_PROGRESS') {
       add('Hoàn tất hỗ trợ', '/resolve', [choice('resolutionType', 'Kết quả hỗ trợ', ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'], 'ON_SITE_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true, 4000)], true);
@@ -49,18 +50,29 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
 export function staffMaintenanceCreate(): FormAction {
   return { title: 'Báo tình trạng cần bảo trì', path: '/staff/maintenance', method: 'POST', idempotent: true, description: 'Dùng mã dữ liệu kho do quản lý cung cấp. Chỉ báo thủ công cho kho đang sẵn sàng; kho đang thuê báo qua hỗ trợ.', fields: [{ name: 'storageUnitId', title: 'Mã dữ liệu kho', required: true, maxLength: 100 }, choice('category', 'Hạng mục', ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], 'UNIT_DAMAGE'), choice('priority', 'Ưu tiên', ['LOW', 'MEDIUM', 'HIGH'], 'MEDIUM'), note('description', 'Mô tả tình trạng', true, 4000), confirmation()] };
 }
-export function customerSupportAction(reservationId: string, context: { contractId?: string; invoiceId?: string; transfer?: boolean; operational?: boolean } = {}): FormAction {
+export function customerSupportAction(reservationId: string, context: { contractId?: string; unitId?: string; invoiceId?: string; transfer?: boolean; operational?: boolean } = {}): FormAction {
   const operational = context.operational ?? !context.invoiceId;
-  return { title: context.transfer ? 'Yêu cầu chuyển kho qua hỗ trợ' : 'Gửi yêu cầu hỗ trợ', path: '/customer/support-requests', method: 'POST', idempotent: true, description: context.transfer ? 'Yêu cầu chuyển kho của bạn sẽ được WDP xem xét. Vui lòng chờ xác nhận kho mới trước khi chuyển hàng.' : 'Thông tin được gửi đến WDP để tiếp nhận và phân công.', fields: [choice('category', 'Loại hỗ trợ', operational ? ['UNIT_ISSUE', 'LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE', 'FACILITY_EQUIPMENT_FAILURE', 'STORED_ITEM_CONCERN', 'OTHER'] : ['PAYMENT_SUPPORT', 'OTHER'], context.transfer ? 'UNIT_ISSUE' : operational ? 'OTHER' : 'PAYMENT_SUPPORT'), { name: 'subject', title: 'Tiêu đề', required: true, minLength: 3, maxLength: 200, ...(context.transfer ? { initial: 'Yêu cầu chuyển kho' } : {}) }, note('description', 'Mô tả yêu cầu', true, 4000), confirmation()], transform: input => ({ ...input, reservationId, rentalContractId: context.contractId, invoiceId: context.invoiceId }) };
+  return { title: context.transfer ? 'Yêu cầu chuyển kho' : 'Gửi yêu cầu hỗ trợ', path: '/customer/support-requests', method: 'POST', idempotent: true, description: context.transfer ? 'Yêu cầu chuyển kho của bạn sẽ được NestBox xem xét. Vui lòng chờ xác nhận kho mới trước khi chuyển hàng.' : 'Thông tin được gửi đến NestBox để tiếp nhận và phân công.', fields: [choice('category', 'Loại hỗ trợ', operational ? ['UNIT_ISSUE', 'LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE', 'FACILITY_EQUIPMENT_FAILURE', 'STORED_ITEM_CONCERN', 'OTHER'] : ['PAYMENT_SUPPORT', 'OTHER'], context.transfer ? 'UNIT_ISSUE' : operational ? 'OTHER' : 'PAYMENT_SUPPORT'), { name: 'subject', title: 'Tiêu đề', required: true, minLength: 3, maxLength: 200, ...(context.transfer ? { initial: 'Yêu cầu chuyển kho', fixed: true } : {}) }, note('description', 'Mô tả yêu cầu', true, 4000), confirmation()], transform: input => ({ ...input, reservationId, rentalContractId: context.contractId, storageUnitId: context.unitId, invoiceId: context.invoiceId }) };
 }
-export function customerRentalActions(row: Row, returns: Row[], now: number): FormAction[] {
+export function customerRentalActions(row: Row, returns: Row[], now: number, requests: Row[] = []): FormAction[] {
   const reservationId = text(row, 'reservationId'), actions: FormAction[] = [];
   if (!reservationId) return actions;
   if (!row.pendingRenewal) {
     if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Yêu cầu hợp lệ được duyệt tự động; thanh toán hóa đơn kích hoạt để cập nhật thời hạn; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '1'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PAY_MONTHLY'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
-    if (Date.parse(text(row, 'effectiveEndDate')) <= now && !returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED')) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Trả kho từ ngày kết thúc kỳ thuê. Nhân viên sẽ kiểm tra thực tế; quyết toán cọc được xử lý sau.' });
+    const activeReturn = returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
+    const approved = requests.some(item => text(item, 'reservation.id') === reservationId && isCurrentEarlyReturnApproval(item, text(row, 'effectiveEndDate')));
+    if ((Date.parse(text(row, 'effectiveEndDate')) <= now || approved) && !activeReturn) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Nhân viên kiểm tra và nhận kho thực tế; cọc quyết toán riêng.' });
   }
-  actions.push(customerSupportAction(reservationId), customerSupportAction(reservationId, { transfer: true }));
+  const hasActiveReturn = returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
+  const hasProposal = requests.some(item => isEarlyReturnRequest(item) && text(item, 'reservation.id') === reservationId && (item.status !== 'RESOLVED' || isCurrentEarlyReturnApproval(item, text(row, 'effectiveEndDate'))));
+  if (!row.pendingRenewal && !hasActiveReturn && !hasProposal && Date.parse(text(row, 'effectiveEndDate')) > now) actions.push({ title: 'Đề nghị trả trước hạn', path: '/customer/support-requests', method: 'POST', idempotent: true, description: 'Quản lý xem xét công nợ và điều kiện trước khi cho phép trả sớm. Bước đề nghị không tự hoàn tiền thuê hoặc cọc.', fields: [note('description', 'Lý do trả trước hạn', true, 3000), confirmation()], transform: input => ({ ...input, reservationId, category: 'OTHER', subject: EARLY_RETURN_SUBJECT }) });
+  actions.push(customerSupportAction(reservationId));
+  for (const contract of rows(row.contracts)) {
+    const action = customerSupportAction(reservationId, { transfer: true, contractId: idOf(contract), unitId: text(contract, 'unit.id') });
+    action.title = `Yêu cầu chuyển kho ${text(contract, 'unit.unitCode')}`;
+    action.description = `Kho ${text(contract, 'unit.unitCode')} · ${text(contract, 'contractCode')}. ` + action.description;
+    actions.push(action);
+  }
   return actions;
 }
 export function customerAppointmentAction(contract: Row, contracts: Row[], appointments: Row[], now: number): FormAction | undefined {

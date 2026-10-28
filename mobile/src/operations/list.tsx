@@ -1,4 +1,4 @@
-import { isStaffWorkflow } from '@/utils/operation-access';
+import { isStaffWorkflow, isManagerResource } from '@/utils/operation-access';
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -12,6 +12,7 @@ import { useResource } from './use-resource';
 import { Button, Field, Navigation, Panel, styles } from './ui';
 import { RecordView, summary } from './record-view';
 import { Availability } from './availability';
+import { TransferInbox } from './transfer-inbox';
 
 export function ResourceList({ resource: preset }: { resource?: string } = {}) {
   const params = useLocalSearchParams<{ resource: string }>();
@@ -21,7 +22,7 @@ export function ResourceList({ resource: preset }: { resource?: string } = {}) {
 function List({ resource }: { resource: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined;
-  const allowed = user?.role === 'MANAGER' ? !isStaffWorkflow(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
+  const allowed = user?.role === 'MANAGER' ? isManagerResource(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
   const data = useResource<Row | Row[]>(allowed && config ? config.path : null, !config?.shape);
   const [search, setSearch] = useState(''), [status, setStatus] = useState('');
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
@@ -30,9 +31,12 @@ function List({ resource }: { resource: string }) {
   const items = rows(config.shape === 'array' ? data.data : (data.data as Row | undefined)?.[config.shape === 'catalog' ? 'products' : 'items']);
   const shown = items.filter(item => (resource !== 'inquiries' || item.requestType === 'INQUIRY') && (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi-VN').includes(search.toLocaleLowerCase('vi-VN'))));
   const create = (user?.role === 'STAFF' ? isStaffWorkflow(resource) : !isStaffWorkflow(resource)) ? createAction(resource) : undefined;
+  if (create && user?.role === 'STAFF' && ['maintenance', 'transfers'].includes(resource)) create.path = `/staff/management/${resource}`;
   const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={config.title} description="Dữ liệu thực tế và thao tác theo quyền hiện có." />
     <Navigation title="Về tổng quan" path={root} />
     <Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading} />
+    {resource === 'transfers' && user?.role === 'STAFF' && <TransferInbox transfers={items} onCreate={setAction} />}
+    {resource === 'maintenance' && <Panel title="Bảo trì đúng tình trạng kho"><Text style={styles.copy}>Tạo bảo trì trực tiếp cho kho trống. Kho đang thuê cần báo sự cố và xử lý chuyển kho trước khi sửa. Sau khi tạo phiếu, quản lý phân công; nhân viên được giao bắt đầu, gửi kết quả và nghiệm thu.</Text><Navigation title="Tra cứu kho đang thuê" path={`${root}/rentals`} /><Navigation title="Yêu cầu sự cố" path={`${root}/support-requests`} /></Panel>}
     {create && !action && <Button title={create.title} onPress={() => { setNotice(''); setAction(create); }} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); data.refresh(); }} />}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}

@@ -1,4 +1,4 @@
-import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, CircleDollarSign, Wallet } from 'lucide-react';
+import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
 import { isStaffWorkflow } from '../../utils/operation-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
 
@@ -15,10 +15,10 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/transfers', label: 'Chuyển kho', icon: ShieldCheck, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/returns', label: 'Trả kho', icon: RefreshCcw, group: 'Giao nhận & thay đổi' },
   { to: '/manager/payment-submissions', label: 'Chờ xác nhận thanh toán', icon: Wallet, group: 'Thanh toán & hợp đồng' },
+  { to: '/manager/early-returns', label: 'Đề nghị trả trước hạn', icon: Undo2, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: WalletCards, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/contracts', label: 'Hợp đồng thuê', icon: FileText, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/payments', label: 'Lịch sử thanh toán', icon: Receipt, group: 'Thanh toán & hợp đồng' },
-  { to: '/manager/operations/deposit-settlements', label: 'Quyết toán cọc', icon: CircleDollarSign, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/rentals', label: 'Kho đang thuê', icon: Repeat2, group: 'Kho & khách hàng' },
   { to: '/manager/units', label: 'Kho vật lý', icon: Warehouse, group: 'Kho & khách hàng' },
   { to: '/manager/catalog', label: 'Loại kho & bảng giá', icon: ClipboardList, group: 'Kho & khách hàng' },

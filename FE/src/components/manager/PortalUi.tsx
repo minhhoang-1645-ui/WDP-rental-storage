@@ -27,7 +27,7 @@ export function PageHeader({
   return (
     <header className="manager-page-header">
       <div>
-        <p className="eyebrow">WDP STORAGE / {workspace}</p>
+        <p className="eyebrow">NESTBOX STORAGE / {workspace}</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>

@@ -13,6 +13,8 @@ export function hasDraft() { return Boolean(document.querySelector('form[data-wd
 export function matchesSource(path: string, sources: string[]) {
   const clean = canonicalSource(path);
   const dependencies: Record<string, string[]> = {
+    'early-return-requests': ['support-requests', 'invoices', 'payments', 'renewals', 'returns'],
+    'support-requests': ['early-return-requests', 'transfers'],
     invoices: ['payments', 'payment-submissions', 'renewals', 'reservations', 'returns', 'deposit-settlements'],
     payments: ['invoices', 'payment-submissions', 'deposit-settlements'],
     contracts: ['reservations', 'invoices', 'appointments', 'renewals', 'returns', 'transfers'],

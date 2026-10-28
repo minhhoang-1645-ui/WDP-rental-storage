@@ -1,3 +1,4 @@
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { FileText, RefreshCw } from "lucide-react";
@@ -15,6 +16,8 @@ import type { CustomerContract } from "../../types/customer";
 
 export function CustomerContractsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const reservationFilter = params.get('reservation');
   const { data, error, status, loading, refresh } =
     usePaginatedResource<CustomerContract>(
       "/customer/contracts?limit=100",
@@ -22,7 +25,7 @@ export function CustomerContractsPage() {
       true,
     );
   const { items: contracts, pagination } = useCustomerPagination(
-    data?.items ?? [],
+    (data?.items ?? []).filter(contract => !reservationFilter || contract.reservation.reference === reservationFilter || contract.reservation.id === reservationFilter),
   );
   return (
     <section className="customer-page">
@@ -41,6 +44,7 @@ export function CustomerContractsPage() {
           </button>
         }
       />
+      {reservationFilter && <p>Hợp đồng của đơn {reservationFilter} · <Link to="/customer/contracts">Xem tất cả hợp đồng</Link></p>}
       {status === 401 ? (
         <CustomerSessionExpired />
       ) : loading ? (
@@ -50,7 +54,7 @@ export function CustomerContractsPage() {
       ) : contracts.length === 0 ? (
         <PortalEmpty icon={<FileText size={30} />} title="Chưa có hợp đồng">
           <span>
-            Hợp đồng sẽ xuất hiện sau khi yêu cầu đặt kho được WDP xác nhận và cấp
+            Hợp đồng sẽ xuất hiện sau khi yêu cầu đặt kho được NestBox xác nhận và cấp
             kho.
           </span>
         </PortalEmpty>

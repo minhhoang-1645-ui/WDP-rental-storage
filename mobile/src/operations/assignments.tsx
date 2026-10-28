@@ -1,3 +1,4 @@
+import { isEarlyReturnRequest } from '@/utils/early-return';
 import { OperationForm, type FormAction } from './form';
 import { assignmentAction } from './actions';
 import { useAuth } from '@/auth/use-auth';
@@ -24,7 +25,7 @@ export function ManagerAssignments() {
   const refresh = () => { support.refresh(); maintenance.refresh(); movements.refresh(); };
   const tasks: Row[] = [
     ...rows(movements.data?.items).map(row => ({ ...row, resource: 'stock-movements' })),
-    ...rows(support.data?.items).map(row => ({ ...row, resource: 'support-requests' })),
+    ...rows(support.data?.items).filter(row => !isEarlyReturnRequest(row)).map(row => ({ ...row, resource: 'support-requests' })),
     ...rows(maintenance.data?.items).map(row => ({ ...row, resource: 'maintenance' })),
   ].filter(row => (history || !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(text(row, 'status')))
     && (!kind || row.resource === kind)

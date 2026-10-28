@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Local verification export
+dist-review/

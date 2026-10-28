@@ -8,7 +8,7 @@ import { ActivityBell } from '../../activity/ActivityCenter';
 
 const links = [
   ["Kho lưu trữ", "/storage"],
-  ["Chọn kích thước", "/size-guide"],
+  ["So sánh kho", "/size-guide"],
   ["Tiện ích", "/#amenities"],
   ["Cách thuê", "/#how-it-works"],
   ["Cơ sở", "/#facility"],
@@ -50,12 +50,12 @@ export function Header() {
         <Link
           to="/"
           className="public-brand flex items-center gap-2 text-lg font-bold tracking-tight"
-          aria-label="WDP Storage - Trang chủ"
+          aria-label="NestBox Storage - Trang chủ"
         >
           <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
             <Warehouse size={19} />
           </span>
-          <span className="public-wordmark">WDP <em>Storage</em><small>Không gian vừa với bạn</small></span>
+          <span className="public-wordmark">NestBox <em>Storage</em><small>Không gian vừa với bạn</small></span>
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"

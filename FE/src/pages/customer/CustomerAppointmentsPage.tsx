@@ -303,7 +303,7 @@ export function CustomerAppointmentsPage() {
               />
             </label>
             <small id="appointment-timezone">
-              Ngày giờ tại cơ sở WDP (UTC+7). Có thể hẹn nhận chìa khóa sớm từ
+              Ngày giờ tại cơ sở NestBox (UTC+7). Có thể hẹn nhận chìa khóa sớm từ
               {selectedReservation
                 ? ` ${formatPortalDate(selectedReservation.pickupStart)}, đến trước ngày ${formatPortalDate(selectedReservation.endDate)}. Quyền sử dụng kho chỉ bắt đầu từ ${formatPortalDate(selectedReservation.startDate)}.`
                 : ' tối đa 3 ngày trước khi bắt đầu thuê và trước ngày kết thúc kỳ thuê.'}

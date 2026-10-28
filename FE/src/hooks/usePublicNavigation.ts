@@ -11,7 +11,7 @@ export function usePublicNavigation() {
     let reached = false
     const update = () => {
       const heading = main.querySelector('h1')?.textContent?.trim()
-      if (heading) document.title = `${heading} | WDP Storage`
+      if (heading) document.title = `${heading} | NestBox Storage`
       const target = section ? document.getElementById(section) : undefined
       if (target && !reached) { target.scrollIntoView({ block: 'start' }); reached = true }
     }

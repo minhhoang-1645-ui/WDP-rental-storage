@@ -1,3 +1,5 @@
+import { isEarlyReturnRequest } from './early-return';
+
 type WorkRow = Record<string, unknown>;
 
 export const staffWorkGroups = [
@@ -83,7 +85,7 @@ export function staffNeedsAction(
     case "stock-movements":
       return status === "ASSIGNED" && assignee(row) === userId;
     case "support-requests":
-      return (
+      return !isEarlyReturnRequest(row) && (
         status === "ESCALATED" ||
         (["ASSIGNED", "IN_PROGRESS"].includes(status) &&
           assignee(row) === userId)
@@ -100,6 +102,7 @@ export function staffNeedsAction(
 
 export function awaitingAssignment(resource: string, row: WorkRow) {
   return (
+    !(resource === "support-requests" && isEarlyReturnRequest(row)) &&
     ["support-requests", "maintenance", "stock-movements"].includes(resource) &&
     ["OPEN", "REQUESTED"].includes(String(row.status)) &&
     !assignee(row)

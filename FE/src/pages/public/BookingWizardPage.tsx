@@ -1,8 +1,9 @@
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, Snowflake, UserRound, Warehouse, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, UserRound, Warehouse, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
-import { StorageIllustration } from '../../components/booking/StorageIllustration'
+import { StorageImage } from '../../components/public/StorageImage'
+import { storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
 import { AdditionalServicePicker } from '../../components/booking/AdditionalServicePicker'
 import { Container } from '../../components/ui/Container'
 import { bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
@@ -97,7 +98,7 @@ interface CheckoutStepProps {
   quoteError: string
   productName: string
   productCode: string
-  productSizeId: 'locker' | 'small' | 'medium' | 'large'
+  productImage: string
   productDimensions: string
   user: ReturnType<typeof useAuth>['user']
   onUpdate: (patch: Partial<BookingDraft>) => void
@@ -107,7 +108,7 @@ interface CheckoutStepProps {
   canSubmit: boolean
 }
 
-function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productSizeId, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
+function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productImage, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
   const [emailBooking, setEmailBooking] = useState(true)
   const supportsEmail = !draft.adjacencyPreference && !draft.note.trim()
   const customer: GuestContact = {
@@ -137,7 +138,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
           <label className="field-label">Họ và tên<input required readOnly={Boolean(user)} minLength={2} autoComplete="name" value={customer.fullName} onChange={(event) => updateCustomer('fullName', event.target.value)} /></label>
           <label className="field-label">Số điện thoại<input required readOnly={Boolean(user)} minLength={8} type="tel" autoComplete="tel" value={customer.phone} onChange={(event) => updateCustomer('phone', event.target.value)} /></label>
           <label className="field-label sm:col-span-2">Email<input required readOnly={Boolean(user)} type="email" autoComplete="email" value={customer.email} onChange={(event) => updateCustomer('email', event.target.value)} /></label>
-          <label className="field-label sm:col-span-2">Ghi chú thêm, không bắt buộc<textarea rows={4} maxLength={500} value={draft.note} onChange={(event) => onUpdate({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để WDP liên hệ" /></label>
+          <label className="field-label sm:col-span-2">Ghi chú thêm, không bắt buộc<textarea rows={4} maxLength={500} value={draft.note} onChange={(event) => onUpdate({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để NestBox liên hệ" /></label>
         </div>
         {user && <p className="checkout-auth-note"><UserRound size={16} /> Yêu cầu sử dụng thông tin của tài khoản {user.email} đang đăng nhập.</p>}
         {!user && <label className="booking-checkbox"><input type="checkbox" checked={emailBooking && supportsEmail} disabled={submitting || !supportsEmail} onChange={event => setEmailBooking(event.target.checked)} /><span><strong>Xác minh email để nhận yêu cầu đặt kho</strong><small>{supportsEmail ? 'Bạn có thể tạo tài khoản sau khi xác minh email. Chưa giữ kho hoặc thanh toán.' : 'Luồng email chưa hỗ trợ ghi chú hoặc ưu tiên kho liền kề. Yêu cầu liên hệ giữ đầy đủ các thông tin này.'}</small></span></label>}
@@ -148,7 +149,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
     </form>
 
     <aside className="checkout-quote">
-      <div className="quote-product"><StorageIllustration sizeId={productSizeId} /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
+      <div className="quote-product"><StorageImage className="booking-product-thumb" src={productImage} alt={`Ảnh tham khảo cho ${productName}`} /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
       <div className="quote-heading"><h3>Báo giá</h3><span>{quoteState === 'loading' ? 'Đang cập nhật…' : 'Theo báo giá từ máy chủ'}</span></div>
       {quoteState === 'loading' && <div className="booking-alert" role="status"><LoaderCircle className="availability-spinner" size={18} /> Đang tính báo giá mới nhất…</div>}
       {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span></div>}
@@ -223,7 +224,7 @@ export function BookingWizardPage() {
   }, [availabilityState])
 
   const product = getStorageListing(draft.productId) ?? getStorageListing('sm-b12')!
-  const size = getStorageSize(product.sizeId)!
+  const size = storageSpecifications(product, getStorageSize(product.sizeId)!)
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
   const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
   const pricingEndDate = endDateExclusive(draft)
@@ -433,16 +434,16 @@ export function BookingWizardPage() {
       {step === 1 && <div className="booking-step-grid">
         <div>
           <p className="eyebrow">Bước 1</p><h2 className="booking-title">Chọn kích thước và loại kho</h2>
-          <div className="booking-size-list">{bookingSizes.map((category) => <button key={category.id} type="button" onClick={() => selectSize(category.id)} className={category.id === selectedCategory.id ? 'booking-size-card is-selected' : 'booking-size-card'} aria-pressed={category.id === selectedCategory.id}><StorageIllustration sizeId={category.id} /><span className="booking-size-card-copy"><strong>{category.name}</strong><small>{category.dimensions}</small><small>{category.volume}</small></span><span className="booking-radio" aria-hidden="true" /></button>)}</div>
-          <div className="booking-option-block"><h3>Loại kho có sẵn cho {selectedCategory.name.toLowerCase()}</h3><div className="booking-segments" role="group" aria-label="Chọn loại kho">{selectedCategory.products.map((item) => <button key={item.id} type="button" className={item.id === product.id ? 'is-selected' : ''} onClick={() => updateDraft({ productId: item.id })} aria-pressed={item.id === product.id}>{item.condition === 'climate' ? <Snowflake size={18} /> : <Warehouse size={18} />}<span><strong>{item.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</strong><small>{item.code}</small></span></button>)}</div></div>
+          <div className="booking-size-list">{bookingSizes.map((category) => <button key={category.id} type="button" onClick={() => selectSize(category.id)} className={category.id === selectedCategory.id ? 'booking-size-card is-selected' : 'booking-size-card'} aria-pressed={category.id === selectedCategory.id}><span className="booking-category-icon"><Warehouse size={25} /></span><span className="booking-size-card-copy"><strong>{category.name}</strong><small>{category.dimensions}</small><small>{category.volume}</small></span><span className="booking-radio" aria-hidden="true" /></button>)}</div>
+          <div className="booking-option-block"><h3>Loại kho có sẵn cho {selectedCategory.name.toLowerCase()}</h3><div className="booking-segments booking-product-options" role="group" aria-label="Chọn loại kho">{selectedCategory.products.map((item) => <button key={item.id} type="button" className={item.id === product.id ? 'is-selected' : ''} onClick={() => updateDraft({ productId: item.id })} aria-pressed={item.id === product.id}><StorageImage src={item.image} alt="" loading="lazy" /><span><strong>{item.name}</strong><small>{item.code} · {item.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</small><small className="booking-choice-price">{storageMonthlyPrice(item.monthlyPrice)}{item.monthlyPrice !== null ? ' / tháng' : ''}</small></span></button>)}</div></div>
           <div className="booking-option-block"><div className="flex items-center justify-between gap-4"><div><h3>Số lượng kho</h3><p>Tối đa 3 kho trong một yêu cầu.</p></div><div className="quantity-stepper" aria-label="Số lượng kho"><button type="button" onClick={() => updateDraft({ quantity: Math.max(1, draft.quantity - 1), adjacencyPreference: draft.quantity - 1 > 1 && draft.adjacencyPreference })} disabled={draft.quantity === 1} aria-label="Giảm số lượng"><Minus size={17} /></button><output aria-live="polite">{draft.quantity}</output><button type="button" onClick={() => updateDraft({ quantity: Math.min(3, draft.quantity + 1) })} disabled={draft.quantity === 3} aria-label="Tăng số lượng"><Plus size={17} /></button></div></div>{draft.quantity > 1 && <label className="booking-checkbox"><input type="checkbox" checked={draft.adjacencyPreference} onChange={(event) => updateDraft({ adjacencyPreference: event.target.checked })} /><span><strong>Ưu tiên các kho liền kề</strong><small>Đây là mong muốn, không phải cam kết vị trí.</small></span></label>}</div>
         </div>
         <aside className="booking-preview">
-          <div className="booking-preview-visual"><StorageIllustration sizeId={product.sizeId} className="is-large" /></div>
+          <div className="booking-preview-visual"><StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /></div>
           <div className="booking-preview-content">
-            <div className="booking-preview-heading"><div><p className="eyebrow">{product.code}</p><h2>{product.name}</h2></div><span className={product.status === 'limited' ? 'status-warning' : 'status-success'}>{product.status === 'limited' ? 'Sắp hết' : 'Đang nhận yêu cầu'}</span></div>
-            <dl className="booking-specs"><div><dt>Kích thước</dt><dd>{size.dimensions}</dd></div><div><dt>Diện tích</dt><dd>{size.floorArea}</dd></div><div><dt>Thể tích</dt><dd>{size.volume}</dd></div><div><dt>Sức chứa</dt><dd>{size.boxCount}</dd></div></dl>
-            <p className="booking-preview-description">{size.capacity}. Hình minh họa giúp hình dung sức chứa, không phải ảnh kho WDP thực tế.</p>
+            <div className="booking-preview-heading"><div><p className="eyebrow">{product.code}</p><h2>{product.name}</h2></div><span className={product.status === 'limited' ? 'status-warning' : 'status-success'}>{product.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span></div>
+            <dl className="booking-specs"><div><dt>Kích thước</dt><dd>{size.dimensions}</dd></div><div><dt>Diện tích</dt><dd>{size.floorArea}</dd></div><div><dt>Thể tích</dt><dd>{size.volume}</dd></div><div><dt>Điều kiện</dt><dd>{product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</dd></div></dl>
+            <p className="booking-preview-description">{product.access}. Bạn chọn loại kho; mã kho vật lý và vị trí được hiển thị sau khi xác nhận. Ảnh tham khảo giống danh sách kho.</p>
             <div className="booking-listed-price"><span>Giá niêm yết theo tháng</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
             <button type="button" className="button-primary booking-preview-cta w-full justify-center" onClick={() => goToStep(2)}>Chọn thời gian <ArrowRight size={18} /></button>
           </div>
@@ -462,13 +463,13 @@ export function BookingWizardPage() {
               <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. Kỳ thuê đủ điều kiện có thể được áp dụng chiết khấu trả trước. Tiền đặt cọc không được chiết khấu.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
             </div></fieldset>
             <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
-            <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Giá và khả dụng được kiểm tra qua hệ thống WDP.</p></div></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
-            <label className="field-label">Ghi chú cho WDP, không bắt buộc<textarea rows={3} maxLength={500} value={draft.note} onChange={(event) => updateDraft({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để liên hệ" /></label>
+            <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Giá và khả dụng được kiểm tra qua hệ thống NestBox.</p></div></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
+            <label className="field-label">Ghi chú cho NestBox, không bắt buộc<textarea rows={3} maxLength={500} value={draft.note} onChange={(event) => updateDraft({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để liên hệ" /></label>
 
           </div>
         </div>
         <aside className="booking-summary">
-          <div className="booking-summary-product"><StorageIllustration sizeId={product.sizeId} /><div><span>{product.code}</span><strong>{product.name}</strong><small>{size.dimensions} · {draft.quantity} kho</small></div></div>
+          <div className="booking-summary-product"><StorageImage className="booking-product-thumb" src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /><div><span>{product.code}</span><strong>{product.name}</strong><small>{size.dimensions} · {draft.quantity} kho</small></div></div>
           <div className="booking-summary-listed-price"><span>Giá niêm yết theo tháng</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
           <div className="booking-period"><CalendarDays size={21} /><div><span>Thời gian thuê</span><strong>{draft.startDate ? 'Từ ' + formatDate(draft.startDate) : 'Chưa chọn ngày bắt đầu'}</strong></div></div>
           <dl className="booking-summary-details">
@@ -500,7 +501,7 @@ export function BookingWizardPage() {
         </aside>
       </div>}
 
-      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productSizeId={product.sizeId} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={canCheckAvailability && availabilityState === 'available' && Boolean(availability?.available) && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
+      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productImage={product.image} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={canCheckAvailability && availabilityState === 'available' && Boolean(availability?.available) && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
     </Container></section>
     {popupOpen && availabilityState !== 'idle' && availabilityState !== 'checking' && <AvailabilityToast state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} onClose={() => setPopupOpen(false)} />}
   </div>

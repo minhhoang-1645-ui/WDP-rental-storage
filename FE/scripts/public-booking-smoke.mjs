@@ -37,10 +37,20 @@ try {
     });
     const page = await context.newPage(); page.setDefaultTimeout(30000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(base + '/booking', { waitUntil: 'domcontentloaded' });
+    const other = catalog.products.find(item => item.id !== product.id && !item.image.includes('.test/'));
+    await page.goto(base + `/size-guide?compare=${encodeURIComponent(product.id + ',' + other.id)}`, { waitUntil: 'domcontentloaded' });
+    const comparison = page.locator(`th[data-product-id="${product.id}"]`);
+    await comparison.waitFor();
+    assert.equal(await comparison.locator('img').getAttribute('data-catalog-image'), product.image);
+    assert.equal(await page.locator('canvas').count(), 0);
+    await page.getByRole('link', { name: `Chọn kho ${product.name}`, exact: true }).click();
+    await page.locator('.booking-preview-heading h2').waitFor();
+    assert.equal(await page.locator('.booking-preview-heading h2').innerText(), product.name);
+    assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), product.image);
     await page.getByRole('button', { name: 'Chọn thời gian', exact: true }).click();
     const next = page.getByRole('button', { name: 'Tiếp tục', exact: true });
-    await next.waitFor(); await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Tiếp tục' && !button.disabled));
+    await next.waitFor();
+    assert.equal(await page.locator('.booking-summary-product img').getAttribute('data-catalog-image'), product.image); await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Tiếp tục' && !button.disabled));
     // Changing the rental period must invalidate previously available inventory.
     unavailable = true;
     const another = new Date(future); another.setUTCDate(another.getUTCDate() + 1);
@@ -51,13 +61,14 @@ try {
     await page.getByLabel('Ngày bắt đầu mong muốn', { exact: true }).fill(startDate);
     await page.locator('.availability-badge.is-available').first().waitFor();
     await next.click();
+    assert.equal(await page.locator('.quote-product img').getAttribute('data-catalog-image'), product.image);
     await page.getByLabel('Họ và tên', { exact: true }).fill('Người đặt kiểm thử');
     await page.getByLabel('Số điện thoại', { exact: true }).fill('0900000000');
     await page.getByLabel('Email', { exact: true }).fill('booking-ui@example.test');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px booking overflow`);
     await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).click();
     await page.getByRole('heading', { name: 'Đã ghi nhận yêu cầu xác minh email', exact: true }).waitFor();
-    checks.push(`${width}px: three booking steps, real catalog/quotes, automatic availability invalidation and isolated guest confirmation`);
+    checks.push(`${width}px: comparison → same product/image in all three booking steps, real quotes, availability invalidation and isolated guest confirmation`);
     await context.close();
   }
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);

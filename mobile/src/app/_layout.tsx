@@ -28,7 +28,7 @@ function RootNavigation() {
         <Stack.Screen name="staff" options={{ headerShown: false }} />
         <Stack.Screen name="manager" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
-        <Stack.Screen name="unsupported" options={{ title: 'WDP Storage' }} />
+        <Stack.Screen name="unsupported" options={{ title: 'NestBox Storage' }} />
         <Stack.Screen name="+not-found" options={{ title: 'Không tìm thấy trang' }} />
       </Stack>
       </View>

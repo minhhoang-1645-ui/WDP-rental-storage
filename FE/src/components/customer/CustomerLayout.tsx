@@ -1,4 +1,5 @@
 import {
+  History,
   ArrowRightLeft,
   CalendarClock,
   CircleHelp,
@@ -35,6 +36,7 @@ const navigation = [
     label: "Yêu cầu đặt kho",
     icon: ClipboardList,
   },
+  { to: "/customer/booking-history", label: "Lịch sử đặt kho", icon: History },
   { to: "/customer/rentals", label: "Kho đang thuê", icon: Warehouse },
   { to: '/customer/stock-movements', label: 'Nhập – xuất hàng', icon: ArrowRightLeft },
   { to: '/customer/stored-items', label: 'Hàng đang lưu', icon: ClipboardList },
@@ -48,7 +50,7 @@ const navigation = [
 ] as const;
 const customerGroups = [
   { title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
-  { title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/stock-movements', '/customer/stored-items'] },
+  { title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
   { title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
 ];
 
@@ -143,9 +145,9 @@ export function CustomerLayout() {
           <NavLink
             to="/customer"
             className="customer-brand"
-            aria-label="WDP Storage - Khu vực khách hàng"
+            aria-label="NestBox Storage - Khu vực khách hàng"
           >
-            <span>WDP</span>
+            <span>NestBox</span>
             <small>Khu vực khách hàng</small>
           </NavLink>
           <button
@@ -214,7 +216,7 @@ export function CustomerLayout() {
           >
             <Menu size={20} />
           </button>
-          <span>WDP Storage</span>
+          <span>NestBox Storage</span>
           <NavLink to="/customer/profile" aria-label="Hồ sơ">
             <UserRound size={20} />
           </NavLink>

@@ -64,7 +64,7 @@ export function PortalLoginPage() {
         <div className="portal-mark">
           <LockKeyhole size={22} />
         </div>
-        <p className="eyebrow">WDP Storage Portal</p>
+        <p className="eyebrow">NestBox Storage Portal</p>
         <h1>Đăng nhập nội bộ</h1>
         <p>
           Dành cho tài khoản nhân viên, quản lý và quản trị viên đã được cấp

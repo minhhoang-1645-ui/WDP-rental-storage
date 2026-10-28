@@ -52,9 +52,6 @@ export function ManagerOverviewPage() {
   ].flatMap((kind) =>
     (activity.data[kind] ?? []).filter((row) => awaitingAssignment(kind, row)),
   );
-  const unsettled = (activity.data["deposit-settlements"] ?? []).filter((row) =>
-    ["PENDING_REVIEW", "APPROVED"].includes(String(row.status)),
-  );
   const available = units.data ? units.data.items.filter(row => row.status === 'AVAILABLE').length : summary.data?.availableUnits;
   const occupied = units.data ? units.data.items.filter(row => row.status === 'OCCUPIED').length : summary.data?.occupiedUnits;
   const count = (kinds: string[], value: number) =>
@@ -120,15 +117,6 @@ export function ManagerOverviewPage() {
             icon: WalletCards,
             count: count(["invoices"], overdueInvoices.length),
             tone: overdueInvoices.length ? "attention" : "normal",
-          },
-          {
-            title: "Quyết toán cọc",
-            description:
-              "Đối chiếu kết quả trả kho và các khoản cần thu hoặc hoàn.",
-            to: "/manager/operations/deposit-settlements",
-            icon: FileText,
-            count: count(["deposit-settlements"], unsettled.length),
-            tone: unsettled.length ? "attention" : "normal",
           },
         ]}
       />

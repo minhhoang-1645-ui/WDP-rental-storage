@@ -899,7 +899,7 @@ try {
   await open(customer.page, "/customer/support");
   assert.equal(
     await customer.page
-      .getByRole("option", { name: "RES-ACTIVE", exact: true })
+      .getByLabel('Yêu cầu đặt kho', { exact: true }).locator('option[value="RES-ACTIVE"]')
       .count(),
     1,
     "No duplicate database ID/reference options",
@@ -986,7 +986,7 @@ try {
     .waitFor();
   await open(customer.page, "/customer/returns");
   await customer.page
-    .getByLabel("Rental đã đến hạn", { exact: true })
+    .getByLabel("Yêu cầu thuê đủ điều kiện trả", { exact: true })
     .selectOption("rental-id");
   await customer.page
     .getByRole("button", { name: "Gửi yêu cầu trả kho", exact: true })

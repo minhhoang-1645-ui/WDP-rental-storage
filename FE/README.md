@@ -1,3 +1,5 @@
+> Hướng dẫn review mới nhất: [NestBox Storage — checklist test](../HUONG_DAN_TEST_NESTBOX.md).
+
 # Frontend WDP
 
 Kết quả hoàn thiện UI/UX và luồng web/mobile theo API hiện có: [FULL_REVIEW_2026-10-16.md](./FULL_REVIEW_2026-10-16.md). Có hướng dẫn thông tin cơ sở, phân quyền, kiểm thử và phần vẫn cần BE.

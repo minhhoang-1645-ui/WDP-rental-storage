@@ -125,6 +125,9 @@ export interface CustomerRenewal {
 export type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER'
 
 export interface CustomerSupportRequest {
+  earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
+  earlyReturnForEndDate?: string | null
+  transfers?: Array<{ id: string; transferCode: string; status: string; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
   id: string
   supportCode: string
   category: SupportCategory

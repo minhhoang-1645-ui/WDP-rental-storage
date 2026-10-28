@@ -44,7 +44,7 @@ export function CustomerReservationsPage() {
         title="Yêu cầu đặt kho của tôi"
         description="Yêu cầu đủ điều kiện được xác nhận tự động; trường hợp ngoại lệ sẽ được nhân viên kiểm tra."
         action={
-          <div className="customer-header-actions">
+          <div className="customer-header-actions"><Link className="button-secondary" to="/customer/booking-history">Lịch sử đặt kho</Link>
             <button
               className="button-secondary"
               type="button"

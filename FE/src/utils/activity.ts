@@ -1,6 +1,8 @@
 import { paymentWindowClosed } from './payment-state';
 import { workflowGuide } from './workflow-guide';
 import { awaitingAssignment, isOverdueInvoice, staffNeedsAction } from './work-queue';
+import { isTransferRequest } from './transfer-request';
+import { isEarlyReturnRequest } from './early-return';
 
 export type ActivityRole = 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN';
 export type ActivityRow = Record<string, unknown>;
@@ -22,7 +24,7 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   const kinds = role === 'CUSTOMER'
     ? ['reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
     : role === 'STAFF' ? ['reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['payment-submissions', 'deposit-settlements', 'support-requests', 'maintenance', 'stock-movements', 'invoices'];
+      : ['payment-submissions', 'support-requests', 'maintenance', 'stock-movements', 'invoices'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   return kinds.map(kind => ({ kind, title: names[kind], path: role === 'CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${role.toLowerCase()}/${kind}`, array: role === 'CUSTOMER' && kind === 'reservations' }));
 }
@@ -50,14 +52,14 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         web += `?invoice=${encodeURIComponent(id)}`;
         action = ['OPEN', 'PARTIALLY_PAID'].includes(status) && Number(row.balanceDue) > 0 && !pendingInvoiceIds.has(id) && !paymentWindowClosed({ type: row.type, reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } });
         if (renewalActivationIds.has(id)) action = false;
-        if (pendingInvoiceIds.has(id)) { title = 'Chuyển khoản đang chờ xác nhận'; message = 'WDP đang đối chiếu khoản bạn đã thông báo. Bạn chưa cần gửi thêm thông báo cho cùng hóa đơn.'; }
+        if (pendingInvoiceIds.has(id)) { title = 'Chuyển khoản đang chờ xác nhận'; message = 'NestBox đang đối chiếu khoản bạn đã thông báo. Bạn chưa cần gửi thêm thông báo cho cùng hóa đơn.'; }
         else if (paymentWindowClosed({ type: row.type, reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } })) message = 'Đã hết hạn giữ kho. Kiểm tra lại trạng thái và gửi hỗ trợ nếu bạn đã chuyển tiền.';
         else if (action) message = 'Mở hóa đơn để xem số tiền còn lại, hạn thanh toán và phương thức thanh toán.';
       }
       if (kind === 'payment-submissions') {
         web = `/customer/payments?invoice=${encodeURIComponent(get('invoice.id'))}&view=submissions`;
         action = status === 'REJECTED';
-        if (action) message = 'Xem lý do chưa xác nhận được khoản chuyển. Nếu bạn đã chuyển tiền, hãy gửi hỗ trợ để WDP kiểm tra.';
+        if (action) message = 'Xem lý do chưa xác nhận được khoản chuyển. Nếu bạn đã chuyển tiền, hãy gửi hỗ trợ để NestBox kiểm tra.';
       }
       if (kind === 'renewals' && status === 'APPROVED_PENDING_PAYMENT') {
         action = true;
@@ -65,7 +67,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const invoice = invoices.find(item => Number(item.renewalCycle) === 1);
         if (invoice?.id) { web = `/customer/payments?invoice=${encodeURIComponent(String(invoice.id))}`; mobile = `/customer/invoices/${encodeURIComponent(String(invoice.id))}`; }
         if (invoice?.status === 'PAID') { action = false; message = 'Thanh toán kỳ đầu đã được ghi nhận. Vui lòng làm mới để kiểm tra kết quả cập nhật thời hạn thuê.'; }
-        if (invoice?.id && pendingInvoiceIds.has(String(invoice.id))) { action = false; title = 'Gia hạn · Đang chờ xác nhận thanh toán'; message = 'Bạn đã gửi thông báo chuyển khoản cho kỳ gia hạn này. WDP đang đối chiếu tiền thực nhận; bạn chưa cần gửi thêm thông báo cho cùng hóa đơn.'; }
+        if (invoice?.id && pendingInvoiceIds.has(String(invoice.id))) { action = false; title = 'Gia hạn · Đang chờ xác nhận thanh toán'; message = 'Bạn đã gửi thông báo chuyển khoản cho kỳ gia hạn này. NestBox đang đối chiếu tiền thực nhận; bạn chưa cần gửi thêm thông báo cho cùng hóa đơn.'; }
       }
       if (kind === 'contracts' && status === 'READY_FOR_HANDOVER') {
         const reservationId = get('reservation.id');
@@ -85,7 +87,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       }
       if (kind === 'support-requests' && status === 'OPEN') title = 'Hỗ trợ · Đang chờ tiếp nhận';
       if (kind === 'deposit-settlements' && status === 'AWAITING_OUTSTANDING_PAYMENT') { action = true; message = 'Xem các khoản được đối chiếu khi trả kho và hóa đơn còn lại trước khi hoàn tất quyết toán.'; }
-      if (kind === 'reservations' && status === 'PENDING') message = 'Yêu cầu đặt kho của bạn đã được gửi. WDP đang kiểm tra kho và sẽ cập nhật kết quả tại đây.';
+      if (kind === 'reservations' && status === 'PENDING') message = 'Yêu cầu đặt kho của bạn đã được gửi. NestBox đang kiểm tra kho và sẽ cập nhật kết quả tại đây.';
       if (kind === 'reservations' && status === 'CONFIRMED') message = get('expiresAt') ? `Đặt kho đã xác nhận. Thanh toán trước ${new Date(get('expiresAt')).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })} (UTC+7) để tiếp tục giữ kho.` : 'Đặt kho đã xác nhận. Xem hợp đồng, thanh toán và các bước nhận kho trong tài khoản.';
       if (kind === 'reservations' && status === 'EXPIRED') message = 'Thời hạn giữ kho đã kết thúc. Kiểm tra hóa đơn và đặt kho mới nếu bạn vẫn có nhu cầu; nếu đã chuyển tiền, hãy gửi hỗ trợ.';
     } else if (role === 'ADMIN') {
@@ -109,6 +111,24 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'MANAGER' && kind === 'invoices') { title = 'Hóa đơn · Quá hạn thanh toán'; message = 'Kiểm tra số dư, hạn thanh toán và lịch sử thu tiền trước khi liên hệ khách hàng.'; }
       if (role === 'STAFF' && awaitingAssignment(kind, row)) { title = `${source.title} · Chờ quản lý phân công`; message = 'Hồ sơ đã được tiếp nhận và đang chờ quản lý giao người phụ trách. Bạn có thể theo dõi; chưa thực hiện thay nhân viên được giao.'; }
       if (role === 'STAFF' && !action && get('assignedStaff.id') && !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(status)) message = `Nhân viên phụ trách: ${get('assignedStaff.fullName') || 'đã được phân công'}. Bạn có thể theo dõi trạng thái; thao tác thực hiện dành cho người được giao.`;
+    }
+    if (kind === 'support-requests' && isTransferRequest(row)) {
+      const transfer = Array.isArray(row.transfers) ? row.transfers[0] as ActivityRow | undefined : undefined;
+      const transferStatus = transfer ? activityText(transfer, 'status') : '';
+      const state = ({ REQUESTED: 'Chờ chọn kho mới', APPROVED: 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transferStatus] || 'Đang chờ tiếp nhận';
+      title = `Chuyển kho · ${state}`;
+      if (role === 'CUSTOMER') { web = '/customer/transfers'; mobile = web; }
+      if (role === 'STAFF') { web = transfer ? `/staff/transfers/${encodeURIComponent(activityText(transfer, 'id'))}` : '/staff/transfers'; mobile = web; action = !transfer || ['REQUESTED', 'APPROVED'].includes(transferStatus); }
+      if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
+    }
+    if (kind === 'support-requests' && isEarlyReturnRequest(row)) {
+      const decision = get('earlyReturnDecision');
+      title = `Trả trước hạn · ${decision === 'APPROVED' ? 'Đã chấp thuận' : decision === 'REJECTED' ? 'Chưa được chấp thuận' : 'Chờ quản lý xem xét'}`;
+      message = get('resolutionNote') || 'Quản lý đối chiếu công nợ và điều kiện trước khi cho phép trả kho trước hạn.';
+      action = role === 'MANAGER' && !decision || role === 'CUSTOMER' && decision === 'APPROVED';
+      if (role === 'MANAGER') { web = '/manager/early-returns'; mobile = web; }
+      if (role === 'CUSTOMER') { web = '/customer/returns'; mobile = web; }
+      if (role === 'STAFF') action = false;
     }
     if (role === 'CUSTOMER' && get('rejectionReason')) message += ` Lý do: ${get('rejectionReason')}`;
     if (role === 'CUSTOMER' && kind === 'support-requests' && get('resolutionNote')) message += ` Phản hồi: ${get('resolutionNote')}`;

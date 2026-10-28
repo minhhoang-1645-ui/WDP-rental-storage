@@ -80,7 +80,7 @@ function ReturnResult({ query }: { query: string }) {
       ? { icon: <CheckCircle2 size={38} />, tone: 'is-success', title: 'Thanh toán thành công', description: `Hóa đơn ${result.invoice.invoiceCode} đã ghi nhận ${moneyLabel(result.amount)}.` }
       : failed
         ? { icon: <AlertCircle size={38} />, tone: 'is-error', title: result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn' : result.providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán' : 'Thanh toán không thành công', description: result.invoice.status === 'VOID' ? 'Yêu cầu đặt kho đã hết hạn và hóa đơn đã hủy. Vui lòng chọn kho và đặt lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' : 'Chưa ghi nhận thanh toán thành công. Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' }
-        : { icon: <Clock3 size={38} />, tone: 'is-pending', title: 'Đang chờ VNPay xác nhận', description: 'WDP đang kiểm tra kết quả từ VNPay. Bạn chỉ cần thanh toán một lần; kết quả và hóa đơn sẽ được cập nhật sau khi giao dịch được xác nhận.' }
+        : { icon: <Clock3 size={38} />, tone: 'is-pending', title: 'Đang chờ VNPay xác nhận', description: 'NestBox đang kiểm tra kết quả từ VNPay. Bạn chỉ cần thanh toán một lần; kết quả và hóa đơn sẽ được cập nhật sau khi giao dịch được xác nhận.' }
 
   return <section className="customer-page vnpay-return-page"><div className={`vnpay-return-card ${content.tone}`}>
     <span className="vnpay-return-icon">{content.icon}</span>

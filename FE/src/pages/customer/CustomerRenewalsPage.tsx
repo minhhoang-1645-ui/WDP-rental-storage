@@ -23,6 +23,8 @@ import { RenewalReview } from '../../components/manager/RenewalReview';
 import { Link } from 'react-router-dom';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
+import { SignatureAgreement } from '../../components/customer/SignatureAgreement';
+import { DocumentSnapshot } from '../../components/customer/DocumentSnapshot';
 
 export function CustomerRenewalsPage() {
   const { user } = useAuth();
@@ -46,6 +48,8 @@ export function CustomerRenewalsPage() {
     kind: "ok" | "error";
     text: string;
   } | null>(null);
+  const [acceptingAppendixId, setAcceptingAppendixId] = useState('');
+  const [selectedAppendix, setSelectedAppendix] = useState<CustomerRenewal | null>(null);
   const eligibleRentals = (rentals.data?.items ?? []).filter(item => !item.pendingRenewal && item.historicalPricing?.billingMode === 'MONTHLY');
 
   const { items: visibleRenewals, pagination } = useCustomerPagination(
@@ -87,6 +91,18 @@ export function CustomerRenewalsPage() {
       submitLock.current = false;
       setSubmitting(false);
     }
+  };
+  const acceptAppendix = async (item: CustomerRenewal, signatureImage: string) => {
+    if (!user || !item.appendix || acceptingAppendixId) return;
+    setAcceptingAppendixId(item.id); setMessage(null);
+    try {
+      await mutate(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/accept`, 'POST', { acceptanceName: user.fullName, agreed: true, signatureImage, snapshotHash: item.appendix.snapshotHash });
+      setMessage({ kind: 'ok', text: `Đã xác nhận phụ lục ${item.appendix.code}.` });
+      setSelectedAppendix(null);
+      renewals.refresh();
+    } catch (error) {
+      setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Không thể xác nhận phụ lục.' });
+    } finally { setAcceptingAppendixId(''); }
   };
 
   return (
@@ -249,8 +265,12 @@ export function CustomerRenewalsPage() {
                     </p>
                   )}
                   <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>
-                  {item.status === 'APPROVED_PENDING_PAYMENT' && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
+                  {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
+                  {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
+                    ? <p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p>
+                    : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và xác nhận phụ lục {item.appendix.code}</button>)}
+                  {selectedAppendix?.id === item.id && item.appendix && <div><DocumentSnapshot value={item.appendix.snapshot} /><SignatureAgreement label="Xác nhận phụ lục" busy={Boolean(acceptingAppendixId)} onSubmit={(signature) => void acceptAppendix(item, signature)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
                   <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ))}

@@ -259,11 +259,72 @@ export class ReturnsService {
     }, 'Yêu cầu trả kho vừa được hoàn tất hoặc thay đổi bởi thao tác khác. Vui lòng tải lại.');
   }
 
+  async listEarlyReturnRequests(page: number, limit: number) {
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Phân trang không hợp lệ.');
+    const where = { subject: 'Đề nghị trả kho trước hạn', category: 'OTHER' as const };
+    const total = await this.prisma.supportRequest.count({ where });
+    const items = await this.prisma.supportRequest.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.earlyReturnInclude() });
+    return { page, limit, total, items: items.map(item => this.toEarlyReturn(item)) };
+  }
+
+  async decideEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định đề nghị trả trước hạn.');
+    const decision = input.decision;
+    const note = typeof input.note === 'string' ? input.note.trim() : '';
+    if (!['APPROVED', 'REJECTED'].includes(String(decision)) || note.length < 3 || note.length > 3000) throw new BadRequestException('Cần quyết định hợp lệ và ghi rõ điều kiện hoặc lý do.');
+    if (decision === 'APPROVED' && input.financialReviewConfirmed !== true) throw new BadRequestException('Cần xác nhận đã đối chiếu công nợ, cọc và điều kiện trả sớm.');
+    return this.serializable(async tx => {
+      const identity = await tx.supportRequest.findFirst({ where: { OR: [{ id }, { supportCode: id }], subject: 'Đề nghị trả kho trước hạn', category: 'OTHER' }, select: { id: true, reservationId: true } });
+      if (!identity) throw new NotFoundException('Không tìm thấy đề nghị trả trước hạn.');
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${identity.reservationId} FOR UPDATE`);
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const request = await tx.supportRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.earlyReturnInclude() });
+      const action = decision === 'APPROVED' ? 'EARLY_RETURN_APPROVED' : 'EARLY_RETURN_REJECTED';
+      const resolutionNote = (decision === 'APPROVED' ? 'Đã chấp thuận trả trước hạn. Công nợ và cọc được quyết toán theo hồ sơ hiện có. ' : 'Chưa chấp thuận trả trước hạn. ') + note;
+      if (request.status === 'RESOLVED') {
+        if (request.lastAction === action && request.resolutionNote === resolutionNote) return this.toEarlyReturn(request);
+        throw new ConflictException('Đề nghị đã được quyết định. Hãy gửi đề nghị mới nếu cần thay đổi điều kiện.');
+      }
+      const reservation = request.reservation;
+      if (decision === 'APPROVED') {
+        this.assertOperationalIntegrity(reservation);
+        if (reservation.renewals.length) throw new ConflictException('Cần xử lý xong gia hạn trước khi chấp thuận trả sớm.');
+        if (await tx.returnRequest.findUnique({ where: { activeKey: this.activeKey(reservation.id) } })) throw new ConflictException('Đã có hồ sơ trả kho đang xử lý.');
+        if (input.reviewedEndDate !== this.isoDate(this.effectiveEndDate(reservation.contracts))) throw new ConflictException('Thời hạn thuê đã thay đổi. Tải lại và đối chiếu điều kiện.');
+        const outstanding = reservation.invoices.reduce((sum, invoice) => sum + Number(invoice.balanceDue), 0);
+        const paid = reservation.invoices.reduce((sum, invoice) => sum + Number(invoice.amountPaid), 0);
+        if (input.reviewedOutstandingAmount !== outstanding || input.reviewedPaidAmount !== paid) throw new ConflictException('Công nợ hoặc số đã thu vừa thay đổi. Tải lại để đối chiếu trước khi quyết định.');
+      }
+      const endDate = reservation.contracts.length ? this.isoDate(this.effectiveEndDate(reservation.contracts)) : 'no-active-contract';
+      const updated = await tx.supportRequest.update({ where: { id: request.id }, data: { status: 'RESOLVED', resolutionType: 'MANAGER_RESOLVED', resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: action, lastActionIdempotencyKey: `early-return:${request.id}:${endDate}` }, include: this.earlyReturnInclude() });
+      return this.toEarlyReturn(updated);
+    }, 'Đề nghị vừa được cập nhật. Tải lại trước khi quyết định.');
+  }
+
+  private earlyReturnInclude() {
+    return {
+      customer: { select: { id: true, fullName: true, email: true, phone: true } },
+      resolvedBy: { select: { id: true, fullName: true, role: true } },
+      reservation: { include: { ...this.eligibilityInclude(), storageType: true, invoices: { where: { status: { not: 'VOID' as const } }, select: { invoiceCode: true, totalAmount: true, amountPaid: true, balanceDue: true, depositAmount: true } } } },
+    };
+  }
+
+  private toEarlyReturn(request: any) {
+    const reservation = request.reservation;
+    const invoices = reservation.invoices ?? [];
+    return { id: request.id, supportCode: request.supportCode, subject: request.subject, description: request.description, status: request.status, decision: request.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : request.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null, resolutionNote: request.resolutionNote, resolvedAt: request.resolvedAt?.toISOString() ?? null, resolvedBy: request.resolvedBy, createdAt: request.createdAt.toISOString(), customer: request.customer,
+      reservation: { id: reservation.id, reference: reservation.reservationCode, storageType: { id: reservation.storageType.id, name: reservation.storageType.name }, effectiveEndDate: reservation.contracts.length ? this.isoDate(this.effectiveEndDateForRead(reservation.contracts)) : this.isoDate(reservation.endDate) },
+      contracts: reservation.contracts.map((contract: any) => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status, unitCode: contract.reservationUnit.storageUnit.unitNumber })),
+      invoices: invoices.map((invoice: any) => ({ invoiceCode: invoice.invoiceCode, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue) })),
+      financialSummary: { outstandingAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.balanceDue), 0), paidAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0), invoicedDeposit: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.depositAmount), 0) } };
+  }
+
   private assertReturnEligible(reservation: any, customerId: string, now: Date) {
     if (!reservation || reservation.customerId !== customerId) throw new NotFoundException('Không tìm thấy Active Rental thuộc khách hàng.');
     this.assertOperationalIntegrity(reservation);
     const endDate = this.effectiveEndDate(reservation.contracts);
-    if (now < endDate) throw new ConflictException({ code: 'RETURN_BEFORE_END_DATE_NOT_SUPPORTED', message: 'Return V1 chỉ hỗ trợ yêu cầu từ ngày kết thúc hiện tại.' });
+    const earlyApproval = (reservation.supportRequests ?? []).some((request: any) => request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'MANAGER' && request.lastActionIdempotencyKey === `early-return:${request.id}:${this.isoDate(endDate)}`);
+    if (now < endDate && !earlyApproval) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Trả trước hạn cần quản lý chấp thuận đề nghị và điều kiện quyết toán trước.' });
     if (reservation.renewals.some((renewal: any) => ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status))) {
       throw new ConflictException({ code: 'UNRESOLVED_RENEWAL_EXISTS', message: 'Phải xử lý xong yêu cầu gia hạn trước khi tạo yêu cầu trả kho.' });
     }
@@ -298,9 +359,10 @@ export class ReturnsService {
 
   private eligibilityInclude(): Prisma.ReservationInclude {
     return {
-      units: { include: { storageUnit: true } },
+      units: { where: { releasedAt: null }, include: { storageUnit: true } },
       contracts: { include: { reservationUnit: { include: { storageUnit: true } } }, orderBy: { contractCode: 'asc' as const } },
       renewals: { where: { status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } }, select: { id: true, status: true } },
+      supportRequests: { where: { subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', lastAction: 'EARLY_RETURN_APPROVED', status: 'RESOLVED', resolvedBy: { role: 'MANAGER' } }, select: { id: true, status: true, lastAction: true, lastActionIdempotencyKey: true, resolvedBy: { select: { role: true } } } },
     };
   }
 
@@ -329,7 +391,7 @@ export class ReturnsService {
       reservation: { include: {
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
-        units: { select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
+        units: { where: { releasedAt: null }, select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
         invoices: { select: { id: true, invoiceCode: true, type: true, status: true, rentalAmount: true, depositAmount: true, chargeAmount: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
         renewals: { select: { id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true }, orderBy: { createdAt: 'desc' as const } },

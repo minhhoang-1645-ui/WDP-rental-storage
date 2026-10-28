@@ -213,6 +213,7 @@ export class BillingService {
         }
         const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: { id: true } } } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        await this.assertSignedBeforePayment(tx, invoice);
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền thanh toán không được vượt quá số dư hóa đơn.');
 
@@ -415,6 +416,17 @@ export class BillingService {
     const payment = await tx.payment.create({ data: { paymentCode: `${invoice.invoiceCode}-P${String(sequence).padStart(2, '0')}`, invoiceId: invoice.id, amount: transaction.amount, method: 'VNPAY', reference: providerTransactionId ?? transaction.merchantOrderRef, note: 'Verified automatically by VNPAY IPN.', recordedByUserId: null, onlinePaymentTransactionId: transaction.id, idempotencyKey: `vnpay:${transaction.id}` } });
     await this.applyInvoicePayment(tx, invoice, transaction.amount, null);
     return payment;
+  }
+
+  async assertSignedBeforePayment(tx: Prisma.TransactionClient, invoice: { type: string; reservationId: string; renewalRequestId: string | null }) {
+    if (invoice.type === 'INITIAL') {
+      const contracts = await tx.rentalContract.findMany({ where: { reservationId: invoice.reservationId }, select: { termsAcceptedAt: true } });
+      if (!contracts.length || contracts.some((contract) => !contract.termsAcceptedAt)) throw new ConflictException({ code: 'CONTRACT_ACCEPTANCE_REQUIRED', message: 'Vui lòng xác nhận tất cả hợp đồng trước khi thanh toán.' });
+    }
+    if (invoice.type === 'RENEWAL' && invoice.renewalRequestId) {
+      const renewal = await tx.renewalRequest.findUnique({ where: { id: invoice.renewalRequestId }, select: { appendixAcceptedAt: true, status: true } });
+      if (!renewal || (!renewal.appendixAcceptedAt && renewal.status !== 'COMPLETED')) throw new ConflictException({ code: 'APPENDIX_ACCEPTANCE_REQUIRED', message: 'Vui lòng xác nhận phụ lục gia hạn trước khi thanh toán.' });
+    }
   }
 
   private async applyInvoicePayment(tx: Prisma.TransactionClient, invoice: any, amount: bigint, actorId: string | null) {

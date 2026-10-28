@@ -5,6 +5,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { RecordPaymentRequestDto } from '../../openapi/api-dtos.js';
 import { BillingService, type InvoiceListQuery, type PaymentListQuery } from './billing.service.js';
+import { OnlinePaymentService } from './online-payment.service.js';
 
 const invoiceStatuses = ['OPEN', 'PARTIALLY_PAID', 'PAID', 'VOID'] as const;
 const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
@@ -15,7 +16,23 @@ const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
 @ApiTags('Manager Billing')
 @ApiBearerAuth('bearerAuth')
 export class ManagerBillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(private readonly billing: BillingService, private readonly onlinePayments: OnlinePaymentService) {}
+
+  @Get('online-payment-reconciliations')
+  @ApiOperation({ summary: 'Danh sách VNPay thành công cần đối soát', description: 'Chỉ xuất hiện khi VNPay trả thành công nhưng hóa đơn/reservation đã hết hiệu lực. Không tự ghi nhận Payment hoặc kích hoạt lại kho.' })
+  listOnlinePaymentReconciliations(@Query() query: Record<string, unknown>) {
+    const page = this.integer(query.page, 1, 100000, 'page');
+    const limit = this.integer(query.limit, 20, 100, 'limit');
+    const status = this.optional(query.status, 'status');
+    if (status && !['PENDING_REVIEW', 'REFUND_REQUIRED', 'RECONCILED'].includes(status)) throw new BadRequestException('Trạng thái đối soát không hợp lệ.');
+    return this.onlinePayments.listManagerReconciliations(page, limit, status as 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED' | undefined);
+  }
+
+  @Post('online-payment-reconciliations/:id/resolve')
+  @ApiOperation({ summary: 'Kết thúc đối soát VNPay trễ', description: 'REFUND_REQUIRED yêu cầu hoàn tiền ngoài cổng thanh toán; RECONCILED chỉ dùng khi đã xử lý nghiệp vụ ngoài hệ thống. Endpoint này không tự hoàn tiền và không kích hoạt lại reservation.' })
+  resolveOnlinePaymentReconciliation(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.onlinePayments.resolveReconciliation(id, body, request.user!);
+  }
 
   @Get('invoices')
   @ApiOperation({ summary: 'Danh sách Invoice', description: 'MANAGER/ADMIN. INITIAL và RECURRING đều ở cấp Reservation, kể cả quantity > 1. PAY_MONTHLY 6 tháng có I01 + 5 kỳ recurring; PREPAID, DAILY và PAY_MONTHLY 1 tháng không có recurring.' })

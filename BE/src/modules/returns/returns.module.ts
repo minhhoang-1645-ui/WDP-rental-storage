@@ -1,3 +1,4 @@
+import { EarlyReturnReviewController } from './early-return-review.controller.js';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { CustomerReturnsController } from './customer-returns.controller.js';
@@ -7,7 +8,7 @@ import { StaffReturnsController } from './staff-returns.controller.js';
 
 @Module({
   imports: [AuthModule],
-  controllers: [CustomerReturnsController, ManagerReturnsController, StaffReturnsController],
+  controllers: [EarlyReturnReviewController, CustomerReturnsController, ManagerReturnsController, StaffReturnsController],
   providers: [ReturnsService],
   exports: [ReturnsService],
 })

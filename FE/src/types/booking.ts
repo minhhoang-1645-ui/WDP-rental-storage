@@ -133,7 +133,7 @@ export interface PendingReservation extends BookingDraft {
   expiresAt: string | null
   endDateExclusive: string
   customer: PublicUser
-  product: Pick<StorageListing, 'id' | 'code' | 'name' | 'sizeId' | 'condition' | 'status'> & {
+  product: Pick<StorageListing, 'id' | 'code' | 'name' | 'sizeId' | 'condition' | 'status' | 'image'> & {
     dimensions: string
     floorArea: string
     volume: string

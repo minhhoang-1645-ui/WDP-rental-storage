@@ -17,6 +17,7 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import { useApiResource } from "../../services/useApiResource";
+import { isTransferRequest } from '../../utils/transfer-request';
 import type {
   CustomerInvoice,
   CustomerRental,
@@ -34,7 +35,7 @@ const categories: Array<{ value: SupportCategory; label: string }> = [
   { value: "OTHER", label: "Vấn đề khác" },
 ];
 
-export function CustomerSupportPage() {
+export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: boolean }) {
   const { user } = useAuth();
   const [params] = useSearchParams();
   const requests = usePaginatedResource<CustomerSupportRequest>(
@@ -64,7 +65,7 @@ export function CustomerSupportPage() {
   const [contractId, setContractId] = useState("");
   const [unitId, setUnitId] = useState("");
   const [invoiceId, setInvoiceId] = useState("");
-  const [subject, setSubject] = useState(params.get("subject") ?? "");
+  const [subject, setSubject] = useState(transferOnly ? 'Yêu cầu chuyển kho' : params.get("subject") ?? "");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
@@ -77,7 +78,7 @@ export function CustomerSupportPage() {
   const reservationOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const rental of rentals.data?.items ?? [])
-      map.set(rental.reservationReference, rental.reservationReference);
+      map.set(rental.reservationReference, `${rental.storageType.name} · Kho ${rental.contracts.map(contract => contract.unit.unitCode).join(', ')} · ${rental.reservationReference}`);
     if (!operational) {
       for (const invoice of invoices.data?.items ?? [])
         map.set(invoice.reservation.reference, invoice.reservation.reference);
@@ -98,7 +99,7 @@ export function CustomerSupportPage() {
   );
 
   const { items: visibleRequests, pagination } = useCustomerPagination(
-    requests.data?.items ?? [],
+    (requests.data?.items ?? []).filter(item => !transferOnly || isTransferRequest(item)),
   );
 
   const submit = async (event: FormEvent) => {
@@ -123,8 +124,8 @@ export function CustomerSupportPage() {
         },
         true,
       );
-      setMessage({ kind: "ok", text: "Đã gửi yêu cầu hỗ trợ đến WDP." });
-      setSubject("");
+      setMessage({ kind: "ok", text: transferOnly ? 'Đã gửi yêu cầu chuyển kho. Nhân viên sẽ kiểm tra kho hiện tại và sắp xếp kho đích phù hợp.' : "Đã gửi yêu cầu hỗ trợ đến NestBox." });
+      setSubject(transferOnly ? 'Yêu cầu chuyển kho' : '');
       setDescription("");
       setContractId("");
       setUnitId("");
@@ -147,9 +148,9 @@ export function CustomerSupportPage() {
   return (
     <section className="customer-page">
       <PortalPageHeader
-        eyebrow="Hỗ trợ"
-        title="Yêu cầu hỗ trợ"
-        description="Gửi vấn đề gắn với yêu cầu đặt kho, kho hoặc hóa đơn và theo dõi tiến độ xử lý."
+        eyebrow={transferOnly ? 'Chuyển đổi kho' : 'Hỗ trợ'}
+        title={transferOnly ? 'Yêu cầu chuyển kho' : 'Yêu cầu hỗ trợ'}
+        description={transferOnly ? 'Chọn hợp đồng và kho đang sử dụng, mô tả lý do để nhân viên kiểm tra và sắp xếp chuyển sang kho cùng loại.' : 'Gửi vấn đề gắn với yêu cầu đặt kho, kho hoặc hóa đơn và theo dõi tiến độ xử lý.'}
         action={
           <button
             className="button-secondary"
@@ -179,7 +180,7 @@ export function CustomerSupportPage() {
               )
             }
           >
-            <h2>Gửi yêu cầu mới</h2>
+            <h2>{transferOnly ? 'Gửi yêu cầu chuyển kho' : 'Gửi yêu cầu mới'}</h2>
             <label className="field-label">
               Yêu cầu đặt kho
               <select
@@ -201,7 +202,7 @@ export function CustomerSupportPage() {
                 ))}
               </select>
             </label>
-            <label className="field-label">
+            {!transferOnly && <label className="field-label">
               Loại hỗ trợ
               <select
                 aria-label="Loại hỗ trợ"
@@ -220,13 +221,14 @@ export function CustomerSupportPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </label>}
             {operational && selectedRental && (
               <>
                 <label className="field-label">
                   Hợp đồng liên quan
                   <select
                     aria-label="Hợp đồng liên quan"
+                    required={transferOnly}
                     value={contractId}
                     onChange={(event) => {
                       setContractId(event.target.value);
@@ -237,10 +239,10 @@ export function CustomerSupportPage() {
                       );
                     }}
                   >
-                    <option value="">Toàn bộ rental</option>
+                    <option value="">{transferOnly ? 'Chọn hợp đồng / kho cần chuyển' : 'Toàn bộ yêu cầu thuê'}</option>
                     {selectedRental.contracts.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.contractCode}
+                        Kho {item.unit.unitCode} · {formatPortalDate(item.startDate)} – {formatPortalDate(item.endDate)} · {item.contractCode}
                       </option>
                     ))}
                   </select>
@@ -284,6 +286,7 @@ export function CustomerSupportPage() {
             <label className="field-label">
               Tiêu đề
               <input
+                readOnly={transferOnly}
                 required
                 minLength={3}
                 maxLength={200}
@@ -345,16 +348,16 @@ export function CustomerSupportPage() {
             <PortalLoading label="Đang tải yêu cầu hỗ trợ…" />
           ) : requests.error ? (
             <PortalError message={requests.error} onRetry={requests.refresh} />
-          ) : (requests.data?.items.length ?? 0) === 0 ? (
+          ) : visibleRequests.length === 0 ? (
             <PortalEmpty
               icon={<Wrench size={30} />}
-              title="Chưa có yêu cầu hỗ trợ"
+              title={transferOnly ? 'Chưa có yêu cầu chuyển kho' : 'Chưa có yêu cầu hỗ trợ'}
             >
               <span>Yêu cầu mới của bạn sẽ xuất hiện tại đây.</span>
             </PortalEmpty>
           ) : (
             <div className="customer-card-list">
-              {visibleRequests.map((item) => (
+              {visibleRequests.map((item) => { const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined; const transferLabel = transfer ? ({ REQUESTED: 'Chờ xác nhận kho mới', APPROVED: 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transfer.status] : undefined; return (
                 <article
                   className="customer-record-card customer-record-card--compact"
                   key={item.id}
@@ -368,7 +371,8 @@ export function CustomerSupportPage() {
                       <h2>{item.subject}</h2>
                     </div>
                     <CustomerStatus
-                      status={item.status}
+                      status={transfer?.status ?? item.status}
+                      label={transferLabel}
                       resource="support-requests"
                     />
                   </div>
@@ -380,13 +384,14 @@ export function CustomerSupportPage() {
                     {item.unit ? ` · ${item.unit.unitCode}` : ""}
                   </p>
                   <p>{item.description}</p>
+                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.completedAt && <p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p>}</div>}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
                       <strong>Kết quả:</strong> {item.resolutionNote}
                     </p>
                   )}
                 </article>
-              ))}
+              )})}
             </div>
           )}
         </section>

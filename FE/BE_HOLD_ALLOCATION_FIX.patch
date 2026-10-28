@@ -1,0 +1,22 @@
+diff --git a/BE/src/modules/booking/booking.service.ts b/BE/src/modules/booking/booking.service.ts
+index c6c18f4..7be75d3 100644
+--- a/BE/src/modules/booking/booking.service.ts
++++ b/BE/src/modules/booking/booking.service.ts
+@@ -476,7 +476,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
+         releasedAt: null,
+         plannedStartDate: { lt: end },
+         plannedEndDate: { gt: start },
+-        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
++        reservation: { status: 'CONFIRMED' },
+       },
+       select: { storageUnitId: true },
+     }) : [];
+@@ -611,7 +611,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
+         releasedAt: null,
+         plannedStartDate: { lt: end },
+         plannedEndDate: { gt: start },
+-        reservation: { status: 'CONFIRMED', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
++        reservation: { status: 'CONFIRMED' },
+       },
+       select: { storageUnitId: true },
+     }) : [];

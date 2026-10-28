@@ -1,3 +1,4 @@
+import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
 import { CustomerBookingGuard } from "../components/layout/CustomerBookingGuard";
@@ -15,6 +16,7 @@ import { StoragePage } from "../pages/public/StoragePage";
 import { ManagerInquiryDetailPage } from "../pages/manager/ManagerInquiryDetailPage";
 import { ManagerInquiriesPage } from "../pages/manager/ManagerInquiriesPage";
 import { ManagerPaymentSubmissionsPage } from "../pages/manager/ManagerPaymentSubmissionsPage";
+import { ManagerOnlinePaymentReconciliationsPage } from "../pages/manager/ManagerOnlinePaymentReconciliationsPage";
 import { ManagerLayout } from "../pages/manager/ManagerLayout";
 import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
@@ -25,6 +27,7 @@ import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservatio
 import { ManagerReportsPage } from "../pages/manager/ManagerReportsPage";
 import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
 import { ManagerAssignmentsPage } from "../pages/manager/ManagerAssignmentsPage";
+import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPage';
 import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
 import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
 import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
@@ -62,6 +65,8 @@ function operationalRoutes(base: string) {
     <>
       <Route index element={<ManagerDashboardPage />} />
       <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
+      <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
+      <Route path="online-payment-reconciliations" element={<ManagerOnlinePaymentReconciliationsPage />} />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
@@ -132,6 +137,7 @@ export function AppRouter() {
           element={<CustomerReservationDetailPage />}
         />
         <Route path="rentals" element={<CustomerRentalsPage />} />
+        <Route path="booking-history" element={<CustomerBookingHistoryPage />} />
         <Route path="stock-movements" element={<StockMovementsPage role="CUSTOMER" />} />
         <Route path="stock-movements/:id" element={<StockMovementsPage role="CUSTOMER" />} />
         <Route path="stored-items" element={<StoredItemsPage />} />

@@ -31,6 +31,9 @@ export interface StorageListing {
   allowDailyRental: boolean
   features: string[]
   image: string
+  dimensions?: string
+  floorArea?: string
+  volume?: string
 }
 
 export interface SearchCriteria {

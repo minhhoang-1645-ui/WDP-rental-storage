@@ -515,7 +515,7 @@ try {
   const managerApp = await setup("MANAGER"), staffApp = await setup("STAFF");
   const context = managerApp.context;
   let page = managerApp.page;
-  for (const resource of Object.keys(fixture)) {
+  for (const resource of Object.keys(fixture).filter(kind => kind !== "deposit-settlements")) {
     page = moved.has(resource) ? staffApp.page : managerApp.page;
     const root = moved.has(resource) ? `/staff/${resource}` : ["units", "customers", "reservations", "inquiries"].includes(
       resource,
@@ -625,16 +625,9 @@ try {
   checks.push("Staff resolves only ESCALATED support");
   page = managerApp.page;
   await open(page, "/manager/operations/deposit-settlements/settlement-id");
-  await page
-    .getByLabel("Căn cứ duyệt")
-    .fill("Chi phí mất chìa khóa theo backend");
-  await page
-    .getByRole("button", { name: "Duyệt quyết toán", exact: true })
-    .click();
-  await success(page);
-  assert.equal(writes.at(-1).body.issues[0].inspectionId, "inspection-id");
-  assert.equal(writes.at(-1).body.issues[0].approvedChargeAmount, 200000);
-  checks.push("Review all inspection issues with backend lost-key fee");
+  assert.equal(await page.getByRole('button', { name: 'Duyệt quyết toán', exact: true }).count(), 0);
+  assert(!requests.some(item => item.path.startsWith('manager/deposit-settlements')));
+  checks.push("Manager settlement deep links expose no feature or API request");
   await open(page, "/manager/operations/invoices/invoice-0");
   await page.getByLabel("Số tiền nhận (VND)").fill("1000000");
   await page.getByLabel("Mã tham chiếu giao dịch").fill("BANK-TEST");
@@ -654,26 +647,6 @@ try {
   assert.equal(payments.length, 2);
   assert.equal(payments[0].key, payments[1].key);
   checks.push("Payment retry preserves idempotency key");
-  const settlement = fixture["deposit-settlements"][0];
-  settlement.status = "APPROVED";
-  settlement.refundAmount = 800000;
-  page = managerApp.page;
-  await open(page, "/manager/operations/deposit-settlements/settlement-id");
-  await page.getByLabel("Mã tham chiếu giao dịch").fill("REFUND-TEST");
-  await page.getByLabel("Tôi đã hoàn tiền thực tế cho khách.").check();
-  await page
-    .getByRole("button", { name: "Ghi nhận hoàn tiền", exact: true })
-    .click();
-  await success(page);
-  assert.equal(
-    writes.at(-1).path,
-    "manager/deposit-settlements/settlement-id/refund",
-  );
-  assert.equal(writes.at(-1).body.reference, "REFUND-TEST");
-  settlement.status = "PENDING_REVIEW";
-  checks.push(
-    "Refund records require approved settlement and real-payment acknowledgment",
-  );
   page = staffApp.page;
   await open(page, "/staff/transfers/transfer-id");
   await page
@@ -724,17 +697,14 @@ try {
     .getByLabel("Mô tả tình trạng")
     .fill("Tạo yêu cầu bảo trì kiểm thử");
   const beforePaging = writes.length;
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Trang sau", exact: true })
-    .click();
+  await page.getByRole("dialog").getByLabel("Tìm kho cần bảo trì", { exact: true }).fill("PAGE-20");
   await page
     .getByRole("combobox", { name: "Kho cần bảo trì", exact: true })
     .selectOption("unit-page-20");
   assert.equal(
     writes.length,
     beforePaging,
-    "Picker pagination must not submit its containing form",
+    "Searching across all picker pages must not submit its containing form",
   );
   await page.getByRole("button", { name: "Tạo yêu cầu", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });

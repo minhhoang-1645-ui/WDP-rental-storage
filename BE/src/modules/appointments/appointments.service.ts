@@ -165,6 +165,9 @@ export class AppointmentsService {
     if (initialInvoices.length !== 1 || initialInvoices[0].status !== 'PAID') throw new ConflictException('Initial Invoice phải được thanh toán đầy đủ trước khi bàn giao.');
     if (reservation.contracts.length !== reservation.quantity || reservation.units.length !== reservation.quantity) throw new ConflictException('Reservation chưa có đủ Contract và allocation vật lý.');
     if (reservation.contracts.some((contract: any) => contract.status !== 'READY_FOR_HANDOVER')) throw new ConflictException('Tất cả RentalContract phải ở trạng thái READY_FOR_HANDOVER.');
+    if (reservation.contracts.some((contract: any) => !contract.termsAcceptedAt || contract.termsAcceptedByUserId !== reservation.customerId)) {
+      throw new ConflictException({ code: 'CONTRACT_ACCEPTANCE_REQUIRED', message: 'Khách hàng cần xác nhận tất cả hợp đồng trước khi đặt hoặc hoàn tất bàn giao.' });
+    }
     const allocationIds = new Set(reservation.units.map((unit: any) => unit.id));
     if (reservation.contracts.some((contract: any) => !allocationIds.has(contract.reservationUnitId))) throw new ConflictException('Contract không khớp allocation vật lý của Reservation.');
   }

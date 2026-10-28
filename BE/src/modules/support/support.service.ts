@@ -39,6 +39,14 @@ export class SupportService {
         const contract = parsed.rentalContractId ? reservation.contracts.find((item) => item.id === parsed.rentalContractId || item.contractCode === parsed.rentalContractId) : null;
         if (parsed.rentalContractId && !contract) throw new BadRequestException('RentalContract không thuộc Reservation đã chọn.');
         const activeContracts = reservation.contracts.filter((item) => item.status === 'ACTIVE' && item.reservationUnit.releasedAt === null && item.reservationUnit.storageUnit.status === 'OCCUPIED');
+        if (parsed.subject === 'Đề nghị trả kho trước hạn') {
+          if (parsed.category !== 'OTHER' || parsed.rentalContractId || parsed.storageUnitId || parsed.invoiceId) throw new BadRequestException('Đề nghị trả sớm áp dụng toàn bộ kỳ thuê, không chọn riêng hợp đồng, kho hoặc hóa đơn.');
+          if (reservation.status !== 'CONFIRMED' || activeContracts.length !== reservation.quantity || reservation.contracts.length !== reservation.quantity) throw new ConflictException('Chỉ đề nghị trả sớm khi toàn bộ kho của kỳ thuê đang được sử dụng.');
+          const dates = new Set(activeContracts.map(item => item.endDate.toISOString()));
+          if (dates.size !== 1 || activeContracts[0].endDate <= new Date()) throw new ConflictException('Kho đã đến hạn hoặc thời hạn chưa đồng nhất. Kiểm tra lại hồ sơ trả kho.');
+          const previous = await tx.supportRequest.findFirst({ where: { reservationId: reservation.id, subject: parsed.subject, category: 'OTHER', OR: [{ status: { not: 'RESOLVED' } }, { lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: { endsWith: `:${activeContracts[0].endDate.toISOString().slice(0, 10)}` }, resolvedBy: { role: 'MANAGER' } }] }, select: { id: true } });
+          if (previous) throw new ConflictException('Đã có đề nghị trả sớm đang chờ hoặc đã được chấp thuận cho kỳ thuê này.');
+        }
         if (operationalCategories.includes(parsed.category)) {
           if (reservation.status !== 'CONFIRMED' || activeContracts.length === 0 || (contract && !activeContracts.some((item) => item.id === contract.id))) {
             throw new ConflictException({ code: 'ACTIVE_RENTAL_REQUIRED', message: 'Loại Support này yêu cầu rental đang ACTIVE và unit còn OCCUPIED.' });
@@ -133,13 +141,15 @@ export class SupportService {
   }
 
   private async transition(id: string, key: string | undefined, action: string, actor: PublicUser, role: 'STAFF' | 'MANAGER', operation: (tx: Prisma.TransactionClient, current: any, key: string) => Promise<any>) {
-    if (role === 'STAFF' && actor.role !== 'STAFF') throw new ForbiddenException('Chỉ Staff được thực hiện thao tác này.');
-    if (action === 'ASSIGN' ? !['MANAGER', 'ADMIN'].includes(actor.role) : actor.role !== 'STAFF') throw new ForbiddenException(action === 'ASSIGN' ? 'Chỉ quản lý được phân công nhân viên.' : 'Chỉ nhân viên được thực hiện thao tác này.');
+    const managerAction = role === 'MANAGER';
+    const permitted = managerAction ? ['MANAGER', 'ADMIN'].includes(actor.role) : actor.role === 'STAFF';
+    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ Manager hoặc Admin được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
     const safeKey = this.key(key); const identity = await this.identity(id);
     return this.serializable(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.supportRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy Support Request.');
+      if (current.subject === 'Đề nghị trả kho trước hạn') throw new ForbiddenException('Đề nghị trả trước hạn do quản lý xem xét tại mục Đề nghị trả sớm; không xử lý như hỗ trợ thông thường.');
       if (current.lastAction === action && current.lastActionIdempotencyKey === safeKey) return this.toView(current, role);
       if (await tx.supportRequest.findUnique({ where: { lastActionIdempotencyKey: safeKey }, select: { id: true } })) throw new ConflictException('Idempotency-Key đã được dùng cho thao tác khác.');
       const updated = await operation(tx, current, safeKey);
@@ -158,6 +168,7 @@ export class SupportService {
   }
 
   private include(): Prisma.SupportRequestInclude { return {
+    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rentalContractId: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
     reservation: { select: { id: true, reservationCode: true, status: true, quoteSnapshot: true } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
@@ -167,7 +178,7 @@ export class SupportService {
   } }
 
   private toView(record: any, mode: ViewMode) {
-    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() };
+    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnDecision: record.subject === 'Đề nghị trả kho trước hạn' && record.resolvedBy?.role === 'MANAGER' ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null) : null, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, contractId: transfer.rentalContractId, fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     if (mode === 'CUSTOMER') return base;
     const operational = { ...base, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'STAFF') return operational;

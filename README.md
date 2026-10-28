@@ -1,4 +1,8 @@
-# WDP Self Storage
+> Hướng dẫn review mới nhất: [NestBox Storage — checklist test](./HUONG_DAN_TEST_NESTBOX.md).
+
+> Học nghiệp vụ và tự thực hành: [Hiểu project và kịch bản demo](./HUONG_DAN_HIEU_VA_DEMO_NESTBOX.md).
+
+# NestBox Storage
 
 > Current client review (16 October 2026): see [web/mobile UI, workflows, role coverage and verification](./FE/FULL_REVIEW_2026-10-16.md). Backend and database remain unchanged; unsupported backend features are documented explicitly.
 

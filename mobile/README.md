@@ -1,4 +1,6 @@
-# WDP Storage Mobile
+> Hướng dẫn review mới nhất: [NestBox Storage — checklist test](../HUONG_DAN_TEST_NESTBOX.md).
+
+# NestBox Storage Mobile
 
 Rà soát UI/UX và bổ sung thao tác Customer/Staff ngày 16/10: [FULL_REVIEW_2026-10-16.md](../FE/FULL_REVIEW_2026-10-16.md). Giữ nguyên BE/database và hai mục Admin.
 

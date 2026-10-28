@@ -8,6 +8,7 @@ import {
   code,
   first,
   label,
+  customer,
   type Row,
 } from "../../components/manager/portal-data";
 import {
@@ -23,6 +24,7 @@ import { allPages, mutate } from "../../services/portal";
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
 import { assignmentWorkRank } from '../../utils/work-queue';
+import { isEarlyReturnRequest } from '../../utils/early-return';
 
 type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
@@ -68,7 +70,7 @@ export function ManagerAssignmentsPage() {
           key,
           tasks: [
             ...movements.items.map(row => ({ kind: 'stock-movements' as const, row })),
-            ...support.items.map((row) => ({
+            ...support.items.filter(row => !isEarlyReturnRequest(row)).map((row) => ({
               kind: "support-requests" as const,
               row,
             })),
@@ -112,6 +114,8 @@ export function ManagerAssignmentsPage() {
         first(task.row, "subject"),
         first(task.row, "description"),
         first(task.row, "assignedStaff.fullName"),
+        first(customer(task.row), 'fullName', 'email'),
+        first(customer(task.row), 'phone'),
         label(task.row.status),
       ]
         .join(" ")
@@ -122,6 +126,8 @@ export function ManagerAssignmentsPage() {
   tasks.sort((a, b) => assignmentWorkRank(a.row) - assignmentWorkRank(b.row) || (Date.parse(first(a.row, 'requestedAt', 'createdAt')) || 0) - (Date.parse(first(b.row, 'requestedAt', 'createdAt')) || 0));
   const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / 20)));
   const knownStaff = staffFromWork(allTasks.map(task => task.row));
+  const workloads = new Map<string, number>();
+  for (const task of allTasks) { const staffId = first(task.row, 'assignedStaff.id'); if (staffId && !finished(task)) workloads.set(staffId, (workloads.get(staffId) ?? 0) + 1); }
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {
@@ -238,7 +244,7 @@ export function ManagerAssignmentsPage() {
                           </small>
                         </td>
                         <td>{workName(task.kind)}</td>
-                        <td>{relatedUnit(task.row)}</td>
+                        <td><strong>{first(customer(task.row), 'fullName') || '—'}</strong><small>{first(customer(task.row), 'phone', 'email')}</small>{relatedUnit(task.row)}</td>
                         <td>
                           {first(task.row, "assignedStaff.fullName") ||
                             "Chưa phân công"}
@@ -280,6 +286,7 @@ export function ManagerAssignmentsPage() {
           key={`${selected.kind}:${first(selected.row, "id")}`}
           task={selected}
           knownStaff={knownStaff}
+          workloads={workloads}
           onClose={() => setSelected(undefined)}
           onAssigned={() => {
             setSelected(undefined);
@@ -295,11 +302,13 @@ export function ManagerAssignmentsPage() {
 function AssignmentDetail({
   task,
   knownStaff,
+  workloads,
   onClose,
   onAssigned,
 }: {
   task: Task;
   knownStaff: Map<string, string>;
+  workloads: Map<string, number>;
   onClose: () => void;
   onAssigned: () => void;
 }) {
@@ -342,6 +351,9 @@ function AssignmentDetail({
       <div className="portal-form">
         <Facts
           items={[
+            ['Khách hàng', first(customer(task.row), 'fullName') || '—'],
+            ['Liên hệ', first(customer(task.row), 'phone', 'email') || '—'],
+            ['Hợp đồng', first(task.row, 'contract.contractCode', 'rentalContract.contractCode') || '—'],
             [
               "Trạng thái",
               <Status key="work-status" value={task.row.status} />,
@@ -365,7 +377,7 @@ function AssignmentDetail({
         )}
         {!finished(task) && (
           <form className="portal-form" onSubmit={assign}>
-            <StaffPicker value={staffId} onChange={value => { setStaffId(value); setError(''); }} knownStaff={knownStaff} disabled={busy} />
+            <StaffPicker value={staffId} onChange={value => { setStaffId(value); setError(''); }} knownStaff={knownStaff} workloads={workloads} disabled={busy} />
             <div className="portal-actions">
               <button
                 className="button-primary"

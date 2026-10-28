@@ -1,7 +1,9 @@
+import { isEarlyReturnRequest } from '@/utils/early-return';
 import { canOperateResource } from '@/utils/operation-access';
 import { idOf, label, options, rows, text, type Row } from './model';
 import type { FormAction, FormField } from './form';
 import { firstIssue as renewalReviewIssue } from './renewal-validation';
+import { isFixtureUnit, isFixtureStaff } from '@/utils/staff-fixture';
 
 const note = (name = 'note', title = 'Ghi chú', required = false, maxLength = 4000): FormField => ({ name, title, required, multiline: true, maxLength, ...(required ? { minLength: 3 } : {}) });
 const select = (name: string, title: string, values: string[], initial?: string): FormField => ({ name, title, required: true, choices: options(values), initial });
@@ -24,15 +26,15 @@ function serviceValidation(input: Row) {
   if (input.kind === 'PURCHASE' ? input.billingUnit !== 'ONE_TIME' : !['DAY', 'MONTH'].includes(String(input.billingUnit))) return 'Dịch vụ mua dùng Một lần; dịch vụ thuê dùng Ngày hoặc Tháng.';
 }
 export function assignmentAction(resource: string, row: Row): FormAction {
-  return { title: 'Phân công nhân viên', path: `/manager/${resource}/${encodeURIComponent(idOf(row))}/assign`, method: 'PATCH', idempotent: resource !== 'stock-movements', fields: [
-    { name: 'staffUserId', title: 'Nhân viên phụ trách', required: true, optionsPath: '/manager/staff', initial: text(row, 'assignedStaff.id'), optionLabel: item => `${text(item, 'fullName')} · ${text(item, 'email')}` }, confirm(),
+  return { title: 'Phân công nhân viên', path: `/manager/${resource}/${encodeURIComponent(idOf(row))}/assign`, method: 'PATCH', idempotent: resource !== 'stock-movements', description: `${text(row, 'customer.fullName', 'reservation.customer.fullName')} · ${text(row, 'customer.phone', 'reservation.customer.phone')} · Kho ${text(row, 'unit.unitCode', 'storageUnit.unitCode')} · ${text(row, 'contract.contractCode', 'rentalContract.contractCode')}`, fields: [
+    { name: 'staffUserId', title: 'Nhân viên phụ trách', required: true, optionsPath: '/manager/staff', optionsAccept: item => !isFixtureStaff(item), initial: text(row, 'assignedStaff.id'), optionLabel: item => `${text(item, 'fullName')} · ${text(item, 'email')}` }, confirm(),
   ] };
 }
 
 export function createAction(resource: string): FormAction | undefined {
   if (resource === 'additional-services') return { title: 'Tạo dịch vụ bổ sung', path: '/manager/additional-services', method: 'POST', fields: serviceFields(), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) };
-  if (resource === 'maintenance') return { title: 'Tạo yêu cầu bảo trì', path: '/manager/maintenance', method: 'POST', idempotent: true, description: 'Chỉ đưa kho AVAILABLE vào bảo trì. Hệ thống kiểm tra lại trước khi lưu.', fields: [
-    { name: 'storageUnitId', title: 'Kho cần bảo trì', required: true, optionsPath: '/manager/units?status=AVAILABLE', optionsAccept: row => row.status === 'AVAILABLE', optionLabel: row => text(row, 'unitCode', 'unitNumber', 'id') },
+  if (resource === 'maintenance') return { title: 'Tạo yêu cầu bảo trì', path: '/manager/maintenance', method: 'POST', idempotent: true, description: 'Chọn kho trống cần sửa chữa. Kho đang có khách sử dụng cần báo sự cố và sắp xếp chuyển kho trước; kho đó chưa nằm trong danh sách này.', fields: [
+    { name: 'storageUnitId', title: 'Kho cần bảo trì', required: true, optionsPath: '/manager/units?status=AVAILABLE', optionsAccept: row => row.status === 'AVAILABLE' && !isFixtureUnit(row), optionLabel: row => `${text(row, 'unitCode', 'unitNumber')} · ${text(row, 'storageType.name')} · ${text(row, 'floor')} ${text(row, 'zone')}` },
     select('category', 'Hạng mục', ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], 'UNIT_DAMAGE'), select('priority', 'Ưu tiên', priorities, 'MEDIUM'), note('description', 'Mô tả tình trạng', true), confirm(),
   ] };
   if (resource === 'transfers') return { title: 'Tạo yêu cầu chuyển kho', path: '/manager/transfers', method: 'POST', idempotent: true, description: 'Chỉ hợp đồng ACTIVE và kho cùng loại. Yêu cầu mới chưa thực hiện chuyển kho.', fields: [
@@ -42,7 +44,7 @@ export function createAction(resource: string): FormAction | undefined {
 }
 
 export function recordActions(resource: string, row: Row, role: string): FormAction[] {
-  if (!canOperateResource(role, resource)) return [];
+  if (!canOperateResource(role, resource) || resource === 'support-requests' && isEarlyReturnRequest(row)) return [];
   const root = `/manager/${resource}/${encodeURIComponent(idOf(row))}`;
   const actions: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], method: 'POST' | 'PATCH' = 'POST', idempotent = false, description?: string) => actions.push({ title, path: root + suffix, method, fields: [...fields, confirm()], idempotent, description });

@@ -6,6 +6,20 @@ import { notifyDataChanged } from './live-events';
 import { operationApiPath } from '@/utils/operation-access';
 
 const verifiedRoles = new Map<string, string>();
+const roleLookups = new Map<string, Promise<string>>();
+async function verifiedRole(token: string) {
+  const existing = verifiedRoles.get(token);
+  if (existing) return existing;
+  let lookup = roleLookups.get(token);
+  if (!lookup) {
+    lookup = apiRequest<{ role: string }>('/auth/me', { expectedToken: token }).then(user => {
+      if (!['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) throw new ApiError('Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.', 502);
+      return user.role;
+    }).finally(() => roleLookups.delete(token));
+    roleLookups.set(token, lookup);
+  }
+  return lookup;
+}
 function rememberRole(token: string, role: string) {
   verifiedRoles.set(token, role);
   if (verifiedRoles.size > 8) verifiedRoles.delete(verifiedRoles.keys().next().value!);
@@ -45,8 +59,10 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30000);
   try {
   let response: Response;
+  const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
+  if (token && await authStorage.getToken() !== token) throw new Error('Phiên đăng nhập đã thay đổi.');
+  const apiPath = operationApiPath(path, role, request.method ?? 'GET');
   try {
-    const apiPath = operationApiPath(path, token ? verifiedRoles.get(token) : undefined, request.method ?? 'GET');
     response = await fetch(`${apiUrl}${apiPath}`, {
       ...request,
       signal: controller.signal,
@@ -60,7 +76,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   } catch (error) {
     if (signal?.aborted) throw error;
     if (timedOut) throw new ApiError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.', 408);
-    throw new ApiError('Không kết nối được hệ thống WDP. Vui lòng kiểm tra mạng và thử lại.', 0);
+    throw new ApiError('Không kết nối được hệ thống NestBox. Vui lòng kiểm tra mạng và thử lại.', 0);
   }
 
   const payload = response.status === 204 ? null : await response.json().catch((error: unknown) => {

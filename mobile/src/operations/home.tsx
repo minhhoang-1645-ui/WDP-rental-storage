@@ -15,7 +15,7 @@ import { formatMoney } from '@/utils/format';
 import { activitySources } from '@/utils/activity';
 
 const operationGroups = [
-  { title: 'Thanh toán & hợp đồng', keys: ['payment-submissions', 'invoices', 'contracts', 'payments', 'deposit-settlements'] },
+  { title: 'Thanh toán & hợp đồng', keys: ['payment-submissions', 'invoices', 'contracts', 'payments'] },
   { title: 'Kho & khách hàng', keys: ['rentals', 'units', 'customers', 'catalog', 'additional-services'] },
 ];
 const summaryMetrics = [
@@ -31,7 +31,6 @@ export function ManagerHome() {
   const overdue = invoices.filter(row => isOverdueInvoice(row));
   const unassigned = ['support-requests', 'maintenance', 'stock-movements'].flatMap(kind => (activity.data[kind] ?? []).filter(row => awaitingAssignment(kind, row)));
   const pendingPayments = (activity.data['payment-submissions'] ?? []).filter(row => row.status === 'PENDING_VERIFICATION');
-  const pendingDeposits = (activity.data['deposit-settlements'] ?? []).filter(row => ['PENDING_REVIEW', 'APPROVED'].includes(String(row.status)));
   const sourceCount = (kinds: string[], value: number) => activity.loading || kinds.some(kind => !activity.data[kind] || activity.failed.includes(activitySources('MANAGER').find(source => source.kind === kind)!.title)) ? '—' : value;
   const refresh = () => { data.refresh(); activity.refresh(); };
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
@@ -42,11 +41,10 @@ export function ManagerHome() {
       { title: 'Phân công nhân viên', path: '/manager/assignments?assignment=unassigned', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.', count: sourceCount(['support-requests', 'maintenance', 'stock-movements'], unassigned.length) },
       { title: 'Chờ xác nhận thanh toán', path: '/manager/payment-submissions', description: 'Kiểm tra thông báo chuyển khoản và khoản tiền thực nhận.', count: sourceCount(['payment-submissions'], pendingPayments.length) },
       { title: 'Hóa đơn & công nợ', path: '/manager/invoices', description: activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `${overdue.length} hóa đơn quá hạn. Kiểm tra hạn trả và lịch sử thu tiền.` : 'Kiểm tra số tiền còn phải thu, hạn trả và lịch sử thu tiền.', count: sourceCount(['invoices'], overdue.length) },
-      { title: 'Quyết toán cọc', path: '/manager/deposit-settlements', description: 'Đối chiếu kết quả trả kho, khoản cần thu và khoản hoàn.', count: sourceCount(['deposit-settlements'], pendingDeposits.length) },
     ]} />
     {data.error && <ErrorState message={data.error} onRetry={data.refresh} />}
     <Panel title="Theo dõi công nợ"><Text style={styles.copy}>{activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `Tổng dư nợ: ${formatMoney(invoices.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0))}. Quá hạn: ${formatMoney(overdue.reduce((sum, row) => sum + Number(row.balanceDue), 0))}.` : 'Chưa tải đủ hóa đơn để tổng hợp.'}</Text><Navigation title="Xem hóa đơn" path="/manager/invoices" /></Panel>
-    <FunctionMenu groups={[{ title: 'Giám sát & nhân sự', items: [{ title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Theo dõi người phụ trách và tiến độ công việc.' }, { title: 'Báo cáo vận hành', path: '/manager/reports', description: 'Hóa đơn, khoản thu và tình hình sử dụng kho.' }] }, ...operationGroups.map(group => ({ title: group.title, items: group.keys.map(key => ({ title: resources[key].title, path: `/manager/${key}`, description: group.title })) }))]} />
+    <FunctionMenu groups={[{ title: 'Giám sát & nhân sự', items: [{ title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Theo dõi người phụ trách và tiến độ công việc.' }, { title: 'Đề nghị trả trước hạn', path: '/manager/early-returns', description: 'Đối chiếu công nợ và phản hồi đề nghị của khách.' }, { title: 'Báo cáo vận hành', path: '/manager/reports', description: 'Hóa đơn, khoản thu và tình hình sử dụng kho.' }] }, ...operationGroups.map(group => ({ title: group.title, items: group.keys.map(key => ({ title: resources[key].title, path: `/manager/${key}`, description: group.title })) }))]} />
     <Disclosure title="Thống kê cơ sở">{data.loading ? <LoadingState /> : data.data && <View style={styles.row}>{summaryMetrics.map(([key, title]) => <MetricCard key={key} label={title} value={count(key)} tone={key === 'overdueRentals' ? 'danger' : 'navy'} />)}</View>}</Disclosure>
     <Navigation title="Báo cáo vận hành" path="/manager/reports" />
     <Navigation title="Tài khoản và đăng xuất" path="/manager/account" />

@@ -121,7 +121,7 @@ export function CustomerAppointmentsPage() {
       )
         throw new Error("Lịch nhận chìa khóa chỉ được đặt sớm tối đa 3 ngày trước ngày bắt đầu thuê.");
       if (scheduledAt.slice(0, 10) >= selectedReservation.endDate) throw new Error('Ngày bàn giao phải trước ngày kết thúc kỳ thuê (không bao gồm ngày kết thúc).');
-      await mutate<CustomerAppointment>(
+      const created = await mutate<CustomerAppointment>(
         "/customer/appointments",
         "POST",
         {
@@ -131,7 +131,7 @@ export function CustomerAppointmentsPage() {
         },
         true,
       );
-      setMessage({ kind: "ok", text: "Lịch nhận kho hợp lệ đã được xác nhận tự động." });
+      setMessage({ kind: "ok", text: created.status === "CONFIRMED" ? "Lịch nhận kho hợp lệ đã được xác nhận tự động." : "Đã ghi nhận lịch nhận kho. Vui lòng xem trạng thái xử lý trong danh sách." });
       setReservationId("");
       setScheduledAt("");
       setNote("");
@@ -303,7 +303,7 @@ export function CustomerAppointmentsPage() {
               />
             </label>
             <small id="appointment-timezone">
-              Ngày giờ tại cơ sở WDP (UTC+7). Có thể hẹn nhận chìa khóa sớm từ
+              Ngày giờ tại cơ sở NestBox (UTC+7). Có thể hẹn nhận chìa khóa sớm từ
               {selectedReservation
                 ? ` ${formatPortalDate(selectedReservation.pickupStart)}, đến trước ngày ${formatPortalDate(selectedReservation.endDate)}. Quyền sử dụng kho chỉ bắt đầu từ ${formatPortalDate(selectedReservation.startDate)}.`
                 : ' tối đa 3 ngày trước khi bắt đầu thuê và trước ngày kết thúc kỳ thuê.'}

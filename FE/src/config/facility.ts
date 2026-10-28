@@ -6,10 +6,10 @@ const configured = {
   hours: import.meta.env.VITE_FACILITY_HOURS?.trim(),
 }
 export const facility = {
-  name: configured.name || 'WDP Storage · Cơ sở TP. Hồ Chí Minh',
-  address: configured.address || 'Lô WDP-01, khu kho vận WDP, TP. Hồ Chí Minh',
-  phone: configured.phone || '0000 000 000',
-  email: configured.email || 'hotro@wdp-storage.example',
+  name: configured.name || 'NestBox Storage · Cơ sở TP. Hồ Chí Minh',
+  address: configured.address || 'Lô NB-01, khu kho vận Long Bình, TP. Hồ Chí Minh',
+  phone: configured.phone || 'Hỗ trợ qua tài khoản',
+  email: configured.email || 'hotro@nestbox.example',
   hours: configured.hours || '08:00–18:00 · Thứ Hai đến Chủ Nhật',
   illustrative: !Object.values(configured).every(Boolean),
   phoneHref: configured.phone && /^\+?[\d\s().-]{8,25}$/.test(configured.phone) && /[1-9]/.test(configured.phone) ? `tel:${configured.phone.replace(/[^\d+]/g, '')}` : undefined,

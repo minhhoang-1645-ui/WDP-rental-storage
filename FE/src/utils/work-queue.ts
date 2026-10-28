@@ -1,10 +1,12 @@
+import { isEarlyReturnRequest } from './early-return';
+
 type WorkRow = Record<string, unknown>;
 
 export const staffWorkGroups = [
   {
     resource: "reservations",
     title: "Yêu cầu đặt kho",
-    description: "Đối chiếu báo giá và khả dụng trước khi duyệt.",
+    description: "Theo dõi đặt kho tự xác nhận; kiểm tra hồ sơ chưa đủ điều kiện.",
   },
   {
     resource: "inquiries",
@@ -83,7 +85,7 @@ export function staffNeedsAction(
     case "stock-movements":
       return status === "ASSIGNED" && assignee(row) === userId;
     case "support-requests":
-      return (
+      return !isEarlyReturnRequest(row) && (
         status === "ESCALATED" ||
         (["ASSIGNED", "IN_PROGRESS"].includes(status) &&
           assignee(row) === userId)
@@ -100,6 +102,7 @@ export function staffNeedsAction(
 
 export function awaitingAssignment(resource: string, row: WorkRow) {
   return (
+    !(resource === "support-requests" && isEarlyReturnRequest(row)) &&
     ["support-requests", "maintenance", "stock-movements"].includes(resource) &&
     ["OPEN", "REQUESTED"].includes(String(row.status)) &&
     !assignee(row)
@@ -121,7 +124,7 @@ export function isOverdueInvoice(row: WorkRow, now = Date.now()) {
   return (
     ["OPEN", "PARTIALLY_PAID"].includes(String(row.status)) &&
     Number(row.balanceDue) > 0 &&
-    Date.parse(String(row.dueAt)) < now
+    Date.parse(String(row.type === "INITIAL" && row.reservation && typeof row.reservation === "object" && (row.reservation as WorkRow).expiresAt || row.dueAt)) < now
   );
 }
 

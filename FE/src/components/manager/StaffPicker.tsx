@@ -1,27 +1,28 @@
 import { useEffect, useId, useState } from 'react';
 import { useAuth } from '../../auth/auth-context';
-import { apiRequest } from '../../services/api';
 import { allPages } from '../../services/portal';
-import { staffFromWork } from '../../utils/staff';
+import { isFixtureStaff, staffFromWork } from '../../utils/staff';
 
-export function StaffPicker({ value, onChange, disabled = false, knownStaff, currentStaff }: {
+export function StaffPicker({ value, onChange, disabled = false, knownStaff, currentStaff, workloads }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   knownStaff?: Map<string, string>;
   currentStaff?: { id: string; fullName: string } | null;
+  workloads?: Map<string, number>;
 }) {
   const { user } = useAuth(), hintId = useId();
   const [manual, setManual] = useState(false), [revision, setRevision] = useState(0);
+  const [search, setSearch] = useState('');
   const key = `${user?.id}:${revision}`;
   const [result, setResult] = useState<{ key: string; staff: Map<string, string>; error: boolean }>();
   useEffect(() => {
     if (!['MANAGER', 'ADMIN'].includes(user?.role ?? '')) return;
     const controller = new AbortController();
-    apiRequest<{ items: Array<{ id: string; fullName: string; email?: string }> }>('/manager/staff?limit=100', { authenticated: true, signal: controller.signal })
+    allPages<{ id: string; fullName: string; email?: string }>('/manager/staff?limit=100', controller.signal)
       .then(response => {
         if (controller.signal.aborted) return;
-        setResult({ key, staff: new Map(response.items.map(staff => [staff.id, staff.fullName + (staff.email ? ` · ${staff.email}` : '')])), error: false });
+        setResult({ key, staff: new Map(response.items.filter(staff => !isFixtureStaff(staff)).map(staff => [staff.id, staff.fullName + (staff.email ? ` · ${staff.email}` : '')])), error: false });
       })
       .catch(async () => {
         try {
@@ -34,18 +35,22 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
     return () => controller.abort();
   }, [key, user?.role]);
   const current = result?.key === key ? result : undefined;
-  const options = new Map([...(knownStaff ?? []), ...(current?.staff ?? [])]);
+  const options = new Map([...(current?.error ? knownStaff ?? [] : []), ...(current?.staff ?? [])]);
   if (currentStaff) options.set(currentStaff.id, currentStaff.fullName);
   const loading = !current;
   const showManual = manual || (!loading && !options.size) || (Boolean(value) && !options.has(value));
+  const normalize = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const filtered = [...options].filter(([id, name]) => id === value || normalize(name).includes(normalize(search.trim()))).sort((a,b) => (workloads ? (workloads.get(a[0]) ?? 0) - (workloads.get(b[0]) ?? 0) : 0) || a[1].localeCompare(b[1], 'vi'));
   return <div className="staff-assignee-picker">
+    <label className="field-label">Tìm nhân viên<input type="search" placeholder="Nhập tên hoặc email nhân viên…" value={search} disabled={disabled} onChange={event => setSearch(event.target.value)} /></label>
     <label className="field-label">Nhân viên phụ trách
       <select aria-label="Nhân viên phụ trách" aria-describedby={hintId} value={options.has(value) && !manual ? value : ''} disabled={disabled || !options.size} required={!showManual} onChange={event => { setManual(false); onChange(event.target.value); }}>
         <option value="">{loading && !options.size ? 'Đang tải danh sách nhân viên…' : options.size ? 'Chọn nhân viên' : 'Chưa có nhân viên đang hoạt động'}</option>
-        {[...options].sort((a, b) => a[1].localeCompare(b[1], 'vi')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        {filtered.map(([id, name]) => <option key={id} value={id}>{name}{workloads ? ` · ${workloads.get(id) ?? 0} việc chưa hoàn tất` : ''}</option>)}
       </select>
     </label>
-    <p id={hintId} className="staff-assignee-hint">Chọn nhân viên kho đang hoạt động để giao việc.</p>
+    <p id={hintId} className="staff-assignee-hint">{filtered.length} nhân viên phù hợp. Tài khoản kiểm thử đã được ẩn khỏi danh sách gợi ý.{workloads && ' Sắp xếp theo số việc chưa hoàn tất trong ba nhóm hỗ trợ, bảo trì và nhập–xuất.'}</p>
+    {value && options.has(value) && <div className="staff-choice-summary"><strong>Đang chọn: {options.get(value)}</strong>{workloads && <p>{workloads.get(value) ?? 0} công việc chưa hoàn tất.</p>}</div>}
     {current?.error && <div className="staff-assignee-hint" role="status">Không tải được danh sách nhân viên mới nhất. Bạn có thể chọn dữ liệu đang có hoặc <button type="button" className="portal-text-button" disabled={disabled} onClick={() => setRevision(value => value + 1)}>Tải lại danh sách</button>.</div>}
     {showManual ? <div><label className="field-label">Mã tài khoản nhân viên<input required maxLength={100} autoComplete="off" spellCheck={false} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} placeholder="Dán mã tài khoản khi cần" /></label><small>Chỉ dùng khi cần giữ nguyên người đã được phân công trong hồ sơ cũ.</small></div> : <button className="portal-text-button" type="button" disabled={disabled} onClick={() => { setManual(true); onChange(''); }}>Nhập mã nhân viên khác</button>}
   </div>;

@@ -1,3 +1,5 @@
+import { paymentExpiry } from '../utils/payment-state'
+
 export type PendingOnlinePayment = {
   customerId: string
   invoiceId: string
@@ -26,7 +28,6 @@ function valid(value: unknown): value is PendingOnlinePayment {
     && typeof item.merchantOrderRef === 'string'
     && Number.isSafeInteger(item.amount)
     && Number(item.amount) > 0
-    && typeof item.expiresAt === 'string'
     && (item.mode === 'VNPAY' || item.mode === 'VNPAYQR')
     && typeof item.createdAt === 'string'
 }
@@ -43,7 +44,7 @@ export function readPendingOnlinePayments(customerId: string) {
     if (!storageKey?.startsWith(prefix)) continue
     try {
       const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
-      if (valid(value) && value.customerId === customerId) items.push(value)
+      if (valid(value) && value.customerId === customerId) items.push({ ...value, expiresAt: paymentExpiry(value.expiresAt, value.createdAt) })
     } catch { /* Ignore corrupt browser state. */ }
   }
   return items.sort((left, right) => right.createdAt.localeCompare(left.createdAt))

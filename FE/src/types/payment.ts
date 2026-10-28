@@ -77,6 +77,13 @@ export interface OnlinePaymentStatusResult {
     amount: number
     receivedAt: string
   } | null
+  reconciliation: {
+    reconciliationCode: string
+    status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'
+    reason: string
+    resolutionNote: string | null
+    reviewedAt: string | null
+  } | null
 }
 
 export type VnpayReturnResult =

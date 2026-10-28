@@ -13,7 +13,8 @@ import {
 } from "../../components/manager/portal-data";
 import { RecordPicker } from "../../components/manager/PortalUi";
 import { renewalReviewIssue } from '../../utils/renewal-review';
-import { canOperateResource } from '../../utils/operation-access';
+import { isEarlyReturnRequest } from '../../utils/early-return';
+import { canAccessManagerReview } from '../../utils/manager-review-access';
 
 export function ManagerActions({
   resource,
@@ -135,7 +136,9 @@ export function ManagerActions({
       </label>
     </>
   );
-  if (!canOperateResource(user?.role ?? '', resource)) return null;
+  if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
+  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Đề nghị trả trước hạn thuộc quản lý xem xét công nợ và điều kiện. Nhân viên xử lý hồ sơ trả kho sau khi đề nghị được chấp thuận.</p>;
+  if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
   return (
     <div className="portal-form">
       {error && (
@@ -749,7 +752,7 @@ export function ManagerActions({
             </>
           ) : (
             <p>
-              {label(row.status)}. Nhân viên sẽ xác nhận việc di chuyển thực tế.
+              {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích. Chỉ hoàn tất khi đã chuyển hàng và bàn giao thực tế.'}
             </p>
           ))}
         {[

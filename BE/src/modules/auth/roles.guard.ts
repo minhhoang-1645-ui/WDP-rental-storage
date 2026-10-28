@@ -13,7 +13,7 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
     const targets = [context.getHandler(), context.getClass()];
     if (this.reflector.getAllAndOverride<boolean>('managerAssignment', targets)) {
-      const permitted = request.method === 'PATCH' && ['MANAGER', 'ADMIN'].includes(user?.role ?? '') && /^\/(?:api\/)?manager\//.test(request.originalUrl ?? '');
+      const permitted = ['PATCH', 'POST'].includes(request.method ?? '') && ['MANAGER', 'ADMIN'].includes(user?.role ?? '') && /^\/(?:api\/)?manager\//.test(request.originalUrl ?? '');
       if (!permitted) throw new ForbiddenException('Chỉ quản lý được phân công nhân viên.');
       return true;
     }

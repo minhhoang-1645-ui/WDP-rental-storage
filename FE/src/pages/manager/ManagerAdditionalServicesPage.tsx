@@ -17,7 +17,7 @@ export function ManagerAdditionalServicesPage() {
   const [notice, setNotice] = useState('');
   const refresh = () => { resource.refresh(); inventory.refresh(); };
   return <section><Link className="booking-back" to={operationPath(user?.role, '/manager/catalog')}>Loại kho & bảng giá</Link>
-    <PageHeader title="Dịch vụ bổ sung" description="Danh mục, giá và tồn kho được lưu qua hệ thống WDP."><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
+    <PageHeader title="Dịch vụ bổ sung" description="Danh mục, giá và tồn kho được lưu qua hệ thống NestBox."><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
     {notice && <div className="portal-success" role="status">{notice}</div>}
     <LoadState loading={resource.loading || inventory.loading} error={resource.error || inventory.error} retry={refresh} />
     {resource.data && !resource.data.length && <Empty title="Chưa có dịch vụ bổ sung" />}

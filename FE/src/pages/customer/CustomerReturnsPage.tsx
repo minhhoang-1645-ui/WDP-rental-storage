@@ -23,10 +23,13 @@ import {
   PortalPageHeader,
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
+import { EarlyReturnPanel } from '../../components/customer/EarlyReturnPanel';
+import { isCurrentEarlyReturnApproval } from '../../utils/early-return';
 import type {
   CustomerDepositSettlement,
   CustomerRental,
   CustomerReturnRequest,
+  CustomerSupportRequest,
 } from "../../types/customer";
 
 export function CustomerReturnsPage() {
@@ -46,6 +49,7 @@ export function CustomerReturnsPage() {
     true,
   );
   const [view, setView] = useState<"returns" | "settlements">("returns");
+  const approvals = usePaginatedResource<CustomerSupportRequest>('/customer/support-requests?limit=100', user?.id ?? '', true);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   const [reservationId, setReservationId] = useState("");
   const [note, setNote] = useState("");
@@ -62,7 +66,7 @@ export function CustomerReturnsPage() {
   );
   const eligibleRentals = (rentals.data?.items ?? []).filter(
     (item) =>
-      new Date(item.effectiveEndDate).getTime() <= checkedAt &&
+      (new Date(item.effectiveEndDate).getTime() <= checkedAt || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
       !item.pendingRenewal &&
       !activeReturnIds.has(item.reservationId),
   );
@@ -72,6 +76,7 @@ export function CustomerReturnsPage() {
     returns.refresh();
     settlements.refresh();
     rentals.refresh();
+    approvals.refresh();
   };
 
   const submit = async (event: FormEvent) => {
@@ -111,7 +116,7 @@ export function CustomerReturnsPage() {
       <PortalPageHeader
         eyebrow="Kết thúc thuê"
         title="Trả kho và quyết toán tiền cọc"
-        description="Gửi yêu cầu trả kho khi hết hạn, theo dõi kiểm tra hiện trạng và khoản tiền cọc."
+        description="Trả kho khi đến hạn hoặc gửi đề nghị trả trước hạn để quản lý xem xét. Theo dõi kiểm tra và quyết toán tiền cọc."
         action={
           <button
             className="button-secondary"
@@ -160,30 +165,29 @@ export function CustomerReturnsPage() {
             <SettlementList items={settlements.data?.items ?? []} />
           )}
         </section>
-        <form className="customer-panel customer-module-form" onSubmit={submit}>
-          <CustomerFormSources resources={[rentals, returns]} retry={refresh} />
+        <div className="customer-return-forms"><form className="customer-panel customer-module-form" onSubmit={submit}>
+          <CustomerFormSources resources={[rentals, returns, approvals]} retry={refresh} />
           <fieldset
             disabled={
               submitting ||
-              [rentals, returns].some(
+              [rentals, returns, approvals].some(
                 (resource) => resource.loading || resource.error,
               )
             }
           >
             <h2>Gửi yêu cầu trả kho</h2>
             <p>
-              Yêu cầu được tiếp nhận từ ngày kết thúc hiệu lực của rental. WDP
-              sẽ kiểm tra từng kho trước khi quyết toán tiền cọc.
+              Chọn yêu cầu thuê đã đến hạn hoặc đã được quản lý chấp thuận trả sớm. Nhân viên sẽ kiểm tra từng kho trước khi quyết toán cọc.
             </p>
             <label className="field-label">
-              Rental đã đến hạn
+              Yêu cầu thuê đủ điều kiện trả
               <select
-                aria-label="Rental đã đến hạn"
+                aria-label="Yêu cầu thuê đủ điều kiện trả"
                 required
                 value={reservationId}
                 onChange={(event) => setReservationId(event.target.value)}
               >
-                <option value="">Chọn rental</option>
+                <option value="">Chọn kho đủ điều kiện trả</option>
                 {eligibleRentals.map((item) => (
                   <option key={item.reservationId} value={item.reservationId}>
                     {item.reservationReference} · {item.storageType.name} · hết
@@ -220,11 +224,11 @@ export function CustomerReturnsPage() {
             </button>
             {!rentals.loading && eligibleRentals.length === 0 && (
               <small>
-                Hiện chưa có rental đã đến hạn và đủ điều kiện trả kho.
+                Chưa có kho đủ điều kiện trả ngay. Nếu muốn trả trước hạn, gửi đề nghị ở phần bên dưới.
               </small>
             )}
           </fieldset>
-        </form>
+        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>
       </div>
     </section>
   );
@@ -318,7 +322,7 @@ function SettlementList({ items }: { items: CustomerDepositSettlement[] }) {
         icon={<ClipboardCheck size={30} />}
         title="Chưa có quyết toán tiền cọc"
       >
-        <span>Quyết toán được tạo sau khi WDP hoàn tất kiểm tra trả kho.</span>
+        <span>Quyết toán được tạo sau khi NestBox hoàn tất kiểm tra trả kho.</span>
       </PortalEmpty>
     );
   return (

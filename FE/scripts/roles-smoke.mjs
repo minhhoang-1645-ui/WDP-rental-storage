@@ -326,7 +326,7 @@ async function setup(initialRole, authenticated = true) {
       amount: 2000000,
       paidAt: when,
       updatedAt: when,
-      invoice: { id: "invoice-0", invoiceCode: "INV-0", status: "PAID", amountPaid: 2000000, balanceDue: 0, paidAt: when },
+      invoice: { id: "invoice-0", invoiceCode: "INV-0", type: "INITIAL", status: "PAID", amountPaid: 2000000, balanceDue: 0, paidAt: when },
       payment: { id: "payment-0", paymentCode: "PAY-0", amount: 2000000, receivedAt: when },
     });
     if (path === failSource)
@@ -346,6 +346,7 @@ async function setup(initialRole, authenticated = true) {
           merchantOrderRef: "WDP-VNPAY-TEST",
           status: "PENDING",
           amount: 2000000,
+          expiresAt: new Date(Date.now() + 900000).toISOString(),
           paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?test=wdp',
         }, 201);
       }
@@ -444,7 +445,7 @@ async function setup(initialRole, authenticated = true) {
         ...body,
         reservation,
         storageType,
-        status: "REQUESTED",
+        status: resource === "appointments" ? "CONFIRMED" : resource === "renewals" ? "APPROVED_PENDING_PAYMENT" : "REQUESTED",
         createdAt: when,
         allocatedUnits: [],
         inspectionSummary: { total: 1, passed: 0, pending: 1, issues: 0 },
@@ -879,7 +880,8 @@ try {
   }
   await open(customer.page, "/customer/payments");
   await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
-  await customer.page.waitForURL((url) => url.pathname === "/customer/payments/vnpay-return");
+  await customer.page.waitForURL((url) => url.pathname === "/customer/appointments");
+  await open(customer.page, "/customer/payments/vnpay-return?transactionId=online-payment-id");
   await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));
   assert.match(onlinePaymentWrite.key, /^cust-vnpay-/);
@@ -897,7 +899,7 @@ try {
   await open(customer.page, "/customer/support");
   assert.equal(
     await customer.page
-      .getByRole("option", { name: "RES-ACTIVE", exact: true })
+      .getByLabel('Yêu cầu đặt kho', { exact: true }).locator('option[value="RES-ACTIVE"]')
       .count(),
     1,
     "No duplicate database ID/reference options",
@@ -942,6 +944,7 @@ try {
     .getByLabel("Yêu cầu đặt kho", { exact: true })
     .selectOption("ready-id");
   const appointmentInput = customer.page.getByLabel('Ngày giờ mong muốn', { exact: true });
+  assert.equal(await appointmentInput.getAttribute('min'), '2030-10-29T00:00');
   assert.equal(await appointmentInput.getAttribute('max'), '2030-11-30T23:59');
   const writesBeforeInvalidAppointment = writes.length;
   await appointmentInput.fill('2030-12-01T10:00');
@@ -950,17 +953,17 @@ try {
   assert.equal(writes.length, writesBeforeInvalidAppointment, 'No appointment may be sent on the exclusive rental end date');
   await customer.page
     .getByLabel("Ngày giờ mong muốn", { exact: true })
-    .fill("2030-11-01T10:00");
+    .fill("2030-10-29T10:00");
   await customer.page
     .getByRole("button", { name: "Gửi yêu cầu", exact: true })
     .click();
   await customer.page
     .getByRole("status")
-    .filter({ hasText: "Đã gửi yêu cầu lịch bàn giao" })
+    .filter({ hasText: "Lịch nhận kho hợp lệ đã được xác nhận tự động" })
     .waitFor();
   assert.equal(
     writes.at(-1).body.scheduledAt,
-    "2030-11-01T03:00:00.000Z",
+    "2030-10-29T03:00:00.000Z",
     "Appointment input uses the facility timezone",
   );
   await open(customer.page, "/customer/renewals");
@@ -979,11 +982,11 @@ try {
     .click();
   await customer.page
     .getByRole("status")
-    .filter({ hasText: "Đã gửi yêu cầu gia hạn" })
+    .filter({ hasText: "Gia hạn hợp lệ đã được duyệt tự động" })
     .waitFor();
   await open(customer.page, "/customer/returns");
   await customer.page
-    .getByLabel("Rental đã đến hạn", { exact: true })
+    .getByLabel("Yêu cầu thuê đủ điều kiện trả", { exact: true })
     .selectOption("rental-id");
   await customer.page
     .getByRole("button", { name: "Gửi yêu cầu trả kho", exact: true })

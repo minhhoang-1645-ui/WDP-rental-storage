@@ -9,6 +9,7 @@ import {
 } from "../../components/manager/portal-data";
 import type { StaffResource } from "./staff-resources";
 import { handoverCompletionIssue } from '../../utils/handover';
+import { isEarlyReturnRequest } from '../../utils/early-return';
 
 export function StaffActions({
   resource,
@@ -229,7 +230,8 @@ export function StaffActions({
             )}
           </>
         )}
-        {resource === "support-requests" && (
+        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
+        {resource === "support-requests" && !isEarlyReturnRequest(row) && (
           <>
             {!assigned &&
               !["ESCALATED", "RESOLVED"].includes(String(row.status)) && (

@@ -75,7 +75,7 @@ export function InternalPortalLayout({
       </span>
       <div>
         <strong>
-          WDP <em>Storage</em>
+          NestBox <em>Storage</em>
         </strong>
         <small>{label}</small>
       </div>

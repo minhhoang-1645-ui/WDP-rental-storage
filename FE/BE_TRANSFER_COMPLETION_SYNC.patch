@@ -1,0 +1,58 @@
+--- a/BE/src/modules/transfers/transfers.service.ts
++++ b/BE/src/modules/transfers/transfers.service.ts
+@@ -131,6 +131,10 @@
+       if (!identity) throw new NotFoundException('Không tìm thấy TransferRequest.');
+       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
+       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
++      if (current.status === 'COMPLETED') {
++        await this.resolveLinkedTransferSupport(tx, current, actor);
++        return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
++      }
+       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
+       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" IN (${current.fromStorageUnitId}, ${current.toStorageUnitId}) FOR UPDATE`);
+       if (current.fromStorageUnit.status !== 'OCCUPIED' || current.toStorageUnit?.status !== 'RESERVED') throw new ConflictException('Trạng thái vật lý của unit đã thay đổi.');
+@@ -139,8 +143,24 @@
+       await tx.reservationUnit.update({ where: { id: current.fromReservationUnitId }, data: { releasedAt: now, actualVacatedAt: now } });
+       await tx.storageUnit.update({ where: { id: current.fromStorageUnitId }, data: { status: 'MAINTENANCE' } });
+       await tx.storageUnit.update({ where: { id: current.toStorageUnitId }, data: { status: 'OCCUPIED' } });
+-      return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now }, include: this.include() }));
++      const completed = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now }, include: this.include() });
++      await this.resolveLinkedTransferSupport(tx, completed, actor);
++      return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
+     }, 'Không thể hoàn tất Transfer do xung đột đồng thời.');
++  }
++
++  private async resolveLinkedTransferSupport(tx: Prisma.TransactionClient, transfer: any, actor: PublicUser) {
++    if (!transfer.supportRequestId) return;
++    const support = await tx.supportRequest.findUnique({ where: { id: transfer.supportRequestId } });
++    if (!support || support.reservationId !== transfer.reservationId || (support.rentalContractId && support.rentalContractId !== transfer.rentalContractId)) throw new ConflictException('Yêu cầu gốc không khớp hợp đồng chuyển kho.');
++    const subject = support.subject.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
++    if (!subject.includes('chuyen kho') && support.resolutionType !== 'TRANSFER_RECOMMENDED') return;
++    if (support.status === 'RESOLVED' && support.resolutionType !== 'TRANSFER_RECOMMENDED') return;
++    const resolutionNote = `Đã hoàn tất chuyển kho từ ${transfer.fromStorageUnit.unitNumber} sang ${transfer.toStorageUnit.unitNumber}. Lệnh ${transfer.transferCode}, hợp đồng ${transfer.rentalContract.contractCode}.`;
++    await tx.supportRequest.updateMany({
++      where: { id: support.id, reservationId: transfer.reservationId, OR: [{ status: { not: 'RESOLVED' } }, { resolutionType: 'TRANSFER_RECOMMENDED' }] },
++      data: { status: 'RESOLVED', resolutionType: 'ON_SITE_RESOLVED', resolutionNote, resolvedByUserId: actor.id, resolvedAt: transfer.completedAt ?? new Date(), lastAction: 'TRANSFER_COMPLETED', lastActionIdempotencyKey: null },
++    });
+   }
+ 
+   private include(): Prisma.TransferRequestInclude { return {
+--- a/BE/src/modules/support/support.service.ts
++++ b/BE/src/modules/support/support.service.ts
+@@ -158,6 +158,7 @@
+   }
+ 
+   private include(): Prisma.SupportRequestInclude { return {
++    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rentalContractId: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
+     customer: { select: { id: true, fullName: true, email: true, phone: true } },
+     reservation: { select: { id: true, reservationCode: true, status: true, quoteSnapshot: true } },
+     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
+@@ -167,7 +168,7 @@
+   } }
+ 
+   private toView(record: any, mode: ViewMode) {
+-    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() };
++    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), transfers: (record.transferRequests ?? []).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, contractId: transfer.rentalContractId, fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
+     if (mode === 'CUSTOMER') return base;
+     const operational = { ...base, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
+     if (mode === 'STAFF') return operational;

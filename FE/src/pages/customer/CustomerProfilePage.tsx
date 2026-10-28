@@ -19,7 +19,7 @@ export function CustomerProfilePage() {
             </span>
             <div>
               <h2>{user?.fullName}</h2>
-              <p>Tài khoản khách hàng WDP Storage</p>
+              <p>Tài khoản khách hàng NestBox Storage</p>
             </div>
           </div>
           <dl className="customer-profile-fields">

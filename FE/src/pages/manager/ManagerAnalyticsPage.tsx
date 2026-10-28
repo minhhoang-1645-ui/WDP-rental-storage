@@ -80,7 +80,7 @@ export function ManagerAnalyticsPage() {
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = `wdp-hoa-don-${from || "tat-ca"}-${to || "hien-tai"}.csv`;
+    link.download = `nestbox-hoa-don-${from || "tat-ca"}-${to || "hien-tai"}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };

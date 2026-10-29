@@ -23,8 +23,9 @@ export function filterNotifications(entries: ActivityEntry[], read: string[], vi
     && (!query || normalizeSearch(`${item.code} ${item.title} ${item.message} ${notificationKinds[item.kind] ?? ''}`).includes(query)));
 }
 /** A badge counts actionable dossiers, not how many times a status was refreshed. */
-export function actionCountForPath(entries: ActivityEntry[], path: string) {
-  return new Set(entries.filter(item => item.action && (item.web.split('?')[0] === path || item.web.split('?')[0].startsWith(path + '/'))).map(item => item.id)).size;
+export function actionCountForPath(entries: ActivityEntry[], path: string | readonly string[]) {
+  const paths = typeof path === 'string' ? [path] : path;
+  return new Set(entries.filter(item => item.action && paths.some(prefix => item.web.split('?')[0] === prefix || item.web.split('?')[0].startsWith(prefix + '/'))).map(item => item.id)).size;
 }
 export function newActivityCount(previous: ActivityEntry[], next: ActivityEntry[]) {
   const before = new Set(previous.map(item => item.token));

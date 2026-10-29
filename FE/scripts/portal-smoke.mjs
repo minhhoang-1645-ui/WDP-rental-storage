@@ -813,12 +813,13 @@ try {
   await page
     .getByRole("button", { name: "Mở điều hướng", exact: true })
     .click();
-  await page.getByRole("dialog", { name: "Điều hướng nội bộ", exact: true }).getByRole("button", { name: "Kho & khách hàng", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Điều hướng nội bộ", exact: true })
-    .getByRole("link", { name: "Kho vật lý", exact: true })
+    .getByRole("link", { name: "Kho & bảng giá", exact: true })
     .click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole('heading', { name: 'Kho & bảng giá', exact: true }).waitFor();
+  await page.getByRole('link', { name: /^Kho vật lý/ }).click();
   assert(page.url().includes("/manager/units"));
   checks.push("390px mobile layout and navigation");
   const adminLogin = await setup("ADMIN", false);

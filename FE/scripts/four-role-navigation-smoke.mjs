@@ -39,7 +39,7 @@ async function setup(role, width = 1440, mobile = false) {
     return send({ page: 1, limit: 100, total: items.length, items });
   });
   const page = await context.newPage(); page.setDefaultTimeout(mobile ? 60000 : 20000); page.on('pageerror', e => errors.push(e.message));
-  return { context, page, reads, goto: path => page.goto(`http://127.0.0.1:${mobile ? 8081 : 5173}${path}`, { waitUntil: 'domcontentloaded', timeout: 60000 }) };
+  return { context, page, reads, data, goto: path => page.goto(`http://127.0.0.1:${mobile ? 8081 : 5173}${path}`, { waitUntil: 'domcontentloaded', timeout: 60000 }) };
 }
 try {
   for (const width of [1440, 390]) {
@@ -66,6 +66,19 @@ try {
   }
   const manager = await setup('MANAGER'); await manager.goto('/manager');
   await manager.page.getByRole('link', { name: /Chờ nghiệm thu bảo trì/ }).first().click(); assert(new URL(manager.page.url()).pathname.startsWith('/manager/'));
+  const menu=manager.page.locator('aside.manager-sidebar nav a');
+  assert.equal(await menu.count(),7,'Manager must have exactly seven primary groups');
+  assert.deepEqual(await menu.locator(':scope > span').allTextContents(),['Tổng quan','Phân công nhân viên','Phê duyệt ngoại lệ','Tài chính','Hồ sơ thuê','Kho & bảng giá','Báo cáo']);
+  manager.data.maintenance.push({...manager.data.maintenance[0],id:'ordinary-maintenance',maintenanceCode:'MNT-NORMAL',status:'OPEN'});
+  await manager.goto('/manager/operations/maintenance?status=OPEN');
+  await manager.page.getByRole('heading',{name:'Nghiệm thu bảo trì',exact:true}).waitFor();
+  await manager.page.getByText('MNT-TEST',{exact:true}).waitFor();
+  assert.equal(await manager.page.getByText('MNT-NORMAL',{exact:true}).count(),0);
+  assert(manager.reads.some(path=>path.includes('/manager/maintenance?')&&path.includes('status=AWAITING_VERIFICATION')));
+  assert.equal(await manager.page.getByRole('button',{name:'Tạo bảo trì',exact:true}).count(),0);
+  for(const [section,title] of [['reviews','Phê duyệt ngoại lệ'],['finance','Tài chính'],['rental-records','Hồ sơ thuê'],['facility','Kho & bảng giá']]) { await manager.goto('/manager/'+section);await manager.page.getByRole('heading',{name:title,exact:true}).waitFor(); }
+  manager.data.units[0].status='AVAILABLE';await manager.goto('/manager/units/'+manager.data.units[0].id);await manager.page.getByText(manager.data.units[0].unitCode,{exact:true}).first().waitFor();assert.equal(await manager.page.getByRole('link',{name:'Tạo bảo trì cho kho',exact:true}).count(),0);
+  checks.push('Exact seven Manager groups, only escalated/verification cases, no Staff create actions, and working finance/review/records/facility destinations');
   await manager.goto('/manager/assignments?assignment=attention');
   await manager.page.getByText('Tài khoản đã vô hiệu hóa · cần đổi người', { exact: true }).waitFor();
   await manager.context.close(); checks.push('Manager: review shortcut stays in Manager; disabled assignee appears in replacement queue');
@@ -77,7 +90,7 @@ try {
   const admin = await setup('ADMIN'); await admin.goto('/admin/users'); await admin.page.getByRole('button', { name: 'Tạo tài khoản', exact: true }).waitFor();
   assert.equal(await admin.page.getByRole('link', { name: 'Phân công nhân viên', exact: true }).count(), 0);
   await admin.goto('/manager'); await admin.page.waitForURL('**/admin'); await admin.context.close(); checks.push('Admin: account administration only, Manager URL returns to Admin');
-  const mobile = await setup('MANAGER', 390, true); await mobile.goto('/manager'); await mobile.page.getByText('Chờ nghiệm thu bảo trì', { exact: true }).waitFor(); await mobile.context.close(); checks.push('Mobile Manager: review work is visible on the work hub');
+  const mobile = await setup('MANAGER', 390, true); await mobile.goto('/manager'); await mobile.page.getByText('Chờ nghiệm thu bảo trì', { exact: true }).waitFor(); for(const [section,title] of [['reviews','Phê duyệt ngoại lệ'],['finance','Tài chính'],['rental-records','Hồ sơ thuê'],['facility','Kho & bảng giá']]) { await mobile.goto('/manager/'+section);await mobile.page.getByRole('heading',{name:title,exact:true}).waitFor(); } mobile.data['support-requests'][0].subject='Yêu cầu chuyển kho';await mobile.goto('/manager/support-requests/'+mobile.data['support-requests'][0].id);await mobile.page.getByRole('heading',{name:'SUP-TEST',exact:true}).waitFor();assert.equal(await mobile.page.getByRole('button',{name:'Tạo lệnh chuyển từ yêu cầu này',exact:true}).count(),0); await mobile.context.close(); checks.push('Mobile Manager: review work is visible on the work hub');
   assert.deepEqual(writes, []); assert.deepEqual(errors, []);
   console.log(JSON.stringify({ checks, browserErrors: errors.length, realDatabaseWrites: 0 }, null, 2));
 } finally { await browser.close(); }

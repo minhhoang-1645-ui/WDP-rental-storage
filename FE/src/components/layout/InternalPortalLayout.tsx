@@ -20,6 +20,7 @@ export interface InternalNavItem {
   icon: LucideIcon;
   end?: boolean;
   group?: string;
+  match?: readonly string[];
 }
 export function InternalPortalLayout({
   label,
@@ -90,13 +91,13 @@ export function InternalPortalLayout({
       {groups.map(({ group, items }, index) => {
         const matching = items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
         if (!matching.length) return null;
-        const active = items.some(item => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
-        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} count={items.reduce((total, item) => total + actionCountForPath(activity.entries, item.to), 0)} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
-          {matching.map(({ to, label: itemLabel, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}>
+        const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
+        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
+          {matching.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
+            <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive || match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')) ? 'active' : undefined}>
               <Icon size={17} />
               <span>{itemLabel}</span>
-              {actionCountForPath(activity.entries, to) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, to)}</b>}
+              {actionCountForPath(activity.entries, [to,...match ?? []]) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, [to,...match ?? []])}</b>}
             </NavLink>
           ))}
         </NavigationGroup>;

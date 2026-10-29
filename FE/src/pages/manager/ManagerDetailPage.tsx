@@ -36,6 +36,7 @@ import { RenewalReview } from '../../components/manager/RenewalReview';
 import { ManagerCreateDialog } from './ManagerCreateDialog';
 import { isTransferRequest } from '../../utils/transfer-request';
 import { TransferSupportAction, CompletedTransferSync } from '../../components/manager/TransferRequests';
+import { isManagerReviewWorkflow } from '../../utils/manager-review-access';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { id = "" } = useParams();
@@ -76,7 +77,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
       />
       {row && (
         <>
-          <PageHeader title={code(row)} description={config.description}>
+          <PageHeader title={code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : config.description}>
             <Status
               value={row.status ?? row.rentalState ?? row.accountStatus}
             />

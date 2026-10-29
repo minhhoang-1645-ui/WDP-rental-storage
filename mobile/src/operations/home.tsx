@@ -1,8 +1,9 @@
+import { managerPrimaryMenu } from '@/utils/manager-sections';
 import { ScrollView, Text, View } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState } from '@/components/screen-state';
-import { adminSections, operationRoot, resources, type Row } from './model';
+import { adminSections, operationRoot, type Row } from './model';
 import { useResource } from './use-resource';
 import { Button, Disclosure, Navigation, Panel, styles } from './ui';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
@@ -14,11 +15,6 @@ import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from '
 import { formatMoney } from '@/utils/format';
 import { activitySources } from '@/utils/activity';
 
-const operationGroups = [
-  { title: 'Thanh toán & hợp đồng', keys: ['payment-submissions', 'online-payment-reconciliations', 'invoices', 'contracts', 'payments', 'deposit-settlements'] },
-  { title: 'Xem xét & nghiệm thu', keys: ['support-requests', 'maintenance'] },
-  { title: 'Kho & khách hàng', keys: ['rentals', 'units', 'customers', 'catalog', 'additional-services'] },
-];
 const summaryMetrics = [
   ['activeRentals', 'Kỳ thuê đang hoạt động'], ['overdueRentals', 'Kỳ thuê quá hạn'], ['maintenanceUnits', 'Kho đang bảo trì'], ['availableUnits', 'Kho sẵn sàng'], ['occupiedUnits', 'Kho đang sử dụng'],
 ] as const;
@@ -46,7 +42,7 @@ export function ManagerHome() {
     ]} />
     {data.error && <ErrorState message={data.error} onRetry={data.refresh} />}
     <Panel title="Theo dõi công nợ"><Text style={styles.copy}>{activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `Tổng dư nợ: ${formatMoney(invoices.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0))}. Quá hạn: ${formatMoney(overdue.reduce((sum, row) => sum + Number(row.balanceDue), 0))}.` : 'Chưa tải đủ hóa đơn để tổng hợp.'}</Text><Navigation title="Xem hóa đơn" path="/manager/invoices" /></Panel>
-    <FunctionMenu groups={[{ title: 'Giám sát & nhân sự', items: [{ title: 'Phân công nhân viên', path: '/manager/assignments', description: 'Theo dõi người phụ trách và tiến độ công việc.' }, { title: 'Đề nghị trả trước hạn', path: '/manager/early-returns', description: 'Đối chiếu công nợ và phản hồi đề nghị của khách.' }, { title: 'Báo cáo vận hành', path: '/manager/reports', description: 'Hóa đơn, khoản thu và tình hình sử dụng kho.' }] }, ...operationGroups.map(group => ({ title: group.title, items: group.keys.map(key => ({ title: resources[key].title, path: `/manager/${key}`, description: group.title })) }))]} />
+    <FunctionMenu groups={[{ title:'Chức năng của quản lý', items:managerPrimaryMenu.filter(item=>item.key).map(item=>({ title:item.title, path:'/manager/'+item.key,description:'Mở đúng nhóm công việc quản lý.' })) }]} />
     <Disclosure title="Thống kê cơ sở">{data.loading ? <LoadingState /> : data.data && <View style={styles.row}>{summaryMetrics.map(([key, title]) => <MetricCard key={key} label={title} value={count(key)} tone={key === 'overdueRentals' ? 'danger' : 'navy'} />)}</View>}</Disclosure>
     <Navigation title="Báo cáo vận hành" path="/manager/reports" />
     <Navigation title="Tài khoản và đăng xuất" path="/manager/account" />

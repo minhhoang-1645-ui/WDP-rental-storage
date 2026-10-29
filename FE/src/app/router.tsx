@@ -61,11 +61,16 @@ import { CustomerReservationDetailPage } from "../pages/customer/CustomerReserva
 import { CustomerReservationsPage } from "../pages/customer/CustomerReservationsPage";
 import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovementsPage';
 import { ActivityInboxPage } from '../activity/ActivityCenter';
+import { ManagerSectionPage } from '../pages/manager/ManagerSectionPage';
 
 function operationalRoutes(base: string) {
   return (
     <>
       <Route index element={<ManagerDashboardPage />} />
+      <Route path="reviews" element={<ManagerSectionPage section="reviews" />} />
+      <Route path="finance" element={<ManagerSectionPage section="finance" />} />
+      <Route path="rental-records" element={<ManagerSectionPage section="rental-records" />} />
+      <Route path="facility" element={<ManagerSectionPage section="facility" />} />
       <Route path="notifications" element={<ActivityInboxPage />} />
       <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
       <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />

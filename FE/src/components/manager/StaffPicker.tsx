@@ -18,7 +18,7 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
   const key = `${user?.id}:${revision}`;
   const [result, setResult] = useState<{ key: string; staff: Map<string, string>; error: boolean }>();
   useEffect(() => {
-    if (!['MANAGER', 'ADMIN'].includes(user?.role ?? '')) return;
+    if (user?.role !== 'MANAGER') return;
     const controller = new AbortController();
     allPages<{ id: string; fullName: string; email?: string }>('/manager/staff?limit=100', controller.signal)
       .then(response => {

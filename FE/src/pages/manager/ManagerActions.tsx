@@ -705,12 +705,7 @@ export function ManagerActions({
           )}
         {resource === "support-requests" &&
           row.resolutionType === "TRANSFER_RECOMMENDED" && (
-            <Link
-              className="button-secondary"
-              to="/manager/operations/transfers"
-            >
-              Tạo chuyển kho liên quan
-            </Link>
+            <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
           )}
         {resource === "transfers" &&
           (row.status === "REQUESTED" ? (
@@ -777,14 +772,6 @@ export function ManagerActions({
                 to={`/manager/operations/maintenance/${encodeURIComponent(first(row, "activeMaintenance.id"))}`}
               >
                 Mở hồ sơ bảo trì
-              </Link>
-            )}
-            {resource === "units" && row.status === "AVAILABLE" && (
-              <Link
-                className="button-secondary"
-                to="/manager/operations/maintenance"
-              >
-                Tạo bảo trì cho kho
               </Link>
             )}
           </>

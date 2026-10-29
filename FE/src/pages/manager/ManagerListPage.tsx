@@ -29,6 +29,7 @@ import {
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
 import { TransferRequests } from '../../components/manager/TransferRequests';
+import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
@@ -36,7 +37,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const search = params.get("search") ?? "";
-  const status = params.get("status") ?? "";
+  const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
+  const status = reviewOnly ? managerReviewStatus(resource) : params.get("status") ?? "";
   const page = Math.min(
     100000,
     Math.max(1, Math.floor(Number(params.get("page")) || 1)),
@@ -102,6 +104,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   }, []);
   const current = state?.key === key ? state : undefined;
   let items = current?.data?.items ?? [];
+  if (reviewOnly) items = items.filter(row => row.status === status);
   if (resource === "inquiries")
     items = items.filter((row) => row.requestType === "INQUIRY");
   if (local)
@@ -133,7 +136,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
   return (
     <section>
-      <PageHeader title={config.title} description={config.description}>
+      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.' : config.description}>
         {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
@@ -150,7 +153,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
         </button>
       </PageHeader>
       {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
-      {resource === 'maintenance' && <section className="manager-section"><h2>Bảo trì đúng tình trạng kho</h2><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></section>}
+      {resource === 'maintenance' && user?.role === 'STAFF' && <section className="manager-section"><h2>Bảo trì đúng tình trạng kho</h2><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></section>}
       {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
       <div className="portal-toolbar">
         <label className="field-label portal-search">
@@ -163,7 +166,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
-        {config.statuses && (
+        {config.statuses && !reviewOnly && (
           <label className="field-label">
             Trạng thái
             <select

@@ -1,4 +1,4 @@
-import { canAccessManagerReview } from '@/utils/manager-review-access';
+import { canAccessManagerReview, isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '@/utils/manager-review-access';
 import { isStaffWorkflow } from '@/utils/operation-access';
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
@@ -24,8 +24,11 @@ function List({ resource }: { resource: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined;
   const allowed = canAccessManagerReview(user?.role ?? '', resource);
-  const data = useResource<Row | Row[]>(allowed && config ? config.path : null, !config?.shape);
-  const [search, setSearch] = useState(''), [status, setStatus] = useState('');
+  const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
+  const reviewStatus = reviewOnly ? managerReviewStatus(resource) : '';
+  const data = useResource<Row | Row[]>(allowed && config ? config.path + (reviewStatus ? '?status='+reviewStatus : '') : null, !config?.shape);
+  const [search, setSearch] = useState(''), [chosenStatus, setStatus] = useState('');
+  const status = reviewStatus || chosenStatus;
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const root = operationRoot(user?.role ?? '');
   if (!allowed || !config) return <View style={styles.page}><EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." /><Navigation title="Về tổng quan" path={root} /></View>;
@@ -33,16 +36,16 @@ function List({ resource }: { resource: string }) {
   const shown = items.filter(item => (resource !== 'inquiries' || item.requestType === 'INQUIRY') && (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi-VN').includes(search.toLocaleLowerCase('vi-VN'))));
   const create = (user?.role === 'STAFF' ? isStaffWorkflow(resource) : !isStaffWorkflow(resource)) ? createAction(resource) : undefined;
   if (create && user?.role === 'STAFF' && ['maintenance', 'transfers'].includes(resource)) create.path = `/staff/management/${resource}`;
-  const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={config.title} description="Dữ liệu thực tế và thao tác theo quyền hiện có." />
+  const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? "Chỉ hồ sơ cần quản lý quyết định; nhân viên tiếp nhận và thực hiện." : "Dữ liệu thực tế và thao tác theo quyền hiện có."} />
     <Navigation title="Về tổng quan" path={root} />
     <Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading} />
     {resource === 'transfers' && user?.role === 'STAFF' && <TransferInbox transfers={items} onCreate={setAction} />}
-    {resource === 'maintenance' && <Panel title="Bảo trì đúng tình trạng kho"><Text style={styles.copy}>Tạo bảo trì trực tiếp cho kho trống. Kho đang thuê cần báo sự cố và xử lý chuyển kho trước khi sửa. Sau khi tạo phiếu, quản lý phân công; nhân viên được giao bắt đầu, gửi kết quả và nghiệm thu.</Text><Navigation title="Tra cứu kho đang thuê" path={`${root}/rentals`} /><Navigation title="Yêu cầu sự cố" path={`${root}/support-requests`} /></Panel>}
+    {resource === 'maintenance' && user?.role === 'STAFF' && <Panel title="Bảo trì đúng tình trạng kho"><Text style={styles.copy}>Tạo bảo trì trực tiếp cho kho trống. Kho đang thuê cần báo sự cố và xử lý chuyển kho trước khi sửa. Sau khi tạo phiếu, quản lý phân công; nhân viên được giao bắt đầu, gửi kết quả và nghiệm thu.</Text><Navigation title="Tra cứu kho đang thuê" path={`${root}/rentals`} /><Navigation title="Yêu cầu sự cố" path={`${root}/support-requests`} /></Panel>}
     {create && !action && <Button title={create.title} onPress={() => { setNotice(''); setAction(create); }} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); data.refresh(); }} />}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm" value={search} onChange={setSearch} maxLength={120} />
-    {config.statuses && <View style={styles.row}><Button variant={!status ? 'primary' : 'secondary'} title={!status ? '✓ Tất cả trạng thái' : 'Tất cả trạng thái'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} variant={status === value ? 'primary' : 'secondary'} title={`${status === value ? '✓ ' : ''}${label(value)}`} onPress={() => setStatus(value)} />)}</View>}
+    {config.statuses && !reviewOnly && <View style={styles.row}><Button variant={!status ? 'primary' : 'secondary'} title={!status ? '✓ Tất cả trạng thái' : 'Tất cả trạng thái'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} variant={status === value ? 'primary' : 'secondary'} title={`${status === value ? '✓ ' : ''}${label(value)}`} onPress={() => setStatus(value)} />)}</View>}
     {resource === 'catalog' && <><Text style={styles.copy}>Xem loại kho, kích thước và bảng giá đã được phê duyệt.</Text><Availability catalog={data.data as Row | undefined} root={root} /></>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{shown.length} / {items.length} hồ sơ</Text>}
   </View>;

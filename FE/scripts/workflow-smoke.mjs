@@ -357,4 +357,17 @@ assert.match(documentText('rentalAmount',1500000),/1\.500\.000/);
 assert.equal(documentText('paymentPlan','PAY_MONTHLY'),'Thanh toán theo tháng');
 assert.match(documentText('acceptedAt','2026-10-29T01:00:00Z'),/8:00|08:00/);
 checks.push('Equipment defaults, subtotals, monthly end-date boundaries, Vietnamese labels, preserved custom names and matching web/mobile policies');
+const rolePolicy = await import(await moduleUrl(new URL('../src/utils/operation-access.ts',import.meta.url)));
+const sections = await import(await moduleUrl(new URL('../src/utils/manager-sections.ts',import.meta.url)));
+assert.equal(sections.managerPrimaryMenu.length,7);
+for(const page of rolePolicy.managerPages) assert(rolePolicy.isManagerDestination(page));
+assert(!rolePolicy.isManagerDestination('invented-module'));
+assert.equal(rolePolicy.staffWorkflows.length,9);
+for(const resource of rolePolicy.staffWorkflows) for(const role of ['STAFF','MANAGER','ADMIN','CUSTOMER']) assert.equal(rolePolicy.canOperateResource(role,resource),role==='STAFF');
+for(const resource of rolePolicy.managerResources) for(const role of ['STAFF','MANAGER','ADMIN','CUSTOMER']) assert.equal(rolePolicy.canOperateResource(role,resource),role==='MANAGER');
+for(const role of ['STAFF','MANAGER','ADMIN','CUSTOMER']) assert(!rolePolicy.canOperateResource(role,'invented-module'));
+for(const section of Object.values(sections.managerSections)) for(const item of section.items) { assert(item.web.startsWith('/manager/'));assert(item.mobile.startsWith('/manager/')); }
+assert.equal(actionCountForPath([{id:'same',action:true,web:'/manager/operations/invoices/a'}],['/manager','/manager/operations/invoices']),1);
+for(const file of ['manager-sections','manager-review-access']) assert.equal(await readFile(new URL('../src/utils/'+file+'.ts',import.meta.url),'utf8'),await readFile(new URL('../../mobile/src/utils/'+file+'.ts',import.meta.url),'utf8'));
+checks.push('Explicit capability allowlists: nine Staff operations, seven Manager groups, no unknown resource grants, matching web/mobile policy and grouped badges without double counts');
 console.log(JSON.stringify({ passed: checks, realDatabaseWrites: 0 }, null, 2));

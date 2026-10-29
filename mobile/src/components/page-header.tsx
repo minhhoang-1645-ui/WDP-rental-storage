@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 
 export function PageHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return <View style={styles.header}><Text style={styles.eyebrow}>{eyebrow}</Text><Text style={styles.title}>{title}</Text><Text style={styles.description}>{description}</Text></View>;
+  return <View style={styles.header}><Text style={styles.eyebrow}>{eyebrow}</Text><Text accessibilityRole="header" style={styles.title}>{title}</Text><Text style={styles.description}>{description}</Text></View>;
 }
 
 const styles = StyleSheet.create({

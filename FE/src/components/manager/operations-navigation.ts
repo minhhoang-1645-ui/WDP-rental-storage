@@ -1,7 +1,8 @@
 import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldAlert, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
 import { isStaffWorkflow } from '../../utils/operation-access';
-import { isManagerReviewWorkflow } from '../../utils/manager-review-access';
+import { isManagerReviewWorkflow, managerReviewTitle } from '../../utils/manager-review-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
+import { managerPrimaryMenu, managerSections, type ManagerSection } from '../../utils/manager-sections';
 
 const managerNavigation: InternalNavItem[] = [
   { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
@@ -29,8 +30,10 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/customers', label: 'Danh bạ khách hàng', icon: Users, group: 'Kho & khách hàng' },
 ];
 export function operationsNavigation(base = '/manager'): InternalNavItem[] {
-  return managerNavigation.filter(item => { const resource = item.to.split('/').at(-1) ?? ''; return !isStaffWorkflow(resource) || isManagerReviewWorkflow(resource); }).map(item => ({ ...item, to: base + item.to.slice('/manager'.length), label: item.end && base !== '/manager' ? 'Tổng quan vận hành' : item.label }));
+  const icons = [Landmark, Users, ClipboardCheck, WalletCards, FileText, Warehouse, BarChart3];
+  return managerPrimaryMenu.map((item,index) => ({ to: base + (item.key ? '/' + item.key : ''), label: item.title, icon: icons[index], end: !item.key, group: 'Quản lý cơ sở', match: Object.hasOwn(managerSections,item.key) ? managerSections[item.key as ManagerSection].items.map(link => link.web.split('?')[0]) : [] }));
 }
+export const managerPageNavigation = () => managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '') || isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({...item, label:isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '') ? managerReviewTitle(item.to.split('/').at(-1)!) : item.label }));
 
 export function staffNavigation(): InternalNavItem[] {
   return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));

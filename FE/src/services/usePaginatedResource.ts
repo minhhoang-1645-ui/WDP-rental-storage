@@ -10,9 +10,11 @@ export function usePaginatedResource<T>(
   refreshOnFocus = false,
 ) {
   const [revision, setRevision] = useState(0);
-  const key = `${identity}:${path}:${revision}`;
+  const sourceKey = `${identity}:${path}`;
+  const key = `${sourceKey}:${revision}`;
   const [result, setResult] = useState<{
     key: string;
+    sourceKey: string;
     data: Page<T> | null;
     error: string;
     status: number | null;
@@ -31,12 +33,13 @@ export function usePaginatedResource<T>(
     allPages<T>(path, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted)
-          setResult({ key, data, error: "", status: null, asOf: Date.now() });
+          setResult({ key, sourceKey, data, error: "", status: null, asOf: Date.now() });
       })
       .catch((error) => {
         if (!controller.signal.aborted)
           setResult({
             key,
+            sourceKey,
             data: null,
             error:
               error instanceof Error ? error.message : "Không thể tải dữ liệu.",
@@ -45,13 +48,14 @@ export function usePaginatedResource<T>(
           });
       });
     return () => controller.abort();
-  }, [path, key]);
-  const current = result?.key === key ? result : undefined;
+  }, [path, key, sourceKey]);
+  const current = result?.sourceKey === sourceKey ? result : undefined;
   return {
     data: current?.data ?? null,
     error: current?.error ?? "",
     status: current?.status ?? null,
     loading: !current,
+    refreshing: Boolean(current && current.key !== key),
     asOf: current?.asOf ?? 0,
     refresh,
   };

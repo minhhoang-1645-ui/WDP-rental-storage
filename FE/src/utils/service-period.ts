@@ -37,3 +37,23 @@ export function serviceBillingBasis(service: AdditionalService, selection: Servi
   const units = service.billingUnit === 'DAY' ? (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000 : serviceCalendarMonths(start, end)
   return units === null ? '' : `Đơn giá × ${selection.quantity} thiết bị × ${units} ${service.billingUnit === 'DAY' ? 'ngày' : 'tháng lịch'}. Không tính ngày kết thúc. Tổng tiền lấy từ báo giá hệ thống.`
 }
+
+export function defaultServiceSelection(service: AdditionalService, start: string, end: string): ServiceSelection | null {
+  if (service.kind === 'PURCHASE') return { serviceId: service.id, quantity: 1 };
+  if (!validServiceDate(start) || !validServiceDate(end) || end <= start) return null;
+  let serviceEndDate = end;
+  if (service.billingUnit === 'MONTH' && serviceCalendarMonths(start, end) === null) {
+    const first = new Date(`${start}T00:00:00Z`), next = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1));
+    next.setUTCDate(Math.min(first.getUTCDate(), new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate()));
+    serviceEndDate = next.toISOString().slice(0, 10);
+    if (serviceEndDate > end) return null;
+  }
+  return { serviceId: service.id, quantity: 1, serviceStartDate: start, serviceEndDate };
+}
+
+export function serviceEstimatedTotal(service: AdditionalService, selection: ServiceSelection, start: string, end: string): number | null {
+  if (serviceSelectionIssue(service, selection, start, end)) return null;
+  const units = service.billingUnit === 'ONE_TIME' ? 1 : service.billingUnit === 'MONTH' ? serviceCalendarMonths(selection.serviceStartDate!, selection.serviceEndDate!) : (Date.parse(selection.serviceEndDate!) - Date.parse(selection.serviceStartDate!)) / 86400000;
+  const amount = Number(service.unitPrice) * selection.quantity * Number(units);
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+}

@@ -10,7 +10,7 @@ import { RenewalsService, type RenewalListQuery } from './renewals.service.js';
 @Controller(['manager/renewals', 'staff/management/renewals'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Renewal')
 @ApiBearerAuth('bearerAuth')
 export class ManagerRenewalsController {

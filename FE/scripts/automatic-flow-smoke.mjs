@@ -29,7 +29,7 @@ async function setup(mobile, options = {}) {
       if (path === '/customer/invoices/invoice-auto/online-payment') return send(session, 201);
       unexpected.push(`${method} ${path}`); return send({ message: 'Unexpected write' }, 500);
     }
-    if (path === '/customer/payment-config') return send({ configured: false });
+    if (path === '/customer/payment-config') return send({ vnpayConfigured: !options.unconfigured, configured: false });
     if (path === '/reservations') return send([]);
     const match = path.match(/^\/customer\/([^/]+)(?:\/(.+))?$/);
     if (match) {
@@ -48,6 +48,13 @@ async function setup(mobile, options = {}) {
 }
 try {
   for (const mobile of [false, true]) {
+    const unavailable = await setup(mobile, { unconfigured: true });
+    await unavailable.page.getByText(/Thanh toán trực tuyến hiện chưa khả dụng/).waitFor();
+    assert.equal(await unavailable.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 0);
+    assert.equal(await unavailable.page.getByRole('button', { name: 'Thanh toán VNPay QR', exact: true }).count(), 0);
+    await unavailable.page.getByRole(mobile ? 'button' : 'link', { name: 'Hỗ trợ về hóa đơn', exact: true }).first().waitFor();
+    await unavailable.context.close();
+    checks.push(`${mobile ? 'Mobile' : 'Web'}: unconfigured online channels offer help and in-person payment without a fake gateway`);
     for (const options of [{ expired: true }, { void: true }]) {
       const test = await setup(mobile, options);
       await test.page.waitForTimeout(600);
@@ -78,7 +85,7 @@ try {
       if (mobile) {
         await test.page.getByText('Thanh toán đã được xác nhận.', { exact: true }).waitFor();
         await test.page.getByRole('button', { name: type === 'INITIAL' ? 'Đặt lịch nhận kho ›' : 'Xem gia hạn và thời hạn mới ›', exact: true }).waitFor();
-      } else await test.page.waitForURL(url => url.pathname === (type === 'INITIAL' ? '/customer/appointments' : '/customer/renewals'));
+      } else await test.page.waitForURL(url => url.pathname === (type === 'INITIAL' ? '/customer/contracts' : '/customer/renewals'));
       await test.context.close();
     }
     checks.push(`${mobile ? 'Mobile' : 'Web'}: pending session survives reload, expiry permits retry, confirmed INITIAL/RENEWAL payment leads to correct next step`);

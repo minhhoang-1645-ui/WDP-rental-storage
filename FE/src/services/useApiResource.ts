@@ -25,6 +25,6 @@ export function useApiResource<T>(path: string | null, identity = '', refreshOnF
       })
     return () => controller.abort()
   }, [path, key, revision])
-  const current = path && result?.key === key && result.revision === revision ? result : null
-  return { data: current?.data ?? null, error: current?.error ?? '', status: current?.status ?? null, loading: Boolean(path && !current), refresh }
+  const current = path && result?.key === key ? result : null
+  return { data: current?.data ?? null, error: current?.error ?? '', status: current?.status ?? null, loading: Boolean(path && !current), refreshing: Boolean(current && current.revision !== revision), refresh }
 }

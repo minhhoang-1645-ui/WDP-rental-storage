@@ -8,7 +8,7 @@ import { parseStockMovementQuery } from './stock-movement-query.js';
 import { StockMovementsService } from './stock-movements.service.js';
 
 @Controller(['manager/stock-movements', 'staff/management/stock-movements'])
-@StaffWorkflow() @UseGuards(AuthGuard, RolesGuard) @Roles('STAFF', 'MANAGER', 'ADMIN') @ApiBearerAuth('bearerAuth') @ApiTags('Manager Stock Movements')
+@StaffWorkflow() @UseGuards(AuthGuard, RolesGuard) @Roles('STAFF', 'MANAGER') @ApiBearerAuth('bearerAuth') @ApiTags('Manager Stock Movements')
 export class ManagerStockMovementsController {
   constructor(private readonly service: StockMovementsService) {}
   @Get() @ApiOperation({ summary: 'Danh sách phiếu nhập/xuất hàng khách' }) @ApiQuery({ name: 'page', required: false }) @ApiQuery({ name: 'limit', required: false }) @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'type', required: false }) @ApiQuery({ name: 'search', required: false })

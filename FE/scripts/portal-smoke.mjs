@@ -614,6 +614,9 @@ try {
   );
   supportStatus = "ESCALATED";
   await open(page, "/staff/support-requests/support-id");
+  assert.equal(await page.getByLabel("Nội dung giải quyết").count(), 0);
+  page = managerApp.page;
+  await open(page, "/manager/operations/support-requests/support-id");
   await page
     .getByLabel("Nội dung giải quyết")
     .fill("Quản lý giải quyết yêu cầu kiểm thử");
@@ -622,12 +625,12 @@ try {
     .click();
   await success(page);
   assert.equal(writes.at(-1).body.resolutionType, "MANAGER_RESOLVED");
-  checks.push("Staff resolves only ESCALATED support");
+  checks.push("Manager resolves ESCALATED support; Staff has no manager decision form");
   page = managerApp.page;
   await open(page, "/manager/operations/deposit-settlements/settlement-id");
-  assert.equal(await page.getByRole('button', { name: 'Duyệt quyết toán', exact: true }).count(), 0);
-  assert(!requests.some(item => item.path.startsWith('manager/deposit-settlements')));
-  checks.push("Manager settlement deep links expose no feature or API request");
+  await page.getByRole('button', { name: 'Duyệt quyết toán', exact: true }).waitFor();
+  assert(requests.some(item => item.path.startsWith('manager/deposit-settlements')));
+  checks.push("Manager settlement review restored under approved scope");
   await open(page, "/manager/operations/invoices/invoice-0");
   await page.getByLabel("Số tiền nhận (VND)").fill("1000000");
   await page.getByLabel("Mã tham chiếu giao dịch").fill("BANK-TEST");
@@ -712,12 +715,15 @@ try {
   assert(writes.at(-1).key);
   fixture.units = originalUnits;
   await open(page, "/staff/maintenance/maintenance-id");
+  assert.equal(await page.getByLabel("Ghi chú nghiệm thu").count(), 0);
+  page = managerApp.page;
+  await open(page, "/manager/operations/maintenance/maintenance-id");
   await page.getByLabel("Ghi chú nghiệm thu").fill("Nghiệm thu kiểm thử");
   await page
     .getByRole("button", { name: "Nghiệm thu hoàn tất", exact: true })
     .click();
   await success(page);
-  assert.equal(writes.at(-1).path, "staff/management/maintenance/maintenance-id/verify");
+  assert.equal(writes.at(-1).path, "manager/maintenance/maintenance-id/verify");
   checks.push("Maintenance create and verify");
   page = managerApp.page;
   await open(page, "/manager/reports");

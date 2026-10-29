@@ -1,6 +1,6 @@
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import { userMessage } from '../utils/user-message';
-import { DATA_CHANGED } from './live-events';
+import { notifyDataChanged } from './live-events';
 import { operationApiPath } from '../utils/operation-access';
 
 const verifiedRoles = new Map<string, string>();
@@ -73,7 +73,7 @@ export async function apiRequest<T>(
     }
     if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
     if (['/auth/login', '/auth/register'].includes(path) && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
-    if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: path })); }
+    if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); notifyDataChanged(path); }
     return payload as T;
   } catch (error) {
     if (signal?.aborted) throw error;

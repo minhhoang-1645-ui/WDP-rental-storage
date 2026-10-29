@@ -1,3 +1,4 @@
+import { QuoteBreakdown } from '../../components/booking/QuoteBreakdown';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, UserRound, Warehouse, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -155,20 +156,10 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
       {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span></div>}
       {quoteState === 'idle' && <div className="booking-alert" role="status"><Info size={18} /> Chọn thời gian thuê hợp lệ để xem báo giá.</div>}
       {quoteState === 'ready' && quote && <>
-        <div className="quote-lines">
-          <div><span><strong>Giá niêm yết theo tháng</strong><small>{quote.quantity} kho</small></span><b>{quoteText(quote.monthlyUnitPrice)}</b></div>
-          <div><span><strong>Thời hạn thuê</strong><small>{quote.billingMode === 'DAILY' ? `${quote.billableDays} ngày` : `${quote.termMonths} tháng`}</small></span><b>{quote.quantity} kho</b></div>
-          <div><span><strong>Tiền thuê trước chiết khấu</strong><small>Giá theo thời hạn và số lượng</small></span><b>{quoteText(quote.baseRentalAmount)}</b></div>
-          {quote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước ({quote.discountPercent}%)</strong><small>Không áp dụng cho tiền đặt cọc</small></span><b>−{quoteText(quote.discountAmount)}</b></div>}
-          <div><span><strong>Tiền thuê sau chiết khấu</strong><small>{quote.paymentPlan === 'PREPAID' ? 'Trả trước toàn bộ kỳ' : 'Tổng tiền thuê cả kỳ; các tháng được lập hóa đơn riêng'}</small></span><b>{quoteText(quote.rentalAmount)}</b></div>
-          <div><span><strong>Tiền đặt cọc</strong><small>Không áp dụng chiết khấu</small></span><b>{quoteText(quote.depositAmount)}</b></div>
-          {quote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><b>{quoteText(item.amount)}</b></div>)}
-        </div>
-        <div className="quote-total"><span>Tổng giá trị dự kiến</span><strong>{quoteText(quote.quotedTotalAmount)}</strong></div>
-        {typeof quote.estimatedInitialAmountDue === 'number' && <div className="quote-total is-payable"><span>Dự kiến thanh toán ban đầu<br /><small>Theo hóa đơn được tạo sau khi xác nhận</small></span><strong>{quoteText(quote.estimatedInitialAmountDue)}</strong></div>}
+        <QuoteBreakdown quote={quote} />
         <div className="booking-alert mt-5"><Info size={18} /><span>{quote.message}</span></div>
       </>}
-      <p className="quote-disclosure">Phí và thuế chưa có trong báo giá của máy chủ nên không hiển thị.</p>
+      <p className="quote-disclosure">Kiểm tra đúng số tiền và hạn trả trên hóa đơn sau khi đơn thuê được xác nhận.</p>
     </aside>
   </div>
 }
@@ -460,7 +451,7 @@ export function BookingWizardPage() {
             {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">{product.allowDailyRental ? `Kho này cho thuê ngắn ngày từ ${product.minRentalDays ?? 1} ngày. Giá theo báo giá hệ thống; không tính ngày kết thúc.` : 'Kho này yêu cầu ít nhất một tháng lịch. Ngày kết thúc không tính vào kỳ thuê.'}</small></label>}
             <fieldset className="payment-plan-fieldset"><legend>Kế hoạch thanh toán</legend><div className="payment-options">
               <button type="button" className={draft.paymentPlan === 'PAY_MONTHLY' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Thanh toán hàng tháng</strong><small>Thanh toán tiền thuê theo từng tháng. Hóa đơn đầu tiên gồm tiền thuê kỳ đầu và tiền đặt cọc. Các kỳ tiếp theo được thanh toán theo hóa đơn định kỳ.</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
-              <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. Kỳ thuê đủ điều kiện có thể được áp dụng chiết khấu trả trước. Tiền đặt cọc không được chiết khấu.</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
+              <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. {pricingQuote?.prepaidDiscountPercent ? `Kỳ này được giảm ${pricingQuote.prepaidDiscountPercent}% tiền thuê khi chọn trả trước. Không giảm tiền cọc hoặc dịch vụ.` : 'Phương án này thanh toán toàn kỳ ngay từ đầu.'}</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
             </div></fieldset>
             <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />
             <section className="addon-section"><div className="addon-heading"><div><h3>Dịch vụ bổ sung được duyệt</h3><p>Giá và khả dụng được kiểm tra qua hệ thống NestBox.</p></div></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
@@ -485,15 +476,7 @@ export function BookingWizardPage() {
             {quoteState === 'error' && <div className="booking-alert is-error" role="alert">{quoteError}</div>}
             {quoteState === 'idle' && <p>Chọn thời gian thuê hợp lệ để nhận báo giá.</p>}
             {quoteState === 'ready' && pricingQuote && <>
-              <div><span><strong>Giá tháng niêm yết</strong><small>{pricingQuote.quantity} kho</small></span><strong>{quoteText(pricingQuote.monthlyUnitPrice)}</strong></div>
-              <div><span><strong>Tiền thuê trước chiết khấu</strong><small>{pricingQuote.billingMode === 'DAILY' ? `${pricingQuote.billableDays} ngày` : `${pricingQuote.termMonths} tháng`} × {pricingQuote.quantity} kho</small></span><strong>{quoteText(pricingQuote.baseRentalAmount)}</strong></div>
-              {pricingQuote.discountAmount > 0 && <div><span><strong>Chiết khấu trả trước</strong><small>{pricingQuote.discountPercent}%</small></span><strong>−{quoteText(pricingQuote.discountAmount)}</strong></div>}
-              <div><span><strong>Tiền thuê sau chiết khấu</strong>{pricingQuote.paymentPlan === 'PAY_MONTHLY' && <small>Tổng tiền thuê cả kỳ; các tháng được lập hóa đơn riêng</small>}</span><strong>{quoteText(pricingQuote.rentalAmount)}</strong></div>
-              <div><span><strong>Tiền đặt cọc</strong><small>Không giảm theo chiết khấu</small></span><strong>{quoteText(pricingQuote.depositAmount)}</strong></div>
-              {pricingQuote.lineItems.filter(item => item.code.startsWith('service-')).map(item => <div key={item.code}><span><strong>{item.label}</strong><small>{item.basis}</small></span><strong>{quoteText(item.amount)}</strong></div>)}
-              <div className="booking-pricing-total"><span><strong>Tổng giá trị dự kiến</strong></span><strong>{quoteText(pricingQuote.quotedTotalAmount)}</strong></div>
-              {typeof pricingQuote.estimatedInitialAmountDue === 'number' && <div><span><strong>Dự kiến thanh toán ban đầu</strong><small>Theo hóa đơn sau khi xác nhận yêu cầu</small></span><strong>{quoteText(pricingQuote.estimatedInitialAmountDue)}</strong></div>}
-              <p>{pricingQuote.paymentPlan === 'PAY_MONTHLY' ? 'Tiền thuê cả kỳ được lập hóa đơn theo từng tháng; tiền đặt cọc chỉ thu một lần. ' : ''}{pricingQuote.message} Phí và thuế chưa có dữ liệu nên không hiển thị.</p>
+              <QuoteBreakdown quote={pricingQuote} />
             </>}
           </div>
           <AvailabilityBadge state={availabilityState} onClick={() => setPopupOpen(true)} />

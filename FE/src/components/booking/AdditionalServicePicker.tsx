@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../services/api';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '../../types/additional-service';
-import { serviceBillingBasis, serviceSelectionIssue } from '../../utils/service-period';
+import { defaultServiceSelection, serviceEstimatedTotal, serviceBillingBasis, serviceSelectionIssue } from '../../utils/service-period';
+import { localizeService } from '../../utils/service-labels';
 
 function serviceGroup(service: AdditionalService): 'DAY' | 'MONTH' | 'ONE_TIME' {
   return service.billingUnit;
 }
 
-export function AdditionalServicePicker({ services, selections, startDate, endDate, onChange }: {
+export function AdditionalServicePicker({ services: rawServices, selections, startDate, endDate, onChange }: {
   services: AdditionalService[];
   selections: ServiceSelection[];
   startDate: string;
   endDate: string;
   onChange: (value: ServiceSelection[]) => void;
 }) {
+  const services = useMemo(() => rawServices.map(localizeService), [rawServices]);
   const [activeKind, setActiveKind] = useState<'DAY' | 'MONTH' | 'ONE_TIME'>('DAY');
   const [state, setState] = useState<{ key: string; error: string; items: ServiceInventory[] }>();
   const issues = useMemo(() => new Map(selections.map(selection => [selection.serviceId, serviceSelectionIssue(services.find(service => service.id === selection.serviceId), selection, startDate, endDate)])), [services, selections, startDate, endDate]);
@@ -40,10 +42,10 @@ export function AdditionalServicePicker({ services, selections, startDate, endDa
     { kind: 'ONE_TIME', title: 'Vật tư mua một lần', description: 'Tính một lần theo số lượng mua.' },
   ] as const;
   const serviceGroups = groups.map(group => ({ ...group, services: services.filter(service => serviceGroup(service) === group.kind) }));
-  const activeGroup = serviceGroups.find(group => group.kind === activeKind) ?? serviceGroups[0]!;
+  const activeGroup = serviceGroups.find(group => group.kind === activeKind && group.services.length) ?? serviceGroups.find(group => group.services.length) ?? serviceGroups[0];
   return <div className="addon-service-picker">
     <div className="addon-service-tabs" role="group" aria-label="Loại dịch vụ bổ sung">
-      {serviceGroups.map(group => <button type="button" className={group.kind === activeGroup.kind ? 'addon-service-tab is-selected' : 'addon-service-tab'} aria-pressed={group.kind === activeGroup.kind} aria-controls={`addon-service-panel-${group.kind.toLowerCase()}`} key={group.kind} onClick={() => setActiveKind(group.kind)}>
+      {serviceGroups.map(group => <button type="button" disabled={!group.services.length} className={group.kind === activeGroup.kind ? 'addon-service-tab is-selected' : 'addon-service-tab'} aria-pressed={group.kind === activeGroup.kind} aria-controls={`addon-service-panel-${group.kind.toLowerCase()}`} key={group.kind} onClick={() => setActiveKind(group.kind)}>
         <span>{group.title}</span><small>{group.services.length} dịch vụ</small>
       </button>)}
     </div>
@@ -57,12 +59,16 @@ export function AdditionalServicePicker({ services, selections, startDate, endDa
           const inventory = state?.key === key ? state.items.find(item => item.serviceId === service.id) : undefined;
           const isRental = service.kind === 'RENTAL';
           const issue = issues.get(service.id);
+          const suggested = defaultServiceSelection(service, startDate, endDate);
+          const subtotal = selected ? serviceEstimatedTotal(service, selected, startDate, endDate) : null;
           return <div className="addon-service-item" key={service.id}>
-            <label className="booking-checkbox"><input type="checkbox" checked={Boolean(selected)} disabled={!selected && (service.isActive === false || service.unitPrice === null || service.unitPrice <= 0)} onChange={event => onChange(event.target.checked ? [...selections, { serviceId: service.id, quantity: 1, ...(isRental ? { serviceStartDate: startDate, serviceEndDate: endDate } : {}) }] : selections.filter(item => item.serviceId !== service.id))} /><span><strong>{service.name}</strong><small>{service.unitPrice === null ? 'Cần xác nhận báo giá' : `${new Intl.NumberFormat('vi-VN').format(service.unitPrice)} VND / ${service.billingUnit === 'DAY' ? 'ngày' : service.billingUnit === 'MONTH' ? 'tháng' : 'lần mua'}`}</small>{service.description && <small>{service.description}</small>}</span></label>
+            <label className="booking-checkbox"><input aria-label={service.name} type="checkbox" checked={Boolean(selected)} disabled={!selected && (!suggested || service.isActive === false || service.unitPrice === null || service.unitPrice <= 0)} onChange={event => onChange(event.target.checked && suggested ? [...selections, suggested] : selections.filter(item => item.serviceId !== service.id))} /><span><strong>{service.name}</strong><small>{service.unitPrice === null ? 'Cần xác nhận báo giá' : `${new Intl.NumberFormat('vi-VN').format(service.unitPrice)} đ / ${service.billingUnit === 'DAY' ? 'ngày' : service.billingUnit === 'MONTH' ? 'tháng lịch' : 'sản phẩm'}`}</small>{service.description && <small>{service.description}</small>}{!suggested && isRental && <small>Chọn kỳ thuê kho phù hợp; thiết bị theo tháng cần ít nhất một tháng lịch.</small>}</span></label>
             {selected && <div className="checkout-fields">
               <label className="field-label">Số lượng {service.name}<input type="number" min={1} max={100} step={1} required value={selected.quantity} onChange={event => change(service.id, { quantity: Number(event.target.value) })} /></label>
               {isRental && <><label className="field-label">Ngày bắt đầu {service.name}<input type="date" required min={startDate} max={endDate} value={selected.serviceStartDate ?? ''} onChange={event => change(service.id, { serviceStartDate: event.target.value })} /></label><label className="field-label">Ngày kết thúc {service.name}<input type="date" required min={selected.serviceStartDate || startDate} max={endDate} value={selected.serviceEndDate ?? ''} onChange={event => change(service.id, { serviceEndDate: event.target.value })} /></label></>}
               <p className="field-help">{serviceBillingBasis(service, selected)}</p>
+              {subtotal !== null && <p className="addon-subtotal">Tạm tính: <strong>{new Intl.NumberFormat('vi-VN').format(subtotal)} đ</strong> · Đối chiếu báo giá ở bên cạnh.</p>}
+              {isRental && suggested && <button type="button" className="portal-text-button" onClick={() => change(service.id, suggested)}>Đặt lại kỳ sử dụng theo kho</button>}
               <p role={issue ? 'alert' : 'status'}>{issue || (state?.key === key && state.error ? state.error : inventory ? inventory.available ? 'Dịch vụ còn đáp ứng; kiểm tra này chưa giữ hàng.' : 'Dịch vụ không đủ tồn kho hoặc công suất.' : 'Đang kiểm tra dịch vụ…')}</p>
             </div>}
           </div>;

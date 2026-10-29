@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -18,7 +20,7 @@ export interface ReturnListQuery {
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   async createCustomerReturn(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
     if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được gửi yêu cầu trả kho qua endpoint này.');
@@ -181,6 +183,12 @@ export class ReturnsService {
       this.assertOperationalIntegrity(current.reservation);
       this.assertInspectionLinks(current);
 
+      const contractIds = current.inspections.map(inspection => inspection.rentalContractId);
+      const pendingMovements = await tx.stockMovement.count({ where: { rentalContractId: { in: contractIds }, status: { in: ['REQUESTED', 'ASSIGNED'] } } });
+      if (pendingMovements) throw new ConflictException({ code: 'RETURN_PENDING_STOCK_MOVEMENTS', message: 'Còn phiếu nhập/xuất chưa hoàn tất. Cần xử lý các phiếu trước khi kết thúc thuê.' });
+      const remainingGoods = await tx.storedItem.count({ where: { rentalContractId: { in: contractIds }, balance: { gt: 0 } } });
+      if (remainingGoods) throw new ConflictException({ code: 'RETURN_STORED_ITEMS_REMAIN', message: 'Còn hàng đang lưu trên hợp đồng. Khách cần tạo phiếu xuất, nhân viên kiểm đếm và hoàn tất lấy hàng trước khi trả kho.' });
+
       const now = new Date();
       const contracts = await tx.rentalContract.updateMany({
         where: { id: { in: current.inspections.map((inspection) => inspection.rentalContractId) }, reservationId: current.reservationId, status: 'ACTIVE' },
@@ -206,6 +214,7 @@ export class ReturnsService {
 
       const issueInspections = current.inspections.filter((inspection) => inspection.result === 'ISSUE_FOUND');
       for (const [index, inspection] of issueInspections.entries()) {
+        const responsibility = await this.unitStaff?.resolveStaff(tx, [inspection.storageUnitId]);
         await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: `${current.returnCode}-MNT${String(index + 1).padStart(2, '0')}`,
@@ -217,6 +226,7 @@ export class ReturnsService {
             status: 'OPEN',
             description: inspection.issueNote ?? inspection.conditionNote ?? 'Return inspection requires maintenance.',
             reportedByUserId: actor.id,
+            assignedStaffUserId: responsibility?.staffUserId,
             activeKey: `MAINTENANCE:${inspection.storageUnitId}`,
             createIdempotencyKey: `RETURN_INSPECTION:${inspection.id}`,
           },
@@ -392,7 +402,7 @@ export class ReturnsService {
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
         units: { where: { releasedAt: null }, select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
-        contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
+        contracts: { include: { storedItems: { where: { balance: { gt: 0 } }, select: { id: true, balance: true } }, stockMovements: { where: { status: { in: ['REQUESTED' as const, 'ASSIGNED' as const] } }, select: { id: true } }, reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
         invoices: { select: { id: true, invoiceCode: true, type: true, status: true, rentalAmount: true, depositAmount: true, chargeAmount: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
         renewals: { select: { id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true }, orderBy: { createdAt: 'desc' as const } },
       } },
@@ -457,7 +467,7 @@ export class ReturnsService {
     });
     const base = {
       id: record.id,
-      returnCode: record.returnCode,
+      returnCode: record.returnCode, inventory: { remainingItemTypes: record.reservation.contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: record.reservation.contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),
       inspectionStartedAt: record.inspectionStartedAt?.toISOString() ?? null,

@@ -1,15 +1,17 @@
+import { Optional } from '@nestjs/common';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-type ListQuery = { page: number; limit: number; status?: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED'; type?: 'IN' | 'OUT'; search?: string };
+type ListQuery = { page: number; limit: number; status?: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED'; type?: 'IN' | 'OUT'; search?: string; rentalContractId?: string };
 type ParsedLine = { storedItemId?: string; name?: string; unit?: string; quantity: number; note: string | null };
 
 @Injectable()
 export class StockMovementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   listCustomer(customerId: string, query: ListQuery) { return this.page({ customerUserId: customerId }, query); }
   listManager(query: ListQuery) { return this.page({}, query); }
@@ -31,18 +33,21 @@ export class StockMovementsService {
     const parsed = this.createInput(input, idempotencyKey);
     const contract = await this.prisma.rentalContract.findFirst({
       where: { OR: [{ id: parsed.contractId }, { contractCode: parsed.contractId }], reservation: { customerId: customer.id } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, reservationUnit: { select: { storageUnitId: true } } },
     });
     if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng thuê của khách hàng.');
-    if (contract.status !== 'ACTIVE') throw new ConflictException({ code: 'STOCK_MOVEMENT_REQUIRES_ACTIVE_CONTRACT', message: 'Chỉ hợp đồng ACTIVE mới được tạo phiếu nhập/xuất hàng.' });
     const duplicate = await this.prisma.stockMovement.findUnique({ where: { idempotencyKey: parsed.key }, include: this.include() });
-    if (duplicate) return this.view(duplicate);
+    if (duplicate) return this.matchingRetry(duplicate, customer.id, contract.id, parsed);
+    if (contract.status !== 'ACTIVE') throw new ConflictException({ code: 'STOCK_MOVEMENT_REQUIRES_ACTIVE_CONTRACT', message: 'Chỉ hợp đồng ACTIVE mới được tạo phiếu nhập/xuất hàng.' });
 
     return this.serializable(async (tx) => {
+      const activeContract = await tx.rentalContract.findUnique({ where: { id: contract.id }, select: { status: true } });
+      if (activeContract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng vừa kết thúc. Không thể tạo phiếu hàng mới.');
+      const responsibility = await this.unitStaff?.resolveStaff(tx, [contract.reservationUnit.storageUnitId]);
       const movement = await tx.stockMovement.create({
         data: {
           movementCode: this.code(), type: parsed.type, customerUserId: customer.id, rentalContractId: contract.id,
-          scheduledAt: parsed.scheduledAt, note: parsed.note, idempotencyKey: parsed.key,
+          ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, assignedByUserId: responsibility.assignedByUserId, assignedAt: new Date(), status: 'ASSIGNED' as const } : {}), scheduledAt: parsed.scheduledAt, note: parsed.note, idempotencyKey: parsed.key,
         },
       });
       for (const line of parsed.lines) {
@@ -72,20 +77,26 @@ export class StockMovementsService {
   }
 
   async complete(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được giao mới được hoàn tất phiếu.');
     const actual = this.actualLines(input.lines);
     const completionNote = this.optionalText(input.note, 2000, 'note');
     return this.serializable(async (tx) => {
       const current = await this.lock(tx, id);
+      if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới được hoàn tất phiếu.');
       if (current.status === 'COMPLETED') return this.view(await tx.stockMovement.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
       if (current.status !== 'ASSIGNED') throw new ConflictException('Chỉ phiếu ASSIGNED mới được hoàn tất.');
-      if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới được hoàn tất phiếu.');
+      const contract = await tx.rentalContract.findUnique({ where: { id: current.rentalContractId }, select: { status: true } });
+      if (contract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng đã kết thúc; không thể thay đổi tồn hàng sau trả kho.');
       const lines = await tx.stockMovementLine.findMany({ where: { stockMovementId: current.id }, include: { storedItem: true }, orderBy: { id: 'asc' } });
       if (!lines.length) throw new ConflictException('Phiếu không có dòng hàng.');
+      if ([...actual.keys()].some(lineId => !lines.some(line => line.id === lineId))) throw new BadRequestException('Kết quả kiểm đếm chứa dòng không thuộc phiếu.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StoredItem" WHERE "id" IN (${Prisma.join(lines.map((line) => line.storedItemId))}) ORDER BY "id" FOR UPDATE`);
       for (const line of lines) {
         const quantity = actual.get(line.id) ?? line.requestedQty;
-        if (current.type === 'OUT' && line.storedItem.balance < quantity) throw new ConflictException({ code: 'INSUFFICIENT_STORED_ITEM_BALANCE', message: `Không đủ tồn cho ${line.storedItem.itemCode}.` });
-        await tx.storedItem.update({ where: { id: line.storedItemId }, data: { balance: current.type === 'IN' ? { increment: quantity } : { decrement: quantity } } });
+        if (current.type === 'OUT') {
+          const changed = await tx.storedItem.updateMany({ where: { id: line.storedItemId, balance: { gte: quantity } }, data: { balance: { decrement: quantity } } });
+          if (!changed.count) throw new ConflictException({ code: 'INSUFFICIENT_STORED_ITEM_BALANCE', message: `Không đủ tồn cho ${line.storedItem.itemCode}.` });
+        } else await tx.storedItem.update({ where: { id: line.storedItemId }, data: { balance: { increment: quantity } } });
         await tx.stockMovementLine.update({ where: { id: line.id }, data: { actualQty: quantity } });
       }
       return this.view(await tx.stockMovement.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: new Date(), completionNote }, include: this.include() }));
@@ -93,9 +104,16 @@ export class StockMovementsService {
   }
 
   private async page(base: Prisma.StockMovementWhereInput, query: ListQuery) {
-    const where: Prisma.StockMovementWhereInput = { ...base, ...(query.status ? { status: query.status } : {}), ...(query.type ? { type: query.type } : {}), ...(query.search ? { OR: [{ movementCode: { contains: query.search, mode: 'insensitive' } }, { rentalContract: { contractCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {}) };
+    const where: Prisma.StockMovementWhereInput = { ...base, ...(query.rentalContractId ? { rentalContractId: query.rentalContractId } : {}), ...(query.status ? { status: query.status } : {}), ...(query.type ? { type: query.type } : {}), ...(query.search ? { OR: [{ movementCode: { contains: query.search, mode: 'insensitive' } }, { rentalContract: { contractCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {}) };
     const [total, items] = await Promise.all([this.prisma.stockMovement.count({ where }), this.prisma.stockMovement.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() })]);
     return { page: query.page, limit: query.limit, total, items: items.map((item) => this.view(item)) };
+  }
+
+  private matchingRetry(item: any, customerId: string, contractId: string, parsed: ReturnType<StockMovementsService['createInput']>) {
+    const expected = parsed.lines.map(line => JSON.stringify([line.storedItemId || `${line.name}:${line.unit}`, line.quantity, line.note])).sort();
+    const actual = item.lines.map((line: any) => JSON.stringify([parsed.lines.some(input => input.storedItemId === line.storedItemId) ? line.storedItemId : `${line.storedItem.name}:${line.storedItem.unit}`, line.requestedQty, line.note])).sort();
+    if (item.customerUserId !== customerId || item.rentalContractId !== contractId || item.type !== parsed.type || (item.note ?? null) !== parsed.note || (item.scheduledAt?.toISOString() ?? null) !== (parsed.scheduledAt?.toISOString() ?? null) || JSON.stringify(expected) !== JSON.stringify(actual)) throw new ConflictException('Idempotency-Key đã dùng cho một yêu cầu khác.');
+    return this.view(item);
   }
 
   private async find(id: string, extra: Prisma.StockMovementWhereInput) {
@@ -111,7 +129,7 @@ export class StockMovementsService {
     return tx.stockMovement.findUniqueOrThrow({ where: { id: identity.id } });
   }
 
-  private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } }; }
+  private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } }; }
   private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
 
   private createInput(input: Record<string, unknown>, idempotencyKey?: string) {

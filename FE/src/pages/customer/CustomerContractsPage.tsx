@@ -23,6 +23,7 @@ export function CustomerContractsPage() {
   const { user } = useAuth();
   const [params] = useSearchParams();
   const reservationFilter = params.get('reservation');
+  const contractFilter = params.get('contract');
   const { data, error, status, loading, refresh } =
     usePaginatedResource<CustomerContract>(
       "/customer/contracts?limit=100",
@@ -30,7 +31,7 @@ export function CustomerContractsPage() {
       true,
     );
   const { items: contracts, pagination } = useCustomerPagination(
-    (data?.items ?? []).filter(contract => !reservationFilter || contract.reservation.reference === reservationFilter || contract.reservation.id === reservationFilter),
+    (data?.items ?? []).filter(contract => (!contractFilter || contract.id === contractFilter) && (!reservationFilter || contract.reservation.reference === reservationFilter || contract.reservation.id === reservationFilter)),
   );
   const [acceptingId, setAcceptingId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -64,6 +65,7 @@ export function CustomerContractsPage() {
         }
       />
       {reservationFilter && <p>Hợp đồng của đơn {reservationFilter} · <Link to="/customer/contracts">Xem tất cả hợp đồng</Link></p>}
+      {contractFilter && <p>Hợp đồng được chọn · <Link to="/customer/contracts">Xem tất cả hợp đồng</Link></p>}
       {status === 401 ? (
         <CustomerSessionExpired />
       ) : loading ? (

@@ -18,7 +18,7 @@ async function setup(role, width) {
     if (path === 'auth/me') return send(role === 'CUSTOMER' ? { ...customer, role } : { ...staff, role, id: role === 'MANAGER' ? 'manager-id' : staff.id });
     if (path === 'manager/staff') { const page = Number(url.searchParams.get('page') || 1), items = [{ id: 'demo-cuid', fullName: 'Demo Staff', email: 'DEMO-1234abcd-staff@example.test' }, { ...staff, id: 'staff-other', fullName: 'Trần Linh' }, staff]; return send({ page, limit: 1, total: 3, items: items.slice(page - 1, page) }); }
     if (path === 'reservations') return send(data.reservations);
-    if (path === 'customer/payment-config') return send({ configured: false });
+    if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: false });
     const parts = path.split('/'), offset = parts[1] === 'management' ? 2 : 1, kind = parts[offset], id = parts[offset + 1], action = parts[offset + 2];
     if (!(kind in data)) { unexpected.push(`${role}:${method}:${path}`); return send({ message: 'Unexpected ' + path }, 500); }
     const row = data[kind].find(item => (item.id || item.reservationId) === id);

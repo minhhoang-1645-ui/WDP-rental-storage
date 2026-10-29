@@ -24,6 +24,7 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import { EarlyReturnPanel } from '../../components/customer/EarlyReturnPanel';
+import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import { isCurrentEarlyReturnApproval } from '../../utils/early-return';
 import type {
   CustomerDepositSettlement,
@@ -51,7 +52,6 @@ export function CustomerReturnsPage() {
   const [view, setView] = useState<"returns" | "settlements">("returns");
   const approvals = usePaginatedResource<CustomerSupportRequest>('/customer/support-requests?limit=100', user?.id ?? '', true);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
-  const [reservationId, setReservationId] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
@@ -71,6 +71,7 @@ export function CustomerReturnsPage() {
       !activeReturnIds.has(item.reservationId),
   );
   const current = view === "returns" ? returns : settlements;
+  const [reservationId, setReservationId] = useScopedSelection('reservation', eligibleRentals.map(item => ({ value: item.reservationId, aliases: [item.reservationReference] })));
   const refresh = () => {
     setCheckedAt(Date.now());
     returns.refresh();
@@ -306,6 +307,7 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
               ))}
             </div>
             {item.note && <p>Ghi chú: {item.note}</p>}
+            {item.inventory && (item.inventory.remainingItemTypes > 0 || item.inventory.pendingMovements > 0) && <p className="customer-inline-notice">Bạn còn {item.inventory.remainingItemTypes} loại hàng và {item.inventory.pendingMovements} phiếu giao nhận đang xử lý. Cần lấy hết hàng trước khi nhận trả kho. <a href="/customer/stock-movements">Mở phiếu nhập – xuất</a></p>}
           </article>
         ))}
       </div>

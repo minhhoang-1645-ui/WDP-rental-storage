@@ -1,13 +1,11 @@
 import { RefreshControl, ScrollView, Text } from 'react-native';
-import { router } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
-import { ReservationTimeline, SectionHeader, StorageUnitCard } from '@/components/customer-ui';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState } from '@/components/screen-state';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
 import { useResource } from '@/operations/use-resource';
 import { Button, Navigation, Panel, styles } from '@/operations/ui';
-import { codeOf, idOf, type Row } from '@/operations/model';
+import { codeOf, label, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
 import { ActivitySummary } from '@/activity/ActivityCenter';
 
@@ -46,13 +44,10 @@ export default function CustomerHomeScreen() {
   const appointments = useResource<{items: Row[]}>('/customer/appointments', true);
   const sources = [rentals, invoices, reservations, appointments], refresh = () => sources.forEach(item => item.refresh());
   const payable = invoices.data?.items.filter(item => ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0) ?? [];
-  const activeRental = rentals.data?.items[0];
-  const latestReservation = reservations.data?.slice().sort((a, b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)))[0];
-  const upcomingAppointment = appointments.data?.items.find(item => ['REQUESTED', 'CONFIRMED'].includes(String(item.status)));
   const count = (source: {loading: boolean; error?: string}, value: number) => source.loading || source.error ? '—' : value;
   const opening = sources.some(item => item.loading) && !rentals.data && !invoices.data && !reservations.data && !appointments.data;
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={!opening && sources.some(item => item.loading)} onRefresh={refresh} tintColor="#187D78" />} contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Trang chủ" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Thông tin quan trọng cho kho thuê của bạn, được cập nhật từ hệ thống WDP." />
+    <PageHeader eyebrow="Trang chủ" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Theo dõi đơn đặt, thanh toán và kho bạn đang sử dụng tại NestBox." />
     <Button title={sources.some(item => item.loading) ? 'Đang cập nhật…' : 'Làm mới tổng quan'} onPress={refresh} disabled={sources.some(item => item.loading)} />
     <ActivitySummary />
     <WorkHub title="Bạn muốn làm gì hôm nay?" description="Yêu cầu, thanh toán và nhận kho được đặt ở đầu để dễ theo dõi." actions={[

@@ -5,6 +5,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { BillingService } from './billing.service.js';
+import { VnpayService } from './vnpay.service.js';
 
 @Controller('customer')
 @UseGuards(AuthGuard, RolesGuard)
@@ -12,17 +13,17 @@ import { BillingService } from './billing.service.js';
 @ApiTags('Customer Billing')
 @ApiBearerAuth('bearerAuth')
 export class CustomerBillingController {
-  constructor(private readonly billing: BillingService, private readonly config: ConfigService) {}
+  constructor(private readonly billing: BillingService, private readonly config: ConfigService, private readonly vnpay: VnpayService) {}
 
   @Get('payment-config')
-  @ApiOperation({ summary: 'Thông tin công khai nhận chuyển khoản', description: 'Chỉ trả thông tin tài khoản dự kiến nhận tiền, không bao gồm thông tin xác thực hoặc bí mật ngân hàng.' })
-  @ApiOkResponse({ schema: { example: { configured: true, bankName: 'Vietcombank', bankCode: '970436', accountNumber: '0123456789', accountName: 'WDP STORAGE' } } })
+  @ApiOperation({ summary: 'Các kênh thanh toán khả dụng và thông tin nhận chuyển khoản', description: 'configured là khả dụng của chuyển khoản/QR ngân hàng; vnpayConfigured là khả dụng của VNPay. Không bao gồm thông tin xác thực hoặc bí mật ngân hàng/cổng thanh toán.' })
+  @ApiOkResponse({ schema: { example: { configured: true, vnpayConfigured: true, bankName: 'Vietcombank', bankCode: '970436', accountNumber: '0123456789', accountName: 'NESTBOX STORAGE' } } })
   getPaymentConfig(@Req() request: AuthenticatedRequest) {
     const bankName = this.config.get<string>('WDP_BANK_NAME')?.trim() ?? '';
     const bankCode = this.config.get<string>('WDP_BANK_CODE')?.trim() ?? '';
     const accountNumber = this.config.get<string>('WDP_BANK_ACCOUNT_NUMBER')?.trim() ?? '';
     const accountName = this.config.get<string>('WDP_BANK_ACCOUNT_NAME')?.trim() ?? '';
-    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), demoEnabled: this.billing.demoPaymentEnabled(request.user!), bankName, bankCode, accountNumber, accountName };
+    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), vnpayConfigured: this.vnpay.isConfigured(), demoEnabled: this.billing.demoPaymentEnabled(request.user!), bankName, bankCode, accountNumber, accountName };
   }
 
   @Get('invoices')

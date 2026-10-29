@@ -1,7 +1,10 @@
-// Uses real read-only catalog/quote/availability APIs. Final submissions are mocked.
+// Uses configured catalog/quote/availability APIs; the isolated helper uses read-only catalog/pricing and fixture availability. Final submissions are mocked.
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
-const api = process.env.WDP_API_URL || 'http://127.0.0.1:3000/api';
+const api = process.env.WDP_API_URL || 'http://127.0.0.1:3001/api';
+// Live availability may expire unpaid holds. Require the dedicated read-only fixture helper.
+const proof = await fetch(api + '/_test/read-only').then(response => { assert(response.ok, 'Start BE/scripts/read-only-smoke-server.mjs; do not use the live business API for this test.'); return response.json(); });
+assert(proof.testOnly === true && proof.databaseMode === 'READ_ONLY' && proof.availability === 'FIXTURE');
 const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 const catalog = await fetch(api + '/booking/catalog').then(response => { assert(response.ok); return response.json(); });
 const product = catalog.products.find(item => item.id === 'sm-b12' && item.monthlyPrice > 0) || catalog.products.find(item => item.monthlyPrice > 0);
@@ -19,9 +22,9 @@ try {
     let unavailable = false, quote;
     await context.route(/\/api\//, async route => {
       const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\//, '');
-      if (request.method() === 'GET' && ['booking/catalog', 'additional-services'].includes(path)) return route.continue();
+      if (request.method() === 'GET' && ['booking/catalog', 'additional-services'].includes(path)) return route.fulfill({ response: await route.fetch({ url: api + '/' + path }) });
       if (request.method() === 'POST' && ['pricing/quote', 'booking/availability'].includes(path)) {
-        const response = await route.fetch();
+        const response = await route.fetch({ url: api + '/' + path });
         const body = await response.json();
         assert(response.ok(), JSON.stringify(body));
         if (path === 'pricing/quote') quote = body;
@@ -68,7 +71,7 @@ try {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px booking overflow`);
     await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).click();
     await page.getByRole('heading', { name: 'Đã ghi nhận yêu cầu xác minh email', exact: true }).waitFor();
-    checks.push(`${width}px: comparison → same product/image in all three booking steps, real quotes, availability invalidation and isolated guest confirmation`);
+    checks.push(`${width}px: comparison → same product/image in all three booking steps, server quotes, configured availability source and invalidation and isolated guest confirmation`);
     await context.close();
   }
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);

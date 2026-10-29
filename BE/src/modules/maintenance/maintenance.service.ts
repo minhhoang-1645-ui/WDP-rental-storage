@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -23,7 +25,7 @@ const unresolvedStatuses: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'AWAITIN
 
 @Injectable()
 export class MaintenanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   createManual(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
@@ -51,8 +53,8 @@ export class MaintenanceService {
     const staffUserId = this.requiredText(input.staffUserId, 100, 'staffUserId');
     return this.transition(id, key, 'ASSIGN', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true } });
-      if (!staff || staff.role !== 'STAFF') throw new BadRequestException('Chỉ có thể giao maintenance cho tài khoản STAFF hợp lệ.');
+      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true, accountStatus: true } });
+      if (!staff || staff.role !== 'STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { assignedStaffUserId: staff.id, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey },
@@ -150,10 +152,11 @@ export class MaintenanceService {
         if (await tx.maintenanceRequest.findUnique({ where: { activeKey: this.activeKey(unit.id) } })) throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
         const changed = await tx.storageUnit.updateMany({ where: { id: unit.id, status: 'AVAILABLE' }, data: { status: 'MAINTENANCE' } });
         if (changed.count !== 1) throw new ConflictException('StorageUnit vừa được thay đổi bởi thao tác khác.');
+        const responsibility = await this.unitStaff?.resolveStaff(tx, [unit.id]);
         const created = await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: this.code(), storageUnitId: unit.id, source: 'MANUAL', category: parsed.category, priority: parsed.priority,
-            description: parsed.description, reportedByUserId: actor.id, activeKey: this.activeKey(unit.id), createIdempotencyKey: parsed.idempotencyKey,
+            assignedStaffUserId: responsibility?.staffUserId, description: parsed.description, reportedByUserId: actor.id, activeKey: this.activeKey(unit.id), createIdempotencyKey: parsed.idempotencyKey,
           },
           include: this.include(),
         });
@@ -231,7 +234,7 @@ export class MaintenanceService {
         },
       },
       reportedBy: { select: { id: true, fullName: true, role: true } },
-      assignedStaff: { select: { id: true, fullName: true, role: true } },
+      assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
       verifiedBy: { select: { id: true, fullName: true, role: true } },
       returnInspection: { include: { returnRequest: { select: { id: true, returnCode: true } } } },
     };

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "npm run test:workflows && npm run test:portal && npm run test:roles && npm run test:workspaces && npm run test:booking && npm run test:automatic && npm run test:catalog && npm run test:usability && npm run test:early-return && npm run test:history-maintenance",
+    "test": "npm run test:workflows && npm run test:portal && npm run test:roles && npm run test:workspaces && npm run test:booking && npm run test:automatic && npm run test:catalog && npm run test:usability && npm run test:early-return && npm run test:history-maintenance && npm run test:manager-review && npm run test:completion && npm run test:role-navigation && npm run test:notifications && npm run test:pricing",
+    "test:notifications": "node scripts/notifications-journey-smoke.mjs",
     "test:history-maintenance": "node scripts/history-maintenance-smoke.mjs",
     "test:early-return": "node scripts/early-return-smoke.mjs",
     "test:usability": "node scripts/transfer-usability-smoke.mjs",
@@ -18,7 +19,11 @@
     "test:workflows": "node scripts/workflow-smoke.mjs",
     "test:workspaces": "node scripts/workspaces-smoke.mjs",
     "test:booking": "node scripts/public-booking-smoke.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:manager-review": "node scripts/manager-review-smoke.mjs",
+    "test:completion": "node scripts/completion-parity-smoke.mjs",
+    "test:role-navigation": "node scripts/four-role-navigation-smoke.mjs",
+    "test:pricing": "node scripts/pricing-ux-smoke.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

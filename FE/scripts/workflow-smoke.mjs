@@ -32,6 +32,8 @@ const { buildActivity, activitySources } = await import(
 const {
   staffNeedsAction,
   awaitingAssignment,
+  assignmentNeedsAttention,
+  managerNeedsAction,
   staffWorkRank,
   isOverdueInvoice,
 } = await import(
@@ -41,6 +43,39 @@ const { matchesSource } = await import(
   await moduleUrl(new URL("../src/services/live-events.ts", import.meta.url))
 );
 const checks = [];
+const { customerProgress } = await import(await moduleUrl(new URL('../src/utils/customer-progress.ts', import.meta.url)));
+const { filterNotifications, newActivityCount, actionCountForPath } = await import(await moduleUrl(new URL('../src/utils/notification-tools.ts', import.meta.url)));
+const journeyReservation = { id: 'PUBLIC-REFERENCE', reference: 'PUBLIC-REFERENCE', quantity: 1, status: 'CONFIRMED' };
+const journeyRelation = { id: 'private-db-id', reference: 'PUBLIC-REFERENCE' };
+const journey = { contracts: [{ id: 'jc', status: 'PENDING_PAYMENT', endDate: '2099-01-01', reservation: journeyRelation, terms: {} }], invoices: [{ id: 'ji', type: 'INITIAL', status: 'OPEN', balanceDue: 100, reservation: journeyRelation }], appointments: [], returns: [], 'payment-submissions': [] };
+assert.equal(customerProgress({ ...journeyReservation, status: 'PENDING' }, journey).stage, 0);
+assert.equal(customerProgress(journeyReservation, journey).stage, 1, 'Public code must resolve private contract by reservation.reference');
+journey.contracts[0].terms.acceptedAt = '2026-10-29T00:00:00Z';
+assert.equal(customerProgress(journeyReservation, journey).stage, 2);
+journey['payment-submissions'].push({ status: 'PENDING_VERIFICATION', invoice: { id: 'ji' } });
+assert.match(customerProgress(journeyReservation, journey).title, /Đang đối chiếu/);
+journey.contracts[0].status = 'READY_FOR_HANDOVER'; journey.invoices[0].status = 'PAID';
+assert.equal(customerProgress(journeyReservation, journey).cta, 'Đặt lịch nhận kho');
+journey.appointments.push({ id: 'ja', status: 'CONFIRMED', reservation: journeyRelation });
+assert.equal(customerProgress(journeyReservation, journey).cta, 'Xem lịch nhận kho');
+journey.contracts[0].status = 'ACTIVE';
+assert.equal(customerProgress(journeyReservation, journey).stage, 4);
+journey.returns.push({ id: 'jr', status: 'REQUESTED', reservation: journeyRelation });
+assert.equal(customerProgress(journeyReservation, journey).stage, 5);
+journey.returns[0].status = 'COMPLETED';
+assert.equal(customerProgress(journeyReservation, journey).stage, 6);
+assert(customerProgress({ ...journeyReservation, status: 'EXPIRED' }, journey).closed);
+assert.match(customerProgress(journeyReservation, { ...journey, contracts: [], returns: [], invoices: [{ ...journey.invoices[0], status: 'VOID' }] }).cta, /hỗ trợ/);
+const manyNotifications = buildActivity('ADMIN', 'admin', { users: Array.from({length: 135}, (_, i) => ({id: `user-${i}`, fullName: 'Nguyễn Văn An', email: `${i}@example.test`, accountStatus: 'ACTIVE', role: 'STAFF'})) });
+assert.equal(manyNotifications.length, 135, 'All fetched dossiers must be available to the paginated inbox');
+assert.equal(filterNotifications(manyNotifications, [], 'all', 'users', 'nguyen van an').length, 135);
+assert.equal(filterNotifications(manyNotifications, [manyNotifications[0].token], 'unread', 'all', '').length, 134);
+assert.equal(newActivityCount(manyNotifications, manyNotifications), 0);
+assert.equal(newActivityCount([], manyNotifications), 135);
+assert.equal(actionCountForPath([{id:'a',action:true,web:'/staff/transfers/x'},{id:'a',action:true,web:'/staff/transfers/x'},{id:'b',action:false,web:'/staff/transfers/y'}], '/staff/transfers'), 1);
+assert(!buildActivity('CUSTOMER', 'c', { invoices: [{ id: 'void', type: 'INITIAL', status: 'VOID', balanceDue: 10, signing: { complete: false } }] })[0].action);
+assert(!buildActivity('STAFF', 's', { 'support-requests': [{ id: 'closed-transfer', subject: 'Chuyển kho', status: 'RESOLVED' }] })[0].action);
+checks.push('Six-step customer journey, public/private identity matching, pending transfer confirmation, VOID safety, complete inbox beyond 100 records, accent-insensitive search and stable update/read badges');
 for (const kind of ["support-requests", "maintenance", "stock-movements"]) {
   const row = {
     id: kind,
@@ -65,14 +100,14 @@ checks.push(
   "Unassigned work belongs to Manager assignment; only the assigned employee executes it",
 );
 assert(
-  staffNeedsAction(
+  !staffNeedsAction(
     "maintenance",
     { status: "AWAITING_VERIFICATION" },
     "staff-a",
   ),
 );
 assert(
-  staffNeedsAction("support-requests", { status: "ESCALATED" }, "staff-a"),
+  !staffNeedsAction("support-requests", { status: "ESCALATED" }, "staff-a"),
 );
 assert(
   staffNeedsAction(
@@ -128,7 +163,7 @@ assert(
 assert.equal(
   buildActivity("MANAGER", "manager", {
     invoices: [{ ...invoice, dueAt: "2099-01-01" }],
-  }).length,
+  }).filter(item => item.action).length,
   0,
 );
 checks.push(
@@ -137,6 +172,7 @@ checks.push(
 
 const renewal = {
   id: "renewal-a",
+  appendix: { acceptedAt: "2026-10-28T00:00:00Z" },
   status: "APPROVED_PENDING_PAYMENT",
   invoices: [
     { ...invoice, renewalCycle: 1 },
@@ -150,6 +186,10 @@ const renewalEntry = buildActivity("CUSTOMER", "customer", customerData).find(
 assert.equal(renewalEntry.web, "/customer/payments?invoice=invoice-a");
 assert.equal(renewalEntry.mobile, "/customer/invoices/invoice-a");
 assert(renewalEntry.action);
+const unsignedRenewal = buildActivity('CUSTOMER', 'customer', { renewals: [{ ...renewal, appendix: { acceptedAt: null } }] })[0];
+assert.equal(unsignedRenewal.web, '/customer/renewals?renewal=renewal-a');
+assert.equal(unsignedRenewal.mobile, '/customer/renewals/renewal-a');
+assert(unsignedRenewal.action);
 const pendingData = {
   ...customerData,
   "payment-submissions": [
@@ -277,4 +317,44 @@ assert(appointment.validateValues({ scheduledAt: '2050-03-01 00:00' }));
 assert(appointment.validateValues({ scheduledAt: '2050-02-30 10:00' }));
 assert.equal(appointment.transform({ scheduledAt: '2050-01-29 10:00' }).scheduledAt, '2050-01-29T03:00:00.000Z');
 checks.push('Hold deadlines, legacy payment session migration, exact hourly debt and mobile three-day appointment boundaries');
+for (const [kind, status, suffix] of [['maintenance', 'AWAITING_VERIFICATION', '/manager/operations/maintenance/'], ['support-requests', 'ESCALATED', '/manager/operations/support-requests/']]) {
+  const row = { id: 'review', status, assignedStaff: { id: 'staff-a' } };
+  assert(!staffNeedsAction(kind, row, 'staff-a'));
+  assert(managerNeedsAction(kind, row));
+  const activity = buildActivity('MANAGER', 'manager', { [kind]: [row] })[0];
+  assert(activity.action && activity.web.startsWith(suffix));
+}
+for (const kind of ['support-requests', 'maintenance', 'stock-movements']) {
+  const row = { id: 'disabled-owner', status: kind === 'maintenance' ? 'OPEN' : 'ASSIGNED', assignedStaff: { id: 'disabled', accountStatus: 'DISABLED' } };
+  assert(assignmentNeedsAttention(kind, row));
+  assert(buildActivity('MANAGER', 'manager', { [kind]: [row] })[0].web.startsWith('/manager/assignments'));
+}
+assert(buildActivity('MANAGER', 'manager', { 'online-payment-reconciliations': [{ id: 'late', status: 'REFUND_REQUIRED' }] })[0].action);
+assert(matchesSource('/staff/returns/return', ['/staff/stock-movements/movement/complete']));
+const { resolveApiBase } = await import(await moduleUrl(new URL('../../mobile/src/services/api-base.ts', import.meta.url)));
+assert.equal(resolveApiBase({ configured: 'https://api.example.org/api/', development: true, hostUri: '192.168.1.9:8081' }), 'https://api.example.org/api');
+assert.equal(resolveApiBase({ development: true, hostUri: '192.168.1.9:8081', platform: 'android' }), 'http://192.168.1.9:3000/api');
+assert.equal(resolveApiBase({ development: true, webHost: '127.0.0.1' }), 'http://127.0.0.1:3000/api');
+assert.equal(resolveApiBase({ development: false, hostUri: '192.168.1.9:8081', platform: 'android' }), 'http://10.0.2.2:3000/api');
+checks.push('Manager reviews are not Staff tasks; disabled assignees need replacement; late-payment follow-up and stock→return refresh; mobile follows current host without overriding explicit configuration');
+const { defaultServiceSelection, serviceEstimatedTotal, serviceSelectionIssue } = await import(await moduleUrl(new URL('../src/utils/service-period.ts', import.meta.url)));
+const { serviceDisplayName } = await import(await moduleUrl(new URL('../src/utils/service-labels.ts', import.meta.url)));
+const shelfService = { id:'shelf',code:'SHELF_STANDARD',name:'Storage Shelf',kind:'RENTAL',billingUnit:'MONTH',unitPrice:120000,isActive:true };
+assert.equal(defaultServiceSelection(shelfService,'2027-01-31','2027-02-15'),null);
+const defaultMonth = defaultServiceSelection(shelfService,'2027-01-31','2027-03-15');
+assert.equal(defaultMonth.serviceEndDate,'2027-02-28');
+assert.equal(serviceEstimatedTotal(shelfService,defaultMonth,'2027-01-31','2027-03-15'),120000);
+assert.equal(serviceEstimatedTotal(shelfService,{...defaultMonth,serviceEndDate:'2027-03-15'},'2027-01-31','2027-03-15'),null);
+const dayService={...shelfService,id:'cart',billingUnit:'DAY',unitPrice:60000};
+assert.equal(serviceEstimatedTotal(dayService,{serviceId:'cart',quantity:2,serviceStartDate:'2027-01-05',serviceEndDate:'2027-01-10'},'2027-01-01','2027-04-01'),600000);
+assert(serviceSelectionIssue(dayService,{serviceId:'cart',quantity:0},'2027-01-01','2027-04-01'));
+assert.equal(serviceDisplayName('SHELF_STANDARD','Storage Shelf'),'Kệ lưu trữ');
+assert.equal(serviceDisplayName('SHELF_STANDARD','Kệ sắt tầng 1'),'Kệ sắt tầng 1');
+assert.equal(serviceDisplayName('','Small Moving Box'),'Thùng carton nhỏ');
+for (const file of ['service-period','service-labels','document-display']) assert.equal(await readFile(new URL('../src/utils/'+file+'.ts',import.meta.url),'utf8'),await readFile(new URL('../../mobile/src/utils/'+file+'.ts',import.meta.url),'utf8'));
+const { documentText } = await import(await moduleUrl(new URL('../src/utils/document-display.ts', import.meta.url)));
+assert.match(documentText('rentalAmount',1500000),/1\.500\.000/);
+assert.equal(documentText('paymentPlan','PAY_MONTHLY'),'Thanh toán theo tháng');
+assert.match(documentText('acceptedAt','2026-10-29T01:00:00Z'),/8:00|08:00/);
+checks.push('Equipment defaults, subtotals, monthly end-date boundaries, Vietnamese labels, preserved custom names and matching web/mobile policies');
 console.log(JSON.stringify({ passed: checks, realDatabaseWrites: 0 }, null, 2));

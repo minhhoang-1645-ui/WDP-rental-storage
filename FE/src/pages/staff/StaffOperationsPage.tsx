@@ -88,7 +88,6 @@ export function StaffOperationsPage() {
           {activity.checking ? "Đang cập nhật…" : "Làm mới"}
         </button>
       </PageHeader>
-      <ActivitySummary />
       <section className="work-queue" aria-label="Ưu tiên xử lý">
         <div className="work-hub-heading">
           <div>
@@ -158,6 +157,7 @@ export function StaffOperationsPage() {
           tone: group.items.length ? "attention" : "normal",
         }))}
       />
+      <ActivitySummary />
       <WorkflowHint title="Phối hợp xử lý">
         Quản lý phân công hỗ trợ, bảo trì và giao nhận hàng. Khi được giao, mở
         hồ sơ để cập nhật kết quả; các khoản thu và tiền cọc do quản lý đối
@@ -166,6 +166,7 @@ export function StaffOperationsPage() {
       <Link className="button-secondary" to="/staff/rentals">
         Tra cứu kho đang thuê
       </Link>
+      <Link className="button-secondary" to="/staff/assigned-units">Kho tôi phụ trách</Link>
     </section>
   );
 }

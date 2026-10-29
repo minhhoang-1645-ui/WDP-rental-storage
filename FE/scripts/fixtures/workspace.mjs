@@ -173,6 +173,7 @@ const fixture = {
       id: "contract-id",
       contractCode: "CON-TEST",
       status: "ACTIVE",
+      terms: { acceptedAt: when, acceptanceName: customer.fullName, snapshotHash: 'isolated-contract-hash', document: {} },
       storageType,
       storageUnit: { ...unit, physicalStatus: "OCCUPIED" },
       reservation,
@@ -299,4 +300,5 @@ const fixture = {
   ],
 };
 
+fixture['online-payment-reconciliations'] = [];
 export { fixture, customer, staff, unit, reservation, quote, when };

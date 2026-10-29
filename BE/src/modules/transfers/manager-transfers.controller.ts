@@ -10,7 +10,7 @@ import { TransfersService } from './transfers.service.js';
 @Controller(['manager/transfers', 'staff/management/transfers'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Transfers')
 @ApiBearerAuth('bearerAuth')
 export class ManagerTransfersController {

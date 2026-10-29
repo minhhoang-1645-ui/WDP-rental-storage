@@ -7,7 +7,7 @@ export function WorkHub({ title, description, actions }: { title: string; descri
 }
 const steps = [
   { title: 'Chọn & đặt kho', text: 'Chọn loại kho, kỳ thuê và dịch vụ.', path: '/booking' },
-  { title: 'Thanh toán', text: 'Theo dõi hóa đơn sau khi được duyệt.', path: '/customer/payments' },
+  { title: 'Ký & thanh toán', text: 'Đọc, ký hợp đồng rồi thanh toán hóa đơn.', path: '/customer/contracts' },
   { title: 'Nhận bàn giao', text: 'Đặt lịch và đến nhận kho theo giờ đã xác nhận.', path: '/customer/appointments' },
   { title: 'Sử dụng kho', text: 'Gửi/lấy hàng, gia hạn hoặc cần hỗ trợ.', path: '/customer/rentals' },
 ];

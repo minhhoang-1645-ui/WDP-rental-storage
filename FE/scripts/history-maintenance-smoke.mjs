@@ -18,8 +18,8 @@ async function setup(role, width, mobile = false) {
     if (path === 'manager/dashboard/summary') return send({ availableUnits: 1 });
     if (path === 'reservations') return send(bookings);
     if (path.startsWith('reservations/')) return send(bookings.find(item => item.id === path.split('/')[1]));
-    if (path === 'customer/payment-config') return send({ configured: false });
-    if (path.startsWith('manager/deposit-settlements')) { unexpected.push(`${method} ${path}`); return send({ message: 'Removed Manager feature' }, 403); }
+    if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: false });
+
     const parts = path.split('/'), offset = parts[1] === 'management' ? 2 : 1, kind = parts[offset], id = parts[offset + 1];
     if (method !== 'GET') {
       writes.push({ path, body: req.postDataJSON(), key: req.headers()['idempotency-key'] });
@@ -59,11 +59,13 @@ try {
   const mobile = await setup('CUSTOMER', 390, true); await mobile.goto('/customer/booking-history'); await mobile.page.getByText('111 / 111 đơn đặt kho', { exact: true }).waitFor(); await mobile.page.getByLabel('Tìm trong lịch sử', { exact: true }).fill('MD-E06-004'); await mobile.page.getByText('RES-100 · Đã trả kho', { exact: true }).waitFor(); await mobile.context.close();
   for (const mobile of [false, true]) {
     const manager = await setup('MANAGER', 390, mobile); await manager.goto('/manager'); await manager.page.getByText(mobile ? 'Bàn làm việc' : 'Tổng quan vận hành', { exact: true }).last().waitFor();
-    assert(!/Quyết toán cọc/.test(await manager.page.locator('body').innerText()));
-    await manager.goto(mobile ? '/manager/deposit-settlements' : '/manager/operations/deposit-settlements'); await manager.page.getByText(mobile ? 'Không tìm thấy phân hệ' : 'Không tìm thấy trang', { exact: true }).waitFor();
-    await manager.goto(mobile ? '/manager/deposit-settlements/old' : '/manager/operations/deposit-settlements/old'); await manager.page.getByText(mobile ? 'Không tìm thấy hồ sơ' : 'Không tìm thấy trang', { exact: true }).waitFor();
-    assert(!manager.requests.some(item => item.path.startsWith('manager/deposit-settlements'))); await manager.context.close();
+    await manager.goto(mobile ? '/manager/deposit-settlements' : '/manager/operations/deposit-settlements');
+    await manager.page.getByText('SET-TEST', { exact: true }).first().waitFor();
+    await manager.goto(mobile ? '/manager/deposit-settlements/settlement-id' : '/manager/operations/deposit-settlements/settlement-id');
+    await manager.page.getByText('SET-TEST', { exact: true }).first().waitFor();
+    assert(manager.requests.some(item => item.path === 'manager/deposit-settlements/settlement-id'));
+    await manager.context.close();
   }
-  checks.push('Expo web history; Manager settlement removed from dashboard, notifications and list/detail deep links on web/mobile');
+  checks.push('Expo web history; Manager settlement restored with working list/detail routes on web/mobile under the approved scope');
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []); console.log(JSON.stringify({ checks, mockedWrites: writes.length, browserErrors: errors.length, realDatabaseWrites: 0 }, null, 2));
 } finally { await browser.close(); }

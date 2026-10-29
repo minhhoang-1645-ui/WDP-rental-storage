@@ -33,6 +33,7 @@ export class OnlinePaymentService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${identity.id} FOR UPDATE`);
       const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: true } });
       if (!invoice || invoice.reservation.customerId !== customer.id) throw new NotFoundException('Không tìm thấy hóa đơn thuộc tài khoản này.');
+      if (invoice.status === 'VOID') throw new ConflictException({ code: 'INVOICE_CANCELLED', message: 'Hóa đơn đã hủy; không thể tạo phiên thanh toán mới.' });
       await this.billing.assertSignedBeforePayment(tx, invoice);
       if (invoice.reservation.status === 'EXPIRED' || (invoice.type === 'INITIAL' && invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())) throw new ConflictException({ code: 'RESERVATION_PAYMENT_WINDOW_EXPIRED', message: 'Thời hạn giữ kho đã hết. Vui lòng tạo yêu cầu đặt kho mới.' });
       if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
@@ -192,9 +193,16 @@ export class OnlinePaymentService {
     if (resolutionNote.length < 3 || resolutionNote.length > 2000) throw new BadRequestException('resolutionNote phải dài 3–2000 ký tự.');
     const record = await this.prisma.onlinePaymentReconciliation.findFirst({ where: { OR: [{ id }, { reconciliationCode: id }] }, include: this.reconciliationInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy hồ sơ đối soát VNPay.');
-    if (record.status !== 'PENDING_REVIEW') return this.toReconciliation(record);
-    const updated = await this.prisma.onlinePaymentReconciliation.update({ where: { id: record.id }, data: { status: resolution as 'REFUND_REQUIRED' | 'RECONCILED', reviewedByUserId: actor.id, reviewedAt: new Date(), resolutionNote }, include: this.reconciliationInclude() });
-    return this.toReconciliation(updated);
+    if (record.status === 'RECONCILED' || record.status === 'REFUND_REQUIRED' && resolution === 'REFUND_REQUIRED') return this.toReconciliation(record);
+    let evidence = resolutionNote;
+    if (record.status === 'REFUND_REQUIRED') {
+      const reference = typeof input.refundReference === 'string' ? input.refundReference.trim() : '';
+      if (reference.length < 2 || reference.length > 200 || input.refundConfirmed !== true) throw new BadRequestException('Cần xác nhận đã hoàn tiền thực tế và mã giao dịch hoàn tiền.');
+      evidence = `${record.resolutionNote || ''}\nĐã hoàn tiền. Tham chiếu: ${reference}. ${resolutionNote}`;
+    }
+    const changed = await this.prisma.onlinePaymentReconciliation.updateMany({ where: { id: record.id, status: record.status }, data: { status: resolution as 'REFUND_REQUIRED' | 'RECONCILED', reviewedByUserId: actor.id, reviewedAt: new Date(), resolutionNote: evidence } });
+    if (!changed.count) throw new ConflictException('Hồ sơ đối soát vừa thay đổi. Vui lòng tải lại trước khi xác nhận.');
+    return this.toReconciliation(await this.prisma.onlinePaymentReconciliation.findUniqueOrThrow({ where: { id: record.id }, include: this.reconciliationInclude() }));
   }
 
   private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string) { return { transactionId: transaction.id, merchantOrderRef: transaction.merchantOrderRef, status: transaction.status, amount: this.money(transaction.amount), expiresAt: this.expiresAt(transaction.createdAt).toISOString(), paymentUrl: this.vnpay.paymentUrl({ orderRef: transaction.merchantOrderRef, amount: transaction.amount, ipAddress, bankCode, locale, createdAt: transaction.createdAt }) }; }

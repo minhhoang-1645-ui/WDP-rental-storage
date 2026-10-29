@@ -10,7 +10,7 @@ const statuses = ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE', 'COMPLETED'
 @Controller(['manager/contracts', 'staff/management/contracts'])
 @StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Contract')
 @ApiBearerAuth('bearerAuth')
 export class ManagerContractsController {

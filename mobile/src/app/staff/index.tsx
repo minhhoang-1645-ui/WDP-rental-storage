@@ -74,6 +74,7 @@ export default function StaffHomeScreen() {
         disabled={activity.checking}
       />
       <ActivitySummary />
+    <Navigation title="Kho tôi phụ trách" path="/staff/assigned-units" />
       <Panel title="Ưu tiên xử lý">
         <Text style={styles.copy}>
           Việc ưu tiên cao và lịch đã đến giờ được đưa lên trước. Chỉ hiển thị

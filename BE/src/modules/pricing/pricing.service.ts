@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PaymentPlan, PricingInput, PricingQuote } from './pricing.types.js';
+import { localizeService } from '../additional-services/additional-service-labels.js';
 
 type PricedStorageType = {
   id: string;
@@ -56,7 +57,8 @@ export class PricingService {
       throw new BadRequestException({ code: 'UNSUPPORTED_RENTAL_TERM', message: 'Thời hạn phải là thuê ngắn ngày hợp lệ hoặc đúng số tháng theo lịch.' });
     }
 
-    const discountPercent = input.paymentPlan === 'PREPAID' && termMonths !== null ? (prepaidDiscounts[termMonths] ?? 0) : 0;
+    const prepaidDiscountPercent = termMonths !== null ? (prepaidDiscounts[termMonths] ?? 0) : 0;
+    const discountPercent = input.paymentPlan === 'PREPAID' ? prepaidDiscountPercent : 0;
     const discount = this.roundDivide(baseRental * BigInt(discountPercent), 100n);
     const rental = baseRental - discount;
     const deposit = storageType.sizeId === 'locker'
@@ -77,6 +79,8 @@ export class PricingService {
     const firstCycleEnd = billingMode === 'MONTHLY' ? this.addMonths(input.startDate, 1) : input.endDate;
     const firstCycleRental = selectedServices.filter((service) => service.kind === 'RENTAL').reduce((sum, service) => sum + this.serviceChargeForBillingPeriod(service, input.startDate, firstCycleEnd), 0n);
     const estimatedInitial = billingMode === 'MONTHLY' && input.paymentPlan === 'PAY_MONTHLY' ? monthlyPrice * BigInt(input.quantity) + deposit + oneTimeServices + firstCycleRental : total;
+    const initialRental = billingMode === 'MONTHLY' && input.paymentPlan === 'PAY_MONTHLY' ? monthlyPrice * BigInt(input.quantity) : rental;
+    const initialRentalServices = billingMode === 'MONTHLY' && input.paymentPlan === 'PAY_MONTHLY' ? firstCycleRental : recurringServices;
     const basis = billingMode === 'MONTHLY' ? `${termMonths} tháng` : `${billableDays} ngày`;
     return {
       currency: 'VND',
@@ -93,6 +97,7 @@ export class PricingService {
       dailyUnitPrice: billingMode === 'DAILY' ? this.dailyRateDisplay(monthlyPrice) : null,
       baseRentalAmount,
       discountPercent,
+      prepaidDiscountPercent,
       discountAmount,
       rentalAmount,
       depositAmount,
@@ -103,6 +108,7 @@ export class PricingService {
       rentalAddOnAmount: this.money(recurringServices),
       addOnTotalAmount: this.money(serviceTotal),
       estimatedInitialAmountDue: this.money(estimatedInitial),
+      initialPaymentBreakdown: { rentalAmount: this.money(initialRental), depositAmount, purchaseAddOnAmount: this.money(oneTimeServices), rentalAddOnAmount: this.money(initialRentalServices), totalAmount: this.money(estimatedInitial), remainingAmount: this.money(total - estimatedInitial), periodStart: input.startDate, periodEnd: billingMode === 'MONTHLY' && input.paymentPlan === 'PAY_MONTHLY' ? firstCycleEnd : input.endDate },
       services: selectedServices.map(({ amountValue, unitPriceValue, ...service }) => ({ ...service, unitPrice: this.money(unitPriceValue), amount: this.money(amountValue) })),
       status: 'PRICED',
       periodStatus: billingMode === 'MONTHLY' ? 'APPROVED_DURATION' : 'SHORT_DURATION_APPROVED',
@@ -110,7 +116,7 @@ export class PricingService {
         { code: 'storage-rent', label: 'Tiền thuê kho', basis: `${basis} × ${input.quantity} kho`, amount: baseRentalAmount, status: 'INCLUDED' },
         ...(discountAmount > 0 ? [{ code: 'prepaid-discount', label: `Chiết khấu trả trước ${discountPercent}%`, basis, amount: -discountAmount, status: 'INCLUDED' as const }] : []),
         { code: 'deposit', label: 'Tiền đặt cọc', basis: storageType.sizeId === 'locker' ? 'Không áp dụng cho tủ lưu trữ' : 'Không áp dụng chiết khấu', amount: depositAmount, status: 'INCLUDED' },
-        ...selectedServices.map((service) => ({ code: `service-${service.code}`, label: service.name, basis: service.billingUnit === 'ONE_TIME' ? `${service.quantity} × mua một lần` : service.billingUnit === 'DAY' ? `${service.serviceStartDate} đến ${service.serviceEndDate} theo ngày` : `${service.serviceStartDate} đến ${service.serviceEndDate} theo tháng`, amount: this.money(service.amountValue), status: 'INCLUDED' as const })),
+        ...selectedServices.map((service) => ({ code: `service-${service.code}`, label: service.name, basis: service.billingUnit === 'ONE_TIME' ? `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} sản phẩm, mua một lần` : `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} thiết bị × ${service.billingUnit === 'DAY' ? this.daysBetween(this.date(service.serviceStartDate!), this.date(service.serviceEndDate!)) + ' ngày' : this.wholeCalendarMonths(service.serviceStartDate!, service.serviceEndDate!) + ' tháng lịch'} (${service.serviceStartDate!.split('-').reverse().join('/')}–${service.serviceEndDate!.split('-').reverse().join('/')}, không tính ngày kết thúc)`, amount: this.money(service.amountValue), status: 'INCLUDED' as const })),
       ],
       rentalSubtotal: baseRentalAmount,
       deposit: depositAmount,
@@ -163,8 +169,9 @@ export class PricingService {
   private priceServices(selections: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>, services: PricedService[], reservationStart: string, reservationEnd: string) {
     if (services.length !== selections.length) throw new BadRequestException({ code: 'ADDITIONAL_SERVICE_NOT_FOUND', message: 'Có dịch vụ bổ sung không tồn tại.' });
     return selections.map((selection) => {
-      const service = services.find((record) => record.id === selection.serviceId);
-      if (!service) throw new BadRequestException({ code: 'ADDITIONAL_SERVICE_NOT_FOUND', message: 'Không tìm thấy dịch vụ bổ sung.' });
+      const record = services.find((record) => record.id === selection.serviceId);
+      if (!record) throw new BadRequestException({ code: 'ADDITIONAL_SERVICE_NOT_FOUND', message: 'Không tìm thấy dịch vụ bổ sung.' });
+      const service = localizeService(record);
       if (!service.isActive) throw new BadRequestException({ code: 'ADDITIONAL_SERVICE_INACTIVE', message: `Dịch vụ ${service.name} hiện không hoạt động.` });
       if (service.unitPrice === null) throw new BadRequestException({ code: 'ADDITIONAL_SERVICE_PRICE_UNAVAILABLE', message: `Dịch vụ ${service.name} chưa có giá được phê duyệt.` });
       const unitPriceValue = service.unitPrice;
@@ -198,11 +205,10 @@ export class PricingService {
       return end > start ? service.unitPriceValue * BigInt(service.quantity) * BigInt(this.daysBetween(this.date(start), this.date(end))) : 0n;
     }
     let amount = 0n;
-    let cursor = service.serviceStartDate;
+    let cursor = service.serviceStartDate, monthOffset = 0;
     while (cursor < service.serviceEndDate) {
-      const next = this.addMonths(cursor, 1);
       if (cursor >= periodStart && cursor < periodEnd) amount += service.unitPriceValue * BigInt(service.quantity);
-      cursor = next;
+      cursor = this.addMonths(service.serviceStartDate, ++monthOffset);
     }
     return amount;
   }

@@ -175,7 +175,24 @@ export class CreateHandoverAppointmentRequestDto {
   note?: string;
 }
 
+export class HandoverReportRequestDto {
+  @ApiProperty({ minLength: 2, maxLength: 120 })
+  recipientName!: string;
+  @ApiProperty({ minLength: 3, maxLength: 500 })
+  condition!: string;
+  @ApiProperty({ minimum: 0, maximum: 50, description: 'Số chìa khóa/thẻ bàn giao thực tế.' })
+  accessItemCount!: number;
+  @ApiProperty({ enum: [true] })
+  identityVerified!: boolean;
+  @ApiProperty({ enum: [true] })
+  unitInspected!: boolean;
+  @ApiProperty({ enum: [true] })
+  accessDelivered!: boolean;
+}
+
 export class CompleteHandoverRequestDto {
+  @ApiPropertyOptional({ type: HandoverReportRequestDto, description: 'Web/mobile mới gửi checklist này. Nội dung được lưu vào handoverNote hiện có; không đổi schema.' })
+  handoverReport?: HandoverReportRequestDto;
   @ApiPropertyOptional({ example: 'Đã bàn giao đầy đủ các kho cho khách hàng.', maxLength: 2000 })
   note?: string;
 }

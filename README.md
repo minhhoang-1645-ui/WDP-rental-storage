@@ -1,3 +1,5 @@
+> **Báo cáo cuối cùng:** [Hoàn thiện RV1/RV2, phân công và hướng dẫn demo](./BAO_CAO_HOAN_THIEN_VA_DEMO_NESTBOX.md). Giữ chữ ký vẽ; OTP/email/QR/VNPay chờ cấu hình.
+
 > Hướng dẫn review mới nhất: [NestBox Storage — checklist test](./HUONG_DAN_TEST_NESTBOX.md).
 
 > Học nghiệp vụ và tự thực hành: [Hiểu project và kịch bản demo](./HUONG_DAN_HIEU_VA_DEMO_NESTBOX.md).

@@ -18,6 +18,7 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import { handoverWindow, vietnamLocalMinute } from '../../utils/handover';
+import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import type {
   CustomerAppointment,
   CustomerContract,
@@ -35,7 +36,6 @@ export function CustomerAppointmentsPage() {
     user?.id ?? "",
   );
   const [view, setView] = useState<"upcoming" | "past">("upcoming");
-  const [reservationId, setReservationId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -80,6 +80,7 @@ export function CustomerAppointmentsPage() {
     }
     return [...map.values()];
   }, [contracts.data, appointments.data, currentTime]);
+  const [reservationId, setReservationId] = useScopedSelection('reservation', eligibleReservations.map(item => ({ value: item.id, aliases: [item.reference] })), true);
   const selectedReservation = eligibleReservations.find(
     (item) => item.id === reservationId,
   );

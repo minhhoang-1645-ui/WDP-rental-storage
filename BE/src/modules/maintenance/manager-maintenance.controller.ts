@@ -11,14 +11,14 @@ import { MaintenanceService } from './maintenance.service.js';
 @Controller(['manager/maintenance', 'staff/management/maintenance'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Maintenance')
 @ApiBearerAuth('bearerAuth')
 export class ManagerMaintenanceController {
   constructor(private readonly maintenance: MaintenanceService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Manager/Admin tạo manual maintenance cho unit AVAILABLE' })
+  @ApiOperation({ summary: 'Manager tạo manual maintenance cho unit AVAILABLE' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-manager-report-001' }) @ApiBody({ type: CreateMaintenanceRequestDto })
   @ApiCreatedResponse({ description: 'Tạo OPEN case và chuyển unit sang MAINTENANCE.' }) @ApiConflictResponse({ description: 'Unit OCCUPIED, không AVAILABLE hoặc có active case.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.createManual(body, key, request.user!); }

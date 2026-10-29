@@ -20,14 +20,17 @@ import {
 import { ApiError } from "../../services/api";
 import type { CustomerRenewal, CustomerRental } from "../../types/customer";
 import { RenewalReview } from '../../components/manager/RenewalReview';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
 import { SignatureAgreement } from '../../components/customer/SignatureAgreement';
+import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import { DocumentSnapshot } from '../../components/customer/DocumentSnapshot';
 
 export function CustomerRenewalsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const renewalFilter = params.get('renewal');
   const rentals = usePaginatedResource<CustomerRental>(
     "/customer/rentals?limit=100",
     user?.id ?? "",
@@ -37,7 +40,6 @@ export function CustomerRenewalsPage() {
     user?.id ?? "",
     true,
   );
-  const [reservationId, setReservationId] = useState("");
   const [termMonths, setTermMonths] = useState("3");
   const [paymentPlan, setPaymentPlan] = useState<"PAY_MONTHLY" | "PREPAID">(
     "PREPAID",
@@ -51,9 +53,10 @@ export function CustomerRenewalsPage() {
   const [acceptingAppendixId, setAcceptingAppendixId] = useState('');
   const [selectedAppendix, setSelectedAppendix] = useState<CustomerRenewal | null>(null);
   const eligibleRentals = (rentals.data?.items ?? []).filter(item => !item.pendingRenewal && item.historicalPricing?.billingMode === 'MONTHLY');
+  const [reservationId, setReservationId] = useScopedSelection('reservation', eligibleRentals.map(item => ({ value: item.reservationId, aliases: [item.reservationReference] })));
 
   const { items: visibleRenewals, pagination } = useCustomerPagination(
-    renewals.data?.items ?? [],
+    (renewals.data?.items ?? []).filter(item => !renewalFilter || item.id === renewalFilter),
   );
 
   const submit = async (event: FormEvent) => {
@@ -73,7 +76,7 @@ export function CustomerRenewalsPage() {
       setMessage({
         kind: "ok",
         text: created.status === 'APPROVED_PENDING_PAYMENT'
-          ? "Gia hạn hợp lệ đã được duyệt tự động. Bạn có thể thanh toán hóa đơn gia hạn."
+          ? "Gia hạn hợp lệ đã được duyệt tự động. Bạn cần xem và ký phụ lục trước khi thanh toán hóa đơn gia hạn."
           : "Đã ghi nhận yêu cầu gia hạn để nhân viên kiểm tra ngoại lệ.",
       });
       setReservationId("");
@@ -122,6 +125,7 @@ export function CustomerRenewalsPage() {
           </button>
         }
       />
+      {renewalFilter && <p>Yêu cầu gia hạn được chọn · <Link to="/customer/renewals">Xem tất cả yêu cầu</Link></p>}
       <div className="customer-module-form-layout">
         <form className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources

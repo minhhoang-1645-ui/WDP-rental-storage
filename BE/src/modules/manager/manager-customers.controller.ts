@@ -6,7 +6,7 @@ import { ManagerService } from './manager.service.js';
 
 @Controller('manager/customers')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('MANAGER')
 @ApiTags('Manager Customer')
 @ApiBearerAuth('bearerAuth')
 export class ManagerCustomersController {

@@ -78,7 +78,7 @@ export function StaffActions({
     void run(
       suffix,
       "POST",
-      { [field]: String(data.get(field) ?? "").trim() || undefined },
+      { [field]: String(data.get(field) ?? "").trim() || undefined, ...(suffix === '/complete-handover' ? { handoverReport: { recipientName: String(data.get('recipientName') ?? '').trim(), condition: String(data.get('condition') ?? '').trim(), accessItemCount: Number(data.get('accessItemCount')), identityVerified: data.get('identityVerified') === 'on', unitInspected: data.get('unitInspected') === 'on', accessDelivered: data.get('accessDelivered') === 'on' } } : {}) },
       idempotent,
     );
   };
@@ -87,6 +87,7 @@ export function StaffActions({
     String(row.status),
   );
   const allInspected =
+    Number(first(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(first(row, 'inventory.pendingMovements') || 0) === 0 &&
     inspections.length > 0 &&
     inspections.every(
       (item) =>
@@ -109,9 +110,16 @@ export function StaffActions({
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
               {handoverIssue && <p className="booking-alert" role="status">{handoverIssue}</p>}
+              <h3>Biên bản bàn giao thực tế</h3>
+              <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
+              <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
+              <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
+              <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>
+              <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>
+              <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="field-label">
                 Ghi chú bàn giao
-                <textarea name="note" maxLength={2000} rows={3} />
+                <textarea name="note" maxLength={1000} rows={3} />
               </label>
               <label className="portal-checkbox">
                 <input name="received" type="checkbox" required />
@@ -138,6 +146,7 @@ export function StaffActions({
             )}
             {inspecting && (
               <>
+                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <p role="status" className="portal-error">Còn {first(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {first(row, 'inventory.pendingMovements') || '0'} phiếu giao nhận chưa hoàn tất. Khách cần gửi phiếu lấy hết hàng; nhân viên hoàn tất giao nhận trước khi nhận trả kho.</p>}
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
                   phí do quản lý duyệt.
@@ -223,7 +232,7 @@ export function StaffActions({
               </form>
             )}
             {row.status === "AWAITING_VERIFICATION" && (
-              <p>Đang chờ nhân viên phụ trách nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
+              <p>Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
             )}
             {row.status === "COMPLETED" && (
               <p>Đã nghiệm thu và hoàn tất bảo trì.</p>

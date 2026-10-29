@@ -10,7 +10,7 @@ const unitStatuses = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'] as con
 @Controller(['manager/units', 'staff/management/units'])
 @StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Storage Unit')
 @ApiBearerAuth('bearerAuth')
 export class ManagerUnitsController {

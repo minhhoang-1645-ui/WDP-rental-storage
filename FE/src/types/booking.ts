@@ -75,6 +75,9 @@ export interface PricingEstimate {
   dailyUnitPrice?: string | null
   baseRentalAmount?: number | null
   discountPercent?: number
+  prepaidDiscountPercent?: number
+  initialPaymentBreakdown?: { rentalAmount: number; depositAmount: number; purchaseAddOnAmount: number; rentalAddOnAmount: number; totalAmount: number; remainingAmount: number; periodStart: string; periodEnd: string }
+  services?: Array<{ serviceId: string; code: string; name: string; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; quantity: number; unitPrice: number; amount: number; serviceStartDate: string | null; serviceEndDate: string | null }>
   discountAmount?: number | null
   rentalAmount?: number | null
   depositAmount?: number | null

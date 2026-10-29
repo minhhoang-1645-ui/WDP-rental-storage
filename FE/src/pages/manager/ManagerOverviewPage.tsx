@@ -22,7 +22,7 @@ import { WorkHub } from "../../components/workspace/WorkHub";
 import { useApiResource } from "../../services/useApiResource";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { useLiveRefresh } from "../../services/live-events";
-import { awaitingAssignment, isOverdueInvoice } from "../../utils/work-queue";
+import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from "../../utils/work-queue";
 import { activitySources } from "../../utils/activity";
 
 export function ManagerOverviewPage() {
@@ -41,7 +41,8 @@ export function ManagerOverviewPage() {
     activity.refresh();
   };
   const invoices = activity.data.invoices ?? [];
-  const overdueInvoices = invoices.filter((row) => isOverdueInvoice(row));
+  const outstandingInvoices = invoices.filter(row => ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0);
+  const overdueInvoices = outstandingInvoices.filter((row) => isOverdueInvoice(row));
   const submissions = (activity.data["payment-submissions"] ?? []).filter(
     (row) => row.status === "PENDING_VERIFICATION",
   );
@@ -50,7 +51,7 @@ export function ManagerOverviewPage() {
     "maintenance",
     "stock-movements",
   ].flatMap((kind) =>
-    (activity.data[kind] ?? []).filter((row) => awaitingAssignment(kind, row)),
+    (activity.data[kind] ?? []).filter((row) => assignmentNeedsAttention(kind, row)),
   );
   const available = units.data ? units.data.items.filter(row => row.status === 'AVAILABLE').length : summary.data?.availableUnits;
   const occupied = units.data ? units.data.items.filter(row => row.status === 'OCCUPIED').length : summary.data?.occupiedUnits;
@@ -83,7 +84,6 @@ export function ManagerOverviewPage() {
           Làm mới
         </button>
       </PageHeader>
-      <ActivitySummary />
       <WorkHub
         title="Việc quản lý cần xử lý"
         description="Ưu tiên hồ sơ chưa có người phụ trách và các khoản cần đối chiếu."
@@ -92,7 +92,7 @@ export function ManagerOverviewPage() {
             title: "Phân công nhân viên",
             description:
               "Giao người phụ trách hỗ trợ, bảo trì và nhập – xuất hàng.",
-            to: "/manager/assignments?assignment=unassigned",
+            to: "/manager/assignments?assignment=attention",
             icon: Headphones,
             count: count(
               ["support-requests", "maintenance", "stock-movements"],
@@ -111,15 +111,22 @@ export function ManagerOverviewPage() {
           {
             title: "Hóa đơn & công nợ",
             description: financeReady
-              ? `${overdueInvoices.length} hóa đơn quá hạn. Kiểm tra số dư và lịch sử thu tiền.`
+              ? `${outstandingInvoices.length} hóa đơn còn số dư, ${overdueInvoices.length} quá hạn. Mở để đối chiếu hoặc ghi nhận thu tại cơ sở.`
               : "Xem số tiền còn phải thu và hạn thanh toán.",
             to: "/manager/operations/invoices",
             icon: WalletCards,
-            count: count(["invoices"], overdueInvoices.length),
+            count: count(["invoices"], outstandingInvoices.length),
             tone: overdueInvoices.length ? "attention" : "normal",
           },
+          ...[
+            ['support-requests', 'Hỗ trợ cần quyết định', '/manager/operations/support-requests?status=ESCALATED', 'Xử lý các hồ sơ nhân viên chuyển lên.'],
+            ['maintenance', 'Chờ nghiệm thu bảo trì', '/manager/operations/maintenance?status=AWAITING_VERIFICATION', 'Kiểm tra kết quả sửa chữa trước khi mở lại kho.'],
+            ['deposit-settlements', 'Quyết toán tiền cọc', '/manager/operations/deposit-settlements', 'Đối chiếu kiểm tra kho, công nợ và khoản hoàn.'],
+            ['online-payment-reconciliations', 'Đối soát VNPay', '/manager/online-payment-reconciliations', 'Theo dõi giao dịch cần kiểm tra và hoàn tiền.'],
+          ].map(([kind, title, to, description]) => { const pending = (activity.data[kind] ?? []).filter(row => managerNeedsAction(kind, row) && !assignmentNeedsAttention(kind, row)); return { title, to, description, icon: ClipboardCheck, count: count([kind], pending.length), tone: pending.length ? 'attention' as const : 'normal' as const }; }),
         ]}
       />
+      <ActivitySummary />
       <LoadState
         loading={summary.loading}
         error={summary.error}
@@ -242,7 +249,7 @@ export function ManagerOverviewPage() {
           <strong>
             {financeReady
               ? money(
-                  invoices.reduce(
+                  outstandingInvoices.reduce(
                     (sum, row) => sum + Number(row.balanceDue || 0),
                     0,
                   ),

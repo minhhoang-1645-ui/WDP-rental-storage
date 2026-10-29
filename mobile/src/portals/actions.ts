@@ -17,12 +17,21 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   const add = (title: string, suffix: string, fields: FormField[] = [], idempotent = false, description?: string) => result.push({ title, path: root + suffix, method: 'POST', fields: [...fields, confirmation()], idempotent, description });
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
   if (resource === 'appointments' && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
-    add('Hoàn tất bàn giao', '/complete-handover', [note('note', 'Ghi chú bàn giao')], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
+    add('Hoàn tất bàn giao', '/complete-handover', [
+      { name: 'recipientName', title: 'Người nhận kho', required: true, minLength: 2, maxLength: 120 },
+      note('condition', 'Hiện trạng cửa, khóa, tường, sàn và thiết bị', true, 500),
+      { name: 'accessItemCount', title: 'Số chìa khóa/thẻ đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
+      { name: 'identityVerified', title: 'Đã đối chiếu người nhận kho', checkbox: true, required: true },
+      { name: 'unitInspected', title: 'Đã kiểm tra đúng mã kho và hiện trạng từng kho', checkbox: true, required: true },
+      { name: 'accessDelivered', title: 'Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập', checkbox: true, required: true },
+      note('note', 'Ghi chú bàn giao', false, 1000),
+    ], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
+    result[result.length - 1].transform = input => ({ note: input.note, handoverReport: { recipientName: input.recipientName, condition: input.condition, accessItemCount: input.accessItemCount, identityVerified: input.identityVerified, unitInspected: input.unitInspected, accessDelivered: input.accessDelivered } });
     result[result.length - 1].validate = () => handoverWindowIssue(row, Date.now()) || Date.parse(String(row.scheduledAt)) > Date.now() ? 'Thời điểm bàn giao nằm ngoài kỳ thuê hoặc chưa đến giờ hẹn. Tải lại hồ sơ.' : undefined;
   }
   if (resource === 'maintenance' && assigned) {
     if (row.status === 'OPEN') add('Bắt đầu bảo trì', '/start', [], true);
-    if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi nhân viên phụ trách nghiệm thu.');
+    if (row.status === 'IN_PROGRESS') add('Gửi kết quả để nghiệm thu', '/complete-work', [note('workNote', 'Kết quả sửa chữa', true, 4000)], true, 'Kho vẫn bảo trì cho đến khi quản lý nghiệm thu.');
   }
   if (resource === 'support-requests' && !isEarlyReturnRequest(row) && assigned) {
     if (row.status === 'ASSIGNED') add('Bắt đầu hỗ trợ', '/start', [], true);
@@ -42,7 +51,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
         if (inspection.result !== 'ISSUE_FOUND') result.push({ title: `Ghi nhận kho ${unit} đạt`, path: base, method: 'PATCH', fields: [note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'PASS' }) });
         result.push({ title: `Ghi nhận vấn đề kho ${unit}`, path: base, method: 'PATCH', fields: [choice('issueType', 'Phân loại vấn đề', issues, text(inspection, 'issueType') || undefined), note('issueNote', 'Mô tả vấn đề', true), note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'ISSUE_FOUND' }), description: 'Chỉ ghi hiện trạng; quản lý xác định trách nhiệm và phí.' });
       }
-      if (inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) add('Hoàn tất nhận kho trả', '/finalize', [], false, 'Đã nhận lại toàn bộ kho thực tế và ghi đủ kết quả kiểm tra. Tiền cọc được quyết toán riêng.');
+      if (Number(text(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(text(row, 'inventory.pendingMovements') || 0) === 0 && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) add('Hoàn tất nhận kho trả', '/finalize', [], false, 'Đã nhận lại toàn bộ kho thực tế và ghi đủ kết quả kiểm tra. Tiền cọc được quyết toán riêng.');
     }
   }
   return result;

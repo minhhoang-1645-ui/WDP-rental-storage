@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -17,7 +19,7 @@ const managerResolutions = ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTI
 
 @Injectable()
 export class SupportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   async createCustomer(actor: PublicUser, input: Record<string, unknown>, key: string | undefined) {
     if (actor.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được tạo Support Request.');
@@ -58,10 +60,11 @@ export class SupportService {
         if (contract && unit && contract.reservationUnit.storageUnitId !== unit.id) throw new BadRequestException('RentalContract và StorageUnit không khớp nhau.');
         const invoice = parsed.invoiceId ? reservation.invoices.find((item) => item.id === parsed.invoiceId) : null;
         if (parsed.invoiceId && !invoice) throw new BadRequestException('Invoice không thuộc Reservation đã chọn.');
+        const responsibility = parsed.subject === 'Đề nghị trả kho trước hạn' ? null : await this.unitStaff?.resolveStaff(tx, unit ? [unit.id] : contract ? [contract.reservationUnit.storageUnitId] : activeContracts.map(item => item.reservationUnit.storageUnitId));
         const created = await tx.supportRequest.create({ data: {
           supportCode: this.code(), customerUserId: actor.id, reservationId: reservation.id,
           rentalContractId: contract?.id, storageUnitId: unit?.id, invoiceId: invoice?.id,
-          category: parsed.category, priority: 'MEDIUM', status: 'OPEN', subject: parsed.subject, description: parsed.description,
+          category: parsed.category, priority: 'MEDIUM', ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, status: 'ASSIGNED' as const } : { status: 'OPEN' as const }), subject: parsed.subject, description: parsed.description,
           idempotencyKey: parsed.idempotencyKey,
         }, include: this.include() });
         return this.toView(created, 'CUSTOMER');
@@ -91,8 +94,8 @@ export class SupportService {
     const staffUserId = this.id(input.staffUserId, 'staffUserId');
     return this.transition(id, key, 'ASSIGN', actor, 'MANAGER', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true } });
-      if (!staff || staff.role !== 'STAFF') throw new BadRequestException('Chỉ có thể assign tài khoản STAFF hợp lệ.');
+      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true, accountStatus: true } });
+      if (!staff || staff.role !== 'STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao công việc cho nhân viên đang hoạt động.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, status: current.status === 'OPEN' ? 'ASSIGNED' : current.status, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
@@ -173,7 +176,7 @@ export class SupportService {
     reservation: { select: { id: true, reservationCode: true, status: true, quoteSnapshot: true } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
     storageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } }, reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } } } },
-    invoice: { select: { id: true, invoiceCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, role: true } },
+    invoice: { select: { id: true, invoiceCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
     escalatedBy: { select: { id: true, fullName: true, role: true } }, resolvedBy: { select: { id: true, fullName: true, role: true } },
   } }
 

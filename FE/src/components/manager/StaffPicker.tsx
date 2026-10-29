@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { allPages } from '../../services/portal';
 import { isFixtureStaff, staffFromWork } from '../../utils/staff';
+import { markFormDirty } from '../../services/live-events';
 
 export function StaffPicker({ value, onChange, disabled = false, knownStaff, currentStaff, workloads }: {
   value: string;
@@ -41,7 +42,9 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
   const showManual = manual || (!loading && !options.size) || (Boolean(value) && !options.has(value));
   const normalize = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const filtered = [...options].filter(([id, name]) => id === value || normalize(name).includes(normalize(search.trim()))).sort((a,b) => (workloads ? (workloads.get(a[0]) ?? 0) - (workloads.get(b[0]) ?? 0) : 0) || a[1].localeCompare(b[1], 'vi'));
+  const recommendation = workloads && current && !current.error ? [...current.staff].sort((a,b) => (workloads.get(a[0]) ?? 0) - (workloads.get(b[0]) ?? 0) || a[1].localeCompare(b[1], 'vi'))[0] : undefined;
   return <div className="staff-assignee-picker">
+    {recommendation && <div className="activity-update-note"><span>Gợi ý: {recommendation[1]} · {workloads?.get(recommendation[0]) ?? 0} việc chưa hoàn tất trong ba nhóm đang phân công. Bạn kiểm tra rồi bấm lưu để xác nhận.</span><button type="button" className="portal-text-button" disabled={disabled || value === recommendation[0]} onClick={event => { const form = event.currentTarget.closest('form'); if (form) markFormDirty(form); setManual(false); onChange(recommendation[0]); }}>Dùng gợi ý</button></div>}
     <label className="field-label">Tìm nhân viên<input type="search" placeholder="Nhập tên hoặc email nhân viên…" value={search} disabled={disabled} onChange={event => setSearch(event.target.value)} /></label>
     <label className="field-label">Nhân viên phụ trách
       <select aria-label="Nhân viên phụ trách" aria-describedby={hintId} value={options.has(value) && !manual ? value : ''} disabled={disabled || !options.size} required={!showManual} onChange={event => { setManual(false); onChange(event.target.value); }}>

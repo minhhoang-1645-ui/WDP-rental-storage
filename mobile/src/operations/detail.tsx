@@ -1,5 +1,5 @@
+import { canAccessManagerReview } from '@/utils/manager-review-access';
 import { staffRecordActions } from '@/portals/actions';
-import { isStaffWorkflow, isManagerResource } from '@/utils/operation-access';
 import { useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -26,7 +26,7 @@ export function ResourceDetail() {
 function Detail({ resource, id }: { resource: string; id: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined, root = operationRoot(user?.role ?? '');
-  const allowed = user?.role === 'MANAGER' ? isManagerResource(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
+  const allowed = canAccessManagerReview(user?.role ?? '', resource);
   const data = useResource<Row>(allowed && config && resource !== 'catalog' ? `${config.path}/${encodeURIComponent(id)}` : null);
   const stock = useResource<Row>(allowed && resource === 'additional-services' ? `/manager/additional-services/${encodeURIComponent(id)}/inventory` : null);
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');

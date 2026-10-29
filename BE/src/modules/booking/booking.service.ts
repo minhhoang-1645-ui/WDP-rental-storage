@@ -96,6 +96,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
+    if (user.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
     const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
     const idempotencyKey = this.fingerprint('reservation', user.id, draft);

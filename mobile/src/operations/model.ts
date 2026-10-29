@@ -7,7 +7,7 @@ export function text(row: Row, ...paths: string[]): string {
   return '';
 }
 export const idOf = (row: Row) => text(row, 'databaseId', 'id', 'reservationId');
-export const codeOf = (row: Row) => text(row, 'movementCode', 'reference', 'contractCode', 'invoiceCode', 'paymentCode', 'appointmentCode', 'renewalCode', 'returnCode', 'transferCode', 'maintenanceCode', 'supportCode', 'settlementCode', 'submissionCode', 'unitCode', 'code', 'reservationReference', 'email', 'id');
+export const codeOf = (row: Row) => text(row, 'reconciliationCode', 'movementCode', 'reference', 'contractCode', 'invoiceCode', 'paymentCode', 'appointmentCode', 'renewalCode', 'returnCode', 'transferCode', 'maintenanceCode', 'supportCode', 'settlementCode', 'submissionCode', 'unitCode', 'code', 'reservationReference', 'email', 'id');
 
 export interface ResourceDefinition { title: string; path: string; shape?: 'catalog' | 'array'; statuses?: string[] }
 export const resources: Record<string, ResourceDefinition> = {
@@ -26,6 +26,7 @@ export const resources: Record<string, ResourceDefinition> = {
   returns: { title: 'Trả kho & kiểm tra', path: '/manager/returns', statuses: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'PENDING_SETTLEMENT', 'COMPLETED'] },
   invoices: { title: 'Hóa đơn', path: '/manager/invoices', statuses: ['OPEN', 'PARTIALLY_PAID', 'PAID', 'VOID'] },
   payments: { title: 'Khoản thu đã ghi nhận', path: '/manager/payments' },
+  'online-payment-reconciliations': { title: 'Đối soát VNPay', path: '/manager/online-payment-reconciliations', statuses: ['PENDING_REVIEW', 'REFUND_REQUIRED', 'RECONCILED'] },
   'payment-submissions': { title: 'Đối chiếu chuyển khoản', path: '/manager/payment-submissions', statuses: ['PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'] },
   'deposit-settlements': { title: 'Quyết toán cọc', path: '/manager/deposit-settlements', statuses: ['PENDING_REVIEW', 'APPROVED', 'AWAITING_OUTSTANDING_PAYMENT', 'SETTLED'] },
   maintenance: { title: 'Bảo trì kho', path: '/manager/maintenance', statuses: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION', 'COMPLETED'] },
@@ -35,6 +36,7 @@ export const adminSections = [
   ['dashboard', 'Tổng quan hệ thống'], ['users', 'Quản lý tài khoản người dùng'],
 ] as const;
 const labels: Record<string, string> = {
+  REFUND_REQUIRED: 'Cần hoàn tiền', RECONCILED: 'Đã đối soát',
   VOID: 'Đã hủy', UNINSPECTED: 'Chưa kiểm tra',
   LOCK_OR_KEY_ISSUE: 'Vấn đề khóa/chìa khóa', ACCESS_CODE_ISSUE: 'Vấn đề mã truy cập', PAYMENT_SUPPORT: 'Hỗ trợ thanh toán', STORED_ITEM_CONCERN: 'Vấn đề hàng đang gửi', DAILY: 'Theo ngày', MONTHLY: 'Theo tháng',
   INITIAL: 'Hóa đơn ban đầu', RECURRING: 'Hóa đơn định kỳ', RENEWAL: 'Hóa đơn gia hạn', SETTLEMENT: 'Hóa đơn quyết toán', INCLUDED: 'Đã tính trong báo giá', PRICED: 'Đã có báo giá', QUOTE_REQUIRED: 'Cần xác nhận báo giá', dates: 'Chọn khoảng ngày', duration: 'Chọn số tháng', INQUIRY: 'Yêu cầu tư vấn', RESERVATION: 'Yêu cầu đặt kho', ok: 'Đã kết nối',

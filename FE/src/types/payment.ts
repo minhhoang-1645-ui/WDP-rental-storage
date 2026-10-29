@@ -4,6 +4,7 @@ export type PaymentSubmissionStatus = 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJ
 
 export interface BankTransferConfig {
   configured: boolean
+  vnpayConfigured?: boolean
   bankName: string
   bankCode: string
   accountNumber: string

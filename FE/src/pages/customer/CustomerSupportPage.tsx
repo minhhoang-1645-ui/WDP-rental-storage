@@ -18,6 +18,7 @@ import {
 import { ApiError } from "../../services/api";
 import { useApiResource } from "../../services/useApiResource";
 import { isTransferRequest } from '../../utils/transfer-request';
+import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import type {
   CustomerInvoice,
   CustomerRental,
@@ -56,13 +57,11 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
     user?.id ?? "",
   );
   const presetCategory = params.get("category") as SupportCategory | null;
-  const [reservationId, setReservationId] = useState("");
   const [category, setCategory] = useState<SupportCategory>(
     categories.some((item) => item.value === presetCategory)
       ? presetCategory!
       : "UNIT_ISSUE",
   );
-  const [contractId, setContractId] = useState("");
   const [unitId, setUnitId] = useState("");
   const [invoiceId, setInvoiceId] = useState("");
   const [subject, setSubject] = useState(transferOnly ? 'Yêu cầu chuyển kho' : params.get("subject") ?? "");
@@ -87,11 +86,13 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
     }
     return [...map].map(([id, reference]) => ({ id, reference }));
   }, [reservations.data, rentals.data, invoices.data, operational]);
+  const [reservationId, setReservationId] = useScopedSelection('reservation', reservationOptions.map(option => ({ value: option.id, aliases: (rentals.data?.items ?? []).filter(item => item.reservationReference === option.id).map(item => item.reservationId) })));
   const selectedRental = rentals.data?.items.find(
     (item) =>
       item.reservationId === reservationId ||
       item.reservationReference === reservationId,
   );
+  const [contractId, setContractId] = useScopedSelection('contract', (selectedRental?.contracts ?? []).map(item => ({ value: item.id })));
   const selectedInvoices = (invoices.data?.items ?? []).filter(
     (item) =>
       item.reservation.id === reservationId ||
@@ -298,6 +299,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             <label className="field-label">
               Chi tiết
               <textarea
+                aria-label="Chi tiết"
                 required
                 minLength={3}
                 maxLength={4000}

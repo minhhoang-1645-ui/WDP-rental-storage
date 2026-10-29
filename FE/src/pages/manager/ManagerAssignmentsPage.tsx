@@ -23,8 +23,9 @@ import {
 import { allPages, mutate } from "../../services/portal";
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
-import { assignmentWorkRank } from '../../utils/work-queue';
+import { assignmentNeedsAttention, assignmentWorkRank } from '../../utils/work-queue';
 import { isEarlyReturnRequest } from '../../utils/early-return';
+import { UnitStaffAssignments } from '../../components/manager/UnitStaffAssignments';
 
 type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
@@ -49,6 +50,7 @@ export function ManagerAssignmentsPage() {
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   useLiveRefresh('/manager/*', refresh);
   const [selected, setSelected] = useState<Task>();
+  const [unitAssignmentsOpen, setUnitAssignmentsOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
     key: string;
@@ -107,7 +109,7 @@ export function ManagerAssignmentsPage() {
       (kind === "all" || task.kind === kind) &&
       (scope !== "active" || !finished(task)) &&
       (assignment === "all" ||
-        (assignment === "assigned" ? assigned : !assigned)) &&
+        (assignment === "attention" ? assignmentNeedsAttention(task.kind, task.row) : assignment === "assigned" ? assigned : !assigned)) &&
       [
         code(task.row),
         relatedUnit(task.row),
@@ -147,6 +149,8 @@ export function ManagerAssignmentsPage() {
 
   return (
     <section>
+      <button type="button" className="button-secondary" onClick={() => setUnitAssignmentsOpen(value => !value)}>{unitAssignmentsOpen ? 'Thu gọn phân công theo kho' : 'Phân công nhân viên phụ trách từng kho'}</button>
+      {unitAssignmentsOpen && <UnitStaffAssignments />}
       <PageHeader
         title="Phân công nhân viên"
         description="Phân công nhân viên phụ trách hỗ trợ, bảo trì và phiếu nhập – xuất hàng khách."
@@ -194,6 +198,7 @@ export function ManagerAssignmentsPage() {
           >
             <option value="all">Tất cả</option>
             <option value="unassigned">Chưa phân công</option>
+            <option value="attention">Cần giao / đổi người</option>
             <option value="assigned">Đã phân công</option>
           </select>
         </label>
@@ -248,6 +253,7 @@ export function ManagerAssignmentsPage() {
                         <td>
                           {first(task.row, "assignedStaff.fullName") ||
                             "Chưa phân công"}
+                          {first(task.row, 'assignedStaff.accountStatus') === 'DISABLED' && <small role="status">Tài khoản đã vô hiệu hóa · cần đổi người</small>}
                         </td>
                         <td>{label(task.row.priority)}</td>
                         <td>

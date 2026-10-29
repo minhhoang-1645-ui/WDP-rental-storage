@@ -35,6 +35,7 @@ import { StaffLayout } from "../pages/staff/StaffLayout";
 import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
+import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
@@ -59,11 +60,13 @@ import { CustomerProfilePage } from "../pages/customer/CustomerProfilePage";
 import { CustomerReservationDetailPage } from "../pages/customer/CustomerReservationDetailPage";
 import { CustomerReservationsPage } from "../pages/customer/CustomerReservationsPage";
 import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovementsPage';
+import { ActivityInboxPage } from '../activity/ActivityCenter';
 
 function operationalRoutes(base: string) {
   return (
     <>
       <Route index element={<ManagerDashboardPage />} />
+      <Route path="notifications" element={<ActivityInboxPage />} />
       <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
       <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
       <Route path="online-payment-reconciliations" element={<ManagerOnlinePaymentReconciliationsPage />} />
@@ -131,6 +134,7 @@ export function AppRouter() {
       <Route path="portal/login" element={<PortalLoginPage />} />
       <Route path="customer" element={<CustomerLayout />}>
         <Route index element={<CustomerDashboardPage />} />
+        <Route path="notifications" element={<ActivityInboxPage />} />
         <Route path="reservations" element={<CustomerReservationsPage />} />
         <Route
           path="reservations/:id"
@@ -155,6 +159,8 @@ export function AppRouter() {
       <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
         <Route path="staff" element={<StaffLayout />}>
           <Route index element={<StaffOperationsPage />} />
+          <Route path="notifications" element={<ActivityInboxPage />} />
+          <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
@@ -185,6 +191,7 @@ export function AppRouter() {
       <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
+          <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="users" element={<AdminAccountsPage />} />
           <Route path="roles" element={<Navigate to="/admin/users" replace />} />
           <Route path="assignments" element={<Navigate to="/admin" replace />} />

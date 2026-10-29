@@ -6,6 +6,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export class VnpayService {
   constructor(private readonly config: ConfigService) {}
 
+  isConfigured() {
+    return ['VNPAY_TMN_CODE', 'VNPAY_HASH_SECRET', 'VNPAY_PAYMENT_URL', 'VNPAY_RETURN_URL'].every(key => Boolean(this.config.get<string>(key)?.trim()));
+  }
+
   assertConfigured() { this.settings(); }
 
   paymentUrl(input: { orderRef: string; amount: bigint; ipAddress: string; bankCode?: string; locale?: string; createdAt: Date }) {
@@ -37,8 +41,8 @@ export class VnpayService {
   }
 
   private settings() {
-    const tmnCode = this.config.get<string>('VNPAY_TMN_CODE'), hashSecret = this.config.get<string>('VNPAY_HASH_SECRET'), paymentUrl = this.config.get<string>('VNPAY_PAYMENT_URL'), returnUrl = this.config.get<string>('VNPAY_RETURN_URL');
-    if (!tmnCode || !hashSecret || !paymentUrl || !returnUrl) throw new ServiceUnavailableException({ code: 'VNPAY_NOT_CONFIGURED', message: 'VNPay chưa được cấu hình.' });
+    const tmnCode = this.config.get<string>('VNPAY_TMN_CODE')?.trim() ?? '', hashSecret = this.config.get<string>('VNPAY_HASH_SECRET')?.trim() ?? '', paymentUrl = this.config.get<string>('VNPAY_PAYMENT_URL')?.trim() ?? '', returnUrl = this.config.get<string>('VNPAY_RETURN_URL')?.trim() ?? '';
+    if (!this.isConfigured()) throw new ServiceUnavailableException({ code: 'VNPAY_NOT_CONFIGURED', message: 'VNPay chưa được cấu hình.' });
     return { tmnCode, hashSecret, paymentUrl, returnUrl };
   }
 

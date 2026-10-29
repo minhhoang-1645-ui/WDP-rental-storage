@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { AuthenticatedRequest } from './auth.types.js';
 import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CreateAdminUserDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
 import { UserRepository } from '../users/user.repository.js';
@@ -58,9 +59,9 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'Bật hoặc vô hiệu hóa tài khoản', description: 'Dữ liệu lịch sử vẫn được giữ nguyên.' })
   @ApiBody({ type: UpdateAccountStatusDto })
   @ApiOkResponse({ description: 'Trạng thái tài khoản đã cập nhật.' })
-  async updateStatus(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  async updateStatus(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
     if (body.accountStatus !== 'ACTIVE' && body.accountStatus !== 'DISABLED') throw new BadRequestException('accountStatus phải là ACTIVE hoặc DISABLED.');
-    const user = await this.users.updateStatus(id, body.accountStatus);
+    const user = await this.users.updateStatus(id, body.accountStatus, request.user!.id);
     if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
     return this.publicUser(user);
   }

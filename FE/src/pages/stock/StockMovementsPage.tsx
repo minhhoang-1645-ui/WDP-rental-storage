@@ -10,6 +10,7 @@ import type { StockDraftLine, StockMovement, StockRole, StoredItem } from '../..
 import { stockCompleteInput, stockCreateInput } from '../../utils/stock';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
+import { useScopedSelection } from '../../components/customer/useScopedSelection';
 
 const statuses = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 const dateTime = (value: unknown) => date(value, true);
@@ -23,7 +24,7 @@ export function StockMovementsPage({ role }: { role: StockRole }) {
 function StockList({ role }: { role: StockRole }) {
   const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(false), [notice, setNotice] = useState('');
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1)), query = new URLSearchParams({ page: String(page), limit: '20' });
-  for (const key of ['status', 'type', 'search']) if (params.get(key)) query.set(key, params.get(key)!);
+  for (const key of ['status', 'type', 'search', 'rentalContractId']) if (params.get(key)) query.set(key, params.get(key)!);
   const data = useApiResource<Page<StockMovement>>(`/${role.toLowerCase()}/stock-movements?${query}`, user?.id, true);
   const update = (key: string, value: string) => setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); return next; }, { replace: true });
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
@@ -32,7 +33,7 @@ function StockList({ role }: { role: StockRole }) {
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
     {notice && <p className="booking-alert" role="status">{notice}</p>}
-    {role === 'CUSTOMER' && <><Link className="button-secondary" to="/customer/stored-items">Hàng đang lưu</Link>{creating && <StockCreate onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setNotice('Yêu cầu của bạn đã được gửi. Số lượng hàng sẽ được cập nhật sau khi giao nhận thực tế.'); data.refresh(); }} />}</>}
+    {role === 'CUSTOMER' && <><Link className="button-secondary" to={params.get('rentalContractId') ? `/customer/stored-items?rentalContractId=${encodeURIComponent(params.get('rentalContractId')!)}` : '/customer/stored-items'}>Hàng đang lưu</Link>{creating && <StockCreate onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setNotice('Yêu cầu của bạn đã được gửi. Số lượng hàng sẽ được cập nhật sau khi giao nhận thực tế.'); data.refresh(); }} />}</>}
     <div className="portal-toolbar">
       <label className="field-label">Tìm mã phiếu / hợp đồng<input type="search" maxLength={100} value={params.get('search') ?? ''} onChange={event => update('search', event.target.value)} /></label>
       <label className="field-label">Trạng thái<select value={params.get('status') ?? ''} onChange={event => update('status', event.target.value)}><option value="">Tất cả</option>{Object.entries(statuses).map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
@@ -47,7 +48,8 @@ function StockList({ role }: { role: StockRole }) {
 }
 function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
   const { user } = useAuth(), contracts = usePaginatedResource<{ id: string; contractCode: string; status: string }>('/customer/contracts', user?.id);
-  const [contract, setContract] = useState(''), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
+  const [contract, setContract] = useScopedSelection('rentalContractId', (contracts.data?.items ?? []).filter(row => row.status === 'ACTIVE').map(row => ({ value: row.id })));
+  const [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
   const items = useApiResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null, user?.id, true);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
   const patch = (key: string, change: Partial<StockDraftLine>) => setLines(current => current.map(line => line.key === key ? { ...line, ...change } : line));
@@ -111,7 +113,9 @@ function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRo
   </article>;
 }
 export function StoredItemsPage() {
-  const { user } = useAuth(), data = useApiResource<StoredItem[]>('/customer/stored-items', user?.id, true);
+  const { user } = useAuth(), [params] = useSearchParams();
+  const contractId = params.get('rentalContractId');
+  const data = useApiResource<StoredItem[]>('/customer/stored-items' + (contractId ? '?rentalContractId=' + encodeURIComponent(contractId) : ''), user?.id, true);
   const [search, setSearch] = useState('');
   const items = data.data?.filter(item => `${item.name} ${item.itemCode} ${item.rentalContract?.contractCode}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))) ?? [];
   return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Số lượng hàng của bạn đã được kiểm đếm. Yêu cầu đang chờ xử lý chưa làm thay đổi số lượng này."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;

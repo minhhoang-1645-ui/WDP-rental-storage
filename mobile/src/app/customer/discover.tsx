@@ -5,25 +5,25 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
-import { object, rows, text, type Row } from '@/operations/model';
+import { rows, text, type Row } from '@/operations/model';
 import { Field, styles } from '@/operations/ui';
-import { useResource } from '@/operations/use-resource';
+import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { formatMoney } from '@/utils/format';
 
 function productMatches(product: Row, query: string, size: string, climateOnly: boolean) {
-  const haystack = [text(product, 'name', 'code', 'sizeId', 'condition'), text(object(product.size), 'name', 'dimensions')].join(' ').toLocaleLowerCase('vi');
+  const haystack = ['name', 'code', 'sizeId', 'condition', 'dimensions', 'floorArea'].map(key => text(product, key)).join(' ').toLocaleLowerCase('vi');
   return (!query || haystack.includes(query.toLocaleLowerCase('vi'))) && (!size || text(product, 'sizeId') === size) && (!climateOnly || text(product, 'condition') === 'climate');
 }
 
 export default function StorageDiscoveryScreen() {
   const params = useLocalSearchParams<{ size?: string }>();
-  const catalog = useResource<Row>('/booking/catalog');
+  const catalog = usePublicCatalog();
   const [query, setQuery] = useState('');
   const [size, setSize] = useState(params.size ?? '');
   const [climateOnly, setClimateOnly] = useState(false);
   const products = rows(catalog.data?.products);
   const sizes = rows(catalog.data?.sizes);
-  const shown = useMemo(() => products.filter(product => productMatches(product, query.trim(), size, climateOnly)).sort((left, right) => Number(left.monthlyPrice ?? 0) - Number(right.monthlyPrice ?? 0)), [products, query, size, climateOnly]);
+  const shown = useMemo(() => products.filter(product => productMatches(product, query.trim(), size, climateOnly)).sort((left, right) => (typeof left.monthlyPrice === 'number' ? left.monthlyPrice : Infinity) - (typeof right.monthlyPrice === 'number' ? right.monthlyPrice : Infinity)), [products, query, size, climateOnly]);
   return <FlatList
     data={catalog.loading || catalog.error ? [] : shown}
     keyExtractor={item => text(item, 'id')}
@@ -32,7 +32,7 @@ export default function StorageDiscoveryScreen() {
     contentContainerStyle={styles.page}
     refreshControl={<RefreshControl refreshing={catalog.loading && Boolean(catalog.data)} onRefresh={catalog.refresh} tintColor={WdpColors.teal} />}
     ListHeaderComponent={<View style={{ gap: WdpSpacing.sm }}>
-      <PageHeader eyebrow="Tìm kho" title="Chọn loại kho phù hợp" description="Thông tin loại kho, giá tham khảo và khả dụng được lấy từ catalog WDP. Số kho thực tế được kiểm tra lại theo ngày thuê." />
+      <PageHeader eyebrow="Tìm kho" title="Chọn loại kho phù hợp" description="Thông tin loại kho, giá tham khảo và khả dụng được lấy từ danh mục NestBox. Số kho thực tế được kiểm tra lại theo ngày thuê." />
       <Field title="Tìm theo tên hoặc kích thước" value={query} onChange={setQuery} maxLength={80} />
       <View style={local.chips}><FilterChip title="Tất cả kích thước" selected={!size} onPress={() => setSize('')} />{sizes.map(item => <FilterChip key={text(item, 'id')} title={text(item, 'name')} selected={size === text(item, 'id')} onPress={() => setSize(text(item, 'id'))} />)}<FilterChip title="Có điều hòa" selected={climateOnly} onPress={() => setClimateOnly(value => !value)} /></View>
       {catalog.loading && !catalog.data ? <LoadingState label="Đang tải loại kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <Text style={styles.copy}>{shown.length} loại kho phù hợp</Text>}
@@ -52,7 +52,7 @@ function StorageTypeCard({ product, size }: { product: Row; size?: Row }) {
   const condition = text(product, 'condition');
   return <Pressable accessibilityRole="button" accessibilityLabel={`Chọn ${text(product, 'name')}`} onPress={() => router.push({ pathname: '/customer/booking', params: { product: id } })} style={({ pressed }) => [local.card, pressed && { opacity: 0.76 }]}>
     <View style={local.cardHeading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={local.code}>{text(product, 'code')}</Text><Text style={local.name}>{text(product, 'name')}</Text></View><View style={local.tag}><Text style={local.tagText}>{condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</Text></View></View>
-    <View style={local.facts}><Fact title="Kích thước" value={text(size ?? {}, 'dimensions', 'floorArea') || 'Xem khi đặt kho'} /><Fact title="Thuê tối thiểu" value={`${text(product, 'minRentalDays') || '—'} ngày`} /><Fact title="Từ mỗi tháng" value={typeof product.monthlyPrice === 'number' ? formatMoney(product.monthlyPrice) : 'Nhận báo giá'} /></View>
+    <View style={local.facts}><Fact title="Kích thước" value={text(product, 'dimensions', 'floorArea') || text(size ?? {}, 'dimensions', 'floorArea') || 'Xem khi đặt kho'} /><Fact title="Thuê tối thiểu" value={`${text(product, 'minRentalDays') || '—'} ngày`} /><Fact title="Từ mỗi tháng" value={typeof product.monthlyPrice === 'number' ? formatMoney(product.monthlyPrice) : 'Nhận báo giá'} /></View>
     <Text style={local.action}>Chọn loại kho và kiểm tra khả dụng ›</Text>
   </Pressable>;
 }

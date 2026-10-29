@@ -1,13 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { networkInterfaces } from 'node:os';
+import { corsOrigins } from './cors-origins.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
   const configuredOrigin = process.env.FRONTEND_URL;
   app.enableCors({
-    origin: configuredOrigin ? configuredOrigin.split(',').map((origin) => origin.trim()) : ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: corsOrigins(configuredOrigin, process.env.NODE_ENV !== 'production', Object.values(networkInterfaces()).flatMap(entries => (entries ?? []).map(entry => entry.address))),
   });
   const swaggerConfig = new DocumentBuilder()
     .setTitle('WDP Storage API')

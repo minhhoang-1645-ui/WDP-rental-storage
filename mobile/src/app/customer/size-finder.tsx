@@ -5,9 +5,9 @@ import { router } from 'expo-router';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
-import { rows, text, type Row } from '@/operations/model';
+import { rows, text } from '@/operations/model';
 import { Button, styles } from '@/operations/ui';
-import { useResource } from '@/operations/use-resource';
+import { usePublicCatalog } from '@/hooks/use-public-catalog';
 
 const assumptions = [
   { id: 'box', title: 'Thùng carton', area: 0.12, note: 'Giả định thùng xếp chồng an toàn.' },
@@ -21,17 +21,17 @@ const assumptions = [
 function areaFrom(value: string) { const number = Number(value.replace(',', '.').match(/[\d.]+/)?.[0]); return Number.isFinite(number) ? number : null; }
 
 export default function SizeFinderScreen() {
-  const catalog = useResource<Row>('/booking/catalog');
+  const catalog = usePublicCatalog();
   const [counts, setCounts] = useState<Record<string, number>>({});
   const required = assumptions.reduce((sum, item) => sum + item.area * (counts[item.id] ?? 0), 0) * 1.25;
   const sizes = rows(catalog.data?.sizes).map(size => ({ ...size, area: areaFrom(text(size, 'floorArea')) })).filter(size => size.area !== null).sort((a, b) => Number(a.area) - Number(b.area));
   const recommended = useMemo(() => sizes.find(size => Number(size.area) >= required), [required, sizes]);
   return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Tìm kích thước" title="Ước tính kho bạn cần" description="Đây là ước tính diện tích sàn để chọn nhóm kho. Kích thước, giá và khả dụng chính thức được WDP xác nhận ở bước đặt kho." />
+    <PageHeader eyebrow="Tìm kích thước" title="Ước tính kho bạn cần" description="Đây là ước tính diện tích sàn để chọn nhóm kho. Kích thước, giá và khả dụng chính thức được NestBox xác nhận ở bước đặt kho." />
     {catalog.loading && !catalog.data ? <LoadingState label="Đang tải kích thước kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
       <View style={local.list}>{assumptions.map(item => <View key={item.id} style={local.item}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text style={local.itemTitle}>{item.title}</Text><Text style={local.itemNote}>{item.note}</Text></View><View style={local.counter}><Pressable accessibilityRole="button" accessibilityLabel={`Giảm ${item.title}`} disabled={!counts[item.id]} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.max(0, (value[item.id] ?? 0) - 1) }))} style={local.counterButton}><Text style={local.counterText}>−</Text></Pressable><Text accessibilityLabel={`Số lượng ${item.title}`} style={local.count}>{counts[item.id] ?? 0}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Tăng ${item.title}`} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.min(50, (value[item.id] ?? 0) + 1) }))} style={local.counterButton}><Text style={local.counterText}>+</Text></Pressable></View></View>)}</View>
-      <View style={local.result}><Text style={local.resultLabel}>Diện tích ước tính (đã gồm 25% lối đi)</Text><Text style={local.resultValue}>{required ? `${required.toFixed(1)} m²` : 'Chọn đồ cần lưu'}</Text>{required ? recommended ? <><Text style={local.resultCopy}>Gợi ý: {text(recommended, 'name')} · {text(recommended, 'floorArea', 'dimensions')}.</Text><Button title="Xem loại kho phù hợp" onPress={() => router.push({ pathname: '/customer/discover', params: { size: text(recommended, 'id') } })} /></> : <Text style={local.resultCopy}>Danh mục hiện không có nhóm kho nào đủ diện tích ước tính. Vui lòng liên hệ WDP để được tư vấn.</Text> : <Text style={local.resultCopy}>Kết quả chỉ là định hướng. Đồ cồng kềnh, không xếp chồng hoặc cần lối đi rộng có thể cần kho lớn hơn.</Text>}</View>
-      {!sizes.length && <EmptyState title="Thiếu dữ liệu kích thước" message="Catalog chưa trả về diện tích sàn để so sánh. WDP cần cung cấp sizes[].floorArea dạng m²." />}
+      <View style={local.result}><Text style={local.resultLabel}>Diện tích ước tính (đã gồm 25% lối đi)</Text><Text style={local.resultValue}>{required ? `${required.toFixed(1)} m²` : 'Chọn đồ cần lưu'}</Text>{required ? recommended ? <><Text style={local.resultCopy}>Gợi ý: {text(recommended, 'name')} · {text(recommended, 'floorArea', 'dimensions')}.</Text><Button title="Xem loại kho phù hợp" onPress={() => router.push({ pathname: '/customer/discover', params: { size: text(recommended, 'id') } })} /></> : <Text style={local.resultCopy}>Danh mục hiện không có nhóm kho nào đủ diện tích ước tính. Vui lòng liên hệ NestBox để được tư vấn.</Text> : <Text style={local.resultCopy}>Kết quả chỉ là định hướng. Đồ cồng kềnh, không xếp chồng hoặc cần lối đi rộng có thể cần kho lớn hơn.</Text>}</View>
+      {!sizes.length && <EmptyState title="Thiếu dữ liệu kích thước" message="Catalog chưa trả về diện tích sàn để so sánh. Vui lòng liên hệ hỗ trợ để được tư vấn kích thước." />}
     </>}
   </ScrollView>;
 }

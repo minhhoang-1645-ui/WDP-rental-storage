@@ -2,6 +2,7 @@ import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@ne
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { BookingAvailabilityRequestDto, GuestInquiryRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { BookingService } from './booking.service.js';
 
@@ -27,12 +28,13 @@ export class BookingController {
   }
 
   @Post('reservations')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Tạo Reservation', description: 'Bearer required. CUSTOMER tạo yêu cầu của mình; Reservation bắt đầu ở PENDING, không phải thanh toán, hợp đồng hay gán kho vật lý.' })
+  @ApiOperation({ summary: 'Tạo Reservation', description: 'CUSTOMER tạo đơn; hệ thống kiểm tra lại khả dụng rồi thử xác nhận tự động để tạo phân bổ, hợp đồng và hóa đơn. Khách cần ký đủ hợp đồng và thanh toán trước khi nhận kho. Ngoại lệ có thể còn PENDING. Yêu cầu lặp cùng dữ liệu được khử trùng trên server.' })
   @ApiBody({ type: BookingAvailabilityRequestDto, examples: { payLater: { summary: 'Reservation chờ xử lý', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], note: 'Liên hệ vào buổi sáng.', paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' } } } })
-  @ApiCreatedResponse({ description: 'Tạo PENDING Reservation. Yêu cầu lặp lại cùng dữ liệu trả về record hiện hữu để chống double-submit.', schema: { example: { id: 'WDP-2026-AB12CD34', status: 'PENDING', productId: 'sm-b12', startDate: '2026-11-01', endDate: '2027-02-01', endDateExclusive: '2027-02-01', quantity: 1, paymentChoice: 'pay-later', paymentStatus: 'NOT_STARTED', unitAssignment: null, persistence: 'DATABASE' } } })
+  @ApiCreatedResponse({ description: 'Đơn hiện hữu hoặc đơn mới sau khi thử xác nhận tự động. Đọc status, hạn giữ và hóa đơn từ phản hồi; CONFIRMED chưa đồng nghĩa đã thanh toán hay đã bàn giao.' })
   @ApiBadRequestResponse({ description: 'Payload không hợp lệ hoặc pay-now chưa được hỗ trợ.' })
   @ApiConflictResponse({ description: 'Kho không đủ cho toàn bộ kỳ thuê khi backend kiểm tra lại.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
@@ -52,7 +54,8 @@ export class BookingController {
   }
 
   @Get('reservations')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
   @ApiOperation({ summary: 'Danh sách Reservation của khách hàng', description: 'Bearer required. CUSTOMER chỉ nhận Reservation thuộc về chính mình.' })
@@ -63,10 +66,11 @@ export class BookingController {
   }
 
   @Get('reservations/:id')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('CUSTOMER', 'STAFF', 'MANAGER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'Bearer required. CUSTOMER chỉ xem Reservation của mình; MANAGER và ADMIN có thể xem để vận hành.' })
+  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'CUSTOMER chỉ xem đơn của mình; STAFF và MANAGER có thể đối chiếu để vận hành. ADMIN không có quyền nghiệp vụ thuê kho.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34', description: 'Reservation reference hoặc database id.' })
   @ApiOkResponse({ description: 'Reservation chi tiết.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })

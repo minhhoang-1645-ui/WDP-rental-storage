@@ -265,6 +265,8 @@ function fixtures() {
 }
 async function setup(initialRole, authenticated = true) {
   const data = fixtures();
+  for (const contract of data.customer.contracts) contract.terms = { version: 'TEST-V1', acceptedAt: '2026-10-01T00:00:00Z', acceptanceName: 'Khách kiểm thử', document: {}, snapshotHash: 'fixture-hash', signatureImage: null };
+
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
     timezoneId: "UTC",
@@ -465,7 +467,7 @@ async function setup(initialRole, authenticated = true) {
       return send(created);
     }
     reads.push({ role, path: actualPath, page: Number(url.searchParams.get("page") ?? 1) });
-    if (path === "customer/payment-config") return send({ configured: true, bankName: "Ngân hàng kiểm thử", bankCode: "970436", accountNumber: "123456789", accountName: "WDP STORAGE" });
+    if (path === "customer/payment-config") return send({ vnpayConfigured: true, configured: true, bankName: "Ngân hàng kiểm thử", bankCode: "970436", accountNumber: "123456789", accountName: "WDP STORAGE" });
     if (path === "payments/vnpay/return") return send({ valid: true, transaction: { merchantOrderRef: "WDP-VNPAY-TEST", status: "SUCCESS", amount: 2000000 }, invoice: { invoiceCode: "INV-0", status: "PAID" }, providerResponseCode: "00" });
     if (path === "reservations") return send(data.reservations);
     if (path.startsWith("reservations/"))
@@ -721,7 +723,7 @@ try {
     .getByRole("button", { name: "Gửi kết quả để nghiệm thu", exact: true })
     .click();
   await staff.page
-    .getByText("Đang chờ nhân viên phụ trách nghiệm thu. Kho vẫn ở trạng thái bảo trì.", {
+    .getByText("Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.", {
       exact: true,
     })
     .waitFor();
@@ -747,7 +749,14 @@ try {
   await open(staff.page, "/staff/appointments/handover-id");
   assert(await staff.page.getByRole('button', { name: 'Hoàn tất bàn giao', exact: true }).isDisabled(), 'Future handover cannot be completed');
   staff.data.staff.appointments[0].scheduledAt = when;
+
   await open(staff.page, "/staff/appointments/handover-id");
+  await staff.page.getByLabel('Người nhận kho', { exact: true }).fill('Khách nhận kho');
+  await staff.page.getByLabel('Hiện trạng cửa, khóa, tường, sàn và thiết bị').fill('Kho sạch, khóa hoạt động.');
+  await staff.page.getByLabel('Số chìa khóa/thẻ đã giao').fill('1');
+  await staff.page.getByLabel('Đã đối chiếu người nhận kho').check();
+  await staff.page.getByLabel('Đã kiểm tra đúng mã kho và hiện trạng từng kho').check();
+  await staff.page.getByLabel('Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập').check();
   await staff.page
     .getByLabel("Đã bàn giao thực tế đầy đủ các kho trong lịch này", {
       exact: true,
@@ -880,7 +889,7 @@ try {
   }
   await open(customer.page, "/customer/payments");
   await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
-  await customer.page.waitForURL((url) => url.pathname === "/customer/appointments");
+  await customer.page.waitForURL((url) => url.pathname === "/customer/contracts");
   await open(customer.page, "/customer/payments/vnpay-return?transactionId=online-payment-id");
   await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));

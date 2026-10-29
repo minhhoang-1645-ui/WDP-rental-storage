@@ -1,5 +1,5 @@
 import { isEarlyReturnRequest } from '@/utils/early-return';
-import { canOperateResource } from '@/utils/operation-access';
+import { canAccessManagerReview } from '@/utils/manager-review-access';
 import { idOf, label, options, rows, text, type Row } from './model';
 import type { FormAction, FormField } from './form';
 import { firstIssue as renewalReviewIssue } from './renewal-validation';
@@ -44,10 +44,14 @@ export function createAction(resource: string): FormAction | undefined {
 }
 
 export function recordActions(resource: string, row: Row, role: string): FormAction[] {
-  if (!canOperateResource(role, resource) || resource === 'support-requests' && isEarlyReturnRequest(row)) return [];
+  if (!canAccessManagerReview(role, resource) || resource === 'support-requests' && isEarlyReturnRequest(row)) return [];
   const root = `/manager/${resource}/${encodeURIComponent(idOf(row))}`;
   const actions: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], method: 'POST' | 'PATCH' = 'POST', idempotent = false, description?: string) => actions.push({ title, path: root + suffix, method, fields: [...fields, confirm()], idempotent, description });
+  if (role === 'MANAGER' && resource === 'online-payment-reconciliations') {
+    if (row.status === 'PENDING_REVIEW') add('Xử lý đối soát VNPay', '/resolve', [select('resolution', 'Kết quả', ['REFUND_REQUIRED', 'RECONCILED']), note('resolutionNote', 'Căn cứ đối soát', true, 2000)], 'POST', false, 'Không tự chuyển tiền hoặc kích hoạt lại đơn đã hết hiệu lực.');
+    if (row.status === 'REFUND_REQUIRED') actions.push({ title: 'Ghi nhận đã hoàn tiền VNPay', path: root + '/resolve', method: 'POST', fields: [{ name: 'refundReference', title: 'Mã giao dịch hoàn tiền thực tế', required: true, minLength: 2, maxLength: 200 }, note('resolutionNote', 'Ghi chú đối soát', true, 2000), { name: 'refundConfirmed', title: 'Tôi đã hoàn tiền và đối chiếu chứng từ thực tế', checkbox: true, required: true }], transform: input => ({ ...input, resolution: 'RECONCILED' }) });
+  }
   if (resource === 'reservations' && row.status === 'PENDING') add('Xử lý yêu cầu đặt kho', '/status', [select('status', 'Quyết định', ['CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'])], 'PATCH', false, 'Xác nhận sẽ kiểm tra toàn kỳ và phân bổ đủ số kho.');
   if (resource === 'inquiries' && row.requestType !== 'RESERVATION') add('Cập nhật liên hệ', '', [select('status', 'Trạng thái liên hệ', ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'], text(row, 'status')), { ...note('internalNotes', 'Ghi chú nội bộ', false, 2000), initial: text(row, 'internalNotes') }], 'PATCH');
   if (resource === 'appointments' && row.status === 'REQUESTED') add('Xác nhận lịch bàn giao', '/confirm', [], 'PATCH');
@@ -67,14 +71,14 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     if (!row.isDemo) add('Xác nhận đã nhận chuyển khoản', '/verify', [{ name: 'reference', title: 'Mã giao dịch ngân hàng đã đối chiếu', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 1000)], 'POST', false, 'Chỉ xác nhận sau khi đã đối chiếu và nhận đủ khoản gửi.');
     add('Từ chối thông báo chuyển khoản', '/reject', [note('reason', 'Lý do từ chối', true, 1000)]);
   }
-  if (['maintenance', 'support-requests'].includes(resource) && !['COMPLETED', 'RESOLVED'].includes(String(row.status))) {
+  if (role === 'MANAGER' && ['maintenance', 'support-requests'].includes(resource) && !['COMPLETED', 'RESOLVED'].includes(String(row.status))) {
     add('Đổi mức ưu tiên', '/priority', [select('priority', 'Ưu tiên', priorities, text(row, 'priority'))], 'PATCH', true);
   }
-  if (resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION') {
+  if (role === 'MANAGER' && resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION') {
     add('Nghiệm thu bảo trì', '/verify', [note()], 'POST', true, 'Xác nhận sửa chữa thực tế; Kho trở lại trạng thái sẵn sàng sau nghiệm thu.');
     add('Yêu cầu sửa lại', '/reject-verification', [note('note', 'Yêu cầu sửa lại', true)], 'POST', true);
   }
-  if (resource === 'support-requests' && row.status === 'ESCALATED') add('Giải quyết hỗ trợ', '/resolve', [select('resolutionType', 'Hướng xử lý', ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], 'MANAGER_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true)], 'POST', true);
+  if (role === 'MANAGER' && resource === 'support-requests' && row.status === 'ESCALATED') add('Giải quyết hỗ trợ', '/resolve', [select('resolutionType', 'Hướng xử lý', ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], 'MANAGER_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true)], 'POST', true);
   if (resource === 'transfers' && row.status === 'REQUESTED') {
     add('Duyệt chuyển kho', '/approve', [{ name: 'toStorageUnitId', title: 'Kho đích cùng loại', required: true, optionsPath: `/manager/units?status=AVAILABLE&storageType=${encodeURIComponent(text(row, 'fromUnit.storageType.id'))}`, optionsAccept: item => item.status === 'AVAILABLE' && idOf(item) !== text(row, 'fromUnit.id'), optionLabel: item => `${text(item, 'unitCode')} · ${text(item, 'floor')} · ${text(item, 'zone')}` }]);
     add('Từ chối chuyển kho', '/reject');

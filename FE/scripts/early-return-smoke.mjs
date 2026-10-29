@@ -18,7 +18,7 @@ async function open(role, width, path, mobile = false) {
     const send = (json, status = 200) => route.fulfill({ json, status });
     if (method === 'OPTIONS') return route.fulfill({ status: 204 });
     if (path === 'auth/me') return send({ ...(role === 'CUSTOMER' ? customer : staff), role, id: role === 'CUSTOMER' ? customer.id : role.toLowerCase() + '-id', accountStatus: 'ACTIVE' });
-    if (path === 'customer/payment-config') return send({ configured: false });
+    if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: false });
     if (path === 'reservations') return send([]);
     if (method === 'GET') {
       if (kind === 'early-return-requests') return send({ page: 1, limit: 100, total: proposals.length, items: review() });

@@ -25,6 +25,7 @@ export interface PricingQuote {
   dailyUnitPrice: string | null;
   baseRentalAmount: number;
   discountPercent: number;
+  prepaidDiscountPercent: number;
   discountAmount: number;
   rentalAmount: number;
   depositAmount: number;
@@ -35,6 +36,7 @@ export interface PricingQuote {
   rentalAddOnAmount: number;
   addOnTotalAmount: number;
   estimatedInitialAmountDue: number;
+  initialPaymentBreakdown: { rentalAmount: number; depositAmount: number; purchaseAddOnAmount: number; rentalAddOnAmount: number; totalAmount: number; remainingAmount: number; periodStart: string; periodEnd: string };
   services: Array<{ serviceId: string; code: string; name: string; kind: 'PURCHASE' | 'RENTAL'; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; quantity: number; serviceStartDate: string | null; serviceEndDate: string | null; amount: number }>;
   status: 'PRICED';
   periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_APPROVED';

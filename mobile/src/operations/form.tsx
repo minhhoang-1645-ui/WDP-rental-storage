@@ -7,7 +7,7 @@ import { useResource } from './use-resource';
 import { useDraftGuard } from '@/services/live-events';
 
 export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; checkbox?: boolean; clientOnly?: boolean }
-export interface FormAction { title: string; path: string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
+export interface FormAction { title: string; path: string; resolvePath?: (input: Row) => string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
 
 function Input({ field, value, onChange, busy }: { field: FormField; value: string; onChange: (value: string) => void; busy: boolean }) {
   const [search, setSearch] = useState('');
@@ -43,7 +43,7 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
       const validation = action.validate?.(input);
       if (validation) { setError(validation); return; }
       lock.current = true; setBusy(true); setError('');
-      const result = await operationMutate(action.path, action.method, object(input), action.idempotent); onSaved(result);
+      const result = await operationMutate(action.resolvePath?.(data) ?? action.path, action.method, object(input), action.idempotent); onSaved(result);
     }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thực hiện được thao tác.'); }
     finally { lock.current = false; setBusy(false); }

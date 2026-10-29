@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -12,7 +12,12 @@ export abstract class UserRepository {
   abstract create(input: CreateStoredUser): Promise<StoredUser>;
   abstract list(offset: number, limit: number, filters?: UserListFilters): Promise<StoredUser[]>;
   abstract count(filters?: UserListFilters): Promise<number>;
-  abstract updateStatus(id: string, accountStatus: StoredUser['accountStatus']): Promise<StoredUser | null>;
+  abstract updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string): Promise<StoredUser | null>;
+}
+
+function assertStatusActor(actor: StoredUser | null | undefined, targetId: string, status: StoredUser['accountStatus']) {
+  if (!actor || actor.role !== 'ADMIN' || actor.accountStatus !== 'ACTIVE') throw new ForbiddenException('Phiên quản trị không còn quyền thay đổi tài khoản.');
+  if (actor.id === targetId && status === 'DISABLED') throw new BadRequestException('Bạn không thể vô hiệu hóa chính tài khoản đang đăng nhập.');
 }
 
 export class MemoryUserRepository extends UserRepository {
@@ -23,7 +28,8 @@ export class MemoryUserRepository extends UserRepository {
   async findById(id: string) { return this.users.get(id) ?? null; }
   async list(offset: number, limit: number, filters: UserListFilters = {}) { return this.filtered(filters).slice(offset, offset + limit); }
   async count(filters: UserListFilters = {}) { return this.filtered(filters).length; }
-  async updateStatus(id: string, accountStatus: StoredUser['accountStatus']) {
+  async updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string) {
+    if (actorId) assertStatusActor(this.users.get(actorId), id, accountStatus);
     const user = this.users.get(id); if (!user) return null;
     const updated = { ...user, accountStatus }; this.users.set(id, updated); return updated;
   }
@@ -52,7 +58,18 @@ export class PrismaUserRepository extends UserRepository {
     return users.map(user => ({ ...user, phone: user.phone ?? '' }));
   }
   async count(filters: UserListFilters = {}) { return this.prisma.user.count({ where: this.where(filters) }); }
-  async updateStatus(id: string, accountStatus: StoredUser['accountStatus']) {
+  async updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string) {
+    if (actorId) return this.prisma.$transaction(async tx => {
+      // Serialize administrator status changes, then recheck the actor inside the lock.
+      // Two administrators cannot concurrently disable one another and leave no active administrator.
+      await tx.$queryRawUnsafe('SELECT "id" FROM "User" WHERE "role" = \'ADMIN\' ORDER BY "id" FOR UPDATE');
+      const actor = await tx.user.findUnique({ where: { id: actorId } });
+      assertStatusActor(actor ? { ...actor, phone: actor.phone ?? '' } : null, id, accountStatus);
+      const target = await tx.user.findUnique({ where: { id }, select: { id: true } });
+      if (!target) return null;
+      const updated = await tx.user.update({ where: { id }, data: { accountStatus } });
+      return { ...updated, phone: updated.phone ?? '' };
+    });
     const exists = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!exists) return null;
     const user = await this.prisma.user.update({ where: { id }, data: { accountStatus } });

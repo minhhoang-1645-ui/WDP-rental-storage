@@ -1,4 +1,5 @@
 import {
+  Bell,
   History,
   ArrowRightLeft,
   CalendarClock,
@@ -28,6 +29,8 @@ import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
+import { useActivity } from '../../activity/context';
+import { actionCountForPath } from '../../utils/notification-tools';
 
 const navigation = [
   { to: "/customer", label: "Tổng quan", icon: LayoutDashboard, end: true },
@@ -56,6 +59,7 @@ const customerGroups = [
 
 export function CustomerLayout() {
   const { user, loading, logout } = useAuth();
+  const activity = useActivity();
   const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -162,7 +166,8 @@ export function CustomerLayout() {
         <nav className="customer-nav">
           <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Chọn kho & đặt thuê</Link>
           <NavLink to="/customer" end className="customer-nav-link" onClick={() => setMenuOpen(false)}><LayoutDashboard size={18} />Tổng quan</NavLink>
-          {customerGroups.map((group, index) => <NavigationGroup key={`${group.title}:${location.pathname}`} title={group.title} expanded={index === 0} active={group.paths.some(path => location.pathname.startsWith(path))}>
+          <NavLink to="/customer/notifications" className="customer-nav-link" onClick={() => setMenuOpen(false)}><Bell size={18} />Thông báo & việc cần làm</NavLink>
+          {customerGroups.map((group, index) => <NavigationGroup key={`${group.title}:${location.pathname}`} title={group.title} count={group.paths.reduce((total, path) => total + actionCountForPath(activity.entries, path), 0)} expanded={index === 0} active={group.paths.some(path => location.pathname.startsWith(path))}>
           {group.paths.map(path => navigation.find(item => item.to === path)!).map((item) => {
             const Icon = item.icon;
             return (
@@ -175,6 +180,7 @@ export function CustomerLayout() {
               >
                 <Icon size={18} />
                 {item.label}
+                {actionCountForPath(activity.entries, item.to) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, item.to)}</b>}
               </NavLink>
             );
           })}

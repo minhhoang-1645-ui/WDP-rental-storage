@@ -6,14 +6,14 @@ import { ActiveRentalsService, type ActiveRentalListQuery } from './active-renta
 
 @Controller('manager/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('MANAGER')
 @ApiTags('Manager Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class ManagerActiveRentalsController {
   constructor(private readonly rentals: ActiveRentalsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách Active Rental cho Manager/Admin' })
+  @ApiOperation({ summary: 'Danh sách Active Rental cho Manager' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
@@ -30,7 +30,7 @@ export class ManagerActiveRentalsController {
   }
 
   @Get(':reservationId')
-  @ApiOperation({ summary: 'Chi tiết Active Rental cho Manager/Admin' })
+  @ApiOperation({ summary: 'Chi tiết Active Rental cho Manager' })
   @ApiParam({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Customer, contracts, units, historical pricing, invoices và payment summary.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })

@@ -95,7 +95,7 @@ async function setup(role, mobile) {
         occupiedUnits: 1,
       });
     if (path === "manager/staff") return send(pageOf([staff], url));
-    if (path === "customer/payment-config") return send({ configured: false });
+    if (path === "customer/payment-config") return send({ vnpayConfigured: true, configured: false });
     if (path === "reservations") return send(data.reservations);
     if (path === "admin/users")
       return send(
@@ -212,7 +212,7 @@ try {
     );
     if (!mobile) {
       assert.equal(await app.page.locator('a[href^="/staff"]').count(), 0);
-      for (const kind of moved)
+      for (const kind of moved.filter(kind => !['support-requests', 'maintenance'].includes(kind)))
         assert.equal(
           await app.page
             .locator(
@@ -233,7 +233,7 @@ try {
       app.data["support-requests"][0].supportCode = "SUP-LIVE-UPDATED";
       await app.page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await app.page
-        .getByText("Có cập nhật mới trong hồ sơ.", { exact: false })
+        .getByText(/Vừa nhận \d+ cập nhật hồ sơ/)
         .waitFor();
       assert.equal(
         await app.page
@@ -353,7 +353,8 @@ try {
     null,
     "□ Tôi đã đối chiếu thông tin và báo giá gia hạn",
   );
-  await mobileAction("maintenance", "Nghiệm thu bảo trì", "/verify");
+  await open(mobile, '/staff/maintenance/maintenance-id', true);
+  assert.equal(await mobile.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).count(), 0);
   await mobileAction("transfers", "Từ chối chuyển kho", "/reject");
   await mobileAction(
     "returns",
@@ -380,7 +381,7 @@ try {
     true,
   );
   checks.push(
-    "Mobile Staff: all nine lists/details and nine forms use Staff endpoints; no assignment controls",
+    "Mobile Staff: all nine lists/details and permitted forms use Staff endpoints; Manager verification remains hidden; no assignment controls",
   );
   await mobile.context.close();
   for (const role of ["ADMIN", "CUSTOMER"]) {

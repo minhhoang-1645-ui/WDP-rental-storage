@@ -4,6 +4,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
+import { invoiceSigningRequirements } from './payment-eligibility.js';
 
 export interface InvoiceListQuery {
   page: number;
@@ -578,11 +579,10 @@ export class BillingService {
     if (end <= start) return 0n;
     if (service.billingUnitSnapshot === 'DAY') return service.unitPriceSnapshot * BigInt(service.quantity) * BigInt(Math.round((end.getTime() - start.getTime()) / 86400000));
     let amount = 0n;
-    let cursor = service.serviceStartDate;
+    let cursor = service.serviceStartDate, monthOffset = 0;
     while (cursor < service.serviceEndDate) {
-      const next = this.addCalendarMonths(cursor, 1);
       if (cursor >= periodStart && cursor < periodEnd) amount += service.unitPriceSnapshot * BigInt(service.quantity);
-      cursor = next;
+      cursor = this.addCalendarMonths(service.serviceStartDate, ++monthOffset);
     }
     return amount;
   }
@@ -663,7 +663,7 @@ export class BillingService {
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
       } },
       payments: { include: { recordedBy: { select: { id: true, fullName: true, role: true } } }, orderBy: { receivedAt: 'asc' as const } },
-      renewalRequest: { select: { id: true, renewalCode: true, status: true, quoteSnapshot: true } },
+      renewalRequest: { select: { id: true, renewalCode: true, status: true, quoteSnapshot: true, appendixAcceptedAt: true } },
       depositSettlement: { select: { id: true, settlementCode: true, status: true } },
     };
   }
@@ -683,6 +683,7 @@ export class BillingService {
     return {
       id: record.id,
       invoiceCode: record.invoiceCode,
+      signing: invoiceSigningRequirements(record),
       type: record.type,
       billingCycle: record.billingCycle,
       renewalCycle: record.renewalCycle,

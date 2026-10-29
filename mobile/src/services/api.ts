@@ -1,4 +1,6 @@
 import { fetch } from 'expo/fetch';
+import Constants from 'expo-constants';
+import { resolveApiBase } from './api-base';
 
 import { authStorage } from '@/services/auth-storage';
 import { userMessage } from '@/utils/user-message';
@@ -25,11 +27,7 @@ function rememberRole(token: string, role: string) {
   if (verifiedRoles.size > 8) verifiedRoles.delete(verifiedRoles.keys().next().value!);
 }
 
-const fallbackUrl = process.env.EXPO_OS === 'android'
-  ? 'http://10.0.2.2:3000/api'
-  : 'http://127.0.0.1:3000/api';
-
-export const apiUrl = (process.env.EXPO_PUBLIC_API_URL || fallbackUrl).replace(/\/$/, '');
+export const apiUrl = resolveApiBase({ configured: process.env.EXPO_PUBLIC_API_URL, hostUri: Constants.expoConfig?.hostUri, webHost: typeof window !== 'undefined' ? window.location?.hostname : undefined, platform: process.env.EXPO_OS, development: __DEV__ });
 
 export class ApiError extends Error {
   constructor(

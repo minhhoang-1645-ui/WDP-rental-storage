@@ -11,6 +11,8 @@ import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
 import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
+import { useActivity } from '../../activity/context';
+import { actionCountForPath } from '../../utils/notification-tools';
 const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
 export interface InternalNavItem {
   to: string;
@@ -30,6 +32,7 @@ export function InternalPortalLayout({
   pageNavigation?: Pick<InternalNavItem, "to" | "label" | "end">[];
 }) {
   const { user, logout } = useAuth();
+  const activity = useActivity();
   const location = useLocation();
   const navigate = useNavigate();
   const [navigationFilter, setNavigationFilter] = useState({ path: location.pathname, value: '' });
@@ -88,11 +91,12 @@ export function InternalPortalLayout({
         const matching = items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
         if (!matching.length) return null;
         const active = items.some(item => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
-        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
+        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} count={items.reduce((total, item) => total + actionCountForPath(activity.entries, item.to), 0)} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
           {matching.map(({ to, label: itemLabel, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end}>
               <Icon size={17} />
               <span>{itemLabel}</span>
+              {actionCountForPath(activity.entries, to) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, to)}</b>}
             </NavLink>
           ))}
         </NavigationGroup>;
@@ -137,7 +141,7 @@ export function InternalPortalLayout({
             </button>
             <span>{label}</span>
             <span className="portal-topbar-divider">/</span>
-            <strong>{active?.label ?? "Hồ sơ chi tiết"}</strong>
+            <strong>{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
             <ActivityBell />

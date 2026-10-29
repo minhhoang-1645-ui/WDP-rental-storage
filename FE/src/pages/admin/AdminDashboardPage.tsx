@@ -57,11 +57,11 @@ export function AdminDashboardPage() {
           Làm mới
         </button>
       </PageHeader>
-      <ActivitySummary />
       <WorkHub title="Quản lý truy cập" description="Tìm tài khoản, cấp tài khoản nhân viên/quản lý và kiểm tra trạng thái truy cập trong cùng một nơi." actions={[
         { title: 'Quản lý tài khoản', description: 'Tìm tên hoặc email; xem hồ sơ, tạo tài khoản nội bộ và bật/tắt truy cập.', to: '/admin/users', icon: Users },
         { title: 'Tra cứu nhân viên kho', description: 'Tìm nhân viên đang hoạt động, lấy mã tài khoản để quản lý phân công.', to: '/admin/users?role=STAFF', icon: ShieldCheck },
       ]} />
+      <ActivitySummary />
       <LoadState
         loading={!current}
         error={current?.error ?? ""}

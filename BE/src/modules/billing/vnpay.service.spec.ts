@@ -7,6 +7,7 @@ const config = { VNPAY_TMN_CODE: 'DEMO_TMN', VNPAY_HASH_SECRET: 'test-only-secre
 describe('VnpayService', () => {
   it('creates a signed sandbox URL and verifies the same provider payload', () => {
     const service = new VnpayService(new ConfigService(config));
+    expect(service.isConfigured()).toBe(true);
     const url = new URL(service.paymentUrl({ orderRef: 'WDPTEST0001', amount: 1250000n, ipAddress: '127.0.0.1', createdAt: new Date('2026-10-21T01:00:00.000Z') }));
     expect(url.origin).toBe('https://sandbox.vnpayment.vn');
     expect(url.searchParams.get('vnp_Amount')).toBe('125000000');
@@ -20,6 +21,15 @@ describe('VnpayService', () => {
 
   it('fails closed when VNPay configuration is incomplete', () => {
     const service = new VnpayService(new ConfigService({}));
+    expect(service.isConfigured()).toBe(false);
     expect(() => service.assertConfigured()).toThrow(ServiceUnavailableException);
+  });
+
+  it('does not advertise an online channel when any required setting is blank', () => {
+    for (const key of Object.keys(config)) {
+      const service = new VnpayService(new ConfigService({ ...config, [key]: '  ' }));
+      expect(service.isConfigured()).toBe(false);
+      expect(() => service.assertConfigured()).toThrow(ServiceUnavailableException);
+    }
   });
 });

@@ -20,6 +20,7 @@ import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
 import { paymentWindowClosed } from '@/utils/payment-state';
 import { isTransferRequest } from '@/utils/transfer-request';
+import { DocumentAcceptance } from '@/components/document-acceptance';
 
 function transferProgress(row: Row) {
   const transfer = isTransferRequest(row) ? rows(row.transfers)[0] : undefined;
@@ -87,9 +88,12 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
       {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && Boolean(row.expiresAt) && <WorkflowHint text={paymentWindowClosed({ type: 'INITIAL', reservation: row }, clock) ? 'Đã đến hạn giữ kho. Hãy kiểm tra lại trạng thái; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.' : `Thanh toán trước ${formatDate(String(row.expiresAt), true)} (UTC+7) để giữ kho.`} />}
-      {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && <Navigation title="Xem hóa đơn và thanh toán" path="/customer/invoices" />}
+      {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && <><Navigation title="Xem và ký các hợp đồng" path="/customer/contracts" /><Navigation title="Xem hóa đơn và thanh toán" path="/customer/invoices" /></>}
+      {role === 'CUSTOMER' && resource === 'contracts' && <DocumentAcceptance row={row} resource="contracts" onSaved={refresh} />}
+      {role === 'CUSTOMER' && resource === 'renewals' && Boolean(row.appendix) && <DocumentAcceptance row={row} resource="renewals" onSaved={refresh} />}
       {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
       <WorkflowHint text={workflowGuide(resource, row.status, role === 'CUSTOMER' ? 'customer' : 'staff')} />
+      {resource === 'returns' && (Number(text(row, 'inventory.remainingItemTypes')) > 0 || Number(text(row, 'inventory.pendingMovements')) > 0) && <Panel title="Cần hoàn tất giao nhận hàng"><Text style={styles.copy}>Còn {text(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {text(row, 'inventory.pendingMovements') || '0'} phiếu đang xử lý. Khách cần lấy hết hàng, nhân viên kiểm đếm trước khi nhận trả kho.</Text><Navigation title="Xem phiếu nhập – xuất" path={`${root}/stock-movements`} /></Panel>}
       {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'APPROVED_PENDING_PAYMENT' && <Navigation title="Xem hóa đơn & thanh toán gia hạn" path={rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)?.id ? `/customer/invoices/${encodeURIComponent(String(rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1)!.id))}` : '/customer/invoices'} />}
       {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'COMPLETED' && <Navigation title="Xem thời hạn thuê mới" path="/customer/rentals" />}
       {Boolean(transferProgress(row)) && <Panel title="Tiến độ chuyển kho"><Text style={styles.copy}>{transferProgress(row)}</Text><Text style={styles.copy}>{text(row, 'resolutionNote')}</Text></Panel>}

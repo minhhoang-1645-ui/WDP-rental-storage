@@ -1,7 +1,15 @@
-const labels: Record<string, string> = { documentType: 'Loại hồ sơ', version: 'Phiên bản', contractCode: 'Mã hợp đồng', reservationReference: 'Mã đặt kho', renewalCode: 'Mã gia hạn', customer: 'Khách hàng', fullName: 'Họ tên', email: 'Email', phone: 'Điện thoại', storage: 'Kho', name: 'Tên', unitCode: 'Mã kho', startDate: 'Ngày bắt đầu', endDate: 'Ngày kết thúc', previousEndDate: 'Hạn cũ', requestedEndDate: 'Hạn mới', quantity: 'Số lượng', pricing: 'Báo giá', services: 'Dịch vụ', contracts: 'Hợp đồng áp dụng', termMonths: 'Số tháng', paymentPlan: 'Kế hoạch thanh toán', quote: 'Chi tiết giá', currency: 'Tiền tệ', totalAmount: 'Tổng tiền', rentalAmount: 'Tiền thuê', depositAmount: 'Tiền cọc', discountAmount: 'Chiết khấu', discountPercent: 'Tỷ lệ chiết khấu', unitPrice: 'Đơn giá', amount: 'Thành tiền', billingUnit: 'Đơn vị tính', monthlyUnitPrice: 'Giá tháng', baseRentalAmount: 'Tiền thuê trước chiết khấu' };
-function Fields({ value }: { value: unknown }) {
-  if (Array.isArray(value)) return value.length ? <ol>{value.map((item, index) => <li key={index}><Fields value={item} /></li>)}</ol> : <span>Không có</span>;
-  if (value && typeof value === 'object') return <dl>{Object.entries(value).filter(([, item]) => item !== null && item !== undefined).map(([key, item]) => <div key={key}><dt>{labels[key] ?? key}</dt><dd><Fields value={item} /></dd></div>)}</dl>;
-  return <span>{typeof value === 'boolean' ? (value ? 'Có' : 'Không') : String(value ?? '—')}</span>;
+import { documentLabels, documentText } from '../../utils/document-display';
+import { QuoteBreakdown } from '../booking/QuoteBreakdown';
+import { serviceDisplayName } from '../../utils/service-labels';
+import type { PricingEstimate } from '../../types/booking';
+
+function Fields({ value, field = '' }: { value: unknown; field?: string }) {
+ if (Array.isArray(value)) return value.length ? <ol>{value.map((item,index)=><li key={index}><Fields value={item} /></li>)}</ol> : <span>Không có</span>;
+ if (value && typeof value==='object') {
+  const row=value as Record<string,unknown>;
+  if (Array.isArray(row.lineItems) && ('grandTotal' in row || 'quotedTotalAmount' in row)) return <QuoteBreakdown quote={row as unknown as PricingEstimate} />;
+  return <dl>{Object.entries(row).filter(([key,item])=>item!==null && item!==undefined && !['storageTypeId','serviceId'].includes(key)).map(([key,item])=><div key={key}><dt>{documentLabels[key]??key}</dt><dd><Fields field={key} value={key==='name'&&typeof item==='string'?serviceDisplayName(String(row.code??''),item):item} /></dd></div>)}</dl>;
+ }
+ return <span>{documentText(field,value)}</span>;
 }
-export function DocumentSnapshot({ value }: { value: unknown }) { return <section className="customer-panel"><h3>Thông tin xác nhận</h3><Fields value={value} /></section>; }
+export function DocumentSnapshot({ value }: {value:unknown}) { return <section className="customer-panel"><h3>Thông tin xác nhận</h3><Fields value={value} /></section>; }

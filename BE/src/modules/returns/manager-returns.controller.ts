@@ -10,7 +10,7 @@ const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'COMPLET
 @Controller(['manager/returns', 'staff/management/returns'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Return')
 @ApiBearerAuth('bearerAuth')
 export class ManagerReturnsController {

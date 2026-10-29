@@ -17,7 +17,7 @@ export class StaffReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho vận hành', description: 'STAFF/MANAGER/ADMIN. Không trả historical pricing hoặc billing amount.' })
+  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho vận hành', description: 'STAFF/MANAGER. Không trả historical pricing hoặc billing amount.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001' })

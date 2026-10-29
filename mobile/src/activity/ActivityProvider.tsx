@@ -18,12 +18,12 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
   const [state, setState] = useState<{ data: ActivityData; checkedAt: number; failed: string[]; checking: boolean; changed: boolean }>({ data: {}, checkedAt: 0, failed: [], checking: true, changed: false });
   const trigger = useRef<() => void>(() => {}), writeQueue = useRef(Promise.resolve());
   const refresh = useCallback(() => trigger.current(), []);
-  const markRead = useCallback((tokens: string[]) => setRead(previous => [...new Set([...previous, ...tokens])].slice(-128)), []);
+  const markRead = useCallback((tokens: string[]) => setRead(previous => [...new Set([...previous, ...tokens])].slice(-4096)), []);
   useEffect(() => {
     let active = true;
     activityStorage.get(storageKey).then(raw => {
       let stored: unknown = []; try { stored = JSON.parse(raw ?? '[]'); } catch { /* Ignore damaged read markers. */ }
-      if (active && Array.isArray(stored)) setRead(previous => [...new Set([...stored.filter((value): value is string => typeof value === 'string'), ...previous])].slice(-128));
+      if (active && Array.isArray(stored)) setRead(previous => [...new Set([...stored.filter((value): value is string => typeof value === 'string'), ...previous])].slice(-4096));
     }).catch(() => {}).finally(() => { if (active) setReadReady(true); });
     return () => { active = false; };
   }, [storageKey]);

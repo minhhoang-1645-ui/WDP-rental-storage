@@ -17,7 +17,7 @@ export class StaffAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách lịch vận hành bàn giao', description: 'STAFF/MANAGER/ADMIN. Không trả pricing internals.' })
+  @ApiOperation({ summary: 'Danh sách lịch vận hành bàn giao', description: 'STAFF/MANAGER. Không trả pricing internals.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001' })

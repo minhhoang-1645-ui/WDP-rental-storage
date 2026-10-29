@@ -61,7 +61,8 @@ describe('Early return approval with memory-only persistence', () => {
   it('prevents ordinary support transitions from modifying early-return approval state', async () => {
     const app = setup(); const prisma = { supportRequest: { findFirst: vi.fn(async () => ({ id: 'proposal' })) }, $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run({ ...app.tx, supportRequest: { ...app.tx.supportRequest, findUnique: vi.fn(async () => app.request) } })) };
     const support = new SupportService(prisma as unknown as PrismaService);
-    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'STAFF' })).rejects.toThrow('trả trước hạn');
+    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'STAFF' })).rejects.toThrow('Chỉ Manager');
+    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', app.actor)).rejects.toThrow('trả trước hạn');
     expect(app.tx.supportRequest.update).not.toHaveBeenCalled();
   });
   it('creates one whole-rental proposal and blocks duplicates while pending or approved', async () => {

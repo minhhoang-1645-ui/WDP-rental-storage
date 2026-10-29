@@ -53,6 +53,14 @@ function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' = 'PENDING
 }
 
 describe('OnlinePaymentService VNPay status and callbacks', () => {
+  it('does not open a payment session for a VOID invoice with an old positive balance', async () => {
+    const { service, prisma, tx } = fixture();
+    Object.assign(prisma, { invoice: { findFirst: vi.fn().mockResolvedValue({ id: 'invoice-1' }) } });
+    prisma.onlinePaymentTransaction.findUnique.mockResolvedValue(null);
+    tx.invoice.findUnique.mockResolvedValue({ id: 'invoice-1', type: 'INITIAL', status: 'VOID', balanceDue: 650000n, reservation: { id: 'reservation-1', customerId: 'customer-1', status: 'CONFIRMED', expiresAt: new Date(Date.now() + 60000) } });
+    await expect(service.create('invoice-1', {}, 'void-invoice-key-123456', customer, '127.0.0.1')).rejects.toThrow('Hóa đơn đã hủy');
+    expect(tx.onlinePaymentTransaction.create).not.toHaveBeenCalled();
+  });
   it('returns a stable customer-owned polling response', async () => {
     const { service, prisma } = fixture();
     prisma.onlinePaymentTransaction.findFirst.mockResolvedValue({

@@ -12,7 +12,7 @@ const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
 
 @Controller('manager')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('MANAGER')
 @ApiTags('Manager Billing')
 @ApiBearerAuth('bearerAuth')
 export class ManagerBillingController {
@@ -35,7 +35,7 @@ export class ManagerBillingController {
   }
 
   @Get('invoices')
-  @ApiOperation({ summary: 'Danh sách Invoice', description: 'MANAGER/ADMIN. INITIAL và RECURRING đều ở cấp Reservation, kể cả quantity > 1. PAY_MONTHLY 6 tháng có I01 + 5 kỳ recurring; PREPAID, DAILY và PAY_MONTHLY 1 tháng không có recurring.' })
+  @ApiOperation({ summary: 'Danh sách Invoice', description: 'MANAGER. INITIAL và RECURRING đều ở cấp Reservation, kể cả quantity > 1. PAY_MONTHLY 6 tháng có I01 + 5 kỳ recurring; PREPAID, DAILY và PAY_MONTHLY 1 tháng không có recurring.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
@@ -69,7 +69,7 @@ export class ManagerBillingController {
   }
 
   @Post('invoices/:invoiceId/payments')
-  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'MANAGER/ADMIN. Payment append-only. INITIAL paid mở handover; RENEWAL paid hoàn tất gia hạn; SETTLEMENT paid đủ tự đóng DepositSettlement khi không có refund.' })
+  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'MANAGER. Payment append-only. INITIAL paid mở handover; RENEWAL paid hoàn tất gia hạn; SETTLEMENT paid đủ tự đóng DepositSettlement khi không có refund.' })
   @ApiParam({ name: 'invoiceId', example: 'WDP-2026-AB12CD34-I01' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'payment-bank-ref-123', description: 'Khóa duy nhất 8–200 ký tự cho lần ghi nhận thanh toán.' })
   @ApiBody({ type: RecordPaymentRequestDto, examples: {
@@ -88,7 +88,7 @@ export class ManagerBillingController {
   }
 
   @Get('payments')
-  @ApiOperation({ summary: 'Danh sách Payment', description: 'MANAGER/ADMIN; stable sorting theo receivedAt.' })
+  @ApiOperation({ summary: 'Danh sách Payment', description: 'MANAGER; stable sorting theo receivedAt.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'BANK-REF-123' })
@@ -113,7 +113,7 @@ export class ManagerBillingController {
   }
 
   @Get('payment-submissions')
-  @ApiOperation({ summary: 'Danh sách thông báo chuyển khoản cần xác minh', description: 'PaymentSubmission đang chờ không phải Payment đã ghi nhận. Chỉ Manager/Admin.' })
+  @ApiOperation({ summary: 'Danh sách thông báo chuyển khoản cần xác minh', description: 'PaymentSubmission đang chờ không phải Payment đã ghi nhận. Chỉ Manager.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'status', required: false, enum: ['PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'] })

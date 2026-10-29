@@ -10,12 +10,13 @@ import { RecordView } from './record-view';
 import { MetricCard } from '@/components/metric-card';
 import { ActivitySummary } from '@/activity/ActivityCenter';
 import { useActivity } from '@/activity/context';
-import { awaitingAssignment, isOverdueInvoice } from '@/utils/work-queue';
+import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from '@/utils/work-queue';
 import { formatMoney } from '@/utils/format';
 import { activitySources } from '@/utils/activity';
 
 const operationGroups = [
-  { title: 'Thanh toán & hợp đồng', keys: ['payment-submissions', 'invoices', 'contracts', 'payments'] },
+  { title: 'Thanh toán & hợp đồng', keys: ['payment-submissions', 'online-payment-reconciliations', 'invoices', 'contracts', 'payments', 'deposit-settlements'] },
+  { title: 'Xem xét & nghiệm thu', keys: ['support-requests', 'maintenance'] },
   { title: 'Kho & khách hàng', keys: ['rentals', 'units', 'customers', 'catalog', 'additional-services'] },
 ];
 const summaryMetrics = [
@@ -29,7 +30,7 @@ export function ManagerHome() {
   const count = (key: string) => typeof data.data?.[key] === 'number' ? data.data[key] as number : '—';
   const invoices = activity.data.invoices ?? [];
   const overdue = invoices.filter(row => isOverdueInvoice(row));
-  const unassigned = ['support-requests', 'maintenance', 'stock-movements'].flatMap(kind => (activity.data[kind] ?? []).filter(row => awaitingAssignment(kind, row)));
+  const unassigned = ['support-requests', 'maintenance', 'stock-movements'].flatMap(kind => (activity.data[kind] ?? []).filter(row => assignmentNeedsAttention(kind, row)));
   const pendingPayments = (activity.data['payment-submissions'] ?? []).filter(row => row.status === 'PENDING_VERIFICATION');
   const sourceCount = (kinds: string[], value: number) => activity.loading || kinds.some(kind => !activity.data[kind] || activity.failed.includes(activitySources('MANAGER').find(source => source.kind === kind)!.title)) ? '—' : value;
   const refresh = () => { data.refresh(); activity.refresh(); };
@@ -38,9 +39,10 @@ export function ManagerHome() {
     <Button title="Làm mới tổng quan" onPress={refresh} disabled={data.loading || activity.checking} />
     <ActivitySummary />
     <WorkHub title="Việc cần xử lý" description="Đi thẳng đến nhóm hồ sơ, xem chi tiết trước khi xác nhận." actions={[
-      { title: 'Phân công nhân viên', path: '/manager/assignments?assignment=unassigned', description: 'Giao hỗ trợ, bảo trì và nhập – xuất hàng cho nhân viên.', count: sourceCount(['support-requests', 'maintenance', 'stock-movements'], unassigned.length) },
+      { title: 'Phân công nhân viên', path: '/manager/assignments?assignment=attention', description: 'Giao người còn thiếu hoặc thay nhân viên đã vô hiệu hóa.', count: sourceCount(['support-requests', 'maintenance', 'stock-movements'], unassigned.length) },
       { title: 'Chờ xác nhận thanh toán', path: '/manager/payment-submissions', description: 'Kiểm tra thông báo chuyển khoản và khoản tiền thực nhận.', count: sourceCount(['payment-submissions'], pendingPayments.length) },
       { title: 'Hóa đơn & công nợ', path: '/manager/invoices', description: activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `${overdue.length} hóa đơn quá hạn. Kiểm tra hạn trả và lịch sử thu tiền.` : 'Kiểm tra số tiền còn phải thu, hạn trả và lịch sử thu tiền.', count: sourceCount(['invoices'], overdue.length) },
+      ...[['support-requests', 'Hỗ trợ cần quyết định', '/manager/support-requests?status=ESCALATED'], ['maintenance', 'Chờ nghiệm thu bảo trì', '/manager/maintenance?status=AWAITING_VERIFICATION'], ['deposit-settlements', 'Quyết toán tiền cọc', '/manager/deposit-settlements'], ['online-payment-reconciliations', 'Đối soát VNPay', '/manager/online-payment-reconciliations']].map(([kind, title, path]) => ({ title, path, description: 'Mở hồ sơ cần quản lý kiểm tra và xác nhận.', count: sourceCount([kind], (activity.data[kind] ?? []).filter(row => managerNeedsAction(kind, row) && !assignmentNeedsAttention(kind, row)).length) })),
     ]} />
     {data.error && <ErrorState message={data.error} onRetry={data.refresh} />}
     <Panel title="Theo dõi công nợ"><Text style={styles.copy}>{activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `Tổng dư nợ: ${formatMoney(invoices.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0))}. Quá hạn: ${formatMoney(overdue.reduce((sum, row) => sum + Number(row.balanceDue), 0))}.` : 'Chưa tải đủ hóa đơn để tổng hợp.'}</Text><Navigation title="Xem hóa đơn" path="/manager/invoices" /></Panel>

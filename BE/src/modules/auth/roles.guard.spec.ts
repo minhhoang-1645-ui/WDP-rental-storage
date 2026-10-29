@@ -5,6 +5,15 @@ import { RolesGuard } from './roles.guard.js';
 import { AdminUsersController } from './admin-users.controller.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
 
+it('keeps all four API workspaces bound to the authenticated role even with broad legacy metadata', () => {
+  const reflector = { getAllAndOverride: (name: string) => name === 'allowedRoles' ? ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] : undefined };
+  const guard = new RolesGuard(reflector as unknown as Reflector);
+  for (const scope of ['customer', 'staff', 'manager', 'admin']) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
+    const context = { getHandler: () => function handler() {}, getClass: () => AdminUsersController, switchToHttp: () => ({ getRequest: () => ({ originalUrl: `/api/${scope}/records`, method: 'GET', user: { role } }) }) } as unknown as ExecutionContext;
+    if (role === scope.toUpperCase()) expect(guard.canActivate(context)).toBe(true); else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  }
+});
+
 it('permits only an admin on the user directory', () => {
   const guard = new RolesGuard(new Reflector());
   for (const role of [undefined, 'CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {

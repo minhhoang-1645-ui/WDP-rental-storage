@@ -45,7 +45,7 @@ describe('Staff workflow ownership after role transfer', () => {
             if (role === 'STAFF' && !assignment) expect(guard.canActivate(staff)).toBe(true);
             else expect(() => guard.canActivate(staff)).toThrow(ForbiddenException);
             const legacy = context(controller, handler, role, `/api/manager/${resource}/record`, method);
-            if (['MANAGER', 'ADMIN'].includes(role ?? '') && (assignment ? method === 'PATCH' : method === 'GET')) expect(guard.canActivate(legacy)).toBe(true);
+            if (role === 'MANAGER' && (assignment ? ['PATCH', 'POST'].includes(method) : method === 'GET')) expect(guard.canActivate(legacy)).toBe(true);
             else expect(() => guard.canActivate(legacy)).toThrow(ForbiddenException);
           }
         }

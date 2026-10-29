@@ -6,14 +6,14 @@ import { ActiveRentalsService, type ActiveRentalListQuery } from './active-renta
 
 @Controller('staff/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Staff Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class StaffActiveRentalsController {
   constructor(private readonly rentals: ActiveRentalsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách Active Rental vận hành', description: 'STAFF/MANAGER/ADMIN. Không trả historical pricing hay chi tiết số tiền.' })
+  @ApiOperation({ summary: 'Danh sách Active Rental vận hành', description: 'STAFF/MANAGER. Không trả historical pricing hay chi tiết số tiền.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'MD-E06-001' })

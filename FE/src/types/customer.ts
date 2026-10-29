@@ -58,6 +58,7 @@ export interface CustomerRental {
 }
 
 export interface CustomerInvoice {
+  signing?: { required: boolean; complete: boolean; contracts: { id: string; code: string }[]; renewalId: string | null }
   id: string
   invoiceCode: string
   type: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT'
@@ -150,6 +151,7 @@ export interface CustomerSupportRequest {
 }
 
 export interface CustomerReturnRequest {
+  inventory?: { remainingItemTypes: number; pendingMovements: number }
   id: string
   returnCode: string
   status: 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED'

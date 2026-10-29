@@ -10,14 +10,14 @@ const statuses = ['PENDING_REVIEW', 'APPROVED', 'AWAITING_OUTSTANDING_PAYMENT', 
 
 @Controller('manager/deposit-settlements')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('MANAGER')
 @ApiTags('Manager Deposit Settlement')
 @ApiBearerAuth('bearerAuth')
 export class ManagerDepositSettlementsController {
   constructor(private readonly settlements: DepositSettlementsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách quyết toán deposit cho Manager/Admin' })
+  @ApiOperation({ summary: 'Danh sách quyết toán deposit cho Manager' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'RETURN-SM-001' })
   @ApiQuery({ name: 'status', required: false, enum: statuses })
@@ -34,7 +34,7 @@ export class ManagerDepositSettlementsController {
   get(@Param('id') id: string) { return this.settlements.getManager(id); }
 
   @Post(':id/review')
-  @ApiOperation({ summary: 'Duyệt trách nhiệm và charge của inspection issues', description: 'Manager/Admin only. Staff observation không tự phát sinh deduction. Charges vượt deposit tạo đúng một SETTLEMENT Invoice.' })
+  @ApiOperation({ summary: 'Duyệt trách nhiệm và charge của inspection issues', description: 'Manager only. Staff observation không tự phát sinh deduction. Charges vượt deposit tạo đúng một SETTLEMENT Invoice.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01-DS01' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'settlement-review-ab12cd34' })
   @ApiBody({ type: ReviewDepositSettlementRequestDto, examples: {

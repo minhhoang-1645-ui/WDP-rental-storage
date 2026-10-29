@@ -10,7 +10,7 @@ import { BookingService } from './booking.service.js';
 @Controller(['manager/reservations', 'staff/management/reservations'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER', 'ADMIN')
+@Roles('STAFF', 'MANAGER')
 @ApiTags('Manager Reservation')
 @ApiBearerAuth('bearerAuth')
 export class ManagerReservationsController {

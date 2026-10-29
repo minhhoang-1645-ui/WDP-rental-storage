@@ -22,6 +22,7 @@ import {
 } from "../../components/customer/CustomerPortalHelpers";
 import { useApiResource } from "../../services/useApiResource";
 import type { PendingReservation } from "../../types/booking";
+import { CustomerRentalProgress } from '../../components/customer/CustomerRentalProgress';
 
 export function CustomerReservationDetailPage() {
   const { id = "" } = useParams();
@@ -67,8 +68,9 @@ export function CustomerReservationDetailPage() {
         description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}. Theo dõi trạng thái yêu cầu và các bước tiếp theo.`}
         action={<ReservationStatus status={reservation.status} />}
       />
+      <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
       <div className="customer-detail-grid">
-        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'Hệ thống chưa thể xác nhận tự động và đã chuyển hồ sơ cho nhân viên kiểm tra ngoại lệ.' : reservation.status === 'CONFIRMED' ? 'Yêu cầu đặt kho đã được xác nhận. Vui lòng kiểm tra hóa đơn trong Thanh toán; sau khi thanh toán được xác nhận, bạn có thể đặt lịch nhận kho.' : 'Yêu cầu đã kết thúc xử lý. Xem trạng thái và nội dung hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
+        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
         <div className="customer-detail-content">
           <section className="customer-panel">

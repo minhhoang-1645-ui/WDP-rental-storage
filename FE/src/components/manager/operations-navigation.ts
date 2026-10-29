@@ -16,6 +16,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/transfers', label: 'Chuyển kho', icon: ShieldCheck, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/returns', label: 'Trả kho', icon: RefreshCcw, group: 'Giao nhận & thay đổi' },
   { to: '/manager/payment-submissions', label: 'Chờ xác nhận thanh toán', icon: Wallet, group: 'Thanh toán & hợp đồng' },
+  { to: '/manager/operations/deposit-settlements', label: 'Quyết toán cọc', icon: WalletCards, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/early-returns', label: 'Đề nghị trả trước hạn', icon: Undo2, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/online-payment-reconciliations', label: 'Đối soát VNPay', icon: ShieldAlert, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: WalletCards, group: 'Thanh toán & hợp đồng' },

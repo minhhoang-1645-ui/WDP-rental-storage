@@ -6,7 +6,7 @@ import { Roles, RolesGuard } from './roles.guard.js';
 
 @Controller('manager/staff')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'ADMIN')
+@Roles('MANAGER')
 @ApiBearerAuth('bearerAuth')
 @ApiTags('Staff Operations')
 export class StaffDirectoryController {

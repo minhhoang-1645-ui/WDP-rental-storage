@@ -6,7 +6,7 @@ import { launchTestBrowser } from './browser-test.mjs';
 
 const source = ts.transpileModule(await readFile(new URL('../src/catalog/public-catalog.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { publicCatalog, isFixtureProduct } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
-const raw = await fetch('http://127.0.0.1:3000/api/booking/catalog').then(response => { assert(response.ok); return response.json(); });
+const raw = await fetch((process.env.WDP_API_URL || 'http://127.0.0.1:3000/api') + '/booking/catalog').then(response => { assert(response.ok); return response.json(); });
 raw.products.find(product => !isFixtureProduct(product)).image = '/missing-photo-for-review.jpg';
 const catalog = publicCatalog(raw), checks = [], errors = [], blockedWrites = [], reservedImages = [];
 assert(catalog.products.length > 0);

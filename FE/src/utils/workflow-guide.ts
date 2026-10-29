@@ -15,7 +15,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
     },
     renewals: {
       PENDING: 'Yêu cầu gia hạn có ngoại lệ và đang được nhân viên kiểm tra. Kết quả sẽ được cập nhật tại đây.',
-      APPROVED_PENDING_PAYMENT: 'Yêu cầu gia hạn của bạn đã được duyệt. Vui lòng thanh toán hóa đơn gia hạn để hoàn tất và cập nhật thời hạn thuê.',
+      APPROVED_PENDING_PAYMENT: 'Yêu cầu gia hạn của bạn đã được duyệt. Vui lòng xem và ký phụ lục, sau đó thanh toán hóa đơn gia hạn để cập nhật thời hạn thuê.',
       COMPLETED: 'Gia hạn của bạn đã hoàn tất. Bạn có thể xem thời hạn mới trong Kho đang thuê.',
       REJECTED: 'Yêu cầu gia hạn chưa được chấp thuận. Vui lòng xem lý do trong hồ sơ hoặc gửi yêu cầu hỗ trợ.',
     },
@@ -50,7 +50,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
     },
     renewals: {
       PENDING: 'Hệ thống không thể duyệt tự động. Nhân viên đối chiếu hợp đồng, hạn cũ – mới và xung đột kho trước khi xử lý.',
-      APPROVED_PENDING_PAYMENT: 'Đã duyệt gia hạn. Khách hàng cần thanh toán hóa đơn kích hoạt; chỉ sau khi hệ thống xác nhận thanh toán thì kỳ gia hạn mới hoàn tất.',
+      APPROVED_PENDING_PAYMENT: 'Đã duyệt gia hạn. Khách hàng cần ký phụ lục và thanh toán hóa đơn kích hoạt; chỉ sau khi hệ thống xác nhận thanh toán thì kỳ gia hạn mới hoàn tất.',
       COMPLETED: 'Gia hạn đã hoàn tất. Xem kỳ thuê cập nhật trong hồ sơ kho đang thuê.',
       REJECTED: 'Yêu cầu đã bị từ chối. Khách hàng xem lý do và gửi hỗ trợ nếu cần giải thích.',
     },
@@ -63,15 +63,15 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
     },
     maintenance: {
       OPEN: 'Quản lý giao nhân viên phụ trách; nhân viên được giao có thể bắt đầu xử lý.',
-      IN_PROGRESS: 'Nhân viên xử lý và gửi kết quả sửa chữa cho nhân viên phụ trách nghiệm thu.',
-      AWAITING_VERIFICATION: 'Nhân viên đã gửi kết quả. Nhân viên phụ trách cần nghiệm thu; kho chưa tự chuyển sang sẵn sàng.',
-      COMPLETED: 'Nhân viên phụ trách đã nghiệm thu và hoàn tất công việc bảo trì.',
+      IN_PROGRESS: 'Nhân viên xử lý và gửi kết quả sửa chữa để quản lý nghiệm thu.',
+      AWAITING_VERIFICATION: 'Đã gửi kết quả, đang chờ quản lý nghiệm thu. Nhân viên theo dõi phản hồi; kho chưa chuyển sang sẵn sàng.',
+      COMPLETED: 'Quản lý đã nghiệm thu và hoàn tất công việc bảo trì.',
     },
     'support-requests': {
       OPEN: 'Yêu cầu đang chờ quản lý phân công người xử lý.',
       ASSIGNED: 'Nhân viên được giao bắt đầu hỗ trợ và cập nhật kết quả.',
-      IN_PROGRESS: 'Nhân viên đang xử lý; có thể ghi nhận kết quả hoặc chuyển nhân viên phụ trách khi cần quyết định.',
-      ESCALATED: 'Yêu cầu đã chuyển nhân viên phụ trách. Nhân viên phụ trách xem nội dung và quyết định cách giải quyết.',
+      IN_PROGRESS: 'Nhân viên đang xử lý; có thể ghi nhận kết quả hoặc chuyển quản lý khi cần quyết định.',
+      ESCALATED: 'Yêu cầu đã chuyển quản lý xem xét. Nhân viên theo dõi quyết định và phối hợp khi được yêu cầu.',
       RESOLVED: 'Yêu cầu đã được giải quyết. Khách hàng có thể xem kết quả xử lý trong hồ sơ.',
     },
     transfers: {

@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -9,7 +11,7 @@ const statuses = ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] as const;
 
 @Injectable()
 export class TransfersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   async create(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const rentalContractId = this.text(input.rentalContractId, 'rentalContractId');
@@ -159,11 +161,12 @@ export class TransfersService {
     const createIdempotencyKey = `TRANSFER:${transfer.id}`;
     if (await tx.maintenanceRequest.findUnique({ where: { activeKey } })) return;
     if (await tx.maintenanceRequest.findUnique({ where: { createIdempotencyKey } })) return;
+    const responsibility = await this.unitStaff?.resolveStaff(tx, [source.id]);
     await tx.maintenanceRequest.create({ data: {
       maintenanceCode: `${transfer.transferCode}-MNT`, storageUnitId: source.id, source: 'MANUAL',
       category: transfer.reason === 'FACILITY_EQUIPMENT_FAILURE' ? 'FACILITY_EQUIPMENT' : transfer.reason === 'OPERATIONAL_RELOCATION' ? 'CLEANING' : 'UNIT_DAMAGE',
       priority: 'MEDIUM', status: 'OPEN', description: `Kiểm tra kho ${transfer.fromStorageUnit.unitNumber} sau lệnh chuyển ${transfer.transferCode}.`,
-      reportedByUserId: actor.id, activeKey, createIdempotencyKey,
+      assignedStaffUserId: responsibility?.staffUserId, reportedByUserId: actor.id, activeKey, createIdempotencyKey,
     } });
   }
 

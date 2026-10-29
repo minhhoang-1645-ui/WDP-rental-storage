@@ -305,6 +305,8 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  unitResponsibilities         UnitStaffAssignment[] @relation("UnitStaffAssignee")
+  assignedUnitResponsibilities UnitStaffAssignment[] @relation("UnitStaffManager")
   id                          String                     @id @default(cuid())
   email                       String                     @unique
   passwordHash                String
@@ -406,6 +408,7 @@ model StorageType {
 }
 
 model StorageUnit {
+  staffAssignments    UnitStaffAssignment[]
   id                  String               @id @default(cuid())
   storageTypeId       String
   storageType         StorageType          @relation(fields: [storageTypeId], references: [id])
@@ -426,6 +429,21 @@ model StorageUnit {
 
   @@index([storageTypeId, status])
   @@index([storageTypeId, row, position])
+}
+
+model UnitStaffAssignment {
+  id               String      @id @default(cuid())
+  storageUnitId    String
+  storageUnit      StorageUnit @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  staffUserId      String
+  staff            User        @relation("UnitStaffAssignee", fields: [staffUserId], references: [id], onDelete: Restrict)
+  assignedByUserId String
+  assignedBy       User        @relation("UnitStaffManager", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt       DateTime    @default(now())
+  endedAt          DateTime?
+
+  @@index([storageUnitId, endedAt])
+  @@index([staffUserId, endedAt])
 }
 
 model ContactInquiry {

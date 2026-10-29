@@ -1,7 +1,7 @@
 export const staffWorkflows = ['reservations', 'inquiries', 'support-requests', 'appointments', 'stock-movements', 'renewals', 'transfers', 'returns', 'maintenance'] as const;
 export const staffLookups = ['units', 'contracts'] as const;
 export const isStaffWorkflow = (resource: string) => (staffWorkflows as readonly string[]).includes(resource);
-export const isManagerResource = (resource: string) => resource !== 'deposit-settlements' && !isStaffWorkflow(resource);
+export const isManagerResource = (resource: string) => !isStaffWorkflow(resource);
 export const canOperateResource = (role: string, resource: string) => role === 'STAFF'
   ? isStaffWorkflow(resource)
   : role === 'MANAGER' && isManagerResource(resource);

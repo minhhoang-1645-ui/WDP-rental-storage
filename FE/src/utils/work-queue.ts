@@ -46,7 +46,7 @@ export const staffWorkGroups = [
   {
     resource: "maintenance",
     title: "Bảo trì kho",
-    description: "Thực hiện sửa chữa được giao và nghiệm thu kết quả.",
+    description: "Thực hiện sửa chữa được giao và gửi kết quả chờ quản lý nghiệm thu.",
   },
 ] as const;
 
@@ -85,16 +85,9 @@ export function staffNeedsAction(
     case "stock-movements":
       return status === "ASSIGNED" && assignee(row) === userId;
     case "support-requests":
-      return !isEarlyReturnRequest(row) && (
-        status === "ESCALATED" ||
-        (["ASSIGNED", "IN_PROGRESS"].includes(status) &&
-          assignee(row) === userId)
-      );
+      return !isEarlyReturnRequest(row) && ["ASSIGNED", "IN_PROGRESS"].includes(status) && assignee(row) === userId;
     case "maintenance":
-      return (
-        status === "AWAITING_VERIFICATION" ||
-        (["OPEN", "IN_PROGRESS"].includes(status) && assignee(row) === userId)
-      );
+      return ["OPEN", "IN_PROGRESS"].includes(status) && assignee(row) === userId;
     default:
       return false;
   }
@@ -107,6 +100,25 @@ export function awaitingAssignment(resource: string, row: WorkRow) {
     ["OPEN", "REQUESTED"].includes(String(row.status)) &&
     !assignee(row)
   );
+}
+
+/** Disabled assignees need an explicit replacement; their work is never silently reassigned. */
+export function assignmentNeedsAttention(resource: string, row: WorkRow) {
+  if (awaitingAssignment(resource, row)) return true;
+  const person = row.assignedStaff;
+  const disabled = person && typeof person === "object" && (person as WorkRow).accountStatus === "DISABLED";
+  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "stock-movements" ? ["ASSIGNED"] : [];
+  return Boolean(disabled && !isEarlyReturnRequest(row) && states.includes(String(row.status)));
+}
+
+export function managerNeedsAction(resource: string, row: WorkRow) {
+  return assignmentNeedsAttention(resource, row)
+    || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
+    || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"
+    || resource === "payment-submissions" && row.status === "PENDING_VERIFICATION"
+    || resource === "deposit-settlements" && ["PENDING_REVIEW", "APPROVED"].includes(String(row.status))
+    || resource === "online-payment-reconciliations" && ["PENDING_REVIEW", "REFUND_REQUIRED"].includes(String(row.status))
+    || resource === "invoices" && isOverdueInvoice(row);
 }
 
 export function staffWorkRank(

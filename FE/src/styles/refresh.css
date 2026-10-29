@@ -569,6 +569,68 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 .customer-return-forms { display: grid; gap: 1.5rem; align-content: start; min-width: 0; }
 .early-return-review { margin-top: 1.5rem; }
 .early-return-review h2 { overflow-wrap: anywhere; }
+.navigation-work-count { margin-left: auto; flex: none; min-width: 22px; padding: 2px 6px; border-radius: 7px; background: #e8f0f2; color: #294c5d; text-align: center; font-size: 11px; }
+.customer-process-guide { border: 1px solid var(--color-border); border-radius: 12px; background: white; margin-block: 18px; }
+.customer-process-guide > summary { padding: 15px 18px; cursor: pointer; color: var(--color-navy); font-size: 13px; font-weight: 650; }
+.quote-breakdown { min-width: 0; width: 100%; }
+.booking-pricing > .quote-breakdown { display: block; }
+.booking-pricing > .quote-breakdown strong { text-align: inherit; }
+.booking-summary:has(.quote-breakdown) { position: static; max-height: none; overflow: visible; }
+.quote-breakdown h4 { color: var(--color-navy); font-weight: 700; font-size: 14px; margin-block: 15px 10px; }
+.quote-unit-price, .quote-breakdown-note, .quote-initial-payment > p { color: var(--color-slate); font-size: 12px; line-height: 1.8; }
+.quote-breakdown-lines > div, .quote-breakdown-total { display: flex; gap: 15px; justify-content: space-between; align-items: flex-start; padding-block: 11px; border-bottom: 1px solid var(--color-border); font-size: 13px; }
+.quote-breakdown-lines > div > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.quote-breakdown-lines small { display: block; font-size: 11px; color: var(--color-slate); line-height: 1.8; margin-top: 4px; }
+.quote-breakdown-lines b, .quote-breakdown-total strong { flex: none; white-space: nowrap; }
+.quote-breakdown-lines .is-discount { color: #277365; }
+.quote-breakdown-total { color: var(--color-navy); font-weight: 700; }
+.quote-initial-payment { border-radius: 12px; padding: 15px; background: #edf5f5; margin-block: 18px 12px; }
+.quote-initial-payment h4 { margin-top: 0; }
+.quote-initial-payment .quote-breakdown-total { border-bottom: 0; font-size: 15px; }
+.quote-breakdown-note { margin-top: 12px; }
+.customer-process-guide .customer-journey { margin: 0; border: 0; }
+.activity-tabs button[aria-pressed="true"] { color: var(--color-navy); background: #edf4f5; font-weight: 700; }
+.notification-filters { display: grid; grid-template-columns: minmax(0,1fr) minmax(140px,.55fr); gap: 12px; margin-block: 14px; }
+.notification-filters label, .rental-progress header label { min-width: 0; display: grid; gap: 6px; color: var(--color-slate); font-size: 12px; }
+.notification-filters label > span { display: flex; align-items: center; gap: 6px; }
+.notification-filters input, .notification-filters select, .rental-progress select { width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-navy); background: white; font-size: 13px; }
+.notification-filters input:focus-visible, .notification-filters select:focus-visible, .rental-progress select:focus-visible { outline: 2px solid #397887; outline-offset: 2px; }
+.notification-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-block: 12px; color: var(--color-slate); font-size: 11px; }
+.notification-pagination > div { display: flex; gap: 10px; align-items: center; }
+.notification-pagination .button-secondary { min-height: 36px; padding: 5px 10px; font-size: 12px; }
+.activity-panel > footer > a { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px; color: var(--color-navy); font-size: 13px; font-weight: 700; }
+.activity-item-cta { display: inline-flex; gap: 5px; align-items: center; margin-top: 9px; color: #285e70; font-size: 12px; font-weight: 650; }
+.activity-inbox-page { max-width: 1100px; background: white; border: 1px solid var(--color-border); padding: 28px; border-radius: 16px; min-width: 0; }
+.activity-inbox-page h1 { font-size: clamp(23px,3vw,32px); color: var(--color-navy); font-weight: 750; }
+.activity-inbox-page > header p, .activity-inbox-footnote { font-size: 12px; color: var(--color-slate); line-height: 1.8; }
+.activity-inbox-footnote { border-top: 1px solid var(--color-border); padding-top: 16px; margin-top: 10px; }
+.connection-dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #3d8274; }
+.connection-dot.is-warning { background: #b56b2e; }
+.rental-progress { min-width: 0; border: 1px solid #cfdee3; border-radius: 16px; padding: 24px; background: linear-gradient(125deg,#f0f6f7,white 70%); margin-block: 18px 24px; }
+.rental-progress header { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.rental-progress header label { max-width: 420px; flex: 1; min-width: min(230px,100%); }
+.rental-progress h2 { font-size: clamp(20px,2.4vw,27px); color: var(--color-navy); font-weight: 750; }
+.rental-progress-caption { display: flex; gap: 8px; align-items: center; margin-block: 15px; color: var(--color-slate); font-size: 12px; overflow-wrap: anywhere; }
+.rental-progress-caption svg { flex: none; }
+.rental-progress ol { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); list-style: none; padding: 0; gap: 12px; margin-block: 22px; }
+.rental-progress li { min-width: 0; color: #80909a; border-top: 2px solid #dbe4e9; padding-top: 12px; font-size: 11px; line-height: 1.6; }
+.rental-progress li > span { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; border: 1px solid #ccd9df; margin-bottom: 8px; background: white; }
+.rental-progress li.is-done, .rental-progress li.is-current { color: var(--color-navy); border-color: #46847f; }
+.rental-progress li.is-done > span { background: #dfefea; color: #2c6c5d; border-color: #c7e0d6; }
+.rental-progress li.is-current > span { background: var(--color-navy); color: white; border-color: var(--color-navy); }
+.rental-progress-next { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-top: 20px; border-top: 1px solid var(--color-border); }
+.rental-progress-next > div { flex: 1; min-width: 0; }
+.rental-progress-next h3 { color: var(--color-navy); font-size: 17px; font-weight: 700; }
+.rental-progress-next p { color: var(--color-slate); font-size: 13px; line-height: 1.8; margin-top: 6px; }
+.rental-progress-next .button-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: none; font-size: 12px; }
+@media (max-width: 680px) {
+  .notification-filters { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .activity-inbox-page { padding: 16px; }
+  .rental-progress { padding: 18px; }
+  .rental-progress ol { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .rental-progress-next { align-items: stretch; flex-direction: column; gap: 14px; }
+  .notification-pagination > div { flex-wrap: wrap; }
+}
 .comparison-result-heading { scroll-margin-top: 110px; }
 .booking-history-filters { align-items: end; flex-wrap: wrap; }
 .booking-history-filters .field-label { flex: 1; min-width: 180px; width: 100%; }

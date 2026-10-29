@@ -1,4 +1,5 @@
-import { isStaffWorkflow, isManagerResource } from '@/utils/operation-access';
+import { canAccessManagerReview } from '@/utils/manager-review-access';
+import { isStaffWorkflow } from '@/utils/operation-access';
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -22,7 +23,7 @@ export function ResourceList({ resource: preset }: { resource?: string } = {}) {
 function List({ resource }: { resource: string }) {
   const { user } = useAuth();
   const config = Object.hasOwn(resources, resource) ? resources[resource] : undefined;
-  const allowed = user?.role === 'MANAGER' ? isManagerResource(resource) : user?.role === 'STAFF' && isStaffWorkflow(resource);
+  const allowed = canAccessManagerReview(user?.role ?? '', resource);
   const data = useResource<Row | Row[]>(allowed && config ? config.path : null, !config?.shape);
   const [search, setSearch] = useState(''), [status, setStatus] = useState('');
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');

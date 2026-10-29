@@ -1,3 +1,4 @@
+import { handoverReport } from './handover-report.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -114,7 +115,7 @@ export class AppointmentsService {
 
   async completeHandover(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được hoàn tất bàn giao.');
-    const handoverNote = this.optionalText(input.note, 2000, 'note');
+    const handoverNote = handoverReport(input) ?? this.optionalText(input.note, 2000, 'note');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);

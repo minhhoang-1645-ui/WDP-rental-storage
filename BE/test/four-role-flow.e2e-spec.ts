@@ -13,6 +13,9 @@ for (const name of ['DATABASE_URL', 'DIRECT_URL']) {
 const { AppModule } = await import('../dist/app.module.js');
 const { PrismaService } = await import('../dist/prisma/prisma.service.js');
 const { AuthService } = await import('../dist/modules/auth/auth.service.js');
+const { EmailService } = await import('../dist/modules/guest-booking/email.service.js');
+const mailbox = new Map<string, string>();
+let emailConfigured = true;
 const tag = randomUUID().slice(0, 8), password = `Local-only-${randomUUID()}`;
 const baseTime = Date.now(), startDate = new Date(baseTime + 25200000).toISOString().slice(0, 10), appointmentAt = new Date(baseTime + 60000).toISOString();
 const gatewaySecret = 'isolated-vnpay-no-real-merchant';
@@ -59,11 +62,29 @@ async function payOnline(invoice: any) {
   expect(await db.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
 }
 
+
+async function signDocument(resource: 'contracts' | 'renewals', row: any) {
+  vi.setSystemTime(new Date(Date.now() + 61_000));
+  const terms = resource === 'contracts' ? row.terms : row.appendix;
+  const base = `/customer/${resource}/${row.id}/${resource === 'contracts' ? '' : 'appendix/'}`;
+  const body = { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: terms.snapshotHash };
+  await api('POST', base + 'accept', 'CUSTOMER', body, 400);
+  const receipt = await api('POST', base + 'signature-otp', 'CUSTOMER', body);
+  expect(receipt).not.toHaveProperty('otp'); expect(receipt).not.toHaveProperty('code');
+  await api('POST', base + 'accept', 'OTHER_CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) }, 404);
+  const signed = await api('POST', base + 'accept', 'CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) });
+  const result = resource === 'contracts' ? signed.terms : signed.appendix;
+  expect(result.verification.method).toBe('EMAIL_OTP'); expect(result.snapshotHash).toBe(terms.snapshotHash);
+  return signed;
+}
+
 describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment provider calls', () => {
   beforeAll(async () => {
     process.env.VNPAY_TMN_CODE = 'LOCALTEST'; process.env.VNPAY_HASH_SECRET = gatewaySecret; process.env.VNPAY_PAYMENT_URL = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'; process.env.VNPAY_RETURN_URL = 'http://127.0.0.1:5173/customer/payments/vnpay-return';
     process.env.WDP_BANK_CODE = '970436'; process.env.WDP_BANK_ACCOUNT_NUMBER = '0123456789';
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(baseTime));
+    vi.spyOn(EmailService.prototype, 'signatureDeliveryConfigured').mockImplementation(() => emailConfigured);
+    vi.spyOn(EmailService.prototype, 'sendSignatureOtp').mockImplementation(async (message: any) => { mailbox.set(message.to, message.code); });
     app = await NestFactory.create(AppModule, { logger: false }); app.setGlobalPrefix('api'); await app.init();
     db = app.get(PrismaService); const auth = app.get(AuthService);
     for (const role of ['ADMIN', 'MANAGER', 'STAFF', 'OTHER_STAFF', 'CUSTOMER', 'OTHER_CUSTOMER']) {
@@ -102,13 +123,26 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     // A notice can report an accidental transfer, but must never settle an unsigned invoice.
     const unsignedNotice = await api('POST', `/customer/invoices/${invoice.id}/payment-submissions`, 'CUSTOMER', { method: 'BANK_TRANSFER', amount: invoice.balanceDue });
     await api('POST', `/manager/payment-submissions/${unsignedNotice.id}/verify`, 'MANAGER', { reference: 'LOCAL-UNSIGNED-BLOCK' }, 409);
-    await api('POST', `/customer/contracts/${contract.id}/accept`, 'CUSTOMER', { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: contract.terms.snapshotHash });
+    emailConfigured = false;
+    await api('POST', `/customer/contracts/${contract.id}/signature-otp`, 'CUSTOMER', { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: contract.terms.snapshotHash }, 503);
+    expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).terms.acceptedAt).toBeNull();
+    emailConfigured = true;
+    await signDocument('contracts', contract);
+    const file = await request(app.getHttpServer()).get(`/api/customer/documents/contracts/${contract.id}`).set('Authorization', 'Bearer ' + tokens.CUSTOMER);
+    expect(file.status).toBe(200); expect(file.headers['content-type']).toContain('application/pdf'); expect(file.headers['cache-control']).toContain('no-store'); expect(file.body.subarray(0, 5).toString()).toBe('%PDF-');
+    for (const role of ['OTHER_CUSTOMER', 'MANAGER', 'STAFF', 'ADMIN']) {
+      await api('GET', `/customer/documents/contracts/${contract.id}`, role, undefined, role === 'OTHER_CUSTOMER' ? 404 : 403);
+    }
+    await api('GET', `/customer/documents/contracts/${contract.id}`, undefined, undefined, 401);
+    const invoiceFile = await request(app.getHttpServer()).get(`/api/customer/documents/invoices/${invoice.id}`).set('Authorization', 'Bearer ' + tokens.CUSTOMER);
+    expect(invoiceFile.status).toBe(200); expect(invoiceFile.body.subarray(0, 5).toString()).toBe('%PDF-');
+
     invoice = await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER'); expect(invoice.signing.complete).toBe(true); await pay(invoice, unsignedNotice);
-    const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', { reservationId: booking.id, scheduledAt: appointmentAt });
+    const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', { reservationId: booking.id, scheduledAt: new Date(Math.max(Date.parse(appointmentAt), Date.now() + 60_000)).toISOString() });
     expect(appointment.status).toBe('CONFIRMED');
     const handover = { note: 'Local test, not a real handover', handoverReport: { recipientName: 'Local receiver', condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true } };
     await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover, 409);
-    vi.setSystemTime(new Date(appointmentAt));
+    vi.setSystemTime(new Date(appointment.scheduledAt));
     expect((await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover)).status).toBe('COMPLETED');
     expect((await api('GET', '/customer/rentals', 'CUSTOMER')).items[0].rentalState).toBe('ACTIVE');
     const support = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Local support', description: 'Kiểm tra hỗ trợ tạm trên local' });
@@ -131,7 +165,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     expect(await api('GET', '/customer/stored-items', 'CUSTOMER')).toHaveLength(0);
     let renewal = await api('POST', '/customer/renewals', 'CUSTOMER', { reservationId: booking.id, termMonths: 3, paymentPlan: 'PREPAID' });
     expect(renewal.status).toBe('APPROVED_PENDING_PAYMENT');
-    await api('POST', `/customer/renewals/${renewal.id}/appendix/accept`, 'CUSTOMER', { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: renewal.appendix.snapshotHash });
+    await signDocument('renewals', renewal);
     const renewalInvoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((i: any) => i.type === 'RENEWAL' && i.renewalCycle === 1); await payOnline(renewalInvoice);
     renewal = await api('GET', `/customer/renewals/${renewal.id}`, 'CUSTOMER'); expect(renewal.status).toBe('COMPLETED');
     const transferRequest = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Yêu cầu chuyển kho', description: 'Local transfer request' });
@@ -171,7 +205,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Not allowed', unit: 'thùng', quantity: 1 }] }, 409);
     const lateBooking = await api('POST', '/reservations', 'CUSTOMER', { ...bookingBody, startDate: new Date(baseTime + 86400000 + 25200000).toISOString().slice(0, 10), durationMonths: 1 });
     const lateContract = (await api('GET', '/customer/contracts?limit=100', 'CUSTOMER')).items.find((c: any) => c.reservation.reference === lateBooking.id);
-    await api('POST', `/customer/contracts/${lateContract.id}/accept`, 'CUSTOMER', { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: lateContract.terms.snapshotHash });
+    await signDocument('contracts', lateContract);
     const lateInvoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((i: any) => i.reservation.reference === lateBooking.id);
     const lateSession = await api('POST', `/customer/invoices/${lateInvoice.id}/online-payment`, 'CUSTOMER', {});
     // Simulate a cancellation racing a provider callback, only in this disposable database.

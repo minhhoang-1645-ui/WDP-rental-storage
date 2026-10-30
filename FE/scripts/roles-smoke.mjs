@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // All /api/ calls are intercepted, including writes. No real database mutations.
 import assert from "node:assert/strict";
 import { launchTestBrowser } from "./browser-test.mjs";
@@ -832,7 +833,7 @@ try {
     .waitFor();
   await open(staff.page, "/staff/maintenance");
   await staff.page.getByRole("button", { name: "Tạo bảo trì", exact: true }).click();
-  await staff.page.getByRole("combobox", { name: "Kho cần bảo trì", exact: true }).selectOption("unit-id");
+  await selectChoice(staff.page.getByRole("combobox", { name: "Kho cần bảo trì", exact: true }), "unit-id");
   await staff.page.getByLabel("Mô tả tình trạng").fill("Kho cần kiểm tra khóa trước khi cho thuê.");
   await staff.page.getByRole("button", { name: "Tạo yêu cầu", exact: true }).click();
   await staff.page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -843,9 +844,8 @@ try {
   issueReturn.inspectionSummary.pending = 1;
   staff.data.staff.returns.push(issueReturn);
   await open(staff.page, "/staff/returns/return-issue");
-  await staff.page
-    .getByLabel("Kết quả kiểm tra", { exact: true })
-    .selectOption("ISSUE_FOUND");
+  await selectChoice(staff.page
+    .getByLabel("Kết quả kiểm tra", { exact: true }), "ISSUE_FOUND");
   await staff.page
     .getByLabel("Mô tả vấn đề", { exact: true })
     .fill("Khóa có dấu hiệu hỏng, cần quản lý đánh giá.");
@@ -908,23 +908,17 @@ try {
   await open(customer.page, "/customer/support");
   assert.equal(
     await customer.page
-      .getByLabel('Yêu cầu đặt kho', { exact: true }).locator('option[value="RES-ACTIVE"]')
+      .getByLabel('Yêu cầu đặt kho', { exact: true }).locator('..').locator('option[value="RES-ACTIVE"]')
       .count(),
     1,
     "No duplicate database ID/reference options",
   );
-  await customer.page
-    .getByLabel("Yêu cầu đặt kho", { exact: true })
-    .selectOption("RES-ACTIVE");
-  await customer.page
-    .getByLabel("Hợp đồng liên quan", { exact: true })
-    .selectOption("contract-id");
-  assert.equal(
-    await customer.page
-      .getByLabel("Kho liên quan", { exact: true })
-      .inputValue(),
-    "unit-id",
-  );
+  await selectChoice(customer.page
+    .getByLabel("Yêu cầu đặt kho", { exact: true }), "RES-ACTIVE");
+  await selectChoice(customer.page
+    .getByLabel("Hợp đồng liên quan", { exact: true }), "contract-id");
+  assert.equal(await customer.page.getByLabel("Kho liên quan", { exact: true }).count(), 0);
+  await customer.page.getByText('Kho được chọn theo hợp đồng:', { exact: false }).waitFor();
   await customer.page
     .getByLabel("Tiêu đề", { exact: true })
     .fill("Khóa đang gặp sự cố");
@@ -949,9 +943,8 @@ try {
   assert.equal(writes.at(-1).key, first.key);
   assert.equal(writes.at(-1).role, "CUSTOMER");
   await open(customer.page, "/customer/appointments");
-  await customer.page
-    .getByLabel("Yêu cầu đặt kho", { exact: true })
-    .selectOption("ready-id");
+  await selectChoice(customer.page
+    .getByLabel("Yêu cầu đặt kho", { exact: true }), "ready-id");
   const appointmentInput = customer.page.getByLabel('Ngày giờ mong muốn', { exact: true });
   assert.equal(await appointmentInput.getAttribute('min'), '2030-10-29T00:00');
   assert.equal(await appointmentInput.getAttribute('max'), '2030-11-30T23:59');
@@ -983,9 +976,8 @@ try {
       .count(),
     0,
   );
-  await customer.page
-    .getByLabel("Kho đang thuê", { exact: true })
-    .selectOption("rental-id");
+  await selectChoice(customer.page
+    .getByLabel("Kho đang thuê", { exact: true }), "rental-id");
   await customer.page
     .getByRole("button", { name: "Gửi yêu cầu gia hạn", exact: true })
     .click();
@@ -994,9 +986,8 @@ try {
     .filter({ hasText: "Gia hạn hợp lệ đã được duyệt tự động" })
     .waitFor();
   await open(customer.page, "/customer/returns");
-  await customer.page
-    .getByLabel("Yêu cầu thuê đủ điều kiện trả", { exact: true })
-    .selectOption("rental-id");
+  await selectChoice(customer.page
+    .getByLabel("Yêu cầu thuê đủ điều kiện trả", { exact: true }), "rental-id");
   await customer.page
     .getByRole("button", { name: "Gửi yêu cầu trả kho", exact: true })
     .click();

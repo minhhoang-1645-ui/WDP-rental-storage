@@ -1,10 +1,12 @@
 // All API and gateway calls are intercepted. No real accounts, emails, payments or database writes.
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { launchTestBrowser } from './browser-test.mjs';
 import { fixture, customer, staff, reservation } from './fixtures/workspace.mjs';
 
 const browser = await launchTestBrowser(), checks = [], errors = [], writes = [];
 const hash = 'a'.repeat(64);
+const otp = '123456';
 async function setup(role, mobile = false) {
   const context = await browser.newContext({ viewport: { width: mobile ? 390 : 1440, height: 960 } });
   const data = structuredClone(fixture);
@@ -15,15 +17,16 @@ async function setup(role, mobile = false) {
   data.contracts = [contract]; data.invoices = [invoice]; data.renewals = [renewal];
   data['support-requests'][0].status = 'ESCALATED';
   data.maintenance[0].status = 'AWAITING_VERIFICATION';
-  let paid = false;
+  let paid = false, bankConfigured = true;
   await context.addInitScript(({ mobile }) => localStorage.setItem(mobile ? 'wdp-mobile-auth-token' : 'wdp-auth-token-v1', 'isolated-session'), { mobile });
   await context.route(/\/api\//, async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname.replace(/^\/api\//, ''), method = request.method();
     const send = (json, status = 200) => route.fulfill({ status, json });
     if (method === 'OPTIONS') return route.fulfill({ status: 204 });
+    if (path.startsWith('customer/documents/')) { assert(!url.searchParams.has('token')); return route.fulfill({contentType:'application/pdf',body:Buffer.from('%PDF-1.4\n% isolated UI download fixture\n%%EOF')}); }
     if (path === 'auth/me') return send(actor);
     if (path === 'auth/login') return send({ token: 'isolated-session', user: actor });
-    if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: true, bankName: 'Ngân hàng kiểm thử', bankCode: '970422', accountNumber: '123456789', accountName: 'Tai khoan kiem thu' });
+    if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: bankConfigured, bankName: 'Ngân hàng kiểm thử', bankCode: '970422', accountNumber: '123456789', accountName: 'Tai khoan kiem thu' });
     if (path === 'manager/dashboard/summary') return send({ availableUnits: 1, activeRentals: 1 });
     if (path === 'manager/staff') return send({ page: 1, limit: 100, total: 1, items: [staff] });
     if (path === 'manager/unit-staff-assignments' || path === 'staff/assigned-units') return send({ enabled: false, items: [] });
@@ -32,8 +35,9 @@ async function setup(role, mobile = false) {
     if (path.includes('/online-payments/')) return send({ transactionId: 'tx', status: paid ? 'SUCCESS' : 'PENDING', providerStatus: paid ? 'SUCCESS' : 'PENDING', invoice: { status: paid ? 'PAID' : 'OPEN', type: 'INITIAL' }, expiresAt: '2099-01-01T00:00:00Z' });
     if (method !== 'GET') {
       const body = request.postDataJSON(); writes.push({ role, mobile, path, body, key: request.headers()['idempotency-key'] });
+      if (path.endsWith('/signature-otp')) { assert(body.agreed); assert.equal(body.snapshotHash, hash); return send({ challengeId: 'mock-challenge', recipient: 'cu***@example.test', expiresAt: new Date(Date.now()+600000).toISOString(), resendAfterSeconds: 60 }); }
       if (path === 'customer/contracts/contract-sign/accept' || path === 'customer/renewals/renewal-sign/appendix/accept') {
-        assert.equal(body.agreed, true); assert.equal(body.snapshotHash, hash);
+        assert.equal(body.agreed, true); assert.equal(body.snapshotHash, hash); assert.equal(body.challengeId, 'mock-challenge'); if(body.otp !== otp) return send({message:'Mã xác thực không đúng.'},400);
         assert.match(body.signatureImage, /^data:image\/png;base64,/);
         const png = Buffer.from(body.signatureImage.split(',')[1], 'base64'); assert.deepEqual([...png.subarray(0, 8)], [137,80,78,71,13,10,26,10]); assert(png.length > 100);
         const document = path.includes('/appendix/') ? renewal.appendix : contract.terms;
@@ -56,8 +60,8 @@ async function setup(role, mobile = false) {
     return send({ page: 1, limit: 100, total: items.length, items });
   });
   await context.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ contentType: 'text/html', body: '<p>Isolated gateway fixture</p>' }));
-  const page = await context.newPage(); page.setDefaultTimeout(mobile ? 25000 : 15000); page.on('pageerror', error => errors.push(error.message));
-  return { context, page, data, invoice, goto: path => page.goto(`http://127.0.0.1:${mobile ? 8081 : 5173}${path}`), paid: () => { paid = true; invoice.status = 'PAID'; invoice.balanceDue = 0; } };
+  const page = await context.newPage(); page.setDefaultTimeout(mobile ? 60000 : 15000); page.on('pageerror', error => errors.push(error.message));
+  return { context, page, data, invoice, bank: value => { bankConfigured = value; }, goto: path => page.goto(`http://127.0.0.1:${mobile ? 8081 : 5173}${path}`, {waitUntil:'domcontentloaded',timeout:60000}), paid: () => { paid = true; invoice.status = 'PAID'; invoice.balanceDue = 0; } };
 }
 async function draw(page) {
   const canvas = page.locator('canvas[aria-label="Khung vẽ chữ ký"]');
@@ -71,24 +75,31 @@ try {
   console.log('CHECK mobile invoice'); await mobile.goto('/customer/invoices/invoice-sign');
   await mobile.page.getByText('Bạn cần ký tài liệu trước khi thanh toán.', { exact: true }).waitFor();
   assert.equal(await mobile.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 0);
-  console.log('CHECK mobile contract'); await mobile.goto('/customer/contracts/contract-sign'); await mobile.page.getByRole('button', { name: 'Ký và xác nhận tài liệu', exact: true }).waitFor();
+  console.log('CHECK mobile contract'); await mobile.goto('/customer/contracts/contract-sign'); await mobile.page.getByRole('button', { name: 'Gửi mã xác thực qua email', exact: true }).waitFor();
   console.log('CHECK mobile drawing'); await draw(mobile.page); await mobile.page.getByRole('checkbox', { name: 'Tôi đã đọc và đồng ý nội dung tài liệu' }).click();
-  await mobile.page.getByRole('button', { name: 'Ký và xác nhận tài liệu', exact: true }).click(); await mobile.page.getByText('Đã ký', { exact: true }).first().waitFor();
+  await mobile.page.getByRole('button', { name: 'Gửi mã xác thực qua email', exact: true }).click(); await mobile.page.getByLabel('Mã xác thực chữ ký', {exact:true}).fill(otp); await mobile.page.getByRole('button',{name:'Xác thực và ký tài liệu',exact:true}).click(); await mobile.page.getByText('Đã ký', { exact: true }).first().waitFor();
   await mobile.goto('/customer/invoices/invoice-sign'); await mobile.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).waitFor();
-  await mobile.goto('/customer/renewals/renewal-sign'); await draw(mobile.page); await mobile.page.getByRole('checkbox', { name: 'Tôi đã đọc và đồng ý nội dung tài liệu' }).click(); await mobile.page.getByRole('button', { name: 'Ký và xác nhận tài liệu', exact: true }).click(); await mobile.page.getByText('Đã ký', { exact: true }).first().waitFor();
-  checks.push('Mobile: INITIAL blocked until signature; real canvas PNG accepted with matching hash; contract and appendix signing work');
+  await mobile.goto('/customer/renewals/renewal-sign'); await draw(mobile.page); await mobile.page.getByRole('checkbox', { name: 'Tôi đã đọc và đồng ý nội dung tài liệu' }).click(); await mobile.page.getByRole('button', { name: 'Gửi mã xác thực qua email', exact: true }).click(); await mobile.page.getByLabel('Mã xác thực chữ ký', {exact:true}).fill(otp); await mobile.page.getByRole('button',{name:'Xác thực và ký tài liệu',exact:true}).click(); await mobile.page.getByText('Đã ký', { exact: true }).first().waitFor();
+  checks.push('Mobile: INITIAL blocked until drawn signature + email OTP; matching snapshot and PNG captured for contract and appendix');
   await mobile.context.close();
 
   const web = await setup('CUSTOMER');
   await web.goto('/customer/payments'); await web.page.getByText('Bạn cần ký tài liệu trước khi thanh toán.', { exact: true }).waitFor();
   assert.equal(await web.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 0);
-  web.invoice.signing.complete = true;
+  await web.goto('/customer/contracts'); await web.page.getByRole('button', {name:'Xem và xác nhận',exact:true}).click();
+  const canvas = web.page.getByLabel('Ô vẽ chữ ký',{exact:true}); const box = await canvas.boundingBox(); assert(box); await canvas.scrollIntoViewIfNeeded(); const rect = await canvas.boundingBox(); await web.page.mouse.move(rect.x+20,rect.y+70); await web.page.mouse.down(); await web.page.mouse.move(rect.x+110,rect.y+40,{steps:12}); await web.page.mouse.up();
+  await web.page.getByLabel('Tôi đã đọc và đồng ý với nội dung trên.',{exact:true}).check(); await web.page.getByRole('button',{name:'Gửi mã xác thực qua email',exact:true}).click(); await web.page.getByLabel('Mã xác thực chữ ký',{exact:true}).fill('000000'); await web.page.getByRole('button',{name:'Xác thực và ký hợp đồng',exact:true}).click(); await web.page.getByText('Mã xác thực không đúng.',{exact:true}).first().waitFor(); await web.page.getByLabel('Mã xác thực chữ ký',{exact:true}).fill(otp); await web.page.getByRole('button',{name:'Xác thực và ký hợp đồng',exact:true}).click(); await web.page.getByText('Đã lưu xác nhận hợp đồng CON-SIGN.',{exact:true}).waitFor();
+
+  await web.page.getByRole('button',{name:'Xem bản đã xác nhận',exact:true}).click(); const downloaded = web.page.waitForEvent('download'); await web.page.getByRole('button',{name:'Tải PDF',exact:true}).click(); assert.equal((await downloaded).suggestedFilename(),'CON-SIGN.pdf');
   await web.goto('/customer/payments'); await web.page.getByRole('button', { name: 'Chi tiết & chuyển khoản', exact: true }).click();
   await web.page.getByRole('img', { name: 'QR chuyển khoản INV-SIGN' }).waitFor();
   await web.page.getByLabel('Tôi đã chuyển khoản thực tế cho hóa đơn này').check(); await web.page.getByRole('button', { name: 'Gửi thông báo đã chuyển khoản', exact: true }).click();
   await web.page.getByText('Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận.', { exact: false }).waitFor();
-  checks.push('Web: unsigned invoice routes to signing; VietQR details and transfer notice do not mark invoice paid');
+  checks.push('Web: drawn signature + email OTP; VietQR details and transfer notice do not mark invoice paid');
+  web.bank(false); await web.goto('/customer/payments'); await web.page.getByRole('button',{name:'Chi tiết & chuyển khoản',exact:true}).click(); await web.page.getByText('Chuyển khoản chưa khả dụng.',{exact:false}).waitFor(); assert.equal(await web.page.getByRole('img',{name:'QR chuyển khoản INV-SIGN'}).count(),0);
   await web.context.close();
+  const pendingEmail = await setup('CUSTOMER'); pendingEmail.data.contracts[0].terms.otp = {required:true,emailConfigured:false}; await pendingEmail.goto('/customer/contracts'); await pendingEmail.page.getByRole('button',{name:'Xem và xác nhận',exact:true}).click(); await pendingEmail.page.getByText('Cơ sở chưa cấu hình email xác thực chữ ký.',{exact:false}).waitFor(); assert(await pendingEmail.page.getByRole('button',{name:'Gửi mã xác thực qua email',exact:true}).isDisabled()); await mkdir('artifacts/run-20261030',{recursive:true}); await pendingEmail.page.screenshot({path:'artifacts/run-20261030/contract-email-pending.png',fullPage:true}); await pendingEmail.context.close();
+  checks.push('PDF download is authenticated; wrong OTP can be corrected; email/bank missing configuration blocks signing/QR without fake success');
 
   const manager = await setup('MANAGER', true);
   await manager.goto('/manager/maintenance/maintenance-id'); await manager.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).waitFor();

@@ -1,3 +1,4 @@
+import { EntitySelect } from '../EntitySelect';
 import { useState } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
@@ -31,7 +32,7 @@ function Editor({ assignments, refresh }: { assignments: Assignment[]; refresh: 
   };
   return <><p>Mỗi kho có một người phụ trách. Khi đổi người, lịch sử phân công được giữ; công việc đã bắt đầu vẫn giữ nhân viên đang thực hiện.</p>
     <LoadState loading={units.loading} error={units.error} retry={units.refresh} />
-    <label className="field-label">Chọn kho cần phân công<select value={unitId} disabled={busy} onChange={event => { setUnitId(event.target.value); setStaffId(''); setNotice(''); }}><option value="">Chọn kho</option>{units.data?.items.map(unit => <option key={first(unit, 'id')} value={first(unit, 'id')}>{first(unit, 'unitCode')} · {first(unit, 'storageType.name')} · {first(unit, 'floor')} {first(unit, 'zone')}</option>)}</select></label>
+    <label className="field-label">Chọn kho cần phân công<EntitySelect value={unitId} disabled={busy} onValueChange={selectedValue => { setUnitId(selectedValue); setStaffId(''); setNotice(''); }}><option value="">Chọn kho</option>{units.data?.items.map(unit => <option key={first(unit, 'id')} value={first(unit, 'id')}>{first(unit, 'unitCode')} · {first(unit, 'storageType.name')} · {first(unit, 'floor')} {first(unit, 'zone')}</option>)}</EntitySelect></label>
     {current && <p>Đang phụ trách: {current.staff.fullName}{current.staff.accountStatus !== 'ACTIVE' ? ' · Tài khoản đã vô hiệu hóa, cần đổi người' : ''}. Người phân công: {current.assignedBy.fullName}.</p>}
     <StaffPicker value={staffId} onChange={setStaffId} disabled={busy || !unitId} currentStaff={current?.staff} />
     <button type="button" className="button-primary" disabled={busy || !unitId || !staffId} onClick={() => void save()}>{busy ? 'Đang lưu…' : 'Lưu người phụ trách kho'}</button>

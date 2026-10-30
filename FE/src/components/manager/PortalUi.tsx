@@ -1,3 +1,4 @@
+import { EntitySelect } from '../EntitySelect';
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, RefreshCw, Search, X } from "lucide-react";
 import { useAuth } from "../../auth/auth-context";
@@ -268,16 +269,16 @@ export function RecordPicker({
           </button>
         </div>
       )}
-      <select
+      <EntitySelect
         aria-label={title}
         value={value}
         disabled={disabled || !current?.data}
-        onChange={(event) => {
+        onValueChange={(selectedValue) => {
           const record = choices.find(
-            (row) => first(row, "id") === event.target.value,
+            (row) => first(row, "id") === selectedValue,
           );
           setPicked(record);
-          onChange(event.target.value, record);
+          onChange(selectedValue, record);
         }}
       >
         <option value="">Chọn {title.toLowerCase()}</option>
@@ -289,7 +290,7 @@ export function RecordPicker({
             {describe(row)}
           </option>
         ))}
-      </select>
+      </EntitySelect>
       {current?.data && !choices.length && (
         <small>Không có lựa chọn phù hợp.</small>
       )}

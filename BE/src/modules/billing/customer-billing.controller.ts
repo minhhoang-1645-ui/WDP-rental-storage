@@ -23,7 +23,7 @@ export class CustomerBillingController {
     const bankCode = this.config.get<string>('WDP_BANK_CODE')?.trim() ?? '';
     const accountNumber = this.config.get<string>('WDP_BANK_ACCOUNT_NUMBER')?.trim() ?? '';
     const accountName = this.config.get<string>('WDP_BANK_ACCOUNT_NAME')?.trim() ?? '';
-    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && accountNumber && accountName), vnpayConfigured: this.vnpay.isConfigured(), demoEnabled: this.billing.demoPaymentEnabled(request.user!), bankName, bankCode, accountNumber, accountName };
+    return { configured: Boolean(bankName && /^\d{6}$/.test(bankCode) && /^[A-Za-z0-9]{1,19}$/.test(accountNumber) && accountName), vnpayConfigured: this.vnpay.isConfigured(), demoEnabled: this.billing.demoPaymentEnabled(request.user!), bankName, bankCode, accountNumber, accountName };
   }
 
   @Get('invoices')

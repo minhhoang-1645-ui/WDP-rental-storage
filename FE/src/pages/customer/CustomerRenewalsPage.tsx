@@ -1,3 +1,4 @@
+import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
@@ -25,7 +26,9 @@ import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
 import { SignatureAgreement } from '../../components/customer/SignatureAgreement';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
-import { DocumentSnapshot } from '../../components/customer/DocumentSnapshot';
+import { DocumentFile } from '../../components/customer/DocumentFile';
+import { apiRequest } from '../../services/api';
+import type { OtpProof, OtpReceipt } from '../../components/customer/SignatureAgreement';
 
 export function CustomerRenewalsPage() {
   const { user } = useAuth();
@@ -95,16 +98,16 @@ export function CustomerRenewalsPage() {
       setSubmitting(false);
     }
   };
-  const acceptAppendix = async (item: CustomerRenewal, signatureImage: string) => {
+  const acceptAppendix = async (item: CustomerRenewal, signatureImage: string, proof: OtpProof) => {
     if (!user || !item.appendix || acceptingAppendixId) return;
     setAcceptingAppendixId(item.id); setMessage(null);
     try {
-      await mutate(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/accept`, 'POST', { acceptanceName: user.fullName, agreed: true, signatureImage, snapshotHash: item.appendix.snapshotHash });
+      await mutate(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/accept`, 'POST', { acceptanceName: user.fullName, agreed: true, ...proof, signatureImage, snapshotHash: item.appendix.snapshotHash });
       setMessage({ kind: 'ok', text: `Đã xác nhận phụ lục ${item.appendix.code}.` });
       setSelectedAppendix(null);
       renewals.refresh();
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Không thể xác nhận phụ lục.' });
+      setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Không thể xác nhận phụ lục.' }); throw error;
     } finally { setAcceptingAppendixId(''); }
   };
 
@@ -147,21 +150,20 @@ export function CustomerRenewalsPage() {
             <p>Chỉ kho thuê theo tháng và chưa có yêu cầu gia hạn chờ xử lý được chọn.</p>
             <label className="field-label">
               Kho đang thuê
-              <select
+              <EntitySelect
                 aria-label="Kho đang thuê"
                 required
                 value={reservationId}
-                onChange={(event) => setReservationId(event.target.value)}
+                onValueChange={(selectedValue) => setReservationId(selectedValue)}
               >
                 <option value="">Chọn kho</option>
                 {eligibleRentals
                   .map((item) => (
                     <option key={item.reservationId} value={item.reservationId}>
-                      {item.reservationReference} · {item.storageType.name} ·
-                      đến {formatPortalDate(item.effectiveEndDate)}
+                      {item.storageType.name} · Kho {item.contracts.map(contract => contract.unit.unitCode).join(', ')} · đến {formatPortalDate(item.effectiveEndDate)} · {item.reservationReference}
                     </option>
                   ))}
-              </select>
+              </EntitySelect>
             </label>
             <label className="field-label">
               Thời hạn gia hạn
@@ -272,9 +274,9 @@ export function CustomerRenewalsPage() {
                   {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
                   {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
-                    ? <p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p>
+                    ? <div><p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} signed /></div>
                     : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và xác nhận phụ lục {item.appendix.code}</button>)}
-                  {selectedAppendix?.id === item.id && item.appendix && <div><DocumentSnapshot value={item.appendix.snapshot} /><SignatureAgreement label="Xác nhận phụ lục" busy={Boolean(acceptingAppendixId)} onSubmit={(signature) => void acceptAppendix(item, signature)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
+                  {selectedAppendix?.id === item.id && item.appendix && <div><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} /><SignatureAgreement key={`${item.id}:${item.appendix.snapshotHash}`} label="Xác thực và ký phụ lục" busy={Boolean(acceptingAppendixId)} otpConfigured={item.appendix.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: item.appendix?.snapshotHash }) })} onSubmit={(signature, proof) => acceptAppendix(item, signature, proof)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
                   <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ))}

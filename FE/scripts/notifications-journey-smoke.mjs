@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // GETs use in-memory fixtures; every business write is rejected. Shared database remains untouched.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -54,7 +55,7 @@ try {
     app.data.invoices[0].status = 'PAID'; app.data.invoices[0].balanceDue = 0; app.data.contracts[0].status = 'READY_FOR_HANDOVER'; app.data['payment-submissions'] = []; await app.pulse();
     await progress.getByRole('link',{name:'Đặt lịch nhận kho',exact:true}).waitFor();
     await progress.getByRole('link',{name:'Đặt lịch nhận kho',exact:true}).click();
-    await app.page.waitForFunction(()=>document.querySelector('select[aria-label="Yêu cầu đặt kho"]')?.value==='PRIVATE-ID');
+    await app.page.waitForFunction(()=>document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value')==='PRIVATE-ID');
     app.data.contracts[0].status='ACTIVE'; await app.goto('/customer'); await progress.getByRole('link',{name:'Mở kho đang thuê',exact:true}).waitFor();
     app.data.returns=[{...fixture.returns[0],reservation:app.own,status:'REQUESTED'}]; await app.pulse();
     await progress.getByRole('link',{name:'Theo dõi trả kho & cọc',exact:true}).waitFor();
@@ -64,7 +65,7 @@ try {
   }
   const app = await setup(); await app.goto('/customer/notifications');
   await app.page.getByRole('heading',{name:'Thông báo & việc cần làm',exact:true}).waitFor();
-  await app.page.getByLabel('Nghiệp vụ',{exact:true}).selectOption('support-requests');
+  await selectChoice(app.page.getByLabel('Nghiệp vụ',{exact:true}), 'support-requests');
   await app.page.getByRole('button',{name:/^Tất cả \(/}).click();
   await app.page.getByText('1–20 / 121 hồ sơ',{exact:true}).waitFor();
   await app.page.getByRole('button',{name:'Sau',exact:true}).click(); await app.page.getByText('21–40 / 121 hồ sơ',{exact:true}).waitFor();
@@ -73,7 +74,7 @@ try {
   await app.page.getByRole('button',{name:'Đánh dấu đã đọc',exact:true}).click();
   await app.page.getByRole('button',{name:/^Chưa đọc \(/}).click();
   await app.page.getByText('Không có kết quả phù hợp.',{exact:false}).waitFor();
-  await app.page.reload(); await app.page.getByLabel('Nghiệp vụ',{exact:true}).selectOption('support-requests');
+  await app.page.reload(); await selectChoice(app.page.getByLabel('Nghiệp vụ',{exact:true}), 'support-requests');
   await app.page.getByText('Bạn đã xem hết thông báo hiện có.',{exact:false}).waitFor();
   app.data['support-requests'][0].status='RESOLVED'; app.data['support-requests'][0].resolutionNote='Đã kiểm tra và xử lý xong'; await app.pulse();
   await app.page.getByText('1–1 / 1 hồ sơ',{exact:true}).waitFor();
@@ -97,7 +98,7 @@ try {
   await assignment.goto('/manager/assignments?kind=support-requests');
   await assignment.page.getByRole('row').filter({hasText:'SUP-000'}).getByRole('button',{name:'Xem / Đổi',exact:true}).click();
   await assignment.page.getByRole('button',{name:'Dùng gợi ý',exact:true}).click();
-  assert.equal(await assignment.page.getByRole('combobox',{name:'Nhân viên phụ trách',exact:true}).inputValue(),'free-staff');
+  assert.equal(await assignment.page.getByRole('combobox',{name:'Nhân viên phụ trách',exact:true}).getAttribute('data-value'),'free-staff');
   assert(await assignment.page.locator('form[data-wdp-dirty="true"]').count());
   await assignment.context.close(); checks.push('Manager receives active low-workload suggestion; selecting it preserves an unsaved draft and never assigns without saving');
   for (const role of ['STAFF','MANAGER','ADMIN']) {

@@ -1,3 +1,4 @@
+import { EntitySelect } from '../EntitySelect';
 import { useState } from 'react';
 import { ArrowRight, Check, PackageOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -15,7 +16,7 @@ export function CustomerRentalProgress({ reservation: selected }: { reservation?
   if (!reservation) return null;
   const progress = customerProgress(reservation, activity.data), ready = required.every(kind => activity.data[kind]);
   return <section className="rental-progress" aria-label="Tiến độ thuê kho">
-    <header><div><span className="section-eyebrow">Đơn thuê của bạn</span><h2>Tiếp tục từ bước đang làm</h2></div>{!selected && options.length > 1 && <label><span>Chọn đơn để theo dõi</span><select aria-label="Chọn đơn để theo dõi" value={activityText(reservation, 'id')} onChange={event => setChoice(event.target.value)}>{options.map(row => <option key={activityText(row, 'id')} value={activityText(row, 'id')}>{activityText(row, 'reference') || activityText(row, 'id')} · {activityText(row, 'product.name') || activityText(row, 'storageType.name') || 'Đơn thuê kho'}</option>)}</select></label>}</header>
+    <header><div><span className="section-eyebrow">Đơn thuê của bạn</span><h2>Tiếp tục từ bước đang làm</h2></div>{!selected && options.length > 1 && <label><span>Chọn đơn để theo dõi</span><EntitySelect aria-label="Chọn đơn để theo dõi" value={activityText(reservation, 'id')} onValueChange={selectedValue => setChoice(selectedValue)}>{options.map(row => <option key={activityText(row, 'id')} value={activityText(row, 'id')}>{activityText(row, 'reference') || activityText(row, 'id')} · {activityText(row, 'product.name') || activityText(row, 'storageType.name') || 'Đơn thuê kho'}</option>)}</EntitySelect></label>}</header>
     <div className="rental-progress-caption"><PackageOpen size={19} /><span>{progress.reference} · {activityText(reservation, 'product.name') || activityText(reservation, 'storageType.name') || 'Kho lưu trữ'}</span></div>
     {!ready ? <p role="status">Đang đối chiếu hợp đồng, thanh toán và lịch nhận kho. {activity.failed.length > 0 && 'Chưa lấy đủ dữ liệu; hãy kiểm tra kết nối và làm mới.'}</p> : <>
       <ol>{rentalSteps.map((name, index) => <li key={name} className={progress.closed ? '' : index < progress.stage ? 'is-done' : index === progress.stage ? 'is-current' : ''} aria-current={!progress.closed && index === progress.stage ? 'step' : undefined}><span>{!progress.closed && index < progress.stage ? <Check size={15} /> : index + 1}</span><strong>{name}</strong></li>)}</ol>

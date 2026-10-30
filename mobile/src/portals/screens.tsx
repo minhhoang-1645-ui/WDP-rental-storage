@@ -1,3 +1,4 @@
+import { DocumentFile } from '@/components/document-file';
 import { isEarlyReturnRequest } from '@/utils/early-return';
 import { useEffect, useState } from 'react';
 import { FlatList, ScrollView, Text, View } from 'react-native';
@@ -89,6 +90,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
       {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && Boolean(row.expiresAt) && <WorkflowHint text={paymentWindowClosed({ type: 'INITIAL', reservation: row }, clock) ? 'Đã đến hạn giữ kho. Hãy kiểm tra lại trạng thái; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.' : `Thanh toán trước ${formatDate(String(row.expiresAt), true)} (UTC+7) để giữ kho.`} />}
       {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && <><Navigation title="Xem và ký các hợp đồng" path="/customer/contracts" /><Navigation title="Xem hóa đơn và thanh toán" path="/customer/invoices" /></>}
+      {role === 'STAFF' && (resource === 'contracts' || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/staff/management/documents/${resource}/${encodeURIComponent(idOf(row))}`} name={codeOf(row)} />}
       {role === 'CUSTOMER' && resource === 'contracts' && <DocumentAcceptance row={row} resource="contracts" onSaved={refresh} />}
       {role === 'CUSTOMER' && resource === 'renewals' && Boolean(row.appendix) && <DocumentAcceptance row={row} resource="renewals" onSaved={refresh} />}
       {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}

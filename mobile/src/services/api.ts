@@ -46,8 +46,8 @@ export function setSessionExpiredHandler(handler?: () => void) {
   onSessionExpired = handler;
 }
 
-export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null } = {}): Promise<T> {
-  const { authenticated = true, signal, expectedToken, ...request } = options;
+export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null; responseType?: 'json' | 'bytes' } = {}): Promise<T> {
+  const { authenticated = true, signal, expectedToken, responseType = 'json', ...request } = options;
   const token = authenticated ? await authStorage.getToken() : null;
   if (expectedToken !== undefined && token !== expectedToken) throw new Error('Phiên đăng nhập đã thay đổi.');
   const controller = new AbortController();
@@ -65,7 +65,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
       ...request,
       signal: controller.signal,
       headers: {
-        Accept: 'application/json',
+        Accept: responseType === 'bytes' ? 'application/pdf' : 'application/json',
         ...(request.body ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...request.headers,
@@ -77,7 +77,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
     throw new ApiError('Không kết nối được hệ thống NestBox. Vui lòng kiểm tra mạng và thử lại.', 0);
   }
 
-  const payload = response.status === 204 ? null : await response.json().catch((error: unknown) => {
+  const payload = response.ok && responseType === 'bytes' ? new Uint8Array(await response.arrayBuffer()) : response.status === 204 ? null : await response.json().catch((error: unknown) => {
     if (signal?.aborted) throw error;
     if (timedOut) throw new ApiError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.', 408);
     return null;
@@ -94,6 +94,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
         : `Yêu cầu thất bại (${response.status})`;
     throw new ApiError(userMessage(message), response.status, payload);
   }
+  if (responseType === 'bytes' && token && await authStorage.getToken() !== token) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng mở lại tài liệu sau khi đăng nhập.');
   if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
   if (path === '/auth/login' && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
   if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path)) notifyDataChanged(path);

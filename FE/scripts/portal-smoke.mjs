@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
 import { launchTestBrowser } from "./browser-test.mjs";
@@ -566,14 +567,14 @@ try {
   await page.getByRole("link", { name: "RET-TEST", exact: true }).waitFor();
   checks.push("Correct inquiry separation and backend filter contracts");
   await open(page, "/staff/reservations/reservation-0");
-  await page.getByLabel("Quyết định").selectOption("CONFIRMED");
+  await selectChoice(page.getByLabel("Quyết định"), "CONFIRMED");
   await page
     .getByRole("button", { name: "Lưu quyết định", exact: true })
     .click();
   await success(page);
   assert.equal(writes.at(-1).body.status, "CONFIRMED");
   await open(page, "/staff/inquiries/inquiry-id");
-  await page.getByLabel("Trạng thái liên hệ").selectOption("CONTACTED");
+  await selectChoice(page.getByLabel("Trạng thái liên hệ"), "CONTACTED");
   await page.getByLabel("Ghi chú nội bộ").fill("Đã gọi khách kiểm thử");
   await page.getByRole("button", { name: "Lưu cập nhật", exact: true }).click();
   await success(page);
@@ -652,9 +653,8 @@ try {
   checks.push("Payment retry preserves idempotency key");
   page = staffApp.page;
   await open(page, "/staff/transfers/transfer-id");
-  await page
-    .getByRole("combobox", { name: "Kho đích", exact: true })
-    .selectOption("unit-id");
+  await selectChoice(page
+    .getByRole("combobox", { name: "Kho đích", exact: true }), "unit-id");
   await page
     .getByRole("button", { name: "Duyệt chuyển kho", exact: true })
     .click();
@@ -671,15 +671,13 @@ try {
   await page
     .getByRole("button", { name: "Tạo chuyển kho", exact: true })
     .click();
-  await page
-    .getByRole("combobox", { name: "Hợp đồng đang thuê", exact: true })
-    .selectOption("contract-id");
-  await page
+  await selectChoice(page
+    .getByRole("combobox", { name: "Hợp đồng đang thuê", exact: true }), "contract-id");
+  await selectChoice(page
     .getByRole("combobox", {
       name: "Yêu cầu hỗ trợ liên quan (tùy chọn)",
       exact: true,
-    })
-    .selectOption("support-id");
+    }), "support-id");
   await page.getByRole("button", { name: "Tạo yêu cầu", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(writes.at(-1).body.rentalContractId, "contract-id");
@@ -693,17 +691,15 @@ try {
   }));
   await open(page, "/staff/maintenance");
   await page.getByRole("button", { name: "Tạo bảo trì", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Kho cần bảo trì", exact: true })
-    .selectOption("unit-page-0");
+  await selectChoice(page
+    .getByRole("combobox", { name: "Kho cần bảo trì", exact: true }), "unit-page-0");
   await page
     .getByLabel("Mô tả tình trạng")
     .fill("Tạo yêu cầu bảo trì kiểm thử");
   const beforePaging = writes.length;
   await page.getByRole("dialog").getByLabel("Tìm kho cần bảo trì", { exact: true }).fill("PAGE-20");
-  await page
-    .getByRole("combobox", { name: "Kho cần bảo trì", exact: true })
-    .selectOption("unit-page-20");
+  await selectChoice(page
+    .getByRole("combobox", { name: "Kho cần bảo trì", exact: true }), "unit-page-20");
   assert.equal(
     writes.length,
     beforePaging,

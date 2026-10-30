@@ -1,3 +1,4 @@
+import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
@@ -182,20 +183,19 @@ export function CustomerReturnsPage() {
             </p>
             <label className="field-label">
               Yêu cầu thuê đủ điều kiện trả
-              <select
+              <EntitySelect
                 aria-label="Yêu cầu thuê đủ điều kiện trả"
                 required
                 value={reservationId}
-                onChange={(event) => setReservationId(event.target.value)}
+                onValueChange={(selectedValue) => setReservationId(selectedValue)}
               >
                 <option value="">Chọn kho đủ điều kiện trả</option>
                 {eligibleRentals.map((item) => (
                   <option key={item.reservationId} value={item.reservationId}>
-                    {item.reservationReference} · {item.storageType.name} · hết
-                    hạn {formatPortalDate(item.effectiveEndDate)}
+                    {item.storageType.name} · Kho {item.contracts.map(contract => contract.unit.unitCode).join(', ')} · hết hạn {formatPortalDate(item.effectiveEndDate)} · {item.reservationReference}
                   </option>
                 ))}
-              </select>
+              </EntitySelect>
             </label>
             <label className="field-label">
               Ghi chú

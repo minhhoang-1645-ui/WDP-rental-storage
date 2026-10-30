@@ -151,7 +151,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
 
     <aside className="checkout-quote">
       <div className="quote-product"><StorageImage className="booking-product-thumb" src={productImage} alt={`Ảnh tham khảo cho ${productName}`} /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
-      <div className="quote-heading"><h3>Báo giá</h3><span>{quoteState === 'loading' ? 'Đang cập nhật…' : 'Theo báo giá từ máy chủ'}</span></div>
+      <div className="quote-heading"><h3>Báo giá</h3><span>{quoteState === 'loading' ? 'Đang cập nhật…' : 'Theo lựa chọn của bạn'}</span></div>
       {quoteState === 'loading' && <div className="booking-alert" role="status"><LoaderCircle className="availability-spinner" size={18} /> Đang tính báo giá mới nhất…</div>}
       {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span></div>}
       {quoteState === 'idle' && <div className="booking-alert" role="status"><Info size={18} /> Chọn thời gian thuê hợp lệ để xem báo giá.</div>}

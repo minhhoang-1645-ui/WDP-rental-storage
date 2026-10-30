@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 import { mkdir } from 'node:fs/promises';
 // Read-only browser fixtures and intercepted writes. No database connection or test records.
 import assert from 'node:assert/strict';
@@ -46,10 +47,10 @@ try {
     const card = app.page.locator('.booking-history-card'); await card.getByText('Đã trả kho', { exact: true }).waitFor(); assert.equal(await card.count(), 1); assert((await card.innerText()).includes('01/04/2027')); assert(app.requests.some(item => item.path === 'customer/contracts' && item.page === '6'));
     if (process.env.WDP_SCREENSHOTS_DIR) { await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true }); await app.page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/booking-history-${width}.png`, fullPage: true }); }
     await card.getByRole('link', { name: 'Xem hợp đồng liên quan', exact: true }).click(); await app.page.getByText('CON-100', { exact: true }).waitFor(); assert.equal(await app.page.locator('.customer-table tbody tr').count(), 1);
-    await app.goto('/customer/booking-history'); await app.page.getByLabel('Trạng thái lịch sử', { exact: true }).selectOption('CANCELLED'); await app.page.getByText('RES-1 · Đặt ngày', { exact: false }).waitFor(); assert.equal(await app.page.locator('.booking-history-card').count(), 1);
+    await app.goto('/customer/booking-history'); await selectChoice(app.page.getByLabel('Trạng thái lịch sử', { exact: true }), 'CANCELLED'); await app.page.getByText('RES-1 · Đặt ngày', { exact: false }).waitFor(); assert.equal(await app.page.locator('.booking-history-card').count(), 1);
     assert(await app.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await app.context.close();
     const operator = await setup('STAFF', width); await operator.goto('/staff/maintenance'); await operator.page.getByRole('button', { name: 'Tạo bảo trì', exact: true }).click();
-    await operator.page.getByLabel('Kho cần bảo trì', { exact: true }).selectOption(unit.id); await operator.page.getByLabel('Hạng mục').selectOption('CLEANING'); await operator.page.getByLabel('Mô tả tình trạng', { exact: true }).fill('Vệ sinh kho sau kiểm tra.'); await operator.page.getByRole('button', { name: 'Tạo yêu cầu', exact: true }).click(); await operator.page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await selectChoice(operator.page.getByLabel('Kho cần bảo trì', { exact: true }), unit.id); await selectChoice(operator.page.getByLabel('Hạng mục'), 'CLEANING'); await operator.page.getByLabel('Mô tả tình trạng', { exact: true }).fill('Vệ sinh kho sau kiểm tra.'); await operator.page.getByRole('button', { name: 'Tạo yêu cầu', exact: true }).click(); await operator.page.getByRole('dialog').waitFor({ state: 'hidden' });
     const before = operator.requests.filter(item => item.path === 'auth/me').length;
     // A fresh API module represents the empty role cache after HMR while the UI stays signed in.
     await operator.page.evaluate(async () => { const api = await import('/src/services/api.ts?isolated-maintenance-refresh'); await Promise.all([api.apiRequest('/manager/units'), api.apiRequest('/manager/maintenance', { method: 'POST', body: JSON.stringify({ storageUnitId: 'unit-id', category: 'CLEANING', priority: 'MEDIUM', description: 'Kiểm tra sau cập nhật giao diện.' }), headers: { 'Idempotency-Key': 'isolated-hot-refresh' } })]); });

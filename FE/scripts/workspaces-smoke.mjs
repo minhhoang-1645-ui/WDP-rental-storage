@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // Browser integration against intercepted API responses only. Never writes to BE.
 import assert from "node:assert/strict";
 import { launchTestBrowser } from "./browser-test.mjs";
@@ -170,6 +171,7 @@ async function setup(role, mobile) {
   };
 }
 async function open(app, path, detail = false) {
+  console.log('CHECK workspace', app.base, path);
   await app.page.goto(app.base + path, { waitUntil: "domcontentloaded" });
   if (!app.mobile) {
     await app.page.locator("h1").waitFor();
@@ -199,7 +201,7 @@ async function mutation(app, path, action) {
   assert.equal(writes.at(-1).path, path);
 }
 try {
-  for (const mobile of [false, true]) {
+  for (const mobile of (process.env.WDP_WORKSPACE_FOCUS ? [] : [false, true])) {
     const app = await setup("MANAGER", mobile);
     await open(app, "/manager");
     await app.page
@@ -227,9 +229,8 @@ try {
         .filter({ hasText: "SUP-TEST" })
         .getByRole("button")
         .click();
-      await app.page
-        .getByLabel("Nhân viên phụ trách", { exact: true })
-        .selectOption(staff.id);
+      await selectChoice(app.page
+        .getByLabel("Nhân viên phụ trách", { exact: true }), staff.id);
       app.data["support-requests"][0].supportCode = "SUP-LIVE-UPDATED";
       await app.page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await app.page
@@ -238,7 +239,7 @@ try {
       assert.equal(
         await app.page
           .getByLabel("Nhân viên phụ trách", { exact: true })
-          .inputValue(),
+          .getAttribute('data-value'),
         staff.id,
       );
       assert.equal(
@@ -278,8 +279,8 @@ try {
         .first()
         .click();
       await app.page
-        .getByRole("button", {
-          name: `✓ ${staff.fullName} · ${staff.email}`,
+        .getByRole("radio", {
+          name: `${staff.fullName} · ${staff.email}`,
           exact: true,
         })
         .click();
@@ -304,7 +305,7 @@ try {
     await app.context.close();
   }
   const mobile = await setup("STAFF", true);
-  for (const kind of moved) {
+  for (const kind of (process.env.WDP_WORKSPACE_FOCUS ? [] : moved)) {
     await open(mobile, `/staff/${kind}`);
     await open(mobile, `/staff/${kind}/${mobile.data[kind][0].id}`, true);
     assert.equal(
@@ -322,6 +323,7 @@ try {
     confirmation = "□ Tôi xác nhận thực hiện thao tác này",
     execution = false,
   ) {
+    if (process.env.WDP_WORKSPACE_FOCUS && process.env.WDP_WORKSPACE_FOCUS !== kind) return;
     await open(mobile, `/staff/${kind}/${mobile.data[kind][0].id}`, true);
     await mobile.page.getByRole("button", { name: title, exact: true }).click();
     if (configure) await configure();
@@ -334,15 +336,16 @@ try {
       () =>
         mobile.page.getByRole("button", { name: "Lưu", exact: true }).click(),
     );
+    await mobile.page.getByText("Đã lưu thành công.", { exact: true }).waitFor();
   }
   await mobileAction("reservations", "Xử lý yêu cầu đặt kho", "/status", () =>
     mobile.page
-      .getByRole("button", { name: "Đã xác nhận", exact: true })
+      .getByRole("radio", { name: "Đã xác nhận", exact: true })
       .click(),
   );
   await mobileAction("inquiries", "Cập nhật liên hệ", "", () =>
     mobile.page
-      .getByRole("button", { name: "Đã liên hệ", exact: true })
+      .getByRole("radio", { name: "Đã liên hệ", exact: true })
       .click(),
   );
   await mobileAction("appointments", "Xác nhận lịch bàn giao", "/confirm");
@@ -353,7 +356,7 @@ try {
     null,
     "□ Tôi đã đối chiếu thông tin và báo giá gia hạn",
   );
-  await open(mobile, '/staff/maintenance/maintenance-id', true);
+  if (!process.env.WDP_WORKSPACE_FOCUS) await open(mobile, '/staff/maintenance/maintenance-id', true);
   assert.equal(await mobile.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).count(), 0);
   await mobileAction("transfers", "Từ chối chuyển kho", "/reject");
   await mobileAction(
@@ -384,7 +387,7 @@ try {
     "Mobile Staff: all nine lists/details and permitted forms use Staff endpoints; Manager verification remains hidden; no assignment controls",
   );
   await mobile.context.close();
-  for (const role of ["ADMIN", "CUSTOMER"]) {
+  for (const role of (process.env.WDP_WORKSPACE_FOCUS ? [] : ["ADMIN", "CUSTOMER"])) {
     const app = await setup(role, true);
     await open(app, "/" + role.toLowerCase());
     await app.page
@@ -409,7 +412,7 @@ try {
   console.log(
     JSON.stringify(
       {
-        passed: checks,
+        passed: process.env.WDP_WORKSPACE_FOCUS ? [`Focused Staff workflow: ${process.env.WDP_WORKSPACE_FOCUS}`] : checks,
         mockedWrites: writes.length,
         browserErrors: errors.length,
         unexpectedRequests: unexpected.length,
@@ -419,6 +422,6 @@ try {
       2,
     ),
   );
-} finally {
+} catch(error) { for (const context of browser.contexts()) for (const page of context.pages()) console.error("FAILED STATE", page.url(), (await page.locator("body").innerText()).slice(-6000)); throw error; } finally {
   await browser.close();
 }

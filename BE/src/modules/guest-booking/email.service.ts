@@ -60,6 +60,26 @@ export class EmailService implements OnModuleInit {
     }
   }
 
+  signatureDeliveryConfigured() {
+    try { if (this.provider() === 'smtp') { this.smtpConfig(); return true; } if (this.provider() === 'resend') { this.resendConfig(); return true; } } catch { return false; }
+    return false;
+  }
+
+  async sendSignatureOtp(message: { to: string; code: string; documentLabel: string; expiresInMinutes: number }) {
+    if (!this.signatureDeliveryConfigured()) throw new ServiceUnavailableException({ code: 'SIGNATURE_EMAIL_NOT_CONFIGURED', message: 'Chưa cấu hình email xác thực chữ ký.' });
+    const text = `NestBox Storage\n\nMã xác thực chữ ký ${message.documentLabel}: ${message.code}\nMã có hiệu lực ${message.expiresInMinutes} phút, chỉ dùng một lần cho nội dung và chữ ký bạn vừa xem. Không chia sẻ mã này. Nếu không yêu cầu ký, hãy bỏ qua email và liên hệ cơ sở.`;
+    try {
+      if (this.provider() === 'smtp') {
+        const config = this.smtpConfig();
+        await this.getSmtpTransport().sendMail({ from: { name: config.fromName, address: config.fromAddress }, to: message.to, subject: 'NestBox - Xác thực chữ ký của bạn', text });
+      } else {
+        const config = this.resendConfig();
+        const response = await this.getResendClient().emails.send({ from: `${config.fromName} <${config.fromAddress}>`, to: [message.to], subject: 'NestBox - Xác thực chữ ký của bạn', text });
+        if (response.error) throw new Error('Delivery rejected');
+      }
+    } catch { throw new ServiceUnavailableException({ code: 'EMAIL_DELIVERY_FAILED', message: 'Chưa gửi được mã xác thực. Vui lòng thử lại sau; chữ ký chưa được lưu.' }); }
+  }
+
   private async sendSmtp(message: BookingEmail, claimUrl: string) {
     const smtp = this.smtpConfig();
     try {
@@ -122,7 +142,7 @@ export class EmailService implements OnModuleInit {
     const user = this.config.get<string>('SMTP_USER')?.trim() ?? '';
     const pass = this.config.get<string>('SMTP_PASS') ?? '';
     const fromAddress = this.config.get<string>('EMAIL_FROM_ADDRESS')?.trim() ?? '';
-    const fromName = this.config.get<string>('EMAIL_FROM_NAME')?.trim() || 'WDP Storage';
+    const fromName = this.config.get<string>('EMAIL_FROM_NAME')?.trim() || 'NestBox Storage';
     const frontendUrl = this.frontendUrl();
     const missing = [!host && 'SMTP_HOST', (!Number.isInteger(port) || port < 1 || port > 65535) && 'SMTP_PORT', !user && 'SMTP_USER', !pass && 'SMTP_PASS', !fromAddress && 'EMAIL_FROM_ADDRESS', !frontendUrl && 'FRONTEND_URL'].filter(Boolean);
     if (missing.length) throw new Error(`EMAIL_SMTP_CONFIG_INVALID: Thiếu hoặc không hợp lệ ${missing.join(', ')}.`);
@@ -132,7 +152,7 @@ export class EmailService implements OnModuleInit {
   private resendConfig() {
     const apiKey = this.config.get<string>('RESEND_API_KEY')?.trim() ?? '';
     const fromAddress = this.config.get<string>('EMAIL_FROM_ADDRESS')?.trim() ?? '';
-    const fromName = this.config.get<string>('EMAIL_FROM_NAME')?.trim() || 'WDP Storage';
+    const fromName = this.config.get<string>('EMAIL_FROM_NAME')?.trim() || 'NestBox Storage';
     const frontendUrl = this.frontendUrl();
     const missing = [!apiKey && 'RESEND_API_KEY', !fromAddress && 'EMAIL_FROM_ADDRESS', !frontendUrl && 'FRONTEND_URL'].filter(Boolean);
     if (missing.length) throw new Error(`EMAIL_RESEND_CONFIG_INVALID: Thiếu hoặc không hợp lệ ${missing.join(', ')}.`);

@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 import { mkdir } from 'node:fs/promises';
 // Every API request is intercepted. No test rental, invoice or account reaches the database.
 import assert from 'node:assert/strict';
@@ -50,9 +51,9 @@ try {
   for (const width of [1440, 390]) {
     proposals = []; returns = [];
     const client = await open('CUSTOMER', width, '/customer/returns');
-    const eligible = client.page.getByLabel('Yêu cầu thuê đủ điều kiện trả', { exact: true }); await eligible.waitFor(); assert.equal(await eligible.locator('option').count(), 1);
+    const eligible = client.page.getByLabel('Yêu cầu thuê đủ điều kiện trả', { exact: true }); await eligible.waitFor(); assert.equal(await eligible.locator('..').locator('option').count(), 1);
     if (process.env.WDP_SCREENSHOTS_DIR) { await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true }); await client.page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/early-customer-${width}.png`, fullPage: true }); }
-    await client.page.getByLabel('Kho muốn trả sớm', { exact: true }).selectOption(reservation.id); await client.page.getByLabel('Lý do trả trước hạn', { exact: true }).fill('Tôi không còn nhu cầu lưu trữ.');
+    await selectChoice(client.page.getByLabel('Kho muốn trả sớm', { exact: true }), reservation.id); await client.page.getByLabel('Lý do trả trước hạn', { exact: true }).fill('Tôi không còn nhu cầu lưu trữ.');
     await client.page.getByRole('button', { name: 'Gửi đề nghị trả trước hạn', exact: true }).click(); await client.page.getByText('Chờ quản lý xem xét', { exact: false }).waitFor(); await client.context.close();
     const manager = await open('MANAGER', width, '/manager/early-returns'); await manager.page.getByText('100 ₫', { exact: false }).first().waitFor();
     if (process.env.WDP_SCREENSHOTS_DIR) await manager.page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/early-manager-${width}.png`, fullPage: true });
@@ -61,7 +62,7 @@ try {
     await manager.page.getByLabel('Tôi đã đối chiếu công nợ, cọc và điều kiện với hồ sơ hiện tại', { exact: true }).check();
     stale = true; await save.click(); await manager.page.getByRole('alert').filter({ hasText: 'Công nợ vừa thay đổi' }).waitFor(); assert.equal(proposals[0].status, 'OPEN');
     await save.click(); await manager.page.getByRole('heading', { name: 'Không có đề nghị phù hợp', exact: true }).waitFor(); await manager.context.close();
-    const approved = await open('CUSTOMER', width, '/customer/returns'); const ready = approved.page.getByLabel('Yêu cầu thuê đủ điều kiện trả', { exact: true }); await ready.selectOption(reservation.id);
+    const approved = await open('CUSTOMER', width, '/customer/returns'); const ready = approved.page.getByLabel('Yêu cầu thuê đủ điều kiện trả', { exact: true }); await selectChoice(ready, reservation.id);
     await approved.page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).click(); await approved.page.getByText('Đã gửi yêu cầu trả kho.', { exact: true }).waitFor(); assert.equal(returns.length, 1);
     assert(await approved.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await approved.context.close();
     const operator = await open('STAFF', width, '/staff/support-requests/early-proposal'); await operator.page.getByText('Đề nghị trả trước hạn thuộc quản lý', { exact: false }).waitFor(); assert.equal(await operator.page.getByRole('button', { name: 'Hoàn tất hỗ trợ', exact: true }).count(), 0); await operator.context.close();

@@ -1,3 +1,4 @@
+import { DocumentFile } from './DocumentFile';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -38,9 +39,10 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không gửi được thông báo chuyển khoản.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <Modal title="Chi tiết hóa đơn và chuyển khoản" onClose={onClose} busy={busy}>
+  return <Modal title={row && ['PAID', 'VOID'].includes(row.status) ? 'Chi tiết hóa đơn' : 'Chi tiết hóa đơn và chuyển khoản'} onClose={onClose} busy={busy}>
     {invoice.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoice.error ? <PortalError message={invoice.error} onRetry={invoice.refresh} /> : row && <>
-      <h3>{row.invoiceCode}</h3><p>Đơn {row.reservation.reference}</p>
+      <DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(row.id)}`} name={row.invoiceCode} signed={row.signing?.complete} /><h3>{row.invoiceCode}</h3><p>Đơn {row.reservation.reference}</p>
+      {['OPEN','PARTIALLY_PAID'].includes(row.status) && row.balanceDue>0 && <section className="invoice-current-balance" aria-label="Số tiền còn phải thanh toán"><span>Còn phải thanh toán cho hóa đơn này</span><strong>{moneyLabel(row.balanceDue)}</strong><small>{pending || onlinePending ? 'Có giao dịch đang chờ đối chiếu. Không chuyển thêm cho cùng hóa đơn.' : 'Đây là số còn lại sau khi trừ các khoản đã được xác nhận thanh toán.'}</small></section>}
       <dl className="manager-facts"><div><dt>Tiền thuê</dt><dd>{moneyLabel(row.rentalAmount)}</dd></div><div><dt>Tiền cọc</dt><dd>{moneyLabel(row.depositAmount)}</dd></div><div><dt>Dịch vụ</dt><dd>{moneyLabel(row.serviceAmount ?? 0)}</dd></div><div><dt>Phí được duyệt</dt><dd>{moneyLabel(row.chargeAmount ?? 0)}</dd></div><div><dt>Đã thanh toán</dt><dd>{moneyLabel(row.amountPaid)}</dd></div><div><dt>Còn phải thanh toán</dt><dd>{moneyLabel(row.balanceDue)}</dd></div></dl>
       {row.signing?.complete === false && <p role="status">Bạn cần <Link to={row.signing.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(row.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(row.reservation.reference)}`}>đọc và ký tài liệu</Link> trước khi thanh toán.</p>}
       {(saved || pending) && <p role="status">Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận. Bạn chưa cần chuyển thêm cho cùng khoản tiền.</p>}

@@ -1,3 +1,4 @@
+import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
@@ -51,7 +52,7 @@ export function CustomerAppointmentsPage() {
   }, []);
   const earliestAppointment = vietnamLocalMinute(currentTime + 60000);
   const eligibleReservations = useMemo(() => {
-    const map = new Map<string, { id: string; reference: string; startDate: string; pickupStart: string; endDate: string }>();
+    const map = new Map<string, { id: string; reference: string; startDate: string; pickupStart: string; endDate: string; label: string }>();
     const groups = new Map<string, CustomerContract[]>();
     for (const contract of contracts.data?.items ?? [])
       groups.set(contract.reservation.id, [
@@ -73,6 +74,7 @@ export function CustomerAppointmentsPage() {
         map.set(id, {
           id,
           reference: items[0].reservation.reference,
+          label: `${items[0].storageType.name} · Kho ${items.map(contract => contract.storageUnit.unitCode).join(', ')} · ${formatPortalDate(period.start)} – ${formatPortalDate(period.end)} · ${items[0].reservation.reference}`,
           startDate: period.start,
           pickupStart: period.pickupStart,
           endDate: period.end,
@@ -265,12 +267,12 @@ export function CustomerAppointmentsPage() {
             </p>
             <label className="field-label">
               Yêu cầu đặt kho
-              <select
+              <EntitySelect
                 aria-label="Yêu cầu đặt kho"
                 required
                 value={reservationId}
-                onChange={(event) => {
-                  const nextId = event.target.value;
+                onValueChange={(selectedValue) => {
+                  const nextId = selectedValue;
                   const nextReservation = eligibleReservations.find(
                     (item) => item.id === nextId,
                   );
@@ -286,10 +288,10 @@ export function CustomerAppointmentsPage() {
                 <option value="">Chọn yêu cầu đặt kho</option>
                 {eligibleReservations.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.reference}
+                    {item.label}
                   </option>
                 ))}
-              </select>
+              </EntitySelect>
             </label>
             <label className="field-label">
               Ngày giờ mong muốn

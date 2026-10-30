@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { AppointmentsModule } from './modules/appointments/appointments.module.js';
@@ -27,6 +28,7 @@ import { UnitStaffModule } from './modules/unit-staff/unit-staff.module.js';
 
 @Module({
   imports: [
+    DocumentsModule,
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     UnitStaffModule,

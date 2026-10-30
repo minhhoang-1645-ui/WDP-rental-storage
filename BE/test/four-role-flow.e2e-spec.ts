@@ -62,6 +62,7 @@ async function payOnline(invoice: any) {
 describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment provider calls', () => {
   beforeAll(async () => {
     process.env.VNPAY_TMN_CODE = 'LOCALTEST'; process.env.VNPAY_HASH_SECRET = gatewaySecret; process.env.VNPAY_PAYMENT_URL = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'; process.env.VNPAY_RETURN_URL = 'http://127.0.0.1:5173/customer/payments/vnpay-return';
+    process.env.WDP_BANK_CODE = '970436'; process.env.WDP_BANK_ACCOUNT_NUMBER = '0123456789';
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(baseTime));
     app = await NestFactory.create(AppModule, { logger: false }); app.setGlobalPrefix('api'); await app.init();
     db = app.get(PrismaService); const auth = app.get(AuthService);

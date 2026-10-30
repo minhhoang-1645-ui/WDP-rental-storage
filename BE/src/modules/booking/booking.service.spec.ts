@@ -116,6 +116,26 @@ describe('BookingService with PostgreSQL persistence', () => {
     expect(multiple.quote.periodStatus).toBe('APPROVED_DURATION');
   });
 
+  it('returns the configured unit layout and allocates a customer-selected available unit', async () => {
+    const map = await service.getUnitMap(baseDraft());
+    expect(map.units).toHaveLength(3);
+    expect(map.units.map((unit) => ({ code: unit.code, row: unit.row, position: unit.position, available: unit.available }))).toEqual(expect.arrayContaining([
+      { code: unitNumbers[0], row: 1, position: 1, available: true },
+    ]));
+
+    const chosen = map.units[2];
+    const created = await service.createReservation(user, { ...baseDraft(), selectedUnitIds: [chosen.id], note: 'customer-selected-unit' });
+    const detail = await service.getManagerReservation(created.id);
+    expect(detail.allocatedUnits.map((unit) => unit.unitId)).toEqual([chosen.id]);
+  });
+
+  it('rejects a selected unit that becomes unavailable instead of silently assigning a different unit', async () => {
+    const map = await service.getUnitMap(baseDraft());
+    await prisma.storageUnit.update({ where: { id: map.units[0].id }, data: { status: 'MAINTENANCE' } });
+    const result = await service.checkAvailability({ ...baseDraft(), selectedUnitIds: [map.units[0].id] });
+    expect(result).toMatchObject({ available: false, reasonCode: 'CONFLICT' });
+  });
+
   it('prices an approved seven-day custom period through Pricing V1', async () => {
     const result = await service.checkAvailability({ ...baseDraft(), periodMode: 'dates', durationMonths: undefined, endDate: futureDate(67) });
     expect(result.available).toBe(true);

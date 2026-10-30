@@ -104,16 +104,17 @@ export function ManagerActions({
           <option value="CASH">Tiền mặt</option>
         </select>
       </label>
-      <label className="field-label">
-        Mã tham chiếu giao dịch
+      {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
+        {resource === "deposit-settlements" ? "Mã tham chiếu giao dịch" : "Mã giao dịch ngân hàng đã đối soát"}
         <input
           value={reference}
           maxLength={200}
-          required={resource === "deposit-settlements"}
+          required={resource === "deposit-settlements" || method === "BANK_TRANSFER"}
           minLength={resource === "deposit-settlements" ? 2 : undefined}
           onChange={(e) => setReference(e.target.value)}
         />
-      </label>
+      </label>}
+      {resource === "invoices" && method === "CASH" && <p className="staff-muted">Hệ thống sẽ sinh mã phiếu thu duy nhất và lưu người ghi nhận từ tài khoản đang đăng nhập.</p>}
       <label className="field-label">
         Ghi chú
         <textarea
@@ -123,7 +124,7 @@ export function ManagerActions({
           onChange={(e) => setNote(e.target.value)}
         />
       </label>
-      <label className="portal-checkbox">
+      {resource === "deposit-settlements" && <label className="portal-checkbox">
         <input
           type="checkbox"
           checked={received}
@@ -133,7 +134,7 @@ export function ManagerActions({
         {resource === "deposit-settlements"
           ? "Tôi đã hoàn tiền thực tế cho khách."
           : "Tôi đã nhận và đối chiếu khoản tiền này."}
-      </label>
+      </label>}
     </>
   );
   if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
@@ -339,14 +340,13 @@ export function ManagerActions({
                   );
                   return;
                 }
-                if (!received) return;
                 run(
                   `${root}/payments`,
                   "POST",
                   {
                     amount: value,
                     method,
-                    reference: reference.trim() || undefined,
+                    reference: method === "BANK_TRANSFER" ? reference.trim() : undefined,
                     note: note.trim() || undefined,
                   },
                   true,
@@ -379,7 +379,7 @@ export function ManagerActions({
               {paymentFields}
               <button
                 className="button-primary"
-                disabled={busy || !received || !amount}
+                disabled={busy || !amount || (method === "BANK_TRANSFER" && !reference.trim())}
               >
                 Ghi nhận thanh toán
               </button>

@@ -226,6 +226,8 @@ export class BillingService {
             amount: parsed.amount,
             method: parsed.method,
             reference: parsed.reference,
+            bankDestinationKey: parsed.bankDestinationKey,
+            bankTransactionReference: parsed.bankTransactionReference,
             note: parsed.note,
             recordedByUserId: actor.id,
             idempotencyKey: parsed.idempotencyKey,
@@ -244,7 +246,9 @@ export class BillingService {
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
           return this.paymentResult(duplicate);
         }
+        if (parsed.method === 'BANK_TRANSFER') throw new ConflictException('Giao dịch ngân hàng này đã được ghi nhận cho một hóa đơn khác.');
       }
+      if (transaction && this.isPrismaCode(error, 'P2002') && parsed.method === 'BANK_TRANSFER') throw new ConflictException('Giao dịch ngân hàng này đã được ghi nhận cho một hóa đơn khác.');
       if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
       throw error;
     }
@@ -381,6 +385,7 @@ export class BillingService {
         return { ...this.toPaymentSubmission(updated), payment: payment.payment, invoice: payment.invoice, contracts: payment.contracts };
       }, { maxWait: 10000, timeout: 20000 });
     } catch (error) {
+      if (this.isPrismaCode(error, 'P2002')) throw new ConflictException('Giao dịch ngân hàng này đã được ghi nhận cho một hóa đơn khác.');
       if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Yêu cầu hoặc hóa đơn vừa được cập nhật. Vui lòng tải lại.');
       throw error;
     }
@@ -601,7 +606,17 @@ export class BillingService {
     const note = this.optionalText(input.note, 2000, 'note');
     const key = idempotencyKey?.trim() ?? '';
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự và chỉ chứa ký tự an toàn.');
-    return { amount: BigInt(amount), method: method as 'BANK_TRANSFER' | 'CASH', reference, note, idempotencyKey: key };
+    const bankTransactionReference = method === 'BANK_TRANSFER' ? reference : null;
+    if (method === 'BANK_TRANSFER' && !bankTransactionReference) throw new BadRequestException('reference giao dịch ngân hàng đã đối chiếu là bắt buộc.');
+    return {
+      amount: BigInt(amount),
+      method: method as 'BANK_TRANSFER' | 'CASH',
+      reference,
+      bankTransactionReference,
+      bankDestinationKey: method === 'BANK_TRANSFER' ? this.bankDestinationKey() : null,
+      note,
+      idempotencyKey: key,
+    };
   }
 
   private paymentSubmissionInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -630,6 +645,15 @@ export class BillingService {
     if (duplicate.invoiceId !== invoiceId || duplicate.amount !== parsed.amount || duplicate.method !== parsed.method || (duplicate.reference ?? '') !== (parsed.reference ?? '')) {
       throw new ConflictException('Idempotency-Key đã được dùng cho một thanh toán khác.');
     }
+  }
+
+  private bankDestinationKey() {
+    const bankCode = process.env.WDP_BANK_CODE?.trim() ?? '';
+    const accountNumber = process.env.WDP_BANK_ACCOUNT_NUMBER?.trim() ?? '';
+    if (!/^\d{6}$/.test(bankCode) || !accountNumber) {
+      throw new ConflictException('Chưa cấu hình tài khoản nhận chuyển khoản để đối soát giao dịch ngân hàng.');
+    }
+    return createHash('sha256').update(`${bankCode}\u0000${accountNumber}`).digest('hex');
   }
 
   private assertMatchingSubmissionRetry(duplicate: any, invoiceId: string, customerId: string, parsed: { amount: bigint; transferReference: string | null; customerNote: string | null }) {

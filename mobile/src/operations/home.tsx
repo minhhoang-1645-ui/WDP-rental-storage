@@ -28,6 +28,7 @@ export function ManagerHome() {
   const overdue = invoices.filter(row => isOverdueInvoice(row));
   const unassigned = ['support-requests', 'maintenance', 'stock-movements'].flatMap(kind => (activity.data[kind] ?? []).filter(row => assignmentNeedsAttention(kind, row)));
   const pendingPayments = (activity.data['payment-submissions'] ?? []).filter(row => row.status === 'PENDING_VERIFICATION');
+  const pendingDeposits = (activity.data['deposit-settlements'] ?? []).filter(row => managerNeedsAction('deposit-settlements', row));
   const sourceCount = (kinds: string[], value: number) => activity.loading || kinds.some(kind => !activity.data[kind] || activity.failed.includes(activitySources('MANAGER').find(source => source.kind === kind)!.title)) ? '—' : value;
   const refresh = () => { data.refresh(); activity.refresh(); };
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
@@ -35,6 +36,7 @@ export function ManagerHome() {
     <Button title="Làm mới tổng quan" onPress={refresh} disabled={data.loading || activity.checking} />
     <ActivitySummary />
     <WorkHub title="Việc cần xử lý" description="Đi thẳng đến nhóm hồ sơ, xem chi tiết trước khi xác nhận." actions={[
+      { title: 'Hộp thư quyết định', path: '/manager/approvals', description: 'Đối chiếu chuyển khoản, quyết toán cọc, đối soát VNPay và các hồ sơ cần Manager quyết định.', count: sourceCount(['payment-submissions', 'deposit-settlements'], pendingPayments.length + pendingDeposits.length) },
       { title: 'Phân công nhân viên', path: '/manager/assignments?assignment=attention', description: 'Giao người còn thiếu hoặc thay nhân viên đã vô hiệu hóa.', count: sourceCount(['support-requests', 'maintenance', 'stock-movements'], unassigned.length) },
       { title: 'Chờ xác nhận thanh toán', path: '/manager/payment-submissions', description: 'Kiểm tra thông báo chuyển khoản và khoản tiền thực nhận.', count: sourceCount(['payment-submissions'], pendingPayments.length) },
       { title: 'Hóa đơn & công nợ', path: '/manager/invoices', description: activity.data.invoices && !activity.failed.includes('Hóa đơn') ? `${overdue.length} hóa đơn quá hạn. Kiểm tra hạn trả và lịch sử thu tiền.` : 'Kiểm tra số tiền còn phải thu, hạn trả và lịch sử thu tiền.', count: sourceCount(['invoices'], overdue.length) },

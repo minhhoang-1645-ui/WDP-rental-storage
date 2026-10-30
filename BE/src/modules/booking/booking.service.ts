@@ -95,6 +95,39 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     }, { maxWait: 10000, timeout: 20000 });
   }
 
+  /** Public, read-only projection for the customer floor plan. It intentionally exposes no allocation or customer data. */
+  async getUnitMap(input: Record<string, unknown>) {
+    const { draft } = await this.validateDraft(input);
+    return this.prisma.$transaction(async (tx) => {
+      await this.expireUnpaidAutomaticReservations(tx, draft.productId);
+      const endDateExclusive = this.getEndDateExclusive(draft);
+      const start = this.date(draft.startDate);
+      const end = this.date(endDateExclusive);
+      const units = await tx.storageUnit.findMany({
+        where: { storageTypeId: draft.productId },
+        select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true },
+        orderBy: [{ floor: 'asc' }, { zone: 'asc' }, { row: 'asc' }, { position: 'asc' }, { unitNumber: 'asc' }],
+      });
+      const unitIds = units.map((unit) => unit.id);
+      const blocked = await this.blockedUnitIds(tx, unitIds, start, end);
+      return {
+        productId: draft.productId,
+        startDate: draft.startDate,
+        endDateExclusive,
+        units: units.map((unit) => ({
+          id: unit.id,
+          code: unit.unitNumber,
+          floor: unit.floor,
+          zone: unit.zone,
+          row: unit.row,
+          position: unit.position,
+          status: unit.status === 'AVAILABLE' && !blocked.has(unit.id) ? 'AVAILABLE' : unit.status === 'AVAILABLE' ? 'RESERVED' : unit.status,
+          available: unit.status === 'AVAILABLE' && !blocked.has(unit.id),
+        })),
+      };
+    }, { maxWait: 10000, timeout: 20000 });
+  }
+
   async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
     if (user.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
     const { draft } = await this.validateDraft(input);
@@ -127,7 +160,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
               periodMode: draft.periodMode === 'dates' ? 'CUSTOM_DATES' : 'DURATION',
               durationMonths: draft.periodMode === 'duration' ? draft.durationMonths : null,
               adjacentPreference: draft.adjacencyPreference,
-              availabilitySnapshot: availability as unknown as Prisma.InputJsonValue,
+              availabilitySnapshot: this.snapshotWithSelection(availability, draft) as unknown as Prisma.InputJsonValue,
               quoteSnapshot: availability.quote as unknown as Prisma.InputJsonValue,
               status: 'PENDING',
               notes: draft.note,
@@ -255,7 +288,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         periodMode: currentQuote.billingMode === 'MONTHLY' ? 'DURATION' : 'CUSTOM_DATES',
         durationMonths: currentQuote.termMonths,
         adjacentPreference: false,
-        availabilitySnapshot: availability as unknown as Prisma.InputJsonValue,
+        availabilitySnapshot: this.snapshotWithSelection(availability, draft) as unknown as Prisma.InputJsonValue,
         quoteSnapshot: guest.quoteSnapshot,
         status: 'PENDING',
         idempotencyKey: this.tokenHash(`guest-claim:${guest.id}`),
@@ -487,7 +520,10 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     if (availableUnits.length < reservation.quantity) {
       throw new ConflictException('Không đủ kho vật lý cho toàn bộ khoảng thuê. Reservation vẫn ở trạng thái PENDING.');
     }
-    const selectedUnits = this.selectPreferredUnits(availableUnits, reservation.quantity, reservation.adjacentPreference);
+    const selectedUnitIds = this.selectedUnitIdsFromSnapshot(reservation.availabilitySnapshot);
+    const selectedUnits = selectedUnitIds.length
+      ? this.requireSelectedUnits(availableUnits, selectedUnitIds, reservation.quantity)
+      : this.selectPreferredUnits(availableUnits, reservation.quantity, reservation.adjacentPreference);
     await tx.reservationUnit.createMany({
       data: selectedUnits.map((unit) => ({
         reservationId: reservation.id,
@@ -498,7 +534,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     });
     const updated = await tx.reservation.update({
       where: { id: reservation.id },
-      data: { status: 'CONFIRMED', confirmedAt: new Date(), expiresAt: new Date(Date.now() + AUTOMATIC_RESERVATION_HOLD_MS), availabilitySnapshot: availability as unknown as Prisma.InputJsonValue },
+      data: { status: 'CONFIRMED', confirmedAt: new Date(), expiresAt: new Date(Date.now() + AUTOMATIC_RESERVATION_HOLD_MS), availabilitySnapshot: this.snapshotWithSelection(availability, draft) as unknown as Prisma.InputJsonValue },
       include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
     });
     await this.inventory.reservePurchases(tx, updated.id);
@@ -510,6 +546,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   private draftFromReservation(record: any): ReservationDraft {
     const periodMode = record.periodMode === 'CUSTOM_DATES' ? 'dates' as const : 'duration' as const;
     const snapshot = record.quoteSnapshot as { paymentPlan?: PaymentPlan };
+    const selectedUnitIds = this.selectedUnitIdsFromSnapshot(record.availabilitySnapshot);
     return {
       productId: record.storageTypeId,
       startDate: this.isoDate(record.startDate),
@@ -517,6 +554,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       periodMode,
       quantity: record.quantity,
       adjacencyPreference: record.adjacentPreference,
+      ...(selectedUnitIds.length ? { selectedUnitIds } : {}),
       addonIds: [],
       paymentChoice: 'pay-later',
       paymentPlan: snapshot.paymentPlan ?? 'PAY_MONTHLY',
@@ -596,6 +634,51 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       || first.unitNumber.localeCompare(second.unitNumber);
   }
 
+  private async blockedUnitIds(db: DbClient, unitIds: string[], start: Date, end: Date) {
+    if (unitIds.length === 0) return new Set<string>();
+    const allocations = await db.reservationUnit.findMany({
+      where: {
+        storageUnitId: { in: unitIds },
+        releasedAt: null,
+        plannedStartDate: { lt: end },
+        plannedEndDate: { gt: start },
+        reservation: { status: 'CONFIRMED' },
+      },
+      select: { storageUnitId: true },
+    });
+    const blocked = new Set(allocations.map((allocation) => allocation.storageUnitId));
+    for (const unitId of await this.approvedRenewalBlockedUnitIds(db, unitIds, start, end)) blocked.add(unitId);
+    return blocked;
+  }
+
+  private selectedUnitIds(value: unknown, quantity: number) {
+    if (!Array.isArray(value) || value.length !== quantity || value.some((id) => typeof id !== 'string' || !id.trim() || id.length > 100)) {
+      throw new BadRequestException('Số kho được chọn phải khớp số lượng thuê và có mã hợp lệ.');
+    }
+    const ids = value.map((id) => (id as string).trim());
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('Không được chọn trùng một kho vật lý.');
+    return ids.sort();
+  }
+
+  private selectedUnitIdsFromSnapshot(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const ids = (value as Record<string, unknown>).selectedUnitIds;
+    return Array.isArray(ids) && ids.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 100) ? [...ids] as string[] : [];
+  }
+
+  private snapshotWithSelection(availability: AvailabilityResult, draft: ReservationDraft) {
+    return { ...availability, ...(draft.selectedUnitIds?.length ? { selectedUnitIds: draft.selectedUnitIds } : {}) };
+  }
+
+  private requireSelectedUnits(availableUnits: LockedStorageUnit[], selectedUnitIds: string[], quantity: number) {
+    const byId = new Map(availableUnits.map((unit) => [unit.id, unit]));
+    const selected = selectedUnitIds.map((id) => byId.get(id));
+    if (selected.length !== quantity || selected.some((unit) => !unit)) {
+      throw new ConflictException('Một hoặc nhiều kho bạn chọn vừa không còn khả dụng. Reservation vẫn ở trạng thái PENDING.');
+    }
+    return selected as LockedStorageUnit[];
+  }
+
   private async checkAvailabilityForDraft(db: DbClient, draft: ReservationDraft, historicalQuote?: QuoteSnapshot, knownStorageType?: any): Promise<AvailabilityResult> {
     const endDateExclusive = this.getEndDateExclusive(draft);
     const quote = historicalQuote ?? await this.calculateCurrentQuote(db, draft, endDateExclusive, knownStorageType);
@@ -606,19 +689,15 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       select: { id: true },
     });
     const unitIds = units.map((unit) => unit.id);
-    const allocations = unitIds.length ? await db.reservationUnit.findMany({
-      where: {
-        storageUnitId: { in: unitIds },
-        releasedAt: null,
-        plannedStartDate: { lt: end },
-        plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED' },
-      },
-      select: { storageUnitId: true },
-    }) : [];
-    const blocked = new Set(allocations.map((allocation) => allocation.storageUnitId));
-    for (const unitId of await this.approvedRenewalBlockedUnitIds(db, unitIds, start, end)) blocked.add(unitId);
+    const blocked = await this.blockedUnitIds(db, unitIds, start, end);
     const availableUnits = unitIds.filter((id) => !blocked.has(id)).length;
+    if (draft.selectedUnitIds?.length) {
+      const selected = new Set(draft.selectedUnitIds);
+      const allSelectedAvailable = selected.size === draft.quantity && [...selected].every((id) => unitIds.includes(id) && !blocked.has(id));
+      if (!allSelectedAvailable) {
+        return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'CONFLICT', message: 'Một hoặc nhiều kho bạn chọn không còn phù hợp cho toàn bộ thời hạn thuê. Vui lòng chọn lại trên sơ đồ.', quote };
+      }
+    }
     if (availableUnits >= draft.quantity) {
       return {
         available: true,
@@ -631,7 +710,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       };
     }
     const occupiedCount = await db.storageUnit.count({ where: { storageTypeId: draft.productId, status: 'OCCUPIED' } });
-    const reasonCode = unitIds.length === 0 && occupiedCount > 0 ? 'OCCUPIED' : allocations.length > 0 ? 'CONFLICT' : 'INSUFFICIENT_INVENTORY';
+    const reasonCode = unitIds.length === 0 && occupiedCount > 0 ? 'OCCUPIED' : blocked.size > 0 ? 'CONFLICT' : 'INSUFFICIENT_INVENTORY';
     const message = reasonCode === 'OCCUPIED'
       ? 'Các kho vật lý phù hợp vẫn đang ở trạng thái OCCUPIED và chỉ được mở lại khi nhân viên xác nhận trả kho.'
       : reasonCode === 'CONFLICT'
@@ -691,7 +770,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const paymentPlanInput = input.paymentPlan;
     if (!['PAY_MONTHLY', 'PREPAID'].includes(paymentPlanInput as string)) throw new BadRequestException('paymentPlan phải là PAY_MONTHLY hoặc PREPAID.');
     const paymentPlan = paymentPlanInput as PaymentPlan;
-    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, addonIds, serviceSelections, ...(note ? { note } : {}), paymentChoice, paymentPlan };
+    const selectedUnitIds = input.selectedUnitIds === undefined ? undefined : this.selectedUnitIds(input.selectedUnitIds, quantity);
+    const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, ...(selectedUnitIds?.length ? { selectedUnitIds } : {}), addonIds, serviceSelections, ...(note ? { note } : {}), paymentChoice, paymentPlan };
     return { draft, product };
   }
 

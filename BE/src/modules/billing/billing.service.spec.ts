@@ -31,6 +31,8 @@ describe('Invoice and Payment V1', () => {
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
 
   beforeAll(async () => {
+    process.env.WDP_BANK_CODE = '970436';
+    process.env.WDP_BANK_ACCOUNT_NUMBER = '0123456789';
     prisma = new PrismaService();
     await prisma.$connect();
     service = new BillingService(prisma);
@@ -169,7 +171,7 @@ describe('Invoice and Payment V1', () => {
     const reservation = await confirmedReservation(quote());
     const [invoice] = await activate(reservation.id);
     const manager = actor(managerId, 'MANAGER');
-    const partial = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER' }, `rec-part-${runId}`, manager);
+    const partial = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: `REC-PART-${runId}` }, `rec-part-${runId}`, manager);
     expect(partial.invoice).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 1000000, balanceDue: 1900000 });
     const full = await service.recordPayment(invoice.id, { amount: 1900000, method: 'CASH' }, `rec-full-${runId}`, manager);
     expect(full.invoice).toMatchObject({ status: 'PAID', balanceDue: 0 });
@@ -291,6 +293,64 @@ describe('Invoice and Payment V1', () => {
     await expect(service.recordPayment(invoice.id, { amount: 2000000, method: 'BANK_TRANSFER', reference: 'IDEM' }, `idem-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('blocks a duplicate reconciled bank transaction with a different Idempotency-Key', async () => {
+    const reservation = await confirmedReservation(quote());
+    const invoice = await ensure(reservation.id);
+    const manager = actor(managerId, 'MANAGER');
+    const reference = `BANK-DUP-${runId}`;
+    const first = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-dup-first-${runId}`, manager);
+    await expect(service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-dup-second-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).toMatchObject({ amountPaid: 1000000n, balanceDue: 4800000n });
+    expect(await prisma.payment.findUniqueOrThrow({ where: { id: first.payment.id } })).toMatchObject({ bankTransactionReference: reference, bankDestinationKey: expect.any(String) });
+  });
+
+  it('serializes the same bank transaction across concurrent manual and submission verification paths', async () => {
+    const manager = actor(managerId, 'MANAGER');
+    const manualReservation = await confirmedReservation(quote());
+    const submissionReservation = await confirmedReservation(quote());
+    const manualInvoice = await ensure(manualReservation.id);
+    const submissionInvoice = await ensure(submissionReservation.id);
+    const reference = `BANK-RACE-${runId}`;
+    const submission = await service.createCustomerPaymentSubmission(customerId, submissionInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-ONLY' }, `bank-race-submission-${runId}`);
+    const outcomes = await Promise.allSettled([
+      service.recordPayment(manualInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-race-manual-${runId}`, manager),
+      service.verifyPaymentSubmission(submission.id, { reference }, manager),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+    expect(await prisma.payment.count({ where: { bankTransactionReference: reference } })).toBe(1);
+    const storedSubmission = await prisma.paymentSubmission.findUniqueOrThrow({ where: { id: submission.id } });
+    expect(['PENDING_VERIFICATION', 'VERIFIED']).toContain(storedSubmission.status);
+  });
+
+  it('blocks a bank reference shared between manual payment and verified submission in either order', async () => {
+    const manager = actor(managerId, 'MANAGER');
+    const firstReservation = await confirmedReservation(quote());
+    const firstInvoice = await ensure(firstReservation.id);
+    const firstSubmission = await service.createCustomerPaymentSubmission(customerId, firstInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-A' }, `cross-first-submission-${runId}`);
+    const firstReference = `BANK-CROSS-MANUAL-FIRST-${runId}`;
+    await service.recordPayment(firstInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: firstReference }, `cross-first-manual-${runId}`, manager);
+    await expect(service.verifyPaymentSubmission(firstSubmission.id, { reference: firstReference }, manager)).rejects.toBeInstanceOf(ConflictException);
+
+    const secondReservation = await confirmedReservation(quote());
+    const secondInvoice = await ensure(secondReservation.id);
+    const secondReference = `BANK-CROSS-VERIFY-FIRST-${runId}`;
+    const secondSubmission = await service.createCustomerPaymentSubmission(customerId, secondInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-B' }, `cross-second-submission-${runId}`);
+    await service.verifyPaymentSubmission(secondSubmission.id, { reference: secondReference }, manager);
+    await expect(service.recordPayment(secondInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: secondReference }, `cross-second-manual-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('keeps partial bank payments and cash receipts valid with the authenticated recorder', async () => {
+    const reservation = await confirmedReservation(quote());
+    const invoice = await ensure(reservation.id);
+    const manager = actor(managerId, 'MANAGER');
+    await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: `BANK-PARTIAL-${runId}` }, `bank-partial-${runId}`, manager);
+    const cash = await service.recordPayment(invoice.id, { amount: 1000000, method: 'CASH' }, `cash-receipt-${runId}`, manager);
+    expect(cash.payment).toMatchObject({ method: 'CASH', paymentCode: expect.any(String), reference: null, recordedBy: { id: managerId } });
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 2000000n, balanceDue: 3800000n });
+  });
+
   it('creates an idempotent customer transfer notice without creating a Payment or changing the Invoice', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
@@ -341,7 +401,7 @@ describe('Invoice and Payment V1', () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
     const manager = actor(managerId, 'MANAGER');
-    await service.recordPayment(invoice.id, { amount: 5800000, method: 'BANK_TRANSFER' }, `paid-before-notice-${runId}`, manager);
+    await service.recordPayment(invoice.id, { amount: 5800000, method: 'BANK_TRANSFER', reference: `PAID-BEFORE-NOTICE-${runId}` }, `paid-before-notice-${runId}`, manager);
     await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 1 }, `paid-notice-${runId}`)).rejects.toBeInstanceOf(ConflictException);
     const otherReservation = await confirmedReservation(quote(), 1);
     const otherInvoice = await ensure(otherReservation.id);

@@ -34,6 +34,8 @@ describe('Renewal V1', () => {
   const staff = actor(staffId, 'STAFF');
 
   beforeAll(async () => {
+    process.env.WDP_BANK_CODE = '970436';
+    process.env.WDP_BANK_ACCOUNT_NUMBER = '0123456789';
     prisma = new PrismaService();
     await prisma.$connect();
     renewals = new RenewalsService(prisma);
@@ -231,9 +233,9 @@ describe('Renewal V1', () => {
     const contractCount = await prisma.rentalContract.count({ where: { reservationId: reservation.id } });
     const allocationCount = await prisma.reservationUnit.count({ where: { reservationId: reservation.id } });
     const firstInvoice = approved.invoices[0];
-    await billing.recordPayment(firstInvoice.id, { amount: 2000000, method: 'BANK_TRANSFER' }, `renew-partial-${runId}`, manager);
+    await billing.recordPayment(firstInvoice.id, { amount: 2000000, method: 'BANK_TRANSFER', reference: `renew-partial-ref-${runId}` }, `renew-partial-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('APPROVED_PENDING_PAYMENT');
-    await billing.recordPayment(firstInvoice.id, { amount: 4200000, method: 'BANK_TRANSFER' }, `renew-final-${runId}`, manager);
+    await billing.recordPayment(firstInvoice.id, { amount: 4200000, method: 'BANK_TRANSFER', reference: `renew-final-ref-${runId}` }, `renew-final-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('COMPLETED');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE', endDate: new Date('2027-08-10T00:00:00.000Z') } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, plannedEndDate: new Date('2027-08-10T00:00:00.000Z') } })).toBe(2);
@@ -253,7 +255,7 @@ describe('Renewal V1', () => {
     const invoice = approved.invoices[0];
     await billing.recordPayment(invoice.id, { amount: 1000000, method: 'CASH' }, `prepaid-part-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('APPROVED_PENDING_PAYMENT');
-    await billing.recordPayment(invoice.id, { amount: invoice.balanceDue - 1000000, method: 'BANK_TRANSFER' }, `prepaid-full-${runId}`, manager);
+    await billing.recordPayment(invoice.id, { amount: invoice.balanceDue - 1000000, method: 'BANK_TRANSFER', reference: `prepaid-full-ref-${runId}` }, `prepaid-full-${runId}`, manager);
     await prisma.$transaction((tx) => renewals.completeAfterPayment(tx, pending.id));
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE', endDate: new Date('2027-08-10T00:00:00.000Z') } })).toBe(3);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'OCCUPIED' } })).toBe(3);

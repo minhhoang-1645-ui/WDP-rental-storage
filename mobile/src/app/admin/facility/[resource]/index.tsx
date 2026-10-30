@@ -1,1 +1,2 @@
-export { ResourceList as default } from '@/operations/list';
+import { Redirect } from 'expo-router';
+export default function Screen() { return <Redirect href="/admin" />; }

@@ -21,6 +21,8 @@ export interface ReservationDraft {
   durationMonths?: number;
   quantity: number;
   adjacencyPreference: boolean;
+  /** Customer's optional, same-product physical-unit preference. Revalidated while confirming. */
+  selectedUnitIds?: string[];
   addonIds: string[];
   serviceSelections?: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>;
   note?: string;

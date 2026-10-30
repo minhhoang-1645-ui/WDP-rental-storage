@@ -56,6 +56,9 @@ export class BookingAvailabilityRequestDto {
   @ApiProperty({ example: false, description: 'Chỉ có ý nghĩa khi quantity lớn hơn 1.' })
   adjacencyPreference!: boolean;
 
+  @ApiPropertyOptional({ type: [String], description: 'Các StorageUnit cùng product mà khách muốn thuê. Chỉ là lựa chọn; backend kiểm tra lại toàn bộ khoảng thuê khi tạo Reservation.', example: ['cm123storageunit'] })
+  selectedUnitIds?: string[];
+
   @ApiProperty({ type: [String], example: [], description: 'Compatibility field. Dùng services để chọn add-on và số lượng.' })
   addonIds!: string[];
 
@@ -157,7 +160,7 @@ export class RecordPaymentRequestDto {
   @ApiProperty({ enum: ['BANK_TRANSFER', 'CASH'], example: 'BANK_TRANSFER' })
   method!: 'BANK_TRANSFER' | 'CASH';
 
-  @ApiPropertyOptional({ example: 'BANK-REF-123', maxLength: 200, description: 'Mã tham chiếu giao dịch; không chứa thông tin đăng nhập ngân hàng.' })
+  @ApiPropertyOptional({ example: 'BANK-REF-123', maxLength: 200, description: 'Bắt buộc với BANK_TRANSFER: mã giao dịch trên sao kê đã được Manager đối soát; không dùng mã Customer tự khai làm bằng chứng.' })
   reference?: string;
 
   @ApiPropertyOptional({ example: 'Đã nhận đợt thanh toán đầu.', maxLength: 2000 })

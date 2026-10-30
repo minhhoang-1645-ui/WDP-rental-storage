@@ -1023,6 +1023,8 @@ model Payment {
   amount                     BigInt
   method                     PaymentMethod
   reference                  String?
+  bankDestinationKey         String?
+  bankTransactionReference   String?
   note                       String?
   receivedAt                 DateTime                  @default(now())
   recordedByUserId           String?
@@ -1037,6 +1039,7 @@ model Payment {
   @@index([invoiceId, receivedAt])
   @@index([recordedByUserId, receivedAt])
   @@index([method, receivedAt])
+  @@unique([bankDestinationKey, bankTransactionReference])
 }
 
 model PaymentSubmission {

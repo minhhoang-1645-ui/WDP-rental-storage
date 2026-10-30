@@ -38,6 +38,8 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   const manager = actor(managerId, 'MANAGER');
 
   beforeAll(async () => {
+    process.env.WDP_BANK_CODE = '970436';
+    process.env.WDP_BANK_ACCOUNT_NUMBER = '0123456789';
     prisma = new PrismaService(); await prisma.$connect();
     returns = new ReturnsService(prisma); settlements = new DepositSettlementsService(prisma); billing = new BillingService(prisma); rentals = new ActiveRentalsService(prisma); maintenance = new MaintenanceService(prisma);
     await prisma.facility.create({ data: { id: facilityId, code: `SETTLE-${runId}`, name: 'Settlement test', address: 'Test only' } });

@@ -63,10 +63,11 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     }
     add('Từ chối gia hạn', '/reject', [note('reason', 'Lý do từ chối', true, 2000)]);
   }
-  if (resource === 'invoices' && ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0) add('Ghi nhận khoản thu', '/payments', [
-    { name: 'amount', title: 'Số tiền thực nhận (VND)', numeric: true, required: true, minimum: 1, maximum: Number(row.balanceDue), initial: String(row.balanceDue) },
-    select('method', 'Phương thức', ['BANK_TRANSFER', 'CASH'], 'BANK_TRANSFER'), { name: 'reference', title: 'Mã giao dịch thực tế', maxLength: 200 }, note('note', 'Ghi chú', false, 2000),
-  ], 'POST', true, 'Chỉ ghi nhận khoản tiền đã nhận và đối chiếu thực tế. Không vượt số dư hóa đơn.');
+  if (resource === 'invoices' && ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0) {
+    const amount = { name: 'amount', title: 'Số tiền thực nhận (VND)', numeric: true, required: true, minimum: 1, maximum: Number(row.balanceDue), initial: String(row.balanceDue) } as FormField;
+    actions.push({ title: 'Ghi nhận chuyển khoản', path: root + '/payments', method: 'POST', idempotent: true, fields: [amount, { name: 'reference', title: 'Mã giao dịch ngân hàng đã đối soát', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 2000)], transform: input => ({ ...input, method: 'BANK_TRANSFER' }), description: 'Chỉ ghi nhận sau khi đối soát sao kê thực nhận. Mã do Customer khai báo không phải căn cứ xác nhận.' });
+    actions.push({ title: 'Ghi nhận tiền mặt', path: root + '/payments', method: 'POST', idempotent: true, fields: [amount, note('note', 'Ghi chú', false, 2000)], transform: input => ({ ...input, method: 'CASH' }), description: 'Hệ thống sẽ sinh mã phiếu thu duy nhất và lưu Manager ghi nhận từ phiên đăng nhập.' });
+  }
   if (resource === 'payment-submissions' && row.status === 'PENDING_VERIFICATION') {
     if (!row.isDemo) add('Xác nhận đã nhận chuyển khoản', '/verify', [{ name: 'reference', title: 'Mã giao dịch ngân hàng đã đối chiếu', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 1000)], 'POST', false, 'Chỉ xác nhận sau khi đã đối chiếu và nhận đủ khoản gửi.');
     add('Từ chối thông báo chuyển khoản', '/reject', [note('reason', 'Lý do từ chối', true, 1000)]);

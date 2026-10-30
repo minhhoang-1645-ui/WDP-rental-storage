@@ -1,1 +1,2 @@
-export { Reports as default } from '@/operations/reports';
+import { Redirect } from 'expo-router';
+export default function Screen() { return <Redirect href="/admin" />; }

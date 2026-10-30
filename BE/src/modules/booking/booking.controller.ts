@@ -27,6 +27,15 @@ export class BookingController {
     return this.bookingService.checkAvailability(body);
   }
 
+  @Post('booking/unit-map')
+  @ApiOperation({ summary: 'Sơ đồ các kho vật lý theo kỳ thuê', description: 'Guest access. Trả vị trí đã được vận hành cấu hình (floor, zone, row, position) và khả dụng cho toàn bộ khoảng thuê. Chỉ đọc, không giữ kho.' })
+  @ApiBody({ type: BookingAvailabilityRequestDto })
+  @ApiOkResponse({ description: 'Danh sách unit thuộc đúng StorageType, không có dữ liệu khách thuê hoặc allocation nội bộ.' })
+  @ApiBadRequestResponse({ description: 'Dữ liệu kỳ thuê hoặc product không hợp lệ.' })
+  unitMap(@Body() body: Record<string, unknown>) {
+    return this.bookingService.getUnitMap(body);
+  }
+
   @Post('reservations')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')

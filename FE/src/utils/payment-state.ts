@@ -6,7 +6,7 @@ export function paymentWindowClosed(invoice: { type?: unknown; reservation?: { s
 
 export function paymentExpiry(expiresAt: unknown, createdAt: unknown): string {
   if (typeof expiresAt === 'string' && Number.isFinite(Date.parse(expiresAt))) return expiresAt
-  return typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? new Date(Date.parse(createdAt) + 15 * 60_000).toISOString() : ''
+  return typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? new Date(Date.parse(createdAt) + 5 * 60_000).toISOString() : ''
 }
 
 export function paymentTimeLeft(expiresAt: unknown, now = Date.now()) {

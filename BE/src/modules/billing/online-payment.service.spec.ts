@@ -93,7 +93,7 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
     const { service, prisma } = fixture();
     prisma.onlinePaymentTransaction.findFirst.mockResolvedValue({
       id: 'transaction-1', merchantOrderRef: 'WDP-ORDER-1', status: 'PENDING', amount: 650000n,
-      createdAt: new Date(Date.now() - 16 * 60_000), paidAt: null, updatedAt: new Date(),
+      createdAt: new Date(Date.now() - 6 * 60_000), paidAt: null, updatedAt: new Date(),
       invoice: { id: 'invoice-1', invoiceCode: 'INV-1', type: 'INITIAL', status: 'OPEN', amountPaid: 0n, balanceDue: 650000n, paidAt: null },
       payment: null,
     });

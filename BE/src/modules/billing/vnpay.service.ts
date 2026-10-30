@@ -20,7 +20,7 @@ export class VnpayService {
       vnp_OrderInfo: `Thanh toan hoa don WDP ${input.orderRef}`, vnp_OrderType: 'other',
       vnp_Locale: input.locale === 'en' ? 'en' : 'vn', vnp_ReturnUrl: settings.returnUrl,
       vnp_IpAddr: input.ipAddress || '127.0.0.1', vnp_CreateDate: this.vnpDate(input.createdAt),
-      vnp_ExpireDate: this.vnpDate(new Date(input.createdAt.getTime() + 15 * 60_000)),
+      vnp_ExpireDate: this.vnpDate(new Date(input.createdAt.getTime() + 5 * 60_000)),
       ...(input.bankCode ? { vnp_BankCode: input.bankCode } : {}),
     };
     const canonical = this.canonical(params);

@@ -70,7 +70,7 @@ function ReturnResult({ query }: { query: string }) {
   const successful = result?.status === 'SUCCESS' && result.invoice.status === 'PAID'
   const failed = result?.status === 'FAILED'
   const nextStep = result?.invoice.type === 'INITIAL'
-    ? { to: '/customer/contracts?payment=success', label: 'Xác nhận hợp đồng' }
+    ? { to: '/customer/appointments?payment=success', label: 'Đặt lịch nhận kho' }
     : result?.invoice.type === 'RENEWAL'
       ? { to: '/customer/renewals?payment=success', label: 'Xem gia hạn' }
       : { to: '/customer/payments?view=payments&payment=success', label: 'Xem giao dịch đã ghi nhận' }

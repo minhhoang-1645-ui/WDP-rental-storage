@@ -5,6 +5,7 @@ import { relatedResource } from '@/portals/resources';
 import { formatDate } from '@/utils/format';
 
 const names: Record<string, string> = {
+  usageStatus: 'Quyền sử dụng kho',
   totalApprovedCharges: 'Tổng phí đã duyệt', deductionAmount: 'Khấu trừ cọc', settledAt: 'Hoàn tất quyết toán lúc', observedIssueType: 'Vấn đề được ghi nhận', approvedIssueType: 'Phân loại đã duyệt', conditionNote: 'Tình trạng kho', billingCycle: 'Kỳ hóa đơn', renewalCycle: 'Kỳ gia hạn', available: 'Khả dụng toàn kỳ', reasonCode: 'Kết quả kiểm tra', inventoryGuarantee: 'Đảm bảo giữ kho', amountPayableNow: 'Số tiền phải trả ngay',
   reconciliationCode: 'Mã đối soát', merchantOrderRef: 'Mã giao dịch VNPay', providerTransactionId: 'Tham chiếu VNPay',
   id: 'Mã dữ liệu', reference: 'Mã tham chiếu', reservationReference: 'Mã đặt kho', fullName: 'Họ tên', email: 'Email', phone: 'Số điện thoại', role: 'Vai trò', accountStatus: 'Trạng thái tài khoản', status: 'Trạng thái', rentalState: 'Trạng thái thuê',
@@ -28,6 +29,7 @@ const nested: Record<string, string> = { transaction: 'Giao dịch cần đối 
 };
 const related: Record<string, string> = { contracts: 'contracts', invoices: 'invoices', payments: 'payments', reservations: 'reservations', outstandingInvoice: 'invoices', contract: 'contracts', reservation: 'reservations', latestReservation: 'reservations', customer: 'customers', unit: 'units', storageUnit: 'units', fromUnit: 'units', toUnit: 'units', invoice: 'invoices', payment: 'payments', renewalRequest: 'renewals', returnRequest: 'returns', depositSettlement: 'deposit-settlements', activeMaintenance: 'maintenance', supportRequest: 'support-requests' };
 function display(key: string, value: unknown) {
+  if (key === 'usageStatus' && value === 'WAITING_FOR_RENTAL_START') return 'Đã bàn giao chìa khóa, chờ ngày bắt đầu thuê';
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'Có' : 'Không';
   if (/Amount$|Price$|Subtotal$|^amount$|^balanceDue$|^deposit$|^grandTotal$|^total(Invoiced|Paid|Outstanding)$/.test(key)) return value === null ? 'Cần xác nhận báo giá' : money(typeof value === 'string' && value.trim() ? Number(value) : value);

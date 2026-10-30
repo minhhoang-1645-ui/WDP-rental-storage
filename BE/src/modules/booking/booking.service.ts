@@ -567,7 +567,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
 
   private async expireUnpaidAutomaticReservations(tx: Prisma.TransactionClient, storageTypeId?: string) {
     const now = new Date();
-    const activePaymentCutoff = new Date(now.getTime() - 15 * 60_000);
+    const activePaymentCutoff = new Date(now.getTime() - 5 * 60_000);
     const stale = await tx.reservation.findMany({
       where: {
         ...(storageTypeId ? { storageTypeId } : {}),

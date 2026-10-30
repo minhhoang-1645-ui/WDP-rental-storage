@@ -10,7 +10,7 @@ const choice = (name: string, title: string, values: string[], initial?: string)
 const issues = ['NORMAL_WEAR', 'FACILITY_FAULT', 'CUSTOMER_DAMAGE', 'CLEANING_REQUIRED', 'LOST_KEY_OR_ACCESS_ITEM', 'OTHER'];
 export function handoverWindowIssue(row: Row, now: number) {
   const today = new Date(now + 25200000).toISOString().slice(0, 10);
-  return rows(row.allocatedUnits).some(item => (text(item, 'contractStartDate') && today < text(item, 'contractStartDate')) || (text(item, 'contractEndDate') && today >= text(item, 'contractEndDate')));
+  return rows(row.allocatedUnits).some(item => (text(item, 'contractStartDate') && today < keyCollectionStartDate(text(item, 'contractStartDate'))) || (text(item, 'contractEndDate') && today >= text(item, 'contractEndDate')));
 }
 export function staffRecordActions(resource: string, row: Row, userId: string, now: number): FormAction[] {
   const root = `/staff/${resource}/${encodeURIComponent(idOf(row))}`, result: FormAction[] = [];

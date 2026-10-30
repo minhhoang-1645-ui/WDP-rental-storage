@@ -15,6 +15,7 @@ import type { BankTransferConfig, OnlinePaymentPollingStatus, PaymentSubmission 
 import { buildVietQrPayload } from '../../utils/vietqr'
 import { usePaginatedResource } from '../../services/usePaginatedResource'
 import { readPendingOnlinePayments, removePendingOnlinePayment, savePendingOnlinePayment, type PendingOnlinePayment } from '../../services/online-payment-session'
+import { paymentTimeLeft } from '../../utils/payment-state'
 
 type View = 'invoices' | 'payments' | 'submissions'
 
@@ -115,7 +116,7 @@ export function CustomerPaymentsPage() {
       const transaction = await customerBillingApi.createOnlinePayment(invoice.id, key, mode === 'VNPAYQR' ? 'VNPAYQR' : undefined)
       const destination = new URL(transaction.paymentUrl)
       if (destination.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)*vnpayment\.vn$/i.test(destination.hostname) || destination.username || destination.password) throw new Error('Đường dẫn thanh toán VNPay không hợp lệ.')
-      const pending: PendingOnlinePayment = { customerId: user.id, invoiceId: invoice.id, invoiceCode: invoice.invoiceCode, transactionId: transaction.transactionId, merchantOrderRef: transaction.merchantOrderRef, amount: transaction.amount, expiresAt: transaction.expiresAt, mode, createdAt: new Date().toISOString() }
+      const pending: PendingOnlinePayment = { customerId: user.id, invoiceId: invoice.id, invoiceCode: invoice.invoiceCode, transactionId: transaction.transactionId, merchantOrderRef: transaction.merchantOrderRef, amount: transaction.amount, expiresAt: transaction.expiresAt, paymentUrl: destination.href, mode, createdAt: new Date().toISOString() }
       savePendingOnlinePayment(pending)
       setPendingOnline(pending)
       setOnlineStatus('PENDING')
@@ -156,10 +157,14 @@ export function CustomerPaymentsPage() {
 }
 
 function OnlinePaymentWaiting({ payment, status, networkError, onRetry }: { payment: PendingOnlinePayment; status: OnlinePaymentPollingStatus; networkError: string; onRetry: () => void }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
   const failed = status === 'FAILED'
   return <div className={`vnpay-waiting-panel ${failed ? 'is-error' : ''}`} role={failed ? 'alert' : 'status'}>
     <span className="vnpay-waiting-icon">{failed ? <X size={23} /> : <span className="customer-spinner" />}</span>
+    {!failed && <small>{paymentTimeLeft(payment.expiresAt, now)}. Hết phiên có thể thử lại nếu đơn còn hạn giữ kho.</small>}
     <div><strong>{failed ? 'Thanh toán VNPay không thành công' : 'Đang chờ VNPay xác nhận'}</strong><span>{payment.invoiceCode} · {moneyLabel(payment.amount)} · {payment.mode === 'VNPAYQR' ? 'VNPay QR' : 'VNPay'}</span>{networkError && !failed && <small>{networkError} Hệ thống sẽ tự thử lại.</small>}</div>
+    {!failed && payment.paymentUrl && (() => { try { const url = new URL(payment.paymentUrl); return url.protocol === 'https:' && /^(?:[a-z0-9-]+\.)*vnpayment\.vn$/i.test(url.hostname) && !url.username && !url.password ? <a className="button-secondary" href={url.href} target="_blank" rel="noopener noreferrer">Mở lại VNPay</a> : null } catch { return null } })()}
     {failed && <button type="button" className="button-secondary" onClick={onRetry}>Thử thanh toán lại</button>}
   </div>
 }

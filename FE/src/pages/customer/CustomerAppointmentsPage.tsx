@@ -238,6 +238,7 @@ export function CustomerAppointmentsPage() {
                     </p>
                   )}
                   {item.note && <p>Ghi chú: {item.note}</p>}
+                  {item.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Đã nhận giấy tờ, hướng dẫn và chìa khóa. Chờ ngày bắt đầu thuê để sử dụng kho và đưa hàng vào; hệ thống tự kích hoạt khi đủ điều kiện.</p>}
                   {workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
                 </article>
               ))}

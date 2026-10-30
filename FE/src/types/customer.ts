@@ -94,6 +94,7 @@ export interface CustomerPayment {
 }
 
 export interface CustomerAppointment {
+  usageStatus?: 'WAITING_FOR_RENTAL_START' | 'ACTIVE' | null;
   id: string
   appointmentCode: string
   status: 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED'

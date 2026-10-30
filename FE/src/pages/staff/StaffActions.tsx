@@ -111,6 +111,7 @@ export function StaffActions({
             >
               {handoverIssue && <p className="booking-alert" role="status">{handoverIssue}</p>}
               <h3>Biên bản bàn giao thực tế</h3>
+              <p>Ghi nhận giấy tờ, hướng dẫn và chìa khóa đã giao. Nếu bàn giao sớm, hợp đồng và quyền sử dụng kho tự kích hoạt từ ngày bắt đầu thuê; khách chưa được đưa hàng vào trước ngày đó.</p>
               <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>

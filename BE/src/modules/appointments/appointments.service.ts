@@ -1,5 +1,5 @@
 import { handoverReport } from './handover-report.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Logger, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -15,7 +15,38 @@ export interface AppointmentListQuery {
 }
 
 @Injectable()
-export class AppointmentsService {
+export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
+  private activationTimer?: ReturnType<typeof setInterval>;
+  private sweeping = false;
+  private readonly logger = new Logger(AppointmentsService.name);
+  onModuleInit() {
+    this.activationTimer = setInterval(() => { void this.activateDueHandovers(); }, 30_000);
+    this.activationTimer.unref?.();
+    void this.activateDueHandovers();
+  }
+  onModuleDestroy() { if (this.activationTimer) clearInterval(this.activationTimer); }
+
+  async activateDueHandovers() {
+    if (this.sweeping) return;
+    this.sweeping = true;
+    try {
+      const today = new Date(`${this.vietnamDate(new Date())}T00:00:00Z`);
+      const pending = await this.prisma.handoverAppointment.findMany({ where: { status: 'COMPLETED', reservation: { status: 'CONFIRMED', contracts: { some: { status: 'READY_FOR_HANDOVER', startDate: { lte: today }, endDate: { gt: today } } } } }, select: { id: true }, take: 100 });
+      for (const item of pending) {
+        try {
+          await this.serializable(async tx => {
+            await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${item.id} FOR UPDATE`);
+            const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, include: this.appointmentInclude() });
+            if (!current || current.status !== 'COMPLETED' || current.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE')) return;
+            this.assertHandoverReady(current.reservation);
+            if (current.reservation.contracts.some((contract: any) => this.vietnamDate(new Date()) < this.isoDate(contract.startDate) || this.vietnamDate(new Date()) >= this.isoDate(contract.endDate))) return;
+            await this.activateContracts(tx, current.reservation);
+          }, 'Hồ sơ kích hoạt vừa thay đổi.');
+        } catch (error) { this.logger.warn(`Chưa kích hoạt được lịch bàn giao ${item.id}: ${error instanceof Error ? error.message : 'Lỗi xử lý'}`); }
+      }
+    } catch (error) { this.logger.error('Không kiểm tra được lịch kích hoạt kho.', error instanceof Error ? error.message : undefined); }
+    finally { this.sweeping = false; }
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: BillingService = new BillingService(prisma),
@@ -40,6 +71,7 @@ export class AppointmentsService {
         if (!reservation) throw new NotFoundException('Không tìm thấy Reservation.');
         this.assertHandoverReady(reservation);
         this.assertAppointmentDate(reservation, parsed.scheduledAt);
+        if (await tx.handoverAppointment.findFirst({ where: { reservationId: reservation.id, status: 'COMPLETED' }, select: { id: true } })) throw new ConflictException('Đã hoàn tất bàn giao chìa khóa cho đơn này. Hệ thống sẽ kích hoạt khi đến ngày thuê.');
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
         const sequence = await tx.handoverAppointment.count({ where: { reservationId: reservation.id } }) + 1;
@@ -139,18 +171,7 @@ export class AppointmentsService {
         if (otherActive > 0) throw new ConflictException('Có StorageUnit đang thuộc một hợp đồng ACTIVE khác.');
 
         const now = new Date();
-        const activated = await tx.rentalContract.updateMany({
-          where: { id: { in: contracts.map((contract: any) => contract.id) }, status: 'READY_FOR_HANDOVER' },
-          data: { status: 'ACTIVE', activatedAt: now },
-        });
-        if (activated.count !== current.reservation.quantity) throw new ConflictException('Không thể kích hoạt đầy đủ tất cả RentalContract.');
-        const occupied = await tx.storageUnit.updateMany({
-          where: { id: { in: unitIds }, status: { notIn: ['MAINTENANCE', 'OCCUPIED'] } },
-          data: { status: 'OCCUPIED' },
-        });
-        if (occupied.count !== current.reservation.quantity) throw new ConflictException('Không thể chuyển đầy đủ StorageUnit sang OCCUPIED.');
-        await this.inventory.fulfillPurchases(tx, current.reservation.id);
-        await this.billing.ensureRecurringInvoices(tx, current.reservation.id);
+        if (contracts.every((contract: any) => this.vietnamDate(now) >= this.isoDate(contract.startDate))) await this.activateContracts(tx, current.reservation);
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
           data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, handoverNote, activeKey: null },
@@ -158,6 +179,26 @@ export class AppointmentsService {
         });
         return this.toAppointment(updated, true);
       }, 'Lịch bàn giao vừa được hoàn tất bởi yêu cầu khác. Vui lòng tải lại.');
+  }
+
+  private async activateContracts(tx: Prisma.TransactionClient, reservation: any) {
+        const contracts = reservation.contracts;
+        const unitIds = contracts.map((contract: any) => contract.reservationUnit.storageUnit.id);
+        if (contracts.some((contract: any) => ['MAINTENANCE', 'OCCUPIED'].includes(contract.reservationUnit.storageUnit.status))) throw new ConflictException('Kho chưa sẵn sàng để kích hoạt.');
+        if (await tx.rentalContract.count({ where: { status: 'ACTIVE', reservationId: { not: reservation.id }, reservationUnit: { storageUnitId: { in: unitIds } } } })) throw new ConflictException('Kho vẫn thuộc hợp đồng đang sử dụng khác.');
+        const now = new Date();
+        const activated = await tx.rentalContract.updateMany({
+          where: { id: { in: contracts.map((contract: any) => contract.id) }, status: 'READY_FOR_HANDOVER' },
+          data: { status: 'ACTIVE', activatedAt: now },
+        });
+        if (activated.count !== reservation.quantity) throw new ConflictException('Không thể kích hoạt đầy đủ tất cả RentalContract.');
+        const occupied = await tx.storageUnit.updateMany({
+          where: { id: { in: unitIds }, status: { notIn: ['MAINTENANCE', 'OCCUPIED'] } },
+          data: { status: 'OCCUPIED' },
+        });
+        if (occupied.count !== reservation.quantity) throw new ConflictException('Không thể chuyển đầy đủ StorageUnit sang OCCUPIED.');
+        await this.inventory.fulfillPurchases(tx, reservation.id);
+        await this.billing.ensureRecurringInvoices(tx, reservation.id);
   }
 
   private assertHandoverReady(reservation: any) {
@@ -189,7 +230,7 @@ export class AppointmentsService {
   private assertHandoverExecutionTime(reservation: any, scheduledAt: Date, now: Date) {
     if (now < scheduledAt) throw new ConflictException({ code: 'HANDOVER_BEFORE_APPOINTMENT_TIME', message: 'Không thể hoàn tất bàn giao trước giờ hẹn.' });
     const today = this.vietnamDate(now);
-    if (reservation.contracts.some((contract: any) => today < this.isoDate(contract.startDate) || today >= this.isoDate(contract.endDate))) {
+    if (reservation.contracts.some((contract: any) => today < this.keyPickupStartDate(contract.startDate) || today >= this.isoDate(contract.endDate))) {
       throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Không thể kích hoạt hợp đồng ngoài kỳ thuê.' });
     }
   }
@@ -263,6 +304,7 @@ export class AppointmentsService {
       id: record.id,
       appointmentCode: record.appointmentCode,
       status: record.status,
+      usageStatus: record.status === 'COMPLETED' && record.reservation.contracts.some((contract: any) => contract.status === 'READY_FOR_HANDOVER') ? 'WAITING_FOR_RENTAL_START' : record.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE') ? 'ACTIVE' : null,
       scheduledAt: record.scheduledAt.toISOString(),
       reservation: {
         id: record.reservation.id,

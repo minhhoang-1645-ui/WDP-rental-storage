@@ -43,7 +43,7 @@ export class StaffAppointmentsController {
   }
 
   @Post(':id/complete-handover')
-  @ApiOperation({ summary: 'Hoàn tất bàn giao vật lý', description: 'Atomically: CONFIRMED appointment → COMPLETED, contracts → ACTIVE, units → OCCUPIED. Không thay đổi startDate/endDate.' })
+  @ApiOperation({ summary: 'Hoàn tất bàn giao giấy tờ và chìa khóa', description: 'Có thể sớm tối đa 3 ngày: lịch chuyển COMPLETED, hợp đồng chờ ngày thuê. Từ ngày thuê, hệ thống tự chuyển hợp đồng ACTIVE và kho OCCUPIED khi đủ điều kiện. Không thay đổi kỳ thuê.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
   @ApiBody({ type: CompleteHandoverRequestDto, examples: { completed: { value: { note: 'Đã bàn giao đầy đủ các kho cho khách hàng.' } } } })
   @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'COMPLETED', completedBy: { fullName: 'WDP Staff', role: 'STAFF' }, completedAt: '2026-11-10T02:35:00.000Z', allocatedUnits: [{ contractCode: 'WDP-2026-AB12CD34-C01', contractStatus: 'ACTIVE', activatedAt: '2026-11-10T02:35:00.000Z', unitCode: 'SM-B12-001', unitStatus: 'OCCUPIED' }] } } })

@@ -8,6 +8,7 @@ export type PendingOnlinePayment = {
   merchantOrderRef: string
   amount: number
   expiresAt: string
+  paymentUrl?: string
   mode: 'VNPAY' | 'VNPAYQR'
   createdAt: string
 }

@@ -1,3 +1,6 @@
+import { moneyLabel } from '../../components/customer/CustomerPortalHelpers';
+import type { PendingReservation } from '../../types/booking';
+import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
@@ -44,7 +47,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
     user?.id ?? "",
     true,
   );
-  const reservations = useApiResource<Array<{ id: string }>>(
+  const reservations = useApiResource<PendingReservation[]>(
     "/reservations",
     user?.id ?? "",
   );
@@ -80,13 +83,13 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
       map.set(rental.reservationReference, `${rental.storageType.name} · Kho ${rental.contracts.map(contract => contract.unit.unitCode).join(', ')} · ${rental.reservationReference}`);
     if (!operational) {
       for (const invoice of invoices.data?.items ?? [])
-        map.set(invoice.reservation.reference, invoice.reservation.reference);
+        if (!map.has(invoice.reservation.reference)) map.set(invoice.reservation.reference, `${invoice.reservation.storageType.name} · ${invoice.reservation.reference}`);
       for (const reservation of reservations.data ?? [])
-        map.set(reservation.id, reservation.id);
+        if (!map.has(reservation.id)) map.set(reservation.id, `${reservation.product?.name || 'Yêu cầu thuê kho'} · ${reservation.id}`);
     }
     return [...map].map(([id, reference]) => ({ id, reference }));
   }, [reservations.data, rentals.data, invoices.data, operational]);
-  const [reservationId, setReservationId] = useScopedSelection('reservation', reservationOptions.map(option => ({ value: option.id, aliases: (rentals.data?.items ?? []).filter(item => item.reservationReference === option.id).map(item => item.reservationId) })));
+  const [reservationId, setReservationId] = useScopedSelection('reservation', reservationOptions.map(option => ({ value: option.id, aliases: [...(rentals.data?.items ?? []).filter(item => item.reservationReference === option.id).map(item => item.reservationId), ...(invoices.data?.items ?? []).filter(item => item.reservation.reference === option.id).map(item => item.reservation.id)] })));
   const selectedRental = rentals.data?.items.find(
     (item) =>
       item.reservationId === reservationId ||
@@ -184,12 +187,12 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             <h2>{transferOnly ? 'Gửi yêu cầu chuyển kho' : 'Gửi yêu cầu mới'}</h2>
             <label className="field-label">
               Yêu cầu đặt kho
-              <select
+              <EntitySelect
                 aria-label="Yêu cầu đặt kho"
                 required
                 value={reservationId}
-                onChange={(event) => {
-                  setReservationId(event.target.value);
+                onValueChange={(selectedValue) => {
+                  setReservationId(selectedValue);
                   setContractId("");
                   setUnitId("");
                   setInvoiceId("");
@@ -201,7 +204,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     {item.reference}
                   </option>
                 ))}
-              </select>
+              </EntitySelect>
             </label>
             {!transferOnly && <label className="field-label">
               Loại hỗ trợ
@@ -227,15 +230,15 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
               <>
                 <label className="field-label">
                   Hợp đồng liên quan
-                  <select
+                  <EntitySelect
                     aria-label="Hợp đồng liên quan"
                     required={transferOnly}
                     value={contractId}
-                    onChange={(event) => {
-                      setContractId(event.target.value);
+                    onValueChange={(selectedValue) => {
+                      setContractId(selectedValue);
                       setUnitId(
                         selectedRental.contracts.find(
-                          (item) => item.id === event.target.value,
+                          (item) => item.id === selectedValue,
                         )?.unit.id ?? "",
                       );
                     }}
@@ -246,14 +249,14 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                         Kho {item.unit.unitCode} · {formatPortalDate(item.startDate)} – {formatPortalDate(item.endDate)} · {item.contractCode}
                       </option>
                     ))}
-                  </select>
+                  </EntitySelect>
                 </label>
-                <label className="field-label">
+                {!contractId && <label className="field-label">
                   Kho liên quan
-                  <select
+                  <EntitySelect
                     aria-label="Kho liên quan"
                     value={unitId}
-                    onChange={(event) => setUnitId(event.target.value)}
+                    onValueChange={(selectedValue) => setUnitId(selectedValue)}
                   >
                     <option value="">Chọn kho nếu có</option>
                     {selectedRental.contracts
@@ -263,25 +266,26 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                           {item.unit.unitCode}
                         </option>
                       ))}
-                  </select>
-                </label>
+                  </EntitySelect>
+                </label>}
+                {contractId && <p className="activity-update-note">Kho được chọn theo hợp đồng: <strong>{selectedRental.contracts.find(item => item.id === contractId)?.unit.unitCode}</strong>. Bạn không cần chọn lại kho.</p>}
               </>
             )}
             {category === "PAYMENT_SUPPORT" && (
               <label className="field-label">
                 Hóa đơn liên quan
-                <select
+                <EntitySelect
                   aria-label="Hóa đơn liên quan"
                   value={invoiceId}
-                  onChange={(event) => setInvoiceId(event.target.value)}
+                  onValueChange={(selectedValue) => setInvoiceId(selectedValue)}
                 >
                   <option value="">Chọn hóa đơn nếu có</option>
                   {selectedInvoices.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.invoiceCode}
+                      {item.invoiceCode} · Còn {moneyLabel(item.balanceDue)} / {moneyLabel(item.totalAmount)} · {formatPortalDate(item.billingPeriodStart)} – {formatPortalDate(item.billingPeriodEnd)}
                     </option>
                   ))}
-                </select>
+                </EntitySelect>
               </label>
             )}
             <label className="field-label">

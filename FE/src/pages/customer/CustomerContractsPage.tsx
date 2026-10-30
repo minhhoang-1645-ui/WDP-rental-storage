@@ -17,7 +17,9 @@ import type { CustomerContract } from "../../types/customer";
 import { mutate } from "../../services/portal";
 import { ApiError } from "../../services/api";
 import { SignatureAgreement } from '../../components/customer/SignatureAgreement';
-import { DocumentSnapshot } from '../../components/customer/DocumentSnapshot';
+import { DocumentFile } from '../../components/customer/DocumentFile';
+import { apiRequest } from '../../services/api';
+import type { OtpProof, OtpReceipt } from '../../components/customer/SignatureAgreement';
 
 export function CustomerContractsPage() {
   const { user } = useAuth();
@@ -36,15 +38,15 @@ export function CustomerContractsPage() {
   const [acceptingId, setAcceptingId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [selected, setSelected] = useState<CustomerContract | null>(null);
-  const accept = async (contract: CustomerContract, signatureImage: string) => {
+  const accept = async (contract: CustomerContract, signatureImage: string, proof: OtpProof) => {
     if (!user || acceptingId) return;
     setAcceptingId(contract.id); setMessage(null);
     try {
-      await mutate(`/customer/contracts/${encodeURIComponent(contract.id)}/accept`, "POST", { acceptanceName: user.fullName, agreed: true, signatureImage, snapshotHash: contract.terms.snapshotHash });
+      await mutate(`/customer/contracts/${encodeURIComponent(contract.id)}/accept`, "POST", { acceptanceName: user.fullName, agreed: true, ...proof, signatureImage, snapshotHash: contract.terms.snapshotHash });
       setMessage(`Đã lưu xác nhận hợp đồng ${contract.contractCode}.`);
       setSelected(null);
       refresh();
-    } catch (caught) { setMessage(caught instanceof ApiError || caught instanceof Error ? caught.message : "Không thể xác nhận hợp đồng."); }
+    } catch (caught) { setMessage(caught instanceof ApiError || caught instanceof Error ? caught.message : "Không thể xác nhận hợp đồng."); throw caught; }
     finally { setAcceptingId(""); }
   };
   return (
@@ -126,7 +128,7 @@ export function CustomerContractsPage() {
             </tbody>
           </table>
         </div>
-        {selected && <div className="customer-panel"><h2>Hợp đồng {selected.contractCode}</h2><p>Kiểm tra thông tin hợp đồng trước khi xác nhận.</p><DocumentSnapshot value={selected.terms.document} />{selected.terms.acceptedAt ? <div><p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>{selected.terms.signatureImage ? <img src={selected.terms.signatureImage} alt="Chữ ký đã xác nhận" style={{ maxWidth: '100%', width: 300 }} /> : <p>Hồ sơ xác nhận trước đây không có ảnh chữ ký.</p>}</div> : <SignatureAgreement label="Xác nhận hợp đồng" busy={Boolean(acceptingId)} onSubmit={(signature) => void accept(selected, signature)} />}<button type="button" className="button-secondary" onClick={() => setSelected(null)}>Đóng</button></div>}
+        {selected && <div className="customer-panel"><h2>Hợp đồng {selected.contractCode}</h2><p>Kiểm tra thông tin hợp đồng trước khi xác nhận.</p><DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />{selected.terms.acceptedAt ? <div><p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>{selected.terms.signatureImage ? <img src={selected.terms.signatureImage} alt="Chữ ký đã xác nhận" style={{ maxWidth: '100%', width: 300 }} /> : <p>Hồ sơ xác nhận trước đây không có ảnh chữ ký.</p>}</div> : <SignatureAgreement key={`${selected.id}:${selected.terms.snapshotHash}`} label="Xác thực và ký hợp đồng" busy={Boolean(acceptingId)} otpConfigured={selected.terms.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/contracts/${encodeURIComponent(selected.id)}/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: selected.terms.snapshotHash }) })} onSubmit={(signature, proof) => accept(selected, signature, proof)} />}<button type="button" className="button-secondary" onClick={() => setSelected(null)}>Đóng</button></div>}
         </>
       )}
       {pagination}

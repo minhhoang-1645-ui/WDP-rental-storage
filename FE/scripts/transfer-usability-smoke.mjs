@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // All browser API traffic, including mutations, is intercepted. No database records are created.
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
@@ -39,18 +40,18 @@ try {
   for (const width of [1440, 390]) {
     data['support-requests'] = []; data.transfers = []; data.maintenance = [];
     const client = await setup('CUSTOMER', width); await client.page.goto(base + '/customer/transfers');
-    await client.page.getByLabel('Yêu cầu đặt kho', { exact: true }).selectOption(reservation.reference);
-    const customerContract = client.page.getByLabel('Hợp đồng liên quan', { exact: true }); assert((await customerContract.locator('option').last().innerText()).includes(unit.unitCode)); await customerContract.selectOption(contract.id);
+    await selectChoice(client.page.getByLabel('Yêu cầu đặt kho', { exact: true }), reservation.reference);
+    const customerContract = client.page.getByLabel('Hợp đồng liên quan', { exact: true }); assert((await customerContract.locator('..').locator('option').last().innerText()).includes(unit.unitCode)); await selectChoice(customerContract, contract.id);
     await client.page.getByLabel('Chi tiết', { exact: true }).fill('Tôi muốn chuyển kho để thuận tiện tiếp cận hàng.'); await client.page.getByRole('button', { name: 'Gửi yêu cầu', exact: true }).click();
     await client.page.getByText('Đã gửi yêu cầu chuyển kho.', { exact: false }).waitFor(); assert.equal(new URL(client.page.url()).pathname, '/customer/transfers'); await client.context.close();
     const manager = await setup('MANAGER', width); await manager.page.goto(base + '/manager/assignments'); await manager.page.getByRole('row').filter({ hasText: 'SUP-TRANSFER' }).getByRole('button').click();
-    const dialog = manager.page.getByRole('dialog'); await dialog.getByText(customer.fullName, { exact: true }).waitFor(); const picker = dialog.getByLabel('Nhân viên phụ trách', { exact: true }); await picker.locator(`option[value="${staff.id}"]`).waitFor({ state: 'attached' });
-    assert.equal(await picker.locator('option').filter({ hasText: 'Demo Staff' }).count(), 0); await dialog.getByLabel('Tìm nhân viên', { exact: true }).fill('nguyen mai'); assert.equal(await picker.locator('option').count(), 2); await picker.selectOption(staff.id);
+    const dialog = manager.page.getByRole('dialog'); await dialog.getByText(customer.fullName, { exact: true }).waitFor(); const picker = dialog.getByLabel('Nhân viên phụ trách', { exact: true }); await picker.locator('..').locator(`option[value="${staff.id}"]`).waitFor({ state: 'attached' });
+    assert.equal(await picker.locator('..').locator('option').filter({ hasText: 'Demo Staff' }).count(), 0); await dialog.getByLabel('Tìm nhân viên', { exact: true }).fill('nguyen mai'); assert.equal(await picker.locator('..').locator('option').count(), 2); await selectChoice(picker, staff.id);
     await dialog.getByRole('button', { name: 'Phân công', exact: true }).click(); await manager.page.getByText('Đã cập nhật nhân viên phụ trách.', { exact: true }).waitFor(); await manager.context.close();
     const operator = await setup('STAFF', width); await operator.page.goto(base + '/staff/transfers'); const inbox = operator.page.getByRole('region', { name: 'Yêu cầu chuyển kho từ khách hàng' }); await inbox.getByRole('button', { name: 'Tiếp nhận chuyển kho', exact: true }).click();
-    const form = operator.page.getByRole('dialog'), choice = form.getByLabel('Hợp đồng đang thuê', { exact: true }); await choice.locator(`option[value="${contract.id}"]`).waitFor({ state: 'attached' }); assert((await choice.locator('option:checked').innerText()).includes(unit.unitCode)); assert((await choice.locator('option:checked').innerText()).includes(customer.fullName));
+    const form = operator.page.getByRole('dialog'), choice = form.getByLabel('Hợp đồng đang thuê', { exact: true }); await choice.locator('..').locator(`option[value="${contract.id}"]`).waitFor({ state: 'attached' }); assert((await choice.locator('..').locator('option:checked').innerText()).includes(unit.unitCode)); assert((await choice.locator('..').locator('option:checked').innerText()).includes(customer.fullName));
     await form.getByRole('button', { name: 'Tạo yêu cầu', exact: true }).click(); await operator.page.waitForURL(url => url.pathname === '/staff/transfers/transfer-created');
-    await operator.page.getByLabel('Kho đích', { exact: true }).selectOption(dest.id); await operator.page.getByRole('button', { name: 'Duyệt chuyển kho', exact: true }).click(); await operator.page.getByLabel('Tôi đã đối chiếu và hoàn tất chuyển kho thực tế', { exact: true }).check(); await operator.page.getByRole('button', { name: 'Hoàn tất chuyển kho', exact: true }).click();
+    await selectChoice(operator.page.getByLabel('Kho đích', { exact: true }), dest.id); await operator.page.getByRole('button', { name: 'Duyệt chuyển kho', exact: true }).click(); await operator.page.getByLabel('Tôi đã đối chiếu và hoàn tất chuyển kho thực tế', { exact: true }).check(); await operator.page.getByRole('button', { name: 'Hoàn tất chuyển kho', exact: true }).click();
     await operator.page.getByText('Đã hoàn tất chuyển kho và cập nhật yêu cầu của khách.', { exact: true }).waitFor(); assert.equal(data['support-requests'][0].status, 'RESOLVED'); assert.equal(data.maintenance.length, 1); await operator.page.getByRole('link', { name: 'Xem bảo trì kho nguồn · MNT-SOURCE', exact: true }).waitFor();
     const transferFacts = operator.page.locator('.manager-section').filter({ has: operator.page.getByRole('heading', { name: 'Điều chuyển', exact: true }) }); assert((await transferFacts.innerText()).includes('A102')); assert((await transferFacts.innerText()).includes('CON-TEST'));
     // Repair an existing completed record; the UI must not offer physical completion a second time.
@@ -71,7 +72,7 @@ try {
   await mobileStaff.page.getByRole('button', { name: '□ Tôi xác nhận thực hiện thao tác này', exact: true }).click();
   await mobileStaff.page.getByRole('button', { name: 'Lưu', exact: true }).click(); await mobileStaff.page.getByRole('button', { name: 'TRF-CREATED ›', exact: true }).click();
   await mobileStaff.page.getByRole('button', { name: 'Duyệt chuyển kho', exact: true }).click();
-  await mobileStaff.page.getByRole('button', { name: /^A102 ·/ }).click(); await mobileStaff.page.getByRole('button', { name: '□ Tôi xác nhận thực hiện thao tác này', exact: true }).click();
+  await mobileStaff.page.getByRole('radio', { name: /^A102 ·/ }).click(); await mobileStaff.page.getByRole('button', { name: '□ Tôi xác nhận thực hiện thao tác này', exact: true }).click();
   await mobileStaff.page.getByRole('button', { name: 'Lưu', exact: true }).click(); await mobileStaff.page.getByRole('button', { name: 'Hoàn tất chuyển kho', exact: true }).click();
   await mobileStaff.page.getByRole('button', { name: '□ Tôi xác nhận thông tin và thao tác này', exact: true }).click();
   await mobileStaff.page.getByRole('button', { name: 'Lưu', exact: true }).click(); await mobileStaff.page.getByRole('button', { name: 'Xem bảo trì kho nguồn ›', exact: true }).waitFor();

@@ -45,6 +45,11 @@ export class CustomerRenewalsController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.renewals.getCustomerRenewal(request.user!.id, id); }
 
+  @Post(':id/appendix/signature-otp')
+  requestOtp(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.renewals.requestSignatureOtp(request.user!, id, body);
+  }
+
   @Post(':id/appendix/accept')
   @ApiOperation({ summary: 'Customer xác nhận phụ lục gia hạn', description: 'Phụ lục được tạo khi yêu cầu gia hạn được duyệt; Customer đọc và xác nhận trước khi thanh toán.' })
   @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })

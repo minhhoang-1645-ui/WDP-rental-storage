@@ -39,9 +39,9 @@ export class ApiError extends Error {
 
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null } = {},
+  options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null; responseType?: 'json' | 'blob' } = {},
 ): Promise<T> {
-  const { authenticated = true, timeoutMs = 30000, signal, expectedToken, ...request } = options;
+  const { authenticated = true, timeoutMs = 30000, signal, expectedToken, responseType = 'json', ...request } = options;
   const token = authenticated ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
   if (expectedToken !== undefined && token !== expectedToken) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
   const mutation = /^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path);
@@ -55,14 +55,14 @@ export async function apiRequest<T>(
   const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     const headers = new Headers(request.headers);
-    headers.set("Accept", "application/json");
+    headers.set("Accept", responseType === 'blob' ? 'application/pdf' : 'application/json');
     if (request.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
     if (token && localStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     const apiPath = operationApiPath(path, role, request.method ?? 'GET');
     const response = await fetch(`${API_URL.replace(/\/$/, "")}${apiPath}`, { ...request, signal: controller.signal, headers });
-    const payload = response.status === 204 ? null : await response.json().catch((error: unknown) => {
+    const payload = response.ok && responseType === 'blob' ? await response.blob() : response.status === 204 ? null : await response.json().catch((error: unknown) => {
       if (controller.signal.aborted) throw error;
       return null;
     });
@@ -71,6 +71,7 @@ export async function apiRequest<T>(
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
       throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
+    if (responseType === 'blob' && token && localStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
     if (['/auth/login', '/auth/register'].includes(path) && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
     if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); notifyDataChanged(path); }

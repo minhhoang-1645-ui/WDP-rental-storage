@@ -3,6 +3,10 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { snapshotHash, validateSignature } from './signature.js';
+import { SigningOtpService, signedDocument, signedEnvelope, signatureVerification } from '../signing/signing-otp.service.js';
+import { DocumentPolicy } from '../documents/document-policy.js';
+import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../guest-booking/email.service.js';
 
 export interface ContractListQuery {
   page: number;
@@ -13,7 +17,17 @@ export interface ContractListQuery {
 
 @Injectable()
 export class ContractsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly signing: SigningOtpService = new SigningOtpService(new EmailService(new ConfigService())), private readonly policy: DocumentPolicy = new DocumentPolicy(new ConfigService())) {}
+
+  async requestSignatureOtp(customer: PublicUser, id: string, input: Record<string, unknown>) {
+    const contract = await this.getCustomerContract(customer.id, id);
+    if (contract.terms.acceptedAt || contract.status === 'CANCELLED') throw new ConflictException('Hợp đồng đã ký hoặc đã hủy. Vui lòng tải lại.');
+    const signatureImage = validateSignature(input);
+    const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
+    if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
+    if (input.snapshotHash !== contract.terms.snapshotHash) throw new ConflictException('Nội dung hợp đồng đã thay đổi. Vui lòng tải lại trước khi ký.');
+    return this.signing.issue({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: contract.terms.snapshotHash, signatureImage, acceptanceName }, `hợp đồng ${contract.contractCode}`);
+  }
 
   async ensureForConfirmedReservation(tx: Prisma.TransactionClient, reservationId: string) {
     const reservation = await tx.reservation.findUnique({
@@ -86,8 +100,12 @@ export class ContractsService {
     const signatureImage = validateSignature(input);
     const snapshot = this.documentSnapshot(contract);
     if (input.snapshotHash !== snapshotHash(snapshot)) throw new ConflictException('Nội dung hợp đồng đã thay đổi. Vui lòng tải lại và kiểm tra trước khi ký.');
-    const changed = await this.prisma.rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: snapshot as Prisma.InputJsonValue, signatureImage } });
-    if (changed.count !== 1) throw new ConflictException('Hợp đồng vừa được cập nhật. Vui lòng tải lại.');
+    const proof = this.signing.acquire({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: snapshotHash(snapshot), signatureImage, acceptanceName }, input);
+    try {
+      const changed = await this.prisma.rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsVersion: snapshot.version, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: signedEnvelope(snapshot, proof.evidence) as unknown as Prisma.InputJsonValue, signatureImage } });
+      if (changed.count !== 1) throw new ConflictException('Hợp đồng vừa được cập nhật. Vui lòng tải lại.');
+      proof.commit();
+    } catch (error) { proof.release(); throw error; }
     const updated = await this.prisma.rentalContract.findUniqueOrThrow({ where: { id: contract.id }, include: this.contractInclude() });
     return this.toContract(updated, true);
   }
@@ -171,12 +189,14 @@ export class ContractsService {
       activatedAt: contract.activatedAt?.toISOString() ?? null,
       completedAt: contract.completedAt?.toISOString() ?? null,
       terms: {
-        version: contract.termsVersion,
+        version: signedDocument(contract.signedSnapshot)?.version ?? (contract.termsAcceptedAt ? contract.termsVersion : this.policy.issuer().termsVersion),
         acceptedAt: contract.termsAcceptedAt?.toISOString() ?? null,
         acceptanceName: contract.acceptanceName ?? null,
         acceptanceNote: contract.acceptanceNote ?? null,
-        document: contract.signedSnapshot ?? this.documentSnapshot(contract),
-        snapshotHash: snapshotHash(contract.signedSnapshot ?? this.documentSnapshot(contract)),
+        document: signedDocument(contract.signedSnapshot) ?? this.documentSnapshot(contract),
+        snapshotHash: snapshotHash(signedDocument(contract.signedSnapshot) ?? this.documentSnapshot(contract)),
+        verification: signatureVerification(contract.signedSnapshot),
+        otp: this.signing.availability(),
         signatureImage: contract.signatureImage ?? null,
       },
     };
@@ -189,7 +209,8 @@ export class ContractsService {
   private documentSnapshot(contract: any) {
     const reservation = contract.reservation;
     return {
-      documentType: 'RENTAL_CONTRACT', version: contract.termsVersion, contractCode: contract.contractCode,
+      documentType: 'RENTAL_CONTRACT', version: contract.termsAcceptedAt ? contract.termsVersion : this.policy.issuer().termsVersion, contractCode: contract.contractCode,
+      ...(contract.termsAcceptedAt ? { issuer: { brand: 'NestBox Storage', draft: true }, legacySnapshotUnavailable: true } : { issuer: this.policy.issuer(), clauses: this.policy.terms() }),
       reservationReference: reservation.reservationCode, customer: { fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? null },
       storage: { name: reservation.storageType.name, unitCode: contract.reservationUnit.storageUnit.unitNumber },
       startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate),

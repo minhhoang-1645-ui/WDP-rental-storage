@@ -5,6 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { snapshotHash, validateSignature } from '../contracts/signature.js';
+import { SigningOtpService, signedDocument, signedEnvelope, signatureVerification } from '../signing/signing-otp.service.js';
+import { DocumentPolicy } from '../documents/document-policy.js';
+import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../guest-booking/email.service.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type PaymentPlan = 'PAY_MONTHLY' | 'PREPAID';
@@ -41,7 +45,19 @@ export class RenewalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService = new PricingService(prisma),
+    private readonly signing: SigningOtpService = new SigningOtpService(new EmailService(new ConfigService())),
+    private readonly policy: DocumentPolicy = new DocumentPolicy(new ConfigService()),
   ) {}
+
+  async requestSignatureOtp(customer: PublicUser, id: string, input: Record<string, unknown>) {
+    const record = await this.getCustomerRenewal(customer.id, id);
+    if (!record.appendix || record.appendix.acceptedAt || !['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(record.status)) throw new ConflictException('Phụ lục chưa sẵn sàng hoặc đã ký.');
+    const signatureImage = validateSignature(input);
+    const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
+    if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
+    if (input.snapshotHash !== record.appendix.snapshotHash) throw new ConflictException('Phụ lục đã thay đổi. Vui lòng tải lại.');
+    return this.signing.issue({ userId: customer.id, email: customer.email, kind: 'appendix', documentId: record.id, documentHash: record.appendix.snapshotHash, signatureImage, acceptanceName }, `phụ lục ${record.appendix.code}`);
+  }
 
   async createCustomerRenewal(customerId: string, input: Record<string, unknown>, idempotencyKey: string | undefined) {
     const parsed = this.createInput(input, idempotencyKey);
@@ -132,9 +148,14 @@ export class RenewalsService {
       return this.toRenewal(current, false);
     }
     const signatureImage = validateSignature(input);
-    if (input.snapshotHash !== snapshotHash(current.appendixSnapshot)) throw new ConflictException('Nội dung phụ lục đã thay đổi. Vui lòng tải lại trước khi ký.');
-    const changed = await this.prisma.renewalRequest.updateMany({ where: { id: current.id, appendixAcceptedAt: null, updatedAt: current.updatedAt, status: { in: ['APPROVED_PENDING_PAYMENT', 'COMPLETED'] } }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customer.id, appendixAcceptanceName: acceptanceName, appendixSignatureImage: signatureImage } });
-    if (changed.count !== 1) throw new ConflictException('Phụ lục vừa được cập nhật. Vui lòng tải lại.');
+    const document = signedDocument(current.appendixSnapshot);
+    if (input.snapshotHash !== snapshotHash(document)) throw new ConflictException('Nội dung phụ lục đã thay đổi. Vui lòng tải lại trước khi ký.');
+    const proof = this.signing.acquire({ userId: customer.id, email: customer.email, kind: 'appendix', documentId: current.id, documentHash: snapshotHash(document), signatureImage, acceptanceName }, input);
+    try {
+      const changed = await this.prisma.renewalRequest.updateMany({ where: { id: current.id, appendixAcceptedAt: null, updatedAt: current.updatedAt, status: { in: ['APPROVED_PENDING_PAYMENT', 'COMPLETED'] } }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customer.id, appendixAcceptanceName: acceptanceName, appendixSignatureImage: signatureImage, appendixSnapshot: signedEnvelope(document, proof.evidence) as unknown as Prisma.InputJsonValue } });
+      if (changed.count !== 1) throw new ConflictException('Phụ lục vừa được cập nhật. Vui lòng tải lại.');
+      proof.commit();
+    } catch (error) { proof.release(); throw error; }
     const updated = await this.prisma.renewalRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
     return this.toRenewal(updated, false);
   }
@@ -380,7 +401,7 @@ export class RenewalsService {
       quoteSnapshot: record.quoteSnapshot, invoices,
       billingSummary: { totalInvoiced: invoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0), totalPaid: invoices.reduce((sum: number, invoice: any) => sum + invoice.amountPaid, 0), totalOutstanding: invoices.reduce((sum: number, invoice: any) => sum + invoice.balanceDue, 0) },
       rejectionReason: record.rejectionReason, requestedAt: record.requestedAt.toISOString(), reviewedAt: record.reviewedAt?.toISOString() ?? null, approvedAt: record.approvedAt?.toISOString() ?? null, rejectedAt: record.rejectedAt?.toISOString() ?? null,
-      appendix: record.appendixCode ? { code: record.appendixCode, version: record.appendixVersion, snapshot: record.appendixSnapshot, snapshotHash: snapshotHash(record.appendixSnapshot), acceptedAt: record.appendixAcceptedAt?.toISOString() ?? null, acceptanceName: record.appendixAcceptanceName ?? null, signatureImage: record.appendixSignatureImage ?? null } : null,
+      appendix: record.appendixCode ? { code: record.appendixCode, version: record.appendixVersion, snapshot: signedDocument(record.appendixSnapshot), snapshotHash: snapshotHash(signedDocument(record.appendixSnapshot)), verification: signatureVerification(record.appendixSnapshot), otp: this.signing.availability(), acceptedAt: record.appendixAcceptedAt?.toISOString() ?? null, acceptanceName: record.appendixAcceptanceName ?? null, signatureImage: record.appendixSignatureImage ?? null } : null,
       ...(manager ? { customer: record.reservation.customer, contracts: record.reservation.contracts.map((contract: any) => ({ contractCode: contract.contractCode, status: contract.status, endDate: this.isoDate(contract.endDate), unitCode: contract.reservationUnit.storageUnit.unitNumber })) , requestedBy: record.requestedBy, reviewedBy: record.reviewedBy } : {}),
     };
   }
@@ -399,8 +420,8 @@ export class RenewalsService {
 
   private appendixDocument(renewal: any) {
     return {
-      appendixCode: `${renewal.renewalCode}-PL01`, appendixVersion: 'WDP-RENEWAL-APPENDIX-V1',
-      appendixSnapshot: { version: 'WDP-RENEWAL-APPENDIX-V1', renewalCode: renewal.renewalCode, reservationReference: renewal.reservation.reservationCode, previousEndDate: this.isoDate(renewal.previousEndDate), requestedEndDate: this.isoDate(renewal.requestedEndDate), termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan, quote: this.snapshot(renewal), contracts: renewal.reservation.contracts.map((contract: any) => ({ contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber })) } as unknown as Prisma.InputJsonValue,
+      appendixCode: `${renewal.renewalCode}-PL01`, appendixVersion: 'NESTBOX-RENEWAL-APPENDIX-V2',
+      appendixSnapshot: { issuer: this.policy.issuer(), customer: renewal.reservation.customer, version: 'NESTBOX-RENEWAL-APPENDIX-V2', renewalCode: renewal.renewalCode, reservationReference: renewal.reservation.reservationCode, previousEndDate: this.isoDate(renewal.previousEndDate), requestedEndDate: this.isoDate(renewal.requestedEndDate), termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan, quote: this.snapshot(renewal), contracts: renewal.reservation.contracts.map((contract: any) => ({ contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber })) } as unknown as Prisma.InputJsonValue,
     };
   }
 

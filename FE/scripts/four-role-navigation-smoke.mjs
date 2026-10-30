@@ -52,14 +52,14 @@ try {
     await app.goto('/customer/renewals?reservation=' + reservation.id);
     await app.page.waitForFunction(id => [...document.querySelectorAll('select')].some(select => select.value === id), reservation.id);
     await app.goto('/customer/transfers?reservation=' + reservation.id);
-    await app.page.waitForFunction(reference => document.querySelector('select[aria-label="Yêu cầu đặt kho"]')?.value === reference, reservation.reference);
+    await app.page.waitForFunction(reference => document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value') === reference, reservation.reference);
     await app.goto('/customer/returns?reservation=' + reservation.id);
     await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).waitFor();
-    await app.page.waitForFunction(id => document.querySelector('select[aria-label="Kho muốn trả sớm"]')?.value === id, reservation.id);
-    assert.equal(await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).inputValue(), reservation.id);
+    await app.page.waitForFunction(id => document.querySelector('[role=combobox][aria-label="Kho muốn trả sớm"]')?.getAttribute('data-value') === id, reservation.id);
+    assert.equal(await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).getAttribute('data-value'), reservation.id);
     await app.goto('/customer/stock-movements?rentalContractId=contract-id');
     await app.page.getByRole('button', { name: 'Tạo phiếu nhập / xuất', exact: true }).click();
-    await app.page.waitForFunction(() => [...document.querySelectorAll('select')].some(select => select.value === 'contract-id'));
+    await app.page.locator('input[type=radio][value="contract-id"]:checked').waitFor();
     assert(app.reads.some(path => path.includes('/customer/stock-movements?') && path.includes('rentalContractId=contract-id')));
     assert(await app.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await app.context.close(); checks.push(`${width}px Customer: rental actions keep the correct invoice, renewal, support/transfer, early-return and stock contract context`);

@@ -16,6 +16,7 @@ import type { StockDraftLine, StockMovement, StockRole, StoredItem } from './typ
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
 import { useDraftGuard } from '@/services/live-events';
+import { RentalChoicePicker } from '@/components/rental-choice-picker';
 
 const states = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 let sequence = 0;
@@ -40,8 +41,11 @@ export function StockList({ role }: { role: StockRole }) {
 }
 function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   useDraftGuard();
-  const contracts = useResource<Page<{ id: string; contractCode: string; status: string }>>('/customer/contracts', true);
-  const [contract, setContract] = useState(''), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [scheduledAt, setScheduledAt] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false), lock = useRef(false);
+  const contracts = useResource<Page<Row>>('/customer/contracts', true), params=useLocalSearchParams<{rentalContractId?:string}>();
+  const [choice, setContract] = useState<string>(), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [scheduledAt, setScheduledAt] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false), lock = useRef(false);
+  const active=(contracts.data?.items ?? []).filter(row=>row.status==='ACTIVE');
+  const requested=choice ?? params.rentalContractId ?? (active.length===1 ? String(active[0].id) : '');
+  const contract=active.some(row=>row.id===requested)?requested:'';
   const items = useResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null);
   const patch = (key: string, changes: Partial<StockDraftLine>) => setLines(current => current.map(item => item.key === key ? { ...item, ...changes } : item));
   const submit = async () => {
@@ -55,8 +59,8 @@ function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không gửi được phiếu.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <Panel title="Tạo phiếu nhập / xuất"><Text style={styles.copy}>Chọn hợp đồng đang hoạt động của bạn. Giờ dự kiến là giờ Việt Nam và có thể bỏ trống.</Text>
-    {contracts.loading ? <LoadingState /> : contracts.error ? <ErrorState message={contracts.error} onRetry={contracts.refresh} /> : <>{!contracts.data?.items.some(item => item.status === 'ACTIVE') && <Text style={styles.copy}>Chưa có hợp đồng hoạt động. Hoàn tất bàn giao kho trước.</Text>}{contracts.data?.items.filter(item => item.status === 'ACTIVE').map(item => <Button key={item.id} title={`${contract === item.id ? '✓ ' : ''}${item.contractCode}`} variant={contract === item.id ? 'primary' : 'secondary'} disabled={busy} onPress={() => { setContract(item.id); setLines([freshLine()]); setConfirmed(false); }} />)}</>}
+  return <Panel title="Tạo phiếu nhập / xuất"><Text style={styles.copy}>Chọn kho bạn muốn gửi hoặc lấy hàng. Giờ dự kiến là giờ Việt Nam và có thể bỏ trống.</Text>
+    {contracts.loading ? <LoadingState /> : contracts.error ? <ErrorState message={contracts.error} onRetry={contracts.refresh} /> : <>{!contracts.data?.items.some(item => item.status === 'ACTIVE') && <Text style={styles.copy}>Chưa có hợp đồng hoạt động. Hoàn tất bàn giao kho trước.</Text>}<RentalChoicePicker contracts={contracts.data?.items ?? []} value={contract} disabled={busy} onChange={id=>{setContract(id);setLines([freshLine()]);setConfirmed(false);}} /></>}
     <View style={styles.row}>{(['IN', 'OUT'] as const).map(value => <Button key={value} title={`${type === value ? '✓ ' : ''}${value === 'IN' ? 'Nhập hàng' : 'Xuất hàng'}`} variant={type === value ? 'primary' : 'secondary'} disabled={busy} onPress={() => { setType(value); setLines([freshLine()]); setConfirmed(false); }} />)}</View>
     <Field title="Ngày giờ dự kiến (YYYY-MM-DD HH:mm, tùy chọn)" value={scheduledAt} onChange={setScheduledAt} maxLength={16} disabled={busy} />
     {items.loading ? <LoadingState /> : items.error && <ErrorState message={items.error} onRetry={items.refresh} />}
@@ -76,8 +80,9 @@ function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 }
 export function StockDetail({ role }: { role: StockRole }) {
   const { id } = useLocalSearchParams<{ id: string }>(), { user } = useAuth(), root = `/${role.toLowerCase()}`;
+  const [savedFor, setSavedFor] = useState('');
   const data = useResource<StockMovement>(user?.role === role ? `${root}/stock-movements/${encodeURIComponent(String(id))}` : null);
-  return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}><Stack.Screen options={{ title: 'Chi tiết nhập – xuất' }} /><PageHeader eyebrow={label(role)} title={data.data?.movementCode ?? 'Chi tiết nhập – xuất'} description="Đối chiếu hàng hóa, số lượng và nhân viên trước khi xác nhận." /><Navigation title="Về danh sách phiếu" path={`${root}/stock-movements`} /><Button title="Làm mới hồ sơ" onPress={data.refresh} disabled={data.loading} />{data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : data.data && <StockRecord key={`${data.data.id}:${data.data.updatedAt}`} row={data.data} role={role} refresh={data.refresh} />}</ScrollView>;
+  return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}><Stack.Screen options={{ title: 'Chi tiết nhập – xuất' }} /><PageHeader eyebrow={label(role)} title={data.data?.movementCode ?? 'Chi tiết nhập – xuất'} description="Đối chiếu hàng hóa, số lượng và nhân viên trước khi xác nhận." /><Navigation title="Về danh sách phiếu" path={`${root}/stock-movements`} /><Button title="Làm mới hồ sơ" onPress={data.refresh} disabled={data.loading} />{savedFor === String(id) && <Text accessibilityRole="alert" style={styles.success}>Đã lưu thành công.</Text>}{data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : data.data && <StockRecord key={`${data.data.id}:${data.data.updatedAt}`} row={data.data} role={role} refresh={() => { setSavedFor(String(id)); data.refresh(); }} />}</ScrollView>;
 }
 function StockRecord({ row, role, refresh }: { row: StockMovement; role: StockRole; refresh: () => void }) {
   const { user } = useAuth(), [action, setAction] = useState<FormAction>();

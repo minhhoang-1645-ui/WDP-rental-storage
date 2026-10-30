@@ -1,3 +1,4 @@
+import { DocumentFile } from '@/components/document-file';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
@@ -33,7 +34,7 @@ export function InvoicePayment({ invoice, refresh, onNotice }: { invoice: Row; r
     { name: 'amount', title: 'Số tiền đã chuyển (VND)', numeric: true, minimum: 1, maximum: balance, required: true, initial: qrAmount },
     { name: 'transferReference', title: 'Mã giao dịch ngân hàng (nếu có)', maxLength: 200 }, { name: 'customerNote', title: 'Ghi chú chuyển khoản', multiline: true, maxLength: 1000 }, { name: '_confirmed', title: 'Tôi đã chuyển khoản thực tế cho hóa đơn này', checkbox: true, required: true, clientOnly: true },
   ], transform: input => ({ ...input, method: 'BANK_TRANSFER', transferReference: input.transferReference ?? null, customerNote: input.customerNote ?? null }) });
-  return <Panel title="Thanh toán và hỗ trợ">
+  return <Panel title="Thanh toán và hỗ trợ"><DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(invoiceId)}`} name={text(invoice, 'invoiceCode')} />
     <Facts values={[["Còn phải thanh toán", money(invoice.balanceDue)]]} />
     {unsigned && <><Text accessibilityRole="alert" style={styles.copy}>Bạn cần ký tài liệu trước khi thanh toán.</Text>{rows(signing?.contracts).map(contract => <Navigation key={idOf(contract)} title={`Ký hợp đồng ${text(contract, 'code')}`} path={`/customer/contracts/${encodeURIComponent(idOf(contract))}`} />)}{text(signing ?? {}, 'renewalId') ? <Navigation title="Xem và ký phụ lục gia hạn" path={`/customer/renewals/${encodeURIComponent(text(signing ?? {}, 'renewalId'))}`} /> : <Navigation title="Kiểm tra toàn bộ hợp đồng của đơn" path="/customer/contracts" />}</>}
     <Navigation title="Xem thông báo chuyển khoản" path="/customer/payment-submissions" />

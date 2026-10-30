@@ -1,3 +1,4 @@
+import { DocumentFile } from '../../components/customer/DocumentFile';
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
 import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -97,7 +98,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             {workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}
-              <DetailContent row={row} resource={resource} />
+              {(['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/${user?.role === 'STAFF' ? 'staff/management' : 'manager'}/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}<DetailContent row={row} resource={resource} />
               {resource === 'support-requests' && user?.role === 'STAFF' && isTransferRequest(row) && <TransferSupportAction row={row} onCreate={() => setCreatingTransfer(true)} />}
               {resource === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
               {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}

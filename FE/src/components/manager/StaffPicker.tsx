@@ -1,3 +1,4 @@
+import { EntitySelect } from '../EntitySelect';
 import { useEffect, useId, useState } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { allPages } from '../../services/portal';
@@ -47,10 +48,10 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
     {recommendation && <div className="activity-update-note"><span>Gợi ý: {recommendation[1]} · {workloads?.get(recommendation[0]) ?? 0} việc chưa hoàn tất trong ba nhóm đang phân công. Bạn kiểm tra rồi bấm lưu để xác nhận.</span><button type="button" className="portal-text-button" disabled={disabled || value === recommendation[0]} onClick={event => { const form = event.currentTarget.closest('form'); if (form) markFormDirty(form); setManual(false); onChange(recommendation[0]); }}>Dùng gợi ý</button></div>}
     <label className="field-label">Tìm nhân viên<input type="search" placeholder="Nhập tên hoặc email nhân viên…" value={search} disabled={disabled} onChange={event => setSearch(event.target.value)} /></label>
     <label className="field-label">Nhân viên phụ trách
-      <select aria-label="Nhân viên phụ trách" aria-describedby={hintId} value={options.has(value) && !manual ? value : ''} disabled={disabled || !options.size} required={!showManual} onChange={event => { setManual(false); onChange(event.target.value); }}>
+      <EntitySelect aria-label="Nhân viên phụ trách" aria-describedby={hintId} value={options.has(value) && !manual ? value : ''} disabled={disabled || !options.size} required={!showManual} onValueChange={selectedValue => { setManual(false); onChange(selectedValue); }}>
         <option value="">{loading && !options.size ? 'Đang tải danh sách nhân viên…' : options.size ? 'Chọn nhân viên' : 'Chưa có nhân viên đang hoạt động'}</option>
         {filtered.map(([id, name]) => <option key={id} value={id}>{name}{workloads ? ` · ${workloads.get(id) ?? 0} việc chưa hoàn tất` : ''}</option>)}
-      </select>
+      </EntitySelect>
     </label>
     <p id={hintId} className="staff-assignee-hint">{filtered.length} nhân viên phù hợp. Tài khoản kiểm thử đã được ẩn khỏi danh sách gợi ý.{workloads && ' Sắp xếp theo số việc chưa hoàn tất trong ba nhóm hỗ trợ, bảo trì và nhập–xuất.'}</p>
     {value && options.has(value) && <div className="staff-choice-summary"><strong>Đang chọn: {options.get(value)}</strong>{workloads && <p>{workloads.get(value) ?? 0} công việc chưa hoàn tất.</p>}</div>}

@@ -120,6 +120,14 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
     expect(tx.onlinePaymentTransaction.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SUCCESS' }) }));
   });
 
+  it('rejects an unsigned IPN without looking up or changing a transaction', async () => {
+    const { service, prisma, billing, vnpay } = fixture();
+    vnpay.verify.mockImplementation(() => { throw new Error('invalid signature'); });
+    await expect(service.processIpn({ vnp_TxnRef: 'WDP-ORDER-1', vnp_Amount: '65000000' })).resolves.toEqual({ RspCode: '97', Message: 'Invalid Checksum' });
+    expect(prisma.onlinePaymentTransaction.findUnique).not.toHaveBeenCalled();
+    expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+  });
+
   it('does not activate an expired reservation when a successful IPN arrives late', async () => {
     const { service, billing, tx } = fixture('EXPIRED');
     tx.invoice.findUnique.mockResolvedValueOnce({
@@ -153,7 +161,7 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
     expect(tx.onlinePaymentTransaction.update).not.toHaveBeenCalled();
   });
 
-  it('keeps browser return read-only while IPN is pending', async () => {
+  it('keeps browser return read-only while IPN is missing and payment remains pending', async () => {
     const { service, prisma, billing } = fixture();
     prisma.onlinePaymentTransaction.findUnique.mockResolvedValueOnce({
       merchantOrderRef: 'WDP-ORDER-1', status: 'PENDING', amount: 650000n,

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -10,6 +10,7 @@ const ONLINE_PAYMENT_TTL_MS = 5 * 60_000;
 
 @Injectable()
 export class OnlinePaymentService {
+  private readonly logger = new Logger(OnlinePaymentService.name);
   constructor(private readonly prisma: PrismaService, private readonly billing: BillingService, private readonly vnpay: VnpayService) {}
 
   async create(invoiceIdentity: string, input: Record<string, unknown>, idempotencyInput: string | undefined, customer: PublicUser, ipAddress: string) {
@@ -55,11 +56,25 @@ export class OnlinePaymentService {
 
   async processIpn(query: Record<string, unknown>) {
     let payload;
-    try { payload = this.vnpay.verify(query); } catch { return { RspCode: '97', Message: 'Invalid Checksum' }; }
-    const identity = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { id: true } });
-    if (!identity) return { RspCode: '01', Message: 'Order not found' };
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      payload = this.vnpay.verify(query);
+    } catch {
+      this.logIpn('rejected_invalid_signature', {
+        orderRef: this.callbackValue(query.vnp_TxnRef),
+        amountMinor: this.callbackValue(query.vnp_Amount),
+        responseCode: this.callbackValue(query.vnp_ResponseCode),
+        transactionStatus: this.callbackValue(query.vnp_TransactionStatus),
+      });
+      return { RspCode: '97', Message: 'Invalid Checksum' };
+    }
+    this.logIpn('received', payload);
+    const identity = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { id: true } });
+    if (!identity) {
+      this.logIpn('rejected_order_not_found', payload);
+      return { RspCode: '01', Message: 'Order not found' };
+    }
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "OnlinePaymentTransaction" WHERE "id" = ${identity.id} FOR UPDATE`);
         const transaction = await tx.onlinePaymentTransaction.findUnique({ where: { id: identity.id } });
         if (!transaction) return { RspCode: '01', Message: 'Order not found' };
@@ -99,8 +114,16 @@ export class OnlinePaymentService {
         await tx.onlinePaymentTransaction.update({ where: { id: transaction.id }, data: { status: 'SUCCESS', providerTransactionId: payload.providerTransactionId, responseCode: payload.responseCode, bankCode: payload.bankCode, paidAt: new Date() } });
         return { RspCode: '00', Message: 'Confirm Success' };
       }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      this.logIpn(result.RspCode === '00' ? 'processed' : 'rejected', { ...payload, resultCode: result.RspCode, resultMessage: result.Message });
+      return result;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) return { RspCode: '02', Message: 'Order already confirmed' };
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
+        this.logIpn('duplicate_or_conflict', { ...payload, databaseCode: error.code });
+        const current = await this.prisma.onlinePaymentTransaction.findUnique({ where: { id: identity.id }, select: { status: true } });
+        if (current?.status === 'SUCCESS') return { RspCode: '02', Message: 'Order already confirmed' };
+        return { RspCode: '99', Message: 'Temporary processing error' };
+      }
+      this.logIpn('processing_error', { ...payload, error: error instanceof Error ? error.name : 'UnknownError' });
       throw error;
     }
   }
@@ -208,6 +231,10 @@ export class OnlinePaymentService {
   private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string) { return { transactionId: transaction.id, merchantOrderRef: transaction.merchantOrderRef, status: transaction.status, amount: this.money(transaction.amount), expiresAt: this.expiresAt(transaction.createdAt).toISOString(), paymentUrl: this.vnpay.paymentUrl({ orderRef: transaction.merchantOrderRef, amount: transaction.amount, ipAddress, bankCode, locale, createdAt: transaction.createdAt }) }; }
   private expiresAt(createdAt: Date) { return new Date(createdAt.getTime() + ONLINE_PAYMENT_TTL_MS); }
   private isExpired(transaction: { status: string; createdAt: Date }) { return transaction.status === 'PENDING' && this.expiresAt(transaction.createdAt).getTime() <= Date.now(); }
+  private callbackValue(value: unknown) { return typeof value === 'string' ? value.slice(0, 80) : undefined; }
+  private logIpn(event: string, value: { orderRef?: string; amountMinor?: bigint | string; responseCode?: string; transactionStatus?: string; providerTransactionId?: string | null; bankCode?: string | null; resultCode?: string; resultMessage?: string; databaseCode?: string; error?: string }) {
+    this.logger.log(JSON.stringify({ event: `vnpay_ipn_${event}`, orderRef: value.orderRef, amountMinor: value.amountMinor?.toString(), responseCode: value.responseCode, transactionStatus: value.transactionStatus, providerTransactionId: value.providerTransactionId ?? undefined, bankCode: value.bankCode ?? undefined, resultCode: value.resultCode, resultMessage: value.resultMessage, databaseCode: value.databaseCode, error: value.error }));
+  }
   private key(value?: string) { const key = value?.trim() ?? ''; if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự.'); return key; }
   private optionalCode(value: unknown, label: string) { if (value === undefined || value === null || value === '') return undefined; if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{2,20}$/.test(value)) throw new BadRequestException(`${label} không hợp lệ.`); return value; }
   private orderRef() { return `WDP${Date.now()}${randomBytes(4).toString('hex').toUpperCase()}`; }

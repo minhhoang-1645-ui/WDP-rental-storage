@@ -1,19 +1,17 @@
-import { Button, Host } from '@expo/ui';
 import { router } from 'expo-router';
-import { Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
-import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
+import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 
 export default function StaffAccountScreen() {
   const { user, logout } = useAuth();
-  const { width } = useWindowDimensions();
-  const buttonStyle = { ...styles.button, width: Platform.OS === "web" ? "100%" as const : Math.max(1, width - 2 * WdpSpacing.md) };
   const signOut = async () => { await logout(); router.replace('/login'); };
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}><PageHeader eyebrow="Nhân viên" title={user?.fullName ?? 'Nhân viên'} description="Tài khoản vận hành đang sử dụng trên thiết bị này." /><View style={styles.card}><Info label="Email" value={user?.email} /><Info label="Số điện thoại" value={user?.phone} /><Info label="Vai trò" value="Nhân viên" /></View><Host seedColor={WdpColors.navy}><Button label="Đăng xuất" variant="outlined" onPress={() => void signOut()} style={buttonStyle} /></Host></ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}><PageHeader eyebrow="Nhân viên" title={user?.fullName ?? 'Nhân viên'} description="Tài khoản vận hành đang sử dụng trên thiết bị này." /><View style={styles.card}><Info label="Email" value={user?.email} /><Info label="Số điện thoại" value={user?.phone} /><Info label="Vai trò" value="Nhân viên" /></View><Pressable accessibilityRole="button" onPress={() => void signOut()} style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutPressed]}><Text style={styles.logoutText}>Đăng xuất</Text></Pressable></ScrollView>;
 }
 
 function Info({ label, value }: { label: string; value?: string | null }) { return <View style={styles.row}><Text style={styles.label}>{label}</Text><Text selectable style={styles.value}>{value || '—'}</Text></View>; }
 
-const styles = StyleSheet.create({ content: { gap: WdpSpacing.lg, padding: WdpSpacing.md }, card: { borderWidth: 1, borderColor: WdpColors.border, borderRadius: 16, borderCurve: 'continuous', backgroundColor: WdpColors.surface, paddingHorizontal: WdpSpacing.md }, row: { gap: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: WdpColors.border, paddingVertical: WdpSpacing.md }, label: { color: WdpColors.muted, fontSize: 12, fontWeight: '700' }, value: { color: WdpColors.text, fontSize: 15, fontWeight: '700' }, button: { width: '100%', height: 48 } });
+const styles = StyleSheet.create({ content: { gap: WdpSpacing.lg, padding: WdpSpacing.md, paddingBottom: 100 }, card: { borderWidth: 1, borderColor: WdpColors.border, borderRadius: 16, borderCurve: 'continuous', backgroundColor: WdpColors.surface, paddingHorizontal: WdpSpacing.md }, row: { gap: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: WdpColors.border, paddingVertical: WdpSpacing.md }, label: { color: WdpColors.muted, fontSize: 12, fontWeight: '700' }, value: { color: WdpColors.text, fontSize: 15, fontWeight: '700' }, logoutButton: { alignItems: 'center', borderWidth: 1.5, borderColor: WdpColors.navy, borderRadius: WdpRadius.md, height: 48, justifyContent: 'center' }, logoutPressed: { opacity: 0.7, backgroundColor: WdpColors.surfaceSecondary }, logoutText: { color: WdpColors.navy, fontSize: 15, fontWeight: '700' } });
+

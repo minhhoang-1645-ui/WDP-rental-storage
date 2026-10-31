@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 
 import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
@@ -53,7 +54,7 @@ function StorageTypeCard({ product, size }: { product: Row; size?: Row }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={`Chọn ${text(product, 'name')}`} onPress={() => router.push({ pathname: '/customer/booking', params: { product: id } })} style={({ pressed }) => [local.card, pressed && { opacity: 0.76 }]}>
     <View style={local.cardHeading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={local.code}>{text(product, 'code')}</Text><Text style={local.name}>{text(product, 'name')}</Text></View><View style={local.tag}><Text style={local.tagText}>{condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</Text></View></View>
     <View style={local.facts}><Fact title="Kích thước" value={text(product, 'dimensions', 'floorArea') || text(size ?? {}, 'dimensions', 'floorArea') || 'Xem khi đặt kho'} /><Fact title="Thuê tối thiểu" value={`${text(product, 'minRentalDays') || '—'} ngày`} /><Fact title="Từ mỗi tháng" value={typeof product.monthlyPrice === 'number' ? formatMoney(product.monthlyPrice) : 'Nhận báo giá'} /></View>
-    <Text style={local.action}>Chọn loại kho và kiểm tra khả dụng ›</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Text style={local.action}>Chọn loại kho và kiểm tra khả dụng</Text><ChevronRight size={14} color={WdpColors.teal} strokeWidth={2.5} /></View>
   </Pressable>;
 }
 

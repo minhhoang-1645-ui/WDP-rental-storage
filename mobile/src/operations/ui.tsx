@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, type Href } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { WdpColors, WdpRadius, WdpSpacing, WdpType } from '@/constants/wdp-theme';
 import { formatMoney } from '@/utils/format';
 
 export const styles = StyleSheet.create({
-  page: { gap: WdpSpacing.lg, padding: WdpSpacing.md, paddingBottom: WdpSpacing.xl },
+  page: { gap: WdpSpacing.lg, padding: WdpSpacing.md, paddingBottom: 100 },
   card: { gap: WdpSpacing.sm, padding: WdpSpacing.md, borderRadius: WdpRadius.md, borderCurve: 'continuous', borderWidth: 1, borderColor: WdpColors.border, backgroundColor: WdpColors.surface },
   title: { color: WdpColors.navy, ...WdpType.cardTitle },
   copy: { color: WdpColors.muted, ...WdpType.secondary },
@@ -21,14 +22,14 @@ export const styles = StyleSheet.create({
   navigation: { flexDirection: 'row', alignItems: 'center', gap: WdpSpacing.sm, minHeight: 68 },
   navigationCopy: { flex: 1, gap: 5 },
   navigationTitle: { color: WdpColors.navy, ...WdpType.cardTitle },
-  navigationArrow: { width: 28, height: 28, textAlign: 'center', lineHeight: 26, borderRadius: WdpRadius.full, backgroundColor: WdpColors.tealSubtle, color: WdpColors.teal, fontSize: 20 },
+  navigationArrow: { width: 28, height: 28, borderRadius: WdpRadius.full, backgroundColor: WdpColors.tealSubtle, alignItems: 'center' as const, justifyContent: 'center' as const },
   pressed: { opacity: 0.72, backgroundColor: WdpColors.soft },
 });
 export function Button({ title, onPress, disabled = false, variant = 'primary' }: { title: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' }) {
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, variant === 'secondary' && styles.secondaryButton, (disabled || pressed) && { opacity: disabled ? 0.5 : 0.8 }]}><Text style={[styles.buttonText, variant === 'secondary' && styles.secondaryButtonText]}>{title}</Text></Pressable>;
 }
 export function Navigation({ title, path, description }: { title: string; path: string; description?: string }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${title} ›`} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, styles.navigation, pressed && styles.pressed]}><View style={styles.navigationCopy}><Text style={styles.navigationTitle}>{title}</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</View><Text accessibilityElementsHidden importantForAccessibility="no" style={styles.navigationArrow}>›</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${title}`} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, styles.navigation, pressed && styles.pressed]}><View style={styles.navigationCopy}><Text style={styles.navigationTitle}>{title}</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</View><View accessibilityElementsHidden importantForAccessibility="no" style={styles.navigationArrow}><ChevronRight size={16} color={WdpColors.teal} strokeWidth={2.5} /></View></Pressable>;
 }
 export function Panel({ title, children }: { title?: string; children: ReactNode }) { return <View style={styles.card}>{Boolean(title) && <Text style={styles.title}>{title}</Text>}{children}</View>; }
 export function Disclosure({ title, children }: { title: string; children: ReactNode }) {

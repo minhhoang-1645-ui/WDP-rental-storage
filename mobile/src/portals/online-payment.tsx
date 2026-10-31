@@ -44,7 +44,9 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
     if (paid) { void paymentStorage.remove(key).catch(() => {}); return; }
     if (!session) return;
     let stopped = false, inFlight = false, terminal = false;
+    let consecutiveErrors = 0;
     const controller = new AbortController();
+    const getDelay = () => Math.min(2500 * Math.pow(2, consecutiveErrors), 20000);
     const poll = async () => {
       if (stopped || inFlight || terminal || (AppState.currentState && AppState.currentState !== 'active')) return;
       inFlight = true;
@@ -52,19 +54,27 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
         const status = await apiRequest<Result>(`/customer/online-payments/${encodeURIComponent(session.transactionId)}`, { signal: controller.signal });
         if (stopped) return;
         setResult(status); setError('');
+        consecutiveErrors = 0;
         terminal = status.status === 'FAILED' || (status.status === 'SUCCESS' && status.invoice.status === 'PAID');
         if (terminal) {
           void paymentStorage.remove(key).catch(() => {});
           if (user?.id) void readPendingOnlinePayment(user.id).then(legacy => { if (legacy?.transactionId === session.transactionId) return removePendingOnlinePayment(user.id); }).catch(() => {});
           refreshRef.current(); notifyDataChanged('/customer/payments');
         }
-      } catch (caught) { if (!stopped) setError(caught instanceof Error ? caught.message : 'Chưa kiểm tra được kết quả. Hệ thống sẽ thử lại.'); }
+      } catch (caught) {
+        if (!stopped) {
+          consecutiveErrors = Math.min(consecutiveErrors + 1, 4);
+          setError(caught instanceof Error ? caught.message : 'Chưa kiểm tra được kết quả. Hệ thống sẽ thử lại.');
+        }
+      }
       finally { inFlight = false; }
+      if (!stopped && !terminal) scheduleNext();
     };
+    let timer: ReturnType<typeof setTimeout>;
+    const scheduleNext = () => { timer = setTimeout(() => { setNow(Date.now()); void poll(); }, getDelay()); };
     void poll();
-    const timer = setInterval(() => { setNow(Date.now()); void poll(); }, 2500);
-    const listener = AppState.addEventListener('change', state => { if (state === 'active') void poll(); });
-    return () => { stopped = true; controller.abort(); clearInterval(timer); listener.remove(); };
+    const listener = AppState.addEventListener('change', state => { if (state === 'active') { consecutiveErrors = 0; void poll(); } });
+    return () => { stopped = true; controller.abort(); clearTimeout(timer); listener.remove(); };
   }, [session, key, paid, user?.id]);
   const waiting = !paid && Boolean(session) && (!result || result.status === 'PENDING');
   const reconciliation = Boolean(result?.reconciliation);

@@ -61,7 +61,7 @@ export function CustomerAppointmentsPage() {
       ]);
     const active = new Set(
       (appointments.data?.items ?? [])
-        .filter((item) => ["REQUESTED", "CONFIRMED"].includes(item.status))
+        .filter((item) => ["REQUESTED", "CONFIRMED", "COMPLETED"].includes(item.status))
         .map((item) => item.reservation.id),
     );
     for (const [id, items] of groups) {
@@ -239,7 +239,7 @@ export function CustomerAppointmentsPage() {
                   )}
                   {item.note && <p>Ghi chú: {item.note}</p>}
                   {item.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Đã nhận giấy tờ, hướng dẫn và chìa khóa. Chờ ngày bắt đầu thuê để sử dụng kho và đưa hàng vào; hệ thống tự kích hoạt khi đủ điều kiện.</p>}
-                  {workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
+                  {item.usageStatus !== 'WAITING_FOR_RENTAL_START' && workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
                 </article>
               ))}
             </div>

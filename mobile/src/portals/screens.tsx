@@ -46,9 +46,16 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
   const { user } = useAuth(), config = portalResource(role, resource), root = `/${role.toLowerCase()}`;
   const data = useResource<Row | Row[]>(user?.role === role && config ? config.path : null, config?.shape !== 'array');
   const [search, setSearch] = useState(''), [status, setStatus] = useState(''), [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
+  const [pagination, setPagination] = useState({ filter: '', page: 1 });
+  const filterKey = JSON.stringify([search, status]);
+  const page = pagination.filter === filterKey ? pagination.page : 1;
+  const setPage = (value: number) => setPagination({ filter: filterKey, page: value });
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy chức năng" message="Chọn chức năng trong khu vực của bạn." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : object(data.data).items).filter(item => role !== 'CUSTOMER' || resource !== 'transfers' || item.resolutionType === 'TRANSFER_RECOMMENDED' || text(item, 'subject').toLocaleLowerCase('vi').includes('chuyển kho'));
-  const shown = items.filter(item => (!status || (item.status ?? item.rentalState) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))));
+  const filtered = items.filter(item => (!status || (item.status ?? item.rentalState) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
+  const currentPage = Math.min(page, totalPages);
+  const shown = filtered.slice((currentPage - 1) * 10, currentPage * 10);
   return <FlatList keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.loading || data.error ? [] : shown} keyExtractor={(item, index) => idOf(item) || String(index)} ListHeaderComponent={<View style={{ gap: 12 }}>
     <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={role === 'STAFF' ? 'Nhân viên' : 'Tài khoản của tôi'} title={config.title} description={role === 'STAFF' ? 'Mở hồ sơ để đối chiếu thông tin và thực hiện công việc được phép.' : 'Thông tin và yêu cầu của riêng bạn tại NestBox.'} />
     <Navigation title="Về tổng quan" path={root} /><Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading || Boolean(action)} />
@@ -60,7 +67,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title="Tìm kiếm hồ sơ" value={search} onChange={setSearch} maxLength={120} />
     {config.statuses && <View style={styles.row}><Button title={!status ? '✓ Tất cả' : 'Tất cả'} variant={!status ? 'primary' : 'secondary'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} title={`${status === value ? '✓ ' : ''}${portalStatus(role, resource, value)}`} variant={status === value ? 'primary' : 'secondary'} onPress={() => setStatus(value)} />)}</View>}
-    {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{shown.length} / {items.length} hồ sơ</Text>}
+    {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <View style={{ gap: 8 }}><Text style={styles.copy}>{filtered.length} hồ sơ · Trang {currentPage}/{totalPages}</Text><View style={styles.row}><Button title="Trang trước" variant="secondary" disabled={currentPage <= 1} onPress={() => setPage(currentPage - 1)} /><Button title="Trang sau" variant="secondary" disabled={currentPage >= totalPages} onPress={() => setPage(currentPage + 1)} /></View></View>}
   </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => <Navigation title={codeOf(item)} description={summary(item, transferProgress(item) || portalStatus(role, resource, item.status ?? item.rentalState))} path={`${root}/${resource}/${encodeURIComponent(idOf(item))}`} />} />;
 }
 export function PortalDetail({ role }: { role: PortalRole }) {

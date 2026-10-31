@@ -21,6 +21,7 @@ export default function CustomerLayout() {
       <Stack.Screen name="rentals" options={{ title: 'Kho đang thuê' }} />
       <Stack.Screen name="payments" options={{ title: 'Thanh toán' }} />
       <Stack.Screen name="account" options={{ title: 'Tài khoản' }} />
+      <Stack.Screen name="services" options={{ title: 'Dịch vụ của bạn' }} />
     </Stack>
     <BottomNav role="CUSTOMER" />
   </View>;

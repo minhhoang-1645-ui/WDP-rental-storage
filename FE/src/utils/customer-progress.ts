@@ -9,12 +9,14 @@ export function customerProgress(reservation: ActivityRow, data: ActivityData) {
   const contracts = (data.contracts ?? []).filter(belongs), invoices = (data.invoices ?? []).filter(belongs);
   const initial = invoices.find(row => row.type === 'INITIAL');
   const appointment = (data.appointments ?? []).find(row => belongs(row) && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)));
+  const completedHandover = (data.appointments ?? []).find(row => belongs(row) && row.status === 'COMPLETED');
   const returned = (data.returns ?? []).find(row => belongs(row) && row.status !== 'CANCELLED');
   const query = encodeURIComponent(reference), detail = `/customer/reservations/${encodeURIComponent(id)}`;
   const result = (stage: number, title: string, message: string, to: string, cta: string, closed = false) => ({ stage, title, message, to, cta, closed, reference, contracts });
   if (['CANCELLED', 'REJECTED', 'EXPIRED'].includes(String(reservation.status))) return result(-1, ({ CANCELLED: 'Đơn đã hủy', REJECTED: 'Đơn chưa được chấp thuận', EXPIRED: 'Đã hết thời gian giữ kho' } as Record<string, string>)[String(reservation.status)], 'Xem kết quả trong hồ sơ. Nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu trước khi đặt lại.', detail, 'Xem kết quả', true);
   if (returned) return result(returned.status === 'COMPLETED' ? 6 : 5, returned.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho và tiền cọc', 'Xem kết quả kiểm tra, khoản cần thanh toán và tiến độ quyết toán tiền cọc.', '/customer/returns', 'Theo dõi trả kho & cọc');
   if (contracts.some(row => row.status === 'ACTIVE')) return result(4, 'Kho của bạn đang sử dụng', 'Gửi hoặc lấy hàng, xem thời hạn, gia hạn và gửi hỗ trợ ngay từ kho đang thuê.', `/customer/rentals?reservation=${query}`, 'Mở kho đang thuê');
+  if (completedHandover && contracts.length === Number(reservation.quantity) && contracts.every(row => row.status === 'READY_FOR_HANDOVER')) return result(4, 'Đã nhận kho, chờ ngày bắt đầu thuê', 'Bạn đã hoàn tất bàn giao. Kho sẽ được kích hoạt khi đến ngày bắt đầu thuê; lúc đó bạn có thể đưa hàng vào.', `/customer/appointments?reservation=${query}`, 'Xem lịch bàn giao');
   if (reservation.status === 'PENDING') return result(0, 'NestBox đang kiểm tra yêu cầu', 'Bạn đã gửi đơn. Nhân viên sẽ xử lý các điều kiện chưa thể xác nhận tự động; kết quả sẽ cập nhật tại đây.', detail, 'Theo dõi yêu cầu');
   if (contracts.length && contracts.every(row => row.status === 'COMPLETED')) return result(6, 'Kỳ thuê đã kết thúc', 'Xem hợp đồng, lịch sử đặt kho và hồ sơ tiền cọc để đối chiếu kết quả.', '/customer/booking-history', 'Xem lịch sử thuê');
   if (contracts.length === Number(reservation.quantity) && contracts.every(row => row.status === 'READY_FOR_HANDOVER')) {

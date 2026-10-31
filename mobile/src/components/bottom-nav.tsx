@@ -1,16 +1,18 @@
 import { useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { usePathname, router } from 'expo-router';
-import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench } from 'lucide-react-native';
+import { usePathname, router, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2 } from 'lucide-react-native';
 import { WdpColors } from '@/constants/wdp-theme';
 
 type Tab = { key: string; label: string; icon: typeof Home; path: string; match: string[] };
 
 const customerTabs: Tab[] = [
   { key: 'home', label: 'Trang chủ', icon: Home, path: '/customer', match: ['/customer'] },
+  { key: 'discover', label: 'Tìm kho', icon: Search, path: '/customer/discover', match: ['/customer/discover', '/customer/booking', '/customer/floor-plan', '/customer/size-finder'] },
   { key: 'rentals', label: 'Kho thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/contracts', '/customer/renewals', '/customer/returns', '/customer/booking-history'] },
   { key: 'payments', label: 'Thanh toán', icon: CreditCard, path: '/customer/invoices', match: ['/customer/invoices', '/customer/payments', '/customer/payment-history', '/customer/payment-submissions'] },
-  { key: 'account', label: 'Tài khoản', icon: User, path: '/customer/account', match: ['/customer/account'] },
+  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/account', '/customer/stored-items', '/customer/stock-movements', '/customer/support-requests', '/customer/deposit-settlements', '/customer/transfers', '/customer/reservations', '/customer/appointments'] },
 ];
 
 const staffTabs: Tab[] = [
@@ -21,12 +23,13 @@ const staffTabs: Tab[] = [
 
 export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' }) {
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
   const tabs = role === 'CUSTOMER' ? customerTabs : staffTabs;
-  const navigate = useCallback((path: string) => { router.push(path as any); }, []);
+  const navigate = useCallback((path: string) => { router.navigate(path as Href); }, []);
 
-  return <View style={styles.wrap}>
+  return <View style={[styles.wrap, { height: 60 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }]}>
     {tabs.map(tab => {
-      const active = tab.match.some(m => pathname === m);
+      const active = tab.match.some(m => pathname === m || m !== '/customer' && m !== '/staff' && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;
       const color = active ? WdpColors.teal : WdpColors.muted;
       return <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => navigate(tab.path)} style={styles.tab}>

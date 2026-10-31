@@ -2,14 +2,14 @@ import { RefreshControl, ScrollView, Text } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState } from '@/components/screen-state';
-import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
+import { WorkHub } from '@/components/workspace-hub';
 import { useResource } from '@/operations/use-resource';
 import { Button, Navigation, Panel, styles } from '@/operations/ui';
 import { codeOf, label, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
 import { ActivitySummary } from '@/activity/ActivityCenter';
 
-const groups = [
+export const groups = [
   { title: 'Tìm và đặt kho', items: [
     { title: 'Tìm kho', path: '/customer/discover', description: 'Xem loại kho và kiểm tra khả dụng theo ngày thuê.' },
     { title: 'Tìm kích thước kho', path: '/customer/size-finder', description: 'Ước tính nhóm kho theo đồ dùng của bạn.' },
@@ -57,9 +57,9 @@ export default function CustomerHomeScreen() {
       { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Xem kho hoạt động, gia hạn và gửi hỗ trợ.', count: count(rentals, rentals.data?.total ?? 0) },
     ]} />
     {sources.filter(item => item.error).map((item, index) => <ErrorState key={index} message={item.error!} onRetry={item.refresh} />)}
-    <Panel title="Quy trình thuê kho"><Text style={styles.copy}>Chọn kho trên website → xác nhận tự động khi đủ điều kiện → thanh toán trong hạn giữ kho → đặt lịch nhận kho → nhận kho và gửi hàng.</Text><Text style={styles.copy}>Mỗi hồ sơ có tiến độ riêng. Gia hạn, trả kho và hỗ trợ nằm trong các nhóm chức năng bên dưới.</Text></Panel>
+    <Navigation title="Tìm kho và chọn vị trí 2D" description="Chọn loại kho, ngày thuê rồi chọn kho trống trên sơ đồ." path="/customer/discover" />
     <Panel title="Yêu cầu gần đây">{reservations.loading ? <LoadingState /> : !reservations.error && (reservations.data?.length ? [...reservations.data].sort((a,b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt))).slice(0,3).map(item => <Navigation key={String(item.id)} title={codeOf(item)} description={`${label(item.status)} · ${String((item.product as Row)?.name ?? 'Yêu cầu đặt kho')}`} path={`/customer/reservations/${encodeURIComponent(String(item.id))}`} />) : <Text style={styles.copy}>Chưa có yêu cầu. Bạn có thể chọn loại kho và gửi yêu cầu trên website NestBox.</Text>)}</Panel>
-    <FunctionMenu groups={groups} />
+    <Navigation title="Tất cả dịch vụ" description="Hợp đồng, nhập xuất hàng, gia hạn, trả kho và hỗ trợ." path="/customer/services" />
     <Navigation title="Tài khoản và đăng xuất" path="/customer/account" />
   </ScrollView>;
 }

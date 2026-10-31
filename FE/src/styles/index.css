@@ -673,6 +673,8 @@
   .customer-recent-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .customer-recent-item span, .customer-recent-item small { color: var(--color-slate); font-size: 12px; }
   .customer-recent-item > div:last-child { justify-items: end; }
+  .customer-contract-confirmation { display: grid; justify-items: start; gap: 8px; }
+  .customer-contract-confirmation .button-secondary { min-height: 36px; padding: 6px 12px; text-align: center; }
   .customer-quick-actions { display: grid; gap: 4px; }
   .customer-quick-actions > a { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--color-border); padding: 14px 0; color: var(--color-ink); text-decoration: none; }
   .customer-quick-actions > a > svg:first-child { color: var(--color-orange); }

@@ -120,7 +120,7 @@ export function CustomerContractsPage() {
                     <CustomerStatus status={contract.status} />
                   </td>
                   <td data-label="Xác nhận">
-                    {contract.terms.acceptedAt ? <span><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="portal-text-button" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="portal-text-button" to="/customer/payments">Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="portal-text-button" to="/customer/appointments">Đặt lịch bàn giao</Link>}</span> :
+                    {contract.terms.acceptedAt ? <div className="customer-contract-confirmation"><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="button-secondary" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="button-secondary" to="/customer/payments">Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="button-secondary" to="/customer/appointments">Đặt lịch bàn giao</Link>}</div> :
                       <button type="button" className="button-secondary payment-table-action" onClick={() => setSelected(contract)}>Xem và xác nhận</button>}
                   </td>
                 </tr>

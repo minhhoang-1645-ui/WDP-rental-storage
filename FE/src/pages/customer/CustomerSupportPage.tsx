@@ -7,7 +7,7 @@ import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { CircleHelp, RefreshCw, Send, Wrench } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import { formatPortalDate } from "../../components/customer/CustomerPortalHelpers";
@@ -390,7 +390,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     {item.unit ? ` · ${item.unit.unitCode}` : ""}
                   </p>
                   <p>{item.description}</p>
-                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.completedAt && <p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p>}</div>}
+                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
                       <strong>Kết quả:</strong> {item.resolutionNote}

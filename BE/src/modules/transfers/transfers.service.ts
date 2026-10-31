@@ -79,6 +79,41 @@ export class TransfersService {
     return this.toTransfer(record);
   }
 
+  async destinations(id: string, query: Record<string, unknown>) {
+    const page = this.integer(query.page, 1, 100000, 'page');
+    const limit = this.integer(query.limit, 20, 100, 'limit');
+    const transfer = await this.prisma.transferRequest.findFirst({
+      where: { OR: [{ id }, { transferCode: id }] },
+      include: { fromStorageUnit: true, rentalContract: true },
+    });
+    if (!transfer) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho.');
+    const start = this.today(), end = transfer.rentalContract.endDate;
+    const where = { storageTypeId: transfer.fromStorageUnit.storageTypeId, id: { not: transfer.fromStorageUnitId } };
+    const total = await this.prisma.storageUnit.count({ where });
+    const units = await this.prisma.storageUnit.findMany({
+      where, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
+      include: { storageType: true, reservationUnits: {
+        where: { releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' } },
+        select: { plannedStartDate: true, plannedEndDate: true }, orderBy: { plannedStartDate: 'asc' },
+      } },
+    });
+    return { page, limit, total, items: units.map(unit => {
+      const reason = transfer.status !== 'REQUESTED' ? 'Yêu cầu đã được xử lý. Mở lại hồ sơ để xem kết quả.'
+        : transfer.rentalContract.status !== 'ACTIVE' || end <= start ? 'Hợp đồng không còn kỳ thuê đang hoạt động.'
+        : transfer.rentalContract.reservationUnitId !== transfer.fromReservationUnitId || transfer.fromStorageUnit.status !== 'OCCUPIED' ? 'Kho nguồn đã thay đổi. Vui lòng kiểm tra lại hồ sơ trước khi chuyển.'
+        : unit.status === 'MAINTENANCE' ? 'Kho đang bảo trì.' : unit.status === 'OCCUPIED' ? 'Kho đang có khách sử dụng.'
+        : unit.status !== 'AVAILABLE' ? 'Kho đang được giữ cho đơn khác.'
+        : unit.reservationUnits.length ? 'Kho có lịch đặt trùng thời gian thuê còn lại.' : '';
+      return { id: unit.id, unitCode: unit.unitNumber, floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position,
+        storageType: { id: unit.storageType.id, code: unit.storageType.code, name: unit.storageType.name },
+        dimensions: { widthCm: unit.storageType.widthCm, lengthCm: unit.storageType.lengthCm, heightCm: unit.storageType.heightCm },
+        status: unit.status, eligible: !reason, unavailableReason: reason,
+        checkedFrom: this.iso(start), checkedUntil: this.iso(end),
+        conflicts: unit.reservationUnits.map(allocation => ({ startDate: this.iso(allocation.plannedStartDate), endDate: this.iso(allocation.plannedEndDate) })),
+      };
+    }) };
+  }
+
   async listForStaff(query: Record<string, unknown>) {
     return this.listFiltered(query, ['APPROVED', 'COMPLETED']);
   }
@@ -101,6 +136,7 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
+      if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
@@ -186,7 +222,7 @@ export class TransfersService {
 
   private include(): Prisma.TransferRequestInclude { return {
     reservation: { select: { id: true, reservationCode: true, startDate: true, endDate: true, quoteSnapshot: true } },
-    rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
+    rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true } },
     fromStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { activeKey: { not: null } }, select: { id: true, maintenanceCode: true, status: true }, take: 1 } } },
     toStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } } } },
     requestedBy: { select: { id: true, fullName: true, role: true } }, approvedBy: { select: { id: true, fullName: true, role: true } }, completedBy: { select: { id: true, fullName: true, role: true } },

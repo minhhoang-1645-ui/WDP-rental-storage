@@ -3,7 +3,6 @@ import { OperationsLink as Link } from "../../components/manager/OperationsLink"
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
-  at,
   code,
   first,
   label,
@@ -11,7 +10,8 @@ import {
   rows,
   type Row,
 } from "../../components/manager/portal-data";
-import { RecordPicker } from "../../components/manager/PortalUi";
+import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
+import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
@@ -719,19 +719,12 @@ export function ManagerActions({
                   });
                 }}
               >
-                <p>
-                  Chọn kho cùng loại. Khả dụng toàn kỳ sẽ được kiểm tra lại khi
-                  duyệt.
-                </p>
-                <RecordPicker
-                  path={`/manager/units?status=AVAILABLE&storageType=${encodeURIComponent(first(row, "fromUnit.storageType.id"))}`}
-                  title="Kho đích"
+                <TransferDestinationPicker
+                  transferId={id}
+                  source={object(row.fromUnit)}
                   value={target}
                   onChange={setTarget}
-                  accept={(item) => item.id !== at(row, "fromUnit.id")}
-                  describe={(item) =>
-                    `${code(item)} · ${first(item, "floor")} · ${first(item, "zone")}`
-                  }
+                  disabled={busy}
                 />
                 <button className="button-primary" disabled={busy || !target}>
                   Duyệt chuyển kho

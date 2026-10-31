@@ -81,7 +81,8 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
   }
   if (role === 'MANAGER' && resource === 'support-requests' && row.status === 'ESCALATED') add('Giải quyết hỗ trợ', '/resolve', [select('resolutionType', 'Hướng xử lý', ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], 'MANAGER_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true)], 'POST', true);
   if (resource === 'transfers' && row.status === 'REQUESTED') {
-    add('Duyệt chuyển kho', '/approve', [{ name: 'toStorageUnitId', title: 'Kho đích cùng loại', required: true, optionsPath: `/manager/units?status=AVAILABLE&storageType=${encodeURIComponent(text(row, 'fromUnit.storageType.id'))}`, optionsAccept: item => item.status === 'AVAILABLE' && idOf(item) !== text(row, 'fromUnit.id'), optionLabel: item => `${text(item, 'unitCode')} · ${text(item, 'floor')} · ${text(item, 'zone')}` }]);
+    add('Duyệt chuyển kho', '/approve', [{ name: 'toStorageUnitId', title: 'Kho đích cùng loại', required: true, optionsPath: `/manager/transfers/${encodeURIComponent(idOf(row))}/destinations`, optionsAccept: item => item.eligible === true, optionLabel: item => `${text(item, 'unitCode')} · ${text(item, 'storageType.name')} · ${text(item, 'floor') || 'Chưa có tầng'} · Khu ${text(item, 'zone') || 'chưa cập nhật'} · Trống ${text(item, 'checkedFrom')} – ${text(item, 'checkedUntil')}` }]);
+    actions[actions.length - 1].description = `Kho nguồn: ${text(row, 'fromUnit.unitCode')} · ${text(row, 'fromUnit.storageType.name')}. Chỉ hiển thị kho cùng loại trống trong toàn kỳ thuê còn lại, giữ nguyên giá và thời hạn. Tìm theo mã, tên kho, tầng hoặc khu vực. Kho chỉ được giữ sau khi duyệt thành công; nếu không có lựa chọn, hãy đóng và mở lại sau khi kho khác được giải phóng.`;
     add('Từ chối chuyển kho', '/reject');
   }
   if (resource === 'additional-services') {

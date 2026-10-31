@@ -23,6 +23,9 @@ export class ManagerTransfersController {
   @ApiQuery({ name: 'search', required: false, example: 'WDP-TRF', description: 'Tìm transfer, reservation, contract hoặc unit code.' })
   @ApiOkResponse({ description: 'Danh sách có phân trang và stable sorting.' }) @ApiBadRequestResponse({ description: 'Pagination/filter/search không hợp lệ.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ STAFF.' })
   list(@Query() query: Record<string, unknown>) { return this.transfers.list(query); }
+  @Get(':id/destinations') @ApiOperation({ summary: 'Kho đích cùng loại và khả dụng trong toàn kỳ thuê còn lại', description: 'Có phân trang, không bao gồm kho nguồn. Trả lý do không thể chọn và lịch trùng, không trả thông tin khách thuê khác. Duyệt vẫn kiểm tra lại trong transaction.' })
+  @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 100 })
+  destinations(@Param('id') id: string, @Query() query: Record<string, unknown>) { return this.transfers.destinations(id, query); }
   @Get(':id') @ApiOperation({ summary: 'Chi tiết TransferRequest' }) @ApiNotFoundResponse({ description: 'Không tìm thấy TransferRequest.' }) get(@Param('id') id: string) { return this.transfers.get(id); }
   @Post(':id/approve') @ApiOperation({ summary: 'Duyệt và reserve unit đích cùng StorageType' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.approve(id, body, req.user!); }

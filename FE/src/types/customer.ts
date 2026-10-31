@@ -15,6 +15,7 @@ export interface CustomerStorageType {
 }
 
 export interface CustomerContract {
+  transfers?: Array<{ id: string; transferCode: string; status: string; reason: string; fromUnit: { unitCode: string }; toUnit: { unitCode: string } | null; createdAt: string; completedAt: string | null; completedBy: { fullName: string } | null }>
   id: string
   contractCode: string
   status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'

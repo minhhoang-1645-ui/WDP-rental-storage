@@ -1,3 +1,5 @@
+import { ContractRenewalHistory } from '@/components/contract-renewal-history';
+import { ContractTransferHistory } from '@/components/contract-transfer-history';
 import { DocumentFile } from '@/components/document-file';
 import { canAccessManagerReview, isManagerReviewWorkflow, managerReviewTitle } from '@/utils/manager-review-access';
 import { staffRecordActions } from '@/portals/actions';
@@ -47,6 +49,8 @@ function Detail({ resource, id }: { resource: string; id: string }) {
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>
+      {resource === 'contracts' && <ContractRenewalHistory contract={row} scope={user?.role === 'STAFF' ? 'staff/management' : 'manager'} />}
+      {resource === 'contracts' && <ContractTransferHistory contract={row} scope={user?.role === 'STAFF' ? 'staff/management' : 'manager'} />}
       {(['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/${user?.role === 'STAFF' ? 'staff/management' : 'manager'}/documents/${resource}/${encodeURIComponent(id)}`} name={codeOf(row)} />}
       {resource === 'renewals' && <RenewalReview row={row} />}
       <WorkflowHint text={workflowGuide(resource, row.status)} />

@@ -128,6 +128,7 @@ async function setup(role, mobile) {
           (item) =>
             (item.id || item.reservationId) === decodeURIComponent(id || ""),
         ) || items[0];
+    if (method === "GET" && kind === "transfers" && action === "destinations") return send(pageOf([], url));
     if (method !== "GET") {
       const body = req.postData() ? req.postDataJSON() : {};
       if (action === "assign") assert.equal(role, "MANAGER");

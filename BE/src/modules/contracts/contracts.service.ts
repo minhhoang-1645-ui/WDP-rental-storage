@@ -150,10 +150,23 @@ export class ContractsService {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
           services: true,
+          renewals: { orderBy: [{ requestedAt: 'asc' as const }, { id: 'asc' as const }], select: {
+            id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true, termMonths: true, paymentPlan: true, quoteSnapshot: true,
+            requestedAt: true, reviewedAt: true, approvedAt: true, rejectedAt: true, rejectionReason: true,
+            requestedBy: { select: { fullName: true } }, reviewedBy: { select: { fullName: true } },
+            appendixCode: true, appendixSnapshot: true, appendixAcceptedAt: true, appendixAcceptanceName: true,
+            invoices: { orderBy: { renewalCycle: 'asc' as const }, select: { id: true, invoiceCode: true, renewalCycle: true, status: true, totalAmount: true, amountPaid: true, balanceDue: true, paidAt: true } },
+          } },
         },
       },
       reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
-    };
+      transferRequests: { orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
+        id: true, transferCode: true, status: true, reason: true, createdAt: true, approvedAt: true, completedAt: true,
+        fromStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
+        toStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
+        requestedBy: { select: { fullName: true } }, approvedBy: { select: { fullName: true } }, completedBy: { select: { fullName: true } },
+      } },
+    } satisfies Prisma.RentalContractInclude;
   }
 
   private toContract(contract: any, includeCustomer: boolean) {
@@ -188,6 +201,25 @@ export class ContractsService {
       updatedAt: contract.updatedAt.toISOString(),
       activatedAt: contract.activatedAt?.toISOString() ?? null,
       completedAt: contract.completedAt?.toISOString() ?? null,
+      renewals: (reservation.renewals ?? []).filter((renewal: any) => {
+        const document = signedDocument(renewal.appendixSnapshot);
+        return !Array.isArray(document?.contracts) || document.contracts.some((item: any) => item.contractCode === contract.contractCode);
+      }).map((renewal: any) => ({
+        id: renewal.id, renewalCode: renewal.renewalCode, status: renewal.status,
+        previousEndDate: this.isoDate(renewal.previousEndDate), requestedEndDate: this.isoDate(renewal.requestedEndDate), termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan,
+        quote: renewal.quoteSnapshot, requestedAt: renewal.requestedAt.toISOString(), reviewedAt: renewal.reviewedAt?.toISOString() ?? null, approvedAt: renewal.approvedAt?.toISOString() ?? null, rejectedAt: renewal.rejectedAt?.toISOString() ?? null,
+        requestedBy: renewal.requestedBy, reviewedBy: renewal.reviewedBy, rejectionReason: renewal.rejectionReason,
+        activatedAt: renewal.status === 'COMPLETED' ? renewal.invoices.find((invoice: any) => invoice.renewalCycle === 1)?.paidAt?.toISOString() ?? null : null,
+        appendix: renewal.appendixCode ? { code: renewal.appendixCode, available: Boolean(renewal.appendixSnapshot), acceptedAt: renewal.appendixAcceptedAt?.toISOString() ?? null, acceptanceName: renewal.appendixAcceptanceName, snapshotHash: snapshotHash(signedDocument(renewal.appendixSnapshot)) } : null,
+        invoices: renewal.invoices.map((invoice: any) => ({ id: invoice.id, invoiceCode: invoice.invoiceCode, status: invoice.status, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue), paidAt: invoice.paidAt?.toISOString() ?? null })),
+      })),
+      transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
+        id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, reason: transfer.reason,
+        fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber, floor: transfer.fromStorageUnit.floor, zone: transfer.fromStorageUnit.zone },
+        toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber, floor: transfer.toStorageUnit.floor, zone: transfer.toStorageUnit.zone } : null,
+        requestedBy: transfer.requestedBy, approvedBy: transfer.approvedBy, completedBy: transfer.completedBy,
+        createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null,
+      })),
       terms: {
         version: signedDocument(contract.signedSnapshot)?.version ?? (contract.termsAcceptedAt ? contract.termsVersion : this.policy.issuer().termsVersion),
         acceptedAt: contract.termsAcceptedAt?.toISOString() ?? null,

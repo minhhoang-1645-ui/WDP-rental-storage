@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 
 function Bone({ width, height = 16, style }: { width: number | `${number}%`; height?: number; style?: object }) {
-  const opacity = useRef(new Animated.Value(0.4)).current;
+  const [opacity] = useState(() => new Animated.Value(0.4));
   useEffect(() => {
     const animation = Animated.loop(
       Animated.sequence([

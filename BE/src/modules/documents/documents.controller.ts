@@ -13,11 +13,23 @@ function send(response: Response, bytes: Buffer, name: string) {
   response.send(bytes);
 }
 
+function completedTransfer(record: { transfers: Array<{ id: string; status: string }> }, id: string) {
+  const transfer = record.transfers.find(item => item.id === id && item.status === 'COMPLETED');
+  if (!transfer) throw new NotFoundException('Chỉ xuất biên bản cho lệnh chuyển đã hoàn tất thuộc hợp đồng này.');
+  return transfer;
+}
+
 @Controller('customer/documents')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('CUSTOMER')
 export class CustomerDocumentsController {
   constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService) {}
+  @Get('contracts/:id/transfers/:transferId')
+  async transfer(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
+    const record = await this.contracts.getCustomerContract(request.user!.id, id);
+    const transfer = completedTransfer(record, transferId);
+    send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
+  }
   @Get('contracts/:id')
   async contract(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) {
     const record = await this.contracts.getCustomerContract(request.user!.id, id);
@@ -43,6 +55,12 @@ export class CustomerDocumentsController {
 @Roles('MANAGER')
 export class ManagerDocumentsController {
   constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService) {}
+  @Get('contracts/:id/transfers/:transferId')
+  async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
+    const record = await this.contracts.getManagerContract(id);
+    const transfer = completedTransfer(record, transferId);
+    send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
+  }
   @Get('contracts/:id')
   async contract(@Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id); send(response, await this.pdf.contract(record), record.contractCode); }
   @Get('renewals/:id')
@@ -61,6 +79,12 @@ export class ManagerDocumentsController {
 @Roles('STAFF')
 export class StaffDocumentsController {
   constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly pdf: PdfDocumentService) {}
+  @Get('contracts/:id/transfers/:transferId')
+  async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
+    const record = await this.contracts.getManagerContract(id);
+    const transfer = completedTransfer(record, transferId);
+    send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
+  }
   @Get('contracts/:id')
   async contract(@Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id); send(response, await this.pdf.contract(record), record.contractCode); }
   @Get('renewals/:id')

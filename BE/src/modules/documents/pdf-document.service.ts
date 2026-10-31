@@ -45,6 +45,24 @@ export class PdfDocumentService {
     });
   }
 
+  async transferRecord(contract: any, transfer: any) {
+    const issuer = contract.terms.document.issuer ?? { brand: 'NestBox Storage', draft: true };
+    const reasons: Record<string, string> = { UNIT_ISSUE: 'Sự cố kho', FACILITY_EQUIPMENT_FAILURE: 'Sự cố thiết bị tại cơ sở', OPERATIONAL_RELOCATION: 'Điều chuyển phục vụ vận hành', OTHER: 'Lý do khác' };
+    return this.render('BIÊN BẢN GHI NHẬN CHUYỂN KHO', `${transfer.transferCode}-BB`, issuer, pdf => {
+      this.party(pdf, issuer, contract.reservation.customer);
+      this.section(pdf, 'Đính kèm hồ sơ hợp đồng thuê kho');
+      this.rows(pdf, [['Hợp đồng liên quan', contract.contractCode], ['Mã đặt kho', contract.reservation.reference], ['Lệnh chuyển kho', transfer.transferCode],
+        ['Kho bàn giao lại', transfer.fromUnit.unitCode], ['Kho được chuyển đến', transfer.toUnit.unitCode], ['Loại kho', contract.storageType.name],
+        ['Lý do chuyển', reasons[transfer.reason] ?? transfer.reason], ['Ngày lập yêu cầu', date(transfer.createdAt)], ['Ngày chấp thuận', date(transfer.approvedAt)], ['Đã chuyển thực tế lúc', date(transfer.completedAt)],
+        ['Người lập yêu cầu', transfer.requestedBy?.fullName ?? 'Chưa ghi nhận'], ['Người chấp thuận', transfer.approvedBy?.fullName ?? 'Chưa ghi nhận'], ['Người xác nhận hoàn tất', transfer.completedBy?.fullName ?? 'Chưa ghi nhận']]);
+      this.section(pdf, 'Ghi nhận thay đổi kho sử dụng');
+      this.paragraph(pdf, `Theo lệnh chuyển đã hoàn tất nêu trên, hợp đồng ${contract.contractCode} tiếp tục được quản lý trên cùng mã hồ sơ. Từ thời điểm hoàn tất lệnh này, kho sử dụng theo lần chuyển này là ${transfer.toUnit.unitCode}, thay cho ${transfer.fromUnit.unitCode}.`);
+      this.paragraph(pdf, 'Đây là chuyển kho cùng loại; thao tác chuyển không thay đổi giá thuê, tiền cọc hoặc thời hạn đã thỏa thuận. Gia hạn và các điều chỉnh khác được ghi nhận trong hồ sơ riêng.');
+      this.paragraph(pdf, 'Biên bản được trích xuất từ lịch sử vận hành đã lưu, đính kèm hợp đồng gốc. Không thay thế hoặc sửa nội dung/chữ ký trên bản hợp đồng đã ký; không xác nhận khách hàng đã ký riêng biên bản này.');
+      this.rows(pdf, [['Mã kiểm tra nội dung hợp đồng đã lưu', contract.terms.snapshotHash]]);
+    });
+  }
+
   async invoice(invoice: any, customer: any, contracts: any[], renewal?: any) {
     return this.render('HÓA ĐƠN THUÊ KHO / CHỨNG TỪ NỘI BỘ', invoice.invoiceCode, this.policy.issuer(), pdf => {
       const issuer = this.policy.issuer();

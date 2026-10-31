@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FileText, Download, Printer } from 'lucide-react';
 import { apiRequest } from '../../services/api';
 
-export function DocumentFile({ path, name, signed = false }: { path: string; name: string; signed?: boolean }) {
+export function DocumentFile({ path, name, signed = false, description }: { path: string; name: string; signed?: boolean; description?: string }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function open(download: boolean) {
     if (busy) return;
@@ -21,7 +21,7 @@ export function DocumentFile({ path, name, signed = false }: { path: string; nam
   }
   return <section className="document-file" aria-label={`File ${name}`}>
     <FileText size={30} aria-hidden="true" />
-    <div><strong>{name}.pdf</strong><small>{signed ? 'Bản có chữ ký đã lưu' : 'Xem toàn bộ nội dung trước khi ký'} · PDF</small><small>Bản có nhãn “Dự thảo” chưa được phát hành chính thức. Mở file và dùng nút in trong trình đọc PDF.</small></div>
+    <div><strong>{name}.pdf</strong><small>{description || (signed ? 'Bản có chữ ký đã lưu' : 'Xem toàn bộ nội dung trước khi ký')} · PDF</small><small>Bản có nhãn “Dự thảo” chưa được phát hành chính thức. Mở file và dùng nút in trong trình đọc PDF.</small></div>
     <div className="document-file-actions"><button type="button" className="button-secondary" disabled={busy} onClick={() => void open(false)}><Printer size={16} />{busy ? 'Đang tải…' : 'Xem / in PDF'}</button><button type="button" className="button-secondary" disabled={busy} onClick={() => void open(true)}><Download size={16} />Tải PDF</button></div>
     {error && <p role="alert" className="portal-error">{error}</p>}
   </section>;

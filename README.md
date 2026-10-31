@@ -176,3 +176,11 @@ Phần này bổ sung luồng ký và chứng từ; không thay schema, không c
 5. Web: `npm run build`, `npm test` (cần máy chủ web/mobile và helper chỉ đọc theo các script). Mobile: `npm run typecheck`, `npm run lint`, export Android. Các fixture chỉ nằm trong bộ nhớ kiểm thử, không phải tài khoản/hóa đơn mẫu đưa vào hệ thống thật.
 
 Kết quả kiểm chứng cho bản cập nhật này: BE build/lint và 120 kiểm thử đơn vị đạt; luồng API bốn vai trò với OTP/PDF/chuyển khoản/bàn giao/gia hạn/chuyển kho/bảo trì/trả sớm/quyết toán chạy đạt trên PostgreSQL tạm rồi xóa database thử. Web build/lint đạt; các bộ kiểm tra vai trò, phân công, hành trình thuê, thông báo, báo giá, lựa chọn kho, ký OTP và tải PDF chạy bằng API chặn trong trình duyệt, không thêm dữ liệu demo vào database nhóm. Mobile typecheck/lint và export Android đạt; các màn hình được kiểm tra thêm trên Expo web. Chưa kiểm thử gửi email/chuyển tiền thật vì chưa có cấu hình, và chưa chạy thực tế trên điện thoại Android/iOS trong lượt này. Bản chạy local hiện dùng BE đã build (`node dist/main.js`); sau khi sửa BE cần build và khởi động lại, hoặc dùng `npm run start:dev` khi phát triển.
+
+### Chuyển kho và hồ sơ hợp đồng (31/10/2026)
+
+- Chuyển giữa các kho vật lý cùng loại; không đổi giá, cọc hoặc thời hạn. Danh sách kho đích kiểm tra toàn bộ kỳ thuê còn lại, loại kho nguồn, cho tìm không dấu theo mã/tên/tầng/khu vực và xem lý do kho chưa thể chọn. BE vẫn kiểm tra lại và giữ kho trong giao dịch khi duyệt.
+- Sau khi chuyển thực tế, Staff hoàn tất lệnh: hợp đồng trỏ sang kho mới; lịch sử kho cũ, kho mới, thời điểm và người xác nhận được giữ trong TransferRequest hiện có. Yêu cầu của khách được đồng bộ và kho cũ có phiếu bảo trì.
+- Trong hồ sơ hợp đồng của Customer/Staff/Manager có lịch sử chuyển và PDF biên bản đính kèm cho từng lệnh đã hoàn tất. Nội dung, chữ ký và mã kiểm tra của hợp đồng gốc không bị sửa. Biên bản là trích xuất ghi nhận vận hành, không giả định khách đã ký thêm một văn bản mới. Customer chỉ xuất biên bản của hợp đồng của mình. Không đổi schema hoặc chạy migration/backfill.
+
+- Hồ sơ hợp đồng cũng tổng hợp các lần gia hạn: hạn cũ/mới, số tháng, báo giá đã chốt, người yêu cầu/duyệt, ngày ký phụ lục, hóa đơn và trạng thái thanh toán/kích hoạt. Mỗi phụ lục mở lại đúng file của lần gia hạn đó; không ghi đè bản hợp đồng hoặc phụ lục đã ký trước.

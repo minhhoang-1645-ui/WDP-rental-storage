@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
+import { router, type Href } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { idOf, rows, text, type Row } from '@/operations/model';
@@ -23,7 +24,13 @@ export function PaymentCenter() {
     {legacy && <Navigation title="Tiếp tục theo dõi phiên VNPay" path={`/customer/invoices/${encodeURIComponent(legacy.invoiceId)}`} description={`${legacy.invoiceCode} · Mở hóa đơn để kiểm tra kết quả, tránh thanh toán lặp.`} />}
     <Panel title="Hóa đơn cần xử lý">
       <Text style={styles.copy}>Mở từng hóa đơn để ký tài liệu còn thiếu, xem số tiền và chọn VNPay hoặc chuyển khoản.</Text>
-      {invoices.loading && !invoices.data ? <LoadingState /> : invoices.error ? <ErrorState message={invoices.error} onRetry={invoices.refresh} /> : outstanding.length ? outstanding.map(invoice => <Navigation key={idOf(invoice)} title={`${text(invoice, 'invoiceCode')} · ${formatMoney(Number(invoice.balanceDue))}`} description={`Đơn ${text(invoice, 'reservation.reference')} · Xem điều kiện và thanh toán`} path={`/customer/invoices/${encodeURIComponent(idOf(invoice))}`} />) : <EmptyState title="Không có hóa đơn cần thanh toán" message="Khoản tiền được xác nhận sẽ xuất hiện trong lịch sử thanh toán." />}
+      {invoices.loading && !invoices.data ? <LoadingState /> : invoices.error ? <ErrorState message={invoices.error} onRetry={invoices.refresh} /> : outstanding.length ? outstanding.map(invoice => {
+        const path = `/customer/invoices/${encodeURIComponent(idOf(invoice))}`;
+        return <View key={idOf(invoice)} style={{ gap: 8 }}>
+          <Navigation title={`${text(invoice, 'invoiceCode')} · ${formatMoney(Number(invoice.balanceDue))}`} description={`Đơn ${text(invoice, 'reservation.reference')} · Kiểm tra hợp đồng và cách thanh toán.`} path={path} />
+          <Button title="Mở hóa đơn để thanh toán" onPress={() => router.push(path as Href)} />
+        </View>;
+      }) : <EmptyState title="Không có hóa đơn cần thanh toán" message="Khoản tiền được xác nhận sẽ xuất hiện trong lịch sử thanh toán." />}
     </Panel>
     <Navigation title="Lịch sử thanh toán" path="/customer/payment-history" />
     <Navigation title="Thông báo chuyển khoản" path="/customer/payment-submissions" />

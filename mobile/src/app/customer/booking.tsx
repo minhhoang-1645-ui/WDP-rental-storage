@@ -24,9 +24,9 @@ type UnitMap = { productId: string; startDate: string; endDateExclusive: string;
 const initial = (productId = ''): Draft => ({ productId, startDate: '', quantity: '1', periodMode: 'duration', durationMonths: '3', endDate: '', paymentPlan: 'PAY_MONTHLY', adjacencyPreference: false, selectedUnitIds: [] });
 
 export default function BookingScreen() {
-  const params = useLocalSearchParams<{ product?: string }>();
+  const params = useLocalSearchParams<{ product?: string; startDate?: string; endDate?: string; unit?: string }>();
   const catalog = usePublicCatalog();
-  const [draft, setDraft] = useState(() => initial(params.product));
+  const [draft, setDraft] = useState(() => ({ ...initial(params.product), ...(params.startDate && params.endDate ? { startDate: params.startDate, endDate: params.endDate, periodMode: 'dates' as const } : {}), selectedUnitIds: params.unit ? [params.unit] : [] }));
   const [step, setStep] = useState(1);
   const addons = useResource<AdditionalService[]>('/additional-services');
   const [selections, setSelections] = useState<ServiceSelection[]>([]);

@@ -1,13 +1,12 @@
-import { RefreshControl, ScrollView, Text } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
-import { PageHeader } from '@/components/page-header';
+import { router, type Href } from 'expo-router';
+import { CalendarDays, ClipboardList, CreditCard, Warehouse, ArrowRight } from 'lucide-react-native';
+import { WdpColors } from '@/constants/wdp-theme';
 import { ErrorState, LoadingState } from '@/components/screen-state';
-import { WorkHub } from '@/components/workspace-hub';
 import { useResource } from '@/operations/use-resource';
-import { Button, Navigation, Panel, styles } from '@/operations/ui';
+import { Navigation, Panel, styles } from '@/operations/ui';
 import { codeOf, label, type Row } from '@/operations/model';
-import { formatMoney } from '@/utils/format';
-import { ActivitySummary } from '@/activity/ActivityCenter';
 
 export const groups = [
   { title: 'Tìm và đặt kho', items: [
@@ -46,20 +45,24 @@ export default function CustomerHomeScreen() {
   const payable = invoices.data?.items.filter(item => ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0) ?? [];
   const count = (source: {loading: boolean; error?: string}, value: number) => source.loading || source.error ? '—' : value;
   const opening = sources.some(item => item.loading) && !rentals.data && !invoices.data && !reservations.data && !appointments.data;
-  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={!opening && sources.some(item => item.loading)} onRefresh={refresh} tintColor="#187D78" />} contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Trang chủ" title={`Chào ${user?.fullName ?? 'bạn'}`} description="Theo dõi đơn đặt, thanh toán và kho bạn đang sử dụng tại NestBox." />
-    <Button title={sources.some(item => item.loading) ? 'Đang cập nhật…' : 'Làm mới tổng quan'} onPress={refresh} disabled={sources.some(item => item.loading)} />
-    <ActivitySummary />
-    <WorkHub title="Bạn muốn làm gì hôm nay?" description="Yêu cầu, thanh toán và nhận kho được đặt ở đầu để dễ theo dõi." actions={[
-      { title: 'Theo dõi yêu cầu', path: '/customer/reservations', description: 'Xem kết quả xác nhận và hạn giữ kho của bạn.', count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
-      { title: 'Hóa đơn & thanh toán', path: '/customer/invoices', description: invoices.loading || invoices.error ? 'Xem hóa đơn và kết quả đối chiếu.' : payable.length ? `Còn ${formatMoney(payable.reduce((sum, item) => sum + Number(item.balanceDue), 0))}. Mở để xem chi tiết.` : 'Xem hóa đơn, khoản đã trả và thông báo chuyển khoản.', count: count(invoices, payable.length) },
-      { title: 'Lịch nhận kho', path: '/customer/appointments', description: 'Xem giờ hẹn đã xác nhận và hướng dẫn nhận kho của bạn.', count: count(appointments, appointments.data?.items.filter(item => ['REQUESTED','CONFIRMED'].includes(String(item.status))).length ?? 0) },
-      { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Xem kho hoạt động, gia hạn và gửi hỗ trợ.', count: count(rentals, rentals.data?.total ?? 0) },
-    ]} />
+
+  const shortcuts = [
+    { title: 'Đơn đặt kho', path: '/customer/reservations', icon: ClipboardList, count: count(reservations, reservations.data?.filter(item => item.status === 'PENDING').length ?? 0) },
+    { title: 'Thanh toán', path: '/customer/invoices', icon: CreditCard, count: count(invoices, payable.length) },
+    { title: 'Lịch nhận kho', path: '/customer/appointments', icon: CalendarDays, count: count(appointments, appointments.data?.items.filter(item => ['REQUESTED', 'CONFIRMED'].includes(String(item.status))).length ?? 0) },
+    { title: 'Kho đang thuê', path: '/customer/rentals', icon: Warehouse, count: count(rentals, rentals.data?.total ?? 0) },
+  ];
+  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={!opening && sources.some(item => item.loading)} onRefresh={refresh} tintColor={WdpColors.navy} />} contentContainerStyle={styles.page}>
+    <View style={{ gap: 4, paddingTop: 8 }}><Text style={styles.copy}>NestBox</Text><Text accessibilityRole="header" style={{ color: WdpColors.navy, fontSize: 28, lineHeight: 36, fontWeight: '700' }}>Chào {user?.fullName ?? 'bạn'}</Text></View>
+    <Pressable accessibilityRole="button" onPress={() => router.push('/customer/discover')} style={({ pressed }) => ({ backgroundColor: WdpColors.navy, padding: 24, borderRadius: 16, borderCurve: 'continuous', flexDirection: 'row', alignItems: 'center', gap: 16, opacity: pressed ? 0.8 : 1 })}>
+      <Warehouse size={28} color={WdpColors.surface} /><View style={{ flex: 1, gap: 4 }}><Text style={[styles.title, { color: WdpColors.surface }]}>Tìm kho phù hợp</Text><Text style={[styles.copy, { color: WdpColors.tealSubtle }]}>Chọn kho & đặt thuê</Text></View><ArrowRight size={22} color={WdpColors.surface} />
+    </Pressable>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{shortcuts.map(({ title, path, icon: Icon, count: value }) => <Pressable key={path} accessibilityRole="button" accessibilityLabel={title + ', ' + value + ' hồ sơ'} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, { flexBasis: '45%', flexGrow: 1, gap: 16 }, pressed && styles.pressed]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 28 }}><Icon size={24} color={WdpColors.navy} />{value !== 0 && <Text style={[styles.label, { color: WdpColors.navy, backgroundColor: WdpColors.soft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }]}>{value}</Text>}</View><Text style={styles.title}>{title}</Text>
+    </Pressable>)}</View>
     {sources.filter(item => item.error).map((item, index) => <ErrorState key={index} message={item.error!} onRetry={item.refresh} />)}
-    <Navigation title="Tìm kho và chọn vị trí 2D" description="Chọn loại kho, ngày thuê rồi chọn kho trống trên sơ đồ." path="/customer/discover" />
-    <Panel title="Yêu cầu gần đây">{reservations.loading ? <LoadingState /> : !reservations.error && (reservations.data?.length ? [...reservations.data].sort((a,b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt))).slice(0,3).map(item => <Navigation key={String(item.id)} title={codeOf(item)} description={`${label(item.status)} · ${String((item.product as Row)?.name ?? 'Yêu cầu đặt kho')}`} path={`/customer/reservations/${encodeURIComponent(String(item.id))}`} />) : <Text style={styles.copy}>Chưa có yêu cầu. Bạn có thể chọn loại kho và gửi yêu cầu trên website NestBox.</Text>)}</Panel>
-    <Navigation title="Tất cả dịch vụ" description="Hợp đồng, nhập xuất hàng, gia hạn, trả kho và hỗ trợ." path="/customer/services" />
-    <Navigation title="Tài khoản và đăng xuất" path="/customer/account" />
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}><Text accessibilityRole="header" style={styles.title}>Đơn gần đây</Text><Pressable accessibilityRole="button" onPress={() => router.push('/customer/reservations')} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}><Text style={[styles.copy, { color: WdpColors.navy }]}>Xem tất cả</Text></Pressable></View>
+    {reservations.loading ? <LoadingState /> : !reservations.error && (reservations.data?.length ? [...reservations.data].sort((a,b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt))).slice(0,2).map(item => <Navigation key={String(item.id)} title={String((item.product as Row)?.name ?? 'Đơn đặt kho')} description={codeOf(item) + ' · ' + label(item.status)} path={'/customer/reservations/' + encodeURIComponent(String(item.id))} />) : <Panel><Text style={styles.copy}>Bạn chưa có đơn đặt kho.</Text></Panel>)}
+    <Navigation title="Tất cả dịch vụ" path="/customer/services" />
   </ScrollView>;
 }

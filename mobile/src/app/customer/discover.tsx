@@ -1,79 +1,77 @@
-import { useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
-
-import { PageHeader } from '@/components/page-header';
+import { DateField } from '@/components/date-field';
+import { StorageYard, type YardGroup } from '@/components/storage-yard';
+import type { FloorPlanUnit } from '@/components/floor-plan-viewer';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
-import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
-import { rows, text, type Row } from '@/operations/model';
-import { Field, styles } from '@/operations/ui';
+import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
+import { rows, text } from '@/operations/model';
+import { Button, Panel, styles } from '@/operations/ui';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
+import { apiRequest } from '@/services/api';
+import { validDate } from '@/operations/availability';
 import { formatMoney } from '@/utils/format';
 
-function productMatches(product: Row, query: string, size: string, climateOnly: boolean) {
-  const haystack = ['name', 'code', 'sizeId', 'condition', 'dimensions', 'floorArea'].map(key => text(product, key)).join(' ').toLocaleLowerCase('vi');
-  return (!query || haystack.includes(query.toLocaleLowerCase('vi'))) && (!size || text(product, 'sizeId') === size) && (!climateOnly || text(product, 'condition') === 'climate');
-}
-
+type UnitMap = { units: FloorPlanUnit[]; groups?: YardGroup[] };
+const today = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+const monthLater = () => { const date = new Date(today() + 'T00:00:00Z'); date.setUTCDate(date.getUTCDate() + 31); return date.toISOString().slice(0, 10); };
 export default function StorageDiscoveryScreen() {
   const params = useLocalSearchParams<{ size?: string }>();
   const catalog = usePublicCatalog();
-  const [query, setQuery] = useState('');
+  const catalogKey = JSON.stringify(catalog.data?.products ?? []);
+  const products = useMemo(() => rows(JSON.parse(catalogKey)), [catalogKey]), sizes = rows(catalog.data?.sizes);
   const [size, setSize] = useState(params.size ?? '');
-  const [climateOnly, setClimateOnly] = useState(false);
-  const products = rows(catalog.data?.products);
-  const sizes = rows(catalog.data?.sizes);
-  const shown = useMemo(() => products.filter(product => productMatches(product, query.trim(), size, climateOnly)).sort((left, right) => (typeof left.monthlyPrice === 'number' ? left.monthlyPrice : Infinity) - (typeof right.monthlyPrice === 'number' ? right.monthlyPrice : Infinity)), [products, query, size, climateOnly]);
-  return <FlatList
-    data={catalog.loading || catalog.error ? [] : shown}
-    keyExtractor={item => text(item, 'id')}
-    contentInsetAdjustmentBehavior="automatic"
-    keyboardShouldPersistTaps="handled"
-    contentContainerStyle={styles.page}
-    refreshControl={<RefreshControl refreshing={catalog.loading && Boolean(catalog.data)} onRefresh={catalog.refresh} tintColor={WdpColors.teal} />}
-    ListHeaderComponent={<View style={{ gap: WdpSpacing.sm }}>
-      <PageHeader eyebrow="Tìm kho" title="Chọn loại kho phù hợp" description="Thông tin loại kho, giá tham khảo và khả dụng được lấy từ danh mục NestBox. Số kho thực tế được kiểm tra lại theo ngày thuê." />
-      <Field title="Tìm theo tên hoặc kích thước" value={query} onChange={setQuery} maxLength={80} />
-      <View style={local.chips}><FilterChip title="Tất cả kích thước" selected={!size} onPress={() => setSize('')} />{sizes.map(item => <FilterChip key={text(item, 'id')} title={text(item, 'name')} selected={size === text(item, 'id')} onPress={() => setSize(text(item, 'id'))} />)}<FilterChip title="Có điều hòa" selected={climateOnly} onPress={() => setClimateOnly(value => !value)} /></View>
-      {catalog.loading && !catalog.data ? <LoadingState label="Đang tải loại kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <Text style={styles.copy}>{shown.length} loại kho phù hợp</Text>}
-    </View>}
-    ItemSeparatorComponent={() => <View style={{ height: WdpSpacing.sm }} />}
-    ListEmptyComponent={!catalog.loading && !catalog.error ? <EmptyState title="Không có loại kho phù hợp" message="Thử bỏ bộ lọc hoặc đổi từ khóa tìm kiếm." /> : null}
-    renderItem={({ item }) => <StorageTypeCard product={item} size={sizes.find(sizeItem => text(sizeItem, 'id') === text(item, 'sizeId'))} />}
-  />;
+  const [choice, setChoice] = useState('');
+  const [startDate, setStart] = useState(today), [endDate, setEnd] = useState(monthLater);
+  const [floorChoice, setFloor] = useState(''), [zoneChoice, setZone] = useState('');
+  const [selected, setSelected] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [result, setResult] = useState<{ key: string; data?: UnitMap; error?: string }>();
+  const activeSize = sizes.some(item => text(item, 'id') === size) ? size : text(sizes[0] ?? {}, 'id');
+  const types = products.filter(item => text(item, 'sizeId') === activeSize);
+  const product = types.find(item => text(item, 'id') === choice) ?? types[0];
+  const productId = text(product ?? {}, 'id');
+  const datesValid = validDate(startDate) && validDate(endDate) && endDate > startDate && startDate >= today();
+  const key = JSON.stringify([productId, startDate, endDate, revision]);
+  useEffect(() => {
+    if (!productId || !datesValid) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      Promise.all(products.map(async product => ({ product, units: (await apiRequest<UnitMap>('/booking/unit-map', { method: 'POST', authenticated: false, signal: controller.signal, body: JSON.stringify({ productId: text(product, 'id'), startDate, endDate, quantity: 1, periodMode: 'dates', paymentPlan: 'PAY_MONTHLY', paymentChoice: 'pay-later', adjacencyPreference: false, addonIds: [] }) })).units }))).then(groups => ({ units: groups.find(group => text(group.product, 'id') === productId)?.units ?? [], groups }))
+        .then(data => { if (!controller.signal.aborted) { setSelected(''); setFloor(''); setZone(''); setResult({ key, data }); } })
+        .catch(error => { if (!controller.signal.aborted) setResult({ key, error: error instanceof Error ? error.message : 'Không tải được sơ đồ.' }); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [productId, startDate, endDate, datesValid, key, products]);
+  const current = result?.key === key ? result : undefined;
+  const units = current?.data?.units ?? [];
+  const floors = [...new Set(units.map(unit => unit.floor ?? ''))];
+  const floor = floors.includes(floorChoice) ? floorChoice : floors[0] ?? '';
+  const zones = [...new Set(units.filter(unit => (unit.floor ?? '') === floor).map(unit => unit.zone ?? ''))];
+  const zone = zones.includes(zoneChoice) ? zoneChoice : zones[0] ?? '';
+  const visible = units.filter(unit => (unit.floor ?? '') === floor && (unit.zone ?? '') === zone);
+  const picked = units.find(unit => unit.id === selected && unit.available);
+  const dimensions = text(product ?? {}, 'dimensions');
+  const refresh = () => { catalog.refresh(); setRevision(value => value + 1); };
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={Boolean(productId && datesValid && !current)} onRefresh={refresh} tintColor={WdpColors.navy} />}>
+    <Text accessibilityRole="header" style={[styles.title, { fontSize: 26, lineHeight: 34 }]}>Tìm kho trên sơ đồ</Text>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: WdpSpacing.xs }}>{sizes.map(item => <Chip key={text(item, 'id')} title={text(item, 'name')} active={activeSize === text(item, 'id')} onPress={() => { setSize(text(item, 'id')); setChoice(''); }} />)}</ScrollView>
+    <View style={{ flexDirection: 'row', gap: WdpSpacing.sm }}><View style={{ flex: 1 }}><DateField title="Ngày nhận" value={startDate} onChange={setStart} /></View><View style={{ flex: 1 }}><DateField title="Ngày trả" value={endDate} onChange={setEnd} /></View></View>
+    {!datesValid && <Text style={styles.error}>Chọn ngày nhận từ hôm nay và ngày trả sau ngày nhận.</Text>}
+    {catalog.loading && !catalog.data ? <LoadingState /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : !product ? <EmptyState title="Chưa có loại kho" message="Thử lại sau hoặc chọn nhóm khác." /> : <>
+      {types.length > 1 && <ScrollView horizontal contentContainerStyle={{ gap: WdpSpacing.xs }}>{types.map(item => <Chip key={text(item, 'id')} title={text(item, 'name')} active={productId === text(item, 'id')} onPress={() => setChoice(text(item, 'id'))} />)}</ScrollView>}
+      <View style={{ gap: WdpSpacing.xxs }}><Text style={styles.title}>{text(product, 'name')}</Text><Text style={styles.copy}>{dimensions} · {typeof product.monthlyPrice === 'number' ? formatMoney(product.monthlyPrice) + '/tháng' : 'Xem báo giá khi đặt'}</Text></View>
+      {datesValid && (!current ? <LoadingState label="Đang kiểm tra kho trống…" /> : current.error ? <ErrorState message={current.error} onRetry={() => setRevision(value => value + 1)} /> : !units.length ? <EmptyState title="Chưa có kho trong nhóm này" message="Chọn loại kho khác để tiếp tục." /> : <>
+        {floors.length > 1 && <View style={styles.row}>{floors.map(item => <Chip key={item} title={item ? 'Tầng ' + item : 'Chưa gắn tầng'} active={floor === item} onPress={() => { setFloor(item); setZone(''); setSelected(''); }} />)}</View>}
+        <View style={styles.row}>{zones.map(item => <Chip key={item} title={item ? 'Khu ' + item : 'Chưa gắn khu'} active={zone === item} onPress={() => { setZone(item); setSelected(''); }} />)}</View>
+        <Text style={styles.copy}>{visible.filter(unit => unit.available).length}/{visible.length} kho còn cho kỳ thuê đã chọn</Text>
+        <StorageYard groups={current.data?.groups ?? []} selectedId={selected} onSelect={(group, unit) => router.push({ pathname: '/customer/booking', params: { product: text(group.product, 'id'), startDate, endDate, unit: unit.id } })} />
+        {picked && <Panel title={picked.code}><Text style={styles.copy}>{dimensions} · Còn kho</Text><Button title="Đặt kho này" onPress={() => router.push({ pathname: '/customer/booking', params: { product: productId, startDate, endDate, unit: picked.id } })} /></Panel>}
+      </>)}
+    </>}
+  </ScrollView>;
 }
-
-function FilterChip({ title, selected, onPress }: { title: string; selected: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={({ pressed }) => [local.chip, selected && local.chipSelected, pressed && { opacity: 0.72 }]}><Text style={[local.chipText, selected && local.chipTextSelected]}>{title}</Text></Pressable>;
+function Chip({ title, active, onPress }: { title: string; active: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={({ pressed }) => ({ paddingHorizontal: 16, paddingVertical: 12, minHeight: 44, borderRadius: 12, backgroundColor: active ? WdpColors.navy : WdpColors.surface, borderWidth: 1, borderColor: WdpColors.border, opacity: pressed ? 0.75 : 1 })}><Text style={{ color: active ? WdpColors.surface : WdpColors.navy, fontWeight: '600' }}>{title}</Text></Pressable>;
 }
-
-function StorageTypeCard({ product, size }: { product: Row; size?: Row }) {
-  const id = text(product, 'id');
-  const condition = text(product, 'condition');
-  return <Pressable accessibilityRole="button" accessibilityLabel={`Chọn ${text(product, 'name')}`} onPress={() => router.push({ pathname: '/customer/booking', params: { product: id } })} style={({ pressed }) => [local.card, pressed && { opacity: 0.76 }]}>
-    <View style={local.cardHeading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={local.code}>{text(product, 'code')}</Text><Text style={local.name}>{text(product, 'name')}</Text></View><View style={local.tag}><Text style={local.tagText}>{condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</Text></View></View>
-    <View style={local.facts}><Fact title="Kích thước" value={text(product, 'dimensions', 'floorArea') || text(size ?? {}, 'dimensions', 'floorArea') || 'Xem khi đặt kho'} /><Fact title="Thuê tối thiểu" value={`${text(product, 'minRentalDays') || '—'} ngày`} /><Fact title="Từ mỗi tháng" value={typeof product.monthlyPrice === 'number' ? formatMoney(product.monthlyPrice) : 'Nhận báo giá'} /></View>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><Text style={local.action}>Chọn loại kho và kiểm tra khả dụng</Text><ChevronRight size={14} color={WdpColors.teal} strokeWidth={2.5} /></View>
-  </Pressable>;
-}
-
-function Fact({ title, value }: { title: string; value: string }) { return <View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text style={local.factTitle}>{title}</Text><Text selectable style={local.factValue}>{value}</Text></View>; }
-
-const local = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: WdpSpacing.xs },
-  chip: { borderColor: WdpColors.border, borderCurve: 'continuous', borderRadius: WdpRadius.full, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: WdpSpacing.sm },
-  chipSelected: { backgroundColor: WdpColors.tealSubtle, borderColor: WdpColors.teal },
-  chipText: { color: WdpColors.muted, fontSize: 13, fontWeight: '500' },
-  chipTextSelected: { color: WdpColors.teal, fontWeight: '600' },
-  card: { gap: WdpSpacing.sm, borderColor: WdpColors.border, borderCurve: 'continuous', borderRadius: WdpRadius.lg, borderWidth: 1, backgroundColor: WdpColors.surface, padding: WdpSpacing.md },
-  cardHeading: { alignItems: 'flex-start', flexDirection: 'row', gap: WdpSpacing.sm, justifyContent: 'space-between' },
-  code: { color: WdpColors.muted, fontSize: 12, fontWeight: '600' },
-  name: { color: WdpColors.navy, fontSize: 18, fontWeight: '700', lineHeight: 25 },
-  tag: { backgroundColor: WdpColors.tealSubtle, borderRadius: WdpRadius.full, paddingHorizontal: WdpSpacing.xs, paddingVertical: WdpSpacing.xxs },
-  tagText: { color: WdpColors.teal, fontSize: 12, fontWeight: '600' },
-  facts: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: WdpColors.border, flexDirection: 'row', flexWrap: 'wrap', gap: WdpSpacing.sm, paddingTop: WdpSpacing.sm },
-  factTitle: { color: WdpColors.muted, fontSize: 12 },
-  factValue: { color: WdpColors.text, fontSize: 13, fontWeight: '600', lineHeight: 19 },
-  action: { color: WdpColors.teal, fontSize: 14, fontWeight: '600' },
-});

@@ -19,6 +19,39 @@ enum AccountStatus {
   DISABLED
 }
 
+enum AuditCategory {
+  LOGIN
+  ACTIVITY
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+// Immutable snapshots: deleting/changing an account must not erase its audit evidence.
+model AuditEvent {
+  id           String        @id @default(cuid())
+  category     AuditCategory
+  action       String        @db.VarChar(80)
+  outcome      AuditOutcome
+  actorId      String?       @db.VarChar(120)
+  actorName    String?       @db.VarChar(120)
+  actorEmail   String?       @db.VarChar(254)
+  actorRole    UserRole?
+  resource     String        @db.VarChar(60)
+  resourceId   String?       @db.VarChar(120)
+  method       String        @db.VarChar(10)
+  route        String        @db.VarChar(250)
+  httpStatus   Int
+  ipAddress    String?       @db.VarChar(64)
+  createdAt    DateTime      @default(now())
+
+  @@index([category, createdAt, id])
+  @@index([actorId, createdAt])
+  @@index([resource, createdAt])
+}
+
 enum TransferStatus {
   REQUESTED
   APPROVED

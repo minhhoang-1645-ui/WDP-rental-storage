@@ -70,7 +70,7 @@ export function AdminHome() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản trị viên" title="Quản lý truy cập" description="Cấp tài khoản cho nhân viên, quản lý và kiểm tra ai đang được truy cập hệ thống." />
     <ActivitySummary />
-    <WorkHub title="Khu vực quản trị" description="Quản trị viên quản lý tài khoản và quyền truy cập. Nhân viên xử lý yêu cầu khách hàng; quản lý phân công và đối chiếu tài chính." actions={adminSections.map(([key, title]) => ({ title, path: `/admin/${key}`, description: key === 'users' ? 'Tìm người dùng, tạo nhân viên/quản lý và bật/tắt truy cập.' : 'Xem số lượng tài khoản và trạng thái hoạt động.' }))} />
+    <WorkHub title="Khu vực quản trị" description="Quản lý tài khoản, quyền truy cập và nhật ký hệ thống." actions={adminSections.map(([key, title]) => ({ title, path: `/admin/${key}`, description: key === 'users' ? 'Tạo tài khoản nội bộ và bật/tắt truy cập.' : key === 'login-history' ? 'Tra cứu lần đăng nhập thành công hoặc thất bại.' : key === 'activity' ? 'Xem người thực hiện và kết quả thao tác.' : 'Xem số lượng tài khoản và trạng thái hoạt động.' }))} />
     <Navigation title="Tài khoản và đăng xuất" path="/admin/account" />
   </ScrollView>;
 }

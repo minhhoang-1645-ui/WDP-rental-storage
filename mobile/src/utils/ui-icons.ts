@@ -8,6 +8,7 @@ import {
 
 export function featureIcon(value: string) {
   const key = value.toLowerCase();
+  if (/login-history|\/admin\/activity|nhật ký/.test(key)) return History;
   if (/payment-history|booking-history|lịch sử/.test(key)) return History;
   if (/reconciliation|đối soát/.test(key)) return ShieldCheck;
   if (/payment-submissions|chuyển khoản/.test(key)) return Wallet;

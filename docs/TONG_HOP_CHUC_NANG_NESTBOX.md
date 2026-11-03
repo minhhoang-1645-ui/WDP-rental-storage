@@ -1,5 +1,7 @@
 # Tổng hợp chức năng và cách hoạt động — WDP / NestBox Storage
 
+**Bổ sung code ngày 03/11/2026:** Admin đã có lịch sử đăng nhập và nhật ký thao tác trên BE/web/mobile; xem [phạm vi, giới hạn và hướng dẫn bật nhật ký](./NHAT_KY_ADMIN.md). Có migration mới nhưng chưa apply lên DB nhóm, chưa nghiệm thu với DB/emulator thật. Những mô tả phía dưới về Admin chưa có audit hoặc mobile `/admin/activity` chỉ redirect là trạng thái của bản rà soát trước bổ sung này.
+
 Ngày đối chiếu: **02/11/2026**. Nguồn: mã nguồn tại nhánh `khang`, HEAD `15ac4db`, **bao gồm thay đổi local chưa commit** tại thời điểm rà soát.
 
 Tài liệu mô tả bản code trong workspace, không khẳng định Render/Vercel hay database nhóm đã chạy đúng phiên bản này. Không đưa mật khẩu, token, connection string hoặc khóa VNPay vào tài liệu.

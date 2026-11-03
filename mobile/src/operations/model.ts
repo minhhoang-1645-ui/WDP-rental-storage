@@ -34,6 +34,7 @@ export const resources: Record<string, ResourceDefinition> = {
 };
 export const adminSections = [
   ['dashboard', 'Tổng quan hệ thống'], ['users', 'Quản lý tài khoản người dùng'],
+  ['login-history', 'Lịch sử đăng nhập'], ['activity', 'Nhật ký hoạt động'],
 ] as const;
 const labels: Record<string, string> = {
   REFUND_REQUIRED: 'Cần hoàn tiền', RECONCILED: 'Đã đối soát',

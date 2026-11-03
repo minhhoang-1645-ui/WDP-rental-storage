@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname, router, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2, Users, Settings, ShieldCheck } from 'lucide-react-native';
+import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2, Users, History, ShieldCheck } from 'lucide-react-native';
 import { WdpColors } from '@/constants/wdp-theme';
 
 type Tab = { key: string; label: string; icon: typeof Home; path: string; match: string[] };
@@ -31,7 +31,7 @@ const managerTabs: Tab[] = [
 const adminTabs: Tab[] = [
   { key: 'home', label: 'Tổng quan', icon: Home, path: '/admin', match: ['/admin'] },
   { key: 'users', label: 'Người dùng', icon: Users, path: '/admin/users', match: ['/admin/users', '/admin/roles', '/admin/account-status'] },
-  { key: 'settings', label: 'Cài đặt', icon: Settings, path: '/admin/settings', match: ['/admin/settings'] },
+  { key: 'audit', label: 'Nhật ký', icon: History, path: '/admin/activity', match: ['/admin/activity', '/admin/login-history'] },
   { key: 'account', label: 'Tài khoản', icon: User, path: '/admin/account', match: ['/admin/account'] },
 ];
 export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' }) {

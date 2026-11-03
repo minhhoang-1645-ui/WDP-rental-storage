@@ -1,2 +1,2 @@
-import { Redirect } from 'expo-router';
-export default function Screen() { return <Redirect href="/admin" />; }
+import { AdminAudit } from '@/operations/admin-audit';
+export default function Screen() { return <AdminAudit category="ACTIVITY" />; }

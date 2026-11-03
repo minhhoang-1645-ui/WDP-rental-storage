@@ -1,6 +1,8 @@
 import {
   LayoutDashboard,
   Users,
+  History,
+  LogIn,
 } from "lucide-react";
 import { InternalPortalLayout } from "../../components/layout/InternalPortalLayout";
 export function AdminLayout() {
@@ -21,6 +23,8 @@ export function AdminLayout() {
           icon: Users,
           group: "Quản trị",
         },
+        { to: '/admin/login-history', label: 'Lịch sử đăng nhập', icon: LogIn, group: 'Nhật ký' },
+        { to: '/admin/activity', label: 'Nhật ký hoạt động', icon: History, group: 'Nhật ký' },
       ]}
     />
   );

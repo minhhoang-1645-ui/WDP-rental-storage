@@ -43,6 +43,7 @@ import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
 import { AdminLayout } from "../pages/admin/AdminLayout";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
 import { AdminAccountsPage } from "../pages/admin/AdminAccountsPage";
+import { AdminAuditPage } from '../pages/admin/AdminAuditPage';
 import { ManagerCatalogPage } from "../pages/manager/ManagerCatalogPage";
 import { ManagerAdditionalServicesPage } from '../pages/manager/ManagerAdditionalServicesPage';
 import { CustomerLayout } from "../components/customer/CustomerLayout";
@@ -195,6 +196,8 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
         <Route path="admin" element={<AdminLayout />}>
+          <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
+          <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
           <Route index element={<AdminDashboardPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="users" element={<AdminAccountsPage />} />

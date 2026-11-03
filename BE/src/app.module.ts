@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditModule } from './modules/audit/audit.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -31,6 +32,7 @@ import { UnitStaffModule } from './modules/unit-staff/unit-staff.module.js';
     DocumentsModule,
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    AuditModule,
     UnitStaffModule,
     HealthModule,
     ManagerModule,

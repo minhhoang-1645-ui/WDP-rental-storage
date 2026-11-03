@@ -1,5 +1,7 @@
 # Kiểm chứng source so với TONG_HOP_CHUC_NANG_NESTBOX.md
 
+**Bổ sung sau lượt kiểm chứng:** code Admin audit BE/web/mobile đã được triển khai ngày 03/11/2026; `/admin/activity` mobile hiện có màn thật và tab Nhật ký, không còn là redirect. Xem [NHAT_KY_ADMIN.md](./NHAT_KY_ADMIN.md). Migration nhật ký chưa apply lên DB nhóm; thay đổi này không xác nhận các nhận xét khác về VNPay/deployment đã được giải quyết.
+
 Ngày: **03/11/2026**. Nhánh local `khang`, HEAD `15ac4db`, có thay đổi uncommitted/untracked trong mobile và docs. Đọc working tree thực tế, không chỉ HEAD. Không fetch/đối chiếu commit Render, không coi local là bản đang deploy.
 
 Đối tượng: [tài liệu tổng hợp](./TONG_HOP_CHUC_NANG_NESTBOX.md). Đây là **báo cáo kiểm chứng**, không phải bản tự sửa nội dung gốc hoặc bản fix nghiệp vụ.

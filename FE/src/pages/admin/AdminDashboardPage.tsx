@@ -1,4 +1,4 @@
-import { ArrowRight, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, RefreshCw, ShieldCheck, Users, History, LogIn } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLiveRefresh } from '../../services/live-events';
 import { Link } from "react-router-dom";
@@ -58,6 +58,8 @@ export function AdminDashboardPage() {
         </button>
       </PageHeader>
       <WorkHub title="Quản lý truy cập" description="Tìm tài khoản, cấp tài khoản nhân viên/quản lý và kiểm tra trạng thái truy cập trong cùng một nơi." actions={[
+        { title: 'Lịch sử đăng nhập', description: 'Tra cứu đăng nhập thành công và thất bại.', to: '/admin/login-history', icon: LogIn },
+        { title: 'Nhật ký hoạt động', description: 'Xem người thực hiện và kết quả thao tác nghiệp vụ.', to: '/admin/activity', icon: History },
         { title: 'Quản lý tài khoản', description: 'Tìm tên hoặc email; xem hồ sơ, tạo tài khoản nội bộ và bật/tắt truy cập.', to: '/admin/users', icon: Users },
         { title: 'Tra cứu nhân viên kho', description: 'Tìm nhân viên đang hoạt động, lấy mã tài khoản để quản lý phân công.', to: '/admin/users?role=STAFF', icon: ShieldCheck },
       ]} />

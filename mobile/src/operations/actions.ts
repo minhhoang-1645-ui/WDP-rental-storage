@@ -1,4 +1,5 @@
 import { isEarlyReturnRequest } from '@/utils/early-return';
+import { unitAction } from './inventory-actions';
 import { canAccessManagerReview } from '@/utils/manager-review-access';
 import { idOf, label, options, rows, text, type Row } from './model';
 import type { FormAction, FormField } from './form';
@@ -32,6 +33,7 @@ export function assignmentAction(resource: string, row: Row): FormAction {
 }
 
 export function createAction(resource: string): FormAction | undefined {
+  if (resource === 'units') return unitAction();
   if (resource === 'additional-services') return { title: 'Tạo dịch vụ bổ sung', path: '/manager/additional-services', method: 'POST', fields: serviceFields(), validate: serviceValidation, transform: input => ({ ...input, description: input.description ?? null, imageUrl: input.imageUrl ?? null, imageAlt: input.imageAlt ?? null }) };
   if (resource === 'maintenance') return { title: 'Tạo yêu cầu bảo trì', path: '/manager/maintenance', method: 'POST', idempotent: true, description: 'Chọn kho trống cần sửa chữa. Kho đang có khách sử dụng cần báo sự cố và sắp xếp chuyển kho trước; kho đó chưa nằm trong danh sách này.', fields: [
     { name: 'storageUnitId', title: 'Kho cần bảo trì', required: true, optionsPath: '/manager/units?status=AVAILABLE', optionsAccept: row => row.status === 'AVAILABLE' && !isFixtureUnit(row), optionLabel: row => `${text(row, 'unitCode', 'unitNumber')} · ${text(row, 'storageType.name')} · ${text(row, 'floor')} ${text(row, 'zone')}` },
@@ -47,6 +49,7 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
   if (!canAccessManagerReview(role, resource) || resource === 'support-requests' && isEarlyReturnRequest(row)) return [];
   const root = `/manager/${resource}/${encodeURIComponent(idOf(row))}`;
   const actions: FormAction[] = [];
+  if (role === 'MANAGER' && resource === 'units') actions.push(unitAction(row));
   const add = (title: string, suffix: string, fields: FormField[] = [], method: 'POST' | 'PATCH' = 'POST', idempotent = false, description?: string) => actions.push({ title, path: root + suffix, method, fields: [...fields, confirm()], idempotent, description });
   if (role === 'MANAGER' && resource === 'online-payment-reconciliations') {
     if (row.status === 'PENDING_REVIEW') add('Xử lý đối soát VNPay', '/resolve', [select('resolution', 'Kết quả', ['REFUND_REQUIRED', 'RECONCILED']), note('resolutionNote', 'Căn cứ đối soát', true, 2000)], 'POST', false, 'Không tự chuyển tiền hoặc kích hoạt lại đơn đã hết hiệu lực.');

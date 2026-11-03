@@ -4,6 +4,8 @@ Ngày đối chiếu: **02/11/2026**. Nguồn: mã nguồn tại nhánh `khang`,
 
 Tài liệu mô tả bản code trong workspace, không khẳng định Render/Vercel hay database nhóm đã chạy đúng phiên bản này. Không đưa mật khẩu, token, connection string hoặc khóa VNPay vào tài liệu.
 
+**Phạm vi role được nhóm xác nhận ngày 03/11/2026:** chỉ gồm `CUSTOMER`, `STAFF`, `MANAGER`, `ADMIN`. Business Operations Manager trong SRS khung cũ đã được bỏ khỏi phạm vi hiện tại; không tính việc thiếu role này là lỗi hoặc yêu cầu bổ sung. Việc bỏ role không tự chuyển các quyền/nghiệp vụ của role cũ cho Admin hay Manager; các chức năng còn lại được xét theo đặc tả đã điều chỉnh và phân quyền hiện có.
+
 ## 1. Dự án làm gì?
 
 NestBox quản lý thuê kho tự quản tại **một cơ sở**. Khách chọn loại kho và kỳ thuê, nhận báo giá, đặt kho, ký hợp đồng, thanh toán, hẹn bàn giao, sử dụng kho, nhập/xuất hàng, gia hạn hoặc trả kho. Nhân viên xử lý vận hành; quản lý phân công, xử lý ngoại lệ và đối chiếu tài chính; quản trị viên quản lý tài khoản.

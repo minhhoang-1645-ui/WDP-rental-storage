@@ -1,4 +1,6 @@
 import { RefreshCw } from "lucide-react";
+import { useState } from 'react';
+import { InventoryEditor } from './InventoryEditor';
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
 import { ManagerAvailabilityForm } from "./ManagerAvailabilityForm";
@@ -20,6 +22,9 @@ import {
 export function ManagerCatalogPage() {
   const { user } = useAuth();
   const resource = useApiResource<Row>("/booking/catalog", user?.id ?? "");
+  const managed = useApiResource<Row>(user?.role === 'MANAGER' ? '/manager/storage-types' : null, user?.id ?? '');
+  const [editor, setEditor] = useState<{ record?: Row }>();
+  const refresh = () => { resource.refresh(); managed.refresh(); };
   const products = rows(resource.data?.products);
   const categories = new Map(
     rows(resource.data?.sizes).map((row) => [
@@ -33,10 +38,11 @@ export function ManagerCatalogPage() {
         title="Loại kho & bảng giá"
         description="Danh mục, kích thước và chính sách giá đang được hệ thống áp dụng."
       >
+        {user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setEditor({})}>Thêm loại kho</button>}
         <Link className="button-secondary" to={operationPath(user?.role, '/manager/catalog/additional-services')}>Dịch vụ bổ sung</Link>
         <button
           className="button-secondary"
-          onClick={resource.refresh}
+          onClick={refresh}
           disabled={resource.loading}
         >
           <RefreshCw size={16} />
@@ -48,14 +54,15 @@ export function ManagerCatalogPage() {
         error={resource.error}
         retry={resource.refresh}
       />
+      {user?.role === 'MANAGER' && <LoadState loading={managed.loading} error={managed.error} retry={managed.refresh} />}
+      {editor && <InventoryEditor kind="type" record={editor.record} onClose={() => setEditor(undefined)} onSaved={() => { setEditor(undefined); refresh(); }} />}
       {resource.data && (
         <>
           {products.length > 0 && (
             <ManagerAvailabilityForm key={user?.id} products={products} />
           )}
           <div className="booking-alert">
-            Đối chiếu loại kho, kích thước và bảng giá hiện hành. Danh mục này
-            đang ở chế độ chỉ xem.
+            Giá mới chỉ áp dụng cho báo giá mới. Hợp đồng và hóa đơn đã lập giữ nguyên dữ liệu.
           </div>
           {products.length ? (
             <div className="portal-catalog-grid">
@@ -65,6 +72,7 @@ export function ManagerCatalogPage() {
                     {first(row, "code")} · {label(row.condition)}
                   </p>
                   <h2>{first(row, "name")}</h2>
+                  {user?.role === 'MANAGER' && <button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Sửa loại kho & giá</button>}
                   <Status value={first(row, "status").toUpperCase()} />
                   <dl className="manager-facts">
                     <div>

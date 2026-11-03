@@ -30,6 +30,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
+import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
 import { StaffActions } from '../staff/StaffActions';
 import { staffResources, type StaffResource } from '../staff/staff-resources';
@@ -46,6 +47,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const [notice, setNotice] = useState("");
   const [creatingTransfer, setCreatingTransfer] = useState(false);
+  const [editingUnit, setEditingUnit] = useState(false);
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
     user?.id ?? "",
@@ -59,6 +61,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
   const row = data.data;
   return (
     <section>
+      {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
       <Link className="booking-back" to={listPath}>
         <ArrowLeft size={16} />
         {config.title}
@@ -79,6 +82,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
       {row && (
         <>
           <PageHeader title={code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : config.description}>
+            {resource === 'units' && user?.role === 'MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <Status
               value={row.status ?? row.rentalState ?? row.accountStatus}
             />

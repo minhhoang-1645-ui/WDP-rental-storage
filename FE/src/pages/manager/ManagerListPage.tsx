@@ -28,6 +28,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
+import { InventoryEditor } from './InventoryEditor';
 import { TransferRequests } from '../../components/manager/TransferRequests';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 
@@ -45,6 +46,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   );
   const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [creatingUnit, setCreatingUnit] = useState(false);
   const [transferSource, setTransferSource] = useState<Row>();
   const [createdMaintenance, setCreatedMaintenance] = useState<{ owner: string; row: Row }>();
   const [state, setState] = useState<{
@@ -136,7 +138,9 @@ export function ManagerListPage({ resource }: { resource: string }) {
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
   return (
     <section>
+      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.' : config.description}>
+        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
         {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} />

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:inventory": "node scripts/inventory-management-smoke.mjs",
     "test": "npm run test:workflows && npm run test:portal && npm run test:roles && npm run test:workspaces && npm run test:booking && npm run test:automatic && npm run test:catalog && npm run test:usability && npm run test:early-return && npm run test:history-maintenance && npm run test:manager-review && npm run test:completion && npm run test:role-navigation && npm run test:notifications && npm run test:pricing && npm run test:stock-picker",
     "test:notifications": "node scripts/notifications-journey-smoke.mjs",
     "test:history-maintenance": "node scripts/history-maintenance-smoke.mjs",

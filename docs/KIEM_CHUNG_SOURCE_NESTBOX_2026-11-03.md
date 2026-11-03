@@ -4,6 +4,8 @@ Ngày: **03/11/2026**. Nhánh local `khang`, HEAD `15ac4db`, có thay đổi unc
 
 Đối tượng: [tài liệu tổng hợp](./TONG_HOP_CHUC_NANG_NESTBOX.md). Đây là **báo cáo kiểm chứng**, không phải bản tự sửa nội dung gốc hoặc bản fix nghiệp vụ.
 
+**Cập nhật phạm vi theo xác nhận của nhóm ngày 03/11/2026:** dự án chỉ có bốn role Customer, Staff, Manager và Admin. Business Operations Manager trong SRS khung cũ không còn thuộc phạm vi. Không coi thiếu role thứ năm là sai lệch; không tự cấp quyền của role đã bỏ cho các role hiện có. Các nhận xét khác về chức năng cần được đánh giá riêng, không suy ra phải triển khai toàn bộ nhóm FR của role đã bỏ.
+
 ## Sai lệch và thiếu sót cần báo trước
 
 1. **QueryDR chưa có.** Tài liệu đã ghi đúng điều này, nhưng yêu cầu khôi phục giao dịch thành công khi mất IPN **chưa được giải quyết** bằng source hiện tại. Log IPN và trang poll không truy vấn VNPay.

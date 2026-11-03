@@ -1,3 +1,4 @@
+import { Armchair, Archive, BriefcaseBusiness, Boxes, Minus, Package, Plus, Table } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
@@ -6,16 +7,16 @@ import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 import { rows, text } from '@/operations/model';
-import { Button, styles } from '@/operations/ui';
+import { Button, Disclosure, styles } from '@/operations/ui';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
 
 const assumptions = [
-  { id: 'box', title: 'Thùng carton', area: 0.12, note: 'Giả định thùng xếp chồng an toàn.' },
-  { id: 'suitcase', title: 'Vali', area: 0.18, note: 'Giả định đặt nằm hoặc dựng đứng.' },
-  { id: 'chair', title: 'Ghế', area: 0.35, note: 'Giả định ghế có thể xếp gọn khi phù hợp.' },
-  { id: 'desk', title: 'Bàn làm việc', area: 0.9, note: 'Giả định bàn tháo rời khi có thể.' },
-  { id: 'table', title: 'Bàn ăn', area: 1.2, note: 'Giả định bàn không tháo rời.' },
-  { id: 'cabinet', title: 'Tủ/kệ', area: 1.1, note: 'Giả định một lối tiếp cận tối thiểu.' },
+  { id: 'box', icon: Package, title: 'Thùng carton', area: 0.12, note: 'Giả định thùng xếp chồng an toàn.' },
+  { id: 'suitcase', icon: BriefcaseBusiness, title: 'Vali', area: 0.18, note: 'Giả định đặt nằm hoặc dựng đứng.' },
+  { id: 'chair', icon: Armchair, title: 'Ghế', area: 0.35, note: 'Giả định ghế có thể xếp gọn khi phù hợp.' },
+  { id: 'desk', icon: Archive, title: 'Bàn làm việc', area: 0.9, note: 'Giả định bàn tháo rời khi có thể.' },
+  { id: 'table', icon: Table, title: 'Bàn ăn', area: 1.2, note: 'Giả định bàn không tháo rời.' },
+  { id: 'cabinet', icon: Boxes, title: 'Tủ/kệ', area: 1.1, note: 'Giả định một lối tiếp cận tối thiểu.' },
 ] as const;
 
 function areaFrom(value: string) { const number = Number(value.replace(',', '.').match(/[\d.]+/)?.[0]); return Number.isFinite(number) ? number : null; }
@@ -29,8 +30,8 @@ export default function SizeFinderScreen() {
   return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Tìm kích thước" title="Ước tính kho bạn cần" description="Đây là ước tính diện tích sàn để chọn nhóm kho. Kích thước, giá và khả dụng chính thức được NestBox xác nhận ở bước đặt kho." />
     {catalog.loading && !catalog.data ? <LoadingState label="Đang tải kích thước kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
-      <View style={local.list}>{assumptions.map(item => <View key={item.id} style={local.item}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text style={local.itemTitle}>{item.title}</Text><Text style={local.itemNote}>{item.note}</Text></View><View style={local.counter}><Pressable accessibilityRole="button" accessibilityLabel={`Giảm ${item.title}`} disabled={!counts[item.id]} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.max(0, (value[item.id] ?? 0) - 1) }))} style={local.counterButton}><Text style={local.counterText}>−</Text></Pressable><Text accessibilityLabel={`Số lượng ${item.title}`} style={local.count}>{counts[item.id] ?? 0}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Tăng ${item.title}`} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.min(50, (value[item.id] ?? 0) + 1) }))} style={local.counterButton}><Text style={local.counterText}>+</Text></Pressable></View></View>)}</View>
-      <View style={local.result}><Text style={local.resultLabel}>Diện tích ước tính (đã gồm 25% lối đi)</Text><Text style={local.resultValue}>{required ? `${required.toFixed(1)} m²` : 'Chọn đồ cần lưu'}</Text>{required ? recommended ? <><Text style={local.resultCopy}>Gợi ý: {text(recommended, 'name')} · {text(recommended, 'floorArea', 'dimensions')}.</Text><Button title="Xem loại kho phù hợp" onPress={() => router.push({ pathname: '/customer/discover', params: { size: text(recommended, 'id') } })} /></> : <Text style={local.resultCopy}>Danh mục hiện không có nhóm kho nào đủ diện tích ước tính. Vui lòng liên hệ NestBox để được tư vấn.</Text> : <Text style={local.resultCopy}>Kết quả chỉ là định hướng. Đồ cồng kềnh, không xếp chồng hoặc cần lối đi rộng có thể cần kho lớn hơn.</Text>}</View>
+      <View style={local.list}>{assumptions.map(item => <View key={item.id} style={local.item}><item.icon size={22} color={WdpColors.navy} /><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text style={local.itemTitle}>{item.title}</Text></View><View style={local.counter}><Pressable accessibilityRole="button" accessibilityLabel={`Giảm ${item.title}`} disabled={!counts[item.id]} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.max(0, (value[item.id] ?? 0) - 1) }))} style={local.counterButton}><Minus size={18} color={WdpColors.navy} /></Pressable><Text accessibilityLabel={`Số lượng ${item.title}`} style={local.count}>{counts[item.id] ?? 0}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Tăng ${item.title}`} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.min(50, (value[item.id] ?? 0) + 1) }))} style={local.counterButton}><Plus size={18} color={WdpColors.navy} /></Pressable></View></View>)}</View>
+      <Disclosure title="Cách ước tính">{assumptions.map(item => <Text key={item.id} style={styles.copy}>{item.title}: {item.note}</Text>)}</Disclosure><View style={local.result}><Text style={local.resultLabel}>Diện tích ước tính (đã gồm 25% lối đi)</Text><Text style={local.resultValue}>{required ? `${required.toFixed(1)} m²` : 'Chọn đồ cần lưu'}</Text>{required ? recommended ? <><Text style={local.resultCopy}>Gợi ý: {text(recommended, 'name')} · {text(recommended, 'floorArea', 'dimensions')}.</Text><Button title="Xem loại kho phù hợp" onPress={() => router.push({ pathname: '/customer/discover', params: { size: text(recommended, 'id') } })} /></> : <Text style={local.resultCopy}>Danh mục hiện không có nhóm kho nào đủ diện tích ước tính. Vui lòng liên hệ NestBox để được tư vấn.</Text> : <Text style={local.resultCopy}>Kết quả chỉ là định hướng. Đồ cồng kềnh, không xếp chồng hoặc cần lối đi rộng có thể cần kho lớn hơn.</Text>}</View>
       {!sizes.length && <EmptyState title="Thiếu dữ liệu kích thước" message="Catalog chưa trả về diện tích sàn để so sánh. Vui lòng liên hệ hỗ trợ để được tư vấn kích thước." />}
     </>}
   </ScrollView>;

@@ -12,7 +12,7 @@ export function TaskCard({ item, kind, onPress }: { item: Row; kind: string; onP
   return <Pressable accessibilityRole="button" accessibilityLabel={`Mở công việc ${codeOf(item)}`} onPress={onPress} style={({ pressed }) => [styles.card, pressed && { opacity: 0.74 }]}>
     <View style={styles.heading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={styles.code}>{codeOf(item)}</Text><Text style={styles.kind}>{kind}{item.priority ? ` · ${label(item.priority)}` : ''}</Text></View><StatusBadge status={String(item.status)} /></View>
     <View style={styles.details}>{unit ? <Text selectable style={styles.detail}>Kho: {unit}</Text> : null}{customer ? <Text selectable style={styles.detail}>Khách: {customer}</Text> : null}{when ? <Text selectable style={styles.detail}>Thời gian: {formatDate(when, true)}</Text> : null}</View>
-    <Text numberOfLines={2} style={styles.summary}>{text(item, 'subject', 'description') || 'Mở hồ sơ để xem việc cần làm và thao tác được phép.'}</Text>
+    {Boolean(text(item, 'subject', 'description')) && <Text numberOfLines={2} style={styles.summary}>{text(item, 'subject', 'description')}</Text>}
   </Pressable>;
 }
 

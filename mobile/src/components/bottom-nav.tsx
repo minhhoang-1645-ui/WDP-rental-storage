@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname, router, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2 } from 'lucide-react-native';
+import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2, Users, Settings, ShieldCheck } from 'lucide-react-native';
 import { WdpColors } from '@/constants/wdp-theme';
 
 type Tab = { key: string; label: string; icon: typeof Home; path: string; match: string[] };
@@ -21,18 +21,31 @@ const staffTabs: Tab[] = [
   { key: 'account', label: 'Tài khoản', icon: User, path: '/staff/account', match: ['/staff/account'] },
 ];
 
-export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' }) {
+const managerTabs: Tab[] = [
+  { key: 'home', label: 'Tổng quan', icon: Home, path: '/manager', match: ['/manager'] },
+  { key: 'approvals', label: 'Duyệt', icon: ShieldCheck, path: '/manager/approvals', match: ['/manager/approvals', '/manager/reviews'] },
+  { key: 'assignments', label: 'Phân công', icon: Users, path: '/manager/assignments', match: ['/manager/assignments'] },
+  { key: 'facility', label: 'Cơ sở', icon: Warehouse, path: '/manager/facility', match: ['/manager/facility'] },
+  { key: 'account', label: 'Tài khoản', icon: User, path: '/manager/account', match: ['/manager/account'] },
+];
+const adminTabs: Tab[] = [
+  { key: 'home', label: 'Tổng quan', icon: Home, path: '/admin', match: ['/admin'] },
+  { key: 'users', label: 'Người dùng', icon: Users, path: '/admin/users', match: ['/admin/users', '/admin/roles', '/admin/account-status'] },
+  { key: 'settings', label: 'Cài đặt', icon: Settings, path: '/admin/settings', match: ['/admin/settings'] },
+  { key: 'account', label: 'Tài khoản', icon: User, path: '/admin/account', match: ['/admin/account'] },
+];
+export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' }) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const tabs = role === 'CUSTOMER' ? customerTabs : staffTabs;
+  const tabs = { CUSTOMER: customerTabs, STAFF: staffTabs, MANAGER: managerTabs, ADMIN: adminTabs }[role];
   const navigate = useCallback((path: string) => { router.navigate(path as Href); }, []);
 
   return <View style={[styles.wrap, { height: 60 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }]}>
     {tabs.map(tab => {
-      const active = tab.match.some(m => pathname === m || m !== '/customer' && m !== '/staff' && pathname.startsWith(`${m}/`));
+      const active = tab.match.some(m => pathname === m || !['/customer', '/staff', '/manager', '/admin'].includes(m) && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;
       const color = active ? WdpColors.teal : WdpColors.muted;
-      return <Pressable key={tab.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => navigate(tab.path)} style={styles.tab}>
+      return <Pressable key={tab.key} accessibilityRole="tab" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} onPress={() => navigate(tab.path)} style={styles.tab}>
         {active && <View style={styles.dot} />}
         <Icon size={22} color={color} strokeWidth={active ? 2.2 : 1.6} />
         <Text style={[styles.label, active && styles.labelActive]}>{tab.label}</Text>
@@ -55,10 +68,6 @@ const styles = StyleSheet.create({
     backgroundColor: WdpColors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: WdpColors.border,
-    ...Platform.select({
-      ios: { shadowColor: '#0a1e2e', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 8 },
-    }),
   },
   tab: {
     flex: 1,

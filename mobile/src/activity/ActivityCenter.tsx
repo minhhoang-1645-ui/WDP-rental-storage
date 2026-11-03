@@ -8,11 +8,12 @@ import { hasDraft, refreshScreens } from '@/services/live-events';
 import { formatDate } from '@/utils/format';
 import type { ActivityEntry } from '@/utils/activity';
 import { useActivity } from './context';
+import { Bell } from 'lucide-react-native';
 
 export function ActivityBell() {
   const activity = useActivity(), [open, setOpen] = useState(false);
   const unread = activity.entries.filter(item => !activity.read.includes(item.token)).length;
-  return <><Pressable accessibilityRole="button" accessibilityLabel={`Thông báo, ${unread} chưa đọc`} onPress={() => setOpen(true)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 12 }}><Text style={{ color: WdpColors.navy, fontWeight: '700', fontSize: 13 }}>Thông báo{unread ? ` (${unread > 99 ? '99+' : unread})` : ''}</Text></Pressable><Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>{open && <ActivityPanel onClose={() => setOpen(false)} />}</Modal></>;
+  return <><Pressable accessibilityRole="button" accessibilityLabel={`Thông báo, ${unread} chưa đọc`} onPress={() => setOpen(true)} style={{ minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }}><Bell size={22} color={WdpColors.navy} />{unread > 0 && <View style={{ position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: WdpColors.danger, borderWidth: 1, borderColor: WdpColors.surface }} />}</Pressable><Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>{open && <ActivityPanel onClose={() => setOpen(false)} />}</Modal></>;
 }
 function ActivityPanel({ onClose }: { onClose: () => void }) {
   const activity = useActivity(), [view, setView] = useState<'unread' | 'action' | 'all'>('unread');

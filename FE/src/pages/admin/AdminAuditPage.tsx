@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
@@ -14,14 +15,17 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
   for (const key of ['search', 'role', 'outcome', 'from', 'to']) if (params.get(key)) query.set(key, params.get(key)!);
   const data = useApiResource<Page>(user?.role === 'ADMIN' ? `/admin/audit-events?${query}` : null, user?.id ?? '');
   const login = category === 'LOGIN';
+  const [filterError, setFilterError] = useState('');
   return <section>
     <PageHeader title={login ? 'Lịch sử đăng nhập' : 'Nhật ký hoạt động'} description="Nhật ký chỉ đọc. Thời gian hiển thị theo Việt Nam (UTC+7); chỉ gồm sự kiện ghi nhận sau khi tính năng được bật.">
       <button className="button-secondary" disabled={data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
     </PageHeader>
     <nav className="portal-actions" aria-label="Nhóm nhật ký"><Link className={login ? 'button-primary' : 'button-secondary'} to="/admin/login-history">Đăng nhập</Link><Link className={!login ? 'button-primary' : 'button-secondary'} to="/admin/activity">Hoạt động</Link></nav>
-    <form className="portal-toolbar" key={`${category}:${params.toString()}`} onSubmit={event => {
+    <form data-wdp-draft="ignore" className="portal-toolbar" key={`${category}:${params.toString()}`} onSubmit={event => {
       event.preventDefault(); const input = new FormData(event.currentTarget); const next = new URLSearchParams();
       for (const key of ['search', 'role', 'outcome', 'from', 'to']) { const value = String(input.get(key) ?? '').trim(); if (value) next.set(key, value); }
+      if (next.get('from') && next.get('to') && next.get('from')! > next.get('to')!) { setFilterError('Ngày kết thúc phải từ ngày bắt đầu trở đi.'); return; }
+      setFilterError('');
       setParams(next);
     }}>
       <label className="field-label portal-search">Tìm nhật ký<input name="search" type="search" maxLength={100} defaultValue={params.get('search') ?? ''} placeholder="Tên, email hoặc mã hồ sơ" /></label>
@@ -30,8 +34,9 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
       <label className="field-label">Từ ngày<input type="date" name="from" defaultValue={params.get('from') ?? ''} /></label>
       <label className="field-label">Đến ngày<input type="date" name="to" defaultValue={params.get('to') ?? ''} /></label>
       <button type="submit" className="button-primary">Lọc nhật ký</button>
-      <button type="button" className="button-secondary" onClick={() => setParams({})}>Xóa bộ lọc</button>
+      <button type="button" className="button-secondary" onClick={() => { setFilterError(''); setParams({}); }}>Xóa bộ lọc</button>
     </form>
+    {filterError && <p className="booking-alert is-error" role="alert">{filterError}</p>}
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
     {data.data && <>
       {data.data.items.length ? <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Thời gian</th><th>Tài khoản</th><th>Vai trò</th><th>Thao tác</th><th>Kết quả</th><th>Chi tiết</th></tr></thead><tbody>

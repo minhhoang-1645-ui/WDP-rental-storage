@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { recordMatches } from '@/utils/record-search';
 import { ScrollView, Text, View } from 'react-native';
 import { Stack } from 'expo-router/stack';
 import { useLocalSearchParams } from 'expo-router';
@@ -26,7 +27,7 @@ export function StockList({ role }: { role: StockRole }) {
   const { user } = useAuth(), root = `/${role.toLowerCase()}`;
   const data = useResource<Page<StockMovement>>(user?.role === role ? `${root}/stock-movements` : null, true);
   const [creating, setCreating] = useState(false), [search, setSearch] = useState(''), [status, setStatus] = useState(''), [type, setType] = useState(''), [notice, setNotice] = useState('');
-  const shown = data.data?.items.filter(item => (!status || item.status === status) && (!type || item.type === type) && `${item.movementCode} ${item.rentalContract.contractCode} ${item.customer.fullName}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))) ?? [];
+  const shown = data.data?.items.filter(item => (!status || item.status === status) && (!type || item.type === type) && recordMatches(item, search, states[item.status])) ?? [];
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}>
     <Stack.Screen options={{ title: 'Nhập – xuất hàng' }} /><PageHeader eyebrow={label(role)} title="Nhập – xuất hàng khách" description="Tồn chỉ thay đổi khi nhân viên được giao xác nhận kiểm đếm và hoàn tất phiếu." />
     <Navigation title="Về tổng quan" path={root} /><Button title="Làm mới" onPress={data.refresh} disabled={data.loading || creating} />
@@ -98,6 +99,6 @@ function StockRecord({ row, role, refresh }: { row: StockMovement; role: StockRo
 export function StoredItems() {
   const { user } = useAuth(), data = useResource<StoredItem[]>(user?.role === 'CUSTOMER' ? '/customer/stored-items' : null);
   const [search, setSearch] = useState('');
-  const items = data.data?.filter(item => `${item.name} ${item.itemCode} ${item.rentalContract?.contractCode}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))) ?? [];
+  const items = data.data?.filter(item => recordMatches(item, search)) ?? [];
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}><Stack.Screen options={{ title: 'Hàng đang lưu' }} /><PageHeader eyebrow="Khách hàng" title="Hàng đang lưu" description="Chỉ hiển thị hàng có tồn lớn hơn 0 đã được xác nhận thực tế." /><Navigation title="Phiếu nhập – xuất" path="/customer/stock-movements" /><Field title="Tìm hàng hoặc hợp đồng" value={search} onChange={setSearch} maxLength={100} /><Button title="Làm mới" onPress={data.refresh} disabled={data.loading} />{data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <>{!items.length && <EmptyState title="Chưa có hàng tồn phù hợp" message="Số lượng hàng được cập nhật sau khi nhân viên giao nhận và kiểm đếm xong." />}{items.map(item => <Panel key={item.id} title={item.name}><Facts values={[["Mã hàng", item.itemCode], ['Hợp đồng', item.rentalContract?.contractCode], ['Tồn', `${item.balance} ${item.unit}`], ['Ghi chú', item.note]]} /></Panel>)}</>}</ScrollView>;
 }

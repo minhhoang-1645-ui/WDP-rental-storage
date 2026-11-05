@@ -1,3 +1,4 @@
+import { businessDate } from '../../business-date.js';
 export interface DerivedOverdueState {
   effectiveEndDate: string;
   isOverdue: boolean;
@@ -7,6 +8,6 @@ export interface DerivedOverdueState {
 
 export function deriveOverdueState(effectiveEndDate: Date, now = new Date()): DerivedOverdueState {
   const end = effectiveEndDate.toISOString().slice(0, 10);
-  const isOverdue = now.getTime() >= effectiveEndDate.getTime();
+  const isOverdue = businessDate(now) >= end;
   return { effectiveEndDate: end, isOverdue, overdueSince: isOverdue ? end : null, rentalState: isOverdue ? 'OVERDUE' : 'ACTIVE' };
 }

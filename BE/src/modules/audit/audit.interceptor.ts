@@ -10,9 +10,9 @@ type AuditRequest = { method: string; route?: { path?: unknown }; params?: Recor
 export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' | 'action' | 'resource' | 'route'> | undefined {
   if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method) || typeof request.route?.path !== 'string') return;
   const route = request.route.path.replace(/^\/api(?=\/)/, '');
-  if (/^\/auth\/(login|logout|register)$/.test(route)) {
+  if (/^\/auth\/(login|logout|register)$/.test(route) || route === '/auth/me' && request.method === 'PATCH') {
     const action = route.split('/').at(-1)!;
-    return { category: action === 'login' ? 'LOGIN' : 'ACTIVITY', action: `AUTH_${action.toUpperCase()}`, resource: 'auth', route };
+    return { category: action === 'login' ? 'LOGIN' : 'ACTIVITY', action: action === 'me' ? 'AUTH_PROFILE_UPDATE' : `AUTH_${action.toUpperCase()}`, resource: 'auth', route };
   }
   if (!request.user) return;
   const segments = route.replace(/^\/(?:customer|manager|admin|staff)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);

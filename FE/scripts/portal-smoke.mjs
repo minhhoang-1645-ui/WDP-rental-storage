@@ -305,6 +305,7 @@ const fixture = {
     },
   ],
 };
+fixture.contracts[0].transfers = fixture.transfers;
 const userRows = [
   staff,
   {
@@ -443,6 +444,7 @@ async function setup(role, authenticated = true) {
         ...body,
       });
     }
+    if (path === "admin/audit-events") return respond({ page: 1, limit: 20, total: 0, items: [] });
     if (path.startsWith("admin/users")) {
       if (role !== "ADMIN") return respond({ message: "Forbidden" }, 403);
       const id = path.split("/")[2];
@@ -457,6 +459,7 @@ async function setup(role, authenticated = true) {
       });
     }
     if (path === "manager/staff") return respond({ page: 1, limit: 100, total: 1, items: [staff] });
+    if (request.method() === "GET" && /^manager\/transfers\/[^/]+\/destinations$/.test(path)) return respond({ page: 1, limit: 100, total: 1, items: [{ ...unit, eligible: true, checkedFrom: '2026-11-04', checkedUntil: reservation.endDate, conflicts: [] }] });
     const [, resource, id] = path.split("/");
     if (!(resource in fixture))
       return respond({ message: `Unmocked endpoint ${path}` }, 500);
@@ -634,8 +637,7 @@ try {
   checks.push("Manager settlement review restored under approved scope");
   await open(page, "/manager/operations/invoices/invoice-0");
   await page.getByLabel("Số tiền nhận (VND)").fill("1000000");
-  await page.getByLabel("Mã tham chiếu giao dịch").fill("BANK-TEST");
-  await page.getByLabel("Tôi đã nhận và đối chiếu khoản tiền này.").check();
+  await page.getByLabel("Mã giao dịch ngân hàng đã đối soát").fill("BANK-TEST");
   await page
     .getByRole("button", { name: "Ghi nhận thanh toán", exact: true })
     .click();
@@ -653,8 +655,7 @@ try {
   checks.push("Payment retry preserves idempotency key");
   page = staffApp.page;
   await open(page, "/staff/transfers/transfer-id");
-  await selectChoice(page
-    .getByRole("combobox", { name: "Kho đích", exact: true }), "unit-id");
+  await page.getByRole('region', { name: 'Chọn kho đích', exact: true }).getByRole('radio', { name: /A101/ }).check();
   await page
     .getByRole("button", { name: "Duyệt chuyển kho", exact: true })
     .click();
@@ -663,7 +664,7 @@ try {
   assert(
     requests.some(
       (row) =>
-        row.path === "staff/management/units" && row.query.storageType === "type-id",
+        row.path === "staff/management/transfers/transfer-id/destinations",
     ),
   );
   checks.push("Transfer chooses actual destination ID of same storage type");
@@ -795,7 +796,7 @@ try {
       exact: true,
     })
     .waitFor();
-  await page.locator("main").getByText("TRF-TEST", { exact: true }).waitFor();
+  await page.getByRole("region", { name: "Lịch sử chuyển kho của hợp đồng", exact: true }).getByText(/^TRF-TEST ·/).waitFor();
   checks.push(
     "Inspection reviewer metadata and existing contract transfer history",
   );
@@ -827,15 +828,15 @@ try {
   await adminLogin.context.close();
   checks.push("Admin saved Manager URLs return to Admin summary, never expose operations");
   const admin = await setup("ADMIN");
-  const adminLinks = ["/admin", "/admin/users"];
-  for (const path of ["/admin", "/admin/users", "/manager/assignments", "/manager/operations/invoices", "/admin/facility/reports", "/admin/facility/operations/returns", "/admin/assignments", "/admin/activity", "/admin/settings", "/admin/roles", "/admin/account-status"]) {
+  const adminLinks = ["/admin", "/admin/users", "/admin/login-history", "/admin/activity"];
+  for (const path of ["/admin", "/admin/users", "/manager/assignments", "/manager/operations/invoices", "/admin/facility/reports", "/admin/facility/operations/returns", "/admin/assignments", "/admin/activity", "/admin/login-history", "/admin/settings", "/admin/roles", "/admin/account-status"]) {
     await open(admin.page, path);
-    const destination = ["/admin/users", "/admin/roles", "/admin/account-status"].includes(path) ? "/admin/users" : "/admin";
+    const destination = ["/admin/users", "/admin/roles", "/admin/account-status"].includes(path) ? "/admin/users" : ["/admin/login-history", "/admin/activity"].includes(path) ? path : "/admin";
     assert.equal(new URL(admin.page.url()).pathname, destination);
     assert.deepEqual(await admin.page.locator('.manager-sidebar nav a').evaluateAll(nodes => nodes.map(node => node.getAttribute('href'))), adminLinks);
     assert.equal(await admin.page.locator('a[href^="/manager"], a[href^="/admin/facility"]').count(), 0);
   }
-  checks.push("Admin has exactly two menu items; legacy and Manager URLs cannot open operational screens");
+  checks.push("Admin has account administration and audit menus; legacy and Manager URLs cannot open operational screens");
   await open(admin.page, "/admin/users?search=customer102");
   await admin.page.getByRole("cell").filter({ hasText: "customer102@example.test" }).waitFor();
   await open(admin.page, "/admin/users");

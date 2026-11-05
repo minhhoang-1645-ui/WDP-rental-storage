@@ -22,6 +22,7 @@ import { staffResources, type StaffResource } from "./staff-resources";
 import { StaffActions } from "./StaffActions";
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
+import { hasDraft } from '../../services/live-events';
 
 export function StaffRecordPage({ resource }: { resource: StaffResource }) {
   const { id = '' } = useParams();
@@ -67,7 +68,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
             description={staffResources[resource].description}
           >
             <Status value={row.status ?? row.rentalState} />
-            <button className="button-secondary" onClick={data.refresh}>
+            <button className="button-secondary" onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu hoặc đóng biểu mẫu trước khi làm mới hồ sơ.'); return; } data.refresh(); }}>
               <RefreshCw size={16} />
               Làm mới hồ sơ
             </button>

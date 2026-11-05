@@ -1,3 +1,4 @@
+import { browserStorage } from './browser-storage.web';
 export type PendingOnlinePayment = {
   customerId: string;
   invoiceId: string;
@@ -24,10 +25,10 @@ function valid(value: unknown): value is PendingOnlinePayment {
 
 export async function readPendingOnlinePayment(customerId: string) {
   try {
-    const value: unknown = JSON.parse(globalThis.localStorage?.getItem(key(customerId)) ?? 'null');
+    const value: unknown = JSON.parse(browserStorage.getItem(key(customerId)) ?? 'null');
     return valid(value) && value.customerId === customerId ? value : null;
   } catch { return null; }
 }
 
-export const savePendingOnlinePayment = async (payment: PendingOnlinePayment) => { globalThis.localStorage?.setItem(key(payment.customerId), JSON.stringify(payment)); };
-export const removePendingOnlinePayment = async (customerId: string) => { globalThis.localStorage?.removeItem(key(customerId)); };
+export const savePendingOnlinePayment = async (payment: PendingOnlinePayment) => { browserStorage.setItem(key(payment.customerId), JSON.stringify(payment)); };
+export const removePendingOnlinePayment = async (customerId: string) => { browserStorage.removeItem(key(customerId)); };

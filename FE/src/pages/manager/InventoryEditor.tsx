@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { EntitySelect } from '../../components/EntitySelect';
 import { useAuth } from '../../auth/auth-context';
 import { Modal, LoadState } from '../../components/manager/PortalUi';
 import { first, rows, type Row } from '../../components/manager/portal-data';
@@ -11,6 +12,9 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const lock = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const type = kind === 'type';
+  const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId'));
+  const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
+  const [daily, setDaily] = useState(record?.allowDailyRental === true);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current || user?.role !== 'MANAGER') return;
@@ -34,20 +38,20 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       <fieldset disabled={busy || !options.data}>
         {type ? <>
-          <label className="field-label">Cơ sở<select aria-label="Cơ sở" name="facilityId" defaultValue={first(record ?? {}, 'facilityId')} required aria-readonly={Boolean(record)} onChange={event => { if (record) event.target.value = first(record, 'facilityId'); }}><option value="">Chọn cơ sở</option>{rows(options.data?.facilities).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'name')}</option>)}</select></label>
-          <label className="field-label">Mã loại kho<input name="code" defaultValue={first(record ?? {}, 'code')} required readOnly={Boolean(record)} maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_\-]*$/.source} /></label>
+          {record ? <label className="field-label">Cơ sở<input readOnly value={first(rows(options.data?.facilities).find(row => row.id === facilityId) ?? {}, 'name') || facilityId} /><input type="hidden" name="facilityId" value={facilityId} /></label> : <label className="field-label">Cơ sở<EntitySelect aria-label="Cơ sở" name="facilityId" value={facilityId} onValueChange={setFacilityId} required><option value="">Chọn cơ sở</option>{rows(options.data?.facilities).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'name')}</option>)}</EntitySelect></label>}
+          <label className="field-label">Mã loại kho<input name="code" defaultValue={first(record ?? {}, 'code')} required readOnly={Boolean(record)} maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_-]*$/.source} /></label>
           {field('name', 'Tên loại kho')}
           <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" defaultValue={first(record ?? {}, 'sizeId') || 'small'}>{[['locker', 'Tủ lưu trữ'], ['small', 'Kho nhỏ'], ['medium', 'Kho vừa'], ['large', 'Kho lớn']].map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
           <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
           {field('widthCm', 'Rộng (cm)', true)}{field('lengthCm', 'Dài (cm)', true)}{field('heightCm', 'Cao (cm)', true)}
           {field('monthlyRate', 'Giá tháng (VND)', true, true, 9999999999)}
-          <label><input name="allowDailyRental" type="checkbox" defaultChecked={record?.allowDailyRental === true} /> Cho thuê theo ngày</label>
-          {field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, false, 30)}
+          <label><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
+          {daily && field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, true, 30)}
           <label className="field-label">URL ảnh (tùy chọn)<input name="image" defaultValue={first(record ?? {}, 'image')} maxLength={2000} /></label>
           {field('imageAlt', 'Mô tả ảnh', false, false)}
         </> : <>
-          <label className="field-label">Loại kho<select aria-label="Loại kho" name="storageTypeId" defaultValue={first(record ?? {}, 'storageTypeId', 'storageType.id')} required><option value="">Chọn loại kho</option>{rows(options.data?.items).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'code')} · {first(row, 'name')}</option>)}</select></label>
-          <label className="field-label">Mã kho<input name="unitNumber" defaultValue={first(record ?? {}, 'unitNumber', 'unitCode')} required maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_\-]*$/.source} /></label>
+          <label className="field-label">Loại kho<EntitySelect aria-label="Loại kho" name="storageTypeId" value={storageTypeId} onValueChange={setStorageTypeId} required><option value="">Chọn loại kho</option>{rows(options.data?.items).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'code')} · {first(row, 'name')}</option>)}</EntitySelect></label>
+          <label className="field-label">Mã kho<input name="unitNumber" defaultValue={first(record ?? {}, 'unitNumber', 'unitCode')} required maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_-]*$/.source} /></label>
           {field('floor', 'Tầng', false, false)}{field('zone', 'Khu', false, false)}{field('row', 'Hàng', true, false)}{field('position', 'Vị trí', true, false)}
         </>}
         <button className="button-primary" type="submit">{busy ? 'Đang lưu…' : 'Lưu'}</button>

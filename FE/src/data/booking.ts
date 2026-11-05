@@ -1,3 +1,4 @@
+import { safeLocalStorage } from '../services/browser-storage'
 import type { Catalog } from '../catalog/catalog-context'
 import type { AvailabilityResult, AvailabilitySnapshot, BookingDraft } from '../types/booking'
 import type { StorageSizeId } from '../types/storage'
@@ -30,12 +31,19 @@ export const bookingVisuals: Record<StorageSizeId, { position: string; alt: stri
   large: { position: '100% 100%', alt: 'Minh họa isometric kho lớn với nội thất, thiết bị, pallet và kệ hàng' },
 }
 
+/** Reject malformed and rolled-over calendar dates from old drafts or shared URLs. */
+export function bookingDate(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
+  const date = new Date(value + 'T00:00:00Z')
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : ''
+}
+
 export function readBookingDraft(catalog: Catalog): BookingDraft {
   const storageListings = catalog.products
   const approvedDurations = catalog.approvedDurations
   const fallback = { ...initialBookingDraft, productId: storageListings.find(item => item.id === initialBookingDraft.productId)?.id ?? storageListings[0].id, durationMonths: approvedDurations.includes(3) ? 3 : approvedDurations[0] }
   try {
-    const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? '') as Partial<BookingDraft>
+    const saved = JSON.parse(safeLocalStorage.getItem(DRAFT_STORAGE_KEY) ?? '') as Partial<BookingDraft>
     const productId = storageListings.some((item) => item.id === saved.productId) ? saved.productId! : fallback.productId
     const durationMonths = approvedDurations.includes(saved.durationMonths as 1 | 3 | 6 | 12) ? saved.durationMonths as 1 | 3 | 6 | 12 : null
     const quantity = Number.isInteger(saved.quantity) && Number(saved.quantity) >= 1 && Number(saved.quantity) <= 3 ? Number(saved.quantity) : 1
@@ -44,8 +52,8 @@ export function readBookingDraft(catalog: Catalog): BookingDraft {
       ...initialBookingDraft,
       ...saved,
       productId,
-      startDate: typeof saved.startDate === 'string' ? saved.startDate : '',
-      endDate: typeof saved.endDate === 'string' ? saved.endDate : '',
+      startDate: bookingDate(saved.startDate),
+      endDate: bookingDate(saved.endDate),
       periodMode: saved.periodMode === 'dates' ? 'dates' : 'duration',
       durationMonths: durationMonths ?? fallback.durationMonths,
       quantity,
@@ -92,7 +100,7 @@ export function bookingAvailabilityFingerprint(draft: BookingDraft) {
 
 export function readBookingAvailability(draft: BookingDraft): AvailabilityResult | null {
   try {
-    const snapshot = JSON.parse(localStorage.getItem(AVAILABILITY_STORAGE_KEY) ?? '') as AvailabilitySnapshot
+    const snapshot = JSON.parse(safeLocalStorage.getItem(AVAILABILITY_STORAGE_KEY) ?? '') as AvailabilitySnapshot
     return snapshot.fingerprint === bookingAvailabilityFingerprint(draft) ? snapshot.result : null
   } catch {
     return null
@@ -101,28 +109,28 @@ export function readBookingAvailability(draft: BookingDraft): AvailabilityResult
 
 export function saveBookingAvailability(draft: BookingDraft, result: AvailabilityResult) {
   const snapshot: AvailabilitySnapshot = { fingerprint: bookingAvailabilityFingerprint(draft), result }
-  localStorage.setItem(AVAILABILITY_STORAGE_KEY, JSON.stringify(snapshot))
+  safeLocalStorage.setItem(AVAILABILITY_STORAGE_KEY, JSON.stringify(snapshot))
 }
 
 export function clearBookingAvailability() {
-  localStorage.removeItem(AVAILABILITY_STORAGE_KEY)
+  safeLocalStorage.removeItem(AVAILABILITY_STORAGE_KEY)
 }
 
 export function readBookingStep() {
-  const value = Number(localStorage.getItem(BOOKING_STEP_STORAGE_KEY))
-  return value >= 1 && value <= 3 ? value as 1 | 2 | 3 : 1
+  const value = Number(safeLocalStorage.getItem(BOOKING_STEP_STORAGE_KEY))
+  return Number.isInteger(value) && value >= 1 && value <= 3 ? value as 1 | 2 | 3 : 1
 }
 
 export function saveBookingStep(step: 1 | 2 | 3) {
-  localStorage.setItem(BOOKING_STEP_STORAGE_KEY, String(step))
+  safeLocalStorage.setItem(BOOKING_STEP_STORAGE_KEY, String(step))
 }
 
 export function clearBookingDraft() {
-  localStorage.removeItem(DRAFT_STORAGE_KEY)
-  localStorage.removeItem(AVAILABILITY_STORAGE_KEY)
-  localStorage.removeItem(BOOKING_STEP_STORAGE_KEY)
+  safeLocalStorage.removeItem(DRAFT_STORAGE_KEY)
+  safeLocalStorage.removeItem(AVAILABILITY_STORAGE_KEY)
+  safeLocalStorage.removeItem(BOOKING_STEP_STORAGE_KEY)
 }
 
 export function saveBookingDraft(draft: BookingDraft) {
-  localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
+  safeLocalStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
 }

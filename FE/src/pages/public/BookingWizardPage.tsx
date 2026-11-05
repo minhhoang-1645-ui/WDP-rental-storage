@@ -1,13 +1,15 @@
+import { safeSessionStorage } from '../../services/browser-storage'
+import { vietnamCalendarDate } from '../../utils/business-date'
 import { QuoteBreakdown } from '../../components/booking/QuoteBreakdown';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Info, LoaderCircle, Minus, Plus, RotateCcw, UserRound, Warehouse, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
 import { StorageImage } from '../../components/public/StorageImage'
-import { storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
+import { storageMonthlyPrice, storageSpecifications, storageGroupSummary } from '../../utils/storage-selection'
 import { AdditionalServicePicker } from '../../components/booking/AdditionalServicePicker'
 import { Container } from '../../components/ui/Container'
-import { bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
+import { bookingDate, bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
 import { useCatalog } from '../../catalog/catalog-context'
 import { ApiError } from '../../services/api'
 import { bookingApi } from '../../services/booking'
@@ -18,11 +20,12 @@ import type { AvailabilityResult, BookingDraft, GuestContact, GuestInquiry, Pend
 const steps = [['01', 'Chọn kho'], ['02', 'Thời gian & dịch vụ'], ['03', 'Thông tin & xác nhận']] as const
 
 function formatDate(value: string) {
-  if (!value) return 'Chưa chọn'
+  if (!bookingDate(value)) return 'Chưa chọn'
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value + 'T00:00:00'))
 }
 
 function inclusiveEndDate(exclusive: string) {
+  if (!bookingDate(exclusive)) return 'Chưa chọn'
   const date = new Date(exclusive + 'T00:00:00')
   date.setDate(date.getDate() - 1)
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
@@ -33,13 +36,13 @@ function quoteText(amount: number) {
 }
 
 function endDateExclusive(draft: BookingDraft) {
-  if (draft.periodMode === 'dates') return draft.endDate
-  if (!draft.startDate || !draft.durationMonths) return ''
+  if (draft.periodMode === 'dates') return bookingDate(draft.endDate)
+  if (!bookingDate(draft.startDate) || typeof draft.durationMonths !== 'number' || !Number.isInteger(draft.durationMonths) || draft.durationMonths <= 0) return ''
   const [year, month, day] = draft.startDate.split('-').map(Number)
   const target = new Date(Date.UTC(year, month - 1 + draft.durationMonths, 1))
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
   target.setUTCDate(Math.min(day, lastDay))
-  return target.toISOString().slice(0, 10)
+  return bookingDate(target.toISOString().slice(0, 10))
 }
 
 type QuoteState = 'idle' | 'loading' | 'ready' | 'error'
@@ -47,9 +50,9 @@ type QuoteState = 'idle' | 'loading' | 'ready' | 'error'
 type AvailabilityState = 'idle' | 'checking' | 'available' | 'unavailable' | 'error'
 
 function hasValidAvailabilityInput(draft: BookingDraft, approvedDurations: number[]) {
-  if (!draft.startDate) return false
+  if (!bookingDate(draft.startDate) || draft.startDate < vietnamCalendarDate() || !endDateExclusive(draft)) return false
   if (draft.periodMode === 'duration') return approvedDurations.includes(draft.durationMonths as 1 | 3 | 6 | 12)
-  return Boolean(draft.endDate && draft.endDate > draft.startDate)
+  return Boolean(bookingDate(draft.endDate) && draft.endDate > draft.startDate)
 }
 
 function AvailabilityBadge({ state, onClick }: { state: AvailabilityState; onClick: () => void }) {
@@ -60,7 +63,7 @@ function AvailabilityBadge({ state, onClick }: { state: AvailabilityState; onCli
     : state === 'error' ? 'Không thể kiểm tra'
     : 'Chờ thông tin thời gian'
   const icon = state === 'checking' ? <LoaderCircle className="availability-spinner" size={16} /> : state === 'available' ? <CheckCircle2 size={16} /> : <Info size={16} />
-  return <div className={`availability-badge is-${state}`} onClick={interactive ? onClick : undefined} onKeyDown={interactive ? (e) => { if (e.key === 'Enter') onClick() } : undefined} role={interactive ? 'button' : undefined} tabIndex={interactive ? 0 : undefined} aria-live="polite">{icon}<span>{label}</span>{interactive && <ChevronRight size={14} />}</div>
+  return <div className={`availability-badge is-${state}`} onClick={interactive ? onClick : undefined} onKeyDown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined} role={interactive ? 'button' : undefined} tabIndex={interactive ? 0 : undefined} aria-live="polite">{icon}<span>{label}</span>{interactive && <ChevronRight size={14} />}</div>
 }
 
 function AvailabilityToast({ state, availability, error, onRetry, onClose }: { state: AvailabilityState; availability: AvailabilityResult | null; error: string; onRetry: () => void; onClose: () => void }) {
@@ -104,12 +107,14 @@ interface CheckoutStepProps {
   user: ReturnType<typeof useAuth>['user']
   onUpdate: (patch: Partial<BookingDraft>) => void
   onBack: () => void
+  onRetryQuote: () => void
+  profileReturnPath: string
   onSubmit: (draft: BookingDraft, emailBooking?: boolean) => void
   submitting: boolean
   canSubmit: boolean
 }
 
-function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productImage, productDimensions, user, onUpdate, onBack, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
+function CheckoutStep({ draft, quote, quoteState, quoteError, productName, productCode, productImage, productDimensions, user, onUpdate, onBack, onRetryQuote, profileReturnPath, onSubmit, submitting, canSubmit }: CheckoutStepProps) {
   const [emailBooking, setEmailBooking] = useState(true)
   const supportsEmail = !draft.adjacencyPreference && !draft.note.trim()
   const customer: GuestContact = {
@@ -117,12 +122,14 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
     phone: user ? user.phone : draft.customer.phone,
     email: user ? user.email : draft.customer.email,
   }
+  const needsProfile = Boolean(user && (user.fullName.trim().length < 2 || user.phone.replace(/\D/g, '').length < 8))
   const updateCustomer = (field: keyof GuestContact, value: string) => {
     onUpdate({ customer: { ...customer, [field]: value } })
   }
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (needsProfile) return
     onSubmit({ ...draft, customer, paymentChoice: 'pay-later' }, !user && emailBooking && supportsEmail)
   }
 
@@ -130,7 +137,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
     <form className="checkout-form" onSubmit={submit}>
       <button type="button" className="booking-back" onClick={onBack}><ArrowLeft size={16} /> Sửa thời gian và dịch vụ</button>
       <p className="eyebrow mt-7">Bước 3</p>
-      <h2 className="booking-title">Thông tin khách hàng và xác nhận yêu cầu</h2>
+      <h2 id="booking-step-title" tabIndex={-1} className="booking-title">Thông tin khách hàng và xác nhận yêu cầu</h2>
       <p className="checkout-intro">Kiểm tra thông tin liên hệ và báo giá trước khi gửi yêu cầu. Báo giá chưa phải hóa đơn hay giao dịch thanh toán.</p>
 
       <fieldset className="checkout-fieldset">
@@ -142,18 +149,19 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
           <label className="field-label sm:col-span-2">Ghi chú thêm, không bắt buộc<textarea rows={4} maxLength={500} value={draft.note} onChange={(event) => onUpdate({ note: event.target.value })} placeholder="Ví dụ: thời gian thuận tiện để NestBox liên hệ" /></label>
         </div>
         {user && <p className="checkout-auth-note"><UserRound size={16} /> Yêu cầu sử dụng thông tin của tài khoản {user.email} đang đăng nhập.</p>}
+        {user && <div className={`booking-alert mt-5${needsProfile ? ' is-error' : ''}`} role={needsProfile ? 'alert' : 'note'}><span>{needsProfile ? 'Bạn cần bổ sung họ tên và số điện thoại hợp lệ trước khi gửi yêu cầu.' : 'Bạn muốn đổi họ tên hoặc số điện thoại liên hệ?'} <Link className="font-semibold underline" to={'/customer/profile?returnTo=' + encodeURIComponent(profileReturnPath)}>Cập nhật hồ sơ rồi tiếp tục đặt kho</Link>. Lựa chọn kho của bạn được giữ lại.</span></div>}
         {!user && <label className="booking-checkbox"><input type="checkbox" checked={emailBooking && supportsEmail} disabled={submitting || !supportsEmail} onChange={event => setEmailBooking(event.target.checked)} /><span><strong>Xác minh email để nhận yêu cầu đặt kho</strong><small>{supportsEmail ? 'Bạn có thể tạo tài khoản sau khi xác minh email. Chưa giữ kho hoặc thanh toán.' : 'Luồng email chưa hỗ trợ ghi chú hoặc ưu tiên kho liền kề. Yêu cầu liên hệ giữ đầy đủ các thông tin này.'}</small></span></label>}
       </fieldset>
 
       <div className="booking-alert mt-7" role="note"><Info size={18} /><span><strong>Bạn chưa cần thanh toán ở bước này.</strong> {(!user && emailBooking && supportsEmail) ? 'Sau khi xác minh email và yêu cầu đặt kho được xác nhận, hệ thống sẽ tạo hóa đơn để bạn thanh toán.' : 'Hóa đơn chỉ được tạo sau khi yêu cầu đặt kho được xác nhận; bạn sẽ thanh toán theo hóa đơn đó.'}</span></div>
-      <button className="button-primary mt-5 w-full justify-center" type="submit" disabled={submitting || !canSubmit}>{submitting ? 'Đang kiểm tra và gửi...' : !canSubmit ? 'Đang xác minh kho…' : !user && (!emailBooking || !supportsEmail) ? 'Gửi yêu cầu liên hệ' : 'Gửi yêu cầu đặt kho'} <ChevronRight size={18} /></button>
+      <button className="button-primary mt-5 w-full justify-center" type="submit" disabled={submitting || !canSubmit || needsProfile}>{submitting ? 'Đang kiểm tra và gửi...' : needsProfile ? 'Bổ sung thông tin liên hệ để tiếp tục' : !canSubmit ? 'Đang xác minh kho…' : !user && (!emailBooking || !supportsEmail) ? 'Gửi yêu cầu liên hệ' : 'Gửi yêu cầu đặt kho'} <ChevronRight size={18} /></button>
     </form>
 
     <aside className="checkout-quote">
       <div className="quote-product"><StorageImage className="booking-product-thumb" src={productImage} alt={`Ảnh tham khảo cho ${productName}`} /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
       <div className="quote-heading"><h3>Báo giá</h3><span>{quoteState === 'loading' ? 'Đang cập nhật…' : 'Theo lựa chọn của bạn'}</span></div>
       {quoteState === 'loading' && <div className="booking-alert" role="status"><LoaderCircle className="availability-spinner" size={18} /> Đang tính báo giá mới nhất…</div>}
-      {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span></div>}
+      {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span><button type="button" onClick={onRetryQuote}>Thử lại báo giá</button></div>}
       {quoteState === 'idle' && <div className="booking-alert" role="status"><Info size={18} /> Chọn thời gian thuê hợp lệ để xem báo giá.</div>}
       {quoteState === 'ready' && quote && <>
         <QuoteBreakdown quote={quote} />
@@ -174,7 +182,7 @@ export function BookingWizardPage() {
   const [draft, setDraft] = useState<BookingDraft>(() => {
     const saved = readBookingDraft(catalog)
     const product = params.get('product')
-    const date = params.get('date')
+    const date = bookingDate(params.get('date'))
     const duration = Number(params.get('duration'))
     return {
       ...saved,
@@ -184,9 +192,15 @@ export function BookingWizardPage() {
     }
   })
   const [step, setStep] = useState<1 | 2 | 3>(() => {
-    const savedStep = requestedStep >= 1 && requestedStep <= 3 ? requestedStep as 1 | 2 | 3 : readBookingStep()
+    const savedStep = Number.isInteger(requestedStep) && requestedStep >= 1 && requestedStep <= 3 ? requestedStep as 1 | 2 | 3 : readBookingStep()
     return savedStep === 3 && !readBookingAvailability(draft)?.available ? 2 : savedStep
   })
+  const previousStep = useRef(step)
+  useEffect(() => {
+    if (previousStep.current === step) return
+    previousStep.current = step
+    document.getElementById('booking-step-title')?.focus({ preventScroll: true })
+  }, [step])
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null)
   const [availabilityState, setAvailabilityState] = useState<AvailabilityState>('idle')
   const [availabilityError, setAvailabilityError] = useState('')
@@ -214,10 +228,10 @@ export function BookingWizardPage() {
     prevAvailabilityState.current = availabilityState
   }, [availabilityState])
 
-  const product = getStorageListing(draft.productId) ?? getStorageListing('sm-b12')!
+  const product = getStorageListing(draft.productId) ?? catalog.products[0]
   const size = storageSpecifications(product, getStorageSize(product.sizeId)!)
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
-  const canCheckAvailability = hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
+  const canCheckAvailability = product.id === draft.productId && hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
   const pricingEndDate = endDateExclusive(draft)
 
   const invalidateAvailability = () => {
@@ -363,24 +377,24 @@ export function BookingWizardPage() {
       if (!user && emailBooking) {
         const input = { ...checkoutDraft.customer, storageTypeId: checkoutDraft.productId, quantity: checkoutDraft.quantity, startDate: checkoutDraft.startDate, endDate: endDateExclusive(checkoutDraft), paymentPlan: checkoutDraft.paymentPlan, services: checkoutDraft.services ?? [] }
         const fingerprint = JSON.stringify(input)
-        const saved = sessionStorage.getItem('wdp-guest-request-retry')
+        const saved = safeSessionStorage.getItem('wdp-guest-request-retry')
         let retry: { fingerprint: string; key: string } | null = null
         try { retry = saved ? JSON.parse(saved) : null } catch { /* Invalid browser data is replaced. */ }
         const key = retry?.fingerprint === fingerprint ? retry.key : `guest-${crypto.randomUUID()}`
-        sessionStorage.setItem('wdp-guest-request-retry', JSON.stringify({ fingerprint, key }))
+        safeSessionStorage.setItem('wdp-guest-request-retry', JSON.stringify({ fingerprint, key }))
         const result = await guestBookingApi.create(input, key)
-        sessionStorage.removeItem('wdp-guest-request-retry')
+        safeSessionStorage.removeItem('wdp-guest-request-retry')
         const safeResult = { bookingCode: result.bookingCode, status: result.status, storage: result.storage, quantity: result.quantity, startDate: result.startDate, endDate: result.endDate, quote: result.quote, message: result.message }
-        sessionStorage.setItem('wdp-guest-response:' + result.bookingCode, JSON.stringify(safeResult))
+        safeSessionStorage.setItem('wdp-guest-response:' + result.bookingCode, JSON.stringify(safeResult))
         clearBookingDraft()
-        navigate('/booking/confirmation/' + result.bookingCode)
+        navigate('/booking/confirmation/' + result.bookingCode, { state: { guestBooking: safeResult } })
         return
       }
       const result: PendingReservation | GuestInquiry = user
         ? await bookingApi.createReservation(payload)
         : await bookingApi.createInquiry(payload)
       if ('accessToken' in result && result.accessToken) {
-        sessionStorage.setItem('wdp-inquiry-token:' + result.id, result.accessToken)
+        safeSessionStorage.setItem('wdp-inquiry-token:' + result.id, result.accessToken)
       }
       clearBookingDraft()
       navigate('/booking/confirmation/' + result.id, { state: { record: result } })
@@ -424,9 +438,9 @@ export function BookingWizardPage() {
 
       {step === 1 && <div className="booking-step-grid">
         <div>
-          <p className="eyebrow">Bước 1</p><h2 className="booking-title">Chọn kích thước và loại kho</h2>
-          <div className="booking-size-list">{bookingSizes.map((category) => <button key={category.id} type="button" onClick={() => selectSize(category.id)} className={category.id === selectedCategory.id ? 'booking-size-card is-selected' : 'booking-size-card'} aria-pressed={category.id === selectedCategory.id}><span className="booking-category-icon"><Warehouse size={25} /></span><span className="booking-size-card-copy"><strong>{category.name}</strong><small>{category.dimensions}</small><small>{category.volume}</small></span><span className="booking-radio" aria-hidden="true" /></button>)}</div>
-          <div className="booking-option-block"><h3>Loại kho có sẵn cho {selectedCategory.name.toLowerCase()}</h3><div className="booking-segments booking-product-options" role="group" aria-label="Chọn loại kho">{selectedCategory.products.map((item) => <button key={item.id} type="button" className={item.id === product.id ? 'is-selected' : ''} onClick={() => updateDraft({ productId: item.id })} aria-pressed={item.id === product.id}><StorageImage src={item.image} alt="" loading="lazy" /><span><strong>{item.name}</strong><small>{item.code} · {item.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</small><small className="booking-choice-price">{storageMonthlyPrice(item.monthlyPrice)}{item.monthlyPrice !== null ? ' / tháng' : ''}</small></span></button>)}</div></div>
+          <p className="eyebrow">Bước 1</p><h2 id="booking-step-title" tabIndex={-1} className="booking-title">Chọn kích thước và loại kho</h2>
+          <div className="booking-size-list">{bookingSizes.map((category) => <button key={category.id} type="button" onClick={() => selectSize(category.id)} className={category.id === selectedCategory.id ? 'booking-size-card is-selected' : 'booking-size-card'} aria-pressed={category.id === selectedCategory.id}><span className="booking-category-icon"><Warehouse size={25} /></span><span className="booking-size-card-copy"><strong>{category.name}</strong><small>{storageGroupSummary(category.products, category)}</small><small>Đối chiếu từng loại kho bên dưới</small></span><span className="booking-radio" aria-hidden="true" /></button>)}</div>
+          <div className="booking-option-block"><h3>Loại kho có sẵn cho {selectedCategory.name.toLowerCase()}</h3><div className="booking-segments booking-product-options" role="group" aria-label="Chọn loại kho">{selectedCategory.products.map((item) => <button key={item.id} type="button" className={item.id === product.id ? 'is-selected' : ''} onClick={() => updateDraft({ productId: item.id })} aria-pressed={item.id === product.id}><StorageImage src={item.image} alt="" loading="lazy" /><span><strong>{item.name}</strong><small>{item.code} · {item.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</small><small>{storageSpecifications(item, selectedCategory).dimensions}</small><small className="booking-choice-price">{storageMonthlyPrice(item.monthlyPrice)}{item.monthlyPrice !== null ? ' / tháng' : ''}</small></span></button>)}</div></div>
           <div className="booking-option-block"><div className="flex items-center justify-between gap-4"><div><h3>Số lượng kho</h3><p>Tối đa 3 kho trong một yêu cầu.</p></div><div className="quantity-stepper" aria-label="Số lượng kho"><button type="button" onClick={() => updateDraft({ quantity: Math.max(1, draft.quantity - 1), adjacencyPreference: draft.quantity - 1 > 1 && draft.adjacencyPreference })} disabled={draft.quantity === 1} aria-label="Giảm số lượng"><Minus size={17} /></button><output aria-live="polite">{draft.quantity}</output><button type="button" onClick={() => updateDraft({ quantity: Math.min(3, draft.quantity + 1) })} disabled={draft.quantity === 3} aria-label="Tăng số lượng"><Plus size={17} /></button></div></div>{draft.quantity > 1 && <label className="booking-checkbox"><input type="checkbox" checked={draft.adjacencyPreference} onChange={(event) => updateDraft({ adjacencyPreference: event.target.checked })} /><span><strong>Ưu tiên các kho liền kề</strong><small>Đây là mong muốn, không phải cam kết vị trí.</small></span></label>}</div>
         </div>
         <aside className="booking-preview">
@@ -444,11 +458,11 @@ export function BookingWizardPage() {
       {step === 2 && <div className="booking-step-grid schedule-grid">
         <div>
           <button type="button" className="booking-back" onClick={() => goToStep(1)}><ArrowLeft size={16} /> Sửa lựa chọn kho</button>
-          <p className="eyebrow mt-7">Bước 2</p><h2 className="booking-title">Thời gian và dịch vụ bổ sung</h2>
+          <p className="eyebrow mt-7">Bước 2</p><h2 id="booking-step-title" tabIndex={-1} className="booking-title">Thời gian và dịch vụ bổ sung</h2>
           <div className="booking-form-panel">
-            <label className="field-label">Ngày bắt đầu mong muốn<input type="date" min={new Date().toISOString().slice(0, 10)} name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
+            <label className="field-label">Ngày bắt đầu mong muốn<input type="date" min={vietnamCalendarDate()} name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
             <div className="period-mode-tabs" role="group" aria-label="Cách chọn thời gian"><button type="button" className={draft.periodMode === 'duration' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Theo thời hạn<small>Danh sách đã duyệt</small></button><button type="button" className={draft.periodMode === 'dates' ? 'is-selected' : ''} onClick={() => updateDraft({ periodMode: 'dates', durationMonths: null })}>Theo ngày kết thúc<small>Cần xác nhận báo giá</small></button></div>
-            {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || new Date().toISOString().slice(0, 10)} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">{product.allowDailyRental ? `Kho này cho thuê ngắn ngày từ ${product.minRentalDays ?? 1} ngày. Giá theo báo giá hệ thống; không tính ngày kết thúc.` : 'Kho này yêu cầu ít nhất một tháng lịch. Ngày kết thúc không tính vào kỳ thuê.'}</small></label>}
+            {draft.periodMode === 'duration' ? <fieldset><legend>Thời hạn được phê duyệt</legend><div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} className={draft.durationMonths === months ? 'is-selected' : ''} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div></fieldset> : <label className="field-label">Ngày kết thúc dự kiến<input type="date" min={draft.startDate || vietnamCalendarDate()} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} /><small className="field-help">{product.allowDailyRental ? `Kho này cho thuê ngắn ngày từ ${product.minRentalDays ?? 1} ngày. Giá theo báo giá hệ thống; không tính ngày kết thúc.` : 'Kho này yêu cầu ít nhất một tháng lịch. Ngày kết thúc không tính vào kỳ thuê.'}</small></label>}
             <fieldset className="payment-plan-fieldset"><legend>Kế hoạch thanh toán</legend><div className="payment-options">
               <button type="button" className={draft.paymentPlan === 'PAY_MONTHLY' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Thanh toán hàng tháng</strong><small>Thanh toán tiền thuê theo từng tháng. Hóa đơn đầu tiên gồm tiền thuê kỳ đầu và tiền đặt cọc. Các kỳ tiếp theo được thanh toán theo hóa đơn định kỳ.</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
               <button type="button" className={draft.paymentPlan === 'PREPAID' ? 'payment-option is-selected' : 'payment-option'} onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước toàn bộ kỳ</strong><small>Thanh toán trước toàn bộ tiền thuê của thời hạn đã chọn. {pricingQuote?.prepaidDiscountPercent ? `Kỳ này được giảm ${pricingQuote.prepaidDiscountPercent}% tiền thuê khi chọn trả trước. Không giảm tiền cọc hoặc dịch vụ.` : 'Phương án này thanh toán toàn kỳ ngay từ đầu.'}</small></span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
@@ -473,7 +487,7 @@ export function BookingWizardPage() {
           <div className="booking-pricing">
             <h3>Trạng thái báo giá</h3>
             {quoteState === 'loading' && <div role="status"><LoaderCircle className="availability-spinner" size={17} /> Đang cập nhật báo giá…</div>}
-            {quoteState === 'error' && <div className="booking-alert is-error" role="alert">{quoteError}</div>}
+            {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><span>{quoteError}</span><button type="button" onClick={retryAvailability}>Thử lại báo giá</button></div>}
             {quoteState === 'idle' && <p>Chọn thời gian thuê hợp lệ để nhận báo giá.</p>}
             {quoteState === 'ready' && pricingQuote && <>
               <QuoteBreakdown quote={pricingQuote} />
@@ -484,7 +498,7 @@ export function BookingWizardPage() {
         </aside>
       </div>}
 
-      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productImage={product.image} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onSubmit={submitCheckout} submitting={submitting} canSubmit={canCheckAvailability && availabilityState === 'available' && Boolean(availability?.available) && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
+      {step === 3 && <><AvailabilityStatus state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} />{availabilityState === 'unavailable' && <button className="button-secondary mt-4" onClick={() => goToStep(2)}>Đổi thời gian thuê</button>}<CheckoutStep draft={draft} quote={pricingQuote} quoteState={quoteState} quoteError={quoteError} productName={product.name} productCode={product.code} productImage={product.image} productDimensions={size.dimensions} user={user} onUpdate={updateDraft} onBack={() => goToStep(2)} onRetryQuote={retryAvailability} profileReturnPath={'/booking?product=' + encodeURIComponent(draft.productId) + '&step=3'} onSubmit={submitCheckout} submitting={submitting} canSubmit={canCheckAvailability && availabilityState === 'available' && Boolean(availability?.available) && quoteState === 'ready' && Boolean(pricingQuote)} /></>}
     </Container></section>
     {popupOpen && availabilityState !== 'idle' && availabilityState !== 'checking' && <AvailabilityToast state={availabilityState} availability={availability} error={availabilityError} onRetry={retryAvailability} onClose={() => setPopupOpen(false)} />}
   </div>

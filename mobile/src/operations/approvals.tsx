@@ -1,11 +1,12 @@
 import { useState } from 'react';
+import { recordMatches } from '@/utils/record-search';
 import { FlatList, RefreshControl, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { PageHeader } from '@/components/page-header';
 import { TaskCard } from '@/components/task-card';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
-import { codeOf, idOf, rows, text, type Row } from '@/operations/model';
+import { idOf, rows, type Row } from '@/operations/model';
 import { Button, Field, Navigation, styles } from '@/operations/ui';
 import { useResource } from '@/operations/use-resource';
 
@@ -31,7 +32,7 @@ export function ApprovalInbox() {
       .filter(row => (source.states as readonly string[]).includes(String(row.status)) && (!('accepts' in source) || !source.accepts || source.accepts(row)))
       .map(row => ({ ...row, source }));
   });
-  const items = combined.filter(row => [codeOf(row), text(row, 'customer.fullName', 'reservation.customer.fullName', 'subject')].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')));
+  const items = combined.filter(row => recordMatches(row, search));
   const refresh = () => data.forEach(item => item.refresh());
   const loading = data.some(item => item.loading) && !data.some(item => item.data);
   const error = data.find(item => item.error)?.error;

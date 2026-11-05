@@ -46,10 +46,17 @@ export function setSessionExpiredHandler(handler?: () => void) {
   onSessionExpired = handler;
 }
 
+function sessionCancellation(message: string) {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null; responseType?: 'json' | 'bytes' } = {}): Promise<T> {
   const { authenticated = true, signal, expectedToken, responseType = 'json', ...request } = options;
   const token = authenticated ? await authStorage.getToken() : null;
-  if (expectedToken !== undefined && token !== expectedToken) throw new Error('Phiên đăng nhập đã thay đổi.');
+  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|auth\/(me|logout))(\/|\?|$)/.test(path)) throw sessionCancellation('Phiên đăng nhập đã kết thúc.');
+  if (expectedToken !== undefined && token !== expectedToken) throw sessionCancellation('Phiên đăng nhập đã thay đổi.');
   const controller = new AbortController();
   let timedOut = false;
   const abort = () => controller.abort();
@@ -58,7 +65,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   try {
   let response: Response;
   const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
-  if (token && await authStorage.getToken() !== token) throw new Error('Phiên đăng nhập đã thay đổi.');
+  if (token && await authStorage.getToken() !== token) throw sessionCancellation('Phiên đăng nhập đã thay đổi.');
   const apiPath = operationApiPath(path, role, request.method ?? 'GET');
   try {
     response = await fetch(`${apiUrl}${apiPath}`, {
@@ -96,10 +103,10 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
         : `Yêu cầu thất bại (${response.status})`;
     throw new ApiError(userMessage(message), response.status, payload);
   }
-  if (responseType === 'bytes' && token && await authStorage.getToken() !== token) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng mở lại tài liệu sau khi đăng nhập.');
+  if (token && await authStorage.getToken() !== token) throw sessionCancellation('Phiên đăng nhập đã thay đổi. Vui lòng đăng nhập lại và mở lại nội dung.');
   if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
   if (path === '/auth/login' && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
-  if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path)) notifyDataChanged(path);
+  if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && (/^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path) || path === '/auth/me' && request.method === 'PATCH')) notifyDataChanged(path);
   return payload as T;
   } finally {
     clearTimeout(timer);

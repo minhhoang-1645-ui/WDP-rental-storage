@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { businessDate } from '../../business-date.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
@@ -754,7 +755,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const product = await this.prisma.storageType.findUnique({ where: { id: productId } });
     if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
-    if (!this.isDate(startDate) || startDate < new Date().toISOString().slice(0, 10)) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
+    if (!this.isDate(startDate) || startDate < businessDate()) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const periodMode = input.periodMode === 'dates' ? 'dates' as const : 'duration' as const;
     const durationMonths = Number(input.durationMonths);
     const endDate = typeof input.endDate === 'string' ? input.endDate : undefined;

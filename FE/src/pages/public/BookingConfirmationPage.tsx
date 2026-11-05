@@ -1,3 +1,4 @@
+import { safeSessionStorage } from '../../services/browser-storage'
 import { CheckCircle2, Clock3, ReceiptText } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
@@ -17,8 +18,11 @@ export function BookingConfirmationPage() {
 }
 
 function GuestConfirmation({ id }: { id: string }) {
+  const location = useLocation()
   const [record] = useState<GuestBooking | null>(() => {
-    try { const saved = JSON.parse(sessionStorage.getItem('wdp-guest-response:' + id) ?? 'null') as GuestBooking | null; return saved?.bookingCode === id ? saved : null } catch { return null }
+    const initial = (location.state as { guestBooking?: GuestBooking } | null)?.guestBooking
+    if (initial?.bookingCode === id) return initial
+    try { const saved = JSON.parse(safeSessionStorage.getItem('wdp-guest-response:' + id) ?? 'null') as GuestBooking | null; return saved?.bookingCode === id ? saved : null } catch { return null }
   })
   return <section className="section-space"><Container className="max-w-3xl"><div className="confirmation-panel"><CheckCircle2 className="text-success" size={48} /><p className="eyebrow mt-6">Yêu cầu đặt kho qua email</p><h1>{record ? 'Đã ghi nhận yêu cầu xác minh email' : 'Tra cứu qua email của NestBox'}</h1><p>Mã yêu cầu: <strong>{id}</strong>. Yêu cầu này chưa giữ kho, chưa tạo hợp đồng hoặc thanh toán.</p>{record && <p>{record.storage.name} · {record.quantity} kho · {record.startDate} đến {record.endDate}</p>}<div className="booking-alert mt-7">{record?.message?.includes('Development') ? 'Dịch vụ gửi email thật chưa được cấu hình. Email xác minh chưa được gửi; hãy liên hệ NestBox hoặc dùng luồng gửi yêu cầu liên hệ.' : 'Mở liên kết xác minh NestBox gửi trong email, sau đó đăng nhập bằng cùng email để nhận yêu cầu. Trang này hiển thị kết quả gửi ban đầu.'}</div><div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to="/storage">Xem kho</Link><Link className="button-secondary" to="/booking">Gửi yêu cầu liên hệ</Link></div></div></Container></section>
 }
@@ -42,7 +46,7 @@ function ConfirmationRecord() {
     setError('')
     try {
       if (id.startsWith('WDPQ-')) {
-        const token = sessionStorage.getItem('wdp-inquiry-token:' + id)
+        const token = safeSessionStorage.getItem('wdp-inquiry-token:' + id)
         if (!token) {
           if (!initialRecord) setError('Liên kết xác nhận này không có mã truy cập bảo mật. Hãy mở lại ngay sau khi gửi yêu cầu.')
           return

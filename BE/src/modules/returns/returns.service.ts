@@ -1,6 +1,7 @@
 import { Optional } from '@nestjs/common';
 import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { businessDate } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -334,7 +335,7 @@ export class ReturnsService {
     this.assertOperationalIntegrity(reservation);
     const endDate = this.effectiveEndDate(reservation.contracts);
     const earlyApproval = (reservation.supportRequests ?? []).some((request: any) => request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'MANAGER' && request.lastActionIdempotencyKey === `early-return:${request.id}:${this.isoDate(endDate)}`);
-    if (now < endDate && !earlyApproval) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Trả trước hạn cần quản lý chấp thuận đề nghị và điều kiện quyết toán trước.' });
+    if (businessDate(now) < this.isoDate(endDate)! && !earlyApproval) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Trả trước hạn cần quản lý chấp thuận đề nghị và điều kiện quyết toán trước.' });
     if (reservation.renewals.some((renewal: any) => ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status))) {
       throw new ConflictException({ code: 'UNRESOLVED_RENEWAL_EXISTS', message: 'Phải xử lý xong yêu cầu gia hạn trước khi tạo yêu cầu trả kho.' });
     }

@@ -9,7 +9,7 @@ import {
   RotateCcw,
   WalletCards,
 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
@@ -27,6 +27,7 @@ import { ApiError } from "../../services/api";
 import { EarlyReturnPanel } from '../../components/customer/EarlyReturnPanel';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import { isCurrentEarlyReturnApproval } from '../../utils/early-return';
+import { vietnamCalendarDate } from '../../utils/business-date';
 import type {
   CustomerDepositSettlement,
   CustomerRental,
@@ -53,6 +54,7 @@ export function CustomerReturnsPage() {
   const [view, setView] = useState<"returns" | "settlements">("returns");
   const approvals = usePaginatedResource<CustomerSupportRequest>('/customer/support-requests?limit=100', user?.id ?? '', true);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setCheckedAt(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
@@ -67,7 +69,7 @@ export function CustomerReturnsPage() {
   );
   const eligibleRentals = (rentals.data?.items ?? []).filter(
     (item) =>
-      (new Date(item.effectiveEndDate).getTime() <= checkedAt || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
+      (item.effectiveEndDate.slice(0, 10) <= vietnamCalendarDate(checkedAt) || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
       !item.pendingRenewal &&
       !activeReturnIds.has(item.reservationId),
   );

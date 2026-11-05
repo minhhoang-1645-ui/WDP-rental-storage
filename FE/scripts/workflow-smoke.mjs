@@ -305,7 +305,7 @@ assert(paymentWindowClosed({ type: 'INITIAL', reservation: { expiresAt: '2050-01
 assert(!paymentWindowClosed({ type: 'INITIAL', reservation: { expiresAt: '2050-01-01T00:00:01Z' } }, clock));
 assert(!paymentWindowClosed({ type: 'RENEWAL', reservation: { expiresAt: '2000-01-01' } }, clock));
 assert(paymentWindowClosed({ reservation: { status: 'EXPIRED' } }));
-assert.equal(paymentExpiry(undefined, '2050-01-01T00:00:00Z'), '2050-01-01T00:15:00.000Z');
+assert.equal(paymentExpiry(undefined, '2050-01-01T00:00:00Z'), '2050-01-01T00:05:00.000Z');
 assert(!paymentTimeLeft('invalid').includes('NaN'));
 assert(!isOverdueInvoice({ type: 'INITIAL', status: 'OPEN', balanceDue: 100, dueAt: '2050-01-01', reservation: { expiresAt: '2050-01-01T14:00:00Z' } }, clock + 1000));
 const scheduledContract = { id: 'c', status: 'READY_FOR_HANDOVER', startDate: '2050-02-01', endDate: '2050-03-01', reservation: { id: 'r', quantity: 1 } };

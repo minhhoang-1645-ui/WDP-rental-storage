@@ -1,9 +1,10 @@
+import { vietnamCalendarDate } from '@/utils/calendar-date';
 import { AdditionalServicePicker } from '@/components/additional-service-picker';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '@/types/additional-service';
 import { serviceSelectionIssue } from '@/utils/service-period';
 import { useResource } from '@/operations/use-resource';
 import { useDraftGuard } from '@/services/live-events';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Warehouse, CalendarDays, Check } from 'lucide-react-native';
@@ -20,12 +21,15 @@ import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { apiRequest } from '@/services/api';
 import { validDate } from '@/operations/availability';
 import { rentalEndDate } from '@/utils/rental-period';
+import { useAuth } from '@/auth/use-auth';
+import { profileContactIssue } from '@/utils/profile-contact';
 
 type Draft = { productId: string; startDate: string; quantity: string; periodMode: 'duration' | 'dates'; durationMonths: string; endDate: string; paymentPlan: 'PAY_MONTHLY' | 'PREPAID'; adjacencyPreference: boolean; selectedUnitIds: string[] };
 type UnitMap = { productId: string; startDate: string; endDateExclusive: string; units: FloorPlanUnit[] };
 const initial = (productId = ''): Draft => ({ productId, startDate: '', quantity: '1', periodMode: 'duration', durationMonths: '3', endDate: '', paymentPlan: 'PAY_MONTHLY', adjacencyPreference: false, selectedUnitIds: [] });
 
 export default function BookingScreen() {
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ product?: string; startDate?: string; endDate?: string; unit?: string; unitCode?: string; periodMode?: string; durationMonths?: string }>();
   const fromMap = Boolean(params.product && params.unit);
   const catalog = usePublicCatalog();
@@ -44,30 +48,38 @@ export default function BookingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
+  const checkingRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => checkingRequest.current?.abort(), []);
   const products = rows(catalog.data?.products);
   const productId = draft.productId || text(products[0] ?? {}, 'id');
   const selected = useMemo(() => products.find(product => text(product, 'id') === productId), [productId, products]);
-  const update = (next: Partial<Draft>) => { setAvailability(undefined); setUnitMap(undefined); setError(''); setDraft(value => ({ ...value, ...next, ...(next.selectedUnitIds === undefined && (next.productId !== undefined || next.quantity !== undefined) ? { selectedUnitIds: [] } : {}) })); };
+  const cancelCheck = () => { checkingRequest.current?.abort(); checkingRequest.current = null; setChecking(false); setAvailability(undefined); setUnitMap(undefined); };
+  const update = (next: Partial<Draft>) => { cancelCheck(); setError(''); setDraft(value => ({ ...value, ...next, ...(next.selectedUnitIds === undefined && (next.productId !== undefined || next.quantity !== undefined) ? { selectedUnitIds: [] } : {}) })); };
   const rentalEnd = (() => {
     if (draft.periodMode === 'dates') return draft.endDate;
     return rentalEndDate(draft.startDate, Number(draft.durationMonths));
   })();
   const body = () => ({ productId, startDate: draft.startDate, quantity: Number(draft.quantity), periodMode: draft.periodMode, ...(draft.periodMode === 'duration' ? { durationMonths: Number(draft.durationMonths) } : { endDate: draft.endDate }), paymentPlan: draft.paymentPlan, paymentChoice: 'pay-later', adjacencyPreference: draft.adjacencyPreference, ...(draft.selectedUnitIds.length ? { selectedUnitIds: draft.selectedUnitIds } : {}), addonIds: [], services: selections });
-  const issue = () => !selected ? 'Chọn loại kho đang được cung cấp.' : !validDate(draft.startDate) ? 'Nhập ngày bắt đầu theo YYYY-MM-DD.' : !Number.isInteger(Number(draft.quantity)) || Number(draft.quantity) < 1 || Number(draft.quantity) > 3 ? 'Số lượng kho phải từ 1 đến 3.' : draft.periodMode === 'duration' && ![1, 3, 6, 12].includes(Number(draft.durationMonths)) ? 'Chọn kỳ thuê được hỗ trợ.' : draft.periodMode === 'dates' && (!validDate(draft.endDate) || draft.endDate <= draft.startDate) ? 'Ngày kết thúc phải sau ngày bắt đầu.' : '';
+  const issue = () => !selected ? 'Chọn loại kho đang được cung cấp.' : !validDate(draft.startDate) ? 'Nhập ngày bắt đầu theo YYYY-MM-DD.' : draft.startDate < vietnamCalendarDate() ? 'Ngày bắt đầu phải từ hôm nay trở đi.' : !Number.isInteger(Number(draft.quantity)) || Number(draft.quantity) < 1 || Number(draft.quantity) > 3 ? 'Số lượng kho phải từ 1 đến 3.' : draft.periodMode === 'duration' && ![1, 3, 6, 12].includes(Number(draft.durationMonths)) ? 'Chọn kỳ thuê được hỗ trợ.' : draft.periodMode === 'dates' && (!validDate(draft.endDate) || draft.endDate <= draft.startDate) ? 'Ngày kết thúc phải sau ngày bắt đầu.' : '';
   const check = async () => {
+    if (checkingRequest.current || lock.current) return;
     const invalid = issue() || selections.map(selection => serviceSelectionIssue(addons.data?.find(service => service.id === selection.serviceId), selection, draft.startDate, rentalEnd)).find(Boolean); if (invalid) { setError(invalid); return; }
+    const controller = new AbortController();
+    checkingRequest.current = controller;
     setChecking(true); setError('');
     try {
       for (const selection of selections) {
         const query = new URLSearchParams({ quantity: String(selection.quantity), ...(selection.serviceStartDate ? { startDate: selection.serviceStartDate } : {}), ...(selection.serviceEndDate ? { endDate: selection.serviceEndDate } : {}) });
-        const stock = await apiRequest<ServiceInventory>('/additional-services/' + encodeURIComponent(selection.serviceId) + '/availability?' + query);
+        const stock = await apiRequest<ServiceInventory>('/additional-services/' + encodeURIComponent(selection.serviceId) + '/availability?' + query, { signal: controller.signal });
         if (!stock.available) throw new Error('Dịch vụ đã chọn không đủ tồn kho/công suất. Vui lòng giảm số lượng hoặc đổi thời gian.');
       }
       const request = body();
       const requestJson = JSON.stringify(request);
-      const result = await apiRequest<Row>('/booking/availability', { method: 'POST', authenticated: false, body: requestJson });
+      const result = await apiRequest<Row>('/booking/availability', { method: 'POST', authenticated: false, body: requestJson, signal: controller.signal });
+      const map = result.available === true ? await apiRequest<UnitMap>('/booking/unit-map', { method: 'POST', authenticated: false, body: requestJson, signal: controller.signal }) : undefined;
+      if (controller.signal.aborted || checkingRequest.current !== controller) return;
+      if (map && !Array.isArray(map.units)) throw new Error('Chưa tải được danh sách kho. Vui lòng kiểm tra lại báo giá.');
       setAvailability(result);
-      const map = result.available === true ? await apiRequest<UnitMap>('/booking/unit-map', { method: 'POST', authenticated: false, body: requestJson }) : undefined;
       setUnitMap(map);
       if (draft.selectedUnitIds.some(id => !map?.units.some(unit => unit.id === id && unit.available))) {
         setError('Kho đã chọn không còn trống trong kỳ này. Hãy đổi kho hoặc thời gian.');
@@ -77,11 +89,13 @@ export default function BookingScreen() {
       setMapFloor(first?.floor ?? '');
       setMapZone(first?.zone ?? '');
       setStep(3); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Chưa kiểm tra được khả dụng.'); }
-    finally { setChecking(false); }
+    catch (caught) { if (!controller.signal.aborted && checkingRequest.current === controller) setError(caught instanceof Error ? caught.message : 'Chưa kiểm tra được khả dụng.'); }
+    finally { if (checkingRequest.current === controller) { checkingRequest.current = null; setChecking(false); } }
   };
   const submit = async () => {
     if (lock.current || availability?.available !== true) return;
+    const contactIssue = profileContactIssue(user?.fullName ?? '', user?.phone ?? '');
+    if (contactIssue) { setError('Vui lòng cập nhật họ tên và số điện thoại liên hệ trước khi gửi yêu cầu.'); return; }
     if (draft.selectedUnitIds.length && draft.selectedUnitIds.length !== Number(draft.quantity)) { setError(`Vui lòng chọn đủ ${draft.quantity} kho hoặc bỏ chọn để hệ thống tự phân bổ.`); return; }
     lock.current = true; setSubmitting(true); setError('');
     try {
@@ -97,8 +111,9 @@ export default function BookingScreen() {
   const toggleUnit = (unit: FloorPlanUnit) => { if (!unit.available) return; setError(''); setDraft(value => ({ ...value, selectedUnitIds: value.selectedUnitIds.includes(unit.id) ? value.selectedUnitIds.filter(id => id !== unit.id) : value.selectedUnitIds.length < Number(value.quantity) ? [...value.selectedUnitIds, unit.id] : value.selectedUnitIds })); };
   return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Đặt kho" title={step === 3 ? "Xác nhận đặt kho" : "Hoàn tất đặt kho"} description="Kiểm tra thông tin, ký hợp đồng và thanh toán." />
-    {catalog.loading && !catalog.data ? <LoadingState label="Đang tải catalog…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
+    {catalog.loading && !catalog.data ? <LoadingState label="Đang tải danh mục kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
       <Progress step={step} fromMap={fromMap} />
+      {profileContactIssue(user?.fullName ?? '', user?.phone ?? '') && <Panel title="Cần bổ sung thông tin liên hệ"><Text style={styles.copy}>NestBox cần họ tên và số điện thoại hợp lệ để xác nhận yêu cầu và liên hệ bàn giao. Bạn vẫn có thể xem báo giá trước.</Text><Button title="Cập nhật thông tin liên hệ" variant="secondary" onPress={() => { checkingRequest.current?.abort(); checkingRequest.current = null; setChecking(false); router.push({ pathname: '/customer/account', params: { returnTo: 'booking', product: productId } }); }} /></Panel>}
       {fromMap && <Panel title="Kho đã chọn">
         <View style={local.summaryRow}><Warehouse size={24} color={WdpColors.navy} /><View style={{ flex: 1, gap: 4 }}>
           <Text style={local.mapTitle}>{params.unitCode || 'Kho đã chọn trên sơ đồ'}</Text>
@@ -107,9 +122,9 @@ export default function BookingScreen() {
         <View style={local.summaryRow}><CalendarDays size={18} color={WdpColors.muted} /><Text style={styles.copy}>{draft.startDate} → {rentalEnd || 'Chọn ngày kết thúc'}</Text></View>
         <Button title="Đổi kho" variant="secondary" onPress={() => router.replace({ pathname: '/customer/discover', params: { size: text(selected ?? {}, 'sizeId') } })} />
       </Panel>}
-      {step === 1 && !fromMap && <Panel title="Chọn loại kho"><Text style={styles.copy}>{selected ? `${text(selected, 'name')} · ${text(selected, 'code')}` : 'Chưa chọn loại kho'}</Text>{products.map(product => <Button key={text(product, 'id')} title={`${productId === text(product, 'id') ? '✓ ' : ''}${text(product, 'name')} · ${text(product, 'code')}`} variant={productId === text(product, 'id') ? 'primary' : 'secondary'} onPress={() => update({ productId: text(product, 'id') })} />)}<DateField title="Ngày bắt đầu" value={draft.startDate} onChange={value => update({ startDate: value })} /><Field title="Số kho" value={draft.quantity} onChange={value => update({ quantity: value.replace(/\D/g, '') })} numeric maxLength={1} /><Button title="Tiếp tục" onPress={() => { const invalid = issue(); if (invalid) setError(invalid); else setStep(2); }} /></Panel>}
-      {step === 2 && <Panel title="Thời gian & thanh toán">{fromMap && <DateField title="Ngày bắt đầu" value={draft.startDate} onChange={value => update({ startDate: value })} />}<Button title={draft.periodMode === 'duration' ? 'Theo số tháng ✓' : 'Theo số tháng'} variant={draft.periodMode === 'duration' ? 'primary' : 'secondary'} onPress={() => update({ periodMode: 'duration' })} /><Button title={draft.periodMode === 'dates' ? 'Theo ngày kết thúc ✓' : 'Theo ngày kết thúc'} variant={draft.periodMode === 'dates' ? 'primary' : 'secondary'} onPress={() => update({ periodMode: 'dates' })} />{draft.periodMode === 'duration' ? <Field title="Số tháng (1, 3, 6 hoặc 12)" value={draft.durationMonths} onChange={value => update({ durationMonths: value.replace(/\D/g, '') })} numeric maxLength={2} /> : <DateField title="Ngày kết thúc" value={draft.endDate} onChange={value => update({ endDate: value })} />}<Button title={draft.paymentPlan === 'PAY_MONTHLY' ? 'Trả hàng tháng ✓' : 'Trả hàng tháng'} variant={draft.paymentPlan === 'PAY_MONTHLY' ? 'primary' : 'secondary'} onPress={() => update({ paymentPlan: 'PAY_MONTHLY' })} /><Button title={draft.paymentPlan === 'PREPAID' ? 'Trả trước ✓' : 'Trả trước'} variant={draft.paymentPlan === 'PREPAID' ? 'primary' : 'secondary'} onPress={() => update({ paymentPlan: 'PREPAID' })} /><AdditionalServicePicker services={addons.data ?? []} selections={selections} start={draft.startDate} end={rentalEnd} loading={addons.loading} error={addons.error} retry={addons.refresh} onChange={value => { setSelections(value); setAvailability(undefined); setError(''); }} /><Button title={checking ? 'Đang kiểm tra…' : 'Xem báo giá'} onPress={() => void check()} disabled={checking} />{!fromMap && <Button title="Quay lại" variant="secondary" onPress={() => setStep(1)} />}</Panel>}
-      {step === 3 && <Panel title="Kiểm tra & xác nhận">{availability?.available === true ? <Text style={local.good}>Còn kho trong kỳ thuê đã chọn.</Text> : <Text style={local.bad}>{text(availability ?? {}, 'message') || 'Chưa có kho phù hợp cho khoảng thời gian này.'}</Text>}{unitMap && (!fromMap || showMap) ? <View style={local.mapSection}><Text style={local.mapTitle}>{fromMap ? "Vị trí kho đã chọn" : "Chọn kho cùng loại"}</Text>{!fromMap && <Text style={styles.copy}>Chọn {draft.quantity} kho, hoặc để hệ thống phân bổ.</Text>}<Text style={local.mapTitle}>Tầng</Text>{floors.map(floor => <Button key={floor || 'unassigned'} title={floor || 'Chưa xác định tầng'} variant={mapFloor === floor ? 'primary' : 'secondary'} onPress={() => { setMapFloor(floor); setMapZone(unitMap.units.find(unit => (unit.floor ?? '') === floor)?.zone ?? ''); }} />)}<Text style={local.mapTitle}>Khu vực</Text>{zones.map(zone => <Button key={zone || 'unassigned'} title={zone || 'Chưa xác định khu'} variant={mapZone === zone ? 'primary' : 'secondary'} onPress={() => setMapZone(zone)} />)}<Button title={mapView === 'map' ? 'Xem danh sách kho' : 'Xem sơ đồ kho'} variant="secondary" onPress={() => setMapView(mapView === 'map' ? 'list' : 'map')} />{mapView === 'map' ? <FloorPlanViewer units={visibleUnits} selectedIds={draft.selectedUnitIds} onPress={fromMap ? undefined : toggleUnit} /> : visibleUnits.map(unit => <Button key={unit.id} title={`${draft.selectedUnitIds.includes(unit.id) ? '✓ ' : ''}${unit.code} · ${unit.available ? 'Có thể đặt' : unit.status === 'RESERVED' ? 'Đã giữ/trùng kỳ' : unit.status === 'OCCUPIED' ? 'Đang thuê' : 'Bảo trì'}`} variant={draft.selectedUnitIds.includes(unit.id) ? 'primary' : 'secondary'} disabled={fromMap || !unit.available} onPress={() => toggleUnit(unit)} />)}<View style={local.legend}><Text style={local.legendAvailable}>Có thể đặt</Text><Text style={local.legendReserved}>Đã giữ/trùng kỳ</Text><Text style={local.legendUnavailable}>Đang thuê/bảo trì</Text></View><Text style={local.selection}>{draft.selectedUnitIds.length ? `Đã chọn ${draft.selectedUnitIds.length}/${draft.quantity}: ${unitMap.units.filter(unit => draft.selectedUnitIds.includes(unit.id)).map(unit => unit.code).join(', ')}` : 'Bạn có thể để hệ thống tự phân bổ, hoặc chọn kho còn trống.'}</Text></View> : null}{fromMap && unitMap && <Button title={showMap ? "Ẩn sơ đồ" : "Xem kho trên sơ đồ"} variant="secondary" onPress={() => setShowMap(value => !value)} />}<PriceBreakdown quote={object(availability?.quote)} />{availability?.available === true && <Button title={submitting ? 'Đang gửi yêu cầu…' : 'Gửi yêu cầu đặt kho'} onPress={() => void submit()} disabled={submitting} />}<Button title="Sửa thời gian thuê" variant="secondary" onPress={() => setStep(2)} /></Panel>}
+      {step === 1 && !fromMap && <Panel title="Chọn loại kho"><Text style={styles.copy}>{selected ? `${text(selected, 'name')} · ${text(selected, 'code')}` : 'Chưa chọn loại kho'}</Text>{products.map(product => <Button key={text(product, 'id')} title={`${productId === text(product, 'id') ? '✓ ' : ''}${text(product, 'name')} · ${text(product, 'code')}`} variant={productId === text(product, 'id') ? 'primary' : 'secondary'} onPress={() => update({ productId: text(product, 'id') })} />)}<DateField title="Ngày bắt đầu" min={vietnamCalendarDate()} value={draft.startDate} onChange={value => update({ startDate: value })} /><Field title="Số kho" value={draft.quantity} onChange={value => update({ quantity: value.replace(/\D/g, '') })} numeric maxLength={1} /><Button title="Tiếp tục" onPress={() => { const invalid = issue(); if (invalid) setError(invalid); else setStep(2); }} /></Panel>}
+      {step === 2 && <Panel title="Thời gian & thanh toán">{fromMap && <DateField title="Ngày bắt đầu" min={vietnamCalendarDate()} value={draft.startDate} onChange={value => update({ startDate: value })} />}<Button title={draft.periodMode === 'duration' ? 'Theo số tháng ✓' : 'Theo số tháng'} variant={draft.periodMode === 'duration' ? 'primary' : 'secondary'} onPress={() => update({ periodMode: 'duration' })} /><Button title={draft.periodMode === 'dates' ? 'Theo ngày kết thúc ✓' : 'Theo ngày kết thúc'} variant={draft.periodMode === 'dates' ? 'primary' : 'secondary'} onPress={() => update({ periodMode: 'dates' })} />{draft.periodMode === 'duration' ? <Field title="Số tháng (1, 3, 6 hoặc 12)" value={draft.durationMonths} onChange={value => update({ durationMonths: value.replace(/\D/g, '') })} numeric maxLength={2} /> : <DateField title="Ngày kết thúc" min={draft.startDate} value={draft.endDate} onChange={value => update({ endDate: value })} />}<Button title={draft.paymentPlan === 'PAY_MONTHLY' ? 'Trả hàng tháng ✓' : 'Trả hàng tháng'} variant={draft.paymentPlan === 'PAY_MONTHLY' ? 'primary' : 'secondary'} onPress={() => update({ paymentPlan: 'PAY_MONTHLY' })} /><Button title={draft.paymentPlan === 'PREPAID' ? 'Trả trước ✓' : 'Trả trước'} variant={draft.paymentPlan === 'PREPAID' ? 'primary' : 'secondary'} onPress={() => update({ paymentPlan: 'PREPAID' })} /><AdditionalServicePicker services={addons.data ?? []} selections={selections} start={draft.startDate} end={rentalEnd} loading={addons.loading} error={addons.error} retry={addons.refresh} onChange={value => { cancelCheck(); setSelections(value); setError(''); }} /><Button title={checking ? 'Đang kiểm tra…' : 'Xem báo giá'} onPress={() => void check()} disabled={checking} />{!fromMap && <Button title="Quay lại" variant="secondary" onPress={() => { cancelCheck(); setStep(1); }} />}</Panel>}
+      {step === 3 && <Panel title="Kiểm tra & xác nhận">{availability?.available === true ? <Text style={local.good}>Còn kho trong kỳ thuê đã chọn.</Text> : <Text style={local.bad}>{text(availability ?? {}, 'message') || 'Chưa có kho phù hợp cho khoảng thời gian này.'}</Text>}{unitMap && (!fromMap || showMap) ? <View style={local.mapSection}><Text style={local.mapTitle}>{fromMap ? "Vị trí kho đã chọn" : "Chọn kho cùng loại"}</Text>{!fromMap && <Text style={styles.copy}>Chọn {draft.quantity} kho, hoặc để hệ thống phân bổ.</Text>}<Text style={local.mapTitle}>Tầng</Text>{floors.map(floor => <Button key={floor || 'unassigned'} title={floor || 'Chưa xác định tầng'} variant={mapFloor === floor ? 'primary' : 'secondary'} onPress={() => { setMapFloor(floor); setMapZone(unitMap.units.find(unit => (unit.floor ?? '') === floor)?.zone ?? ''); }} />)}<Text style={local.mapTitle}>Khu vực</Text>{zones.map(zone => <Button key={zone || 'unassigned'} title={zone || 'Chưa xác định khu'} variant={mapZone === zone ? 'primary' : 'secondary'} onPress={() => setMapZone(zone)} />)}<Button title={mapView === 'map' ? 'Xem danh sách kho' : 'Xem sơ đồ kho'} variant="secondary" onPress={() => setMapView(mapView === 'map' ? 'list' : 'map')} />{mapView === 'map' ? <FloorPlanViewer units={visibleUnits} selectedIds={draft.selectedUnitIds} onPress={fromMap ? undefined : toggleUnit} /> : visibleUnits.map(unit => <Button key={unit.id} title={`${draft.selectedUnitIds.includes(unit.id) ? '✓ ' : ''}${unit.code} · ${unit.available ? 'Có thể đặt' : unit.status === 'RESERVED' ? 'Đã giữ/trùng kỳ' : unit.status === 'OCCUPIED' ? 'Đang thuê' : 'Bảo trì'}`} variant={draft.selectedUnitIds.includes(unit.id) ? 'primary' : 'secondary'} disabled={fromMap || !unit.available} onPress={() => toggleUnit(unit)} />)}<View style={local.legend}><Text style={local.legendAvailable}>Có thể đặt</Text><Text style={local.legendReserved}>Đã giữ/trùng kỳ</Text><Text style={local.legendUnavailable}>Đang thuê/bảo trì</Text></View><Text style={local.selection}>{draft.selectedUnitIds.length ? `Đã chọn ${draft.selectedUnitIds.length}/${draft.quantity}: ${unitMap.units.filter(unit => draft.selectedUnitIds.includes(unit.id)).map(unit => unit.code).join(', ')}` : 'Bạn có thể để hệ thống tự phân bổ, hoặc chọn kho còn trống.'}</Text></View> : null}{fromMap && unitMap && <Button title={showMap ? "Ẩn sơ đồ" : "Xem kho trên sơ đồ"} variant="secondary" onPress={() => setShowMap(value => !value)} />}<PriceBreakdown quote={object(availability?.quote)} />{availability?.available === true && <Button title={submitting ? 'Đang gửi yêu cầu…' : 'Gửi yêu cầu đặt kho'} onPress={() => void submit()} disabled={submitting || Boolean(profileContactIssue(user?.fullName ?? '', user?.phone ?? ''))} />}<Button title="Sửa thời gian thuê" variant="secondary" onPress={() => setStep(2)} /></Panel>}
       {error ? <Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text> : null}
     </>}
   </ScrollView>;

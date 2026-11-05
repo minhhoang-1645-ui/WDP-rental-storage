@@ -1,4 +1,4 @@
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, type Href } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -49,6 +49,7 @@ export default function LoginScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel="Đăng nhập" accessibilityState={{ disabled: submitting || !email.trim() || !password, busy: submitting }} disabled={submitting || !email.trim() || !password} onPress={() => void submit()} style={styles.submit}><Text style={styles.submitText}>{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</Text></Pressable>
         </View>
       </View>
+      <Pressable accessibilityRole="button" onPress={() => router.push('/continue-booking' as Href)}><Text style={styles.label}>Tiếp tục đơn qua email / Quên mật khẩu</Text></Pressable>
       <Text style={styles.hint}>Dùng cùng tài khoản NestBox trên web và điện thoại. Bạn sẽ được đưa đến đúng khu vực theo vai trò.</Text>
     </ScrollView>
   </KeyboardAvoidingView>;

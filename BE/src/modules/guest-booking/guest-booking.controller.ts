@@ -17,7 +17,7 @@ export class GuestBookingController {
   @ApiCreatedResponse({ description: 'PENDING_VERIFICATION. Production không trả claim token.' })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiConflictResponse({ description: 'Không còn đủ kho hoặc khóa idempotency xung đột.' })
-  create(@Body() body: Record<string, unknown>, @Headers('Idempotency-Key') key?: string) { return this.service.create(body, key); }
+  create(@Body() body: Record<string, unknown>, @Headers('Idempotency-Key') key: string | undefined, @Req() req: { socket?: { remoteAddress?: string } }) { return this.service.create(body, key, req.socket?.remoteAddress); }
 
   @Post('guest/booking-requests/verify')
   @ApiOperation({ summary: 'Xác minh email bằng claim token dùng một lần', description: 'Public. bookingCode không đủ để xác minh.' })
@@ -25,7 +25,7 @@ export class GuestBookingController {
   @ApiOkResponse({ description: 'PENDING_VERIFICATION → VERIFIED.' })
   @ApiBadRequestResponse({ description: 'Token không hợp lệ.' })
   @ApiConflictResponse({ description: 'Token hết hạn hoặc booking không còn claimable.' })
-  verify(@Body() body: Record<string, unknown>) { return this.service.verify(body); }
+  verify(@Body() body: Record<string, unknown>, @Req() req: { socket?: { remoteAddress?: string } }) { return this.service.verify(body, req.socket?.remoteAddress); }
 
   @Post('customer/booking-requests/:bookingCode/claim')
   @UseGuards(AuthGuard, RolesGuard)

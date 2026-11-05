@@ -103,6 +103,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const value: AuthContextValue = {
     user,
     loading,
+    acceptSession: saveSession,
     login: async (input) => saveSession(await authApi.login(input)),
     register: async (input) => saveSession(await authApi.register(input)),
     logout: () => {

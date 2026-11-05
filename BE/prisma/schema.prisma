@@ -19,6 +19,24 @@ enum AccountStatus {
   DISABLED
 }
 
+model AccountFlowToken {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  kind String
+  email String
+  bookingCode String?
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([email, kind, createdAt])
+}
+
+model AccountFlowLimit {
+  key String @id
+  bucket DateTime
+  count Int @default(0)
+}
+
 enum AuditCategory {
   LOGIN
   ACTIVITY

@@ -9,6 +9,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<PublicUser>;
   logout: () => Promise<void>;
+  acceptSession: (session: AuthSession) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -66,6 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) void apiRequest<void>('/auth/logout', { method: 'POST', authenticated: false, headers: { Authorization: `Bearer ${token}` } }).catch(() => undefined);
   }, [clearLocalSession]);
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
+  const acceptSession = useCallback(async (session: AuthSession) => {
+    if (!session?.token || !session.user?.id || session.user.role !== 'CUSTOMER') throw new Error('Phiên khách hàng không hợp lệ.');
+    revision.current++;
+    await authStorage.setToken(session.token);
+    setUser(session.user); setLoading(false);
+  }, []);
+  const value = useMemo(() => ({ user, loading, login, logout, acceptSession }), [user, loading, login, logout, acceptSession]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

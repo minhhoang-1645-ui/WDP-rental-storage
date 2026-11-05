@@ -155,6 +155,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
             Dùng cùng tài khoản NestBox trên web và điện thoại. Nếu phiên hết hạn,
             hãy đăng nhập lại để tiếp tục.
           </p>
+          {mode === "login" && <Link className="button-secondary mt-4" to="/claim-booking">Quên mật khẩu</Link>}
         </form>
       </Container>
     </section>

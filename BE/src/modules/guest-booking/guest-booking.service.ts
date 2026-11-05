@@ -6,13 +6,16 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BookingService } from '../booking/booking.service.js';
 import { EmailService } from './email.service.js';
+import { AccountOnboardingService } from './account-onboarding.service.js';
 
 @Injectable()
 export class GuestBookingService {
-  constructor(private readonly prisma: PrismaService, private readonly booking: BookingService, private readonly email: EmailService, private readonly config: ConfigService) {}
+  constructor(private readonly prisma: PrismaService, private readonly booking: BookingService, private readonly email: EmailService, private readonly config: ConfigService, private readonly onboarding: AccountOnboardingService) {}
 
-  async create(input: Record<string, unknown>, keyInput?: string) {
+  async create(input: Record<string, unknown>, keyInput?: string, client = 'unknown') {
+    await this.onboarding.limit('guest-ip', client, 30);
     const parsed = this.parse(input);
+    await this.onboarding.limit('verification-email', parsed.email, 5);
     const key = this.key(keyInput);
     const availability = await this.booking.checkAvailability({ productId: parsed.storageTypeId, startDate: parsed.startDate, endDate: parsed.endDate, periodMode: 'dates', quantity: parsed.quantity, adjacencyPreference: false, services: parsed.services, addonIds: [], paymentChoice: 'pay-later', paymentPlan: parsed.paymentPlan });
     if (!availability.available) throw new ConflictException({ code: 'REQUESTED_STORAGE_NOT_AVAILABLE', message: availability.message, availability });
@@ -30,6 +33,8 @@ export class GuestBookingService {
           record = await this.prisma.guestBookingRequest.create({ data: { bookingCode: this.code(), fullName: parsed.fullName, email: parsed.email, phone: parsed.phone, storageTypeId: parsed.storageTypeId, quantity: parsed.quantity, startDate: new Date(`${parsed.startDate}T00:00:00.000Z`), endDate: new Date(`${parsed.endDate}T00:00:00.000Z`), paymentPlan: parsed.paymentPlan, facilityId: product.facilityId, quoteSnapshot: availability.quote as unknown as Prisma.InputJsonValue, availabilitySnapshot: availability as unknown as Prisma.InputJsonValue, claimTokenHash: this.hash(token), claimTokenExpiresAt: expiresAt, idempotencyKey: key, services: { create: parsed.services.map((service) => ({ additionalServiceId: service.serviceId, quantity: service.quantity, serviceStartDate: service.serviceStartDate ? new Date(`${service.serviceStartDate}T00:00:00.000Z`) : null, serviceEndDate: service.serviceEndDate ? new Date(`${service.serviceEndDate}T00:00:00.000Z`) : null })) } }, include: { storageType: true, services: true } });
         } catch (error) {
           if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+          const duplicate = await this.prisma.guestBookingRequest.findUnique({ where: { idempotencyKey: key }, include: { storageType: true, services: true } });
+          if (duplicate) { if (!this.sameRequest(duplicate, parsed)) throw new ConflictException('Idempotency-Key đã dùng cho yêu cầu khác.'); return this.view(duplicate); }
         }
       }
     }
@@ -40,19 +45,10 @@ export class GuestBookingService {
     return { ...this.view(record), message: delivery.delivered ? 'Vui lòng kiểm tra email để xác minh yêu cầu đặt kho.' : 'Development email adapter đang hoạt động; email thật chưa được gửi.', ...(delivery.adapter === 'development' ? { developmentClaimUrl: delivery.claimUrl } : {}) };
   }
 
-  async verify(input: Record<string, unknown>) {
-    const token = typeof input.token === 'string' ? input.token.trim() : '';
-    if (token.length < 32) throw new BadRequestException({ code: 'INVALID_CLAIM_TOKEN', message: 'Claim token không hợp lệ.' });
-    const record = await this.prisma.guestBookingRequest.findUnique({ where: { claimTokenHash: this.hash(token) }, include: { storageType: true } });
-    if (!record) throw new BadRequestException({ code: 'INVALID_CLAIM_TOKEN', message: 'Claim token không hợp lệ.' });
-    if (record.status === 'CLAIMED') throw new ConflictException({ code: 'BOOKING_ALREADY_CLAIMED', message: 'Booking đã được nhận.' });
-    if (record.status === 'CANCELLED' || record.status === 'EXPIRED') throw new ConflictException({ code: 'BOOKING_NOT_CLAIMABLE', message: 'Booking không còn hiệu lực.' });
-    if (!record.claimTokenExpiresAt || record.claimTokenExpiresAt <= new Date()) {
-      await this.prisma.guestBookingRequest.update({ where: { id: record.id }, data: { status: 'EXPIRED', claimTokenHash: null } });
-      throw new ConflictException({ code: 'CLAIM_TOKEN_EXPIRED', message: 'Liên kết xác minh đã hết hạn.' });
-    }
-    const verified = record.status === 'VERIFIED' ? record : await this.prisma.guestBookingRequest.update({ where: { id: record.id }, data: { status: 'VERIFIED', emailVerifiedAt: new Date(), claimTokenHash: null, claimTokenExpiresAt: null }, include: { storageType: true } });
-    return { ...this.view(verified), message: 'Email đã được xác minh. Hãy đăng nhập hoặc đăng ký bằng cùng email để nhận booking.' };
+  async verify(input: Record<string, unknown>, client = 'unknown') {
+    await this.onboarding.limit('verify-ip', client, 40);
+    await this.onboarding.limit('verify-token', typeof input.token === 'string' ? input.token.slice(0, 200) : 'invalid', 8);
+    return this.onboarding.verify(input.token as string);
   }
 
   async claim(bookingCode: string, customer: PublicUser) {

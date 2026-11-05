@@ -16,6 +16,6 @@ export interface GuestBooking {
 
 export const guestBookingApi = {
   create: (input: { fullName: string; email: string; phone: string; storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: 'PAY_MONTHLY' | 'PREPAID'; services: ServiceSelection[] }, idempotencyKey: string) => apiRequest<GuestBooking>('/guest/booking-requests', { method: 'POST', body: JSON.stringify(input), authenticated: false, headers: { 'Idempotency-Key': idempotencyKey } }),
-  verify: (token: string) => apiRequest<GuestBooking>('/guest/booking-requests/verify', { method: 'POST', authenticated: false, body: JSON.stringify({ token }) }),
+  verify: (token: string) => apiRequest<{ bookingCode: string; continuationToken: string }>('/guest/booking-requests/verify', { method: 'POST', authenticated: false, body: JSON.stringify({ token }) }),
   claim: (bookingCode: string) => apiRequest<{ reservationCode: string }>(`/customer/booking-requests/${encodeURIComponent(bookingCode)}/claim`, { method: 'POST', body: '{}' }),
 };

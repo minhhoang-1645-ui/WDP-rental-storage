@@ -31,7 +31,7 @@ describe('GuestBookingService email delivery', () => {
     };
     const booking = { checkAvailability: vi.fn().mockResolvedValue({ available: true, message: 'Còn kho', quote: record.quoteSnapshot }) };
     const email = { sendBookingClaim: vi.fn().mockResolvedValue({ delivered: true, adapter: 'smtp' }) };
-    const service = new GuestBookingService(prisma as never, booking as never, email as never, new ConfigService({ GUEST_CLAIM_TOKEN_TTL_MINUTES: '60' }));
+    const service = new GuestBookingService(prisma as never, booking as never, email as never, new ConfigService({ GUEST_CLAIM_TOKEN_TTL_MINUTES: '60' }), { limit: vi.fn().mockResolvedValue(undefined) } as never);
 
     const result = await service.create({ fullName: record.fullName, email: ' CUSTOMER@GMAIL.COM ', phone: '0900000000', storageTypeId: record.storageTypeId, quantity: 1, startDate: '2026-11-01', endDate: '2026-12-01', paymentPlan: 'PAY_MONTHLY', services: [] }, 'guest-booking-email-test');
 

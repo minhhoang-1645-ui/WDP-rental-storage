@@ -72,6 +72,16 @@ export class AuthService {
 
   logout(token: string) { this.sessions.delete(this.tokenKey(token)); }
 
+  async encodePassword(value: unknown) {
+    const password = this.password(value, 8);
+    const salt = randomBytes(16).toString('hex');
+    return 'scrypt$' + salt + '$' + (await this.hashPassword(password, salt)).toString('hex');
+  }
+
+  revokeUserSessions(userId: string) {
+    for (const [key, session] of this.sessions) if (session.userId === userId) this.sessions.delete(key);
+  }
+
   private createSession(user: StoredUser): AuthSession {
     for (const [key, session] of this.sessions) {
       if (session.expiresAt <= Date.now()) this.sessions.delete(key);

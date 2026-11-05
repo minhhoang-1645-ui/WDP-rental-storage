@@ -372,7 +372,7 @@ export function BookingWizardPage() {
         sessionStorage.removeItem('wdp-guest-request-retry')
         const safeResult = { bookingCode: result.bookingCode, status: result.status, storage: result.storage, quantity: result.quantity, startDate: result.startDate, endDate: result.endDate, quote: result.quote, message: result.message }
         sessionStorage.setItem('wdp-guest-response:' + result.bookingCode, JSON.stringify(safeResult))
-        clearBookingDraft()
+        // Keep selections available if price/availability changes before claim.
         navigate('/booking/confirmation/' + result.bookingCode)
         return
       }

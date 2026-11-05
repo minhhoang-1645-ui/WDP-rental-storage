@@ -16,6 +16,7 @@ export type BookingEmail = {
   depositAmount: number;
   initialAmountDue: number;
   claimToken: string;
+  expiresInMinutes?: number;
   quantity: number;
   paymentPlan: 'PAY_MONTHLY' | 'PREPAID';
 };
@@ -39,7 +40,7 @@ export class EmailService implements OnModuleInit {
 
   async sendBookingClaim(message: BookingEmail) {
     const provider = this.provider();
-    const claimUrl = this.claimUrl(message.claimToken, provider === 'smtp');
+    const claimUrl = this.claimUrl(message.claimToken, provider === 'smtp' || this.config.get<string>('NODE_ENV') === 'production') + '&bookingCode=' + encodeURIComponent(message.bookingCode);
     if (provider === 'development' && this.config.get<string>('NODE_ENV') !== 'production') {
       return { delivered: false, adapter: 'development' as const, claimUrl };
     }
@@ -58,6 +59,21 @@ export class EmailService implements OnModuleInit {
     } catch (error) {
       throw new Error(this.smtpFailureMessage(error));
     }
+  }
+
+  async sendPasswordReset(to: string, token: string) {
+    const provider = this.provider();
+    const url = new URL(this.claimUrl(token, true));
+    url.search = ''; url.searchParams.set('resetToken', token);
+    const text = `NestBox Storage\n\nBạn đã yêu cầu đặt lại mật khẩu. Mở liên kết: ${url}\nLiên kết có hiệu lực 30 phút, dùng một lần. Nếu không yêu cầu, hãy bỏ qua email này. Không chia sẻ liên kết.`;
+    if (provider === 'smtp') {
+      const config = this.smtpConfig();
+      await this.getSmtpTransport().sendMail({ from: { name: config.fromName, address: config.fromAddress }, to, subject: 'NestBox - Đặt lại mật khẩu', text });
+    } else if (provider === 'resend') {
+      const config = this.resendConfig();
+      const result = await this.getResendClient().emails.send({ from: `${config.fromName} <${config.fromAddress}>`, to: [to], subject: 'NestBox - Đặt lại mật khẩu', text });
+      if (result.error) throw new ServiceUnavailableException('Chưa gửi được email.');
+    } else throw new ServiceUnavailableException('Dịch vụ email chưa sẵn sàng.');
   }
 
   signatureDeliveryConfigured() {
@@ -162,8 +178,12 @@ export class EmailService implements OnModuleInit {
   private claimUrl(token: string, requireConfiguredUrl: boolean) {
     const appUrl = this.frontendUrl() || (requireConfiguredUrl ? '' : 'http://127.0.0.1:5173');
     if (!appUrl) throw new Error('EMAIL_SMTP_CONFIG_INVALID: Thiếu hoặc không hợp lệ FRONTEND_URL.');
+    const parsed = new URL(appUrl.split(',')[0]!);
+    if (this.config.get<string>('NODE_ENV') === 'production' && (parsed.protocol !== 'https:' || ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname))) throw new ServiceUnavailableException('FRONTEND_PUBLIC_URL phải là URL HTTPS công khai.');
     return `${appUrl.split(',')[0]!.replace(/\/$/, '')}/claim-booking?token=${encodeURIComponent(token)}`;
   }
+
+  private verificationMinutes() { const value = Number(this.config.get<string>('GUEST_CLAIM_TOKEN_TTL_MINUTES') ?? 60); return Number.isSafeInteger(value) && value >= 5 && value <= 10080 ? value : 60; }
 
   private frontendUrl() {
     return this.config.get<string>('FRONTEND_PUBLIC_URL')?.trim() || this.config.get<string>('FRONTEND_URL')?.trim() || '';
@@ -180,11 +200,11 @@ export class EmailService implements OnModuleInit {
 
   private html(message: BookingEmail, claimUrl: string) {
     const money = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
-    return `<h1>WDP Storage</h1><p>Xin chào ${this.escape(message.fullName)},</p><p>Mã đặt kho: <strong>${this.escape(message.bookingCode)}</strong></p><p>${this.escape(message.storageName)} · ${message.startDate} đến ${message.endDate}</p><p>Số lượng: ${message.quantity}<br>Phương thức thanh toán: ${this.escape(this.paymentPlan(message.paymentPlan))}</p><p>Tiền thuê ước tính: ${money(message.rentalAmount)} VND<br>Giảm giá: ${money(message.discountAmount)} VND<br>Tiền cọc: ${money(message.depositAmount)} VND<br>Cần thanh toán ban đầu: ${money(message.initialAmountDue)} VND</p><p><a href="${this.escape(claimUrl)}">Xác minh và nhận booking</a></p><p>Liên kết chỉ sử dụng một lần và sẽ hết hạn.</p>`;
+    return `<h1>WDP Storage</h1><p>Xin chào ${this.escape(message.fullName)},</p><p>Mã đặt kho: <strong>${this.escape(message.bookingCode)}</strong></p><p>${this.escape(message.storageName)} · ${message.startDate} đến ${message.endDate}</p><p>Số lượng: ${message.quantity}<br>Phương thức thanh toán: ${this.escape(this.paymentPlan(message.paymentPlan))}</p><p>Tiền thuê ước tính: ${money(message.rentalAmount)} VND<br>Giảm giá: ${money(message.discountAmount)} VND<br>Tiền cọc: ${money(message.depositAmount)} VND<br>Cần thanh toán ban đầu: ${money(message.initialAmountDue)} VND</p><p><a href="${this.escape(claimUrl)}">Xác minh email và tiếp tục</a></p><p>Liên kết chỉ dùng một lần, hết hạn sau ${message.expiresInMinutes ?? this.verificationMinutes()} phút. Sau xác minh, bạn sẽ đặt mật khẩu hoặc đăng nhập để tiếp tục. Chưa có kho nào được giữ.</p>`;
   }
 
   private text(message: BookingEmail, claimUrl: string) {
-    return `WDP Storage\n\nXin chào ${message.fullName},\nMã đặt kho: ${message.bookingCode}\n${message.storageName} · ${message.startDate} đến ${message.endDate}\nSố lượng: ${message.quantity}\nPhương thức thanh toán: ${this.paymentPlan(message.paymentPlan)}\n\nXác minh và nhận booking: ${claimUrl}\n\nLiên kết chỉ sử dụng một lần và sẽ hết hạn.`;
+    return `WDP Storage\n\nXin chào ${message.fullName},\nMã đặt kho: ${message.bookingCode}\n${message.storageName} · ${message.startDate} đến ${message.endDate}\nSố lượng: ${message.quantity}\nPhương thức thanh toán: ${this.paymentPlan(message.paymentPlan)}\n\nXác minh email và tiếp tục: ${claimUrl}\n\nLiên kết chỉ dùng một lần, hết hạn sau ${message.expiresInMinutes ?? this.verificationMinutes()} phút. Sau xác minh, bạn sẽ đặt mật khẩu hoặc đăng nhập để tiếp tục. Chưa có kho nào được giữ.`;
   }
 
   private paymentPlan(value: BookingEmail['paymentPlan']) { return value === 'PREPAID' ? 'Trả trước' : 'Thanh toán hàng tháng'; }

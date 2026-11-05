@@ -64,6 +64,7 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
         thuê; kết quả chưa giữ hoặc phân bổ kho.
       </p>
       <form
+        data-wdp-draft="ignore"
         className="portal-form"
         onSubmit={submit}
         onChange={() => {

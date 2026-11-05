@@ -22,6 +22,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-navy); }
 .public-header .nav-link { font-size: 13px; white-space: nowrap; }
 .public-header .nav-link.active { color: var(--color-navy); }
 .public-header .button-primary { min-height: 42px; padding-inline: 18px; font-size: 12px; }
+@media (max-width: 380px) {
+  .public-header > div { padding-inline: 12px; }
+  .public-header .public-brand { gap: 8px; min-width: 0; }
+  .public-header .public-brand > span:first-child { width: 36px; height: 36px; flex-shrink: 0; }
+  .public-header .public-wordmark { font-size: 18px; white-space: nowrap; }
+  .public-header .public-wordmark small { font-size: 9px; }
+}
 .public-header nav[aria-label="Điều hướng chính"] { gap: 24px; }
 .public-footer { background: #172f40; }
 .public-footer .footer-title { text-transform: none; letter-spacing: 0; font-size: 15px; }
@@ -226,7 +233,9 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
   .home-faq .home-section-heading { gap: 35px; grid-template-columns: .8fr 1.2fr; }
 }
 @media (max-width: 760px) {
-  .public-header > div { height: 70px; }
+  .public-header > div { height: 70px; gap: 8px; }
+  .public-header > div > div { flex-shrink: 0; }
+  .public-header > div > .icon-button { width: 44px; height: 44px; flex: 0 0 44px; }
   .public-wordmark { font-size: 21px; }
   .storage-hero { padding-top: 34px; padding-bottom: 26px; }
   .storage-hero h1 { font-size: 35px; letter-spacing: -1.25px; }
@@ -333,7 +342,9 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
 .workspace-home { display: grid; gap: 24px; }
 .workspace-home > .manager-page-header, .workspace-home > .customer-page-header { margin-bottom: 0; }
 .work-hub { min-width: 0; }
-.work-hub-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.work-hub-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-bottom: 16px; }
+.work-hub-heading > div { flex: 1 1 180px; min-width: 0; }
+.work-hub-heading > a { flex: 0 0 auto; white-space: nowrap; }
 .work-hub-heading h2 { margin: 0; color: var(--color-navy); font-size: 20px; font-weight: 750; }
 .work-hub-heading p { margin-top: 6px; color: var(--color-slate); font-size: 13px; line-height: 1.65; }
 .work-hub-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

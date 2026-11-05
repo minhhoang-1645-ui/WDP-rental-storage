@@ -7,17 +7,20 @@ import { AuthProvider } from '@/auth/auth-context';
 import { useAuth } from '@/auth/use-auth';
 import { ActivityProvider } from '@/activity/ActivityProvider';
 import { ActivityRefreshNote } from '@/activity/ActivityCenter';
-import { View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
+import { ErrorState } from '@/components/screen-state';
+import { Button, styles } from '@/operations/ui';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigation() {
-  const { loading } = useAuth();
+  const { loading, sessionError, retrySession, logout } = useAuth();
   useEffect(() => {
     if (!loading) void SplashScreen.hideAsync();
   }, [loading]);
   if (loading) return null;
+  if (sessionError) return <ScrollView contentContainerStyle={[styles.page, { flexGrow: 1, justifyContent: 'center' }]}><Text accessibilityRole="header" style={styles.title}>Kết nối lại NestBox</Text><Text style={styles.copy}>Chưa thể kiểm tra tài khoản đã lưu. Bạn không cần nhập lại mật khẩu chỉ vì mất kết nối.</Text><ErrorState message={sessionError} onRetry={retrySession} /><Button title="Đăng nhập bằng tài khoản khác" variant="secondary" onPress={() => void logout()} /></ScrollView>;
 
   return (
     <ThemeProvider value={DefaultTheme}>

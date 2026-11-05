@@ -26,6 +26,7 @@ import { staffFromWork } from '../../utils/staff';
 import { assignmentNeedsAttention, assignmentWorkRank } from '../../utils/work-queue';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { UnitStaffAssignments } from '../../components/manager/UnitStaffAssignments';
+import { normalizeSearch } from '../../utils/notification-tools';
 
 type WorkKind = "support-requests" | "maintenance" | "stock-movements";
 type Task = { kind: WorkKind; row: Row };
@@ -110,7 +111,7 @@ export function ManagerAssignmentsPage() {
       (scope !== "active" || !finished(task)) &&
       (assignment === "all" ||
         (assignment === "attention" ? assignmentNeedsAttention(task.kind, task.row) : assignment === "assigned" ? assigned : !assigned)) &&
-      [
+      normalizeSearch([
         code(task.row),
         relatedUnit(task.row),
         first(task.row, "subject"),
@@ -120,9 +121,7 @@ export function ManagerAssignmentsPage() {
         first(customer(task.row), 'phone'),
         label(task.row.status),
       ]
-        .join(" ")
-        .toLocaleLowerCase("vi")
-        .includes(search.trim().toLocaleLowerCase("vi"))
+        .join(" ")).includes(normalizeSearch(search))
     );
   });
   tasks.sort((a, b) => assignmentWorkRank(a.row) - assignmentWorkRank(b.row) || (Date.parse(first(a.row, 'requestedAt', 'createdAt')) || 0) - (Date.parse(first(b.row, 'requestedAt', 'createdAt')) || 0));

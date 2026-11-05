@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { businessToday } from '../../business-date.js';
 
 export interface UnitListQuery {
   page: number;
@@ -24,11 +25,11 @@ export class ManagerService {
 
   async dashboardSummary() {
     const now = new Date();
-    const today = new Date(now.toISOString().slice(0, 10) + 'T00:00:00.000Z');
+    const today = businessToday(now);
     const [pendingReservations, activeRentalRows, overdueRows, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits] = await Promise.all([
       this.prisma.reservation.count({ where: { status: 'PENDING' } }),
       this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
-      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE', endDate: { lt: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
       this.prisma.handoverAppointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
       this.prisma.renewalRequest.count({ where: { status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
       this.prisma.supportRequest.count({ where: { status: { not: 'RESOLVED' } } }),
@@ -75,10 +76,10 @@ export class ManagerService {
         reservationUnits: {
           where: {
             releasedAt: null,
-            plannedEndDate: { gt: today },
+            OR: [{ plannedEndDate: { gt: today } }, { contract: { is: { status: 'ACTIVE' } } }],
             reservation: { status: 'CONFIRMED' },
           },
-          include: { reservation: { include: { customer: true } } },
+          include: { reservation: { include: { customer: true } }, contract: { select: { status: true } } },
           orderBy: [{ plannedStartDate: 'asc' }, { id: 'asc' }],
         },
       },
@@ -103,7 +104,7 @@ export class ManagerService {
           select: { id: true, maintenanceCode: true, status: true, priority: true },
         },
         reservationUnits: {
-          include: { reservation: { include: { customer: true } } },
+          include: { reservation: { include: { customer: true } }, contract: { select: { status: true } } },
           orderBy: [{ plannedStartDate: 'desc' }, { id: 'asc' }],
         },
       },
@@ -111,10 +112,8 @@ export class ManagerService {
     if (!unit) throw new NotFoundException('Không tìm thấy kho vật lý.');
     const today = this.today();
     const allocations = unit.reservationUnits.map((allocation) => this.toAllocation(allocation));
-    const isActive = (allocation: typeof unit.reservationUnits[number]) => allocation.reservation.status === 'CONFIRMED'
-      && allocation.releasedAt === null
-      && allocation.plannedStartDate <= today
-      && allocation.plannedEndDate > today;
+    const current = this.currentAllocation(unit.reservationUnits, today);
+    const isActive = (allocation: typeof unit.reservationUnits[number]) => allocation.id === current?.id;
     const isFuture = (allocation: typeof unit.reservationUnits[number]) => allocation.reservation.status === 'CONFIRMED'
       && allocation.releasedAt === null
       && allocation.plannedStartDate > today;
@@ -221,7 +220,7 @@ export class ManagerService {
   }
 
   private toUnit(unit: any, today: Date) {
-    const allocations = unit.reservationUnits.map((allocation: any) => this.toAllocation(allocation));
+    const current = this.currentAllocation(unit.reservationUnits, today);
     return {
       id: unit.id,
       unitCode: unit.unitNumber,
@@ -243,10 +242,18 @@ export class ManagerService {
       maintenanceStatus: unit.maintenanceRequests?.[0]?.status ?? null,
       maintenancePriority: unit.maintenanceRequests?.[0]?.priority ?? null,
       allocationSummary: {
-        current: allocations.find((allocation: any) => this.date(allocation.startDate) <= today && this.date(allocation.endDate) > today) ?? null,
-        future: allocations.filter((allocation: any) => this.date(allocation.startDate) > today),
+        current: current ? this.toAllocation(current) : null,
+        future: unit.reservationUnits.filter((allocation: any) => allocation.reservation.status === 'CONFIRMED' && allocation.releasedAt === null && allocation.plannedStartDate > today).map((allocation: any) => this.toAllocation(allocation)),
       },
     };
+  }
+
+  private currentAllocation(allocations: any[], today: Date) {
+    const eligible = allocations.filter(allocation => allocation.reservation.status === 'CONFIRMED' && allocation.releasedAt === null && allocation.plannedStartDate <= today);
+    // A customer remains the physical occupant until actual return/transfer,
+    // even when an already-confirmed future booking reaches its planned start.
+    return eligible.find(allocation => allocation.contract?.status === 'ACTIVE')
+      ?? eligible.find(allocation => allocation.plannedEndDate > today);
   }
 
   private toAllocation(allocation: any) {
@@ -279,7 +286,7 @@ export class ManagerService {
   }
 
   private today() {
-    return this.date(new Date().toISOString().slice(0, 10));
+    return businessToday();
   }
 
   private date(value: string) {

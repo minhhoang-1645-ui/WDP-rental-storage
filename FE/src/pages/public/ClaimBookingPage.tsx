@@ -1,3 +1,4 @@
+import { safeLocalStorage } from '../../services/browser-storage';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -13,7 +14,7 @@ const post = <T,>(action: string, body: unknown) => apiRequest<T>('/guest/accoun
 export function ClaimBookingPage() {
   const auth = useAuth(), navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [saved, setSaved] = useState<{ token: string; bookingCode: string } | null>(() => { try { const value = JSON.parse(localStorage.getItem(key) ?? 'null'); return value?.bookingCode ? { ...value, token: value.expires > Date.now() ? value.token : '' } : null; } catch { return null; } });
+  const [saved, setSaved] = useState<{ token: string; bookingCode: string } | null>(() => { try { const value = JSON.parse(safeLocalStorage.getItem(key) ?? 'null'); return value?.bookingCode ? { ...value, token: value.expires > Date.now() ? value.token : '' } : null; } catch { return null; } });
   const [context, setContext] = useState<Context>();
   const [password, setPassword] = useState(''), [confirm, setConfirm] = useState(''), [email, setEmail] = useState(''), [resendCode, setResendCode] = useState(params.get('bookingCode') ?? '');
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [retry, setRetry] = useState(0);
@@ -29,7 +30,7 @@ export function ClaimBookingPage() {
     verification.current ??= guestBookingApi.verify(token);
     verification.current.then(result => {
       const value = { token: result.continuationToken, bookingCode: result.bookingCode, expires: Date.now() + 30 * 60000 };
-      localStorage.setItem(key, JSON.stringify(value));
+      safeLocalStorage.setItem(key, JSON.stringify(value));
       if (active) { setSaved(value); setParams({ bookingCode: result.bookingCode }, { replace: true }); }
     }).catch(caught => { if (active) setError(caught instanceof Error ? caught.message : 'Chưa xác minh được email.'); });
     return () => { active = false; };
@@ -43,7 +44,7 @@ export function ClaimBookingPage() {
   useEffect(() => {
     if (auth.loading || !auth.user || auth.user.role !== 'CUSTOMER' || !code || token || reset || claimed.current === code) return;
     claimed.current = code; setBusy(true);
-    guestBookingApi.claim(code).then(value => { localStorage.removeItem(key); clearBookingDraft(); navigate('/customer/reservations/' + encodeURIComponent(value.reservationCode), { replace: true }); }).catch(caught => setError(caught.message)).finally(() => setBusy(false));
+    guestBookingApi.claim(code).then(value => { safeLocalStorage.removeItem(key); clearBookingDraft(); navigate('/customer/reservations/' + encodeURIComponent(value.reservationCode), { replace: true }); }).catch(caught => setError(caught.message)).finally(() => setBusy(false));
   }, [auth.loading, auth.user, code, token, reset, retry, navigate]);
   const run = async (action: 'continue' | 'forgot' | 'reset' | 'resend') => {
     if (lock.current) return;

@@ -85,13 +85,15 @@ try {
     if(req.method()==='GET' && ['additional-services','reservations'].includes(path))return route.fulfill({json:[]});
     if(req.method()==='GET' && path.startsWith('customer/'))return route.fulfill({json:{items:[],total:0,page:1,limit:100}});
     if(req.method()==='POST' && path==='booking/availability')return route.fulfill({response:await route.fetch({url:api+'/'+path})});
+    if(req.method()==='POST' && path==='booking/unit-map')return route.fulfill({json:{productId:lockerProduct.id,startDate:'2027-01-31',endDateExclusive:'2027-04-30',units:[]}});
     unexpected.push(req.method()+':mobile:'+path);return route.abort();
   });
   const mobilePage=await mobile.newPage();mobilePage.setDefaultTimeout(60000);mobilePage.on('pageerror',err=>errors.push(err.message));
+  mobilePage.on('console',message=>{if(message.type()==='error' && /React does not recognize|Invalid DOM property/.test(message.text()))errors.push(message.text());});
   await mobilePage.goto('http://127.0.0.1:8081/customer/booking?product='+encodeURIComponent(lockerProduct.id),{waitUntil:'domcontentloaded',timeout:90000});
-  await mobilePage.getByLabel('Ngày bắt đầu (YYYY-MM-DD)',{exact:true}).fill('2027-01-31');
+  await mobilePage.getByLabel('Ngày bắt đầu',{exact:true}).fill('2027-01-31');
   await mobilePage.getByRole('button',{name:'Tiếp tục',exact:true}).click();
-  await mobilePage.getByRole('button',{name:'Kiểm tra khả dụng & báo giá',exact:true}).click();
+  await mobilePage.getByRole('button',{name:'Xem báo giá',exact:true}).click();
   const upfront=mobilePage.getByLabel('Số tiền thanh toán lần đầu dự kiến',{exact:true});await upfront.waitFor();
   assert.equal((await upfront.innerText()).replace(/\D/g,''),'650000');
   await mobilePage.getByText(/2 kỳ còn lại ×/).waitFor();

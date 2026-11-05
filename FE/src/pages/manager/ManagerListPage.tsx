@@ -31,6 +31,7 @@ import { ManagerCreateDialog } from "./ManagerCreateDialog";
 import { InventoryEditor } from './InventoryEditor';
 import { TransferRequests } from '../../components/manager/TransferRequests';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
+import { normalizeSearch } from '../../utils/notification-tools';
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
@@ -114,14 +115,13 @@ export function ManagerListPage({ resource }: { resource: string }) {
       (row) =>
         (!status || row.status === status) &&
         (!search ||
-          JSON.stringify(row)
-            .toLocaleLowerCase("vi")
-            .includes(search.trim().toLocaleLowerCase("vi"))) &&
+          normalizeSearch(JSON.stringify(row)).includes(normalizeSearch(search))) &&
         (!params.get("date") ||
           date(row.createdAt) === date(params.get("date"))),
     );
   const total = local ? items.length : (current?.data?.total ?? 0);
-  const visible = local ? items.slice((page - 1) * 20, page * 20) : items;
+  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / 20))) : page;
+  const visible = local ? items.slice((visiblePage - 1) * 20, visiblePage * 20) : items;
   const refresh = () => setRevision((v) => v + 1);
   useLiveRefresh(path, refresh);
   const change = (name: string, value: string) =>
@@ -319,7 +319,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
             <Empty />
           )}
           <Pagination
-            page={page}
+            page={visiblePage}
             limit={20}
             total={total}
             onChange={(v) => change("page", String(v))}

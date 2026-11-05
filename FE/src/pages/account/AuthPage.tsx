@@ -1,3 +1,4 @@
+import { safeSessionStorage } from '../../services/browser-storage';
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
@@ -10,7 +11,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { user, loading, login, register } = useAuth();
   const [params] = useSearchParams();
   const [error, setError] = useState(() =>
-    sessionStorage.getItem("wdp-session-expired")
+    safeSessionStorage.getItem("wdp-session-expired")
       ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục."
       : "",
   );

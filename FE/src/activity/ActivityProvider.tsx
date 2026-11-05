@@ -1,3 +1,4 @@
+import { safeLocalStorage } from '../services/browser-storage';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { apiRequest } from '../services/api';
@@ -8,7 +9,7 @@ import { ActivityContext } from './context';
 import { AUTH_TOKEN_KEY } from '../data/booking';
 import { ACTIVITY_POLL_MS, ACTIVITY_READ_LIMIT, DATA_PULSE_KEY, newActivityCount } from '../utils/notification-tools';
 
-function storedRead(key: string): string[] { try { const value: unknown = JSON.parse(localStorage.getItem(key) ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(-ACTIVITY_READ_LIMIT) : []; } catch { return []; } }
+function storedRead(key: string): string[] { try { const value: unknown = JSON.parse(safeLocalStorage.getItem(key) ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(-ACTIVITY_READ_LIMIT) : []; } catch { return []; } }
 export function ActivityProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   return user ? <ActivitySession key={`${user.id}:${user.role}`} userId={user.id} role={user.role}>{children}</ActivitySession> : children;
@@ -22,14 +23,14 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
   const markRead = useCallback((tokens: string[]) => {
     setRead(previous => { const next = [...new Set([...previous, ...tokens])].slice(-ACTIVITY_READ_LIMIT); return next; });
   }, []);
-  useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(read)); } catch { /* Read state remains available for this session. */ } }, [storageKey, read]);
+  useEffect(() => { try { safeLocalStorage.setItem(storageKey, JSON.stringify(read)); } catch { /* Read state remains available for this session. */ } }, [storageKey, read]);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => { if (event.key === storageKey) setRead(storedRead(storageKey)); };
     window.addEventListener('storage', onStorage); return () => window.removeEventListener('storage', onStorage);
   }, [storageKey]);
   useEffect(() => {
     const controller = new AbortController(), sources = activitySources(role);
-    const sessionToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    const sessionToken = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
     const snapshot: ActivityData = {}; let running = false, initialized = false, queued = false, timer: ReturnType<typeof setTimeout>;
     let previousEntries: ReturnType<typeof buildActivity> = [];
     const load = async () => {
@@ -41,7 +42,7 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
       let index = 0;
       const worker = async () => { while (index < sources.length && !controller.signal.aborted) {
         const source = sources[index++];
-        if (localStorage.getItem(AUTH_TOKEN_KEY) !== sessionToken) { controller.abort(); return; }
+        if (safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== sessionToken) { controller.abort(); return; }
         try {
           const rows = source.array ? await apiRequest<ActivityRow[]>(source.path, { signal: controller.signal, expectedToken: sessionToken }) : (await allPages(source.path, controller.signal, sessionToken)).items;
           if (!Array.isArray(rows)) throw new Error('Danh sách không hợp lệ');
@@ -64,7 +65,7 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     const mutation = () => { clearTimeout(timer); timer = setTimeout(() => { void load().finally(schedule); }, 400); };
     const crossTab = (event: StorageEvent) => { if (event.key === DATA_PULSE_KEY && event.newValue) mutation(); };
     const dirty = (event: Event) => { const target = event.target; if (target instanceof Element) { const form = target.closest('form'); if (form) markFormDirty(form); } };
-    const submit = (event: Event) => { if (event.target instanceof HTMLFormElement) event.target.setAttribute('data-wdp-submitting', 'true'); };
+    const submit = (event: Event) => { if (event.target instanceof HTMLFormElement && event.target.dataset.wdpDraft !== 'ignore') event.target.setAttribute('data-wdp-submitting', 'true'); };
     document.addEventListener('input', dirty, true); document.addEventListener('change', dirty, true); document.addEventListener('submit', submit, true);
     document.addEventListener('visibilitychange', resume); window.addEventListener('online', resume); window.addEventListener('offline', resume); window.addEventListener('focus', resume); window.addEventListener(DATA_CHANGED, mutation); window.addEventListener('storage', crossTab);
     void load().finally(schedule);

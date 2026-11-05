@@ -42,4 +42,16 @@ describe('unit responsibility feature gate and ownership', () => {
     expect(tx.unitStaffAssignment.update).toHaveBeenCalledWith({ where: { id: 'old' }, data: { endedAt: expect.any(Date) } });
     expect(tx.stockMovement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'REQUESTED' }) }));
   });
+  it('retries an unchanged owner without replacing assignment history and picks up contract-linked unassigned support', async () => {
+    const assignment = { id: 'assignment', staffUserId: staff.id };
+    const tx = { $queryRaw: vi.fn(), storageUnit: { findUnique: vi.fn().mockResolvedValue({ id: 'unit' }) }, user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },
+      unitStaffAssignment: { findFirst: vi.fn().mockResolvedValue(assignment), findUniqueOrThrow: vi.fn().mockResolvedValue(assignment), update: vi.fn(), create: vi.fn() },
+      supportRequest: { updateMany: vi.fn() }, maintenanceRequest: { updateMany: vi.fn() }, stockMovement: { updateMany: vi.fn() } };
+    const service = new UnitStaffService({ $transaction: vi.fn(operation => operation(tx)) } as never, config(true) as never);
+    await expect(service.assign('unit', { staffUserId: staff.id, expectedAssignmentId: 'assignment' }, manager)).resolves.toEqual(assignment);
+    expect(tx.unitStaffAssignment.update).not.toHaveBeenCalled(); expect(tx.unitStaffAssignment.create).not.toHaveBeenCalled();
+    expect(tx.supportRequest.updateMany).toHaveBeenCalledWith({ where: { OR: [{ storageUnitId: 'unit' }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnitId: 'unit' } } }], assignedStaffUserId: null, status: 'OPEN', subject: { not: 'Đề nghị trả kho trước hạn' } }, data: { assignedStaffUserId: staff.id, status: 'ASSIGNED' } });
+    expect(tx.maintenanceRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'OPEN' }) }));
+    expect(tx.stockMovement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'REQUESTED' }) }));
+  });
 });

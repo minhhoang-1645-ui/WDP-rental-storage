@@ -3,6 +3,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PaymentPlan, PricingInput, PricingQuote } from './pricing.types.js';
 import { localizeService } from '../additional-services/additional-service-labels.js';
+import { businessDate } from '../../business-date.js';
 
 type PricedStorageType = {
   id: string;
@@ -138,7 +139,7 @@ export class PricingService {
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
     const endDate = typeof input.endDate === 'string' ? input.endDate : '';
     if (!this.isDate(startDate) || !this.isDate(endDate)) throw new BadRequestException({ code: 'INVALID_DATE', message: 'Ngày thuê phải có định dạng YYYY-MM-DD hợp lệ.' });
-    if (startDate < new Date().toISOString().slice(0, 10)) throw new BadRequestException({ code: 'INVALID_START_DATE', message: 'Ngày bắt đầu không được ở trong quá khứ.' });
+    if (startDate < businessDate()) throw new BadRequestException({ code: 'INVALID_START_DATE', message: 'Ngày bắt đầu không được ở trong quá khứ.' });
     const paymentPlan = typeof input.paymentPlan === 'string' ? input.paymentPlan : '';
     if (!paymentPlans.includes(paymentPlan as PaymentPlan)) throw new BadRequestException({ code: 'INVALID_PAYMENT_PLAN', message: 'paymentPlan phải là PAY_MONTHLY hoặc PREPAID.' });
     return { storageTypeId, quantity, startDate, endDate, paymentPlan: paymentPlan as PaymentPlan, serviceSelections: this.parseServiceSelections(input) };

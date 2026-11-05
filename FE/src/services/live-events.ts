@@ -1,3 +1,4 @@
+import { safeLocalStorage } from './browser-storage';
 import { useEffect, useRef } from 'react';
 import { isStaffWorkflow } from '../utils/operation-access';
 import { DATA_PULSE_KEY } from '../utils/notification-tools';
@@ -11,15 +12,16 @@ const canonicalSource = (path: string) => {
 export const LIVE_REFRESH = 'wdp-live-refresh';
 export const DATA_CHANGED = 'wdp-data-changed';
 export function markFormDirty(form: HTMLFormElement) {
+  if (form.dataset.wdpDraft === 'ignore') return;
   form.setAttribute('data-wdp-dirty', 'true');
   form.setAttribute('data-wdp-edit-version', String(Number(form.getAttribute('data-wdp-edit-version') ?? 0) + 1));
 }
 export function notifyDataChanged(path: string) {
   window.dispatchEvent(new CustomEvent(DATA_CHANGED, { detail: path }));
   // Cross-tab signal contains no dossier, token, role or customer information.
-  try { localStorage.setItem(DATA_PULSE_KEY, JSON.stringify({ at: Date.now(), nonce: crypto.randomUUID() })); } catch { /* Polling remains available when storage is disabled. */ }
+  try { safeLocalStorage.setItem(DATA_PULSE_KEY, JSON.stringify({ at: Date.now(), nonce: crypto.randomUUID() })); } catch { /* Polling remains available when storage is disabled. */ }
 }
-export function hasDraft() { return Boolean(document.querySelector('form[data-wdp-dirty="true"], form[data-wdp-submitting="true"]')); }
+export function hasDraft() { return Boolean(document.querySelector('form:not([data-wdp-draft="ignore"])[data-wdp-dirty="true"], form:not([data-wdp-draft="ignore"])[data-wdp-submitting="true"]')); }
 export function matchesSource(path: string, sources: string[]) {
   const clean = canonicalSource(path);
   const dependencies: Record<string, string[]> = {

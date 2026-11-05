@@ -12,8 +12,8 @@ async function bootstrap() {
     origin: corsOrigins(configuredOrigin, process.env.NODE_ENV !== 'production', Object.values(networkInterfaces()).flatMap(entries => (entries ?? []).map(entry => entry.address))),
   });
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('WDP Storage API')
-    .setDescription('API currently implemented for WDP Storage. Guest endpoints are public; protected endpoints require a Bearer token obtained from POST /api/auth/login or /api/auth/register. Prices can remain unknown and are never represented as zero.')
+    .setTitle('NestBox Storage API')
+    .setDescription('API NestBox Storage. Các endpoint nội bộ kiểm tra bearer token và quyền theo vai trò. Đăng nhập tại POST /api/auth/login; đăng ký công khai chỉ tạo tài khoản khách hàng. Giá chưa cấu hình không được coi là 0 đồng.')
     .setVersion('1.0.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'Bearer', description: 'Paste only the token value returned by login or register.' }, 'bearerAuth')
     .build();
@@ -28,7 +28,7 @@ async function bootstrap() {
   }
   SwaggerModule.setup('api/docs', app, swaggerDocument, {
     swaggerOptions: { persistAuthorization: true },
-    customSiteTitle: 'WDP Storage API',
+    customSiteTitle: 'NestBox Storage API',
   });
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');

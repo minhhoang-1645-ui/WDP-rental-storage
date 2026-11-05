@@ -93,7 +93,7 @@ export class OnlinePaymentService {
           include: { reservation: { select: { id: true, status: true, expiresAt: true } } },
         });
         if (!invoice) return { RspCode: '01', Message: 'Order not found' };
-        if (invoice.status === 'VOID' || (invoice.type === 'INITIAL' && (invoice.reservation.status === 'EXPIRED' || (invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())))) {
+        if (invoice.status === 'VOID' || invoice.balanceDue !== transaction.amount || (invoice.type === 'INITIAL' && (invoice.reservation.status === 'EXPIRED' || (invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())))) {
           await tx.onlinePaymentTransaction.updateMany({
             where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED'] } },
             data: { status: 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode },
@@ -103,13 +103,14 @@ export class OnlinePaymentService {
             update: { providerTransactionId: payload.providerTransactionId, amount: transaction.amount },
             create: {
               reconciliationCode: this.reconciliationCode(), onlinePaymentTransactionId: transaction.id,
-              reason: invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.' : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.',
+              reason: invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.'
+                : invoice.balanceDue !== transaction.amount ? 'VNPay xác nhận thành công nhưng số dư hóa đơn đã thay đổi do khoản thanh toán khác; cần đối chiếu tiền thực nhận, không tự ghi thu thêm.'
+                : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.',
               providerTransactionId: payload.providerTransactionId, amount: transaction.amount,
             },
           });
           return { RspCode: '00', Message: 'Confirm Success - reconciliation required' };
         }
-        if (invoice.balanceDue !== transaction.amount) return { RspCode: '04', Message: 'Invalid amount' };
         await this.billing.recordVerifiedOnlinePayment(tx, invoice, transaction, payload.providerTransactionId);
         await tx.onlinePaymentTransaction.update({ where: { id: transaction.id }, data: { status: 'SUCCESS', providerTransactionId: payload.providerTransactionId, responseCode: payload.responseCode, bankCode: payload.bankCode, paidAt: new Date() } });
         return { RspCode: '00', Message: 'Confirm Success' };

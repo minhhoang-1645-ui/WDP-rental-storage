@@ -286,8 +286,8 @@ try {
         })
         .click();
       await app.page
-        .getByRole("button", {
-          name: "□ Tôi xác nhận thực hiện thao tác này",
+        .getByRole("checkbox", {
+          name: "Tôi xác nhận thực hiện thao tác này",
           exact: true,
         })
         .click();
@@ -321,7 +321,7 @@ try {
     title,
     suffix,
     configure,
-    confirmation = "□ Tôi xác nhận thực hiện thao tác này",
+    confirmation = "Tôi xác nhận thực hiện thao tác này",
     execution = false,
   ) {
     if (process.env.WDP_WORKSPACE_FOCUS && process.env.WDP_WORKSPACE_FOCUS !== kind) return;
@@ -329,7 +329,7 @@ try {
     await mobile.page.getByRole("button", { name: title, exact: true }).click();
     if (configure) await configure();
     await mobile.page
-      .getByRole("button", { name: confirmation, exact: true })
+      .getByRole("checkbox", { name: confirmation, exact: true })
       .click();
     await mutation(
       mobile,
@@ -355,7 +355,7 @@ try {
     "Duyệt gia hạn",
     "/approve",
     null,
-    "□ Tôi đã đối chiếu thông tin và báo giá gia hạn",
+    "Tôi đã đối chiếu thông tin và báo giá gia hạn",
   );
   if (!process.env.WDP_WORKSPACE_FOCUS) await open(mobile, '/staff/maintenance/maintenance-id', true);
   assert.equal(await mobile.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).count(), 0);
@@ -365,7 +365,7 @@ try {
     "Bắt đầu kiểm tra",
     "/start-inspection",
     null,
-    "□ Tôi xác nhận thông tin và thao tác này",
+    "Tôi xác nhận thông tin và thao tác này",
     true,
   );
   await mobileAction(
@@ -373,7 +373,7 @@ try {
     "Bắt đầu hỗ trợ",
     "/start",
     null,
-    "□ Tôi xác nhận thông tin và thao tác này",
+    "Tôi xác nhận thông tin và thao tác này",
     true,
   );
   await mobileAction(
@@ -381,7 +381,7 @@ try {
     "Hoàn tất phiếu",
     "/complete",
     null,
-    "□ Tôi đã đối chiếu và xác nhận thao tác thực tế",
+    "Tôi đã đối chiếu và xác nhận thao tác thực tế",
     true,
   );
   checks.push(
@@ -393,7 +393,7 @@ try {
     await open(app, "/" + role.toLowerCase());
     await app.page
       .getByText(
-        role === "ADMIN" ? "Khu vực quản trị" : "Bạn muốn làm gì hôm nay?",
+        role === "ADMIN" ? "Khu vực quản trị" : "Tìm kho phù hợp",
         { exact: true },
       )
       .waitFor();

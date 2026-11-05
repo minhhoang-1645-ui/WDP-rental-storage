@@ -1,3 +1,4 @@
+import { selectChoice } from './select-choice.mjs';
 // Fully intercepted API traffic: this test never writes to the development/shared DB.
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
@@ -41,17 +42,23 @@ try {
   assert.equal(writes.at(-1).body.expectedUpdatedAt, version);
 
   await page.getByRole('button', { name: 'Thêm loại kho', exact: true }).click();
-  await page.getByLabel('Cơ sở', { exact: true }).selectOption('facility');
+  await selectChoice(page.getByLabel('Cơ sở', { exact: true }), 'facility');
   for (const [label, value] of [['Mã loại kho', 'NEW'], ['Tên loại kho', 'Kho mới'], ['Rộng (cm)', '200'], ['Dài (cm)', '300'], ['Cao (cm)', '240'], ['Giá tháng (VND)', '2000000']]) await page.getByLabel(label, { exact: true }).fill(value);
+  await page.getByLabel('Cho thuê theo ngày', { exact: true }).check();
+  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  assert.equal(writes.length, 1, 'No API write without required daily minimum');
+  await page.getByLabel('Số ngày tối thiểu khi thuê ngày', { exact: true }).fill('3');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(writes.at(-1).path, 'manager/storage-types');
   assert.equal(writes.at(-1).method, 'POST');
   assert.equal(writes.at(-1).body.widthCm, 200);
+  assert.equal(writes.at(-1).body.minRentalDays, 3);
+  assert.equal(writes.at(-1).body.allowDailyRental, true);
 
   await page.goto(`${base}/manager/units`);
   await page.getByRole('button', { name: 'Thêm kho', exact: true }).click();
-  await page.getByLabel('Loại kho', { exact: true }).selectOption('real-type');
+  await selectChoice(page.getByLabel('Loại kho', { exact: true }), 'real-type');
   await page.getByLabel('Mã kho', { exact: true }).fill('SM-A-002');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });

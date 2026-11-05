@@ -1,3 +1,4 @@
+import { safeLocalStorage } from './browser-storage';
 import { paymentExpiry } from '../utils/payment-state'
 
 export type PendingOnlinePayment = {
@@ -34,17 +35,17 @@ function valid(value: unknown): value is PendingOnlinePayment {
 }
 
 export function savePendingOnlinePayment(value: PendingOnlinePayment) {
-  localStorage.setItem(key(value.customerId, value.invoiceId), JSON.stringify(value))
+  safeLocalStorage.setItem(key(value.customerId, value.invoiceId), JSON.stringify(value))
 }
 
 export function readPendingOnlinePayments(customerId: string) {
   const items: PendingOnlinePayment[] = []
   const prefix = `${PREFIX}${customerId}:`
-  for (let index = 0; index < localStorage.length; index++) {
-    const storageKey = localStorage.key(index)
+  for (let index = 0; index < safeLocalStorage.length; index++) {
+    const storageKey = safeLocalStorage.key(index)
     if (!storageKey?.startsWith(prefix)) continue
     try {
-      const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? 'null')
+      const value: unknown = JSON.parse(safeLocalStorage.getItem(storageKey) ?? 'null')
       if (valid(value) && value.customerId === customerId) items.push({ ...value, expiresAt: paymentExpiry(value.expiresAt, value.createdAt) })
     } catch { /* Ignore corrupt browser state. */ }
   }
@@ -52,5 +53,5 @@ export function readPendingOnlinePayments(customerId: string) {
 }
 
 export function removePendingOnlinePayment(value: Pick<PendingOnlinePayment, 'customerId' | 'invoiceId'>) {
-  localStorage.removeItem(key(value.customerId, value.invoiceId))
+  safeLocalStorage.removeItem(key(value.customerId, value.invoiceId))
 }

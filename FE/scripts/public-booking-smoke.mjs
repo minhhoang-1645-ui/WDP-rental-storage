@@ -72,8 +72,14 @@ try {
     await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).click();
     await page.getByRole('heading', { name: 'Đã ghi nhận yêu cầu xác minh email', exact: true }).waitFor();
     checks.push(`${width}px: comparison → same product/image in all three booking steps, server quotes, configured availability source and invalidation and isolated guest confirmation`);
+    await context.unrouteAll({ behavior: 'wait' });
     await context.close();
   }
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
   console.log(JSON.stringify({ passed: checks, mockedSubmissions: writes.length, realDatabaseWrites: 0, sentEmails: 0, browserErrors: errors.length }, null, 2));
-} finally { await browser.close(); }
+} finally {
+  // Let forwarded read-only requests settle before disposing their context;
+  // otherwise teardown can hide the assertion that actually failed.
+  for (const context of browser.contexts()) await context.unrouteAll({ behavior: 'wait' });
+  await browser.close();
+}

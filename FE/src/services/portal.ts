@@ -1,3 +1,4 @@
+import { safeLocalStorage } from './browser-storage';
 import { apiRequest } from "./api";
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import type { Page, Row } from "../components/manager/portal-data";
@@ -6,7 +7,7 @@ import type { Page, Row } from "../components/manager/portal-data";
 export async function allPages<T = Row>(
   path: string,
   signal?: AbortSignal,
-  expectedToken: string | null = localStorage.getItem(AUTH_TOKEN_KEY),
+  expectedToken: string | null = safeLocalStorage.getItem(AUTH_TOKEN_KEY),
 ): Promise<Page<T>> {
   const [pathname, search = ""] = path.split("?", 2);
   const params = new URLSearchParams(search);
@@ -33,7 +34,7 @@ export async function mutate<T = Row>(
   idempotent = false,
 ): Promise<T> {
   const body = input === undefined ? undefined : JSON.stringify(input);
-  const fingerprint = `${localStorage.getItem(AUTH_TOKEN_KEY)}:${method}:${path}:${body ?? ""}`;
+  const fingerprint = `${safeLocalStorage.getItem(AUTH_TOKEN_KEY)}:${method}:${path}:${body ?? ""}`;
   const key = idempotent
     ? (retryKeys.get(fingerprint) ?? `portal-${crypto.randomUUID()}`)
     : "";

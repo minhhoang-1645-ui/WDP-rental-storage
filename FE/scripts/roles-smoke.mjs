@@ -413,7 +413,11 @@ async function setup(initialRole, authenticated = true) {
           row.status = "ESCALATED";
           row.escalationReason = body.reason;
         }
-        if (action === "complete-handover") row.status = "COMPLETED";
+        if (action === "complete-handover") {
+          assert.equal(body.handoverReport?.documentsDelivered, true);
+          row.status = "COMPLETED";
+          row.usageStatus = "WAITING_FOR_RENTAL_START";
+        }
         if (action === "start-inspection")
           row.status = "INSPECTION_IN_PROGRESS";
         if (action === "inspections") {
@@ -534,7 +538,7 @@ async function open(page, path) {
   await page.goto(base + path, { waitUntil: "domcontentloaded" });
   await page.locator("h1").first().waitFor();
   await page.waitForFunction(
-    () => !document.querySelector(".portal-loading, .customer-state--loading"),
+    () => !document.querySelector(".loading-skeleton"),
   );
 }
 async function ownLinks(page, role) {
@@ -748,7 +752,9 @@ try {
     .getByText("Đã chuyển đến bộ phận phụ trách xem xét.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/appointments/handover-id");
-  assert(await staff.page.getByRole('button', { name: 'Hoàn tất bàn giao', exact: true }).isDisabled(), 'Future handover cannot be completed');
+  const confirmHandover = staff.page.getByRole('button', { name: 'Xác nhận đã bàn giao giấy tờ và chìa khóa', exact: true });
+  assert(await confirmHandover.isDisabled(), 'Future handover cannot be completed');
+  assert.match(await staff.page.locator('#handover-availability').innerText(), /Chưa đến giờ hẹn/);
   staff.data.staff.appointments[0].scheduledAt = when;
 
   await open(staff.page, "/staff/appointments/handover-id");
@@ -759,15 +765,13 @@ try {
   await staff.page.getByLabel('Đã kiểm tra đúng mã kho và hiện trạng từng kho').check();
   await staff.page.getByLabel('Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập').check();
   await staff.page
-    .getByLabel("Đã bàn giao thực tế đầy đủ các kho trong lịch này", {
+    .getByLabel("Đã giao giấy tờ bàn giao cho khách", {
       exact: true,
     })
     .check();
+  await confirmHandover.click();
   await staff.page
-    .getByRole("button", { name: "Hoàn tất bàn giao", exact: true })
-    .click();
-  await staff.page
-    .getByText("Lịch này không còn thao tác bàn giao.", { exact: true })
+    .getByText("Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/returns/return-id");
   await staff.page

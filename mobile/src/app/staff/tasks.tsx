@@ -30,7 +30,7 @@ export default function StaffTasksScreen() {
     ...withKind(returns.data?.items, 'Trả kho'),
     ...withKind(transfers.data?.items, 'Chuyển kho'),
   ];
-  if (loading) return <View style={styles.stateWrap}><LoadingState /></View>;
+  if (loading) return <View style={styles.stateWrap}><LoadingState layout="list" /></View>;
   if (error) return <View style={styles.stateWrap}><ErrorState message={error} onRetry={refresh} /><Navigation title="Về tổng quan" path="/staff" />{Object.entries(taskPaths).map(([title, resource]) => <Navigation key={resource} title={title} path={`/staff/${resource}`} />)}</View>;
   return <FlatList data={items} keyExtractor={(item) => item.key} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={WdpColors.teal} />} ListHeaderComponent={<View style={{ gap: 12 }}><PageHeader eyebrow="Công việc" title="Vận hành tại cơ sở" description="Tổng hợp bảo trì, hỗ trợ, trả kho và chuyển kho dành cho nhân viên." />{Object.entries(taskPaths).map(([title, resource]) => <Navigation key={resource} title={title} path={`/staff/${resource}`} />)}</View>} ListHeaderComponentStyle={styles.header} ItemSeparatorComponent={() => <View style={styles.separator} />} ListEmptyComponent={<EmptyState title="Không có công việc" message="Các việc được giao hoặc đã duyệt sẽ xuất hiện tại đây." />} renderItem={({ item }) => <TaskCard item={{ ...item } as Row} kind={item.kind} onPress={() => router.push(`/staff/${taskPaths[item.kind]}/${encodeURIComponent(item.id)}` as Href)} />} />;
 }

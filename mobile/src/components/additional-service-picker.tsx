@@ -14,7 +14,7 @@ export function AdditionalServicePicker({ services, selections, start, end, load
   return <Disclosure title="Dịch vụ thêm (tùy chọn)">
     {selections.length > 0 && <Text style={styles.copy}>Đã chọn {selections.length} dịch vụ</Text>}
     <View style={styles.row}><Button title="Thuê thiết bị" variant={kind === 'RENTAL' ? 'primary' : 'secondary'} onPress={() => setKind('RENTAL')} /><Button title="Mua một lần" variant={kind === 'PURCHASE' ? 'primary' : 'secondary'} onPress={() => setKind('PURCHASE')} /></View>
-    {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={retry} /> : !visible.length ? <Text style={styles.copy}>Chưa có dịch vụ trong nhóm này.</Text> : visible.map(rawService => {
+    {loading ? <LoadingState layout="compact" /> : error ? <ErrorState message={error} onRetry={retry} /> : !visible.length ? <Text style={styles.copy}>Chưa có dịch vụ trong nhóm này.</Text> : visible.map(rawService => {
       const service = localizeService(rawService);
       const selection = selections.find(item => item.serviceId === service.id);
       const issue = selection ? serviceSelectionIssue(service, selection, start, end) : '';

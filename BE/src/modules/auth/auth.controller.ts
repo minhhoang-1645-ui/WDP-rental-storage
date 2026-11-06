@@ -46,6 +46,6 @@ export class AuthController {
   @ApiNoContentResponse({ description: 'Đã hủy phiên hiện tại.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu, sai hoặc hết hạn token.' })
   logout(@Req() request: AuthenticatedRequest) {
-    this.authService.logout(request.headers.authorization!.slice(7));
+    return this.authService.logout(request.headers.authorization!.slice(7));
   }
 }

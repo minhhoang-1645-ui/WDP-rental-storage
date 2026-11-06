@@ -20,6 +20,9 @@ export class LoginRequestDto {
 
   @ApiProperty({ format: 'password', example: 'your-password-here', description: 'Thay bằng mật khẩu của bạn.' })
   password!: string;
+
+  @ApiPropertyOptional({ description: 'Giữ phiên đăng nhập trong 30 ngày thay vì 8 giờ.', default: false })
+  rememberMe?: boolean;
 }
 
 export class CreateAdminUserDto {
@@ -191,6 +194,8 @@ export class HandoverReportRequestDto {
   unitInspected!: boolean;
   @ApiProperty({ enum: [true] })
   accessDelivered!: boolean;
+  @ApiPropertyOptional({ enum: [true], description: 'Xác nhận giấy tờ đã được giao. Client cũ có thể bỏ qua trường này.' })
+  documentsDelivered?: boolean;
 }
 
 export class CompleteHandoverRequestDto {

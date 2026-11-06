@@ -276,7 +276,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     };
     const [total, records] = await Promise.all([
       this.prisma.handoverAppointment.count({ where }),
-      this.prisma.handoverAppointment.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }], include: this.appointmentInclude() }),
+      this.prisma.handoverAppointment.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ scheduledAt: includeCustomer ? 'desc' : 'asc' }, { id: 'asc' }], include: this.appointmentInclude() }),
     ]);
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toAppointment(record, includeCustomer)) };
   }

@@ -356,6 +356,7 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  authSessions                AuthSession[]
   unitResponsibilities         UnitStaffAssignment[] @relation("UnitStaffAssignee")
   assignedUnitResponsibilities UnitStaffAssignment[] @relation("UnitStaffManager")
   id                          String                     @id @default(cuid())
@@ -406,6 +407,15 @@ model User {
   completedTransfers          TransferRequest[]          @relation("TransferCompleter")
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
+}
+
+model AuthSession {
+  tokenHash String   @id
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Facility {

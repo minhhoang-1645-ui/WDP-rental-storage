@@ -14,12 +14,24 @@ export class StockMovementsService {
   constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   listCustomer(customerId: string, query: ListQuery) { return this.page({ customerUserId: customerId }, query); }
-  listManager(query: ListQuery) { return this.page({}, query); }
-  listStaff(actor: PublicUser, query: ListQuery) { return this.page({ assignedStaffUserId: actor.id }, query); }
+  async listManager(query: ListQuery, actor?: PublicUser) {
+    if (actor?.role === 'STAFF') await this.unitStaff?.recoverPendingStockMovements(actor.id);
+    return this.page({}, query);
+  }
+  async listStaff(actor: PublicUser, query: ListQuery) {
+    await this.unitStaff?.recoverPendingStockMovements(actor.id);
+    return this.page({ assignedStaffUserId: actor.id }, query);
+  }
 
   async getCustomer(customerId: string, id: string) { return this.find(id, { customerUserId: customerId }); }
-  async getManager(id: string) { return this.find(id, {}); }
-  async getStaff(actor: PublicUser, id: string) { return this.find(id, { assignedStaffUserId: actor.id }); }
+  async getManager(id: string, actor?: PublicUser) {
+    if (actor?.role === 'STAFF') await this.unitStaff?.recoverPendingStockMovements(actor.id, id);
+    return this.find(id, {});
+  }
+  async getStaff(actor: PublicUser, id: string) {
+    await this.unitStaff?.recoverPendingStockMovements(actor.id, id);
+    return this.find(id, { assignedStaffUserId: actor.id });
+  }
 
   async listStoredItems(customerId: string, contractId?: string) {
     return this.prisma.storedItem.findMany({

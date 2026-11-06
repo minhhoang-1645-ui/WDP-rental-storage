@@ -95,7 +95,8 @@ export function PortalLoginPage() {
           />
         </label>
         <button
-          className="button-primary w-full justify-center"
+          className="button-primary portal-login-submit w-full justify-center"
+          type="submit"
           disabled={submitting}
         >
           {submitting ? (

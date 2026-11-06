@@ -1,5 +1,5 @@
 import { useCustomerPagination } from '../../components/customer/useCustomerPagination'
-import { CreditCard, ExternalLink, FileText, History, QrCode, RefreshCw, Wallet, X } from 'lucide-react'
+import { CreditCard, ExternalLink, FileText, History, RefreshCw, Wallet, X } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useDialog } from '../../hooks/useDialog'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -35,6 +35,7 @@ export function CustomerPaymentsPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const [onlineInvoiceId, setOnlineInvoiceId] = useState('')
   const [onlineError, setOnlineError] = useState('')
+  const [onlineNotice, setOnlineNotice] = useState('')
   const [pendingOnline, setPendingOnline] = useState<PendingOnlinePayment | null>(() => user ? readPendingOnlinePayments(user.id)[0] ?? null : null)
   const [onlineStatus, setOnlineStatus] = useState<OnlinePaymentPollingStatus>('PENDING')
   const [pollError, setPollError] = useState('')
@@ -70,6 +71,16 @@ export function CustomerPaymentsPage() {
           navigate(`/customer/payments/vnpay-return?transactionId=${encodeURIComponent(result.transactionId)}`, { replace: true })
           return
         }
+        if (result.providerStatus === 'CANCELLED') {
+          removePendingOnlinePayment(pendingOnline)
+          onlineKeys.current.delete(pendingOnline.invoiceId)
+          setPendingOnline(null)
+          setOnlineInvoiceId('')
+          setOnlineNotice(`Phiên thanh toán VNPay cho ${pendingOnline.invoiceCode} đã được hủy.`)
+          onlineLock.current = false
+          refreshInvoices()
+          return
+        }
         if (result.status === 'FAILED') {
           setOnlineStatus('FAILED')
           onlineLock.current = false
@@ -98,7 +109,7 @@ export function CustomerPaymentsPage() {
     setView('submissions')
   }
 
-  const createOnlinePayment = async (invoice: CustomerInvoice, mode: 'VNPAY' | 'VNPAYQR') => {
+  const createOnlinePayment = async (invoice: CustomerInvoice) => {
     if (!user || onlineLock.current || pendingOnline || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) return
     const paymentWindow = window.open('about:blank', '_blank')
     if (!paymentWindow) { setOnlineError('Trình duyệt đã chặn tab VNPay. Hãy cho phép popup rồi thử lại.'); return }
@@ -106,17 +117,18 @@ export function CustomerPaymentsPage() {
     onlineLock.current = true
     setOnlineInvoiceId(invoice.id)
     setOnlineError('')
-    const keyIdentity = `${invoice.id}:${mode}`
+    setOnlineNotice('')
+    const keyIdentity = invoice.id
     let key = onlineKeys.current.get(keyIdentity)
     if (!key) {
       key = `cust-vnpay-${crypto.randomUUID()}`
       onlineKeys.current.set(keyIdentity, key)
     }
     try {
-      const transaction = await customerBillingApi.createOnlinePayment(invoice.id, key, mode === 'VNPAYQR' ? 'VNPAYQR' : undefined)
+      const transaction = await customerBillingApi.createOnlinePayment(invoice.id, key)
       const destination = new URL(transaction.paymentUrl)
       if (destination.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)*vnpayment\.vn$/i.test(destination.hostname) || destination.username || destination.password) throw new Error('Đường dẫn thanh toán VNPay không hợp lệ.')
-      const pending: PendingOnlinePayment = { customerId: user.id, invoiceId: invoice.id, invoiceCode: invoice.invoiceCode, transactionId: transaction.transactionId, merchantOrderRef: transaction.merchantOrderRef, amount: transaction.amount, expiresAt: transaction.expiresAt, paymentUrl: destination.href, mode, createdAt: new Date().toISOString() }
+      const pending: PendingOnlinePayment = { customerId: user.id, invoiceId: invoice.id, invoiceCode: invoice.invoiceCode, transactionId: transaction.transactionId, merchantOrderRef: transaction.merchantOrderRef, amount: transaction.amount, expiresAt: transaction.expiresAt, paymentUrl: destination.href, mode: 'VNPAY', createdAt: new Date().toISOString() }
       savePendingOnlinePayment(pending)
       setPendingOnline(pending)
       setOnlineStatus('PENDING')
@@ -139,7 +151,7 @@ export function CustomerPaymentsPage() {
     </div>
     {pendingOnline && <OnlinePaymentWaiting payment={pendingOnline} status={onlineStatus} networkError={pollError} onRetry={() => {
       removePendingOnlinePayment(pendingOnline)
-      onlineKeys.current.delete(`${pendingOnline.invoiceId}:${pendingOnline.mode}`)
+      onlineKeys.current.delete(pendingOnline.invoiceId)
       setPendingOnline(null)
       setOnlineStatus('PENDING')
       setPollError('')
@@ -147,6 +159,7 @@ export function CustomerPaymentsPage() {
       onlineLock.current = false
     }} />}
     {onlineError && <div className="booking-alert is-error payment-online-error" role="alert">{onlineError}</div>}
+    {onlineNotice && <p className="customer-filter-notice" role="status">{onlineNotice}</p>}
     {current.status === 401 ? <CustomerSessionExpired /> : current.loading ? <PortalLoading label="Đang tải dữ liệu thanh toán…" /> : current.error ? <PortalError message={current.error} onRetry={refresh} /> : view === 'invoices'
       ? <>{invoiceFilter && <p className="customer-filter-notice">Đang xem hóa đơn được chọn · <Link to="/customer/payments">Xem tất cả hóa đơn</Link></p>}<InvoiceList items={(invoices.data?.items ?? []).filter(matchesInvoice)} submissions={submissions.data?.items ?? []} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} hasPendingOnline={Boolean(pendingOnline)} /></>
       : view === 'payments'
@@ -169,13 +182,13 @@ function OnlinePaymentWaiting({ payment, status, networkError, onRetry }: { paym
   </div>
 }
 
-function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineInvoiceId, hasPendingOnline }: { items: CustomerInvoice[]; submissions: PaymentSubmission[]; onBankTransfer: (invoice: CustomerInvoice) => void; onOnlinePay: (invoice: CustomerInvoice, mode: 'VNPAY' | 'VNPAYQR') => void; onlineInvoiceId: string; hasPendingOnline: boolean }) {
+function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineInvoiceId, hasPendingOnline }: { items: CustomerInvoice[]; submissions: PaymentSubmission[]; onBankTransfer: (invoice: CustomerInvoice) => void; onOnlinePay: (invoice: CustomerInvoice) => void; onlineInvoiceId: string; hasPendingOnline: boolean }) {
   const { items: visibleItems, pagination } = useCustomerPagination(items)
   if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện sau khi WDP xác nhận reservation hoặc kỳ thanh toán.</span></PortalEmpty>
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
   return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Mã hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => <tr key={invoice.id}><td data-label="Mã hóa đơn"><strong>{invoice.invoiceCode}</strong><small>{invoice.reservation.reference}</small></td><td data-label="Kỳ thanh toán">{customerStatusLabel(invoice.type)}</td><td data-label="Tổng tiền">{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td data-label="Đã trả">{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td data-label="Còn lại"><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td data-label="Hạn trả">{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td data-label="Trạng thái"><CustomerStatus status={invoice.status} /></td><td data-label="Thao tác">{invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status) ? pendingInvoiceIds.has(invoice.id)
     ? <span className="payment-pending-label">Đang chờ WDP xác nhận</span>
-    : <div className="payment-actions"><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onBankTransfer(invoice)}><Wallet size={15} /> Chuyển khoản QR</button>{['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) && <><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAY')}><ExternalLink size={15} /> Thanh toán VNPay</button><button type="button" className="button-primary payment-table-action" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAYQR')}><QrCode size={15} /> {onlineInvoiceId === invoice.id ? 'Đang mở VNPay QR…' : 'Quét VNPay QR'}</button></>}</div> : '—'}</td></tr>)}</tbody></table></div>{pagination}</>
+    : <div className="payment-actions"><button type="button" className="button-secondary payment-table-action" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onBankTransfer(invoice)}><Wallet size={15} /> Chuyển khoản QR</button>{['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) && <button type="button" className="button-primary payment-table-action" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice)}><ExternalLink size={15} /> {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button>}</div> : '—'}</td></tr>)}</tbody></table></div>{pagination}</>
 }
 
 function SubmissionList({ items }: { items: PaymentSubmission[] }) {

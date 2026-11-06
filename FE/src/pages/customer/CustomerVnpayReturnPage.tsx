@@ -52,7 +52,7 @@ function ReturnResult({ query }: { query: string }) {
         if (stopped) return
         setResult(value)
         setNetworkError('')
-        if (value.status === 'SUCCESS' && value.invoice.status === 'PAID') {
+        if ((value.status === 'SUCCESS' && value.invoice.status === 'PAID') || value.providerStatus === 'CANCELLED') {
           const pending = user ? readPendingOnlinePayments(user.id).find((item) => item.transactionId === value.transactionId || item.merchantOrderRef === value.merchantOrderRef) : undefined
           if (pending) removePendingOnlinePayment(pending)
           return
@@ -69,6 +69,7 @@ function ReturnResult({ query }: { query: string }) {
 
   const successful = result?.status === 'SUCCESS' && result.invoice.status === 'PAID'
   const failed = result?.status === 'FAILED'
+  const cancelled = result?.providerStatus === 'CANCELLED'
   const nextStep = result?.invoice.type === 'INITIAL'
     ? { to: '/customer/appointments?payment=success', label: 'Đặt lịch nhận kho' }
     : result?.invoice.type === 'RENEWAL'
@@ -80,8 +81,8 @@ function ReturnResult({ query }: { query: string }) {
       ? { icon: <CheckCircle2 size={38} />, tone: 'is-success', title: 'Thanh toán thành công', description: `Hóa đơn ${result.invoice.invoiceCode} đã ghi nhận ${moneyLabel(result.amount)}.` }
       : failed
       ? result.reconciliation
-        ? { icon: <AlertCircle size={38} />, tone: 'is-error', title: 'Giao dịch đang được đối soát', description: `VNPay đã báo thành công nhưng hóa đơn không còn hiệu lực. NestBox đã tạo hồ sơ ${result.reconciliation.reconciliationCode}; vui lòng không thanh toán lại.` }
-        : { icon: <AlertCircle size={38} />, tone: 'is-error', title: result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn' : result.providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán' : 'Thanh toán không thành công', description: result.invoice.status === 'VOID' ? 'Yêu cầu đặt kho đã hết hạn và hóa đơn đã hủy. Vui lòng chọn kho và đặt lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' : 'Chưa ghi nhận thanh toán thành công. Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' }
+        ? { icon: <AlertCircle size={38} />, tone: 'is-error', title: 'Giao dịch đang được đối soát', description: `VNPay đã báo thành công. NestBox đang đối chiếu với hóa đơn theo hồ sơ ${result.reconciliation.reconciliationCode}. Vui lòng không thanh toán lại.` }
+        : { icon: <AlertCircle size={38} />, tone: 'is-error', title: result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn' : cancelled ? 'Bạn đã hủy thanh toán' : 'Thanh toán không thành công', description: result.invoice.status === 'VOID' ? 'Yêu cầu đặt kho đã hết hạn và hóa đơn đã hủy. Vui lòng chọn kho và đặt lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' : cancelled ? 'Phiên VNPay đã được hủy. Bạn có thể mở hóa đơn để xem trạng thái hoặc thanh toán lại.' : 'Chưa ghi nhận thanh toán thành công. Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi yêu cầu hỗ trợ.' }
         : { icon: <Clock3 size={38} />, tone: 'is-pending', title: 'Đang chờ VNPay xác nhận', description: 'NestBox đang kiểm tra kết quả từ VNPay. Bạn chỉ cần thanh toán một lần; kết quả và hóa đơn sẽ được cập nhật sau khi giao dịch được xác nhận.' }
 
   return <section className="customer-page vnpay-return-page"><div className={`vnpay-return-card ${content.tone}`}>
@@ -92,6 +93,6 @@ function ReturnResult({ query }: { query: string }) {
     {networkError && !displayedFatalError && <div className="booking-alert is-error" role="alert">{networkError} Hệ thống sẽ tiếp tục thử lại.</div>}
     {(displayedFatalError || networkError) && <button className="button-secondary" onClick={() => { setFatalError(''); setNetworkError(''); setResult(undefined); setRetry((value) => value + 1) }}>Kiểm tra lại</button>}
     {result && <dl><div><dt>Mã giao dịch</dt><dd>{result.merchantOrderRef}</dd></div><div><dt>Số tiền</dt><dd>{moneyLabel(result.amount)}</dd></div><div><dt>Hóa đơn</dt><dd>{result.invoice.invoiceCode}</dd></div></dl>}
-    <Link className="button-primary" to={successful ? nextStep.to : '/customer/payments'}><CreditCard size={17} /> {successful ? nextStep.label : 'Xem hóa đơn và thanh toán'}</Link>
+    <Link className="button-primary" to={successful ? nextStep.to : cancelled ? `/customer/payments?invoice=${encodeURIComponent(result.invoice.id)}` : '/customer/payments'}><CreditCard size={17} /> {successful ? nextStep.label : 'Xem hóa đơn và thanh toán'}</Link>
   </div></section>
 }

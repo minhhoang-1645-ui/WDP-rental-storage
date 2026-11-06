@@ -4,7 +4,7 @@ import { OnlinePaymentService } from './online-payment.service.js';
 
 const customer = { id: 'customer-1', role: 'CUSTOMER' } as never;
 
-function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' = 'PENDING') {
+function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' | 'CANCELLED' = 'PENDING') {
   const transaction = { id: 'transaction-1', invoiceId: 'invoice-1', amount: 650000n, status: transactionStatus };
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([]),
@@ -170,5 +170,27 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
     await expect(service.returnStatus({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toMatchObject({ valid: true, transaction: { status: 'PENDING' }, invoice: { status: 'OPEN' } });
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+  });
+
+  it('closes a cancelled session from a signed return without recording payment', async () => {
+    const { service, prisma, billing, vnpay } = fixture();
+    vnpay.verify.mockReturnValue({ ...vnpay.verify(), responseCode: '24', transactionStatus: '02' });
+    prisma.onlinePaymentTransaction.findUnique.mockResolvedValueOnce({
+      merchantOrderRef: 'WDP-ORDER-1', status: 'PENDING', amount: 650000n,
+      invoice: { invoiceCode: 'INV-1', status: 'OPEN' },
+    });
+
+    await expect(service.returnStatus({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toMatchObject({ valid: true, transaction: { status: 'CANCELLED' }, invoice: { status: 'OPEN' } });
+    expect(prisma.onlinePaymentTransaction.updateMany).toHaveBeenCalledWith({
+      where: { merchantOrderRef: 'WDP-ORDER-1', status: { in: ['PENDING', 'EXPIRED'] } },
+      data: { status: 'CANCELLED', responseCode: '24' },
+    });
+    expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+  });
+
+  it('honors a signed success IPN after the browser marked the session cancelled', async () => {
+    const { service, billing } = fixture('CANCELLED');
+    await expect(service.processIpn({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toMatchObject({ RspCode: '00' });
+    expect(billing.recordVerifiedOnlinePayment).toHaveBeenCalledOnce();
   });
 });

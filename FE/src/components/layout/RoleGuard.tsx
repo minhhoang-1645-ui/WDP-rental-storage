@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import type { PublicUser } from "../../types/booking";
+import { LoadingSkeleton } from "../LoadingSkeleton";
 
 export function RoleGuard({
   allowedRoles,
@@ -12,8 +13,8 @@ export function RoleGuard({
   const location = useLocation();
   if (loading)
     return (
-      <main className="manager-shell-loading" role="status">
-        Đang kiểm tra quyền truy cập…
+      <main className="manager-shell-loading">
+        <LoadingSkeleton layout="detail" label="Đang kiểm tra quyền truy cập…" />
       </main>
     );
   if (!user)

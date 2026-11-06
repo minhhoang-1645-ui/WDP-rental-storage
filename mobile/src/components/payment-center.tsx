@@ -23,7 +23,7 @@ export function PaymentCenter() {
   return <View style={{ gap: 16 }}>
     {legacy && <Navigation title="Tiếp tục theo dõi phiên VNPay" path={`/customer/invoices/${encodeURIComponent(legacy.invoiceId)}`} description={`${legacy.invoiceCode} · Mở hóa đơn để kiểm tra kết quả, tránh thanh toán lặp.`} />}
     <Panel title="Hóa đơn cần xử lý">
-      {invoices.loading && !invoices.data ? <LoadingState /> : invoices.error ? <ErrorState message={invoices.error} onRetry={invoices.refresh} /> : outstanding.length ? outstanding.map(invoice => {
+      {invoices.loading && !invoices.data ? <LoadingState layout="list" /> : invoices.error ? <ErrorState message={invoices.error} onRetry={invoices.refresh} /> : outstanding.length ? outstanding.map(invoice => {
         const path = `/customer/invoices/${encodeURIComponent(idOf(invoice))}`;
         return <View key={idOf(invoice)} style={{ gap: 8 }}>
           <Navigation title={`${text(invoice, 'invoiceCode')} · ${formatMoney(Number(invoice.balanceDue))}`} description={`Đơn ${text(invoice, 'reservation.reference')} · Kiểm tra hợp đồng và cách thanh toán.`} path={path} />

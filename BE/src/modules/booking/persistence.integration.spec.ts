@@ -58,7 +58,7 @@ describe('Persistence and manager milestone', () => {
     const registered = await first.register(input);
     createdUserIds.push(registered.user.id);
     const restarted = new AuthService(new PrismaUserRepository(prisma));
-    expect((await restarted.login(input)).user.id).toBe(registered.user.id);
+    expect((await restarted.getUserByToken(registered.token)).id).toBe(registered.user.id);
   });
 
   it('persists an inquiry and lets a new service instance read it with its lookup token', async () => {

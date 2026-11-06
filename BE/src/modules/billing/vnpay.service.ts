@@ -14,6 +14,8 @@ export class VnpayService {
 
   paymentUrl(input: { orderRef: string; amount: bigint; ipAddress: string; bankCode?: string; locale?: string; createdAt: Date }) {
     const settings = this.settings();
+    const isSandbox = new URL(settings.paymentUrl).hostname === 'sandbox.vnpayment.vn';
+    const bankCode = input.bankCode ?? (isSandbox ? 'NCB' : undefined);
     const params: Record<string, string> = {
       vnp_Version: '2.1.0', vnp_Command: 'pay', vnp_TmnCode: settings.tmnCode,
       vnp_Amount: String(input.amount * 100n), vnp_CurrCode: 'VND', vnp_TxnRef: input.orderRef,
@@ -21,7 +23,7 @@ export class VnpayService {
       vnp_Locale: input.locale === 'en' ? 'en' : 'vn', vnp_ReturnUrl: settings.returnUrl,
       vnp_IpAddr: input.ipAddress || '127.0.0.1', vnp_CreateDate: this.vnpDate(input.createdAt),
       vnp_ExpireDate: this.vnpDate(new Date(input.createdAt.getTime() + 5 * 60_000)),
-      ...(input.bankCode ? { vnp_BankCode: input.bankCode } : {}),
+      ...(bankCode ? { vnp_BankCode: bankCode } : {}),
     };
     const canonical = this.canonical(params);
     const signature = createHmac('sha512', settings.hashSecret).update(canonical).digest('hex');

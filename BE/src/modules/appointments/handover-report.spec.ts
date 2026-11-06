@@ -10,5 +10,10 @@ describe('handover report without schema changes', () => {
   it('rejects incomplete attestations and invalid access counts', () => {
     for (const patch of [{ identityVerified: false }, { unitInspected: false }, { accessDelivered: false }, { accessItemCount: -1 }, { condition: '' }, { recipientName: '' }]) expect(() => handoverReport({ handoverReport: { ...report, ...patch } })).toThrow();
   });
+  it('records explicit paperwork delivery and rejects an unchecked confirmation', () => {
+    expect(handoverReport({ handoverReport: { ...report, documentsDelivered: true } })).toContain('Đã giao giấy tờ bàn giao cho khách.');
+    expect(() => handoverReport({ handoverReport: { ...report, documentsDelivered: false } })).toThrow('Cần xác nhận đã giao giấy tờ');
+    expect(handoverReport({ handoverReport: report })).not.toContain('Đã giao giấy tờ bàn giao cho khách.');
+  });
   it('keeps legacy payload handling for existing clients', () => { expect(handoverReport({ note: 'Ghi chú cũ' })).toBeUndefined(); });
 });

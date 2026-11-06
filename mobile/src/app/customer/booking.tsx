@@ -97,7 +97,7 @@ export default function BookingScreen() {
   const toggleUnit = (unit: FloorPlanUnit) => { if (!unit.available) return; setError(''); setDraft(value => ({ ...value, selectedUnitIds: value.selectedUnitIds.includes(unit.id) ? value.selectedUnitIds.filter(id => id !== unit.id) : value.selectedUnitIds.length < Number(value.quantity) ? [...value.selectedUnitIds, unit.id] : value.selectedUnitIds })); };
   return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Đặt kho" title={step === 3 ? "Xác nhận đặt kho" : "Hoàn tất đặt kho"} description="Kiểm tra thông tin, ký hợp đồng và thanh toán." />
-    {catalog.loading && !catalog.data ? <LoadingState label="Đang tải catalog…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
+    {catalog.loading && !catalog.data ? <LoadingState layout="detail" label="Đang tải catalog…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
       <Progress step={step} fromMap={fromMap} />
       {fromMap && <Panel title="Kho đã chọn">
         <View style={local.summaryRow}><Warehouse size={24} color={WdpColors.navy} /><View style={{ flex: 1, gap: 4 }}>

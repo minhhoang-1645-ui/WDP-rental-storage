@@ -33,8 +33,26 @@ export function CustomerBookingHistoryPage() {
         return <article key={entry.reference} className="customer-panel customer-record-card booking-history-card">
           <div className="customer-record-heading"><div><small>{entry.reference} · Đặt ngày {formatPortalDate(String(entry.reservation.createdAt))}</small><h2>{String(product?.name ?? 'Kho đã đặt')}</h2></div><strong className="customer-history-status">{entry.phaseLabel}</strong></div>
           <dl className="customer-record-facts"><div><dt>Thời hạn theo hợp đồng / đơn</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd></div><div><dt>Số kho đã đặt</dt><dd>{Number(entry.reservation.quantity ?? 0)}</dd></div><div><dt>Kho được cấp theo hợp đồng</dt><dd>{entry.unitCodes.join(', ') || 'Chưa được cấp kho'}</dd></div><div><dt>Báo giá tại thời điểm đặt</dt><dd>{quoteLabel(Number(quote?.quotedTotalAmount ?? quote?.grandTotal))}</dd></div></dl>
-          {entry.contracts.map(contract => <p key={String(contract.id)}>{String(contract.contractCode)}{contract.completedAt ? ` · Đã trả ngày ${formatPortalDate(String(contract.completedAt))}` : ''}</p>)}
-          <div className="portal-actions"><Link className="button-secondary" to={`/customer/reservations/${encodeURIComponent(entry.reference)}`}>Xem đơn đặt kho</Link>{entry.contracts.length > 0 && <Link className="button-secondary" to={`/customer/contracts?reservation=${encodeURIComponent(entry.reference)}`}>Xem hợp đồng liên quan</Link>}</div>
+          <details className="customer-inline-notice">
+            <summary>Xem các mốc của lần đặt này</summary>
+            <ul>
+              <li>Đặt kho ngày {formatPortalDate(String(entry.reservation.createdAt), true)}</li>
+              {typeof entry.reservation.confirmedAt === 'string' && <li>Xác nhận đặt kho ngày {formatPortalDate(entry.reservation.confirmedAt, true)}</li>}
+              {entry.phase === 'EXPIRED' && typeof entry.reservation.expiresAt === 'string' && <li>Hết hạn giữ kho ngày {formatPortalDate(entry.reservation.expiresAt, true)}</li>}
+            </ul>
+            {entry.contracts.map(contract => {
+              const terms = contract.terms as Row | undefined;
+              const unit = contract.storageUnit as Row | undefined;
+              return <div key={String(contract.id)}>
+                <strong>{String(contract.contractCode)}{unit?.unitCode ? ` · ${String(unit.unitCode)}` : ''}</strong>
+                <ul>
+                  {typeof terms?.acceptedAt === 'string' && <li>Ký hợp đồng ngày {formatPortalDate(terms.acceptedAt, true)}</li>}
+                  {typeof contract.activatedAt === 'string' && <li>Bắt đầu sử dụng kho ngày {formatPortalDate(contract.activatedAt, true)}</li>}
+                  {typeof contract.completedAt === 'string' && <li>Kết thúc hợp đồng ngày {formatPortalDate(contract.completedAt, true)}</li>}
+                </ul>
+              </div>;
+            })}
+          </details>
         </article>;
       })}</div>}
       {pagination}

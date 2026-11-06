@@ -45,7 +45,7 @@ describe('Authentication without a database', () => {
   it('revokes only the logged-out session', async () => {
     const first = await service.register(registration);
     const second = await service.login(registration);
-    service.logout(first.token);
+    await service.logout(first.token);
     await expect(service.getUserByToken(first.token)).rejects.toBeInstanceOf(UnauthorizedException);
     expect((await service.getUserByToken(second.token)).id).toBe(first.user.id);
   });
@@ -62,5 +62,17 @@ describe('Authentication without a database', () => {
     const later = Date.now() + 8 * 60 * 60 * 1000 + 1;
     vi.spyOn(Date, 'now').mockReturnValue(later);
     await expect(service.getUserByToken(session.token)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('keeps a remembered session across service restarts for up to thirty days', async () => {
+    await service.register(registration);
+    const session = await service.login({ ...registration, rememberMe: true });
+    const restarted = new AuthService(repository);
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 24 * 60 * 60 * 1000);
+    await expect(restarted.getUserByToken(session.token)).resolves.toMatchObject({ id: session.user.id });
+
+    clock.mockReturnValue(now + 30 * 24 * 60 * 60 * 1000);
+    await expect(restarted.getUserByToken(session.token)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

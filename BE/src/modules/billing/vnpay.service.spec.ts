@@ -12,11 +12,21 @@ describe('VnpayService', () => {
     expect(url.origin).toBe('https://sandbox.vnpayment.vn');
     expect(url.searchParams.get('vnp_Amount')).toBe('125000000');
     expect(url.searchParams.get('vnp_ReturnUrl')).toBe('http://localhost:5173/customer/payments/vnpay-return');
+    expect(url.searchParams.get('vnp_BankCode')).toBe('NCB');
     url.searchParams.set('vnp_ResponseCode', '00'); url.searchParams.set('vnp_TransactionStatus', '00');
     // Provider callbacks sign the complete callback payload, so a modified unsigned URL must fail.
     expect(() => service.verify(Object.fromEntries(url.searchParams))).toThrow(BadRequestException);
     const original = new URL(service.paymentUrl({ orderRef: 'WDPTEST0001', amount: 1250000n, ipAddress: '127.0.0.1', createdAt: new Date('2026-10-21T01:00:00.000Z') }));
     expect(service.verify(Object.fromEntries(original.searchParams))).toMatchObject({ orderRef: 'WDPTEST0001', amountMinor: 125000000n });
+  });
+
+  it('preserves explicit QR selection and leaves the bank unset outside Sandbox', () => {
+    const payment = { orderRef: 'WDPTEST0001', amount: 1250000n, ipAddress: '127.0.0.1', createdAt: new Date('2026-10-21T01:00:00.000Z') };
+    const sandbox = new VnpayService(new ConfigService(config));
+    const production = new VnpayService(new ConfigService({ ...config, VNPAY_PAYMENT_URL: 'https://pay.vnpay.vn/vpcpay.html' }));
+
+    expect(new URL(sandbox.paymentUrl({ ...payment, bankCode: 'VNPAYQR' })).searchParams.get('vnp_BankCode')).toBe('VNPAYQR');
+    expect(new URL(production.paymentUrl(payment)).searchParams.has('vnp_BankCode')).toBe(false);
   });
 
   it('fails closed when VNPay configuration is incomplete', () => {

@@ -355,6 +355,13 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
 .work-hub-copy { flex: 1; min-width: 0; }
 .work-hub-copy > strong { display: block; font-size: 15px; line-height: 1.5; }
 .work-hub-copy p { color: var(--color-slate); font-size: 13px; line-height: 1.65; margin-top: 6px; }
+.work-hub-item { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.work-hub-item > .work-hub-card { flex: 1; }
+.work-hub-update { margin-top: 10px; overflow-wrap: anywhere; }
+.work-hub-update > small { display: block; color: var(--color-orange); font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+.work-hub-update > strong { font-size: 13px; }
+.work-hub-direct { display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: var(--color-navy); font-size: 12px; font-weight: 650; min-height: 44px; overflow-wrap: anywhere; }
+.work-hub-direct:focus-visible { outline: 3px solid var(--color-orange); outline-offset: 2px; }
 .work-hub-count { background: #edf3f5; min-width: 28px; min-height: 28px; padding: 3px 7px; border-radius: 9px; text-align: center; font-weight: 750; flex-shrink: 0; }
 .work-hub-card.needs-attention { border-color: #e6d7c4; }
 .work-hub-card.needs-attention .work-hub-count { color: #855420; background: #fcf0df; }

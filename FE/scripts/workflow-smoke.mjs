@@ -26,7 +26,7 @@ async function moduleUrl(file) {
   modules.set(file.href, url);
   return url;
 }
-const { buildActivity, activitySources } = await import(
+const { buildActivity, activitySources, dashboardNotifications, staffPriorityActivities, activityForPath } = await import(
   await moduleUrl(new URL("../src/utils/activity.ts", import.meta.url))
 );
 const {
@@ -43,6 +43,27 @@ const { matchesSource } = await import(
   await moduleUrl(new URL("../src/services/live-events.ts", import.meta.url))
 );
 const checks = [];
+{
+  const old = '2020-01-01T00:00:00Z', fresh = '2030-01-01T00:00:00Z';
+  const backlog = Array.from({ length: 8 }, (_, i) => ({ id: `old-${i}`, supportCode: `OLD-${i}`, status: 'ASSIGNED', priority: 'MEDIUM', assignedStaff: { id: 'employee' }, createdAt: old }));
+  const current = { ...backlog[0], id: 'fresh', supportCode: 'FRESH', createdAt: '2019-01-01T00:00:00Z', assignedAt: fresh };
+  const entries = buildActivity('STAFF', 'employee', { 'support-requests': [...backlog, current] });
+  assert.equal(staffPriorityActivities(entries)[0].code, 'FRESH', 'An old request just assigned must precede an old unchanged backlog');
+  assert.equal(dashboardNotifications(entries, [])[0].code, 'FRESH');
+  const completed = buildActivity('STAFF', 'employee', { 'support-requests': [...backlog, { ...current, status: 'RESOLVED', resolvedAt: fresh }] });
+  assert(!staffPriorityActivities(completed).some(item => item.code === 'FRESH'));
+  assert.equal(dashboardNotifications(completed, [])[0].code, 'FRESH', 'A completed update must not be buried beneath unfinished work');
+  assert(dashboardNotifications(completed, [])[1].action);
+  const read = completed.map(item => item.token);
+  assert.equal(dashboardNotifications(completed, read).length, 8, 'Reading does not complete outstanding work or resurrect completed work');
+  assert.equal(activityForPath(completed, [], '/staff/support-requests').unread.length, 9);
+  assert.equal(activityForPath(completed, [], '/staff/renewals').latest, undefined);
+  const linked = { id: 'transfer', transferCode: 'TRANSFER', status: 'APPROVED', createdAt: old, approvedAt: fresh };
+  const transfers = buildActivity('STAFF', 'employee', { transfers: [linked], 'support-requests': [{ ...current, subject: 'Chuyển kho', transfers: [linked] }] });
+  assert.equal(staffPriorityActivities(transfers).length, 1, 'One physical transfer is not displayed twice');
+  assert.equal(transfers.find(item => item.kind === 'transfers').at, fresh, 'Approval time remains usable for legacy DTOs');
+  checks.push('Dashboard freshness: latest assignment and completed result beat stale backlog; read does not complete work; scoped function updates; transfer deduplication and approval timestamps');
+}
 const { customerProgress } = await import(await moduleUrl(new URL('../src/utils/customer-progress.ts', import.meta.url)));
 const { filterNotifications, newActivityCount, actionCountForPath } = await import(await moduleUrl(new URL('../src/utils/notification-tools.ts', import.meta.url)));
 const journeyReservation = { id: 'PUBLIC-REFERENCE', reference: 'PUBLIC-REFERENCE', quantity: 1, status: 'CONFIRMED' };
@@ -285,7 +306,6 @@ for (const name of [
   "work-queue",
   "operation-access",
   "payment-state",
-  "handover",
 ])
   assert.equal(
     await readFile(new URL(`../src/utils/${name}.ts`, import.meta.url), "utf8"),
@@ -298,6 +318,16 @@ for (const name of [
 checks.push(
   "Web and mobile use identical workflow, notification and permission rules",
 );
+// The latest merge intentionally gives web/mobile different explanatory copy.
+// Compare handover rules, rather than requiring those messages to be identical.
+const webHandover = await import(await moduleUrl(new URL('../src/utils/handover.ts', import.meta.url)));
+const mobileHandover = await import(await moduleUrl(new URL('../../mobile/src/utils/handover.ts', import.meta.url)));
+for (const [planned, clock, contracts] of [
+  ['invalid', Date.parse('2030-01-01'), []],
+  ['2030-02-01T00:00:00Z', Date.parse('2030-01-01'), []],
+  ['2030-01-01T00:00:00Z', Date.parse('2030-01-01T01:00:00Z'), [{ contractStartDate: '2030-01-02', contractEndDate: '2030-02-01' }]],
+  ['2030-01-01T00:00:00Z', Date.parse('2030-02-01'), [{ contractStartDate: '2030-01-01', contractEndDate: '2030-02-01' }]],
+]) assert.equal(Boolean(webHandover.handoverCompletionIssue(planned, clock, contracts)), Boolean(mobileHandover.handoverCompletionIssue(planned, clock, contracts)));
 const { paymentWindowClosed, paymentExpiry, paymentTimeLeft } = await import(await moduleUrl(new URL('../src/utils/payment-state.ts', import.meta.url)));
 const { customerAppointmentAction } = await import(await moduleUrl(new URL('../../mobile/src/portals/actions.ts', import.meta.url)));
 const clock = Date.parse('2050-01-01T00:00:00Z');

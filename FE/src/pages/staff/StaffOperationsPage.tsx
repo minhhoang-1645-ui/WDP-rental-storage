@@ -12,15 +12,13 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { useActivity } from "../../activity/context";
 import { ActivitySummary } from "../../activity/ActivityCenter";
-import { activitySources } from "../../utils/activity";
-import { code, first, date } from "../../components/manager/portal-data";
-import { PageHeader, Status } from "../../components/manager/PortalUi";
+import { activitySources, staffPriorityActivities } from "../../utils/activity";
+import { date } from "../../components/manager/portal-data";
+import { PageHeader } from "../../components/manager/PortalUi";
 import { WorkHub, WorkflowHint } from "../../components/workspace/WorkHub";
 import {
   awaitingAssignment,
-  staffNeedsAction,
   staffWorkGroups,
-  staffWorkRank,
 } from "../../utils/work-queue";
 
 const icons = {
@@ -39,14 +37,13 @@ export function StaffOperationsPage() {
   const { user } = useAuth();
   const activity = useActivity();
   const sources = activitySources("STAFF");
+  const actionable = new Set(activity.entries.filter(item => item.action).map(item => item.id));
   const groups = staffWorkGroups.map((group) => {
     const items = activity.data[group.resource] ?? [];
     return {
       ...group,
       path: `/staff/${group.resource}`,
-      items: items.filter((row) =>
-        staffNeedsAction(group.resource, row, user?.id ?? ""),
-      ),
+      items: items.filter(row => actionable.has(`${group.resource}:${row.id}`)),
       waiting: items.filter((row) => awaitingAssignment(group.resource, row))
         .length,
       unavailable:
@@ -57,21 +54,7 @@ export function StaffOperationsPage() {
         ),
     };
   });
-  const queue = groups
-    .flatMap((group) =>
-      group.items.map((row) => ({
-        row,
-        group,
-        path: `${group.path}/${encodeURIComponent(first(row, "id"))}`,
-      })),
-    )
-    .sort(
-      (a, b) =>
-        staffWorkRank(a.group.resource, a.row) -
-          staffWorkRank(b.group.resource, b.row) ||
-        (Date.parse(first(a.row, "scheduledAt", "createdAt")) || 0) -
-          (Date.parse(first(b.row, "scheduledAt", "createdAt")) || 0),
-    );
+  const queue = staffPriorityActivities(activity.entries);
   const waiting = groups.reduce((sum, group) => sum + group.waiting, 0);
   return (
     <section className="workspace-home">
@@ -93,8 +76,8 @@ export function StaffOperationsPage() {
           <div>
             <h2>Ưu tiên xử lý</h2>
             <p>
-              Việc ưu tiên cao và lịch đã đến giờ được đưa lên trước. Chỉ hiển
-              thị hồ sơ bạn có thể xử lý.
+              Cùng danh sách cần thực hiện trong thông báo: việc khẩn trước,
+              sau đó là hồ sơ vừa cập nhật. Chỉ hiện việc bạn có thể xử lý.
             </p>
           </div>
         </div>
@@ -105,24 +88,14 @@ export function StaffOperationsPage() {
         )}
         {queue.length > 0 ? (
           <div className="workspace-shortcuts">
-            {queue.slice(0, 6).map(({ row, group, path }) => (
-              <Link key={path} to={path}>
+            {queue.slice(0, 6).map(item => (
+              <Link key={item.id} to={item.web} onClick={() => activity.markRead([item.token])}>
                 <span className="work-queue-marker" />
                 <div>
-                  <strong>{code(row)}</strong>
-                  <span>
-                    {group.title} ·{" "}
-                    {first(
-                      row,
-                      "customer.fullName",
-                      "reservation.customer.fullName",
-                      "subject",
-                      "storageUnit.unitNumber",
-                    ) || "Mở hồ sơ để đối chiếu"}
-                    {row.scheduledAt ? ` · ${date(row.scheduledAt, true)}` : ""}
-                  </span>
+                  <strong>{item.code} · {item.title}</strong>
+                  <span>{item.message}</span>
+                  {item.at && <span>Cập nhật {date(item.at, true)}</span>}
                 </div>
-                <Status value={row.status} />
                 <ArrowRight size={16} />
               </Link>
             ))}
@@ -136,6 +109,7 @@ export function StaffOperationsPage() {
             </p>
           )
         )}
+        {queue.length > 6 && <Link className="portal-text-button" to="/staff/notifications?view=action">Xem tất cả việc cần làm ({queue.length}) <ArrowRight size={14} /></Link>}
         {waiting > 0 && (
           <p className="workspace-waiting">
             {waiting} hồ sơ đang chờ quản lý phân công. Các hồ sơ này chưa được

@@ -12,7 +12,7 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
   const transfer = { id: 'transfer', transferCode: 'TRF-1', status, supportRequestId: 'support' as string | null, reservationId: 'reservation', rentalContractId: 'contract', fromStorageUnitId: 'source', toStorageUnitId: 'destination', fromReservationUnitId: 'allocation-old', toReservationUnitId: 'allocation-new',
     fromStorageUnit: { id: 'source', unitNumber: 'A101', status: status === 'COMPLETED' ? 'MAINTENANCE' : 'OCCUPIED', storageType }, toStorageUnit: { id: 'destination', unitNumber: 'A102', status: 'RESERVED', storageType },
     rentalContract: { id: 'contract', contractCode: 'CON-1', status: 'ACTIVE', startDate: stamp, endDate: stamp }, reservation: { id: 'reservation', reservationCode: 'RES-1', startDate: stamp, endDate: stamp },
-    requestedBy: actor, approvedBy: actor, completedBy: actor, createdAt: stamp, approvedAt: stamp, completedAt: status === 'COMPLETED' ? stamp : null as Date | null };
+    requestedBy: actor, approvedBy: actor, completedBy: actor, createdAt: stamp, updatedAt: stamp, approvedAt: stamp, completedAt: status === 'COMPLETED' ? stamp : null as Date | null };
   const maintenance: Record<string, unknown>[] = [];
   const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, resolutionType: support.resolutionType } });
   const tx = { $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
@@ -24,6 +24,13 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
 }
 
 describe('Transfer completion and linked customer request, with memory-only dependencies', () => {
+  it('returns the actual latest modification time separately from the old creation time', async () => {
+    const app = setup('COMPLETED');
+    app.transfer.updatedAt = new Date('2026-11-06T05:00:00Z');
+    const result = await app.service.complete('transfer', app.actor);
+    expect(result.updatedAt).toBe('2026-11-06T05:00:00.000Z');
+    expect(result.createdAt).toBe('2026-10-27T13:00:00.000Z');
+  });
   it('completes physical movement and resolves the linked request in the same transaction', async () => {
     const app = setup(); const result = await app.service.complete('transfer', app.actor);
     expect(result.status).toBe('COMPLETED'); expect(result.supportRequest.status).toBe('RESOLVED');

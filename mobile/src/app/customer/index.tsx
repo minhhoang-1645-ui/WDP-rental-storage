@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '@/components/screen-state';
 import { useResource } from '@/operations/use-resource';
 import { Navigation, Panel, styles } from '@/operations/ui';
 import { codeOf, label, type Row } from '@/operations/model';
+import { ActivitySummary } from '@/activity/ActivityCenter';
 
 export default function CustomerHomeScreen() {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ export default function CustomerHomeScreen() {
     <Pressable accessibilityRole="button" onPress={() => router.push('/customer/discover')} style={({ pressed }) => ({ backgroundColor: WdpColors.navy, padding: 24, borderRadius: 16, borderCurve: 'continuous', flexDirection: 'row', alignItems: 'center', gap: 16, opacity: pressed ? 0.8 : 1 })}>
       <Warehouse size={28} color={WdpColors.surface} /><View style={{ flex: 1, gap: 4 }}><Text style={[styles.title, { color: WdpColors.surface }]}>Tìm kho phù hợp</Text><Text style={[styles.copy, { color: WdpColors.tealSubtle }]}>Chọn kho & đặt thuê</Text></View><ArrowRight size={22} color={WdpColors.surface} />
     </Pressable>
+    <ActivitySummary />
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{shortcuts.map(({ title, path, icon: Icon, count: value }) => <Pressable key={path} accessibilityRole="button" accessibilityLabel={title + ', ' + value + ' hồ sơ'} onPress={() => router.push(path as Href)} style={({ pressed }) => [styles.card, { flexBasis: '45%', flexGrow: 1, gap: 16 }, pressed && styles.pressed]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 28 }}><Icon size={24} color={WdpColors.navy} />{value !== 0 && <Text style={[styles.label, { color: WdpColors.navy, backgroundColor: WdpColors.soft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }]}>{value}</Text>}</View><Text style={styles.title}>{title}</Text>
     </Pressable>)}</View>

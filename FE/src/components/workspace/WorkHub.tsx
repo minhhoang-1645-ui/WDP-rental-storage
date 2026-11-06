@@ -1,9 +1,15 @@
 import { ArrowRight, CircleCheck, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useActivity } from '../../activity/context';
+import { activityForPath } from '../../utils/activity';
 
 export interface WorkAction { title: string; description: string; to: string; icon: LucideIcon; count?: number | string; tone?: 'attention' | 'normal' }
 export function WorkHub({ title, description, actions }: { title: string; description: string; actions: WorkAction[] }) {
-  return <section className="work-hub" aria-label={title}><header className="work-hub-heading"><div><h2>{title}</h2><p>{description}</p></div></header><div className="work-hub-grid">{actions.map(({ title: name, description: copy, to, icon: Icon, count, tone }) => <Link key={to} to={to} className={`work-hub-card${tone === 'attention' ? ' needs-attention' : ''}`}><span className="work-hub-icon"><Icon size={21} /></span><div className="work-hub-copy"><strong>{name}</strong><p>{copy}</p></div>{count !== undefined && <span className="work-hub-count" aria-label={`${count} hồ sơ`}>{count}</span>}<ArrowRight size={17} className="work-hub-arrow" /></Link>)}</div></section>;
+  const activity = useActivity();
+  return <section className="work-hub" aria-label={title}><header className="work-hub-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div></header><div className="work-hub-grid">{actions.map(({ title: name, description: copy, to, icon: Icon, count, tone }) => {
+    const { unread, todo, latest } = activityForPath(activity.entries, activity.read, to);
+    return <div key={to} className="work-hub-item"><Link to={to} className={`work-hub-card${tone === 'attention' || todo.length ? ' needs-attention' : ''}`}><span className="work-hub-icon"><Icon size={21} /></span><div className="work-hub-copy"><strong>{name}</strong>{copy && <p>{copy}</p>}{latest && <div className="work-hub-update"><small>{unread.length > 0 ? `${unread.length} cập nhật chưa đọc` : 'Đã xem cập nhật'} · {todo.length} việc cần làm</small><strong>{latest.title}</strong><p>{latest.code} · {latest.message}</p></div>}</div>{count !== undefined && <span className="work-hub-count" aria-label={count === '—' ? 'Chưa tải được công việc' : `${count} hồ sơ cần xử lý`}>{count}</span>}<ArrowRight size={17} className="work-hub-arrow" /></Link>{latest && <Link className="work-hub-direct" to={latest.web} onClick={() => activity.markRead([latest.token])}>{latest.action ? 'Xem bước tiếp theo' : 'Xem cập nhật'} · {latest.code} <ArrowRight size={14} /></Link>}</div>;
+  })}</div></section>;
 }
 const steps = [
   { title: 'Chọn & đặt kho', text: 'Chọn loại kho, kỳ thuê và dịch vụ.', path: '/booking' },

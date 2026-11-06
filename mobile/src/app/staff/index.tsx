@@ -7,30 +7,25 @@ import {
   WorkflowHint,
 } from "@/components/workspace-hub";
 import { Button, Navigation, Panel, styles } from "@/operations/ui";
-import { codeOf, text, label } from "@/operations/model";
-import { formatDate } from "@/utils/format";
-import { ActivitySummary } from "@/activity/ActivityCenter";
+import { ActivityItem, ActivitySummary } from "@/activity/ActivityCenter";
 import { useActivity } from "@/activity/context";
-import { activitySources } from "@/utils/activity";
+import { activitySources, staffPriorityActivities } from "@/utils/activity";
 import {
   awaitingAssignment,
-  staffNeedsAction,
   staffWorkGroups,
-  staffWorkRank,
 } from "@/utils/work-queue";
 
 export default function StaffHomeScreen() {
   const { user } = useAuth();
   const activity = useActivity();
   const sources = activitySources("STAFF");
+  const actionableIds = new Set(activity.entries.filter(item => item.action).map(item => item.id));
   const groups = staffWorkGroups.map((group) => {
     const items = activity.data[group.resource] ?? [];
     return {
       ...group,
       path: `/staff/${group.resource}`,
-      items: items.filter((row) =>
-        staffNeedsAction(group.resource, row, user?.id ?? ""),
-      ),
+      items: items.filter(row => actionableIds.has(`${group.resource}:${String(row.id)}`)),
       waiting: items.filter((row) => awaitingAssignment(group.resource, row))
         .length,
       unavailable:
@@ -41,21 +36,7 @@ export default function StaffHomeScreen() {
         ),
     };
   });
-  const queue = groups
-    .flatMap((group) =>
-      group.items.map((item) => ({
-        item,
-        group,
-        path: `${group.path}/${encodeURIComponent(String(item.id))}`,
-      })),
-    )
-    .sort(
-      (a, b) =>
-        staffWorkRank(a.group.resource, a.item) -
-          staffWorkRank(b.group.resource, b.item) ||
-        (Date.parse(text(a.item, "scheduledAt", "createdAt")) || 0) -
-          (Date.parse(text(b.item, "scheduledAt", "createdAt")) || 0),
-    );
+  const queue = staffPriorityActivities(activity.entries);
   const waiting = groups.reduce((sum, group) => sum + group.waiting, 0);
   return (
     <ScrollView
@@ -77,17 +58,10 @@ export default function StaffHomeScreen() {
     <Navigation title="Kho tôi phụ trách" path="/staff/assigned-units" />
       <Panel title="Ưu tiên xử lý">
         <Text style={styles.copy}>
-          Việc ưu tiên cao và lịch đã đến giờ được đưa lên trước. Chỉ hiển thị
-          hồ sơ bạn có thể xử lý.
+          Sắp xếp theo mức ưu tiên và lần cập nhật gần nhất, đồng bộ với thông báo.
+          Chỉ hiển thị hồ sơ bạn có thể xử lý.
         </Text>
-        {queue.slice(0, 6).map(({ item, path, group }) => (
-          <Navigation
-            key={path}
-            title={codeOf(item)}
-            description={`${group.title} · ${label(item.status)}${item.scheduledAt ? ` · ${formatDate(String(item.scheduledAt), true)}` : ""}`}
-            path={path}
-          />
-        ))}
+        {queue.slice(0, 6).map(item => <ActivityItem key={item.id} item={item} />)}
         {!queue.length && (
           <Text style={styles.copy}>
             {activity.loading

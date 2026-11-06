@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date }
+export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date; updatedAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
 export interface UserListFilters { search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
 type StoredSession = { tokenHash: string; userId: string; expiresAt: Date };

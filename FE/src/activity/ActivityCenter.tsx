@@ -6,7 +6,7 @@ import { useActivity } from './context';
 import { useDialog } from '../hooks/useDialog';
 import { hasDraft, LIVE_REFRESH } from '../services/live-events';
 import { filterNotifications, notificationGroup, notificationKinds } from '../utils/notification-tools';
-import type { ActivityEntry } from '../utils/activity';
+import { dashboardNotifications, type ActivityEntry } from '../utils/activity';
 
 function useInboxPath() { const { user } = useAuth(); return `/${user?.role.toLowerCase() ?? 'customer'}/notifications`; }
 export function ActivityBell() {
@@ -62,7 +62,6 @@ export function ActivityRefreshNote() {
 export function ActivitySummary() {
   const activity = useActivity(), path = useInboxPath(), [expanded, setExpanded] = useState(false);
   const actionable = activity.entries.filter(item => item.action), unread = activity.entries.filter(item => !activity.read.includes(item.token));
-  const recent = [...unread].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
-  const combined = [...actionable, ...recent].filter((item, index, items) => items.findIndex(entry => entry.id === item.id) === index);
+  const combined = dashboardNotifications(activity.entries, activity.read);
   return <section className="activity-summary"><div className="work-hub-heading"><div><h2>Cần thực hiện & cập nhật mới</h2><p>{activity.loading ? 'Đang tải công việc và thông báo…' : `${actionable.length} hồ sơ cần thực hiện · ${unread.length} cập nhật chưa đọc`}</p></div><Link to={path} className="portal-text-button">Xem tất cả <ArrowRight size={14} /></Link></div><ActivityStatus />{combined.slice(0, expanded ? 12 : 2).map(item => <ActivityLink key={item.id} item={item} />)}{activity.loading && <p role="status">Đang kiểm tra hồ sơ…</p>}{!activity.loading && !combined.length && <p className="activity-empty">{activity.failed.length ? 'Chưa lấy đủ dữ liệu. Kiểm tra kết nối để cập nhật công việc.' : 'Chưa có việc cần thực hiện hoặc cập nhật chưa đọc.'}</p>}{combined.length > 2 && <button type="button" className="portal-text-button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Thu gọn' : 'Xem thêm việc & cập nhật'}</button>}</section>;
 }

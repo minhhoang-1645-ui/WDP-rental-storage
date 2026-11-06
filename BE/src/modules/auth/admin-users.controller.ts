@@ -66,7 +66,7 @@ export class AdminUsersController {
     return this.publicUser(user);
   }
 
-  private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string; createdAt?: Date }) {
-    return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, accountStatus: user.accountStatus, createdAt: user.createdAt?.toISOString() ?? null };
+  private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string; createdAt?: Date; updatedAt?: Date }) {
+    return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, accountStatus: user.accountStatus, createdAt: user.createdAt?.toISOString() ?? null, updatedAt: user.updatedAt?.toISOString() ?? user.createdAt?.toISOString() ?? null };
   }
 }

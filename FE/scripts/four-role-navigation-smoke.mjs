@@ -46,9 +46,10 @@ try {
     const app = await setup('CUSTOMER', width);
     await app.goto('/customer/rentals');
     const card = app.page.locator('article').filter({ hasText: reservation.reference }).first();
-    await card.getByRole('link', { name: 'Hóa đơn & thanh toán', exact: true }).click();
-    await app.page.getByText('SCOPE-INVOICE', { exact: true }).waitFor();
-    assert.equal(await app.page.getByText('OTHER-INVOICE', { exact: true }).count(), 0);
+    await card.getByRole('button', { name: 'Xem hóa đơn', exact: true }).click();
+    const invoiceDialog = app.page.getByRole('dialog');
+    await invoiceDialog.getByRole('heading', { name: 'SCOPE-INVOICE', exact: true }).waitFor();
+    assert.equal(await invoiceDialog.getByText('OTHER-INVOICE', { exact: true }).count(), 0);
     await app.goto('/customer/renewals?reservation=' + reservation.id);
     await app.page.waitForFunction(id => [...document.querySelectorAll('select')].some(select => select.value === id), reservation.id);
     await app.goto('/customer/transfers?reservation=' + reservation.id);

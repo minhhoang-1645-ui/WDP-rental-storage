@@ -9,6 +9,36 @@ export type ActivityRow = Record<string, unknown>;
 export interface ActivitySource { kind: string; path: string; array?: boolean; title: string }
 export interface ActivityEntry { id: string; token: string; kind: string; code: string; title: string; message: string; web: string; mobile: string; action: boolean; priority: number; at: string }
 export type ActivityData = Record<string, ActivityRow[]>;
+const activityOrder = (a: ActivityEntry, b: ActivityEntry) => a.priority - b.priority || (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id);
+
+/** Context for a function card, scoped to its route rather than all account updates. */
+export function activityForPath(entries: ActivityEntry[], read: string[], path: string) {
+  const base = path.split(/[?#]/)[0].replace(/\/$/, '');
+  const matches = (destination: string) => { const target = destination.split(/[?#]/)[0]; return target === base || target.startsWith(base + '/'); };
+  const related = entries.filter(item => matches(item.web) || matches(item.mobile));
+  const unread = related.filter(item => !read.includes(item.token)).sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id));
+  const todo = related.filter(item => item.action).sort(activityOrder);
+  return { unread, todo, latest: unread[0] ?? todo[0] };
+}
+
+/** Use the same actionable records and update times as the notification inbox. */
+export function staffPriorityActivities(entries: ActivityEntry[]): ActivityEntry[] {
+  const byDestination = new Map<string, ActivityEntry>();
+  for (const entry of entries.filter(item => item.action)) {
+    const previous = byDestination.get(entry.web);
+    if (!previous || (Date.parse(entry.at) || 0) > (Date.parse(previous.at) || 0)) byDestination.set(entry.web, entry);
+  }
+  return [...byDestination.values()].sort(activityOrder);
+}
+
+/** Reserve the leading slot for a fresh unread result, even with an old backlog. */
+export function dashboardNotifications(entries: ActivityEntry[], read: string[]): ActivityEntry[] {
+  const seen = new Set(read);
+  const recent = entries.filter(item => !seen.has(item.token)).sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id));
+  const todo = entries.filter(item => item.action).sort(activityOrder);
+  const leading = [recent[0], todo.find(item => item.id !== recent[0]?.id)].filter((item): item is ActivityEntry => Boolean(item));
+  return [...new Map([...leading, ...recent, ...todo].map(item => [item.id, item])).values()];
+}
 export const activityText = (row: ActivityRow, path: string): string => {
   let value: unknown = row;
   for (const key of path.split('.')) value = value && typeof value === 'object' ? (value as ActivityRow)[key] : undefined;
@@ -64,6 +94,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       }
       if (kind === 'renewals' && status === 'APPROVED_PENDING_PAYMENT') {
         action = true;
+        message = get('appendix.acceptedAt') ? 'Bạn đã ký phụ lục gia hạn. Mở hóa đơn để xem số tiền còn phải trả và thanh toán; không cần ký lại.' : 'Gia hạn đã được duyệt. Mở hồ sơ để xem phụ lục và hóa đơn của kỳ gia hạn.';
         const invoices = Array.isArray(row.invoices) ? row.invoices as ActivityRow[] : [];
         const invoice = invoices.find(item => Number(item.renewalCycle) === 1);
         if (invoice?.id) { web = `/customer/payments?invoice=${encodeURIComponent(String(invoice.id))}`; mobile = `/customer/invoices/${encodeURIComponent(String(invoice.id))}`; }
@@ -155,10 +186,10 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     if (context.length) message = context.join(' · ') + '. ' + message;
     if (action) priority = 1;
     if (action && (row.priority === 'HIGH' || status === 'ESCALATED' || status === 'PENDING_VERIFICATION')) priority = 0;
-    const at = ['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'updatedAt', 'submittedAt', 'requestedAt', 'createdAt'].map(get).filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
+    const at = ['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'updatedAt', 'approvedAt', 'rejectedAt', 'submittedAt', 'requestedAt', 'createdAt', 'terms.acceptedAt', 'appendix.acceptedAt', 'transfers.0.updatedAt', 'transfers.0.approvedAt', 'transfers.0.completedAt'].map(get).filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
     const fingerprint = JSON.stringify([code, status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('expiresAt'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName'), get('storageUnit.id'), get('storageUnit.unitCode'), get('unit.id'), get('unit.unitCode')]);
     const entryId = `${kind}:${id}`, token = activityHash(`${entryId}:${fingerprint}`);
     result.push({ id: entryId, token, kind, code, title, message, web, mobile, action, priority, at });
   }
-  return [...new Map(result.map(item => [item.id, item])).values()].sort((a, b) => a.priority - b.priority || (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id));
+  return [...new Map(result.map(item => [item.id, item])).values()].sort(activityOrder);
 }

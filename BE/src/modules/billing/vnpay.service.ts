@@ -23,15 +23,21 @@ export class VnpayService {
 
   assertConfigured() { this.settings(); }
 
-  paymentUrl(input: { orderRef: string; amount: bigint; ipAddress: string; bankCode?: string; locale?: string; createdAt: Date }) {
+  paymentUrl(input: { orderRef: string; amount: bigint; ipAddress: string; bankCode?: string; locale?: string; createdAt: Date; mobileInvoiceId?: string }) {
     const settings = this.settings();
     const isSandbox = new URL(settings.paymentUrl).hostname === 'sandbox.vnpayment.vn';
     const bankCode = input.bankCode ?? (isSandbox ? 'NCB' : undefined);
+    let returnUrl = settings.returnUrl;
+    if (input.mobileInvoiceId) {
+      const callback = new URL(returnUrl);
+      callback.pathname = callback.pathname.replace(/\/$/, '') + '/mobile/' + encodeURIComponent(input.mobileInvoiceId);
+      returnUrl = callback.href;
+    }
     const params: Record<string, string> = {
       vnp_Version: '2.1.0', vnp_Command: 'pay', vnp_TmnCode: settings.tmnCode,
       vnp_Amount: String(input.amount * 100n), vnp_CurrCode: 'VND', vnp_TxnRef: input.orderRef,
       vnp_OrderInfo: `Thanh toan hoa don WDP ${input.orderRef}`, vnp_OrderType: 'other',
-      vnp_Locale: input.locale === 'en' ? 'en' : 'vn', vnp_ReturnUrl: settings.returnUrl,
+      vnp_Locale: input.locale === 'en' ? 'en' : 'vn', vnp_ReturnUrl: returnUrl,
       vnp_IpAddr: input.ipAddress || '127.0.0.1', vnp_CreateDate: this.vnpDate(input.createdAt),
       vnp_ExpireDate: this.vnpDate(new Date(input.createdAt.getTime() + 5 * 60_000)),
       ...(bankCode ? { vnp_BankCode: bankCode } : {}),

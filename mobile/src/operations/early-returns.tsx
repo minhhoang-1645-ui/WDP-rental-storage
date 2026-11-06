@@ -1,3 +1,4 @@
+import { ManagerParentLink } from '@/operations/manager-parent-link';
 import { useState } from 'react';
 import { ScrollView, Text } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
@@ -6,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state'
 import { OperationForm, type FormAction } from './form';
 import { idOf, rows, text, type Row } from './model';
 import { useResource } from './use-resource';
-import { Button, Facts, Navigation, Panel, styles } from './ui';
+import { Button, Facts, Panel, styles } from './ui';
 import { formatDate, formatMoney } from '@/utils/format';
 
 function reviewAction(item: Row, approved: boolean): FormAction {
@@ -29,7 +30,7 @@ export function ManagerEarlyReturns() {
   const items = rows(data.data?.items).filter(item => history || !item.decision);
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản lý" title="Đề nghị trả trước hạn" description="Xem xét đề nghị trước khi khách tạo hồ sơ trả kho. Nhân viên kiểm tra và nhận kho sau khi được chấp thuận." />
-    <Navigation title="Về tổng quan" path="/manager" />
+    <ManagerParentLink resource="early-returns" />
     <Button title="Làm mới đề nghị" onPress={data.refresh} disabled={data.loading || Boolean(action)} />
     <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chờ duyệt' : 'Xem cả đề nghị đã quyết định'} variant="secondary" onPress={() => setHistory(value => !value)} />
     {notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}

@@ -1,3 +1,4 @@
+import { useCustomerOnlinePayment } from './useCustomerOnlinePayment';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
@@ -43,6 +44,7 @@ export function CustomerRenewalsPage() {
     user?.id ?? "",
     true,
   );
+  const { createOnlinePayment, onlineInvoiceId, hasPendingOnline, feedback } = useCustomerOnlinePayment(user?.id ?? '', renewals.refresh);
   const [termMonths, setTermMonths] = useState("3");
   const [paymentPlan, setPaymentPlan] = useState<"PAY_MONTHLY" | "PREPAID">(
     "PREPAID",
@@ -235,7 +237,12 @@ export function CustomerRenewalsPage() {
             </PortalEmpty>
           ) : (
             <div className="customer-card-list">
-              {visibleRenewals.map((item) => (
+              {feedback}
+              {visibleRenewals.map((item) => {
+                const invoice = item.invoices?.find(candidate => candidate.renewalCycle === 1);
+                const canPay = item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt
+                  && invoice && invoice.status !== 'PAID' && invoice.status !== 'VOID' && invoice.balanceDue > 0;
+                return (
                 <article
                   className="customer-record-card customer-record-card--compact"
                   key={item.id}
@@ -271,7 +278,10 @@ export function CustomerRenewalsPage() {
                     </p>
                   )}
                   <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>
-                  {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-primary" to={`/customer/payments${item.invoices?.find(invoice => invoice.renewalCycle === 1) ? `?invoice=${encodeURIComponent(item.invoices.find(invoice => invoice.renewalCycle === 1)!.id)}` : ''}`}>Xem hóa đơn & thanh toán gia hạn</Link>}
+                  {canPay && <button type="button" className="button-primary" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => void createOnlinePayment({ ...invoice, type: 'RENEWAL' })}>
+                    {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}
+                  </button>}
+                  {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-secondary" to={invoice ? `/customer/payments?invoice=${encodeURIComponent(invoice.id)}` : '/customer/payments'}>Xem hóa đơn gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
                   {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
                     ? <div><p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} signed /></div>
@@ -279,7 +289,7 @@ export function CustomerRenewalsPage() {
                   {selectedAppendix?.id === item.id && item.appendix && <div><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} /><SignatureAgreement key={`${item.id}:${item.appendix.snapshotHash}`} label="Xác thực và ký phụ lục" busy={Boolean(acceptingAppendixId)} otpConfigured={item.appendix.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: item.appendix?.snapshotHash }) })} onSubmit={(signature, proof) => acceptAppendix(item, signature, proof)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
                   <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
-              ))}
+              ); })}
             </div>
           )}
         </section>

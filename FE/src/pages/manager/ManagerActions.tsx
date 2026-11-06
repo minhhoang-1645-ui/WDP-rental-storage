@@ -1,3 +1,4 @@
+import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
@@ -324,7 +325,7 @@ export function ManagerActions({
             </p>
           ))}
         {resource === "invoices" &&
-          (row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
+          (Number(row.balanceDue) > 0 && isScheduledRenewalInvoice(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
             <form
               className="portal-form"
               onSubmit={(event) => {

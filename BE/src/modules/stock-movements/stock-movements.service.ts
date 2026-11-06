@@ -53,8 +53,16 @@ export class StockMovementsService {
     if (contract.status !== 'ACTIVE') throw new ConflictException({ code: 'STOCK_MOVEMENT_REQUIRES_ACTIVE_CONTRACT', message: 'Chỉ hợp đồng ACTIVE mới được tạo phiếu nhập/xuất hàng.' });
 
     return this.serializable(async (tx) => {
-      const activeContract = await tx.rentalContract.findUnique({ where: { id: contract.id }, select: { status: true, reservationUnit: { select: { storageUnitId: true } } } });
+      const activeContract = await tx.rentalContract.findUnique({ where: { id: contract.id }, select: { status: true, startDate: true, endDate: true, reservationUnit: { select: { storageUnitId: true } } } });
       if (activeContract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng vừa kết thúc. Không thể tạo phiếu hàng mới.');
+      if (parsed.scheduledAt) {
+        const time = parsed.scheduledAt.getTime();
+        if (time <= Date.now()) throw new BadRequestException('Lịch dự kiến phải ở tương lai.');
+        // Contract dates are date-only. The last usable instant is before midnight at the end date in Vietnam.
+        const start = Date.parse(`${activeContract.startDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
+        const end = Date.parse(`${activeContract.endDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
+        if (time < start || time >= end) throw new BadRequestException('Lịch dự kiến phải nằm trong kỳ thuê của kho đã chọn.');
+      }
       const responsibility = await this.unitStaff?.resolveStaff(tx, [activeContract.reservationUnit.storageUnitId]);
       const movement = await tx.stockMovement.create({
         data: {

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -82,8 +83,15 @@ export class InventoryManagementService {
       if (id && !current) throw new NotFoundException('Không tìm thấy kho vật lý.');
       if (current) this.version(current.updatedAt, input.expectedUpdatedAt);
       const value = { ...current, ...input };
+      const storageTypeId = this.text(value.storageTypeId, 'Loại kho', 100);
+      const storageType = await tx.storageType.findUnique({ where: { id: storageTypeId }, select: { code: true } });
+      if (!storageType) throw new BadRequestException('Loại kho không tồn tại.');
+      const autoCode = !current && (value.unitNumber === undefined || value.unitNumber === '' || value.unitNumber === null);
       const data = {
-        unitNumber: this.code(value.unitNumber, 'Mã kho'), storageTypeId: this.text(value.storageTypeId, 'Loại kho', 100),
+        unitNumber: autoCode
+          ? `${storageType.code.slice(0, 33)}-${randomBytes(8).toString('hex').toUpperCase()}`
+          : this.code(value.unitNumber, 'Mã kho'),
+        storageTypeId,
         floor: this.optionalText(value.floor, 'Tầng', 100), zone: this.optionalText(value.zone, 'Khu', 100),
         row: this.optionalInteger(value.row, 'Hàng'), position: this.optionalInteger(value.position, 'Vị trí'),
       };
@@ -92,7 +100,6 @@ export class InventoryManagementService {
           throw new ConflictException('Kho đã có hồ sơ, phân công hoặc đang sử dụng. Không đổi mã, loại hoặc vị trí; hãy tạo kho mới.');
         }
       }
-      if (!await tx.storageType.findUnique({ where: { id: data.storageTypeId }, select: { id: true } })) throw new BadRequestException('Loại kho không tồn tại.');
       return current ? tx.storageUnit.update({ where: { id: current.id }, data }) : tx.storageUnit.create({ data });
     });
   }

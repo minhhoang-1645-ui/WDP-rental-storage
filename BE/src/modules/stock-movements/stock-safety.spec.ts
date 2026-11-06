@@ -28,6 +28,24 @@ describe('stock movement safety with stubbed transaction', () => {
     expect(responsibility.resolveStaff).toHaveBeenCalledWith(tx, ['destination']);
     expect(tx.stockMovement.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ assignedStaffUserId: 'destination-owner', status: 'ASSIGNED' }) }));
   });
+
+  it('rejects new scheduled movements in the past or outside the Vietnam rental dates', async () => {
+    const start = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    const end = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const contract = { id: 'contract', status: 'ACTIVE', startDate: new Date(start), endDate: new Date(end) };
+    const create = vi.fn();
+    const tx = { rentalContract: { findUnique: vi.fn().mockResolvedValue(contract) }, stockMovement: { create } };
+    const db = { $transaction: vi.fn(operation => operation(tx)), rentalContract: { findFirst: vi.fn().mockResolvedValue(contract) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) } };
+    const service = new StockMovementsService(db as never);
+    const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
+    const input = { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Hồ sơ', unit: 'thùng', quantity: 1 }] };
+    const submit = (scheduledAt: string) => service.create(customer, { ...input, scheduledAt }, 'schedule-check');
+
+    await expect(submit(new Date(Date.now() - 60000).toISOString())).rejects.toThrow('phải ở tương lai');
+    await expect(submit(new Date(Date.parse(`${start}T00:00:00+07:00`) - 60000).toISOString())).rejects.toThrow('phải nằm trong kỳ thuê');
+    await expect(submit(`${end}T00:00:00+07:00`)).rejects.toThrow('phải nằm trong kỳ thuê');
+    expect(create).not.toHaveBeenCalled();
+  });
   it('rejects aggregate overdraw when two lines reference the same stored item', async () => {
     const state = setup([4, 4]);
     await expect(state.service.complete('movement', {}, staff)).rejects.toThrow('Không đủ tồn');

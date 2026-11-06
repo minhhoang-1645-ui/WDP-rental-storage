@@ -38,9 +38,9 @@ export function ManagerAssignments() {
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}
     data={loading || error ? [] : tasks} keyExtractor={row => `${row.resource}:${idOf(row)}`}
     ListHeaderComponent={<View style={{ gap: 12 }}>
-      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Mở hồ sơ hỗ trợ, bảo trì hoặc nhập – xuất hàng để giao và đổi nhân viên phụ trách." />
+      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Chọn người phụ trách theo kho hoặc giao thủ công từng hồ sơ hỗ trợ, bảo trì và nhập – xuất." />
       <Navigation title="Về tổng quan" path="/manager" />
-      <Disclosure title="Phân công nhân viên phụ trách từng kho"><UnitStaffAssignments /></Disclosure>
+      <Disclosure title="Phân công nhân viên phụ trách từng kho"><UnitStaffAssignments onSaved={refresh} /></Disclosure>
       {action && <OperationForm key={action.path} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); refresh(); }} />}
       <Button title="Làm mới phân công" onPress={refresh} disabled={loading} />
       <Field title="Tìm công việc, kho hoặc nhân viên" value={search} onChange={setSearch} maxLength={120} />

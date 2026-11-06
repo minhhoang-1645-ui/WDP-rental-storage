@@ -6,13 +6,14 @@ import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState, EmptyState } from '@/components/screen-state';
-import { Button, Facts, Field, Navigation, Panel, styles } from '@/operations/ui';
+import { Button, Disclosure, Facts, Field, Navigation, Panel, styles } from '@/operations/ui';
+import { DateField } from '@/components/date-field';
 import { useResource } from '@/operations/use-resource';
 import { OperationForm, type FormAction } from '@/operations/form';
 import { operationMutate } from '@/operations/mutate';
 import { label, type Row } from '@/operations/model';
 import { formatDate } from '@/utils/format';
-import { stockCompleteInput, stockCreateInput } from './validation';
+import { stockCompleteInput, stockCreateInput, validateStockSchedule } from './validation';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from './types';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
@@ -43,19 +44,22 @@ export function StockList({ role }: { role: StockRole }) {
 function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   useDraftGuard();
   const contracts = useResource<Page<Row>>('/customer/contracts', true), params=useLocalSearchParams<{rentalContractId?:string}>();
-  const [choice, setContract] = useState<string>(), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [scheduledAt, setScheduledAt] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false), lock = useRef(false);
+  const [choice, setContract] = useState<string>(), [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [date, setDate] = useState(''), [time, setTime] = useState(''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false), lock = useRef(false);
   const active=(contracts.data?.items ?? []).filter(row=>row.status==='ACTIVE');
   const requested=choice ?? params.rentalContractId ?? (active.length===1 ? String(active[0].id) : '');
-  const contract=active.some(row=>row.id===requested)?requested:'';
+  const selectedContract = active.find(row => row.id === requested);
+  const contract = selectedContract ? requested : '';
   const items = useResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null);
   const patch = (key: string, changes: Partial<StockDraftLine>) => setLines(current => current.map(item => item.key === key ? { ...item, ...changes } : item));
   const submit = async () => {
     if (lock.current) return; setError('');
     try {
       if (!confirmed) throw new Error('Xác nhận đã đối chiếu hàng hóa và số lượng.');
-      if (!contracts.data?.items.some(item => item.id === contract && item.status === 'ACTIVE')) throw new Error('Chọn hợp đồng đang hoạt động của bạn.');
+      if (!selectedContract) throw new Error('Chọn hợp đồng đang hoạt động của bạn.');
       if (items.loading || items.error) throw new Error('Cần tải thành công danh sách hàng trước khi gửi.');
-      const input = stockCreateInput(contract, type, lines, items.data ?? [], scheduledAt, note);
+      if (Boolean(date) !== Boolean(time.trim())) throw new Error('Chọn cả ngày và giờ hoặc để trống lịch dự kiến.');
+      const input = stockCreateInput(contract, type, lines, items.data ?? [], date ? `${date} ${time.trim()}` : '', note);
+      validateStockSchedule(input.scheduledAt, selectedContract);
       lock.current = true; setBusy(true); await operationMutate('/customer/stock-movements', 'POST', input, true); onSaved();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không gửi được phiếu.'); }
     finally { lock.current = false; setBusy(false); }
@@ -63,7 +67,12 @@ function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   return <Panel title="Tạo phiếu nhập / xuất"><Text style={styles.copy}>Chọn kho bạn muốn gửi hoặc lấy hàng. Giờ dự kiến là giờ Việt Nam và có thể bỏ trống.</Text>
     {contracts.loading ? <LoadingState /> : contracts.error ? <ErrorState message={contracts.error} onRetry={contracts.refresh} /> : <>{!contracts.data?.items.some(item => item.status === 'ACTIVE') && <Text style={styles.copy}>Chưa có hợp đồng hoạt động. Hoàn tất bàn giao kho trước.</Text>}<RentalChoicePicker contracts={contracts.data?.items ?? []} value={contract} disabled={busy} onChange={id=>{setContract(id);setLines([freshLine()]);setConfirmed(false);}} /></>}
     <View style={styles.row}>{(['IN', 'OUT'] as const).map(value => <Button key={value} title={`${type === value ? '✓ ' : ''}${value === 'IN' ? 'Nhập hàng' : 'Xuất hàng'}`} variant={type === value ? 'primary' : 'secondary'} disabled={busy} onPress={() => { setType(value); setLines([freshLine()]); setConfirmed(false); }} />)}</View>
-    <Field title="Ngày giờ dự kiến (YYYY-MM-DD HH:mm, tùy chọn)" value={scheduledAt} onChange={setScheduledAt} maxLength={16} disabled={busy} />
+    <Disclosure title={date && time ? `Lịch dự kiến · ${formatDate(date)} ${time}` : 'Thêm lịch dự kiến'}>
+      <Text style={styles.copy}>Chọn giờ Việt Nam trong kỳ thuê. Có thể bỏ trống.</Text>
+      {!busy && <DateField title="Ngày giao nhận" value={date} onChange={setDate} />}
+      <Field title="Giờ giao nhận (ví dụ 14:30)" value={time} onChange={setTime} maxLength={5} disabled={busy} />
+      {(date || time) && <Button title="Bỏ lịch dự kiến" variant="secondary" disabled={busy} onPress={() => { setDate(''); setTime(''); }} />}
+    </Disclosure>
     {items.loading ? <LoadingState /> : items.error && <ErrorState message={items.error} onRetry={items.refresh} />}
     {lines.map((line, index) => <Panel key={line.key} title={`Hàng ${index + 1}`}>
       {type === 'IN' && <Button title={`${!line.storedItemId ? '✓ ' : ''}Nhập mặt hàng mới`} variant={!line.storedItemId ? 'primary' : 'secondary'} disabled={busy} onPress={() => patch(line.key, { storedItemId: '' })} />}

@@ -1,3 +1,4 @@
+import { ManagerParentLink } from '@/operations/manager-parent-link';
 import { useState } from 'react';
 import { ScrollView, Text } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
@@ -17,6 +18,7 @@ export default function Catalog() {
   if (user?.role !== 'MANAGER') return <EmptyState title="Không có quyền truy cập" message="Chỉ quản lý cơ sở được sửa danh mục." />;
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản lý cơ sở" title="Loại kho & bảng giá" description="Giá mới áp dụng cho báo giá mới." />
+    <ManagerParentLink resource="catalog" />
     {notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}
     {action ? <OperationForm key={action.path} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu.'); data.refresh(); }} /> : <>
       <Button title="Thêm loại kho" disabled={!data.data || data.loading} onPress={() => setAction(storageTypeAction(undefined, rows(data.data?.facilities)))} />

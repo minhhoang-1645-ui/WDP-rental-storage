@@ -36,8 +36,17 @@ export function CustomerBookingHistory() {
         ['Số kho đã đặt', item.reservation.quantity], ['Kho được cấp theo hợp đồng', item.unitCodes.join(', ') || 'Chưa được cấp kho'],
         ['Báo giá tại thời điểm đặt', text(item.reservation, 'quote.quotedTotalAmount', 'quote.grandTotal') ? formatMoney(Number(text(item.reservation, 'quote.quotedTotalAmount', 'quote.grandTotal'))) : 'Xem báo giá trong đơn'],
       ]} />
-      {item.contracts.map(contract => <Text key={text(contract, 'id')} style={styles.copy}>{text(contract, 'contractCode')}{contract.completedAt ? ` · Đã trả ngày ${formatDate(text(contract, 'completedAt'))}` : ''}</Text>)}
-      <Navigation title="Xem đơn đặt kho" path={`/customer/reservations/${encodeURIComponent(item.reference)}`} />
-      {item.contracts.map(contract => <Navigation key={text(contract, 'id')} title={`Xem hợp đồng ${text(contract, 'contractCode')}`} path={`/customer/contracts/${encodeURIComponent(text(contract, 'id'))}`} />)}
+      <Disclosure title="Các mốc đặt kho">
+        <Text style={styles.copy}>Đặt kho · {formatDate(text(item.reservation, 'createdAt'), true)}</Text>
+        {Boolean(text(item.reservation, 'confirmedAt')) && <Text style={styles.copy}>Xác nhận · {formatDate(text(item.reservation, 'confirmedAt'), true)}</Text>}
+        {item.phase === 'EXPIRED' && Boolean(text(item.reservation, 'expiresAt')) && <Text style={styles.copy}>Hết hạn giữ kho · {formatDate(text(item.reservation, 'expiresAt'), true)}</Text>}
+        {item.contracts.map(contract => <View key={text(contract, 'id')} style={{ gap: 4 }}>
+          <Text style={styles.label}>{[text(contract, 'contractCode'), text(contract, 'storageUnit.unitCode')].filter(Boolean).join(' · ')}</Text>
+          {([['terms.acceptedAt', 'Ký hợp đồng'], ['activatedAt', 'Bắt đầu sử dụng kho'], ['completedAt', 'Kết thúc hợp đồng']] as const).map(([path, title]) => {
+            const date = text(contract, path);
+            return date ? <Text key={path} style={styles.copy}>{title} · {formatDate(date, true)}</Text> : null;
+          })}
+        </View>)}
+      </Disclosure>
     </View>} />;
 }

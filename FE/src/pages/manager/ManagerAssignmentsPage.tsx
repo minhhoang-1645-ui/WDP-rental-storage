@@ -149,10 +149,10 @@ export function ManagerAssignmentsPage() {
   return (
     <section>
       <button type="button" className="button-secondary" onClick={() => setUnitAssignmentsOpen(value => !value)}>{unitAssignmentsOpen ? 'Thu gọn phân công theo kho' : 'Phân công nhân viên phụ trách từng kho'}</button>
-      {unitAssignmentsOpen && <UnitStaffAssignments />}
+      {unitAssignmentsOpen && <UnitStaffAssignments onSaved={() => setRevision(value => value + 1)} />}
       <PageHeader
         title="Phân công nhân viên"
-        description="Phân công nhân viên phụ trách hỗ trợ, bảo trì và phiếu nhập – xuất hàng khách."
+        description="Giao thủ công từng hồ sơ hỗ trợ, bảo trì hoặc phiếu nhập – xuất, kể cả khi kho chưa có người phụ trách."
       >
         <button
           className="button-secondary"

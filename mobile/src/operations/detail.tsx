@@ -1,3 +1,4 @@
+import { ManagerParentLink } from '@/operations/manager-parent-link';
 import { ContractRenewalHistory } from '@/components/contract-renewal-history';
 import { ContractTransferHistory } from '@/components/contract-transfer-history';
 import { DocumentFile } from '@/components/document-file';
@@ -44,6 +45,7 @@ function Detail({ resource, id }: { resource: string; id: string }) {
   const row: Row | undefined = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? managerReviewTitle(resource) : config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả chờ nghiệm thu; nhân viên thực hiện vận hành.' : 'Thông tin, lịch sử và thao tác theo vai trò của bạn.'} />
+    {user?.role === 'MANAGER' && <ManagerParentLink resource={resource} />}
     <Navigation title="Về danh sách" path={`${root}/${resource}`} />
     <Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}

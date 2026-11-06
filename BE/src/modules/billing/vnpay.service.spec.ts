@@ -51,6 +51,16 @@ describe('VnpayService', () => {
     expect(() => service.assertConfigured()).toThrow(ServiceUnavailableException);
   });
 
+  it('signs the return URL for the mobile invoice', () => {
+    const service = new VnpayService(new ConfigService(config));
+    const url = new URL(service.paymentUrl({
+      orderRef: 'WDPTEST0001', amount: 1250000n, ipAddress: '127.0.0.1',
+      createdAt: new Date('2026-10-21T01:00:00.000Z'), mobileInvoiceId: 'invoice-1',
+    }));
+    expect(url.searchParams.get('vnp_ReturnUrl')).toBe(config.VNPAY_RETURN_URL + '/mobile/invoice-1');
+    expect(service.verify(Object.fromEntries(url.searchParams)).orderRef).toBe('WDPTEST0001');
+  });
+
   it('does not advertise an online channel when any required setting is blank', () => {
     for (const key of Object.keys(config)) {
       const service = new VnpayService(new ConfigService({ ...config, [key]: '  ' }));

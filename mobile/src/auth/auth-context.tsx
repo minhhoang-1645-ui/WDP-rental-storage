@@ -9,7 +9,7 @@ interface AuthContextValue {
   loading: boolean;
   sessionError: string;
   retrySession: () => void;
-  login: (email: string, password: string) => Promise<PublicUser>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<PublicUser>;
   updateProfile: (input: { fullName: string; phone: string }) => Promise<PublicUser>;
   logout: () => Promise<void>;
   acceptSession: (session: AuthSession) => Promise<void>;
@@ -67,11 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, [clearLocalSession, attempt]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
     const version = ++revision.current;
     const session = await apiRequest<AuthSession>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password, rememberMe }),
       authenticated: false,
     });
     if (!session?.token || !session.user?.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(session.user.role)) throw new Error('Thông tin phiên đăng nhập không hợp lệ.');

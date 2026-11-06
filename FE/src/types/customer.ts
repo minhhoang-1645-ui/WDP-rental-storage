@@ -55,7 +55,7 @@ export interface CustomerRental {
   contracts: RentalContractSummary[]
   pendingRenewal: { renewalCode: string; status: string; requestedEndDate: string } | null
   historicalPricing?: { billingMode?: 'DAILY' | 'MONTHLY' }
-  billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number; nextInvoice: CustomerInvoice | null }
+  billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number; payableBalance?: number; scheduledBalance?: number; nextInvoice: CustomerInvoice | null }
 }
 
 export interface CustomerInvoice {

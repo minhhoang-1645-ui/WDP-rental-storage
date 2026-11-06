@@ -1,5 +1,5 @@
 import { EntitySelect } from '../../components/EntitySelect';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { PageHeader, LoadState, Empty, Pagination, Facts } from '../../components/manager/PortalUi';
@@ -9,6 +9,7 @@ import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from '../../types/stock';
 import { stockCompleteInput, stockCreateInput } from '../../utils/stock';
+import { vietnamLocalMinute } from '../../utils/handover';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
@@ -55,6 +56,19 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
   const [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
   const items = useApiResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null, user?.id, true);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const selectedContract = contracts.data?.items.find(row => row.id === contract && row.status === 'ACTIVE');
+  const startDate = selectedContract?.startDate?.slice(0, 10);
+  const endDate = selectedContract?.endDate?.slice(0, 10);
+  const startMinute = startDate ? `${startDate}T00:00` : '';
+  const nextMinute = vietnamLocalMinute(now + 60000);
+  const minSchedule = startMinute > nextMinute ? startMinute : nextMinute;
+  const endTime = endDate ? Date.parse(`${endDate}T00:00:00+07:00`) : NaN;
+  const maxSchedule = Number.isFinite(endTime) ? vietnamLocalMinute(endTime - 60000) : undefined;
   const patch = (key: string, change: Partial<StockDraftLine>) => setLines(current => current.map(line => line.key === key ? { ...line, ...change } : line));
   const submit = async (event: FormEvent) => {
     event.preventDefault(); if (lock.current) return; setError('');
@@ -62,6 +76,7 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
       if (!contracts.data?.items.some(row => row.id === contract && row.status === 'ACTIVE')) throw new Error('Vui lòng chọn hợp đồng đang hoạt động của bạn.');
       if (items.loading || items.error) throw new Error('Cần tải thành công danh sách hàng trước khi gửi.');
       const input = stockCreateInput(contract, type, lines, items.data ?? [], schedule, note);
+      if (input.scheduledAt && Date.parse(input.scheduledAt) <= Date.now()) throw new Error('Lịch dự kiến phải ở tương lai.');
       lock.current = true; setBusy(true); await mutate('/customer/stock-movements', 'POST', input, true); onSaved();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không gửi được phiếu.'); }
     finally { lock.current = false; setBusy(false); }
@@ -73,7 +88,10 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
       <RentalChoicePicker contracts={contracts.data?.items ?? []} value={contract} disabled={busy} onChange={value => { setContract(value); setLines([freshLine()]); }} />
       {!contracts.loading && !contracts.error && !contracts.data?.items.some(row => row.status === 'ACTIVE') && <p>Chưa có hợp đồng đang hoạt động. Hoàn tất bàn giao kho trước khi gửi phiếu.</p>}
       <label className="field-label">Loại phiếu<select aria-label="Loại phiếu" value={type} onChange={event => { setType(event.target.value as 'IN' | 'OUT'); setLines([freshLine()]); }}><option value="IN">Nhập hàng</option><option value="OUT">Xuất hàng</option></select></label>
-      <label className="field-label">Lịch dự kiến (tùy chọn)<input type="datetime-local" value={schedule} onChange={event => setSchedule(event.target.value)} /></label>
+      <label className="field-label">Lịch dự kiến (tùy chọn)
+        <input type="datetime-local" min={minSchedule} max={maxSchedule} value={schedule} onFocus={() => setNow(Date.now())} onChange={event => setSchedule(event.target.value)} aria-describedby="stock-schedule-hint" />
+      </label>
+      <small id="stock-schedule-hint">Chọn giờ trong tương lai và trong kỳ thuê, theo giờ Việt Nam. Nếu chưa biết giờ giao nhận, bạn có thể để trống.</small>
       <LoadState loading={items.loading} error={items.error} retry={items.refresh} />
       {lines.map((line, index) => <fieldset key={line.key} className="stock-line"><legend>Hàng {index + 1}</legend>
         <label className="field-label">Mặt hàng<EntitySelect aria-label={`Mặt hàng ${index + 1}`} value={line.storedItemId} required={type === 'OUT'} onValueChange={selectedValue => patch(line.key, { storedItemId: selectedValue })}><option value="">{type === 'IN' ? 'Nhập hàng mới' : 'Chọn hàng đang lưu'}</option>{items.data?.map(item => <option key={item.id} value={item.id}>{item.name} · {item.itemCode} · tồn {item.balance} {item.unit}</option>)}</EntitySelect></label>

@@ -7,7 +7,7 @@ import { useApiResource } from '../../services/useApiResource';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { customerBillingApi } from '../../services/billing';
 import { buildVietQrPayload } from '../../utils/vietqr';
-import { paymentWindowClosed } from '../../utils/payment-state';
+import { isScheduledRenewalInvoice, paymentWindowClosed } from '../../utils/payment-state';
 import { moneyLabel } from './CustomerPortalHelpers';
 import { PortalError, PortalLoading } from './CustomerPortalUi';
 import { Modal } from '../manager/PortalUi';
@@ -24,7 +24,8 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
   const row = invoice.data;
   const selectedAmount = amount || (row ? String(row.balanceDue) : '');
   const pending = submissions.data?.items.some(item => item.invoice.id === id && item.status === 'PENDING_VERIFICATION');
-  const payable = row && ['OPEN', 'PARTIALLY_PAID'].includes(row.status) && row.balanceDue > 0 && row.signing?.complete !== false && !paymentWindowClosed(row) && !pending && !onlinePending && !saved;
+  const scheduled = !!row && row.balanceDue > 0 && isScheduledRenewalInvoice(row);
+  const payable = row && !scheduled && ['OPEN', 'PARTIALLY_PAID'].includes(row.status) && row.balanceDue > 0 && row.signing?.complete !== false && !paymentWindowClosed(row) && !pending && !onlinePending && !saved;
   let qr = '';
   try { if (row && bank.data && Number(selectedAmount) <= row.balanceDue) qr = buildVietQrPayload(bank.data, Number(selectedAmount), row.invoiceCode); } catch { /* Display validation; never render an unusable QR. */ }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -47,6 +48,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
       {row.signing?.complete === false && <p role="status">Bạn cần <Link to={row.signing.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(row.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(row.reservation.reference)}`}>đọc và ký tài liệu</Link> trước khi thanh toán.</p>}
       {(saved || pending) && <p role="status">Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận. Bạn chưa cần chuyển thêm cho cùng khoản tiền.</p>}
       {onlinePending && <p role="status">Đang theo dõi VNPay. Không chuyển khoản thêm cho cùng hóa đơn.</p>}
+      {scheduled && <p role="status">Hóa đơn gia hạn chưa đến kỳ thanh toán.</p>}
       {paymentWindowClosed(row) && <p role="alert">Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p>}
       {submissions.error && <PortalError message={submissions.error} onRetry={submissions.refresh} />}
       {payable && (bank.loading ? <PortalLoading label="Đang tải thông tin ngân hàng…" /> : bank.error ? <PortalError message={bank.error} onRetry={bank.refresh} /> : !bank.data?.configured ? <p>Chuyển khoản chưa khả dụng. {bank.data?.vnpayConfigured === true ? 'Bạn có thể thanh toán qua VNPay trên danh sách hóa đơn.' : 'Bạn có thể thanh toán tại cơ sở; hóa đơn chỉ cập nhật sau khi NestBox xác nhận thu tiền.'} <Link to={`/customer/support?reservation=${encodeURIComponent(row.reservation.id)}`}>Gửi hỗ trợ về hóa đơn</Link></p> : <form className="portal-form" onSubmit={event => void submit(event)}>

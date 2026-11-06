@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { isScheduledRenewalInvoice } from './renewal-invoice-schedule.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { invoiceSigningRequirements } from './payment-eligibility.js';
 
@@ -214,6 +215,7 @@ export class BillingService {
         }
         const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: { id: true } } } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
         await this.assertSignedBeforePayment(tx, invoice);
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền thanh toán không được vượt quá số dư hóa đơn.');
@@ -286,9 +288,10 @@ export class BillingService {
           this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
           return this.toPaymentSubmission(duplicate);
         }
-        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true } });
+        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
+        if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
         if (!['OPEN', 'PARTIALLY_PAID'].includes(invoice.status)) throw new ConflictException('Hóa đơn hiện không thể nhận yêu cầu thanh toán.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền gửi xác nhận không được vượt quá số dư hiện tại.');
         const sequence = await tx.paymentSubmission.count({ where: { invoiceId: invoice.id } }) + 1;
@@ -663,6 +666,7 @@ export class BillingService {
   }
 
   private async invoicePage(where: Prisma.InvoiceWhereInput, page: number, limit: number, includeCustomer: boolean) {
+    where = { AND: [where, { NOT: { type: 'RENEWAL', renewalCycle: { gt: 1 }, dueAt: { gt: new Date() }, status: 'OPEN', amountPaid: 0n } }] };
     const [total, items] = await Promise.all([
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ issuedAt: 'desc' }, { id: 'asc' }], include: this.invoiceInclude() }),

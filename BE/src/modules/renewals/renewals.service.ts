@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
+import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -41,7 +42,56 @@ type RenewalSnapshot = {
 };
 
 @Injectable()
-export class RenewalsService {
+export class RenewalsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RenewalsService.name);
+  private invoiceTimer?: ReturnType<typeof setInterval>;
+  private issuingInvoices = false;
+
+  onModuleInit() {
+    void this.issueDueInvoices();
+    this.invoiceTimer = setInterval(() => void this.issueDueInvoices(), 60_000);
+    this.invoiceTimer.unref();
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.invoiceTimer);
+  }
+
+  async issueDueInvoices(now = new Date(), renewalId?: string) {
+    if (this.issuingInvoices) return;
+    this.issuingInvoices = true;
+    const eligible = {
+      id: renewalId,
+      status: 'COMPLETED',
+      paymentPlan: 'PAY_MONTHLY',
+      previousEndDate: { lt: now },
+      reservation: { status: 'CONFIRMED', contracts: { some: { status: 'ACTIVE' } } },
+    } satisfies Prisma.RenewalRequestWhereInput;
+    try {
+      const renewals = await this.prisma.renewalRequest.findMany({ where: eligible, select: { id: true } });
+      for (const { id } of renewals) {
+        try {
+          await this.prisma.$transaction(async tx => {
+            const renewal = await tx.renewalRequest.findFirst({
+              where: { ...eligible, id },
+              include: { invoices: { select: { renewalCycle: true } } },
+            });
+            if (!renewal) return;
+            const snapshot = this.snapshot(renewal);
+            this.assertSnapshot(renewal, snapshot);
+            await this.createInvoices(tx, renewal, snapshot, now, new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
+          }, { isolationLevel: 'Serializable' });
+        } catch (error) {
+          this.logger.warn(`Không thể phát hành hóa đơn gia hạn ${id}: ${String(error)}`);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Không thể kiểm tra kỳ gia hạn đến hạn: ${String(error)}`);
+    } finally {
+      this.issuingInvoices = false;
+    }
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService = new PricingService(prisma),
@@ -298,10 +348,12 @@ export class RenewalsService {
     } });
   }
 
-  private async createInvoices(tx: Prisma.TransactionClient, renewal: any, snapshot: RenewalSnapshot) {
+  private async createInvoices(tx: Prisma.TransactionClient, renewal: any, snapshot: RenewalSnapshot, dueThrough?: Date, existingCycles = new Set<number | null>()) {
     const count = snapshot.paymentPlan === 'PREPAID' ? 1 : snapshot.termMonths;
     for (let cycle = 1; cycle <= count; cycle += 1) {
       const start = this.addCalendarMonths(renewal.previousEndDate, cycle - 1);
+      if (cycle > 1 && (!dueThrough || start > dueThrough)) break;
+      if (existingCycles.has(cycle)) continue;
       const end = snapshot.paymentPlan === 'PREPAID'
         ? renewal.requestedEndDate
         : cycle === count ? renewal.requestedEndDate : this.addCalendarMonths(renewal.previousEndDate, cycle);
@@ -387,7 +439,7 @@ export class RenewalsService {
   }
 
   private toRenewal(record: any, manager: boolean) {
-    const invoices = record.invoices.map((invoice: any) => ({
+    const invoices = record.invoices.filter((invoice: any) => invoice.amountPaid > 0n || !isScheduledRenewalInvoice(invoice)).map((invoice: any) => ({
       id: invoice.id, invoiceCode: invoice.invoiceCode, type: invoice.type, renewalCycle: invoice.renewalCycle,
       billingPeriodStart: this.isoDate(invoice.billingPeriodStart), billingPeriodEnd: this.isoDate(invoice.billingPeriodEnd), dueAt: this.isoDate(invoice.dueAt),
       status: invoice.status, rentalAmount: this.money(invoice.rentalAmount), depositAmount: this.money(invoice.depositAmount), totalAmount: this.money(invoice.totalAmount),

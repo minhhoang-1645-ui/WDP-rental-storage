@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, Text } from 'react-native';
+import { AppState, Platform, Text } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { router, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '@/auth/use-auth';
 import { apiRequest } from '@/services/api';
@@ -16,7 +18,7 @@ function destination(value: string) {
   return vnpayDestination(value).href;
 }
 
-export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange: (waiting: boolean) => void }) {
+export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void }) {
   const { user } = useAuth();
   const [session, setSession] = useState<Session>(), [result, setResult] = useState<Result>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [restored, setRestored] = useState(false), [now, setNow] = useState(Date.now);
   const lock = useRef(false), refreshRef = useRef(refresh);
@@ -80,19 +82,28 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
   const waiting = !paid && Boolean(session) && (!result || result.status === 'PENDING');
   const reconciliation = Boolean(result?.reconciliation);
   const unresolved = Boolean(result?.reconciliation && result.reconciliation.status !== 'RECONCILED');
-  useEffect(() => { onWaitingChange(waiting || unresolved); return () => onWaitingChange(false); }, [waiting, unresolved, onWaitingChange]);
+  useEffect(() => { onWaitingChange?.(waiting || unresolved); return () => onWaitingChange?.(false); }, [waiting, unresolved, onWaitingChange]);
   const open = async (qr = false) => {
     if (lock.current || reconciliation || !restored || (!waiting && (!eligible || disabled))) return;
     lock.current = true; setBusy(true); setError('');
     try {
       let payment = session;
       if (!waiting) {
-        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}) }) });
+        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}), ...(Platform.OS !== 'web' ? { channel: 'mobile' } : {}) }) });
         destination(payment.paymentUrl);
         setSession(payment); setResult(undefined);
         await paymentStorage.set(key, JSON.stringify(payment));
       }
-      if (payment?.paymentUrl) await WebBrowser.openBrowserAsync(destination(payment.paymentUrl));
+      if (!payment?.paymentUrl) return;
+      const url = destination(payment.paymentUrl);
+      if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+        await WebBrowser.openBrowserAsync(url);
+        return;
+      }
+      const invoicePath = `/customer/invoices/${encodeURIComponent(invoiceId)}`;
+      const callback = `wdp-storage://${invoicePath.slice(1)}`;
+      const completed = await WebBrowser.openAuthSessionAsync(url, callback);
+      if (completed.type === 'success') router.navigate(invoicePath as Href);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không mở được VNPay.'); }
     finally { lock.current = false; setBusy(false); }
   };

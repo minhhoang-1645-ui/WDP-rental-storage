@@ -1,3 +1,4 @@
+import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -416,7 +417,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         {resource === "invoices" ? (
           <>
             <strong>{money(row.totalAmount)}</strong>
-            <small>Còn thu: {money(row.balanceDue)}</small>
+            <small>{Number(row.balanceDue) > 0 && isScheduledRenewalInvoice(row) ? "Chưa đến kỳ" : `Còn thu: ${money(row.balanceDue)}`}</small>
             {row.isPastDue === true && <Status value="OVERDUE" />}
           </>
         ) : resource === "payments" ? (

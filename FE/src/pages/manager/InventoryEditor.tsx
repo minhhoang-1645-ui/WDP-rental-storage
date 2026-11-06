@@ -1,5 +1,6 @@
-import { useRef, useState, type FormEvent } from 'react';
 import { EntitySelect } from '../../components/EntitySelect';
+import { useRef, useState, type FormEvent } from 'react';
+
 import { useAuth } from '../../auth/auth-context';
 import { Modal, LoadState } from '../../components/manager/PortalUi';
 import { first, rows, type Row } from '../../components/manager/portal-data';
@@ -15,12 +16,28 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId'));
   const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
   const [daily, setDaily] = useState(record?.allowDailyRental === true);
+  const existingUnits = useApiResource<{ items: Row[] }>(!type ? '/manager/units?limit=100' : null, user?.id ?? '');
+  const locationField = (name: string, title: string, numeric = false) => {
+    const values = [...new Set((existingUnits.data?.items ?? []).map(unit => first(unit, name)).filter(Boolean))];
+    return <InventoryLocationPicker key={name} name={name} title={title} numeric={numeric}
+      initialValue={first(record ?? {}, name)} values={values} disabled={busy} />;
+  };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current || user?.role !== 'MANAGER') return;
     const fields = new FormData(event.currentTarget);
     const input: Row = Object.fromEntries(fields.entries());
     for (const key of type ? ['widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;
+    if (!type && !record && !String(input.unitNumber ?? '').trim()) {
+      const selectedType = rows(options.data?.items).find(row => first(row, 'id') === input.storageTypeId);
+      if (!selectedType) {
+        setError('Vui lòng chọn loại kho.');
+        return;
+      }
+      const prefix = first(selectedType, 'code').slice(0, 33);
+      const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase();
+      input.unitNumber = `${prefix}-${suffix}`;
+    }
     if (type) input.allowDailyRental = fields.get('allowDailyRental') === 'on';
     if (record) input.expectedUpdatedAt = record.updatedAt;
     lock.current = true; setBusy(true); setError('');
@@ -34,7 +51,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   return <Modal title={`${record ? 'Sửa' : 'Thêm'} ${type ? 'loại kho' : 'kho vật lý'}`} onClose={onClose} busy={busy}>
     <LoadState loading={options.loading} error={options.error} retry={options.refresh} />
     {options.data && <form className="portal-form" onSubmit={submit}>
-      <p>Giá mới chỉ áp dụng cho báo giá mới. Không đổi cấu trúc hoặc vị trí kho đã có hồ sơ. Trạng thái kho được cập nhật qua nghiệp vụ.</p>
+      <p>{type ? 'Giá mới chỉ áp dụng cho báo giá mới.' : record ? 'Kho đã có hồ sơ hoặc đang sử dụng không thể đổi mã, loại hoặc vị trí.' : 'Chọn loại kho đã có trong danh mục để dùng chung kích thước, điều kiện và bảng giá. Các ô vị trí có thể để trống.'}</p>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       <fieldset disabled={busy || !options.data}>
         {type ? <>
@@ -50,12 +67,45 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
           <label className="field-label">URL ảnh (tùy chọn)<input name="image" defaultValue={first(record ?? {}, 'image')} maxLength={2000} /></label>
           {field('imageAlt', 'Mô tả ảnh', false, false)}
         </> : <>
-          <label className="field-label">Loại kho<EntitySelect aria-label="Loại kho" name="storageTypeId" value={storageTypeId} onValueChange={setStorageTypeId} required><option value="">Chọn loại kho</option>{rows(options.data?.items).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'code')} · {first(row, 'name')}</option>)}</EntitySelect></label>
-          <label className="field-label">Mã kho<input name="unitNumber" defaultValue={first(record ?? {}, 'unitNumber', 'unitCode')} required maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_-]*$/.source} /></label>
-          {field('floor', 'Tầng', false, false)}{field('zone', 'Khu', false, false)}{field('row', 'Hàng', true, false)}{field('position', 'Vị trí', true, false)}
+          <div className="field-label">
+            <span>Loại kho áp dụng</span>
+            <EntitySelect aria-label="Loại kho áp dụng" name="storageTypeId" value={storageTypeId}
+              onValueChange={setStorageTypeId} disabled={busy} required>
+              <option value="">Chọn loại kho</option>
+              {rows(options.data?.items).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>
+                {first(row, 'name')} · {first(row, 'code')}
+              </option>)}
+            </EntitySelect>
+          </div>
+          <label className="field-label">{record ? 'Mã kho' : 'Mã kho (tùy chọn)'}<input name="unitNumber" defaultValue={first(record ?? {}, 'unitNumber', 'unitCode')} required={Boolean(record)} placeholder={record ? undefined : 'Để trống để hệ thống tự tạo mã'} maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_\-]*$/.source} /></label>
+          {locationField('floor', 'Tầng')}{locationField('zone', 'Khu')}{locationField('row', 'Hàng', true)}{locationField('position', 'Vị trí trong hàng', true)}
         </>}
         <button className="button-primary" type="submit">{busy ? 'Đang lưu…' : 'Lưu'}</button>
       </fieldset>
     </form>}
   </Modal>;
+}
+
+
+const newLocation = '__new_location__';
+
+function InventoryLocationPicker({ name, title, numeric, initialValue, values, disabled }: {
+  name: string; title: string; numeric: boolean; initialValue: string; values: string[]; disabled: boolean;
+}) {
+  const [selected, setSelected] = useState(initialValue);
+  const custom = selected === newLocation;
+  const choices = [...new Set([...values, initialValue].filter(Boolean))];
+  return <div className="field-label">
+    <span>{title} (tùy chọn)</span>
+    <EntitySelect aria-label={title} name={custom ? undefined : name} value={selected}
+      onValueChange={setSelected} disabled={disabled}>
+      <option value="">Chưa chọn {title.toLocaleLowerCase('vi')}</option>
+      {choices.map(value => <option key={value} value={value}>{value}</option>)}
+      <option value={newLocation}>+ Nhập giá trị mới</option>
+    </EntitySelect>
+    {custom && <input aria-label={`Nhập ${title.toLocaleLowerCase('vi')} mới`} name={name}
+      type={numeric ? 'number' : 'text'} min={numeric ? 1 : undefined}
+      max={numeric ? 100000 : undefined} maxLength={numeric ? undefined : 100}
+      placeholder="Nhập giá trị mới" required />}
+  </div>;
 }

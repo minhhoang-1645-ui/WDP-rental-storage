@@ -227,8 +227,6 @@ describe('Renewal V1', () => {
     const approved = await renewals.approve(pending.id, staff);
     expect(approved.invoices.map((invoice: any) => [invoice.renewalCycle, invoice.billingPeriodStart, invoice.billingPeriodEnd, invoice.dueAt, invoice.totalAmount, invoice.depositAmount])).toEqual([
       [1, '2027-05-10', '2027-06-10', '2027-05-10', 6200000, 0],
-      [2, '2027-06-10', '2027-07-10', '2027-06-10', 6200000, 0],
-      [3, '2027-07-10', '2027-08-10', '2027-07-10', 6200000, 0],
     ]);
     const contractCount = await prisma.rentalContract.count({ where: { reservationId: reservation.id } });
     const allocationCount = await prisma.reservationUnit.count({ where: { reservationId: reservation.id } });
@@ -246,6 +244,17 @@ describe('Renewal V1', () => {
     const view = await activeRentals.getCustomerRental(customerId, reservation.id);
     expect(view.endDate).toBe('2027-08-10');
     expect(view.renewalHistory[0]).toMatchObject({ status: 'COMPLETED', requestedEndDate: '2027-08-10' });
+    const invoices = () => prisma.invoice.findMany({ where: { renewalRequestId: pending.id }, orderBy: { renewalCycle: 'asc' } });
+    await renewals.issueDueInvoices(new Date('2027-06-09T23:59:59.000Z'), pending.id);
+    expect(await invoices()).toHaveLength(1);
+    await renewals.issueDueInvoices(new Date('2027-06-10T00:00:00.000Z'), pending.id);
+    await renewals.issueDueInvoices(new Date('2027-06-10T00:00:00.000Z'), pending.id);
+    expect(await invoices()).toMatchObject([
+      { renewalCycle: 1, status: 'PAID' },
+      { renewalCycle: 2, dueAt: new Date('2027-06-10T00:00:00.000Z'), totalAmount: 6200000n, status: 'OPEN' },
+    ]);
+    await renewals.issueDueInvoices(new Date('2027-07-10T00:00:00.000Z'), pending.id);
+    expect(await invoices()).toHaveLength(3);
   });
 
   it('requires full PREPAID payment, then extends all contracts atomically and safely ignores later completion retries', async () => {

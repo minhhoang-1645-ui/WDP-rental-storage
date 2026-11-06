@@ -8,7 +8,7 @@ import { rows, text, type Row } from './model';
 import { useResource } from './use-resource';
 import { Button, Panel, styles } from './ui';
 
-export function UnitStaffAssignments() {
+export function UnitStaffAssignments({ onSaved }: { onSaved?: () => void }) {
   const { user } = useAuth();
   const manager = user?.role === 'MANAGER';
   const source = useResource<Row>(manager ? '/manager/unit-staff-assignments' : user?.role === 'STAFF' ? '/staff/assigned-units' : null);
@@ -19,9 +19,10 @@ export function UnitStaffAssignments() {
     { name: '_confirmed', title: 'Tôi xác nhận giao kho cho nhân viên này', required: true, checkbox: true, clientOnly: true },
   ], transform: input => ({ staffUserId: input.staffUserId, expectedAssignmentId: assignment?.id ?? rows(source.data?.items).find(item => item.storageUnitId === input.storageUnitId)?.id ?? null }) });
   return <Panel title={manager ? 'Nhân viên phụ trách từng kho' : 'Kho bạn phụ trách'}>
+    {manager && <Text style={styles.copy}>Hồ sơ đủ điều kiện sẽ tự giao cho người phụ trách kho. Hồ sơ chưa có người nhận có thể giao thủ công bên dưới.</Text>}
     {source.loading ? <LoadingState /> : source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : source.data?.enabled === false ? <Text style={styles.copy}>Phân công cố định theo kho chưa được bật. Công việc được giao hiện tại vẫn nằm trong các phân hệ nghiệp vụ.</Text> : <>
       {manager && !form && <Button title="Giao kho cho nhân viên" onPress={() => start()} />}
-      {form && <OperationForm action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); source.refresh(); }} />}
+      {form && <OperationForm action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); source.refresh(); onSaved?.(); }} />}
       {rows(source.data?.items).map(item => <Panel key={text(item, 'id')} title={text(item, 'storageUnit.unitNumber')}><Text style={styles.copy}>{text(item, 'storageUnit.floor')} · {text(item, 'storageUnit.zone')} · {text(item, 'staff.fullName')}</Text>{manager && !form && <Button title="Đổi người phụ trách kho" variant="secondary" onPress={() => start(item)} />}</Panel>)}
       {!rows(source.data?.items).length && <EmptyState title="Chưa có phân công theo kho" message={manager ? 'Chọn kho và nhân viên đang hoạt động để phân công.' : 'Quản lý sẽ giao kho bạn phụ trách.'} />}
     </>}

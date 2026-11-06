@@ -53,6 +53,7 @@ import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointments
 import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
 import { CustomerPaymentsPage } from "../pages/customer/CustomerPaymentsPage";
 import { CustomerVnpayReturnPage } from "../pages/customer/CustomerVnpayReturnPage";
+import { MobileVnpayReturnPage } from "../pages/customer/MobileVnpayReturnPage";
 import { CustomerRenewalsPage } from "../pages/customer/CustomerRenewalsPage";
 import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
 import { CustomerReturnsPage } from "../pages/customer/CustomerReturnsPage";
@@ -101,6 +102,7 @@ function operationalRoutes(base: string) {
 export function AppRouter() {
   return (
     <Routes>
+      <Route path="/customer/payments/vnpay-return/mobile/:invoiceId" element={<MobileVnpayReturnPage />} />
       <Route element={<PublicLayout />}>
         <Route path="claim-booking" element={<ClaimBookingPage />} />
         <Route element={<CatalogRouteLayout />}>

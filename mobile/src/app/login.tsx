@@ -11,6 +11,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
@@ -27,7 +28,7 @@ export default function LoginScreen() {
     setSubmitting(true);
     setError('');
     try {
-      const loggedInUser = await login(normalizedEmail, submittedPassword);
+      const loggedInUser = await login(normalizedEmail, submittedPassword, rememberMe);
       router.replace(destination(loggedInUser.role));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không thể đăng nhập.');
@@ -45,6 +46,9 @@ export default function LoginScreen() {
         <View style={styles.form}>
           <View style={styles.field}><Text style={styles.label}>Email</Text><TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!submitting} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" returnKeyType="next" submitBehavior="submit" onSubmitEditing={event => { setEmail(event.nativeEvent.text); passwordInput.current?.focus(); }} maxLength={254} placeholder="name@example.com" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /></View>
           <View style={styles.field}><Text style={styles.label}>Mật khẩu</Text><TextInput ref={passwordInput} accessibilityLabel="Mật khẩu" value={password} onChangeText={setPassword} editable={!submitting} secureTextEntry={!passwordVisible} autoCapitalize="none" autoCorrect={false} autoComplete="current-password" returnKeyType="done" submitBehavior="submit" maxLength={128} onSubmitEditing={event => void submit(event.nativeEvent.text)} placeholder="Nhập mật khẩu" placeholderTextColor={WdpColors.muted} underlineColorAndroid="transparent" style={styles.input} /><Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} disabled={submitting} onPress={() => setPasswordVisible(value => !value)} style={{ minHeight: 44, justifyContent: "center", alignSelf: "flex-end" }}><Text style={styles.label}>{passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</Text></Pressable></View>
+          <Pressable accessibilityRole="checkbox" accessibilityLabel="Duy trì đăng nhập trong 30 ngày" accessibilityState={{ checked: rememberMe, disabled: submitting }} disabled={submitting} onPress={() => setRememberMe(value => !value)} style={styles.remember}>
+            <Text style={styles.label}>{rememberMe ? '☑' : '☐'}  Duy trì đăng nhập trong 30 ngày</Text>
+          </Pressable>
           {error ? <Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Đăng nhập" accessibilityState={{ disabled: submitting || !email.trim() || !password, busy: submitting }} disabled={submitting || !email.trim() || !password} onPress={() => void submit()} style={styles.submit}><Text style={styles.submitText}>{submitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</Text></Pressable>
         </View>
@@ -72,6 +76,7 @@ const styles = StyleSheet.create({
   description: { color: WdpColors.muted, fontSize: 14, lineHeight: 21 },
   form: { gap: WdpSpacing.md, width: '100%' },
   field: { gap: WdpSpacing.xs },
+  remember: { minHeight: 44, justifyContent: 'center' },
   label: { color: WdpColors.text, fontSize: 13, fontWeight: '800' },
   input: { width: '100%', height: 52, borderWidth: 1, borderColor: WdpColors.border, borderRadius: 14, paddingHorizontal: 14, backgroundColor: '#FBFCFC', color: WdpColors.text, fontSize: 14 },
   error: { color: WdpColors.danger, fontSize: 13, lineHeight: 20 },

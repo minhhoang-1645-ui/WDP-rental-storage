@@ -1,3 +1,4 @@
+import { isScheduledRenewalInvoice } from './renewal-invoice-schedule.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -19,6 +20,7 @@ export class OnlinePaymentService {
     const idempotencyKey = this.key(idempotencyInput);
     const bankCode = this.optionalCode(input.bankCode, 'bankCode');
     const locale = input.locale === 'en' ? 'en' : 'vn';
+    const mobile = input.channel === 'mobile';
     const identity = await this.prisma.invoice.findFirst({ where: { OR: [{ id: invoiceIdentity }, { invoiceCode: invoiceIdentity }], reservation: { customerId: customer.id } }, select: { id: true } });
     if (!identity) throw new NotFoundException('Không tìm thấy hóa đơn thuộc tài khoản này.');
     const existing = await this.prisma.onlinePaymentTransaction.findUnique({ where: { idempotencyKey }, include: { invoice: true } });
@@ -28,13 +30,14 @@ export class OnlinePaymentService {
         await this.prisma.onlinePaymentTransaction.updateMany({ where: { id: existing.id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
         throw new ConflictException({ code: 'ONLINE_PAYMENT_EXPIRED', message: 'Phiên thanh toán đã hết hạn. Vui lòng tạo phiên thanh toán mới.' });
       }
-      return this.created(existing, bankCode, locale, ipAddress);
+      return this.created(existing, bankCode, locale, ipAddress, mobile);
     }
     const transaction = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${identity.id} FOR UPDATE`);
       const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: true } });
       if (!invoice || invoice.reservation.customerId !== customer.id) throw new NotFoundException('Không tìm thấy hóa đơn thuộc tài khoản này.');
       if (invoice.status === 'VOID') throw new ConflictException({ code: 'INVOICE_CANCELLED', message: 'Hóa đơn đã hủy; không thể tạo phiên thanh toán mới.' });
+      if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
       await this.billing.assertSignedBeforePayment(tx, invoice);
       if (invoice.reservation.status === 'EXPIRED' || (invoice.type === 'INITIAL' && invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())) throw new ConflictException({ code: 'RESERVATION_PAYMENT_WINDOW_EXPIRED', message: 'Thời hạn giữ kho đã hết. Vui lòng tạo yêu cầu đặt kho mới.' });
       if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
@@ -51,7 +54,7 @@ export class OnlinePaymentService {
       if (active) return active;
       return tx.onlinePaymentTransaction.create({ data: { invoiceId: invoice.id, customerUserId: customer.id, amount: invoice.balanceDue, merchantOrderRef: this.orderRef(), idempotencyKey } });
     }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
-    return this.created(transaction, bankCode, locale, ipAddress);
+    return this.created(transaction, bankCode, locale, ipAddress, mobile);
   }
 
   async processIpn(query: Record<string, unknown>) {
@@ -241,7 +244,17 @@ export class OnlinePaymentService {
     return this.toReconciliation(await this.prisma.onlinePaymentReconciliation.findUniqueOrThrow({ where: { id: record.id }, include: this.reconciliationInclude() }));
   }
 
-  private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string) { return { transactionId: transaction.id, merchantOrderRef: transaction.merchantOrderRef, status: transaction.status, amount: this.money(transaction.amount), expiresAt: this.expiresAt(transaction.createdAt).toISOString(), paymentUrl: this.vnpay.paymentUrl({ orderRef: transaction.merchantOrderRef, amount: transaction.amount, ipAddress, bankCode, locale, createdAt: transaction.createdAt }) }; }
+  private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string, mobile: boolean) {
+    return {
+      transactionId: transaction.id, merchantOrderRef: transaction.merchantOrderRef,
+      status: transaction.status, amount: this.money(transaction.amount),
+      expiresAt: this.expiresAt(transaction.createdAt).toISOString(),
+      paymentUrl: this.vnpay.paymentUrl({
+        orderRef: transaction.merchantOrderRef, amount: transaction.amount, ipAddress, bankCode, locale,
+        createdAt: transaction.createdAt, mobileInvoiceId: mobile ? transaction.invoiceId : undefined,
+      }),
+    };
+  }
   private expiresAt(createdAt: Date) { return new Date(createdAt.getTime() + ONLINE_PAYMENT_TTL_MS); }
   private isExpired(transaction: { status: string; createdAt: Date }) { return transaction.status === 'PENDING' && this.expiresAt(transaction.createdAt).getTime() <= Date.now(); }
   private callbackValue(value: unknown) { return typeof value === 'string' ? value.slice(0, 80) : undefined; }

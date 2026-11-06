@@ -132,6 +132,7 @@ export class VerifyGuestBookingDto {
 export class ClaimGuestBookingDto {}
 
 export class CreateOnlinePaymentDto {
+  @ApiPropertyOptional({ enum: ['mobile'], description: 'Trả về trang mở lại ứng dụng sau thanh toán.' }) channel?: 'mobile';
   @ApiPropertyOptional({ example: 'NCB', description: 'Mã ngân hàng tùy chọn do UI chọn; không ảnh hưởng số tiền.' }) bankCode?: string;
   @ApiPropertyOptional({ enum: ['vn', 'en'], example: 'vn' }) locale?: 'vn' | 'en';
 }

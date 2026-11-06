@@ -24,9 +24,10 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
       { name: 'identityVerified', title: 'Đã đối chiếu người nhận kho', checkbox: true, required: true },
       { name: 'unitInspected', title: 'Đã kiểm tra đúng mã kho và hiện trạng từng kho', checkbox: true, required: true },
       { name: 'accessDelivered', title: 'Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập', checkbox: true, required: true },
+      { name: 'documentsDelivered', title: 'Đã giao giấy tờ cho khách', checkbox: true, required: true },
       note('note', 'Ghi chú bàn giao', false, 1000),
     ], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
-    result[result.length - 1].transform = input => ({ note: input.note, handoverReport: { recipientName: input.recipientName, condition: input.condition, accessItemCount: input.accessItemCount, identityVerified: input.identityVerified, unitInspected: input.unitInspected, accessDelivered: input.accessDelivered } });
+    result[result.length - 1].transform = input => ({ note: input.note, handoverReport: { recipientName: input.recipientName, condition: input.condition, accessItemCount: input.accessItemCount, identityVerified: input.identityVerified, unitInspected: input.unitInspected, accessDelivered: input.accessDelivered, documentsDelivered: input.documentsDelivered } });
     result[result.length - 1].validate = () => handoverWindowIssue(row, Date.now()) || Date.parse(String(row.scheduledAt)) > Date.now() ? 'Thời điểm bàn giao nằm ngoài kỳ thuê hoặc chưa đến giờ hẹn. Tải lại hồ sơ.' : undefined;
   }
   if (resource === 'maintenance' && assigned) {
@@ -67,7 +68,7 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
   const reservationId = text(row, 'reservationId'), actions: FormAction[] = [];
   if (!reservationId) return actions;
   if (!row.pendingRenewal) {
-    if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Yêu cầu hợp lệ được duyệt tự động; thanh toán hóa đơn kích hoạt để cập nhật thời hạn; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '1'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PAY_MONTHLY'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
+    if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Yêu cầu hợp lệ được duyệt tự động; thanh toán hóa đơn kích hoạt để cập nhật thời hạn; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '3'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PREPAID'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
     const activeReturn = returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
     const approved = requests.some(item => text(item, 'reservation.id') === reservationId && isCurrentEarlyReturnApproval(item, text(row, 'effectiveEndDate')));
     if ((Date.parse(text(row, 'effectiveEndDate')) <= now || approved) && !activeReturn) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Nhân viên kiểm tra và nhận kho thực tế; cọc quyết toán riêng.' });

@@ -1,4 +1,5 @@
 import { isEarlyReturnRequest } from '@/utils/early-return';
+import { isScheduledRenewalInvoice } from '@/utils/payment-state';
 import { unitAction } from './inventory-actions';
 import { canAccessManagerReview } from '@/utils/manager-review-access';
 import { idOf, label, options, rows, text, type Row } from './model';
@@ -66,7 +67,7 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     }
     add('Từ chối gia hạn', '/reject', [note('reason', 'Lý do từ chối', true, 2000)]);
   }
-  if (resource === 'invoices' && ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0) {
+  if (resource === 'invoices' && !isScheduledRenewalInvoice(row) && ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0) {
     const amount = { name: 'amount', title: 'Số tiền thực nhận (VND)', numeric: true, required: true, minimum: 1, maximum: Number(row.balanceDue), initial: String(row.balanceDue) } as FormField;
     actions.push({ title: 'Ghi nhận chuyển khoản', path: root + '/payments', method: 'POST', idempotent: true, fields: [amount, { name: 'reference', title: 'Mã giao dịch ngân hàng đã đối soát', required: true, minLength: 2, maxLength: 200 }, note('note', 'Ghi chú', false, 2000)], transform: input => ({ ...input, method: 'BANK_TRANSFER' }), description: 'Chỉ ghi nhận sau khi đối soát sao kê thực nhận. Mã do Customer khai báo không phải căn cứ xác nhận.' });
     actions.push({ title: 'Ghi nhận tiền mặt', path: root + '/payments', method: 'POST', idempotent: true, fields: [amount, note('note', 'Ghi chú', false, 2000)], transform: input => ({ ...input, method: 'CASH' }), description: 'Hệ thống sẽ sinh mã phiếu thu duy nhất và lưu Manager ghi nhận từ phiên đăng nhập.' });

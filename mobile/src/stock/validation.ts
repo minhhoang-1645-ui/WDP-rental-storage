@@ -9,6 +9,15 @@ export function stockSchedule(value: string) {
   if (!Number.isFinite(time) || new Date(time + 25200000).toISOString().slice(0, 16) !== local) throw new Error('Ngày giờ dự kiến không hợp lệ.');
   return new Date(time).toISOString();
 }
+export function validateStockSchedule(scheduledAt: string | undefined, contract: { startDate?: unknown; endDate?: unknown }, now = Date.now()) {
+  if (!scheduledAt) return;
+  const time = Date.parse(scheduledAt);
+  if (time <= now) throw new Error('Lịch dự kiến phải ở tương lai.');
+  const start = typeof contract.startDate === 'string' ? Date.parse(contract.startDate.slice(0, 10) + 'T00:00:00+07:00') : NaN;
+  const end = typeof contract.endDate === 'string' ? Date.parse(contract.endDate.slice(0, 10) + 'T00:00:00+07:00') : NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error('Chưa đọc được kỳ thuê. Tải lại hợp đồng hoặc bỏ trống lịch dự kiến.');
+  if (time < start || time >= end) throw new Error('Chọn giờ trong kỳ thuê của kho này.');
+}
 export function stockCreateInput(contractId: string, type: 'IN' | 'OUT', lines: StockDraftLine[], items: StoredItem[], scheduledAt: string, note: string) {
   if (!contractId) throw new Error('Chọn hợp đồng đang hoạt động.');
   if (!lines.length || lines.length > 100) throw new Error('Phiếu cần từ 1 đến 100 dòng hàng.');

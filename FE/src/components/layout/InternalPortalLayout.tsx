@@ -13,6 +13,7 @@ import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
+const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
 const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
 export interface InternalNavItem {
   to: string;
@@ -60,9 +61,11 @@ export function InternalPortalLayout({
     .filter((item) =>
       item.end
         ? location.pathname === item.to
-        : location.pathname.startsWith(item.to),
+        : matchesPath(location.pathname, item.to),
     )
     .sort((a, b) => b.to.length - a.to.length)[0];
+  const parent = navigation.find(item => item.to !== active?.to
+    && item.match?.some(path => matchesPath(location.pathname, path)));
   const brand: ReactNode = (
     <Link
       className="portal-brand"
@@ -142,7 +145,11 @@ export function InternalPortalLayout({
             </button>
             <span>{label}</span>
             <span className="portal-topbar-divider">/</span>
-            <strong>{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : active?.label ?? "Hồ sơ chi tiết"}</strong>
+            {parent && <>
+              <Link className="portal-topbar-parent" to={parent.to}>{parent.label}</Link>
+              <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
+            </>}
+            <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
             <ActivityBell />

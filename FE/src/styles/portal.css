@@ -141,6 +141,19 @@
   color: #1e3a5f;
   font-weight: 600;
 }
+.portal-topbar-parent {
+  color: inherit;
+}
+
+.portal-topbar-parent:hover,
+.portal-topbar-parent:focus-visible {
+  text-decoration: underline;
+}
+
+.portal-topbar-parent-divider {
+  opacity: 0.65;
+}
+
 .portal-topbar-divider {
   color: #ccd5df;
 }

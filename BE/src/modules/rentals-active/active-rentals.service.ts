@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { deriveOverdueState } from './overdue-state.js';
 
 export interface ActiveRentalListQuery {
@@ -109,7 +110,9 @@ export class ActiveRentalsService {
     const overdue = deriveOverdueState(effectiveEndDate, now);
     const snapshot = record.quoteSnapshot as Record<string, unknown>;
     const invoices = record.invoices.map((invoice: any) => this.invoiceSummary(invoice));
-    const outstanding = record.invoices.reduce((sum: bigint, invoice: any) => sum + invoice.balanceDue, 0n);
+    const outstanding: bigint = record.invoices.reduce((sum: bigint, invoice: any) => sum + invoice.balanceDue, 0n);
+    const scheduledBalance: bigint = record.invoices.reduce((sum: bigint, invoice: any) =>
+      sum + (isScheduledRenewalInvoice(invoice, now) ? invoice.balanceDue : 0n), 0n);
     const totalInvoiced = record.invoices.reduce((sum: bigint, invoice: any) => sum + invoice.totalAmount, 0n);
     const totalPaid = record.invoices.reduce((sum: bigint, invoice: any) => sum + invoice.amountPaid, 0n);
     const nextInvoice = record.invoices
@@ -181,6 +184,8 @@ export class ActiveRentalsService {
         totalInvoiced: this.money(totalInvoiced),
         totalPaid: this.money(totalPaid),
         totalOutstanding: this.money(outstanding),
+        payableBalance: this.money(outstanding - scheduledBalance),
+        scheduledBalance: this.money(scheduledBalance),
         nextInvoice: nextInvoice ? this.invoiceSummary(nextInvoice) : null,
       },
     };

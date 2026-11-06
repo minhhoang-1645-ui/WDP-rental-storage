@@ -9,13 +9,13 @@ import { StaffPicker } from './StaffPicker';
 import { LoadState } from './PortalUi';
 
 type Assignment = { id: string; storageUnitId: string; staff: { id: string; fullName: string; accountStatus: string }; assignedBy: { fullName: string }; assignedAt: string };
-export function UnitStaffAssignments() {
+export function UnitStaffAssignments({ onSaved }: { onSaved: () => void }) {
   const { user } = useAuth();
   const assignments = useApiResource<{ enabled: boolean; items: Assignment[] }>('/manager/unit-staff-assignments', user?.id ?? '');
   return <section className="manager-section"><h2>Nhân viên phụ trách từng kho</h2>
     <LoadState loading={assignments.loading} error={assignments.error} retry={assignments.refresh} />
     {assignments.data?.enabled === false && <p>Phân công cố định theo kho chưa được bật. Hiện quản lý vẫn có thể giao từng hồ sơ bên dưới.</p>}
-    {assignments.data?.enabled && <Editor assignments={assignments.data.items} refresh={assignments.refresh} />}
+    {assignments.data?.enabled && <Editor assignments={assignments.data.items} refresh={() => { assignments.refresh(); onSaved(); }} />}
   </section>;
 }
 function Editor({ assignments, refresh }: { assignments: Assignment[]; refresh: () => void }) {
@@ -30,7 +30,7 @@ function Editor({ assignments, refresh }: { assignments: Assignment[]; refresh: 
     catch (error) { setNotice(error instanceof Error ? error.message : 'Không lưu được phân công.'); }
     finally { setBusy(false); }
   };
-  return <><p>Mỗi kho có một người phụ trách. Khi đổi người, lịch sử phân công được giữ; công việc đã bắt đầu vẫn giữ nhân viên đang thực hiện.</p>
+  return <><p>Hồ sơ hỗ trợ, bảo trì và phiếu nhập – xuất đủ điều kiện sẽ tự giao cho nhân viên phụ trách kho. Với hồ sơ chưa có người nhận, quản lý có thể giao thủ công ở danh sách bên dưới.</p>
     <LoadState loading={units.loading} error={units.error} retry={units.refresh} />
     <label className="field-label">Chọn kho cần phân công<EntitySelect value={unitId} disabled={busy} onValueChange={selectedValue => { setUnitId(selectedValue); setStaffId(''); setNotice(''); }}><option value="">Chọn kho</option>{units.data?.items.map(unit => <option key={first(unit, 'id')} value={first(unit, 'id')}>{first(unit, 'unitCode')} · {first(unit, 'storageType.name')} · {first(unit, 'floor')} {first(unit, 'zone')}</option>)}</EntitySelect></label>
     {current && <p>Đang phụ trách: {current.staff.fullName}{current.staff.accountStatus !== 'ACTIVE' ? ' · Tài khoản đã vô hiệu hóa, cần đổi người' : ''}. Người phân công: {current.assignedBy.fullName}.</p>}

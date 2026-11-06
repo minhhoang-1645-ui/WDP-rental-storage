@@ -24,14 +24,23 @@ export function storageTypeAction(item: Row | undefined, facilities: Row[]): For
   };
 }
 
+function locationField(name: string, title: string, item?: Row, numeric = false): FormField {
+  return {
+    ...(numeric ? number(name, title, item, false) : field(name, title, item)),
+    compactChoices: true, allowCustom: true, optionsPath: '/manager/units?limit=100',
+    optionValue: row => text(row, name), optionLabel: row => text(row, name),
+  };
+}
+
 export function unitAction(item?: Row): FormAction {
   return {
-    title: item ? 'Sửa thông tin kho' : 'Thêm kho', description,
+    title: item ? 'Sửa thông tin kho' : 'Thêm kho vật lý',
+    description: item ? description : 'Chọn loại kho để dùng chung kích thước và bảng giá. Mã và vị trí có thể để trống.',
     path: `/manager/units${item ? `/${encodeURIComponent(text(item, 'id'))}` : ''}`, method: item ? 'PATCH' : 'POST',
     fields: [
-      { name: 'storageTypeId', title: 'Loại kho', required: true, initial: text(item ?? {}, 'storageTypeId', 'storageType.id'), optionsPath: '/manager/storage-types', optionLabel: row => `${text(row, 'code')} · ${text(row, 'name')}` },
-      { ...field('unitNumber', 'Mã kho', item, true, 50), initial: text(item ?? {}, 'unitNumber', 'unitCode') },
-      field('floor', 'Tầng', item), field('zone', 'Khu', item), number('row', 'Hàng', item, false), number('position', 'Vị trí', item, false),
+      { name: 'storageTypeId', title: 'Loại kho áp dụng', required: true, compactChoices: true, initial: text(item ?? {}, 'storageTypeId', 'storageType.id'), optionsPath: '/manager/storage-types', optionLabel: row => `${text(row, 'name')} · ${text(row, 'code')}` },
+      { ...field('unitNumber', item ? 'Mã kho' : 'Mã kho (để trống để tự tạo)', item, Boolean(item), 50), initial: text(item ?? {}, 'unitNumber', 'unitCode') },
+      locationField('floor', 'Tầng', item), locationField('zone', 'Khu', item), locationField('row', 'Hàng', item, true), locationField('position', 'Vị trí trong hàng', item, true),
     ],
     transform: input => ({ ...input, floor: input.floor ?? null, zone: input.zone ?? null, row: input.row ?? null, position: input.position ?? null, ...(item ? { expectedUpdatedAt: item.updatedAt } : {}) }),
   };

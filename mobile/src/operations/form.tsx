@@ -8,17 +8,30 @@ import { operationMutate } from './mutate';
 import { useResource } from './use-resource';
 import { useDraftGuard } from '@/services/live-events';
 
-export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; checkbox?: boolean; clientOnly?: boolean }
+export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; visibleWhen?: (values: Record<string, string>) => boolean; optionValue?: (row: Row) => string; allowCustom?: boolean; compactChoices?: boolean; checkbox?: boolean; clientOnly?: boolean }
 export interface FormAction { title: string; path: string; resolvePath?: (input: Row) => string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
 
 function Input({ field, value, onChange, busy }: { field: FormField; value: string; onChange: (value: string) => void; busy: boolean }) {
   const [search, setSearch] = useState('');
-  const resource = useResource<{ items: Row[] }>(field.optionsPath ?? null, true);
-  const choices = field.choices ?? resource.data?.items.filter(row => !field.optionsAccept || field.optionsAccept(row)).map(row => ({ value: String(row.id ?? ''), label: field.optionLabel?.(row) ?? String(row.fullName ?? row.contractCode ?? row.unitCode ?? row.id) }));
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const locationOptions = Boolean(field.optionValue);
+  const resource = useResource<{ items: Row[] }>(locationOptions && !open ? null : field.optionsPath ?? null, !locationOptions);
+  const loadedChoices = field.choices ?? resource.data?.items.filter(row => !field.optionsAccept || field.optionsAccept(row)).map(row => ({ value: field.optionValue?.(row) ?? String(row.id ?? ''), label: field.optionLabel?.(row) ?? String(row.fullName ?? row.contractCode ?? row.unitCode ?? row.id) }));
+  const choices = loadedChoices && [...new Map(loadedChoices.filter(choice => choice.value).map(choice => [choice.value, choice])).values()];
+  const select = (next: string) => { onChange(next); setCustom(false); setOpen(false); setSearch(''); };
   const normalize = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const shownChoices = choices?.filter(choice => choice.value === value || normalize(choice.label).includes(normalize(search.trim())));
   if (field.checkbox) return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: value === 'true', disabled: busy || field.fixed }} disabled={busy || field.fixed} onPress={() => onChange(value === 'true' ? 'false' : 'true')} style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, opacity: busy || field.fixed ? 0.5 : pressed ? 0.7 : 1 })}>{value === 'true' ? <CheckSquare size={24} color={WdpColors.navy} /> : <Square size={24} color={WdpColors.muted} />}<Text style={[styles.copy, { flex: 1, color: WdpColors.text }]}>{field.title}</Text></Pressable>;
-  if (choices || field.optionsPath) return <View style={{ gap: 8 }}><Text style={styles.label}>{field.title}</Text>{(field.optionsPath || (choices?.length ?? 0) > 5) && <Field title={`Tìm ${field.title.toLowerCase()}`} value={search} onChange={setSearch} disabled={busy} maxLength={120} />}{Boolean(resource.error) && <Text style={styles.error}>{resource.error}</Text>}{resource.loading ? <Text style={styles.copy}>Đang tải lựa chọn…</Text> : <ScrollView style={{ maxHeight: 330 }} nestedScrollEnabled keyboardShouldPersistTaps="handled"><View accessibilityRole="radiogroup" accessibilityLabel={field.title} style={{ gap: 8 }}>{!field.required && <Button variant={!value ? 'primary' : 'secondary'} title={!value ? '✓ Không chọn' : 'Không chọn'} disabled={busy} onPress={() => onChange('')} />}{shownChoices?.map(choice => <Pressable key={choice.value} accessibilityRole="radio" aria-checked={value === choice.value} accessibilityLabel={choice.label} accessibilityState={{ checked: value === choice.value, disabled: busy || field.fixed }} disabled={busy || field.fixed} onPress={() => onChange(choice.value)} style={{ minHeight: 56, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: value === choice.value ? WdpColors.navy : WdpColors.border, backgroundColor: value === choice.value ? WdpColors.soft : WdpColors.surface }}><Text style={styles.label}>{value === choice.value ? '✓ ' : ''}{choice.label.split(' · ')[0]}</Text>{choice.label.includes(' · ') && <Text style={styles.copy}>{choice.label.split(' · ').slice(1).join(' · ')}</Text>}</Pressable>)}{shownChoices?.length === 0 && <Text style={styles.copy}>Không có lựa chọn phù hợp.</Text>}</View></ScrollView>}</View>;
+  if (field.compactChoices && !open) return <View style={{ gap: 8 }}>
+    <Text style={styles.label}>{field.title}</Text>
+    <Button variant="secondary" title={choices?.find(choice => choice.value === value)?.label || value || 'Chọn từ danh sách'} disabled={busy} onPress={() => { setCustom(false); setOpen(true); }} />
+  </View>;
+  if (custom) return <View style={{ gap: 8 }}>
+    <Field title={`Nhập ${field.title.toLowerCase()}`} value={value} onChange={onChange} numeric={field.numeric} disabled={busy} maxLength={field.maxLength} />
+    <Button title="Chọn từ danh sách" variant="secondary" disabled={busy} onPress={() => setCustom(false)} />
+  </View>;
+  if (choices || field.optionsPath) return <View style={{ gap: 8 }}><Text style={styles.label}>{field.title}</Text>{field.compactChoices && <Button title="Đóng danh sách" variant="secondary" disabled={busy} onPress={() => setOpen(false)} />}{field.allowCustom && <Button title="+ Nhập giá trị mới" variant="secondary" disabled={busy} onPress={() => { onChange(''); setCustom(true); }} />}{(field.optionsPath || (choices?.length ?? 0) > 5) && <Field title={`Tìm ${field.title.toLowerCase()}`} value={search} onChange={setSearch} disabled={busy} maxLength={120} />}{Boolean(resource.error) && <Text style={styles.error}>{resource.error}</Text>}{resource.loading ? <Text style={styles.copy}>Đang tải lựa chọn…</Text> : <ScrollView style={{ maxHeight: 330 }} nestedScrollEnabled keyboardShouldPersistTaps="handled"><View accessibilityRole="radiogroup" accessibilityLabel={field.title} style={{ gap: 8 }}>{!field.required && <Button variant={!value ? 'primary' : 'secondary'} title={!value ? '✓ Không chọn' : 'Không chọn'} disabled={busy} onPress={() => select('')} />}{shownChoices?.map(choice => <Pressable key={choice.value} accessibilityRole="radio" aria-checked={value === choice.value} accessibilityLabel={choice.label} accessibilityState={{ checked: value === choice.value, disabled: busy || field.fixed }} disabled={busy || field.fixed} onPress={() => select(choice.value)} style={{ minHeight: 56, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: value === choice.value ? WdpColors.navy : WdpColors.border, backgroundColor: value === choice.value ? WdpColors.soft : WdpColors.surface }}><Text style={styles.label}>{value === choice.value ? '✓ ' : ''}{choice.label.split(' · ')[0]}</Text>{choice.label.includes(' · ') && <Text style={styles.copy}>{choice.label.split(' · ').slice(1).join(' · ')}</Text>}</Pressable>)}{shownChoices?.length === 0 && <Text style={styles.copy}>Không có lựa chọn phù hợp.</Text>}</View></ScrollView>}</View>;
   return <Field title={field.title} value={value} onChange={onChange} numeric={field.numeric} secure={field.secure} multiline={field.multiline} disabled={busy || field.fixed} maxLength={field.maxLength} />;
 }
 
@@ -26,11 +39,12 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
   useDraftGuard();
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(action.fields.map(field => [field.name, field.initial ?? ''])));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const fields = action.fields.filter(field => !field.visibleWhen || field.visibleWhen(values));
   const lock = useRef(false);
   const submit = async () => {
     if (lock.current) return;
     const data: Row = {};
-    for (const field of action.fields) {
+    for (const field of fields) {
       const value = field.secure ? values[field.name] ?? '' : (values[field.name] ?? '').trim();
       if (field.required && (!value || (field.checkbox && value !== 'true'))) { setError(`Vui lòng nhập/xác nhận ${field.title.toLowerCase()}.`); return; }
       if (value && ((field.minLength && value.length < field.minLength) || (field.maxLength && value.length > field.maxLength))) { setError(`${field.title} chưa đúng độ dài yêu cầu.`); return; }
@@ -50,5 +64,5 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thực hiện được thao tác.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <View style={styles.card}><Text style={styles.title}>{action.title}</Text>{Boolean(action.description) && <Text style={styles.copy}>{action.description}</Text>}{action.fields.map(field => <Input key={field.name} field={field} value={values[field.name] ?? ''} onChange={value => setValues(current => ({ ...current, [field.name]: value }))} busy={busy} />)}{Boolean(error) && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Button title={busy ? 'Đang lưu…' : action.submitTitle ?? 'Lưu'} disabled={busy} onPress={() => void submit()} /><Button title="Hủy" variant="secondary" disabled={busy} onPress={onClose} /></View>;
+  return <View style={styles.card}><Text style={styles.title}>{action.title}</Text>{Boolean(action.description) && <Text style={styles.copy}>{action.description}</Text>}{fields.map(field => <Input key={field.name} field={field} value={values[field.name] ?? ''} onChange={value => setValues(current => ({ ...current, [field.name]: value }))} busy={busy} />)}{Boolean(error) && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Button title={busy ? 'Đang lưu…' : action.submitTitle ?? 'Lưu'} disabled={busy} onPress={() => void submit()} /><Button title="Hủy" variant="secondary" disabled={busy} onPress={onClose} /></View>;
 }

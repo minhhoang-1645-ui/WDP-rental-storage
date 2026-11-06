@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, Text } from 'react-native';
+import { AppState, Platform, Text } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { router, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '@/auth/use-auth';
 import { apiRequest } from '@/services/api';
@@ -17,7 +19,7 @@ function destination(value: string) {
   return url.href;
 }
 
-export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange: (waiting: boolean) => void }) {
+export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void }) {
   const { user } = useAuth();
   const [session, setSession] = useState<Session>(), [result, setResult] = useState<Result>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [restored, setRestored] = useState(false), [now, setNow] = useState(Date.now);
   const lock = useRef(false), refreshRef = useRef(refresh);
@@ -78,19 +80,28 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
   }, [session, key, paid, user?.id]);
   const waiting = !paid && Boolean(session) && (!result || result.status === 'PENDING');
   const reconciliation = Boolean(result?.reconciliation);
-  useEffect(() => { onWaitingChange(waiting || reconciliation); return () => onWaitingChange(false); }, [waiting, reconciliation, onWaitingChange]);
-  const open = async (qr = false) => {
+  useEffect(() => { onWaitingChange?.(waiting || reconciliation); return () => onWaitingChange?.(false); }, [waiting, reconciliation, onWaitingChange]);
+  const open = async () => {
     if (lock.current || reconciliation || !restored || (!waiting && (!eligible || disabled))) return;
     lock.current = true; setBusy(true); setError('');
     try {
       let payment = session;
       if (!waiting) {
-        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}) }) });
+        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(Platform.OS !== 'web' ? { channel: 'mobile' } : {}) }) });
         destination(payment.paymentUrl);
         setSession(payment); setResult(undefined);
         await paymentStorage.set(key, JSON.stringify(payment));
       }
-      if (payment?.paymentUrl) await WebBrowser.openBrowserAsync(destination(payment.paymentUrl));
+      if (!payment?.paymentUrl) return;
+      const url = destination(payment.paymentUrl);
+      if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+        await WebBrowser.openBrowserAsync(url);
+        return;
+      }
+      const invoicePath = `/customer/invoices/${encodeURIComponent(invoiceId)}`;
+      const callback = `wdp-storage://${invoicePath.slice(1)}`;
+      const completed = await WebBrowser.openAuthSessionAsync(url, callback);
+      if (completed.type === 'success') router.navigate(invoicePath as Href);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không mở được VNPay.'); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -101,6 +112,5 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
     {reconciliation ? <Text accessibilityRole="alert" style={styles.error}>Khoản VNPay cần đối soát: {result?.reconciliation?.reconciliationCode}. NestBox đang kiểm tra; không thanh toán lại cho cùng khoản tiền này.</Text> : !paid && result?.status === 'FAILED' && <Text accessibilityRole="alert" style={styles.error}>{result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : result.providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán VNPay.' : 'Chưa ghi nhận thanh toán thành công.'} {result.invoice.status === 'VOID' ? 'Hóa đơn đã hủy. Nếu đã bị trừ tiền, hãy gửi hỗ trợ.' : 'Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi hỗ trợ.'}</Text>}
     {success && <><Text accessibilityLiveRegion="polite" style={styles.success}>Thanh toán đã được xác nhận.</Text><Navigation title={(result?.invoice.type || invoiceType) === 'INITIAL' ? 'Đặt lịch nhận kho' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? 'Xem gia hạn và thời hạn mới' : 'Xem lịch sử thanh toán'} path={(result?.invoice.type || invoiceType) === 'INITIAL' ? '/customer/appointments' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? '/customer/renewals' : '/customer/payment-history'} /></>}
     {!success && !reconciliation && (eligible || waiting) && <Button title={busy ? 'Đang mở VNPay…' : waiting ? 'Mở lại VNPay' : 'Thanh toán VNPay'} disabled={busy || !restored || waiting && !session?.paymentUrl || (!waiting && disabled)} onPress={() => void open()} />}
-    {!success && !reconciliation && eligible && !waiting && <Button title="Thanh toán VNPay QR" variant="secondary" disabled={busy || !restored || disabled} onPress={() => void open(true)} />}
   </>;
 }

@@ -13,7 +13,10 @@ export class VnpayService {
       const gateway = new URL(setting('VNPAY_PAYMENT_URL')), destination = new URL(setting('VNPAY_RETURN_URL'));
       if (gateway.protocol !== 'https:' || !['sandbox.vnpayment.vn', 'pay.vnpayment.vn', 'pay.vnpay.vn'].includes(gateway.hostname) || gateway.username || gateway.password || gateway.port || gateway.search || gateway.hash) return false;
       if (!['http:', 'https:'].includes(destination.protocol) || destination.username || destination.password || destination.pathname !== '/customer/payments/vnpay-return' || destination.search || destination.hash) return false;
-      if (setting('NODE_ENV') === 'production' && (gateway.hostname === 'sandbox.vnpayment.vn' || destination.protocol !== 'https:')) return false;
+      if (setting('NODE_ENV') === 'production') {
+        if (destination.protocol !== 'https:') return false;
+        if (gateway.hostname === 'sandbox.vnpayment.vn' && setting('VNPAY_ALLOW_SANDBOX') !== 'true') return false;
+      }
       return true;
     } catch { return false; }
   }

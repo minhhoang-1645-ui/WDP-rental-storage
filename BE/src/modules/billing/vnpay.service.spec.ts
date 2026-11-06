@@ -55,8 +55,21 @@ describe('VnpayService', () => {
   it.each(['javascript:alert(1)', 'https://shop.example/wrong-route', 'https://user:secret@shop.example/customer/payments/vnpay-return'])('does not advertise a broken return URL: %s', returnUrl => {
     expect(new VnpayService(new ConfigService({ ...config, VNPAY_RETURN_URL: returnUrl })).isConfigured()).toBe(false);
   });
-  it('supports the provider payment hosts and requires live HTTPS settings in production', () => {
+  it('supports the live provider hosts and disables Sandbox by default in production', () => {
     for (const host of ['pay.vnpay.vn', 'pay.vnpayment.vn']) expect(new VnpayService(new ConfigService({ ...config, NODE_ENV: 'production', VNPAY_PAYMENT_URL: `https://${host}/vpcpay.html`, VNPAY_RETURN_URL: 'https://nestbox.vn/customer/payments/vnpay-return' })).isConfigured()).toBe(true);
-    expect(new VnpayService(new ConfigService({ ...config, NODE_ENV: 'production' })).isConfigured()).toBe(false);
+    expect(new VnpayService(new ConfigService({ ...config, NODE_ENV: 'production', VNPAY_RETURN_URL: 'https://nestbox.vn/customer/payments/vnpay-return' })).isConfigured()).toBe(false);
+  });
+
+  it('allows signed Sandbox payments and callbacks on a hosted HTTPS demo only with explicit opt-in', () => {
+    const demoConfig = { ...config, NODE_ENV: 'production', VNPAY_ALLOW_SANDBOX: 'true' };
+    expect(new VnpayService(new ConfigService(demoConfig)).isConfigured()).toBe(false);
+
+    const returnUrl = 'https://demo.nestbox.vn/customer/payments/vnpay-return';
+    const service = new VnpayService(new ConfigService({ ...demoConfig, VNPAY_RETURN_URL: returnUrl }));
+    expect(service.isConfigured()).toBe(true);
+    const url = new URL(service.paymentUrl({ orderRef: 'DEMO-1', amount: 650000n, ipAddress: '127.0.0.1', createdAt: new Date('2026-10-21T01:00:00.000Z') }));
+    expect(url.origin).toBe('https://sandbox.vnpayment.vn');
+    expect(url.searchParams.get('vnp_ReturnUrl')).toBe(returnUrl);
+    expect(service.verify(callback({ vnp_TmnCode: config.VNPAY_TMN_CODE, vnp_TxnRef: 'DEMO-1', vnp_Amount: '65000000', vnp_ResponseCode: '00', vnp_TransactionStatus: '00' }))).toMatchObject({ orderRef: 'DEMO-1', amountMinor: 65000000n, responseCode: '00', transactionStatus: '00' });
   });
 });

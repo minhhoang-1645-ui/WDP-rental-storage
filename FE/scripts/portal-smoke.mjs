@@ -506,7 +506,7 @@ async function setup(role, authenticated = true) {
 async function open(page, path) {
   await page.goto(base + path, { waitUntil: "domcontentloaded" });
   await page.locator("h1").waitFor();
-  await page.waitForFunction(() => !document.querySelector('.portal-loading'));
+  await page.waitForFunction(() => !document.querySelector('.loading-skeleton'));
 }
 async function success(page) {
   await page

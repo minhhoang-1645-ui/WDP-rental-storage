@@ -8,12 +8,14 @@ const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
 const config = (enabled: boolean) => ({ get: () => String(enabled) });
 describe('unit responsibility feature gate and ownership', () => {
   it('does not access the new table before the migration is enabled', async () => {
-    const db = { unitStaffAssignment: { findMany: vi.fn() } };
+    const db = { unitStaffAssignment: { findMany: vi.fn() }, $executeRaw: vi.fn() };
     const service = new UnitStaffService(db as never, config(false) as never);
     expect(await service.list(manager)).toMatchObject({ enabled: false, items: [] });
     expect(await service.resolveStaff(db as never, ['unit'])).toBeNull();
+    await service.recoverPendingStockMovements(staff.id);
     await expect(service.assign('unit', { staffUserId: 'staff', expectedAssignmentId: null }, manager)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(db.unitStaffAssignment.findMany).not.toHaveBeenCalled();
+    expect(db.$executeRaw).not.toHaveBeenCalled();
   });
   it('returns only the authenticated Staff assignments and denies customer/admin assignment', async () => {
     const findMany = vi.fn().mockResolvedValue([]);

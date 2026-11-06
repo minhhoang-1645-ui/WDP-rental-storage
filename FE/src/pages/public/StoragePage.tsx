@@ -6,6 +6,7 @@ import { Container } from '../../components/ui/Container'
 import { useApiResource } from '../../services/useApiResource'
 import type { StorageCondition, StorageSizeId, StorageListing } from '../../types/storage'
 import { isFixtureProduct } from '../../catalog/public-catalog'
+import { LoadingSkeleton } from '../../components/LoadingSkeleton'
 
 interface SearchResult { items: StorageListing[]; checkedPeriod: boolean; total: number }
 
@@ -27,7 +28,7 @@ export function StoragePage() {
         <p className="flex items-center gap-2 text-sm text-slate"><SlidersHorizontal size={17} />{pending ? 'Đang tìm kho…' : error ? 'Chưa tải được kết quả' : `${items.length} lựa chọn phù hợp`}</p>
         <button type="button" className="button-secondary" onClick={refresh} disabled={pending}>Làm mới</button>
       </div>
-      {pending ? <p role="status">Đang kiểm tra danh sách kho…</p> : error ? <div role="alert" className="booking-alert is-error"><p>{error}</p><button type="button" onClick={refresh}>Thử lại</button></div> : <>
+      {pending ? <LoadingSkeleton layout="cards" label="Đang kiểm tra danh sách kho…" /> : error ? <div role="alert" className="booking-alert is-error"><p>{error}</p><button type="button" onClick={refresh}>Thử lại</button></div> : <>
         <p className="mb-6 text-sm text-slate">{current?.checkedPeriod ? 'Đã kiểm tra khoảng thuê trong dữ liệu hiện tại. Tình trạng sẽ được kiểm tra lại khi gửi yêu cầu.' : 'Chưa kiểm tra lịch trống. Hãy chọn ngày và thời hạn thuê cụ thể.'}</p>
         {items.length ? <div className="home-product-grid">{items.map(unit => <StorageListingCard key={unit.id} unit={unit} />)}</div> : <div className="storage-search-empty border border-border bg-white p-10 text-center"><h2 className="text-2xl font-semibold">Chưa có lựa chọn khớp hoàn toàn</h2><p className="mt-3 text-slate">Hãy thử đổi thời gian, kích thước hoặc loại kho.</p><Link className="button-secondary mt-6" to="/storage?size=all&type=all&duration=3">Xóa bộ lọc</Link></div>}
       </>}

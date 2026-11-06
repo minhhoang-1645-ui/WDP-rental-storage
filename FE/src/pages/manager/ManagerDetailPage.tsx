@@ -75,6 +75,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
         </div>
       )}
       <LoadState
+        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}

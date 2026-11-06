@@ -50,5 +50,34 @@ export class UnitStaffService {
     if (rows.length !== ids.length || new Set(rows.map(row => row.staffUserId)).size !== 1) return null;
     return rows[0];
   }
+  async recoverPendingStockMovements(staffUserId: string, reference?: string) {
+    if (!this.enabled()) return;
+    const movement = reference
+      ? Prisma.sql`AND (m."id" = ${reference} OR m."movementCode" = ${reference})`
+      : Prisma.empty;
+    // Resolve responsibility and update the movement in one statement. Keep manual
+    // assignments and historical records intact even when another request is racing.
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE "StockMovement" AS m
+      SET "status" = 'ASSIGNED',
+          "assignedStaffUserId" = a."staffUserId",
+          "assignedByUserId" = a."assignedByUserId",
+          "assignedAt" = CURRENT_TIMESTAMP,
+          "updatedAt" = CURRENT_TIMESTAMP
+      FROM "RentalContract" AS c
+      JOIN "ReservationUnit" AS r ON r."id" = c."reservationUnitId"
+      JOIN "UnitStaffAssignment" AS a ON a."storageUnitId" = r."storageUnitId"
+      JOIN "User" AS s ON s."id" = a."staffUserId"
+      WHERE m."rentalContractId" = c."id"
+        AND m."status" = 'REQUESTED'
+        AND m."assignedStaffUserId" IS NULL
+        AND c."status" = 'ACTIVE'
+        AND a."endedAt" IS NULL
+        AND s."role" = 'STAFF'
+        AND s."accountStatus" = 'ACTIVE'
+        AND a."staffUserId" = ${staffUserId}
+        ${movement}
+    `);
+  }
   private include() { return { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, status: true } }, staff: { select: { id: true, fullName: true, email: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } } }; }
 }

@@ -4,7 +4,7 @@ import type { PublicUser, AuthSession } from '../types/booking'
 export interface AuthContextValue {
   user: PublicUser | null
   loading: boolean
-  login: (input: { email: string; password: string }) => Promise<void>
+  login: (input: { email: string; password: string; rememberMe?: boolean }) => Promise<void>
   register: (input: { fullName: string; email: string; phone: string; password: string }) => Promise<void>
   updateProfile: (input: { fullName: string; phone: string }) => Promise<void>
   logout: () => void

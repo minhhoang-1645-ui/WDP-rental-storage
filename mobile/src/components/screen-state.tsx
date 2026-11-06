@@ -2,10 +2,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AlertCircle, Inbox, RefreshCw } from 'lucide-react-native';
 
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
-import { SkeletonCard } from './skeleton';
+import { Skeleton, type SkeletonLayout } from './skeleton';
 
-export function LoadingState({ label = 'Đang tải dữ liệu…' }: { label?: string }) {
-  return <View style={styles.state}><SkeletonCard /><Text style={styles.description}>{label}</Text></View>;
+export function LoadingState({ label = 'Đang tải dữ liệu…', layout = 'card' }: { label?: string; layout?: SkeletonLayout }) {
+  return <View accessible accessibilityLabel={label} accessibilityState={{ busy: true }} accessibilityLiveRegion="polite">
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Skeleton layout={layout} />
+    </View>
+  </View>;
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {

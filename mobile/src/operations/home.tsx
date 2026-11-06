@@ -59,7 +59,7 @@ export function ManagerHome() {
     {data.error && <ErrorState message={data.error} onRetry={data.refresh} />}
     <Panel title="Theo dõi công nợ"><View style={{ gap: 6 }}><View style={styles.row}><MetricCard label="Tổng dư nợ" value={financeReady ? formatMoney(outstanding.reduce((sum, row) => sum + Number(row.balanceDue || 0), 0)) : '—'} tone="navy" /><MetricCard label="Quá hạn" value={financeReady ? formatMoney(overdue.reduce((sum, row) => sum + Number(row.balanceDue), 0)) : '—'} tone="danger" /></View><Text style={styles.copy}>{financeReady ? `${outstanding.length} hóa đơn còn số dư, ${overdue.length} quá hạn.` : 'Chưa tải đủ hóa đơn để tổng hợp.'}</Text></View><Navigation title="Xem hóa đơn" path="/manager/invoices" /></Panel>
     <FunctionMenu groups={[{ title:'Chức năng của quản lý', items:managerPrimaryMenu.filter(item=>item.key).map(item=>({ title:item.title, path:'/manager/'+item.key,description:'Mở đúng nhóm công việc quản lý.' })) }]} />
-    <Disclosure title="Thống kê cơ sở">{data.loading ? <LoadingState /> : data.data && <View style={styles.row}>{summaryMetrics.map(([key, title]) => <MetricCard key={key} label={title} value={count(key)} tone={key === 'overdueRentals' ? 'danger' : 'navy'} />)}</View>}</Disclosure>
+    <Disclosure title="Thống kê cơ sở">{data.loading ? <LoadingState layout="metrics" /> : data.data && <View style={styles.row}>{summaryMetrics.map(([key, title]) => <MetricCard key={key} label={title} value={count(key)} tone={key === 'overdueRentals' ? 'danger' : 'navy'} />)}</View>}</Disclosure>
     <Navigation title="Báo cáo vận hành" path="/manager/reports" />
     <Navigation title="Đề nghị trả trước hạn" path="/manager/early-returns" />
     <Navigation title="Tài khoản và đăng xuất" path="/manager/account" />

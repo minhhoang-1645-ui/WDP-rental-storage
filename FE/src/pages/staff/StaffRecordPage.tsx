@@ -52,6 +52,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
         />
       )}
       <LoadState
+        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}

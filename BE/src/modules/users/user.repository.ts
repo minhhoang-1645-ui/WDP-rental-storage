@@ -6,7 +6,12 @@ import type { PublicUser } from '../auth/auth.types.js';
 export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
 export interface UserListFilters { search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
+type StoredSession = { tokenHash: string; userId: string; expiresAt: Date };
 export abstract class UserRepository {
+  abstract saveSession(session: StoredSession): Promise<void>;
+  abstract findSession(tokenHash: string): Promise<StoredSession | null>;
+  abstract deleteSession(tokenHash: string): Promise<void>;
+  abstract deleteUserSessions(userId: string): Promise<void>;
   abstract findByEmail(email: string): Promise<StoredUser | null>;
   abstract findById(id: string): Promise<StoredUser | null>;
   abstract create(input: CreateStoredUser): Promise<StoredUser>;
@@ -23,6 +28,13 @@ function assertStatusActor(actor: StoredUser | null | undefined, targetId: strin
 
 export class MemoryUserRepository extends UserRepository {
   private readonly users = new Map<string, StoredUser>();
+  private readonly sessions = new Map<string, StoredSession>();
+  async saveSession(session: StoredSession) { this.sessions.set(session.tokenHash, session); }
+  async findSession(tokenHash: string) { return this.sessions.get(tokenHash) ?? null; }
+  async deleteSession(tokenHash: string) { this.sessions.delete(tokenHash); }
+  async deleteUserSessions(userId: string) {
+    for (const [key, session] of this.sessions) if (session.userId === userId) this.sessions.delete(key);
+  }
   async findByEmail(email: string) {
     return [...this.users.values()].find(user => user.email === email) ?? null;
   }
@@ -63,6 +75,15 @@ export class PrismaUserRepository extends UserRepository {
     const result = await this.prisma.user.updateMany({ where: { id, accountStatus: 'ACTIVE' }, data });
     return result.count === 1 ? this.findById(id) : null;
   }
+  async saveSession(session: StoredSession) {
+    await this.prisma.$transaction([
+      this.prisma.authSession.deleteMany({ where: { userId: session.userId, expiresAt: { lte: new Date() } } }),
+      this.prisma.authSession.create({ data: session }),
+    ]);
+  }
+  async findSession(tokenHash: string) { return this.prisma.authSession.findUnique({ where: { tokenHash } }); }
+  async deleteSession(tokenHash: string) { await this.prisma.authSession.deleteMany({ where: { tokenHash } }); }
+  async deleteUserSessions(userId: string) { await this.prisma.authSession.deleteMany({ where: { userId } }); }
   async list(offset: number, limit: number, filters: UserListFilters = {}) {
     const users = await this.prisma.user.findMany({ where: this.where(filters), skip: offset, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] });
     return users.map(user => ({ ...user, phone: user.phone ?? '' }));

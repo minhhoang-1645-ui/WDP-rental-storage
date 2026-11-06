@@ -44,7 +44,7 @@ export class OnlinePaymentController {
   ipn(@Query() query: Record<string, unknown>) { return this.service.processIpn(query); }
 
   @Get('payments/vnpay/return')
-  @ApiOperation({ summary: 'VNPay browser return', description: 'Chỉ phục vụ UX và không ghi nhận Payment/PAID. Trạng thái chính thức đến từ IPN.' })
+  @ApiOperation({ summary: 'VNPay browser return', description: 'Ghi nhận phiên bị hủy nếu VNPay trả mã 24 có chữ ký hợp lệ và khớp số tiền. Thanh toán thành công chỉ được ghi nhận qua IPN.' })
   @ApiOkResponse({ description: 'Kết quả chữ ký và trạng thái transaction hiện đang lưu.' })
   returnUrl(@Query() query: Record<string, unknown>) { return this.service.returnStatus(query); }
 }

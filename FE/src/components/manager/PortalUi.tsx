@@ -1,6 +1,7 @@
 import { EntitySelect } from '../EntitySelect';
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { LoadingSkeleton, type SkeletonLayout } from "../LoadingSkeleton";
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
 import { allPages } from "../../services/portal";
@@ -41,15 +42,15 @@ export function LoadState({
   loading,
   error,
   retry,
+  layout,
 }: {
   loading: boolean;
   error: string;
   retry: () => void;
+  layout?: SkeletonLayout;
 }) {
   return loading ? (
-    <div className="portal-loading" role="status">
-      <RefreshCw size={20} className="portal-spin" /> Đang tải dữ liệu…
-    </div>
+    <LoadingSkeleton layout={layout} />
   ) : error ? (
     <div className="booking-alert is-error" role="alert">
       {error}

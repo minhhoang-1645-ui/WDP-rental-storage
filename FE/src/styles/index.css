@@ -690,7 +690,6 @@
   .customer-state-content > span { display: block; }
   .customer-state-action { display: flex; grid-column: 1 / -1; justify-content: center; width: 100%; margin-top: 6px; }
   .customer-state-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 50%; background: #edf3f8; color: var(--color-navy); }
-  .customer-state--loading { min-height: 280px; align-content: center; color: var(--color-slate); }
   .customer-state--empty { min-height: 300px; align-content: center; }
   .customer-state--error { grid-template-columns: auto minmax(0, 1fr) auto; justify-items: start; border-color: #fecaca; background: #fffafa; text-align: left; }
   .customer-state--error > svg { color: #b91c1c; }
@@ -863,11 +862,13 @@
 .portal-login-panel h1 { margin-top: 8px; font-size: 32px; font-weight: 800; color: var(--color-navy); }
 .portal-login-panel > p:not(.eyebrow) { margin: 10px 0 24px; line-height: 1.65; color: var(--color-slate); }
 .portal-login-panel .field-label { margin-top: 18px; }
+.portal-login-panel .portal-login-submit { margin-top: 24px; }
 .portal-login-panel > small { display: block; margin-top: 16px; text-align: center; color: var(--color-slate); }
 .portal-mark { display: grid; width: 44px; height: 44px; margin-bottom: 20px; place-items: center; border-radius: 8px; color: white; background: var(--color-navy); }
 
 .manager-shell { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); background: #f8fafc; color: var(--color-ink); }
-.manager-shell-loading { min-height: 100vh; display: grid; place-items: center; background: #f8fafc; color: var(--color-slate); }
+.manager-shell-loading { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: var(--color-canvas); }
+.manager-shell-loading > .loading-skeleton { width: min(100%, 48rem); }
 .manager-sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 28px 20px; color: white; background: #1e3a5f; }
 .manager-brand { display: block; font-size: 24px; font-weight: 850; letter-spacing: 0; }
 .manager-sidebar > div > small { color: #cbd5e1; }

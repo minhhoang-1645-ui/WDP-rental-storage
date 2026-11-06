@@ -27,7 +27,7 @@ import {
 } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
-import { NavigationGroup } from '../workspace/NavigationGroup';
+import type { WorkspaceSection } from '../workspace/WorkspaceSectionPage';
 import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
@@ -52,10 +52,15 @@ const navigation = [
   { to: "/customer/support", label: "Hỗ trợ", icon: CircleHelp },
 ] as const;
 const customerGroups = [
-  { title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
-  { title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
-  { title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
+  { key: 'booking', icon: ClipboardList, title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
+  { key: 'storage', icon: Warehouse, title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
+  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
 ];
+
+export const customerSections: WorkspaceSection[] = customerGroups.map(group => ({
+  ...group,
+  items: group.paths.map(path => navigation.find(item => item.to === path)!),
+}));
 
 export function CustomerLayout() {
   const { user, loading, logout } = useAuth();
@@ -167,24 +172,17 @@ export function CustomerLayout() {
           <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Chọn kho & đặt thuê</Link>
           <NavLink to="/customer" end className="customer-nav-link" onClick={() => setMenuOpen(false)}><LayoutDashboard size={18} />Tổng quan</NavLink>
           <NavLink to="/customer/notifications" className="customer-nav-link" onClick={() => setMenuOpen(false)}><Bell size={18} />Thông báo & việc cần làm</NavLink>
-          {customerGroups.map((group, index) => <NavigationGroup key={`${group.title}:${location.pathname}`} title={group.title} count={group.paths.reduce((total, path) => total + actionCountForPath(activity.entries, path), 0)} expanded={index === 0} active={group.paths.some(path => location.pathname.startsWith(path))}>
-          {group.paths.map(path => navigation.find(item => item.to === path)!).map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={"end" in item && item.end}
-                onClick={() => setMenuOpen(false)}
-                className="customer-nav-link"
-              >
-                <Icon size={18} />
-                {item.label}
-                {actionCountForPath(activity.entries, item.to) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, item.to)}</b>}
-              </NavLink>
-            );
+          {customerGroups.map(group => {
+            const Icon = group.icon;
+            const count = actionCountForPath(activity.entries, group.paths);
+            const childActive = group.paths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'));
+            return <NavLink key={group.key} to={`/customer/sections/${group.key}`} onClick={() => setMenuOpen(false)}
+              className={({ isActive }) => `customer-nav-link${isActive || childActive ? ' active' : ''}`}>
+              <Icon size={18} />
+              <span>{group.title}</span>
+              {count > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{count}</b>}
+            </NavLink>;
           })}
-          </NavigationGroup>)}
         </nav>
         <div className="customer-sidebar-bottom">
           <NavLink to="/customer/profile" className="customer-account">

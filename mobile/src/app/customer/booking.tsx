@@ -111,7 +111,7 @@ export default function BookingScreen() {
   const toggleUnit = (unit: FloorPlanUnit) => { if (!unit.available) return; setError(''); setDraft(value => ({ ...value, selectedUnitIds: value.selectedUnitIds.includes(unit.id) ? value.selectedUnitIds.filter(id => id !== unit.id) : value.selectedUnitIds.length < Number(value.quantity) ? [...value.selectedUnitIds, unit.id] : value.selectedUnitIds })); };
   return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Đặt kho" title={step === 3 ? "Xác nhận đặt kho" : "Hoàn tất đặt kho"} description="Kiểm tra thông tin, ký hợp đồng và thanh toán." />
-    {catalog.loading && !catalog.data ? <LoadingState label="Đang tải danh mục kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
+    {catalog.loading && !catalog.data ? <LoadingState layout="detail" label="Đang tải danh mục kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
       <Progress step={step} fromMap={fromMap} />
       {profileContactIssue(user?.fullName ?? '', user?.phone ?? '') && <Panel title="Cần bổ sung thông tin liên hệ"><Text style={styles.copy}>NestBox cần họ tên và số điện thoại hợp lệ để xác nhận yêu cầu và liên hệ bàn giao. Bạn vẫn có thể xem báo giá trước.</Text><Button title="Cập nhật thông tin liên hệ" variant="secondary" onPress={() => { checkingRequest.current?.abort(); checkingRequest.current = null; setChecking(false); router.push({ pathname: '/customer/account', params: { returnTo: 'booking', product: productId } }); }} /></Panel>}
       {fromMap && <Panel title="Kho đã chọn">

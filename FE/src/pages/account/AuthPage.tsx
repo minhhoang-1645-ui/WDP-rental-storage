@@ -51,6 +51,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
         await login({
           email: String(data.get("email")).trim().toLowerCase(),
           password: String(data.get("password")),
+          rememberMe: data.has("rememberMe"),
         });
       }
     } catch (caught) {
@@ -133,6 +134,12 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
               />
             </label>
             <small id="auth-password-help">{mode === "register" ? "Tối thiểu 8 ký tự." : "Nhập mật khẩu tài khoản của bạn."}</small>
+            {mode === "login" && (
+              <label className="flex items-center gap-2 text-sm">
+                <input name="rememberMe" type="checkbox" className="!size-4 !min-h-0" />
+                Duy trì đăng nhập trong 30 ngày
+              </label>
+            )}
           </div>
           <button
             className="button-primary mt-7 w-full justify-center"

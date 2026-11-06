@@ -86,7 +86,7 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     expect(session.user.role).toBe('CUSTOMER');
     await expect(auth.getUserByToken(session.token)).resolves.toMatchObject({ email: 'new@example.test' });
     await expect(auth.register({ fullName: 'Other', email: 'new@example.test', phone: '0900000000', password: 'password123' })).rejects.toThrow();
-    auth.revokeUserSessions(session.user.id);
+    await auth.revokeUserSessions(session.user.id);
     await expect(auth.getUserByToken(session.token)).rejects.toThrow();
   });
   it('rotates expired verification links without changing a claimed booking', async () => {

@@ -4,7 +4,7 @@ import { apiRequest } from './api'
 export const authApi = {
   register: (input: { fullName: string; email: string; phone: string; password: string }) =>
     apiRequest<AuthSession>('/auth/register', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
-  login: (input: { email: string; password: string }) =>
+  login: (input: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
   me: () => apiRequest<PublicUser>('/auth/me'),
   updateProfile: (input: { fullName: string; phone: string }, expectedToken: string) =>

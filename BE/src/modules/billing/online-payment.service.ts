@@ -80,9 +80,9 @@ export class OnlinePaymentService {
         if (!transaction) return { RspCode: '01', Message: 'Order not found' };
         if (payload.amountMinor !== transaction.amount * 100n) return { RspCode: '04', Message: 'Invalid amount' };
         if (transaction.status === 'SUCCESS') return { RspCode: '00', Message: 'Confirm Success' };
-        // A signed success IPN can arrive after a browser poll marked the local session expired.
+        // A signed success IPN can arrive after the browser closed or expired the local session.
         // Money confirmed by VNPay remains the source of truth.
-        if (!['PENDING', 'EXPIRED'].includes(transaction.status)) return { RspCode: '02', Message: 'Order already confirmed' };
+        if (!['PENDING', 'EXPIRED', 'CANCELLED'].includes(transaction.status)) return { RspCode: '02', Message: 'Order already confirmed' };
         if (payload.responseCode !== '00' || payload.transactionStatus !== '00') {
           if (transaction.status === 'PENDING') await tx.onlinePaymentTransaction.update({ where: { id: transaction.id }, data: { status: payload.responseCode === '24' ? 'CANCELLED' : 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode } });
           return { RspCode: '00', Message: 'Confirm Success' };
@@ -95,7 +95,7 @@ export class OnlinePaymentService {
         if (!invoice) return { RspCode: '01', Message: 'Order not found' };
         if (invoice.status === 'VOID' || invoice.balanceDue !== transaction.amount || (invoice.type === 'INITIAL' && (invoice.reservation.status === 'EXPIRED' || (invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())))) {
           await tx.onlinePaymentTransaction.updateMany({
-            where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED'] } },
+            where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED', 'CANCELLED'] } },
             data: { status: 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode },
           });
           await tx.onlinePaymentReconciliation.upsert({
@@ -192,12 +192,24 @@ export class OnlinePaymentService {
   }
 
   async returnStatus(query: Record<string, unknown>) {
+    let payload;
     try {
-      const payload = this.vnpay.verify(query);
-      const transaction = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { merchantOrderRef: true, status: true, amount: true, invoice: { select: { invoiceCode: true, status: true } } } });
-      if (!transaction) return { valid: false, status: 'NOT_FOUND' };
-      return { valid: true, transaction: { merchantOrderRef: transaction.merchantOrderRef, status: transaction.status, amount: this.money(transaction.amount) }, invoice: transaction.invoice, providerResponseCode: payload.responseCode };
+      payload = this.vnpay.verify(query);
     } catch { return { valid: false, status: 'INVALID_SIGNATURE' }; }
+
+    const transaction = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { merchantOrderRef: true, status: true, amount: true, invoice: { select: { invoiceCode: true, status: true } } } });
+    if (!transaction) return { valid: false, status: 'NOT_FOUND' };
+
+    let status = transaction.status;
+    if (payload.responseCode === '24' && payload.transactionStatus !== '00' && payload.amountMinor === transaction.amount * 100n && (status === 'PENDING' || status === 'EXPIRED')) {
+      const cancelled = await this.prisma.onlinePaymentTransaction.updateMany({
+        where: { merchantOrderRef: payload.orderRef, status: { in: ['PENDING', 'EXPIRED'] } },
+        data: { status: 'CANCELLED', responseCode: payload.responseCode },
+      });
+      if (cancelled.count === 1) status = 'CANCELLED';
+    }
+
+    return { valid: true, transaction: { merchantOrderRef: transaction.merchantOrderRef, status, amount: this.money(transaction.amount) }, invoice: transaction.invoice, providerResponseCode: payload.responseCode };
   }
 
   async listManagerReconciliations(page: number, limit: number, status?: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED') {

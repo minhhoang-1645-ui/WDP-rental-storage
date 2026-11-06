@@ -1,0 +1,61 @@
+.loading-skeleton__bone {
+  display: block;
+  height: .85rem;
+  border-radius: .375rem;
+  background: var(--color-border);
+  animation: loading-skeleton-pulse 1.6s ease-in-out infinite alternate;
+}
+
+.loading-skeleton__heading,
+.loading-skeleton__lines {
+  display: grid;
+  gap: .75rem;
+}
+
+.loading-skeleton__heading { margin-bottom: 1.5rem; }
+.loading-skeleton__heading .loading-skeleton__bone:first-child { width: min(70%, 24rem); height: 2rem; }
+.loading-skeleton__heading .loading-skeleton__bone:last-child { width: min(90%, 32rem); }
+
+.loading-skeleton__items {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: .875rem;
+  background: var(--color-surface);
+}
+
+.loading-skeleton__item + .loading-skeleton__item { border-top: 1px solid var(--color-border); }
+.loading-skeleton__lines { padding: 1rem; }
+.loading-skeleton__lines .loading-skeleton__bone:nth-child(1) { width: 60%; height: 1rem; }
+.loading-skeleton__lines .loading-skeleton__bone:nth-child(2) { width: 80%; }
+.loading-skeleton__lines .loading-skeleton__bone:nth-child(3) { width: 40%; }
+
+.loading-skeleton--compact > .loading-skeleton__bone { width: min(100%, 12rem); }
+.loading-skeleton--catalog { padding-block: clamp(2rem, 5vw, 4rem); }
+.loading-skeleton:is(.loading-skeleton--catalog, .loading-skeleton--cards, .loading-skeleton--detail) .loading-skeleton__items {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.loading-skeleton:is(.loading-skeleton--catalog, .loading-skeleton--cards, .loading-skeleton--detail) .loading-skeleton__item {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: .875rem;
+  background: var(--color-surface);
+}
+
+.loading-skeleton--detail .loading-skeleton__lines { min-height: 9rem; padding: 1.5rem; align-content: center; }
+.loading-skeleton__image { height: auto; aspect-ratio: 16 / 9; border-radius: 0; }
+
+@media (min-width: 768px) {
+  .loading-skeleton--list .loading-skeleton__lines { grid-template-columns: 1.4fr 1fr 1fr; align-items: center; min-height: 4rem; }
+  .loading-skeleton--detail .loading-skeleton__items { grid-template-columns: 2fr 1fr; }
+  .loading-skeleton:is(.loading-skeleton--catalog, .loading-skeleton--cards) .loading-skeleton__items { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@keyframes loading-skeleton-pulse { from { opacity: 1; } to { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+  .loading-skeleton__bone { animation: none; }
+}

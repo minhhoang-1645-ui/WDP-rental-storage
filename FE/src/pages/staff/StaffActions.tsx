@@ -53,8 +53,12 @@ export function StaffActions({
     setBusy(true);
     setError("");
     try {
-      await mutate(root + suffix, method, input, idempotent);
-      onSuccess("Đã lưu thao tác thành công.");
+      const result = await mutate(root + suffix, method, input, idempotent);
+      onSuccess(suffix === '/complete-handover'
+        ? result?.usageStatus === 'WAITING_FOR_RENTAL_START'
+          ? 'Đã ghi nhận bàn giao giấy tờ và chìa khóa. Hợp đồng chờ đến ngày bắt đầu thuê.'
+          : 'Đã ghi nhận bàn giao giấy tờ và chìa khóa.'
+        : 'Đã lưu thao tác thành công.');
       refresh();
     } catch (caught) {
       setError(
@@ -75,12 +79,19 @@ export function StaffActions({
   ) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    void run(
-      suffix,
-      "POST",
-      { [field]: String(data.get(field) ?? "").trim() || undefined, ...(suffix === '/complete-handover' ? { handoverReport: { recipientName: String(data.get('recipientName') ?? '').trim(), condition: String(data.get('condition') ?? '').trim(), accessItemCount: Number(data.get('accessItemCount')), identityVerified: data.get('identityVerified') === 'on', unitInspected: data.get('unitInspected') === 'on', accessDelivered: data.get('accessDelivered') === 'on' } } : {}) },
-      idempotent,
-    );
+    const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
+    if (suffix === '/complete-handover') {
+      input.handoverReport = {
+        recipientName: String(data.get('recipientName') ?? '').trim(),
+        condition: String(data.get('condition') ?? '').trim(),
+        accessItemCount: Number(data.get('accessItemCount')),
+        identityVerified: data.get('identityVerified') === 'on',
+        unitInspected: data.get('unitInspected') === 'on',
+        accessDelivered: data.get('accessDelivered') === 'on',
+        documentsDelivered: data.get('documentsDelivered') === 'on',
+      };
+    }
+    void run(suffix, 'POST', input, idempotent);
   };
   const inspections = rows(row.inspections);
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
@@ -109,30 +120,29 @@ export function StaffActions({
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
-              {handoverIssue && <p className="booking-alert" role="status">{handoverIssue}</p>}
-              <h3>Biên bản bàn giao thực tế</h3>
-              <p>Ghi nhận giấy tờ, hướng dẫn và chìa khóa đã giao. Nếu bàn giao sớm, hợp đồng và quyền sử dụng kho tự kích hoạt từ ngày bắt đầu thuê; khách chưa được đưa hàng vào trước ngày đó.</p>
+              <h3>Bàn giao giấy tờ và chìa khóa</h3>
+              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
               <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
               <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>
               <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
+              <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
-              <label className="portal-checkbox">
-                <input name="received" type="checkbox" required />
-                Đã bàn giao thực tế đầy đủ các kho trong lịch này
-              </label>
-              <button className="button-primary" disabled={Boolean(handoverIssue)}>Hoàn tất bàn giao</button>
+              {handoverIssue && <p className="booking-alert" id="handover-availability" role="status">{handoverIssue}</p>}
+              <button type="submit" className="button-primary" disabled={Boolean(handoverIssue)} aria-describedby={handoverIssue ? 'handover-availability' : undefined}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
             </form>
           ) : (
             <p>
               {row.status === "REQUESTED"
                 ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
-                : "Lịch này không còn thao tác bàn giao."}
+                : row.usageStatus === 'WAITING_FOR_RENTAL_START'
+                  ? 'Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.'
+                  : "Lịch này không còn thao tác bàn giao."}
             </p>
           ))}
         {resource === "returns" && (

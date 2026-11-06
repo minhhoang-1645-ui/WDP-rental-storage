@@ -10,6 +10,6 @@ export function CustomerFormSources({
   const error = resources.find((resource) => resource.error)?.error;
   if (error) return <PortalError message={error} onRetry={retry} />;
   return resources.some((resource) => resource.loading) ? (
-    <PortalLoading label="Đang tải hồ sơ đủ điều kiện…" />
+    <PortalLoading layout="compact" label="Đang tải hồ sơ đủ điều kiện…" />
   ) : null;
 }

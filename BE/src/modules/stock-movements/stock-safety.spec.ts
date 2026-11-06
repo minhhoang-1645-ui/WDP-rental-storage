@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StockMovementsService } from './stock-movements.service.js';
+import { ManagerStockMovementsController } from './manager-stock-movements.controller.js';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
@@ -63,5 +65,37 @@ describe('stock movement safety with stubbed transaction', () => {
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue({ customerUserId: 'other', rentalContractId: 'other-contract', type: 'IN', note: null, lines: [] }) } };
     const service = new StockMovementsService(db as never);
     await expect(service.create({ id: 'customer', role: 'CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'collision-key')).rejects.toThrow('Idempotency-Key');
+  });
+  it('recovers pending movements before the Staff portal reads them via its operational routes', async () => {
+    const row = {
+      id: 'movement',
+      status: 'REQUESTED',
+      lines: [],
+      assignedStaff: null as { id: string } | null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const stockMovement = {
+      findFirst: vi.fn(async () => row),
+      findMany: vi.fn(async () => [row]),
+      count: vi.fn(async () => 1),
+    };
+    const recover = vi.fn(async (staffId: string, reference?: string) => {
+      if (staffId === staff.id && (!reference || reference === row.id)) {
+        row.status = 'ASSIGNED';
+        row.assignedStaff = { id: staffId };
+      }
+    });
+    const service = new StockMovementsService({ stockMovement } as never, { recoverPendingStockMovements: recover } as never);
+    const controller = new ManagerStockMovementsController(service);
+    const managerRequest = { user: { id: 'manager', role: 'MANAGER' } } as AuthenticatedRequest;
+    const staffRequest = { user: staff } as AuthenticatedRequest;
+
+    await expect(controller.get(managerRequest, row.id)).resolves.toMatchObject({ status: 'REQUESTED' });
+    expect(recover).not.toHaveBeenCalled();
+    await expect(controller.get(staffRequest, row.id)).resolves.toMatchObject({ status: 'ASSIGNED', assignedStaff: { id: staff.id } });
+    expect(recover).toHaveBeenCalledWith(staff.id, row.id);
+    await controller.list(staffRequest, {});
+    expect(recover).toHaveBeenLastCalledWith(staff.id);
   });
 });

@@ -7,8 +7,8 @@ import type { AuthSession, PublicUser } from './auth.types.js';
 
 @Injectable()
 export class AuthService {
-  private readonly sessions = new Map<string, { userId: string; expiresAt: number }>();
   private readonly sessionTtlMs = 8 * 60 * 60 * 1000;
+  private readonly rememberedSessionTtlMs = 30 * 24 * 60 * 60 * 1000;
   private readonly loginAttempts = new Map<string, { count: number; until: number }>();
   private activePasswordHashes = 0;
 
@@ -41,7 +41,7 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng.');
     }
     if (user.accountStatus === 'DISABLED') throw new UnauthorizedException('Tài khoản đã bị vô hiệu hóa.');
-    return this.createSession(user);
+    return this.createSession(user, input.rememberMe === true);
   }
 
   async createInternalUser(input: Record<string, unknown>) {
@@ -60,20 +60,20 @@ export class AuthService {
 
   async getUserByToken(token: string | undefined): Promise<PublicUser> {
     const key = token ? this.tokenKey(token) : '';
-    const session = this.sessions.get(key);
-    if (!session || session.expiresAt <= Date.now()) {
-      this.sessions.delete(key);
+    const session = token ? await this.users.findSession(key) : null;
+    if (!session || session.expiresAt.getTime() <= Date.now()) {
+      if (session) await this.users.deleteSession(key);
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');
     }
     const user = await this.users.findById(session.userId);
     if (!user || user.accountStatus === 'DISABLED') {
-      this.sessions.delete(key);
+      await this.users.deleteSession(key);
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ, đã hết hạn hoặc tài khoản đã bị vô hiệu hóa.');
     }
     return this.toPublicUser(user);
   }
 
-  logout(token: string) { this.sessions.delete(this.tokenKey(token)); }
+  logout(token: string) { return this.users.deleteSession(this.tokenKey(token)); }
 
   async encodePassword(value: unknown) {
     const password = this.password(value, 8);
@@ -82,7 +82,7 @@ export class AuthService {
   }
 
   revokeUserSessions(userId: string) {
-    for (const [key, session] of this.sessions) if (session.userId === userId) this.sessions.delete(key);
+    return this.users.deleteUserSessions(userId);
   }
 
   async updateProfile(actor: PublicUser, input: Record<string, unknown>): Promise<PublicUser> {
@@ -96,12 +96,10 @@ export class AuthService {
     return this.toPublicUser(updated);
   }
 
-  private createSession(user: StoredUser): AuthSession {
-    for (const [key, session] of this.sessions) {
-      if (session.expiresAt <= Date.now()) this.sessions.delete(key);
-    }
+  private async createSession(user: StoredUser, rememberMe = false): Promise<AuthSession> {
     const token = randomBytes(32).toString('hex');
-    this.sessions.set(this.tokenKey(token), { userId: user.id, expiresAt: Date.now() + this.sessionTtlMs });
+    const ttl = rememberMe ? this.rememberedSessionTtlMs : this.sessionTtlMs;
+    await this.users.saveSession({ tokenHash: this.tokenKey(token), userId: user.id, expiresAt: new Date(Date.now() + ttl) });
     return { token, user: this.toPublicUser(user) };
   }
 

@@ -37,6 +37,7 @@ export function CustomerPaymentsPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const [onlineInvoiceId, setOnlineInvoiceId] = useState('')
   const [onlineError, setOnlineError] = useState('')
+  const [onlineNotice, setOnlineNotice] = useState('')
   const [pendingOnline, setPendingOnline] = useState<PendingOnlinePayment | null>(() => user ? readPendingOnlinePayments(user.id)[0] ?? null : null)
   const [onlineStatus, setOnlineStatus] = useState<OnlinePaymentPollingStatus>('PENDING')
   const [pollError, setPollError] = useState('')
@@ -96,6 +97,17 @@ export function CustomerPaymentsPage() {
           navigate(`/customer/payments/vnpay-return?transactionId=${encodeURIComponent(result.transactionId)}`, { replace: true })
           return
         }
+        if (result.providerStatus === 'CANCELLED' && !result.reconciliation) {
+          removePendingOnlinePayment(pendingOnline)
+          onlineKeys.current.delete(`${pendingOnline.invoiceId}:${pendingOnline.mode}`)
+          setPendingOnline(null)
+          setOnlineInvoiceId('')
+          setOnlineStatus('PENDING')
+          setOnlineNotice(`Phiên thanh toán VNPay cho ${pendingOnline.invoiceCode} đã được hủy.`)
+          onlineLock.current = false
+          refreshInvoices()
+          return
+        }
         if (result.status === 'FAILED') {
           setOnlineStatus('FAILED')
           onlineLock.current = false
@@ -130,6 +142,7 @@ export function CustomerPaymentsPage() {
     onlineLock.current = true
     setOnlineInvoiceId(invoice.id)
     setOnlineError('')
+    setOnlineNotice('')
     setOnlineResult(undefined)
     const keyIdentity = `${invoice.id}:${mode}`
     let key = onlineKeys.current.get(keyIdentity)
@@ -173,6 +186,7 @@ export function CustomerPaymentsPage() {
       refreshInvoices()
     }} />}
     {onlineError && <div className="booking-alert is-error payment-online-error" role="alert">{onlineError}</div>}
+    {onlineNotice && <p className="customer-filter-notice" role="status">{onlineNotice}</p>}
     {scoped && <p className="customer-filter-notice">Đang xem giao dịch của {reservationFilter ? 'đơn thuê được chọn' : 'hóa đơn được chọn'} · <Link to="/customer/payments">Xem tất cả</Link></p>}
     {current.status === 401 || scoped && invoices.status === 401 ? <CustomerSessionExpired /> : current.loading || scoped && invoices.loading ? <PortalLoading label="Đang tải dữ liệu thanh toán…" /> : current.error || scoped && invoices.error ? <PortalError message={current.error || invoices.error || 'Không tải được dữ liệu thanh toán.'} onRetry={refresh} /> : view === 'invoices'
       ? <InvoiceList items={shownInvoices} submissions={shownSubmissions} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} hasPendingOnline={Boolean(pendingOnline)} vnpayConfigured={bank.data?.vnpayConfigured === true} />

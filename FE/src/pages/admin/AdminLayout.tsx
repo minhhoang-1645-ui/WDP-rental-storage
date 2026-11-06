@@ -5,6 +5,14 @@ import {
   LogIn,
 } from "lucide-react";
 import { InternalPortalLayout } from "../../components/layout/InternalPortalLayout";
+import type { WorkspaceSection } from "../../components/workspace/WorkspaceSectionPage";
+
+const auditItems = [
+  { to: '/admin/login-history', label: 'Lịch sử đăng nhập', icon: LogIn },
+  { to: '/admin/activity', label: 'Nhật ký hoạt động', icon: History },
+];
+export const adminSections: WorkspaceSection[] = [{ key: 'audit', title: 'Nhật ký', items: auditItems }];
+
 export function AdminLayout() {
   return (
     <InternalPortalLayout
@@ -23,9 +31,9 @@ export function AdminLayout() {
           icon: Users,
           group: "Quản trị",
         },
-        { to: '/admin/login-history', label: 'Lịch sử đăng nhập', icon: LogIn, group: 'Nhật ký' },
-        { to: '/admin/activity', label: 'Nhật ký hoạt động', icon: History, group: 'Nhật ký' },
+        { to: '/admin/sections/audit', label: 'Nhật ký', icon: History, group: 'Quản trị', match: auditItems.map(item => item.to) },
       ]}
+      pageNavigation={auditItems}
     />
   );
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AlertCircle, Inbox, RefreshCw } from "lucide-react";
 import { customerStatusLabel } from "./CustomerPortalHelpers";
+import { LoadingSkeleton, type SkeletonLayout } from "../LoadingSkeleton";
 
 export function ReservationStatus({ status }: { status: string }) {
   const labels: Record<string, string> = {
@@ -39,15 +40,12 @@ export function CustomerStatus({
 
 export function PortalLoading({
   label = "Đang tải dữ liệu…",
+  layout,
 }: {
   label?: string;
+  layout?: SkeletonLayout;
 }) {
-  return (
-    <div className="customer-state customer-state--loading" role="status">
-      <span className="customer-spinner" aria-hidden="true" />
-      <p>{label}</p>
-    </div>
-  );
+  return <LoadingSkeleton label={label} layout={layout} />;
 }
 
 export function PortalError({

@@ -41,7 +41,7 @@ export function CustomerReservationDetailPage() {
   if (loading)
     return (
       <section className="customer-page">
-        <PortalLoading label="Đang tải chi tiết yêu cầu đặt kho…" />
+        <PortalLoading layout="detail" label="Đang tải chi tiết yêu cầu đặt kho…" />
       </section>
     );
   if (error || !reservation)

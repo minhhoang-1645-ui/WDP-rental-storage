@@ -31,7 +31,7 @@ import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPag
 import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
 import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
 import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
-import { StaffLayout } from "../pages/staff/StaffLayout";
+import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
@@ -40,13 +40,14 @@ import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
 import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
-import { AdminLayout } from "../pages/admin/AdminLayout";
+import { AdminLayout, adminSections } from "../pages/admin/AdminLayout";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
 import { AdminAccountsPage } from "../pages/admin/AdminAccountsPage";
 import { AdminAuditPage } from '../pages/admin/AdminAuditPage';
 import { ManagerCatalogPage } from "../pages/manager/ManagerCatalogPage";
 import { ManagerAdditionalServicesPage } from '../pages/manager/ManagerAdditionalServicesPage';
-import { CustomerLayout } from "../components/customer/CustomerLayout";
+import { CustomerLayout, customerSections } from "../components/customer/CustomerLayout";
+import { WorkspaceSectionPage } from "../components/workspace/WorkspaceSectionPage";
 import { CustomerDashboardPage } from "../pages/customer/CustomerDashboardPage";
 import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointmentsPage";
 import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
@@ -139,6 +140,7 @@ export function AppRouter() {
       </Route>
       <Route path="portal/login" element={<PortalLoginPage />} />
       <Route path="customer" element={<CustomerLayout />}>
+        <Route path="sections/:section" element={<WorkspaceSectionPage sections={customerSections} />} />
         <Route index element={<CustomerDashboardPage />} />
         <Route path="notifications" element={<ActivityInboxPage />} />
         <Route path="reservations" element={<CustomerReservationsPage />} />
@@ -164,6 +166,7 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
         <Route path="staff" element={<StaffLayout />}>
+          <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
@@ -196,6 +199,7 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
         <Route path="admin" element={<AdminLayout />}>
+          <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />
           <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
           <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
           <Route index element={<AdminDashboardPage />} />

@@ -75,7 +75,7 @@ export class AccountOnboardingService {
       await tx.accountFlowToken.updateMany({ where: { email: proof.email, kind: 'RESET', usedAt: null }, data: { usedAt: new Date() } });
       return user.id;
     });
-    this.auth.revokeUserSessions(userId);
+    await this.auth.revokeUserSessions(userId);
     return { message: 'Đã đặt lại mật khẩu. Hãy đăng nhập bằng mật khẩu mới để tiếp tục.' };
   }
   async resend(input: Record<string, unknown>) {

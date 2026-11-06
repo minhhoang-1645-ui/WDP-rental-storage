@@ -177,7 +177,7 @@ async function open(app, path, detail = false) {
   if (!app.mobile) {
     await app.page.locator("h1").waitFor();
     await app.page.waitForFunction(
-      () => !document.querySelector(".portal-loading"),
+      () => !document.querySelector(".loading-skeleton"),
     );
   } else if (/^\/staff\/[^/]+/.test(path))
     await app.page

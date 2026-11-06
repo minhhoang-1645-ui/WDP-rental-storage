@@ -20,7 +20,7 @@ export default function CustomerRentalsScreen() {
   >
     <PageHeader eyebrow="Kho của tôi" title="Kho đang thuê" description="Theo dõi thời hạn thuê, vị trí kho và các việc cần làm cho từng kỳ thuê." />
     <Button title={rentals.loading ? 'Đang cập nhật…' : 'Làm mới'} onPress={rentals.refresh} disabled={rentals.loading} />
-    {opening ? <LoadingState label="Đang tải kho đang thuê…" /> : rentals.error ? <ErrorState message={rentals.error} onRetry={rentals.refresh} /> : items.length ? <>
+    {opening ? <LoadingState layout="list" label="Đang tải kho đang thuê…" /> : rentals.error ? <ErrorState message={rentals.error} onRetry={rentals.refresh} /> : items.length ? <>
       <SectionHeader title={`${items.length} kỳ thuê đang theo dõi`} />
       <View style={{ gap: 12 }}>{items.map(rental => <StorageUnitCard key={idOf(rental)} rental={rental} onPress={() => router.push(`/customer/rentals/${encodeURIComponent(idOf(rental))}`)} />)}</View>
       <Navigation title="Hàng đang lưu" description="Xem số lượng hàng đã được ghi nhận theo hợp đồng." path="/customer/stored-items" />

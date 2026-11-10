@@ -37,8 +37,13 @@ function display(key: string, value: unknown) {
   return typeof value === 'string' ? label(value) : value;
 }
 
+const lookupLinks = new Set(['reservation', 'latestReservation', 'customer', 'unit', 'storageUnit', 'fromUnit', 'toUnit']);
+
 export function RecordView({ row, root, depth = 0 }: { row: Row; root: string; depth?: number }) {
-  const facts = Object.entries(row).filter(([key, value]) => names[key] && (value === null || typeof value !== 'object')).map(([key, value]) => [names[key], display(key, value)] as [string, unknown]);
+  const facts = Object.entries(row)
+    .filter(([key, value]) => names[key] && (value === null || typeof value !== 'object'))
+    .filter(([key, value]) => key !== 'deposit' || value !== row.depositAmount)
+    .map(([key, value]): [string, unknown, string] => [names[key], display(key, value), key]);
   return <View style={{ gap: 12 }}><Facts values={facts} />{depth < 4 && Object.entries(nested).flatMap(([key, title]) => {
     const value = row[key];
     if (!value || typeof value !== 'object') return [];
@@ -46,7 +51,7 @@ export function RecordView({ row, root, depth = 0 }: { row: Row; root: string; d
     if (!items.length) return [];
     return [<Panel key={key} title={title}>{items.map((item, index) => <View key={`${idOf(item) || codeOf(item)}:${index}`} style={{ gap: 8 }}>
       {items.length > 1 && <Text style={styles.label}>{codeOf(item) || `${title} ${index + 1}`}</Text>}
-      {related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation title={`Mở ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} />}
+      {related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation title={`Mở ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} mode={lookupLinks.has(key) ? 'new-flow' : 'push'} />}
       <RecordView row={item} root={root} depth={depth + 1} />
     </View>)}</Panel>];
   })}</View>;

@@ -5,7 +5,12 @@ import { View, StyleSheet } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { WdpColors } from '@/constants/wdp-theme';
 import { ActivityBell } from '@/activity/ActivityCenter';
+import { AccountHeaderActions } from '@/components/account-header-actions';
 import { BottomNav } from '@/components/bottom-nav';
+import { portalScreenOptions } from '@/portals/resources';
+
+const resourceOptions = portalScreenOptions('CUSTOMER');
+export const unstable_settings = { initialRouteName: 'index' };
 
 export default function CustomerLayout() {
   const { user } = useAuth();
@@ -13,7 +18,10 @@ export default function CustomerLayout() {
   if (user.role !== 'CUSTOMER') return <Redirect href="/" />;
   return <View style={layout.root}>
     <Stack screenOptions={{ headerRight: () => <ActivityBell />, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
-      <Stack.Screen name="index" options={{ title: 'Tài khoản của tôi' }} />
+      <Stack.Screen name="index" options={{
+        title: 'Tài khoản của tôi',
+        headerRight: () => <AccountHeaderActions href="/customer/account" />,
+      }} />
       <Stack.Screen name="discover" options={{ title: 'Tìm kho' }} />
       <Stack.Screen name="booking" options={{ title: 'Đặt kho' }} />
       <Stack.Screen name="size-finder" options={{ title: 'Chọn kích thước kho' }} />
@@ -22,6 +30,8 @@ export default function CustomerLayout() {
       <Stack.Screen name="payments" options={{ title: 'Thanh toán' }} />
       <Stack.Screen name="account" options={{ title: 'Tài khoản' }} />
       <Stack.Screen name="services" options={{ title: 'Dịch vụ của bạn' }} />
+      <Stack.Screen name="[resource]/index" options={resourceOptions} />
+      <Stack.Screen name="[resource]/[id]" options={resourceOptions} />
     </Stack>
     <BottomNav role="CUSTOMER" />
   </View>;

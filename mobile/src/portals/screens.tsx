@@ -4,7 +4,6 @@ import { DocumentFile } from '@/components/document-file';
 import { isEarlyReturnRequest } from '@/utils/early-return';
 import { useEffect, useState } from 'react';
 import { FlatList, ScrollView, Text, View } from 'react-native';
-import { Stack } from 'expo-router/stack';
 import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
@@ -61,7 +60,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
   const currentPage = Math.min(page, totalPages);
   const shown = filtered.slice((currentPage - 1) * 10, currentPage * 10);
   return <FlatList keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.loading || data.error ? [] : shown} keyExtractor={(item, index) => idOf(item) || String(index)} ListHeaderComponent={<View style={{ gap: 12 }}>
-    <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={role === 'STAFF' ? 'Nhân viên' : 'Tài khoản của tôi'} title={config.title} description={role === 'STAFF' ? 'Mở hồ sơ để đối chiếu thông tin và thực hiện công việc được phép.' : 'Thông tin và yêu cầu của riêng bạn tại NestBox.'} />
+    <PageHeader eyebrow={role === 'STAFF' ? 'Nhân viên' : 'Tài khoản của tôi'} title={config.title} description={role === 'STAFF' ? 'Mở hồ sơ để đối chiếu thông tin và thực hiện công việc được phép.' : 'Thông tin và yêu cầu của riêng bạn tại NestBox.'} />
     <Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading || Boolean(action)} />
     {role === 'STAFF' && resource === 'maintenance' && !action && <Button title="Báo tình trạng cần bảo trì" onPress={() => setAction(staffMaintenanceCreate())} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã gửi yêu cầu.'); data.refresh(); }} />}
@@ -111,7 +110,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
   const renewalInvoice = row && role === 'CUSTOMER' && resource === 'renewals' ? rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1) : undefined;
   const refresh = () => { data.refresh(); sources.forEach(item => item.refresh()); };
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <Stack.Screen options={{ title: config.title }} /><PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={role === 'CUSTOMER' ? 'Theo dõi trạng thái, thông tin và hướng dẫn cho yêu cầu của bạn.' : 'Đối chiếu thông tin và cập nhật kết quả công việc tại đây.'} /><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
+    <PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={role === 'CUSTOMER' ? 'Theo dõi trạng thái, thông tin và hướng dẫn cho yêu cầu của bạn.' : 'Đối chiếu thông tin và cập nhật kết quả công việc tại đây.'} /><Navigation mode="back-to" title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {data.loading ? <LoadingState layout="detail" /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : row && <>
       {role === 'CUSTOMER' && resource === 'reservations' && row.status === 'CONFIRMED' && Boolean(row.expiresAt) && <WorkflowHint text={paymentWindowClosed({ type: 'INITIAL', reservation: row }, clock) ? 'Đã đến hạn giữ kho. Hãy kiểm tra lại trạng thái; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.' : `Thanh toán trước ${formatDate(String(row.expiresAt), true)} (UTC+7) để giữ kho.`} />}

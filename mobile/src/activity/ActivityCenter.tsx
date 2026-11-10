@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FlatList, Modal, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, type Href } from 'expo-router';
+import { openWorkspaceEntry } from '@/utils/workspace-navigation';
 import { Button, Panel, styles } from '@/operations/ui';
 import { WdpColors } from '@/constants/wdp-theme';
 import { hasDraft, refreshScreens } from '@/services/live-events';
@@ -22,7 +22,7 @@ function ActivityPanel({ onClose }: { onClose: () => void }) {
 }
 function ActivityItem({ item, onOpen }: { item: ActivityEntry; onOpen?: () => void }) {
   const activity = useActivity(), unread = !activity.read.includes(item.token);
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}, ${item.code}${unread ? ', chưa đọc' : ''}`} onPress={() => { activity.markRead([item.token]); onOpen?.(); router.push(item.mobile as Href); }} style={({pressed}) => [styles.card, { marginVertical: 5, borderLeftWidth: unread ? 3 : 1, borderLeftColor: unread ? '#397887' : WdpColors.border }, pressed && styles.pressed]}><Text style={styles.label}>{item.code}{item.action ? ' · Cần thực hiện' : ''}{unread ? ' · Chưa đọc' : ''}</Text><Text style={styles.navigationTitle}>{item.title}</Text><Text style={styles.copy}>{item.message}</Text>{Boolean(item.at) && <Text style={styles.label}>{formatDate(item.at, true)}</Text>}</Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}, ${item.code}${unread ? ', chưa đọc' : ''}`} onPress={() => { activity.markRead([item.token]); onOpen?.(); openWorkspaceEntry(item.mobile); }} style={({pressed}) => [styles.card, { marginVertical: 5, borderLeftWidth: unread ? 3 : 1, borderLeftColor: unread ? '#397887' : WdpColors.border }, pressed && styles.pressed]}><Text style={styles.label}>{item.code}{item.action ? ' · Cần thực hiện' : ''}{unread ? ' · Chưa đọc' : ''}</Text><Text style={styles.navigationTitle}>{item.title}</Text><Text style={styles.copy}>{item.message}</Text>{Boolean(item.at) && <Text style={styles.label}>{formatDate(item.at, true)}</Text>}</Pressable>;
 }
 function ActivityStatus() {
   const activity = useActivity();

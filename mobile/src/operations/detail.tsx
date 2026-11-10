@@ -21,6 +21,7 @@ import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { transferFromSupport } from './transfer-inbox';
+import { HandoverDetail } from './handover-detail';
 
 export function ResourceDetail() {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>();
@@ -43,10 +44,13 @@ function Detail({ resource, id }: { resource: string; id: string }) {
   const refresh = () => { data.refresh(); stock.refresh(); };
   if (!allowed || !config || resource === 'catalog') return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
   const row: Row | undefined = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
+  if (user?.role === 'STAFF' && resource === 'appointments') {
+    return <HandoverDetail row={row} loading={data.loading} error={data.error} refresh={refresh} userId={user.id} now={now} />;
+  }
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? managerReviewTitle(resource) : config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả chờ nghiệm thu; nhân viên thực hiện vận hành.' : 'Thông tin, lịch sử và thao tác theo vai trò của bạn.'} />
     {user?.role === 'MANAGER' && <ManagerParentLink resource={resource} />}
-    <Navigation title="Về danh sách" path={`${root}/${resource}`} />
+    <Navigation title="Về danh sách" path={`${root}/${resource}`} mode="back-to" />
     <Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} />
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}

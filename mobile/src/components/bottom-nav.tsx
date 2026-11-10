@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { usePathname, router, type Href } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2, Users, History, ShieldCheck } from 'lucide-react-native';
 import { WdpColors } from '@/constants/wdp-theme';
+import { openWorkspaceEntry } from '@/utils/workspace-navigation';
 
 type Tab = { key: string; label: string; icon: typeof Home; path: string; match: string[] };
 
@@ -38,14 +38,15 @@ export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | '
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const tabs = { CUSTOMER: customerTabs, STAFF: staffTabs, MANAGER: managerTabs, ADMIN: adminTabs }[role];
-  const navigate = useCallback((path: string) => { router.navigate(path as Href); }, []);
 
   return <View style={[styles.wrap, { height: 60 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }]}>
     {tabs.map(tab => {
       const active = tab.match.some(m => pathname === m || !['/customer', '/staff', '/manager', '/admin'].includes(m) && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;
       const color = active ? WdpColors.teal : WdpColors.muted;
-      return <Pressable key={tab.key} accessibilityRole="tab" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} onPress={() => navigate(tab.path)} style={styles.tab}>
+      return <Pressable key={tab.key} accessibilityRole="tab" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} onPress={() => {
+        if (pathname !== tab.path) openWorkspaceEntry(tab.path);
+      }} style={styles.tab}>
         {active && <View style={styles.dot} />}
         <Icon size={22} color={color} strokeWidth={active ? 2.2 : 1.6} />
         <Text style={[styles.label, active && styles.labelActive]}>{tab.label}</Text>

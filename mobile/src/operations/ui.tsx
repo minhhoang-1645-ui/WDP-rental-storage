@@ -6,6 +6,7 @@ import { actionIcon, featureIcon } from '@/utils/ui-icons';
 import { shortLabel } from '@/utils/ui-labels';
 import { WdpColors, WdpRadius, WdpSpacing, WdpType } from '@/constants/wdp-theme';
 import { formatMoney } from '@/utils/format';
+import { openWorkspaceEntry } from '@/utils/workspace-navigation';
 
 export const styles = StyleSheet.create({
   page: { gap: WdpSpacing.md, padding: WdpSpacing.md, paddingBottom: 120 },
@@ -34,9 +35,14 @@ export function Button({ title, onPress, disabled = false, variant = 'primary' }
     {busy ? <ActivityIndicator size="small" color={color} /> : Icon ? createElement(Icon, { size: 18, color, accessibilityElementsHidden: true }) : null}
     <Text style={[styles.buttonText, variant === 'secondary' && styles.secondaryButtonText]}>{shortLabel(title.replace(/^✓\s*/, ''))}</Text></Pressable>;
 }
-export function Navigation({ title, path, description, compact = false }: { title: string; path: string; description?: string; compact?: boolean }) {
+export function Navigation({ title, path, description, compact = false, mode = 'push' }: { title: string; path: string; description?: string; compact?: boolean; mode?: 'push' | 'new-flow' | 'back-to' }) {
   const Icon = featureIcon(path);
-  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={() => router.push(path as Href)} style={({ pressed }) => [compact ? { paddingVertical: 12, paddingHorizontal: 14 } : styles.card, styles.navigation, compact && { minHeight: 56 }, pressed && styles.pressed]}>
+  const open = () => {
+    if (mode === 'new-flow') openWorkspaceEntry(path);
+    else if (mode === 'back-to') router.dismissTo(path as Href);
+    else router.push(path as Href);
+  };
+  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={open} style={({ pressed }) => [compact ? { paddingVertical: 12, paddingHorizontal: 14 } : styles.card, styles.navigation, compact && { minHeight: 56 }, pressed && styles.pressed]}>
     <View accessibilityElementsHidden style={{ padding: 8, backgroundColor: WdpColors.soft, borderRadius: 10 }}>{createElement(Icon, { size: 21, color: WdpColors.navy })}</View>
     <View style={styles.navigationCopy}><Text style={[styles.navigationTitle, compact && { fontSize: 15 }]}>{shortLabel(title)}</Text>{Boolean(description) && <Text style={styles.copy}>{description}</Text>}</View><ChevronRight accessibilityElementsHidden size={18} color={WdpColors.muted} /></Pressable>;
 }
@@ -46,8 +52,14 @@ export function Disclosure({ title, children }: { title: string; children: React
   const Icon = featureIcon(title);
   return <View style={styles.card}><Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={{ minHeight: 44, flexDirection: 'row', gap: 10, alignItems: 'center' }}>{createElement(Icon, { size: 20, color: WdpColors.navy })}<Text style={[styles.title, { flex: 1 }]}>{shortLabel(title)}</Text>{expanded ? <ChevronDown size={18} color={WdpColors.muted} /> : <ChevronRight size={18} color={WdpColors.muted} />}</Pressable>{expanded && children}</View>;
 }
-export function Facts({ values }: { values: [string, unknown][] }) {
-  return <View style={{ gap: WdpSpacing.sm }}>{values.map(([name, value]) => <View key={name}><Text style={styles.label}>{name}</Text><Text selectable style={styles.copy}>{value === null || value === undefined || value === '' ? '—' : String(value)}</Text></View>)}</View>;
+export function Facts({ values }: { values: [label: string, value: unknown, fieldId?: string][] }) {
+  const occurrences = new Map<string, number>();
+  return <View style={{ gap: WdpSpacing.sm }}>{values.map(([name, value, fieldId]) => {
+    const occurrence = (occurrences.get(name) ?? 0) + 1;
+    occurrences.set(name, occurrence);
+    const key = fieldId ? `field:${fieldId}` : `label:${occurrence}:${name}`;
+    return <View key={key}><Text style={styles.label}>{name}</Text><Text selectable style={styles.copy}>{value === null || value === undefined || value === '' ? '—' : String(value)}</Text></View>;
+  })}</View>;
 }
 export const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? formatMoney(value) : 'Cần xác nhận báo giá';
 export function Field({ title, value, onChange, numeric, secure, multiline, disabled, maxLength }: { title: string; value: string; onChange: (value: string) => void; numeric?: boolean; secure?: boolean; multiline?: boolean; disabled?: boolean; maxLength?: number }) {

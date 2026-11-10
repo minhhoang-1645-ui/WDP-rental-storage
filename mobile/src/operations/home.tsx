@@ -4,11 +4,10 @@ import { useAuth } from '@/auth/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState, LoadingState } from '@/components/screen-state';
 import { CapacityBar } from '@/components/capacity-bar';
-import { adminSections, operationRoot, type Row } from './model';
+import { adminSections, type Row } from './model';
 import { useResource } from './use-resource';
 import { Button, Disclosure, Navigation, Panel, styles } from './ui';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
-import { RecordView } from './record-view';
 import { MetricCard } from '@/components/metric-card';
 import { ActivitySummary } from '@/activity/ActivityCenter';
 import { useActivity } from '@/activity/context';
@@ -73,9 +72,4 @@ export function AdminHome() {
     <WorkHub title="Khu vực quản trị" description="Quản lý tài khoản, quyền truy cập và nhật ký hệ thống." actions={adminSections.map(([key, title]) => ({ title, path: `/admin/${key}`, description: key === 'users' ? 'Tạo tài khoản nội bộ và bật/tắt truy cập.' : key === 'login-history' ? 'Tra cứu lần đăng nhập thành công hoặc thất bại.' : key === 'activity' ? 'Xem người thực hiện và kết quả thao tác.' : 'Xem số lượng tài khoản và trạng thái hoạt động.' }))} />
     <Navigation title="Tài khoản và đăng xuất" path="/admin/account" />
   </ScrollView>;
-}
-
-export function OperationAccount() {
-  const { user, logout } = useAuth();
-  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}><PageHeader eyebrow="Tài khoản" title={user?.fullName ?? ''} description="Thông tin phiên đăng nhập hiện tại." /><Panel><RecordView row={user ? { ...user } : {}} root={operationRoot(user?.role ?? '')} /></Panel><Button title="Đăng xuất" onPress={() => void logout()} /><Text style={styles.copy}>Sau khi đăng xuất, ứng dụng trở về màn hình đăng nhập.</Text></ScrollView>;
 }

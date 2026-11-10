@@ -26,6 +26,8 @@ export class ManagerTransfersController {
   @Get(':id/destinations') @ApiOperation({ summary: 'Kho đích cùng loại và khả dụng trong toàn kỳ thuê còn lại', description: 'Có phân trang, không bao gồm kho nguồn. Trả lý do không thể chọn và lịch trùng, không trả thông tin khách thuê khác. Duyệt vẫn kiểm tra lại trong transaction.' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 100 })
   destinations(@Param('id') id: string, @Query() query: Record<string, unknown>) { return this.transfers.destinations(id, query); }
+  @Get(':id/commercial-preview')
+  commercialPreview(@Param('id') id: string, @Query('destination') destination: string) { return this.transfers.previewCommercial(id, destination); }
   @Get(':id') @ApiOperation({ summary: 'Chi tiết TransferRequest' }) @ApiNotFoundResponse({ description: 'Không tìm thấy TransferRequest.' }) get(@Param('id') id: string) { return this.transfers.get(id); }
   @Post(':id/approve') @ApiOperation({ summary: 'Duyệt và reserve unit đích cùng StorageType' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.approve(id, body, req.user!); }

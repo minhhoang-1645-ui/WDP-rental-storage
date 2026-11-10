@@ -3,6 +3,7 @@ export const managerSections = {
   reviews: {
     title: 'Phê duyệt ngoại lệ', description: 'Chỉ xử lý đề nghị cần quyết định của quản lý và kết quả nhân viên gửi nghiệm thu.',
     items: [
+      { title: 'Sự cố hàng hóa', description: 'Đối chiếu ghi nhận thực tế và quyết định hướng xử lý.', web: '/manager/damage-claims', mobile: '/manager/damage-claims' },
       { title: 'Đề nghị trả trước hạn', description: 'Đối chiếu công nợ và quyết định trước khi nhân viên tiếp nhận trả kho.', web: '/manager/early-returns', mobile: '/manager/early-returns' },
       { title: 'Hỗ trợ cần quyết định', description: 'Chỉ những hồ sơ nhân viên chuyển lên, không tiếp nhận thay nhân viên.', web: '/manager/operations/support-requests?status=ESCALATED', mobile: '/manager/support-requests?status=ESCALATED' },
       { title: 'Nghiệm thu bảo trì', description: 'Duyệt kết quả sửa chữa hoặc yêu cầu làm lại; nhân viên thực hiện bảo trì.', web: '/manager/operations/maintenance?status=AWAITING_VERIFICATION', mobile: '/manager/maintenance?status=AWAITING_VERIFICATION' },

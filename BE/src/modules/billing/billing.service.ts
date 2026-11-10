@@ -61,6 +61,7 @@ export class BillingService {
       update: {},
       create: {
         invoiceCode: `${reservation.reservationCode}-I01`,
+        storageTypeIdSnapshot: reservation.storageTypeId,
         reservationId,
         type: 'INITIAL',
         billingCycle: 1,
@@ -108,6 +109,7 @@ export class BillingService {
         update: {},
         create: {
           invoiceCode: `${reservation.reservationCode}-I${String(cycle).padStart(2, '0')}`,
+          storageTypeIdSnapshot: reservation.storageTypeId,
           reservationId,
           type: 'RECURRING',
           billingCycle: cycle,
@@ -741,7 +743,8 @@ export class BillingService {
       currency: record.currency,
       issuedAt: record.issuedAt.toISOString(),
       paidAt: record.paidAt?.toISOString() ?? null,
-      historicalPricing: record.type === 'SETTLEMENT' ? null : record.type === 'RENEWAL' ? record.renewalRequest?.quoteSnapshot : reservation.quoteSnapshot,
+      replacesInvoiceId: record.replacesInvoiceId ?? null,
+      historicalPricing: record.pricingSnapshot ?? (record.type === 'SETTLEMENT' ? null : record.type === 'RENEWAL' ? record.renewalRequest?.quoteSnapshot : reservation.quoteSnapshot),
       contracts: reservation.contracts.map((contract: any) => ({
         id: contract.id,
         contractCode: contract.contractCode,

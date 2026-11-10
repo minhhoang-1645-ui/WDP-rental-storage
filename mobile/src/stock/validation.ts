@@ -1,3 +1,4 @@
+import { stockUnits } from '@/utils/stock-units';
 import type { StockDraftLine, StoredItem, StockMovement } from './types';
 
 export const stockQuantity = (value: unknown) => typeof value === 'string' && value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 1000000;
@@ -30,7 +31,7 @@ export function stockCreateInput(contractId: string, type: 'IN' | 'OUT', lines: 
       if (seen.has(item.id)) throw new Error('Mỗi mặt hàng chỉ được xuất hiện một lần trong phiếu.');
       seen.add(item.id);
       if (type === 'OUT' && quantity > item.balance) throw new Error(`Dòng ${index + 1}: số lượng xuất vượt tồn hiện tại (${item.balance}).`);
-    } else if (type === 'OUT' || !line.name.trim() || !line.unit.trim()) throw new Error(`Dòng ${index + 1}: chọn mặt hàng hoặc nhập tên và đơn vị hàng mới.`);
+    } else if (type === 'OUT' || !line.name.trim() || !stockUnits.some(unit => unit === line.unit)) throw new Error(`Dòng ${index + 1}: chọn mặt hàng hoặc nhập tên và đơn vị hàng mới.`);
     return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.note.trim() ? { note: line.note.trim() } : {}) };
   });
   return { rentalContractId: contractId, type, lines: parsed, scheduledAt: stockSchedule(scheduledAt), ...(note.trim() ? { note: note.trim() } : {}) };

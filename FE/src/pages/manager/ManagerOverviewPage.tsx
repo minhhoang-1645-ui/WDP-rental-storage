@@ -1,3 +1,4 @@
+import { OverstayNotice } from '../../components/workspace/OverstayNotice';
 import {
   ArrowRight,
   BarChart3,
@@ -84,6 +85,7 @@ export function ManagerOverviewPage() {
           Làm mới
         </button>
       </PageHeader>
+      <OverstayNotice />
       <WorkHub
         title="Việc quản lý cần xử lý"
         description="Ưu tiên hồ sơ chưa có người phụ trách và các khoản cần đối chiếu."

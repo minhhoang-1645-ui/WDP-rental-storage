@@ -19,7 +19,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
   if (resource === 'appointments' && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
     add('Hoàn tất bàn giao', '/complete-handover', [
-      { name: 'recipientName', title: 'Người nhận kho', required: true, minLength: 2, maxLength: 120 },
+      { name: 'recipientName', title: 'Người nhận kho', initial: text(row, 'customer.fullName', 'reservation.customer.fullName'), required: true, minLength: 2, maxLength: 120 },
       note('condition', 'Hiện trạng cửa, khóa, tường, sàn và thiết bị', true, 500),
       { name: 'accessItemCount', title: 'Số chìa khóa/thẻ đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
       { name: 'identityVerified', title: 'Đã đối chiếu người nhận kho', checkbox: true, required: true },

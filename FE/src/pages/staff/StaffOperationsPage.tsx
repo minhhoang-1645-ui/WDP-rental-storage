@@ -1,3 +1,4 @@
+import { OverstayNotice } from '../../components/workspace/OverstayNotice';
 import {
   ArrowRight,
   CalendarClock,
@@ -117,6 +118,7 @@ export function StaffOperationsPage() {
           </p>
         )}
       </section>
+      <OverstayNotice />
       <WorkHub
         title="Các nhóm công việc"
         description="Số hồ sơ cần bạn xử lý. Mở danh sách để xem toàn bộ hồ sơ và lịch sử."

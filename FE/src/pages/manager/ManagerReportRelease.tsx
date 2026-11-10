@@ -1,0 +1,33 @@
+import { useState } from 'react';
+import { Download, RefreshCw } from 'lucide-react';
+import { useAuth } from '../../auth/auth-context';
+import { useApiResource } from '../../services/useApiResource';
+import { apiRequest } from '../../services/api';
+import { ReportCharts } from '../../components/manager/ReportCharts';
+import { PageHeader, LoadState } from '../../components/manager/PortalUi';
+import { reportDay, reportRange, reportMoney, type ReportGroup, type ReportPeriod } from '../../utils/reporting';
+
+type Report = { asOf: string; filters: { from: string; to: string }; rent: number; received: number; debt: number; deposit: number; paid: number; total: number; overdue: number; invoiceCount: number; paymentCount: number; bookingCount: number; confirmedCount: number; allocatedUnits: number; voidCount: number; categories: { id: string; name: string; requests: number; confirmed: number; units: number; rent: number; physicalUnits: number; occupied: number }[]; times: { date: string; rent: number; received: number; bookings: number }[]; unitSummary: { status: string; count: number }[] };
+export function ManagerReportRelease() {
+  const { user } = useAuth(), initial = reportRange('month', reportDay(new Date().toISOString()));
+  const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to), [group, setGroup] = useState<ReportGroup>('month'), [typeId, setTypeId] = useState(''), [period, setPeriod] = useState<ReportPeriod>('month'), [error, setError] = useState(''), [exporting, setExporting] = useState(false);
+  const valid = !(from && to && from > to), params = new URLSearchParams({ from, to, group, typeId });
+  const result = useApiResource<Report>(valid ? `/manager/reports?${params}` : '', valid ? user?.id : '', true);
+  const catalog = useApiResource<{ items: { id: string; name: string }[] }>('/manager/storage-types', user?.id, true);
+  const report = valid ? result.data : null;
+  const choose = (value: ReportPeriod) => { setPeriod(value); const range = reportRange(value, reportDay(new Date().toISOString())); setFrom(range.from); setTo(range.to); if (value !== 'all' && value !== 'custom') setGroup(value); };
+  const download = async () => { if (exporting || !valid) return; setExporting(true); setError(''); try { const blob = await apiRequest<Blob>(`/manager/reports/invoices.csv?${params}`, { responseType: 'blob' }); const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `nestbox-hoa-don-${from || 'tat-ca'}-${to || 'hien-tai'}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không xuất được.'); } finally { setExporting(false); } };
+  const totalUnits = report?.unitSummary.reduce((n, row) => n + row.count, 0) ?? 0, occupied = report?.unitSummary.find(row => row.status === 'OCCUPIED')?.count ?? 0;
+  return <section className="manager-reports"><PageHeader title="Báo cáo vận hành" description="Số liệu do máy chủ tổng hợp từ hồ sơ thực tế. Tiền thuê, khoản thu và tiền cọc được tách riêng."><button className="button-secondary" onClick={result.refresh} disabled={result.loading}><RefreshCw size={16} />Làm mới</button><button className="button-secondary" disabled={!report || exporting} onClick={download}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất hóa đơn CSV'}</button></PageHeader>
+    <div className="manager-section report-filter-panel"><div className="portal-actions">{([['day', 'Hôm nay'], ['week', 'Tuần này'], ['month', 'Tháng này'], ['year', 'Năm nay'], ['all', 'Toàn bộ thời gian']] as const).map(([key, name]) => <button key={key} className={period === key ? 'button-primary' : 'button-secondary'} onClick={() => choose(key)}>{name}</button>)}</div><div className="portal-filter-grid"><label className="field-label">Từ ngày<input type="date" value={from} onChange={event => { setFrom(event.target.value); setPeriod('custom'); }} /></label><label className="field-label">Đến ngày<input type="date" min={from || undefined} value={to} onChange={event => { setTo(event.target.value); setPeriod('custom'); }} /></label><label className="field-label">Nhóm thời gian<select aria-label="Nhóm thời gian báo cáo" value={group} onChange={event => setGroup(event.target.value as ReportGroup)}><option value="day">Ngày</option><option value="week">Tuần</option><option value="month">Tháng</option><option value="year">Năm</option></select></label><label className="field-label">Loại kho<select aria-label="Lọc loại kho báo cáo" value={typeId} onChange={event => setTypeId(event.target.value)}><option value="">Tất cả loại kho</option>{catalog.data?.items.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label></div><p>Chọn cùng một ngày ở hai ô để xem một ngày cụ thể. Thời gian Việt Nam (UTC+7).</p></div>
+    {!valid && <p role="alert" className="booking-alert is-error">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}{error && <p role="alert" className="booking-alert is-error">{error}</p>}{valid && <LoadState loading={result.loading} error={result.error} retry={result.refresh} />}
+    {report && <><div className="portal-metrics">{[
+      ['Tiền thuê trên hóa đơn', reportMoney(report.rent), 'Không gồm cọc, dịch vụ hoặc phí'],
+      ['Tiền đã nhận', reportMoney(report.received), `${report.paymentCount} khoản thu theo ngày nhận; có thể gồm cọc/phí`],
+      ['Còn phải thu', reportMoney(report.debt), 'Còn nợ hiện tại trên hóa đơn phát hành trong khoảng chọn'],
+      ['Số đơn đặt', String(report.bookingCount), `${report.confirmedCount} đã xác nhận; theo ngày gửi đơn`],
+      ['Số kho được phân bổ', String(report.allocatedUnits), 'Kho vật lý khác nhau thuộc đơn xác nhận trong khoảng chọn'],
+      ['Tỷ lệ sử dụng kho', totalUnits ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(occupied / totalUnits * 100)}%` : 'Chưa có kho', `${occupied}/${totalUnits} đang sử dụng tại lúc tải`],
+    ].map(([name, value, note]) => <article className="portal-metric" key={name}><span>{name}</span><strong>{value}</strong><small>{note}</small></article>)}</div><p className="portal-report-note">Cọc trên hóa đơn trong bộ lọc: {reportMoney(report.deposit)} · Đã quá hạn, chưa trả: {reportMoney(report.overdue)} · Bỏ qua {report.voidCount} hóa đơn hết hiệu lực. Tiền thuê theo ngày phát hành hóa đơn; tiền nhận theo ngày thu; lượt đặt theo ngày tạo. Kho đang sử dụng là tình trạng hiện tại.</p><ReportCharts report={report} group={group} units={report.unitSummary} /><p className="portal-report-note">Cập nhật {new Date(report.asOf).toLocaleString('vi-VN')}. Các chỉ số trên không phải lợi nhuận; dự án chưa có dữ liệu chi phí đầy đủ.</p></>}
+  </section>;
+}

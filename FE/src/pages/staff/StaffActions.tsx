@@ -122,7 +122,8 @@ export function StaffActions({
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
               <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
-              <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
+              <label className="field-label">Người nhận kho<input name="recipientName" defaultValue={first(row, 'customer.fullName', 'reservation.customer.fullName')} required minLength={2} maxLength={120} /></label>
+              <p>Điền sẵn từ hồ sơ khách hàng. Sửa lại nếu người nhận thực tế khác; nhân viên vẫn phải đối chiếu người nhận, hiện trạng và số chìa khóa tại kho.</p>
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
               <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>

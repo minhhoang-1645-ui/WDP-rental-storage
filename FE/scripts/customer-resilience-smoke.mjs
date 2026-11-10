@@ -112,8 +112,11 @@ try {
   const attempts = writes.filter(row => row.path === '/guest/booking-requests'); assert.equal(attempts.length, 2); assert.equal(attempts[0].key, attempts[1].key); assert(attempts[0].key);
   await guest.page.getByText(/Email xác minh chưa được gửi/).waitFor();
   const draft = await guest.page.evaluate(async () => { const { safeLocalStorage } = await import('/src/services/browser-storage.ts'); return safeLocalStorage.getItem('wdp-booking-draft-v1'); });
-  assert.equal(draft, null, 'API success clears the draft even when native removeItem throws');
-  checks.push('Guest submission keeps its idempotency key after network failure, then shows the actual result and clears draft despite storage quota; unconfigured email is never claimed sent');
+  const pendingDraft = JSON.parse(draft);
+  assert.equal(pendingDraft.productId, product.id, 'Email verification is pending, so preserve choices for claim/repricing recovery even when native storage throws');
+  assert.equal(pendingDraft.durationMonths, 3);
+  assert.equal(pendingDraft.quantity, 1);
+  checks.push('Guest email request keeps its idempotency key after network failure, shows the actual pending-verification result and preserves choices for claim/repricing recovery despite storage quota; unconfigured email is never claimed sent');
   await guest.context.close();
 
   // Mount the actual shared component in an isolated browser-only fixture; no test route is added to production.

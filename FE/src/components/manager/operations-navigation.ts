@@ -5,6 +5,7 @@ import type { InternalNavItem } from '../layout/InternalPortalLayout';
 import { managerPrimaryMenu, managerSections, type ManagerSection } from '../../utils/manager-sections';
 
 const managerNavigation: InternalNavItem[] = [
+  { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
   { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
   { to: '/manager/reports', label: 'Báo cáo & Thống kê', icon: BarChart3, group: 'Tổng quan' },
   { to: '/manager/reservations', label: 'Yêu cầu đặt kho', icon: ClipboardCheck, group: 'Tiếp nhận & phân công' },
@@ -36,5 +37,5 @@ export function operationsNavigation(base = '/manager'): InternalNavItem[] {
 export const managerPageNavigation = () => managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '') || isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({...item, label:isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '') ? managerReviewTitle(item.to.split('/').at(-1)!) : item.label }));
 
 export function staffNavigation(): InternalNavItem[] {
-  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));
+  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals') || item.to.endsWith('/damage-claims')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));
 }

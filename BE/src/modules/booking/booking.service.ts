@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -40,6 +41,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     private readonly contracts: ContractsService = new ContractsService(prisma),
     private readonly billing: BillingService = new BillingService(prisma),
     private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
+    @Optional() private readonly policies?: BusinessPolicyService,
   ) {}
 
   onModuleInit() {
@@ -535,7 +537,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     });
     const updated = await tx.reservation.update({
       where: { id: reservation.id },
-      data: { status: 'CONFIRMED', confirmedAt: new Date(), expiresAt: new Date(Date.now() + AUTOMATIC_RESERVATION_HOLD_MS), availabilitySnapshot: this.snapshotWithSelection(availability, draft) as unknown as Prisma.InputJsonValue },
+      data: { status: 'CONFIRMED', confirmedAt: new Date(), expiresAt: new Date(Date.now() + (this.policies ? await this.policies.value('reservationHoldMinutes', tx) * 60_000 : AUTOMATIC_RESERVATION_HOLD_MS)), availabilitySnapshot: this.snapshotWithSelection(availability, draft) as unknown as Prisma.InputJsonValue },
       include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
     });
     await this.inventory.reservePurchases(tx, updated.id);

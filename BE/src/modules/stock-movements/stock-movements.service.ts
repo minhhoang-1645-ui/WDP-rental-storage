@@ -34,11 +34,12 @@ export class StockMovementsService {
   }
 
   async listStoredItems(customerId: string, contractId?: string) {
-    return this.prisma.storedItem.findMany({
+    const items = await this.prisma.storedItem.findMany({
       where: { customerUserId: customerId, ...(contractId ? { rentalContract: { OR: [{ id: contractId }, { contractCode: contractId }] } } : {}), balance: { gt: 0 } },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      select: { id: true, itemCode: true, name: true, unit: true, balance: true, note: true, rentalContract: { select: { id: true, contractCode: true } } },
+      select: { id: true, itemCode: true, name: true, unit: true, balance: true, note: true, rentalContract: { select: { id: true, contractCode: true, reservationUnit: { select: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } } } } } } },
     });
+    return items.map(({ rentalContract, ...item }) => ({ ...item, rentalContract: { id: rentalContract.id, contractCode: rentalContract.contractCode }, storageUnit: rentalContract.reservationUnit.storageUnit }));
   }
 
   async create(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -53,20 +54,28 @@ export class StockMovementsService {
     if (contract.status !== 'ACTIVE') throw new ConflictException({ code: 'STOCK_MOVEMENT_REQUIRES_ACTIVE_CONTRACT', message: 'Chỉ hợp đồng ACTIVE mới được tạo phiếu nhập/xuất hàng.' });
 
     return this.serializable(async (tx) => {
-      const activeContract = await tx.rentalContract.findUnique({ where: { id: contract.id }, select: { status: true, startDate: true, endDate: true, reservationUnit: { select: { storageUnitId: true } } } });
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RentalContract" WHERE "id" = ${contract.id} FOR UPDATE`);
+      const activeContract = await tx.rentalContract.findUnique({ where: { id: contract.id }, select: { status: true, startDate: true, endDate: true, reservationUnit: { select: { storageUnitId: true, storageUnit: { select: { unitNumber: true, floor: true, zone: true } } } } } });
       if (activeContract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng vừa kết thúc. Không thể tạo phiếu hàng mới.');
+      const endOfTerm = Date.parse(`${activeContract.endDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
+      if (Date.now() >= endOfTerm && parsed.type === 'IN') throw new ConflictException('Đã hết kỳ thuê. Bạn vẫn có thể xuất hàng để trả kho; hãy gia hạn trước khi gửi thêm hàng.');
       if (parsed.scheduledAt) {
         const time = parsed.scheduledAt.getTime();
         if (time <= Date.now()) throw new BadRequestException('Lịch dự kiến phải ở tương lai.');
         // Contract dates are date-only. The last usable instant is before midnight at the end date in Vietnam.
         const start = Date.parse(`${activeContract.startDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
         const end = Date.parse(`${activeContract.endDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
-        if (time < start || time >= end) throw new BadRequestException('Lịch dự kiến phải nằm trong kỳ thuê của kho đã chọn.');
+        if (time < start || parsed.type === 'IN' && time >= end) throw new BadRequestException('Lịch nhập phải trong kỳ thuê. Lịch xuất có thể sau hạn để lấy hết hàng và trả kho.');
       }
       const responsibility = await this.unitStaff?.resolveStaff(tx, [activeContract.reservationUnit.storageUnitId]);
       const movement = await tx.stockMovement.create({
         data: {
           movementCode: this.code(), type: parsed.type, customerUserId: customer.id, rentalContractId: contract.id,
+          storageUnitId: activeContract.reservationUnit.storageUnitId,
+          unitCodeSnapshot: activeContract.reservationUnit.storageUnit.unitNumber,
+          floorSnapshot: activeContract.reservationUnit.storageUnit.floor,
+          zoneSnapshot: activeContract.reservationUnit.storageUnit.zone,
+          locationRecordedAt: new Date(),
           ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, assignedByUserId: responsibility.assignedByUserId, assignedAt: new Date(), status: 'ASSIGNED' as const } : {}), scheduledAt: parsed.scheduledAt, note: parsed.note, idempotencyKey: parsed.key,
         },
       });
@@ -149,8 +158,8 @@ export class StockMovementsService {
     return tx.stockMovement.findUniqueOrThrow({ where: { id: identity.id } });
   }
 
-  private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } }; }
-  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
+  private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true, reservationUnit: { select: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } } } } } }, assignedStaff: { select: { id: true, fullName: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } }; }
+  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: { id: item.rentalContract.id, contractCode: item.rentalContract.contractCode, status: item.rentalContract.status }, storageUnit: item.locationRecordedAt && item.storageUnitId && item.unitCodeSnapshot ? { id: item.storageUnitId, unitNumber: item.unitCodeSnapshot, floor: item.floorSnapshot, zone: item.zoneSnapshot } : item.status === 'COMPLETED' ? null : item.rentalContract.reservationUnit?.storageUnit ?? null, locationEvidence: item.locationRecordedAt ? 'RECORDED' : item.status === 'COMPLETED' ? 'UNKNOWN_LEGACY' : 'CURRENT_CONTRACT', scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
 
   private createInput(input: Record<string, unknown>, idempotencyKey?: string) {
     const contractId = this.requiredText(input.rentalContractId, 200, 'rentalContractId');

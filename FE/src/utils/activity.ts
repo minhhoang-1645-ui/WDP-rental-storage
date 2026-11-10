@@ -39,6 +39,11 @@ export function dashboardNotifications(entries: ActivityEntry[], read: string[])
   const leading = [recent[0], todo.find(item => item.id !== recent[0]?.id)].filter((item): item is ActivityEntry => Boolean(item));
   return [...new Map([...leading, ...recent, ...todo].map(item => [item.id, item])).values()];
 }
+/** Results are newest first; the action view keeps work priority and excludes completed dossiers. */
+export function notificationEntries(entries: ActivityEntry[], read: string[], view: string): ActivityEntry[] {
+  const seen = new Set(read);
+  return entries.filter(item => view === 'all' || (view === 'action' ? item.action : !seen.has(item.token))).sort(view === 'action' ? activityOrder : (a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id));
+}
 export const activityText = (row: ActivityRow, path: string): string => {
   let value: unknown = row;
   for (const key of path.split('.')) value = value && typeof value === 'object' ? (value as ActivityRow)[key] : undefined;
@@ -52,12 +57,14 @@ export function activityHash(text: string) {
 export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === 'ADMIN') return [{ kind: 'users', path: '/admin/users', title: 'Tài khoản' }];
   const kinds = role === 'CUSTOMER'
-    ? ['reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'STAFF' ? ['reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['payment-submissions', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements', 'online-payment-reconciliations'];
+    ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
+    : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
+      : ['damage-claims', 'payment-submissions', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements', 'online-payment-reconciliations'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
+  names['transfer-orders'] = 'Phụ lục chuyển kho';
+  names['damage-claims'] = 'Sự cố hàng hóa';
   names['online-payment-reconciliations'] = 'Đối soát VNPay';
-  return kinds.map(kind => ({ kind, title: names[kind], path: role === 'CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${role.toLowerCase()}/${kind}`, array: role === 'CUSTOMER' && kind === 'reservations' }));
+  return kinds.map(kind => ({ kind, title: names[kind], path: role === 'STAFF' && kind === 'damage-claims' ? '/staff/management/damage-claims' : role === 'CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${role.toLowerCase()}/${kind}`, array: role === 'CUSTOMER' && kind === 'reservations' }));
 }
 const customerStates: Record<string, string> = {
   PENDING: 'Đang chờ xét duyệt', REQUESTED: 'Yêu cầu của bạn đã được gửi', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', REJECTED: 'Cần xem kết quả xử lý', EXPIRED: 'Yêu cầu đã hết hạn', OPEN: 'Chưa thanh toán', PARTIALLY_PAID: 'Chưa thanh toán đủ', PAID: 'Đã thanh toán đủ', PENDING_VERIFICATION: 'Đang chờ xác nhận chuyển khoản', VERIFIED: 'Đã xác nhận khoản chuyển', APPROVED_PENDING_PAYMENT: 'Gia hạn đã duyệt · cần thanh toán', ASSIGNED: 'Đã có nhân viên tiếp nhận', IN_PROGRESS: 'Đang được xử lý', ESCALATED: 'Đã chuyển bộ phận phụ trách xem xét', RESOLVED: 'Đã có kết quả hỗ trợ', COMPLETED: 'Đã hoàn tất', ACTIVE: 'Kho của bạn đã sẵn sàng sử dụng', READY_FOR_HANDOVER: 'Bạn có thể đặt lịch nhận kho', PENDING_SETTLEMENT: 'Đang đối chiếu tiền cọc', INSPECTION_IN_PROGRESS: 'Đang kiểm tra trả kho', ISSUE_FOUND: 'Có vấn đề cần đối chiếu', PENDING_REVIEW: 'Đang chờ đối chiếu tiền cọc', APPROVED: 'Đã duyệt', AWAITING_OUTSTANDING_PAYMENT: 'Còn khoản cần thanh toán', SETTLED: 'Đã hoàn tất quyết toán', VOID: 'Hóa đơn đã hủy',
@@ -71,7 +78,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     const get = (path: string) => activityText(row, path), kind = source.kind, status = get('status') || get('accountStatus'), id = get('id');
     if (!id) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
-    const code = ['reconciliationCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
+    const code = ['claimCode', 'reconciliationCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
     let title = source.title, message = '', action = false, priority = 2;
     let web = `/${role.toLowerCase()}/${kind}/${encodeURIComponent(id)}`, mobile = web;
     if (role === 'CUSTOMER') {
@@ -179,6 +186,20 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'STAFF') action = false;
       const returnRecord = (data.returns ?? []).find(item => activityText(item, 'reservation.id') === get('reservation.id') && item.status !== 'CANCELLED');
       if (role === 'CUSTOMER' && returnRecord) { action = false; message = returnRecord.status === 'COMPLETED' ? 'Bạn đã hoàn tất trả kho. Mở hồ sơ để xem kết quả kiểm tra và tiền cọc.' : 'Hồ sơ trả kho đã được gửi. Theo dõi kiểm tra và quyết toán trong Trả kho & tiền cọc.'; }
+    }
+    if (kind === 'transfer-orders') {
+      title = get('commercial.acceptedAt') ? 'Chuyển kho · Đã ký phụ lục' : 'Chuyển kho · Cần ký phụ lục đổi loại';
+      message = 'Mở phương án để xem kho cũ, kho mới, ngày áp dụng giá và phụ lục.';
+      action = status === 'APPROVED' && !get('commercial.acceptedAt');
+      web = '/customer/transfers?transfer=' + encodeURIComponent(id); mobile = web;
+    }
+    if (role === 'STAFF' && kind === 'transfers' && row.commercial && !get('commercial.acceptedAt')) { action = false; message = 'Kho đích đã giữ, đang chờ khách ký phụ lục đổi loại; chưa được chuyển thực tế.'; }
+    if (kind === 'damage-claims') {
+      const label = ({ REPORTED: 'Đã gửi, chờ kiểm tra', INVESTIGATING: 'Đang xác minh', APPROVED: 'Có hướng xử lý', REJECTED: 'Cần xem lý do', RESOLVED: 'Đã có kết quả' } as Record<string,string>)[status] ?? 'Đang cập nhật';
+      title = 'Sự cố hàng hóa · ' + label;
+      message = [get('unitCodeSnapshot'), get('resolutionNote') || get('decisionReason') || (role === 'STAFF' ? 'Ghi nhận thực tế và chuyển quản lý xem xét.' : role === 'MANAGER' ? 'Đối chiếu ghi nhận của nhân viên và quyết định hướng xử lý.' : 'Theo dõi ghi nhận và phản hồi của cơ sở.')].filter(Boolean).join(' · ');
+      action = role === 'STAFF' && ['REPORTED', 'INVESTIGATING'].includes(status) || role === 'MANAGER' && ['INVESTIGATING', 'APPROVED', 'REJECTED'].includes(status);
+      web = '/' + role.toLowerCase() + '/damage-claims?claim=' + encodeURIComponent(id); mobile = web;
     }
     if (role === 'CUSTOMER' && get('rejectionReason')) message += ` Lý do: ${get('rejectionReason')}`;
     if (role === 'CUSTOMER' && kind === 'support-requests' && get('resolutionNote')) message += ` Phản hồi: ${get('resolutionNote')}`;

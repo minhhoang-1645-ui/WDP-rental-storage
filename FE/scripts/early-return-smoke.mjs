@@ -22,6 +22,7 @@ async function open(role, width, path, mobile = false) {
     if (path === 'customer/payment-config') return send({ vnpayConfigured: true, configured: false });
     if (path === 'reservations') return send([]);
     if (method === 'GET') {
+      if (path === 'manager/dashboard/summary') return send({});
       if (kind === 'early-return-requests') return send({ page: 1, limit: 100, total: proposals.length, items: review() });
       const items = kind === 'support-requests' ? proposals : kind === 'returns' ? returns : kind === 'rentals' ? [rental] : ['deposit-settlements', 'payment-submissions'].includes(kind) ? [] : fixture[kind];
       if (!items) { unexpected.push(path); return send({ message: 'Unexpected GET ' + path }, 500); }

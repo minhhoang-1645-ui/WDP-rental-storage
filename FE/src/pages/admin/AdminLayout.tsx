@@ -3,6 +3,7 @@ import {
   Users,
   History,
   LogIn,
+  Settings,
 } from "lucide-react";
 import { InternalPortalLayout } from "../../components/layout/InternalPortalLayout";
 import type { WorkspaceSection } from "../../components/workspace/WorkspaceSectionPage";
@@ -18,6 +19,7 @@ export function AdminLayout() {
     <InternalPortalLayout
       label="Quản trị hệ thống"
       navigation={[
+        { to: '/admin/settings', label: 'Chính sách hệ thống', icon: Settings, group: 'Quản trị' },
         {
           to: "/admin",
           label: "Tổng quan",

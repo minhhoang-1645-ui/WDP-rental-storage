@@ -6,7 +6,7 @@ import { Button, Panel, styles } from '@/operations/ui';
 import { WdpColors } from '@/constants/wdp-theme';
 import { hasDraft, refreshScreens } from '@/services/live-events';
 import { formatDate } from '@/utils/format';
-import { dashboardNotifications, type ActivityEntry } from '@/utils/activity';
+import { dashboardNotifications, notificationEntries, type ActivityEntry } from '@/utils/activity';
 import { useActivity } from './context';
 import { Bell } from 'lucide-react-native';
 
@@ -17,7 +17,7 @@ export function ActivityBell() {
 }
 function ActivityPanel({ onClose }: { onClose: () => void }) {
   const activity = useActivity(), [view, setView] = useState<'unread' | 'action' | 'all'>('unread');
-  const entries = activity.entries.filter(item => view === 'all' || (view === 'action' ? item.action : !activity.read.includes(item.token)));
+  const entries = notificationEntries(activity.entries, activity.read, view);
   return <SafeAreaView style={{ flex: 1, backgroundColor: WdpColors.background }}><FlatList data={entries} keyExtractor={item => item.id} contentContainerStyle={styles.page} ListHeaderComponent={<View style={{ gap: 12 }}><Text accessibilityRole="header" style={styles.title}>Thông báo & việc cần làm</Text><Button title="Đóng thông báo" variant="secondary" onPress={onClose} /><Text style={styles.copy}>Cập nhật trạng thái khi ứng dụng đang mở. Chọn một hồ sơ để xem chi tiết hoặc thực hiện bước tiếp theo.</Text><Button title={activity.checking ? 'Đang kiểm tra…' : 'Kiểm tra mới'} onPress={activity.refresh} disabled={activity.checking} /><Button title="Đánh dấu đã đọc" variant="secondary" onPress={() => activity.markRead(activity.entries.map(item => item.token))} /><View style={styles.row}>{([['unread', 'Chưa đọc'], ['action', 'Cần thực hiện'], ['all', 'Tất cả']] as const).map(([key, title]) => <Button key={key} title={`${view === key ? '✓ ' : ''}${title} (${activity.entries.filter(item => key === 'all' || (key === 'action' ? item.action : !activity.read.includes(item.token))).length})`} variant={view === key ? 'primary' : 'secondary'} onPress={() => setView(key)} />)}</View><ActivityStatus /></View>} renderItem={({item}) => <ActivityItem item={item} onOpen={onClose} />} ListEmptyComponent={<Text style={styles.copy}>{activity.loading ? 'Đang tải hồ sơ…' : view === 'unread' ? 'Bạn đã xem hết thông báo hiện có. Các việc chưa xong vẫn nằm trong Cần thực hiện.' : 'Chưa có hồ sơ phù hợp.'}</Text>} ListFooterComponent={<Text style={styles.copy}>Đã đọc chỉ ghi nhận việc bạn đã xem trên thiết bị này, không thay đổi trạng thái yêu cầu.</Text>} /></SafeAreaView>;
 }
 export function ActivityItem({ item, onOpen }: { item: ActivityEntry; onOpen?: () => void }) {

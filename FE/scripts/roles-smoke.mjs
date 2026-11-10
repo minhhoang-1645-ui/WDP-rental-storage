@@ -1032,8 +1032,9 @@ try {
         .click();
       await app.page
         .getByRole("dialog")
-        .getByRole("link", { name: "Hỗ trợ khách hàng", exact: true })
+        .getByRole("link", { name: "Tiếp nhận yêu cầu", exact: true })
         .click();
+      await app.page.locator('.work-hub-card[href="/staff/support-requests"]').click();
     } else {
       await app.page
         .getByRole("button", { name: "Mở menu", exact: true })
@@ -1053,8 +1054,9 @@ try {
         .click();
       await app.page
         .locator(".customer-sidebar")
-        .getByRole("link", { name: "Hỗ trợ", exact: true })
+        .getByRole("link", { name: /Thay đổi & hỗ trợ/ })
         .click();
+      await app.page.locator('.work-hub-card[href="/customer/support"]').click();
     }
     await ownLinks(app.page, role);
     if (process.env.WDP_SCREENSHOTS_DIR) {

@@ -26,7 +26,7 @@ async function moduleUrl(file) {
   modules.set(file.href, url);
   return url;
 }
-const { buildActivity, activitySources, dashboardNotifications, staffPriorityActivities, activityForPath } = await import(
+const { buildActivity, activitySources, dashboardNotifications, notificationEntries, staffPriorityActivities, activityForPath } = await import(
   await moduleUrl(new URL("../src/utils/activity.ts", import.meta.url))
 );
 const {
@@ -53,6 +53,10 @@ const checks = [];
   const completed = buildActivity('STAFF', 'employee', { 'support-requests': [...backlog, { ...current, status: 'RESOLVED', resolvedAt: fresh }] });
   assert(!staffPriorityActivities(completed).some(item => item.code === 'FRESH'));
   assert.equal(dashboardNotifications(completed, [])[0].code, 'FRESH', 'A completed update must not be buried beneath unfinished work');
+  assert.equal(notificationEntries(completed, [], 'unread')[0].code, 'FRESH', 'Newest completed results lead unread notifications, independent of the work priority');
+  assert.equal(notificationEntries(completed, [], 'all')[0].code, 'FRESH');
+  assert(!notificationEntries(completed, [], 'action').some(item => item.code === 'FRESH'));
+  assert.equal(notificationEntries(entries, entries.map(item => item.token), 'action')[0].code, 'FRESH', 'Marking read must not hide work');
   assert(dashboardNotifications(completed, [])[1].action);
   const read = completed.map(item => item.token);
   assert.equal(dashboardNotifications(completed, read).length, 8, 'Reading does not complete outstanding work or resurrect completed work');

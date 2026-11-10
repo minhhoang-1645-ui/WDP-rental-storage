@@ -11,7 +11,7 @@ import { useDraftGuard } from '@/services/live-events';
 export interface FormField { name: string; title: string; required?: boolean; minLength?: number; maxLength?: number; numeric?: boolean; minimum?: number; maximum?: number; initial?: string; fixed?: boolean; secure?: boolean; multiline?: boolean; choices?: { value: string; label: string }[]; optionsPath?: string; optionsAccept?: (row: Row) => boolean; optionLabel?: (row: Row) => string; visibleWhen?: (values: Record<string, string>) => boolean; optionValue?: (row: Row) => string; allowCustom?: boolean; compactChoices?: boolean; checkbox?: boolean; clientOnly?: boolean }
 export interface FormAction { title: string; path: string; resolvePath?: (input: Row) => string; method: 'POST' | 'PATCH'; fields: FormField[]; idempotent?: boolean; description?: string; submitTitle?: string; transform?: (input: Row) => Row; validateValues?: (input: Row) => string | undefined; validate?: (input: Row) => string | undefined }
 
-function Input({ field, value, onChange, busy }: { field: FormField; value: string; onChange: (value: string) => void; busy: boolean }) {
+export function FormInput({ field, value, onChange, busy }: { field: FormField; value: string; onChange: (value: string) => void; busy: boolean }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
@@ -77,5 +77,5 @@ export function OperationForm({ action, onSaved, onClose }: { action: FormAction
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thực hiện được thao tác.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <View style={styles.card}><Text style={styles.title}>{action.title}</Text>{Boolean(action.description) && <Text style={styles.copy}>{action.description}</Text>}{fields.map(field => <Input key={field.name} field={field} value={values[field.name] ?? ''} onChange={value => setValues(current => ({ ...current, [field.name]: value }))} busy={busy} />)}{Boolean(error) && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Button title={busy ? 'Đang lưu…' : action.submitTitle ?? 'Lưu'} disabled={busy} onPress={() => void submit()} /><Button title="Hủy" variant="secondary" disabled={busy} onPress={onClose} /></View>;
+  return <View style={styles.card}><Text style={styles.title}>{action.title}</Text>{Boolean(action.description) && <Text style={styles.copy}>{action.description}</Text>}{fields.map(field => <FormInput key={field.name} field={field} value={values[field.name] ?? ''} onChange={value => setValues(current => ({ ...current, [field.name]: value }))} busy={busy} />)}{Boolean(error) && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}<Button title={busy ? 'Đang lưu…' : action.submitTitle ?? 'Lưu'} disabled={busy} onPress={() => void submit()} /><Button title="Hủy" variant="secondary" disabled={busy} onPress={onClose} /></View>;
 }

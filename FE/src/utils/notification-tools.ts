@@ -1,4 +1,4 @@
-import type { ActivityEntry } from './activity';
+import { notificationEntries, type ActivityEntry } from './activity';
 
 export const ACTIVITY_POLL_MS = 15_000;
 export const ACTIVITY_READ_LIMIT = 4096;
@@ -17,9 +17,8 @@ export function notificationGroup(item: ActivityEntry) {
 }
 export const normalizeSearch = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim();
 export function filterNotifications(entries: ActivityEntry[], read: string[], view: string, kind: string, search: string) {
-  const seen = new Set(read), query = normalizeSearch(search);
-  return entries.filter(item => (view === 'all' || (view === 'action' ? item.action : !seen.has(item.token)))
-    && (kind === 'all' || notificationGroup(item) === kind)
+  const query = normalizeSearch(search);
+  return notificationEntries(entries, read, view).filter(item => (kind === 'all' || notificationGroup(item) === kind)
     && (!query || normalizeSearch(`${item.code} ${item.title} ${item.message} ${notificationKinds[item.kind] ?? ''}`).includes(query)));
 }
 /** A badge counts actionable dossiers, not how many times a status was refreshed. */

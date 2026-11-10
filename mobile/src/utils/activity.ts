@@ -39,6 +39,11 @@ export function dashboardNotifications(entries: ActivityEntry[], read: string[])
   const leading = [recent[0], todo.find(item => item.id !== recent[0]?.id)].filter((item): item is ActivityEntry => Boolean(item));
   return [...new Map([...leading, ...recent, ...todo].map(item => [item.id, item])).values()];
 }
+/** Results are newest first; the action view keeps work priority and excludes completed dossiers. */
+export function notificationEntries(entries: ActivityEntry[], read: string[], view: string): ActivityEntry[] {
+  const seen = new Set(read);
+  return entries.filter(item => view === 'all' || (view === 'action' ? item.action : !seen.has(item.token))).sort(view === 'action' ? activityOrder : (a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0) || a.id.localeCompare(b.id));
+}
 export const activityText = (row: ActivityRow, path: string): string => {
   let value: unknown = row;
   for (const key of path.split('.')) value = value && typeof value === 'object' ? (value as ActivityRow)[key] : undefined;

@@ -33,6 +33,7 @@ import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
 
 const navigation = [
+  { to: '/customer/damage-claims', label: 'Sự cố hàng hóa', icon: CircleHelp },
   { to: "/customer", label: "Tổng quan", icon: LayoutDashboard, end: true },
   {
     to: "/customer/reservations",
@@ -54,7 +55,7 @@ const navigation = [
 const customerGroups = [
   { key: 'booking', icon: ClipboardList, title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
   { key: 'storage', icon: Warehouse, title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
-  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
+  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support', '/customer/damage-claims'] },
 ];
 
 export const customerSections: WorkspaceSection[] = customerGroups.map(group => ({

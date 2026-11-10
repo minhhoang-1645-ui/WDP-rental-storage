@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryUserRepository } from '../users/user.repository.js';
+import { AdminUsersController } from './admin-users.controller.js';
 
 describe('administrator account status changes', () => {
+  it('returns the existing account update time without exposing authentication data', async () => {
+    const row = { id: 'old-user', fullName: 'Nhân viên', email: 'staff@example.test', phone: '0901234567', role: 'STAFF', accountStatus: 'DISABLED', passwordHash: 'must-not-leak', createdAt: new Date('2020-01-01'), updatedAt: new Date('2030-01-01') };
+    const users = { list: async () => [row], count: async () => 1, findById: async () => row };
+    const controller = new AdminUsersController(users as never, {} as never);
+    const list = await controller.list();
+    expect(list.items[0].updatedAt).toBe('2030-01-01T00:00:00.000Z');
+    expect(await controller.get(row.id)).toEqual(list.items[0]);
+    expect(list.items[0]).not.toHaveProperty('passwordHash');
+  });
   it('rejects self-disable and a non-administrator actor', async () => {
     const users = new MemoryUserRepository();
     const create = (role: 'ADMIN' | 'STAFF') => users.create({ fullName: role, email: role + '@example.test', phone: '', passwordHash: 'local-only', role });

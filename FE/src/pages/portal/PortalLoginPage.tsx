@@ -1,3 +1,4 @@
+import { safeSessionStorage } from '../../services/browser-storage';
 import { LockKeyhole, LogIn } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -12,7 +13,7 @@ export function PortalLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(() =>
-    sessionStorage.getItem("wdp-session-expired")
+    safeSessionStorage.getItem("wdp-session-expired")
       ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục."
       : "",
   );

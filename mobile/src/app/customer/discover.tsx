@@ -69,11 +69,11 @@ export default function StorageDiscoveryScreen() {
       <Chip title="Theo tháng" active={periodMode === 'duration'} onPress={() => setPeriodMode('duration')} />
       <Chip title="Theo ngày kết thúc" active={periodMode === 'dates'} onPress={() => setPeriodMode('dates')} />
     </View>
-    <DateField title="Ngày bắt đầu" value={startDate} onChange={setStart} />
+    <DateField title="Ngày bắt đầu" min={today()} value={startDate} onChange={setStart} />
     {periodMode === 'duration' ? <>
       <View style={styles.row}>{[1, 3, 6, 12].map(months => <Chip key={months} title={`${months} tháng`} active={durationMonths === months} onPress={() => setDurationMonths(months)} />)}</View>
       {endDate && <Text style={styles.copy}>Kết thúc: {endDate.split('-').reverse().join('/')}</Text>}
-    </> : <DateField title="Ngày kết thúc" value={customEndDate} onChange={setEnd} />}
+    </> : <DateField title="Ngày kết thúc" min={startDate} value={customEndDate} onChange={setEnd} />}
     {!datesValid && <Text style={styles.error}>Chọn ngày nhận từ hôm nay và ngày trả sau ngày nhận.</Text>}
     {catalog.loading && !catalog.data ? <LoadingState /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : !product ? <EmptyState title="Chưa có loại kho" message="Thử lại sau hoặc chọn nhóm khác." /> : <>
       {types.length > 1 && <ScrollView horizontal contentContainerStyle={{ gap: WdpSpacing.xs }}>{types.map(item => <Chip key={text(item, 'id')} title={text(item, 'name')} active={productId === text(item, 'id')} onPress={() => setChoice(text(item, 'id'))} />)}</ScrollView>}

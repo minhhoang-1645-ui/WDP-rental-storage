@@ -107,10 +107,15 @@ try {
     await app.page.getByRole('button',{name:/^Tất cả \(/}).click();
     await app.page.locator('.activity-item').first().waitFor();
     for (const href of await app.page.locator('.activity-item').evaluateAll(items=>items.map(item=>item.getAttribute('href')))) assert(href.startsWith(`/${role.toLowerCase()}/`),href);
-    if (role === 'ADMIN') assert.equal(await app.page.locator('.manager-sidebar nav a').count(),2);
+    if (role === 'ADMIN') {
+      assert.deepEqual((await app.page.locator('.manager-sidebar nav a').evaluateAll(links => links.map(link => link.getAttribute('href')))).sort(), ['/admin','/admin/users','/admin/sections/audit'].sort());
+      await app.goto('/admin/sections/audit');
+      await app.page.locator('.work-hub-card[href="/admin/login-history"]').waitFor();
+      await app.page.locator('.work-hub-card[href="/admin/activity"]').waitFor();
+    }
     assert(await app.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     await app.page.screenshot({path:`${artifacts}/${role.toLowerCase()}-notifications-390.png`,fullPage:true});
-    await app.context.close(); checks.push(`${role}: 390px inbox stays in its own role; Admin retains exactly two main menus`);
+    await app.context.close(); checks.push(`${role}: 390px inbox stays in its own role; Admin retains account administration and both audit menus`);
   }
   assert.deepEqual(errors,[]); assert.deepEqual(writes,[]);
   console.log(JSON.stringify({checks,browserErrors:errors.length,realDatabaseWrites:0},null,2));

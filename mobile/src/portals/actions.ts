@@ -3,6 +3,7 @@ import { idOf, object, options, rows, text, type Row } from '@/operations/model'
 import type { FormAction, FormField } from '@/operations/form';
 import { formatDate } from '@/utils/format';
 import { keyCollectionStartDate } from '@/utils/handover';
+import { vietnamCalendarDate } from '@/utils/calendar-date';
 
 const confirmation = (title = 'Tôi xác nhận thông tin và thao tác này'): FormField => ({ name: '_confirmed', title, checkbox: true, required: true, clientOnly: true });
 const note = (name = 'note', title = 'Ghi chú', required = false, limit = 2000): FormField => ({ name, title, required, multiline: true, maxLength: limit, ...(required ? { minLength: 3 } : {}) });
@@ -71,11 +72,11 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') actions.push({ title: 'Yêu cầu gia hạn', path: '/customer/renewals', method: 'POST', idempotent: true, description: `Hạn hiện tại ${formatDate(text(row, 'effectiveEndDate'))} (không bao gồm). Yêu cầu hợp lệ được duyệt tự động; thanh toán hóa đơn kích hoạt để cập nhật thời hạn; không thu cọc lần nữa.`, fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '3'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PREPAID'), confirmation()], transform: input => ({ ...input, reservationId, termMonths: Number(input.termMonths) }) });
     const activeReturn = returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
     const approved = requests.some(item => text(item, 'reservation.id') === reservationId && isCurrentEarlyReturnApproval(item, text(row, 'effectiveEndDate')));
-    if ((Date.parse(text(row, 'effectiveEndDate')) <= now || approved) && !activeReturn) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Nhân viên kiểm tra và nhận kho thực tế; cọc quyết toán riêng.' });
+    if ((text(row, 'effectiveEndDate').slice(0, 10) <= vietnamCalendarDate(now) || approved) && !activeReturn) actions.push({ title: 'Yêu cầu trả kho', path: '/customer/returns', method: 'POST', idempotent: true, fields: [note(), confirmation('Tôi xác nhận muốn trả toàn bộ kho của yêu cầu này')], transform: input => ({ ...input, reservationId }), description: 'Kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Nhân viên kiểm tra và nhận kho thực tế; cọc quyết toán riêng.' });
   }
   const hasActiveReturn = returns.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
   const hasProposal = requests.some(item => isEarlyReturnRequest(item) && text(item, 'reservation.id') === reservationId && (item.status !== 'RESOLVED' || isCurrentEarlyReturnApproval(item, text(row, 'effectiveEndDate'))));
-  if (!row.pendingRenewal && !hasActiveReturn && !hasProposal && Date.parse(text(row, 'effectiveEndDate')) > now) actions.push({ title: 'Đề nghị trả trước hạn', path: '/customer/support-requests', method: 'POST', idempotent: true, description: 'Quản lý xem xét công nợ và điều kiện trước khi cho phép trả sớm. Bước đề nghị không tự hoàn tiền thuê hoặc cọc.', fields: [note('description', 'Lý do trả trước hạn', true, 3000), confirmation()], transform: input => ({ ...input, reservationId, category: 'OTHER', subject: EARLY_RETURN_SUBJECT }) });
+  if (!row.pendingRenewal && !hasActiveReturn && !hasProposal && text(row, 'effectiveEndDate').slice(0, 10) > vietnamCalendarDate(now)) actions.push({ title: 'Đề nghị trả trước hạn', path: '/customer/support-requests', method: 'POST', idempotent: true, description: 'Quản lý xem xét công nợ và điều kiện trước khi cho phép trả sớm. Bước đề nghị không tự hoàn tiền thuê hoặc cọc.', fields: [note('description', 'Lý do trả trước hạn', true, 3000), confirmation()], transform: input => ({ ...input, reservationId, category: 'OTHER', subject: EARLY_RETURN_SUBJECT }) });
   actions.push(customerSupportAction(reservationId));
   for (const contract of rows(row.contracts)) {
     const action = customerSupportAction(reservationId, { transfer: true, contractId: idOf(contract), unitId: text(contract, 'unit.id') });

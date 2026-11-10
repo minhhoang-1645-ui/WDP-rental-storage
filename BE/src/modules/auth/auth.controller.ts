@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { LoginRequestDto, RegisterRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from './auth.guard.js';
@@ -20,12 +20,12 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Đăng nhập', description: 'Guest access. Dùng cùng endpoint cho CUSTOMER, MANAGER và ADMIN; role trả về từ database.' })
+  @ApiOperation({ summary: 'Đăng nhập', description: 'Guest access. Dùng cùng endpoint cho CUSTOMER, STAFF, MANAGER và ADMIN; role trả về từ database.' })
   @ApiBody({ type: LoginRequestDto, examples: { credentials: { summary: 'Thông tin đăng nhập', value: { email: 'customer@example.test', password: 'your-password-here' } } } })
   @ApiOkResponse({ description: 'Đăng nhập thành công.', schema: { example: { token: 'token-returned-by-api', user: { id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER' } } } })
   @ApiUnauthorizedResponse({ description: 'Email hoặc mật khẩu không đúng.', schema: { example: { statusCode: 401, message: 'Email hoặc mật khẩu không đúng.', error: 'Unauthorized' } } })
-  login(@Body() body: Record<string, unknown>) {
-    return this.authService.login(body);
+  login(@Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest & { socket?: { remoteAddress?: string } }) {
+    return this.authService.login(body, request.socket?.remoteAddress);
   }
 
   @Get('me')
@@ -36,6 +36,15 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Thiếu, sai hoặc hết hạn token.' })
   me(@Req() request: AuthenticatedRequest) {
     return request.user;
+  }
+
+  @Patch('me')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth('bearerAuth')
+  @ApiOperation({ summary: 'Cập nhật tên và số điện thoại của chính tài khoản đang đăng nhập' })
+  @ApiBody({ schema: { type: 'object', minProperties: 1, additionalProperties: false, properties: { fullName: { type: 'string', minLength: 2, maxLength: 120 }, phone: { type: 'string', minLength: 8, maxLength: 25 } } } })
+  updateMe(@Req() request: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
+    return this.authService.updateProfile(request.user!, body);
   }
 
   @Post('logout')

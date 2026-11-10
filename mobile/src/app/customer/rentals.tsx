@@ -32,7 +32,7 @@ export default function CustomerRentalsScreen() {
     </> : <>
       <EmptyState title="Bạn chưa có kho đang thuê" message="Khi hoàn tất bàn giao, kho và hợp đồng hoạt động sẽ hiển thị tại đây." />
       <Navigation title="Theo dõi yêu cầu đặt kho" description="Kiểm tra tiến độ yêu cầu hiện có của bạn." path="/customer/reservations" />
-      <Text style={styles.copy}>Để bắt đầu thuê mới, hãy chọn loại kho và gửi yêu cầu trên website WDP.</Text>
+      <Text style={styles.copy}>Bạn có thể chọn kho và gửi yêu cầu mới ngay trong ứng dụng.</Text><Navigation title="Tìm kho và đặt thuê" path="/customer/discover" />
     </>}
   </ScrollView>;
 }

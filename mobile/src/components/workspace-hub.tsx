@@ -2,7 +2,9 @@ import { createElement, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { ChevronDown, ChevronRight } from 'lucide-react-native';
-import { Disclosure, Field, Navigation, styles } from '@/operations/ui';
+import { Button, Disclosure, Field, Navigation, styles } from '@/operations/ui';
+import { useActivity } from '@/activity/context';
+import { activityForPath } from '@/utils/activity';
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 import { featureIcon } from '@/utils/ui-icons';
 import { shortLabel } from '@/utils/ui-labels';
@@ -12,13 +14,13 @@ export function WorkHub({ title, actions }: { title: string; description: string
   return <View style={{ gap: WdpSpacing.xs }}><Text accessibilityRole="header" style={styles.title}>{shortLabel(title)}</Text>
     <View style={local.group}>{actions.map(action => {
       const Icon = featureIcon(action.path);
-      return <Pressable key={action.path} accessibilityRole="button" accessibilityLabel={`${action.title}${action.count !== undefined ? `, ${action.count} hồ sơ` : ''}`}
+      return <View key={action.path}><Pressable accessibilityRole="button" accessibilityLabel={`${action.title}${action.count !== undefined ? `, ${action.count} hồ sơ` : ''}`}
         onPress={() => router.push(action.path as Href)} style={({ pressed }) => [local.action, pressed && styles.pressed]}>
         <View style={local.icon}>{createElement(Icon, { size: 21, color: WdpColors.navy })}</View>
         <Text style={[styles.label, { flex: 1, fontSize: 15 }]}>{shortLabel(action.title)}</Text>
         {action.count !== undefined && action.count !== 0 && <Text style={local.count}>{action.count}</Text>}
         <ChevronRight size={18} color={WdpColors.muted} />
-      </Pressable>;
+      </Pressable><FunctionActivity path={action.path} /></View>;
     })}</View>
   </View>;
 }
@@ -41,7 +43,22 @@ function FunctionGroup({ title, items, open, onToggle }: { title: string; items:
       {createElement(Icon, { size: 22, color: WdpColors.navy })}<Text style={[styles.title, { flex: 1, fontSize: 15 }]}>{title}</Text>
       {open ? <ChevronDown size={18} color={WdpColors.muted} /> : <ChevronRight size={18} color={WdpColors.muted} />}
     </Pressable>
-    {open && items.map(item => <View key={item.path} style={local.divider}><Navigation compact title={item.title} path={item.path} /></View>)}
+    {open && items.map(item => <View key={item.path} style={local.divider}><Navigation compact title={item.title} path={item.path} description={item.description} /><FunctionActivity path={item.path} /></View>)}
+  </View>;
+}
+function FunctionActivity({ path }: { path: string }) {
+  const activity = useActivity();
+  const related = activityForPath(activity.entries, activity.read, path);
+  const latest = related.latest;
+  if (!latest) return null;
+  return <View style={local.activity}>
+    <Text style={styles.label}>{related.unread.length} cập nhật chưa đọc · {related.todo.length} việc cần làm</Text>
+    <Text style={styles.label} numberOfLines={2}>{latest.title} · {latest.code}</Text>
+    <Text style={styles.copy} numberOfLines={3}>{latest.message}</Text>
+    <Button title={latest.action ? 'Xem bước tiếp theo' : 'Xem cập nhật'} variant="secondary" onPress={() => {
+      activity.markRead([latest.token]);
+      router.push(latest.mobile as Href);
+    }} />
   </View>;
 }
 export function WorkflowHint({ text }: { text: string }) {
@@ -54,4 +71,5 @@ const local = StyleSheet.create({
   icon: { backgroundColor: WdpColors.soft, borderRadius: 10, padding: 8 },
   count: { color: WdpColors.navy, fontWeight: '700', fontSize: 13, minWidth: 24, textAlign: 'center' },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: WdpColors.border },
+  activity: { gap: WdpSpacing.xs, marginHorizontal: 14, marginBottom: 14, padding: WdpSpacing.sm, borderRadius: 10, backgroundColor: WdpColors.soft },
 });

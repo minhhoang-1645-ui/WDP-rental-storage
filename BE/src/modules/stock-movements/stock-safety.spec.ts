@@ -15,6 +15,20 @@ function setup(quantities: number[], initial = 6, type = 'OUT') {
   return { service: new StockMovementsService(db as never), tx, balance: () => balance };
 }
 describe('stock movement safety with stubbed transaction', () => {
+  it('autoassigns new stock requests using the current allocation when a transfer happened between contract reads', async () => {
+    const stamp = new Date();
+    const movement = { id: 'movement', movementCode: 'MOV', status: 'ASSIGNED', type: 'IN', lines: [], createdAt: stamp, updatedAt: stamp };
+    const tx = { rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', reservationUnit: { storageUnitId: 'destination' } }) },
+      stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
+      storedItem: { create: vi.fn().mockResolvedValue({ id: 'item' }) }, stockMovementLine: { create: vi.fn() } };
+    const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE', reservationUnit: { storageUnitId: 'old-source' } }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
+    const responsibility = { resolveStaff: vi.fn().mockResolvedValue({ staffUserId: 'destination-owner', assignedByUserId: 'manager' }) };
+    const service = new StockMovementsService(db as never, responsibility as never);
+    await service.create({ id: 'customer', role: 'CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'create-after-transfer');
+    expect(responsibility.resolveStaff).toHaveBeenCalledWith(tx, ['destination']);
+    expect(tx.stockMovement.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ assignedStaffUserId: 'destination-owner', status: 'ASSIGNED' }) }));
+  });
+
   it('rejects new scheduled movements in the past or outside the Vietnam rental dates', async () => {
     const start = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
     const end = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);

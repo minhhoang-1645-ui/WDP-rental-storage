@@ -53,6 +53,27 @@ function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' | 'CANCELL
 }
 
 describe('OnlinePaymentService VNPay status and callbacks', () => {
+  it.each([['PARTIALLY_PAID', 300000n], ['PAID', 0n]])('records provider-confirmed money for reconciliation when invoice is now %s with balance %s', async (status, balanceDue) => {
+    const { service, tx, billing } = fixture();
+    tx.invoice.findUnique.mockResolvedValue({ id: 'invoice-1', type: 'INITIAL', status, balanceDue, reservation: { id: 'reservation-1', customerId: 'customer-1', status: 'CONFIRMED', expiresAt: new Date(Date.now() + 60000) } });
+    const current = await tx.onlinePaymentTransaction.findUnique();
+    tx.onlinePaymentTransaction.updateMany.mockImplementation(async ({ data }) => { Object.assign(current, data); return { count: 1 }; });
+    await expect(service.processIpn({})).resolves.toMatchObject({ RspCode: '00', Message: 'Confirm Success - reconciliation required' });
+    expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+    expect(tx.onlinePaymentReconciliation.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ onlinePaymentTransactionId: 'transaction-1', amount: 650000n, providerTransactionId: 'provider-1', reason: expect.stringContaining('số dư hóa đơn đã thay đổi') }) }));
+    await expect(service.processIpn({})).resolves.toMatchObject({ RspCode: '02' });
+    expect(tx.onlinePaymentReconciliation.upsert).toHaveBeenCalledTimes(1);
+    expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a provider amount that differs from the original transaction amount', async () => {
+    const { service, tx, billing, vnpay } = fixture();
+    vnpay.verify.mockReturnValue({ orderRef: 'WDP-ORDER-1', amountMinor: 1n, responseCode: '00', transactionStatus: '00', providerTransactionId: 'provider-1', bankCode: 'VNPAYQR' });
+    await expect(service.processIpn({})).resolves.toMatchObject({ RspCode: '04' });
+    expect(tx.onlinePaymentReconciliation.upsert).not.toHaveBeenCalled();
+    expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();
+    expect(tx.onlinePaymentTransaction.updateMany).not.toHaveBeenCalled();
+  });
   it('does not open a payment session for a VOID invoice with an old positive balance', async () => {
     const { service, prisma, tx } = fixture();
     Object.assign(prisma, { invoice: { findFirst: vi.fn().mockResolvedValue({ id: 'invoice-1' }) } });

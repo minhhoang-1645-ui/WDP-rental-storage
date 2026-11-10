@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date }
+export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date; updatedAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
 export interface UserListFilters { search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
 type StoredSession = { tokenHash: string; userId: string; expiresAt: Date };
@@ -18,6 +18,7 @@ export abstract class UserRepository {
   abstract list(offset: number, limit: number, filters?: UserListFilters): Promise<StoredUser[]>;
   abstract count(filters?: UserListFilters): Promise<number>;
   abstract updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string): Promise<StoredUser | null>;
+  abstract updateProfile(id: string, data: Partial<Pick<PublicUser, 'fullName' | 'phone'>>): Promise<StoredUser | null>;
 }
 
 function assertStatusActor(actor: StoredUser | null | undefined, targetId: string, status: StoredUser['accountStatus']) {
@@ -38,6 +39,11 @@ export class MemoryUserRepository extends UserRepository {
     return [...this.users.values()].find(user => user.email === email) ?? null;
   }
   async findById(id: string) { return this.users.get(id) ?? null; }
+  async updateProfile(id: string, data: Partial<Pick<PublicUser, 'fullName' | 'phone'>>) {
+    const user = this.users.get(id);
+    if (!user || user.accountStatus !== 'ACTIVE') return null;
+    const updated = { ...user, ...data }; this.users.set(id, updated); return updated;
+  }
   async list(offset: number, limit: number, filters: UserListFilters = {}) { return this.filtered(filters).slice(offset, offset + limit); }
   async count(filters: UserListFilters = {}) { return this.filtered(filters).length; }
   async updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string) {
@@ -65,6 +71,10 @@ export class MemoryUserRepository extends UserRepository {
 @Injectable()
 export class PrismaUserRepository extends UserRepository {
   constructor(private readonly prisma: PrismaService) { super(); }
+  async updateProfile(id: string, data: Partial<Pick<PublicUser, 'fullName' | 'phone'>>) {
+    const result = await this.prisma.user.updateMany({ where: { id, accountStatus: 'ACTIVE' }, data });
+    return result.count === 1 ? this.findById(id) : null;
+  }
   async saveSession(session: StoredSession) {
     await this.prisma.$transaction([
       this.prisma.authSession.deleteMany({ where: { userId: session.userId, expiresAt: { lte: new Date() } } }),

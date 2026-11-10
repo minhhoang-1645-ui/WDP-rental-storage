@@ -1,4 +1,5 @@
 import { isEarlyReturnRequest } from '@/utils/early-return';
+import { recordMatches } from '@/utils/record-search';
 import { OperationForm, type FormAction } from './form';
 import { assignmentAction } from './actions';
 import { useAuth } from '@/auth/use-auth';
@@ -31,7 +32,7 @@ export function ManagerAssignments() {
   ].filter(row => (history || !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(text(row, 'status')))
     && (!kind || row.resource === kind)
     && (!assignment || (assignment === 'attention' ? assignmentNeedsAttention(text(row, 'resource'), row) : Boolean(text(row, 'assignedStaff.id')) === (assignment === 'assigned')))
-    && [codeOf(row), text(row, 'subject', 'description'), text(row, 'assignedStaff.fullName'), text(row, 'unit.unitCode', 'storageUnit.unitNumber')].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')));
+    && recordMatches(row, search));
   tasks.sort((a, b) => assignmentWorkRank(a) - assignmentWorkRank(b) || (Date.parse(text(a, 'requestedAt', 'createdAt')) || 0) - (Date.parse(text(b, 'requestedAt', 'createdAt')) || 0));
   if (!allowed) return <View style={styles.page}><EmptyState title="Phân công thuộc khu vực quản lý" message="Mở đúng khu vực theo tài khoản của bạn." /><Navigation title="Về tổng quan" path="/manager" /></View>;
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}

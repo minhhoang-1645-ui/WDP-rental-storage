@@ -2,20 +2,16 @@ import { useRef, useState } from "react";
 import { router, type Href } from "expo-router";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, ClipboardList, LayoutGrid, RefreshCw, Inbox, ArrowLeftRight, Warehouse } from "lucide-react-native";
-import { useAuth } from "@/auth/use-auth";
 import { EmptyState, ErrorState, LoadingState } from "@/components/screen-state";
 import { Button, Disclosure, Navigation, styles } from "@/operations/ui";
-import { codeOf, text, label } from "@/operations/model";
 import { formatDate } from "@/utils/format";
 import { useActivity } from "@/activity/context";
-import { activitySources } from "@/utils/activity";
+import { activitySources, staffPriorityActivities } from "@/utils/activity";
 import { WdpColors, WdpRadius, WdpSpacing, WdpType } from "@/constants/wdp-theme";
 import { featureIcon } from "@/utils/ui-icons";
 import {
   awaitingAssignment,
-  staffNeedsAction,
   staffWorkGroups,
-  staffWorkRank,
 } from "@/utils/work-queue";
 
 const sections = [
@@ -36,21 +32,19 @@ const filters = [
 ] as const;
 
 export default function StaffHomeScreen() {
-  const { user } = useAuth();
   const activity = useActivity();
   const [tab, setTab] = useState<"queue" | "directory">("queue");
   const [filter, setFilter] = useState<string>("all");
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const listRef = useRef<FlatList>(null);
   const sources = activitySources("STAFF");
+  const actionableIds = new Set(activity.entries.filter(item => item.action).map(item => item.id));
   const groups = staffWorkGroups.map((group) => {
     const items = activity.data[group.resource] ?? [];
     return {
       ...group,
       path: `/staff/${group.resource}`,
-      items: items.filter((row) =>
-        staffNeedsAction(group.resource, row, user?.id ?? ""),
-      ),
+      items: items.filter(row => actionableIds.has(`${group.resource}:${String(row.id)}`)),
       waiting: items.filter((row) => awaitingAssignment(group.resource, row))
         .length,
       unavailable:
@@ -61,25 +55,11 @@ export default function StaffHomeScreen() {
         ),
     };
   });
-  const queue = groups
-    .flatMap((group) =>
-      group.items.map((item) => ({
-        item,
-        group,
-        path: `${group.path}/${encodeURIComponent(String(item.id))}`,
-      })),
-    )
-    .sort(
-      (a, b) =>
-        staffWorkRank(a.group.resource, a.item) -
-          staffWorkRank(b.group.resource, b.item) ||
-        (Date.parse(text(a.item, "scheduledAt", "createdAt")) || 0) -
-          (Date.parse(text(b.item, "scheduledAt", "createdAt")) || 0),
-    );
+  const queue = staffPriorityActivities(activity.entries);
   const waiting = groups.reduce((sum, group) => sum + group.waiting, 0);
   const incomplete = groups.some((group) => group.unavailable);
   const activeFilter = filters.find(item => item.key === filter) ?? filters[0];
-  const filteredQueue = queue.filter(({ group }) => !("resources" in activeFilter) || activeFilter.resources.includes(group.resource));
+  const filteredQueue = queue.filter(entry => !("resources" in activeFilter) || activeFilter.resources.includes(entry.kind));
   const visibleQueue = filteredQueue.slice(0, visibleCount);
 
   return (
@@ -147,7 +127,7 @@ export default function StaffHomeScreen() {
             <FlatList
               ref={listRef}
               data={visibleQueue}
-              keyExtractor={({ path }) => path}
+              keyExtractor={entry => entry.id}
               style={local.list}
               contentContainerStyle={local.listContent}
               ListEmptyComponent={
@@ -161,25 +141,24 @@ export default function StaffHomeScreen() {
                 )}
               </View>
               }
-              renderItem={({ item: { item, path, group } }) => {
-            const Icon = featureIcon(group.resource);
-            const code = codeOf(item);
-            const rank = staffWorkRank(group.resource, item);
-            const status = rank === 0 ? "Ưu tiên cao" : rank === 1 ? "Đến giờ" : label(item.status);
-            const metadata = item.scheduledAt ? `${code} · ${formatDate(String(item.scheduledAt), true)}` : code;
+              renderItem={({ item }) => {
+            const Icon = featureIcon(item.kind);
+            const rank = item.priority;
+            const status = rank < 2 ? "Ưu tiên" : "";
+            const metadata = item.at ? `${item.code} · ${formatDate(item.at, true)}` : item.code;
             return (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${group.title}, ${metadata}, ${status}`}
-                onPress={() => router.push(path as Href)}
+                accessibilityLabel={`${item.title}, ${metadata}, ${status}`}
+                onPress={() => { activity.markRead([item.token]); router.push(item.mobile as Href); }}
                 style={({ pressed }) => [local.row, pressed && styles.pressed]}
               >
                 <View style={local.rowIcon}><Icon size={18} color={WdpColors.navy} /></View>
                 <View style={local.rowCopy}>
-                  <Text style={local.rowTitle}>{group.title}</Text>
+                  <Text style={local.rowTitle}>{item.title}</Text>
                   <Text style={local.rowMeta} numberOfLines={2}>{metadata}</Text>
                 </View>
-                <Text style={[local.status, rank < 2 && local.urgent]}>{status}</Text>
+                {status ? <Text style={[local.status, local.urgent]}>{status}</Text> : null}
                 <ChevronRight size={16} color={WdpColors.muted} />
               </Pressable>
             );

@@ -893,7 +893,9 @@ try {
   }
   await open(customer.page, "/customer/payments");
   await customer.page.getByRole("button", { name: "Thanh toán VNPay", exact: true }).first().click();
-  await customer.page.waitForURL((url) => url.pathname === "/customer/contracts");
+  await customer.page.waitForURL((url) => url.pathname === "/customer/payments/vnpay-return");
+  await customer.page.getByRole("link", { name: "Đặt lịch nhận kho", exact: true }).click();
+  await customer.page.waitForURL((url) => url.pathname === "/customer/appointments");
   await open(customer.page, "/customer/payments/vnpay-return?transactionId=online-payment-id");
   await customer.page.getByRole("heading", { name: "Thanh toán thành công", exact: true }).waitFor();
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 type Listener = (path?: string) => void;
@@ -8,11 +8,11 @@ export const subscribeDataChanged = (listener: Listener) => { changes.add(listen
 export const refreshScreens = () => refreshes.forEach(listener => listener());
 export const hasDraft = () => drafts.size > 0;
 export function useDraftGuard(blocked = true) {
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!blocked) return;
     const token = {}; drafts.add(token);
     return () => { drafts.delete(token); if (!drafts.size) refreshScreens(); };
-  }, [blocked]);
+  }, [blocked]));
 }
 export function useLiveRefresh(path: string | null, refresh: () => void) {
   useFocusEffect(useCallback(() => {

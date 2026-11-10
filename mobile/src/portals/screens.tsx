@@ -24,6 +24,7 @@ import { workflowGuide } from '@/utils/workflow-guide';
 import { isScheduledRenewalInvoice, paymentWindowClosed } from '@/utils/payment-state';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { DocumentAcceptance } from '@/components/document-acceptance';
+import { recordMatches } from '@/utils/record-search';
 
 function transferProgress(row: Row) {
   const transfer = isTransferRequest(row) ? rows(row.transfers)[0] : undefined;
@@ -55,7 +56,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
   const setPage = (value: number) => setPagination({ filter: filterKey, page: value });
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy chức năng" message="Chọn chức năng trong khu vực của bạn." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : object(data.data).items).filter(item => role !== 'CUSTOMER' || resource !== 'transfers' || item.resolutionType === 'TRANSFER_RECOMMENDED' || text(item, 'subject').toLocaleLowerCase('vi').includes('chuyển kho'));
-  const filtered = items.filter(item => (!customerInvoices || Number(item.amountPaid) > 0 || !isScheduledRenewalInvoice(item)) && (!status || (item.status ?? item.rentalState) === status) && (!search || JSON.stringify(item).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))));
+  const filtered = items.filter(item => (!customerInvoices || Number(item.amountPaid) > 0 || !isScheduledRenewalInvoice(item)) && (!status || (item.status ?? item.rentalState) === status) && recordMatches(item, search, portalStatus(role, resource, item.status ?? item.rentalState)));
   const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
   const currentPage = Math.min(page, totalPages);
   const shown = filtered.slice((currentPage - 1) * 10, currentPage * 10);

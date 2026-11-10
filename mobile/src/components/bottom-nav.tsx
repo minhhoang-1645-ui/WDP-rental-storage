@@ -17,7 +17,7 @@ const customerTabs: Tab[] = [
 
 const staffTabs: Tab[] = [
   { key: 'home', label: 'Công việc', icon: ClipboardList, path: '/staff', match: ['/staff'] },
-  { key: 'tasks', label: 'Vận hành', icon: Wrench, path: '/staff/tasks', match: ['/staff/tasks', '/staff/appointments'] },
+  { key: 'tasks', label: 'Vận hành', icon: Wrench, path: '/staff/tasks', match: ['/staff/tasks', '/staff/appointments', '/staff/reservations', '/staff/inquiries', '/staff/support-requests', '/staff/stock-movements', '/staff/renewals', '/staff/transfers', '/staff/returns', '/staff/maintenance', '/staff/contracts', '/staff/rentals', '/staff/units'] },
   { key: 'account', label: 'Tài khoản', icon: User, path: '/staff/account', match: ['/staff/account'] },
 ];
 
@@ -25,7 +25,7 @@ const managerTabs: Tab[] = [
   { key: 'home', label: 'Tổng quan', icon: Home, path: '/manager', match: ['/manager'] },
   { key: 'approvals', label: 'Duyệt', icon: ShieldCheck, path: '/manager/approvals', match: ['/manager/approvals', '/manager/reviews'] },
   { key: 'assignments', label: 'Phân công', icon: Users, path: '/manager/assignments', match: ['/manager/assignments'] },
-  { key: 'facility', label: 'Cơ sở', icon: Warehouse, path: '/manager/facility', match: ['/manager/facility'] },
+  { key: 'facility', label: 'Cơ sở', icon: Warehouse, path: '/manager/facility', match: ['/manager/facility', '/manager/catalog', '/manager/units', '/manager/additional-services'] },
   { key: 'account', label: 'Tài khoản', icon: User, path: '/manager/account', match: ['/manager/account'] },
 ];
 const adminTabs: Tab[] = [

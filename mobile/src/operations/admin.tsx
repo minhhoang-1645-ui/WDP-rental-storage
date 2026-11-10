@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { recordMatches } from '@/utils/record-search';
 import { router, useLocalSearchParams } from 'expo-router';
 import { FlatList, ScrollView, Text, View } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
@@ -15,7 +16,7 @@ export function AdminUsers({ statusOnly = false }: { statusOnly?: boolean }) {
   const params = useLocalSearchParams<{ search?: string; role?: string; status?: string }>();
   const data = useResource<Row>('/admin/users', true);
   const [search, setSearch] = useState(params.search ?? ''), [role, setRole] = useState(params.role ?? ''), [status, setStatus] = useState(params.status ?? '');
-  const items = rows(data.data?.items).filter(row => (!role || row.role === role) && (!status || row.accountStatus === status) && (!search || [row.fullName, row.email, row.phone].join(' ').toLowerCase().includes(search.toLowerCase())));
+  const items = rows(data.data?.items).filter(row => (!role || row.role === role) && (!status || row.accountStatus === status) && recordMatches(row, search));
   const header = <View style={{ gap: 12 }}><PageHeader eyebrow="Quản trị viên" title={statusOnly ? 'Trạng thái tài khoản' : 'Quản lý tài khoản người dùng'} description="Tài khoản và trạng thái được đọc từ hệ thống." /><Navigation title="Về tổng quan quản trị" path="/admin" /><Button title="Làm mới tài khoản" onPress={data.refresh} disabled={data.loading} />{!statusOnly && <Button title="Tạo tài khoản nội bộ" onPress={() => router.push('/admin/users/new')} />}<Field title="Tìm tên, email hoặc số điện thoại" value={search} onChange={setSearch} maxLength={120} />
     <View style={styles.row}>{['', 'CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].map(value => <Button key={value} variant={role === value ? 'primary' : 'secondary'} title={`${role === value ? '✓ ' : ''}${value ? label(value) : 'Tất cả vai trò'}`} onPress={() => setRole(value)} />)}</View>
     <View style={styles.row}>{['', 'ACTIVE', 'DISABLED'].map(value => <Button key={value} variant={status === value ? 'primary' : 'secondary'} title={`${status === value ? '✓ ' : ''}${value ? label(value) : 'Tất cả trạng thái'}`} onPress={() => setStatus(value)} />)}</View>

@@ -58,6 +58,11 @@ describe('Early return approval with memory-only persistence', () => {
     const app = setup(); expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-04-02')).unitIds).toEqual(['unit-new']);
     expect(app.internal.eligibilityInclude().units.where).toEqual({ releasedAt: null }); expect(app.internal.include().reservation.include.units.where).toEqual({ releasedAt: null });
   });
+  it('accepts normal returns from the exclusive end date at Vietnamese midnight', () => {
+    const app = setup();
+    expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T16:59:59.999Z'))).toThrow('quản lý chấp thuận');
+    expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T17:00:00Z')).unitIds).toEqual(['unit-new']);
+  });
   it('prevents ordinary support transitions from modifying early-return approval state', async () => {
     const app = setup(); const prisma = { supportRequest: { findFirst: vi.fn(async () => ({ id: 'proposal' })) }, $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run({ ...app.tx, supportRequest: { ...app.tx.supportRequest, findUnique: vi.fn(async () => app.request) } })) };
     const support = new SupportService(prisma as unknown as PrismaService);

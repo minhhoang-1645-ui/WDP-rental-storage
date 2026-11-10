@@ -26,12 +26,14 @@ export class UnitStaffService {
         const staff = await tx.user.findFirst({ where: { id: staffUserId, role: 'STAFF', accountStatus: 'ACTIVE' }, select: { id: true } });
         if (!staff) throw new BadRequestException('Nhân viên phải là STAFF đang hoạt động.');
         const current = await tx.unitStaffAssignment.findFirst({ where: { storageUnitId: unitId, endedAt: null } });
-        if (current?.staffUserId === staffUserId) return tx.unitStaffAssignment.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
-        if ((current?.id ?? null) !== input.expectedAssignmentId) throw new ConflictException('Phân công đã thay đổi. Vui lòng tải lại danh sách kho.');
+        const unchanged = current?.staffUserId === staffUserId;
+        if (!unchanged && (current?.id ?? null) !== input.expectedAssignmentId) throw new ConflictException('Phân công đã thay đổi. Vui lòng tải lại danh sách kho.');
         const now = new Date();
-        if (current) await tx.unitStaffAssignment.update({ where: { id: current.id }, data: { endedAt: now } });
-        const assigned = await tx.unitStaffAssignment.create({ data: { storageUnitId: unitId, staffUserId, assignedByUserId: actor.id, assignedAt: now }, include: this.include() });
-        await tx.supportRequest.updateMany({ where: { storageUnitId: unitId, assignedStaffUserId: null, status: 'OPEN', subject: { not: 'Đề nghị trả kho trước hạn' } }, data: { assignedStaffUserId: staffUserId, status: 'ASSIGNED' } });
+        if (current && !unchanged) await tx.unitStaffAssignment.update({ where: { id: current.id }, data: { endedAt: now } });
+        const assigned = unchanged
+          ? await tx.unitStaffAssignment.findUniqueOrThrow({ where: { id: current.id }, include: this.include() })
+          : await tx.unitStaffAssignment.create({ data: { storageUnitId: unitId, staffUserId, assignedByUserId: actor.id, assignedAt: now }, include: this.include() });
+        await tx.supportRequest.updateMany({ where: { OR: [{ storageUnitId: unitId }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnitId: unitId } } }], assignedStaffUserId: null, status: 'OPEN', subject: { not: 'Đề nghị trả kho trước hạn' } }, data: { assignedStaffUserId: staffUserId, status: 'ASSIGNED' } });
         await tx.maintenanceRequest.updateMany({ where: { storageUnitId: unitId, assignedStaffUserId: null, status: 'OPEN' }, data: { assignedStaffUserId: staffUserId } });
         await tx.stockMovement.updateMany({ where: { status: 'REQUESTED', assignedStaffUserId: null, rentalContract: { reservationUnit: { storageUnitId: unitId } } }, data: { assignedStaffUserId: staffUserId, assignedByUserId: actor.id, assignedAt: now, status: 'ASSIGNED' } });
         return assigned;

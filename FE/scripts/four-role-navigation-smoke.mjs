@@ -46,9 +46,10 @@ try {
     const app = await setup('CUSTOMER', width);
     await app.goto('/customer/rentals');
     const card = app.page.locator('article').filter({ hasText: reservation.reference }).first();
-    await card.getByRole('link', { name: 'Hóa đơn & thanh toán', exact: true }).click();
-    await app.page.getByText('SCOPE-INVOICE', { exact: true }).waitFor();
-    assert.equal(await app.page.getByText('OTHER-INVOICE', { exact: true }).count(), 0);
+    await card.getByRole('button', { name: 'Xem hóa đơn', exact: true }).click();
+    const invoiceDialog = app.page.getByRole('dialog');
+    await invoiceDialog.getByRole('heading', { name: 'SCOPE-INVOICE', exact: true }).waitFor();
+    assert.equal(await invoiceDialog.getByText('OTHER-INVOICE', { exact: true }).count(), 0);
     await app.goto('/customer/renewals?reservation=' + reservation.id);
     await app.page.waitForFunction(id => [...document.querySelectorAll('select')].some(select => select.value === id), reservation.id);
     await app.goto('/customer/transfers?reservation=' + reservation.id);
@@ -90,7 +91,7 @@ try {
   const admin = await setup('ADMIN'); await admin.goto('/admin/users'); await admin.page.getByRole('button', { name: 'Tạo tài khoản', exact: true }).waitFor();
   assert.equal(await admin.page.getByRole('link', { name: 'Phân công nhân viên', exact: true }).count(), 0);
   await admin.goto('/manager'); await admin.page.waitForURL('**/admin'); await admin.context.close(); checks.push('Admin: account administration only, Manager URL returns to Admin');
-  const mobile = await setup('MANAGER', 390, true); await mobile.goto('/manager'); await mobile.page.getByText('Chờ nghiệm thu bảo trì', { exact: true }).waitFor(); for(const [section,title] of [['reviews','Phê duyệt ngoại lệ'],['finance','Tài chính'],['rental-records','Hồ sơ thuê'],['facility','Kho & bảng giá']]) { await mobile.goto('/manager/'+section);await mobile.page.getByRole('heading',{name:title,exact:true}).waitFor(); } mobile.data['support-requests'][0].subject='Yêu cầu chuyển kho';await mobile.goto('/manager/support-requests/'+mobile.data['support-requests'][0].id);await mobile.page.getByRole('heading',{name:'SUP-TEST',exact:true}).waitFor();assert.equal(await mobile.page.getByRole('button',{name:'Tạo lệnh chuyển từ yêu cầu này',exact:true}).count(),0); await mobile.context.close(); checks.push('Mobile Manager: review work is visible on the work hub');
+  const mobile = await setup('MANAGER', 390, true); await mobile.goto('/manager'); await mobile.page.getByRole('button', { name: /^Chờ nghiệm thu bảo trì/ }).first().waitFor(); for(const [section,title] of [['reviews','Phê duyệt ngoại lệ'],['finance','Tài chính'],['rental-records','Hồ sơ thuê'],['facility','Kho & bảng giá']]) { await mobile.goto('/manager/'+section);await mobile.page.getByRole('heading',{name:title,exact:true}).waitFor(); } mobile.data['support-requests'][0].subject='Yêu cầu chuyển kho';await mobile.goto('/manager/support-requests/'+mobile.data['support-requests'][0].id);await mobile.page.getByRole('heading',{name:'SUP-TEST',exact:true}).waitFor();assert.equal(await mobile.page.getByRole('button',{name:'Tạo lệnh chuyển từ yêu cầu này',exact:true}).count(),0); await mobile.context.close(); checks.push('Mobile Manager: review work is visible on the work hub');
   assert.deepEqual(writes, []); assert.deepEqual(errors, []);
   console.log(JSON.stringify({ checks, browserErrors: errors.length, realDatabaseWrites: 0 }, null, 2));
 } finally { await browser.close(); }

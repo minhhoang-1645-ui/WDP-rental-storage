@@ -6,6 +6,7 @@ import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
 import { allPages } from "../../services/portal";
 import { code, first, label, type Page, type Row } from "./portal-data";
+import { normalizeSearch } from '../../utils/notification-tools';
 
 export function Status({ value }: { value: unknown }) {
   const status = typeof value === "string" ? value : "";
@@ -238,9 +239,7 @@ export function RecordPicker({
     (row) =>
       (!accept || accept(row)) &&
       (!local ||
-        JSON.stringify(row)
-          .toLocaleLowerCase("vi")
-          .includes(search.toLocaleLowerCase("vi"))),
+        normalizeSearch(JSON.stringify(row)).includes(normalizeSearch(search))),
   );
   const selected =
     choices.find((row) => first(row, "id") === value) ??

@@ -8,6 +8,7 @@ import { DateField } from '@/components/date-field';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { WdpColors } from '@/constants/wdp-theme';
 import { auditAction, auditResource } from '@/utils/audit-labels';
+import { isCalendarDate } from '@/utils/calendar-date';
 import { label, rows, text, type Row } from './model';
 import { Button, Disclosure, Field, Panel, styles } from './ui';
 import { useResource } from './use-resource';
@@ -16,11 +17,17 @@ const empty = { search: '', outcome: '', role: '', from: '', to: '' };
 export function AdminAudit({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
   const { user } = useAuth();
   const [draft, setDraft] = useState(empty), [filters, setFilters] = useState(empty), [page, setPage] = useState(1);
+  const [filterError, setFilterError] = useState('');
   const query = new URLSearchParams({ category, page: String(page), limit: '20' });
   for (const [key, value] of Object.entries(filters)) if (value.trim()) query.set(key, value.trim());
   const data = useResource<Row>(user?.role === 'ADMIN' ? `/admin/audit-events?${query}` : null);
   const total = Number(data.data?.total ?? 0), pages = Math.max(1, Math.ceil(total / 20));
   const update = (key: keyof typeof empty, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
+  const applyFilters = () => {
+    if (draft.from && !isCalendarDate(draft.from) || draft.to && !isCalendarDate(draft.to)) { setFilterError('Nhập ngày hợp lệ theo YYYY-MM-DD.'); return; }
+    if (draft.from && draft.to && draft.from > draft.to) { setFilterError('Đến ngày phải bằng hoặc sau Từ ngày.'); return; }
+    setFilterError(''); setPage(1); setFilters({ ...draft });
+  };
   const when = (value: unknown) => typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—';
   if (user?.role !== 'ADMIN') return <EmptyState title="Không có quyền truy cập" message="Chỉ Admin được xem nhật ký." />;
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={rows(data.data?.items)} keyExtractor={item => text(item, 'id')}
@@ -35,7 +42,8 @@ export function AdminAudit({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
         <DateField title="Từ ngày" value={draft.from} onChange={value => update('from', value)} />
         <DateField title="Đến ngày" value={draft.to} onChange={value => update('to', value)} />
       </Disclosure>
-      <View style={styles.row}><Button title="Lọc nhật ký" disabled={data.loading} onPress={() => { setPage(1); setFilters({ ...draft }); }} /><Button title="Xóa bộ lọc" variant="secondary" onPress={() => { setDraft(empty); setFilters(empty); setPage(1); }} /></View>
+      <View style={styles.row}><Button title="Lọc nhật ký" disabled={data.loading} onPress={applyFilters} /><Button title="Xóa bộ lọc" variant="secondary" onPress={() => { setDraft(empty); setFilters(empty); setPage(1); setFilterError(''); }} /></View>
+      {filterError ? <Text accessibilityRole="alert" style={styles.error}>{filterError}</Text> : null}
       {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{total} bản ghi</Text>}
     </View>}
     ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có nhật ký phù hợp" message="Thử đổi bộ lọc. Lịch sử cũ không được tạo lại." /> : null}

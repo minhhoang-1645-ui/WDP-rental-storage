@@ -1,28 +1,34 @@
 import { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 import { Calendar } from 'lucide-react-native';
+import { calendarChoice, daysInMonth, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
 
 /**
  * Cross-platform date input.
- * On web: renders native `<input type="date">`.
- * On native: renders a text field with format hint that opens a simple year/month/day picker modal.
+ * Web accepts ISO text; native offers scrollable calendar columns.
  */
 export function DateField({ title, value, onChange, min }: { title: string; value: string; onChange: (value: string) => void; min?: string }) {
+  const minimum = min && isCalendarDate(min) ? min : '';
+  const initialDate = isCalendarDate(value) && (!minimum || value >= minimum) ? value : minimum || vietnamCalendarDate();
   const [modal, setModal] = useState(false);
-  const [tempYear, setTempYear] = useState(() => value.slice(0, 4) || String(new Date().getFullYear()));
-  const [tempMonth, setTempMonth] = useState(() => value.slice(5, 7) || String(new Date().getMonth() + 1).padStart(2, '0'));
-  const [tempDay, setTempDay] = useState(() => value.slice(8, 10) || '01');
+  const [tempYear, setTempYear] = useState(() => initialDate.slice(0, 4));
+  const [tempMonth, setTempMonth] = useState(() => initialDate.slice(5, 7));
+  const [tempDay, setTempDay] = useState(() => initialDate.slice(8, 10));
+  const { height } = useWindowDimensions();
+  const currentIssue = value && (!isCalendarDate(value) ? 'Ngày không hợp lệ. Nhập theo YYYY-MM-DD.' : minimum && value < minimum ? `Chọn ngày từ ${minimum} trở đi.` : '');
 
   const openPicker = () => {
-    setTempYear(value.slice(0, 4) || String(new Date().getFullYear()));
-    setTempMonth(value.slice(5, 7) || String(new Date().getMonth() + 1).padStart(2, '0'));
-    setTempDay(value.slice(8, 10) || '01');
+    const initial = isCalendarDate(value) && (!minimum || value >= minimum) ? value : minimum || vietnamCalendarDate();
+    setTempYear(initial.slice(0, 4));
+    setTempMonth(initial.slice(5, 7));
+    setTempDay(initial.slice(8, 10));
     setModal(true);
   };
 
   const confirm = () => {
-    const result = `${tempYear}-${tempMonth.padStart(2, '0')}-${tempDay.padStart(2, '0')}`;
+    const result = calendarChoice(tempYear, tempMonth, tempDay);
+    if (!isCalendarDate(result) || minimum && result < minimum) return;
     onChange(result);
     setModal(false);
   };
@@ -31,12 +37,21 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
     return <View style={local.field}>
       <Text style={local.label}>{title}</Text>
       <TextInput accessibilityLabel={title} value={value} onChangeText={onChange} maxLength={10} placeholder="YYYY-MM-DD" placeholderTextColor={WdpColors.muted} style={local.input} />
+      {currentIssue ? <Text accessibilityRole="alert" style={local.error}>{currentIssue}</Text> : null}
     </View>;
   }
 
   const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
-  const days = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
-  const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() + i));
+  const days = Array.from({ length: daysInMonth(tempYear, tempMonth) }, (_, i) => String(i + 1).padStart(2, '0'));
+  const selectedYear = Number(tempYear) || new Date().getFullYear();
+  // Keep the list bounded while allowing the window to move with the selected year.
+  const firstYear = Math.max(minimum ? Number(minimum.slice(0, 4)) : 1, selectedYear - 10);
+  const lastYear = Math.min(9999, Math.max(selectedYear + 10, firstYear));
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => String(firstYear + i));
+  const candidate = calendarChoice(tempYear, tempMonth, tempDay);
+  const unavailable = Boolean(minimum && candidate < minimum);
+  const chooseMonth = (month: string) => { setTempMonth(month); setTempDay(calendarChoice(tempYear, month, tempDay).slice(8, 10)); };
+  const chooseYear = (year: string) => { setTempYear(year); setTempDay(calendarChoice(year, tempMonth, tempDay).slice(8, 10)); };
 
   return <View style={local.field}>
     <Text style={local.label}>{title}</Text>
@@ -44,28 +59,30 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
       <Text style={value ? local.inputText : local.placeholder}>{value || 'Chọn ngày'}</Text>
       <Calendar size={18} color={WdpColors.muted} strokeWidth={1.8} />
     </Pressable>
+    {currentIssue ? <Text accessibilityRole="alert" style={local.error}>{currentIssue}</Text> : null}
     <Modal visible={modal} transparent animationType="fade" onRequestClose={() => setModal(false)}>
       <Pressable style={local.overlay} onPress={() => setModal(false)}>
         <Pressable style={local.sheet} onPress={e => e.stopPropagation()}>
           <Text style={local.sheetTitle}>Chọn ngày</Text>
-          <View style={local.pickerRow}>
+          <View style={[local.pickerRow, { height: Math.max(120, Math.min(260, height * .32)) }]}>
             <View style={local.pickerCol}>
               <Text style={local.pickerLabel}>Năm</Text>
-              {years.map(y => <Pressable key={y} onPress={() => setTempYear(y)} style={[local.option, tempYear === y && local.optionActive]}><Text style={[local.optionText, tempYear === y && local.optionTextActive]}>{y}</Text></Pressable>)}
+              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" contentOffset={{ x: 0, y: Math.max(0, years.indexOf(tempYear) - 2) * 44 }}>{years.map(y => <Pressable accessibilityRole="button" accessibilityLabel={`Năm ${y}`} accessibilityState={{ selected: tempYear === y }} key={y} onPress={() => chooseYear(y)} style={[local.option, tempYear === y && local.optionActive]}><Text style={[local.optionText, tempYear === y && local.optionTextActive]}>{y}</Text></Pressable>)}</ScrollView>
             </View>
             <View style={local.pickerCol}>
               <Text style={local.pickerLabel}>Tháng</Text>
-              {months.map(m => <Pressable key={m} onPress={() => setTempMonth(m)} style={[local.option, tempMonth === m && local.optionActive]}><Text style={[local.optionText, tempMonth === m && local.optionTextActive]}>{m}</Text></Pressable>)}
+              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" contentOffset={{ x: 0, y: Math.max(0, months.indexOf(tempMonth) - 2) * 44 }}>{months.map(m => <Pressable accessibilityRole="button" accessibilityLabel={`Tháng ${m}`} accessibilityState={{ selected: tempMonth === m }} key={m} onPress={() => chooseMonth(m)} style={[local.option, tempMonth === m && local.optionActive]}><Text style={[local.optionText, tempMonth === m && local.optionTextActive]}>{m}</Text></Pressable>)}</ScrollView>
             </View>
             <View style={local.pickerCol}>
               <Text style={local.pickerLabel}>Ngày</Text>
-              {days.map(d => <Pressable key={d} onPress={() => setTempDay(d)} style={[local.option, tempDay === d && local.optionActive]}><Text style={[local.optionText, tempDay === d && local.optionTextActive]}>{d}</Text></Pressable>)}
+              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" contentOffset={{ x: 0, y: Math.max(0, days.indexOf(tempDay) - 2) * 44 }}>{days.map(d => <Pressable accessibilityRole="button" accessibilityLabel={`Ngày ${d}`} accessibilityState={{ selected: tempDay === d }} key={d} onPress={() => setTempDay(d)} style={[local.option, tempDay === d && local.optionActive]}><Text style={[local.optionText, tempDay === d && local.optionTextActive]}>{d}</Text></Pressable>)}</ScrollView>
             </View>
           </View>
-          <Text style={local.preview}>{tempYear}-{tempMonth}-{tempDay}</Text>
+          <Text style={local.preview}>{candidate}</Text>
+          {unavailable && <Text accessibilityRole="alert" style={local.error}>Chọn ngày từ {minimum} trở đi.</Text>}
           <View style={local.sheetActions}>
             <Pressable onPress={() => setModal(false)} style={local.cancelBtn}><Text style={local.cancelText}>Hủy</Text></Pressable>
-            <Pressable onPress={confirm} style={local.confirmBtn}><Text style={local.confirmText}>Chọn ngày này</Text></Pressable>
+            <Pressable accessibilityRole="button" disabled={unavailable} accessibilityState={{ disabled: unavailable }} onPress={confirm} style={[local.confirmBtn, unavailable && { opacity: .5 }]}><Text style={local.confirmText}>Chọn ngày này</Text></Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -86,7 +103,8 @@ const local = StyleSheet.create({
   pickerRow: { flexDirection: 'row', gap: WdpSpacing.sm },
   pickerCol: { flex: 1, gap: 4 },
   pickerLabel: { color: WdpColors.muted, fontSize: 11, fontWeight: '600', textAlign: 'center', marginBottom: 4 },
-  option: { alignItems: 'center', paddingVertical: 6, borderRadius: WdpRadius.sm },
+  option: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingVertical: 6, borderRadius: WdpRadius.sm },
+  error: { color: WdpColors.danger, fontSize: 12, lineHeight: 18 },
   optionActive: { backgroundColor: WdpColors.teal },
   optionText: { color: WdpColors.text, fontSize: 14, fontWeight: '500' },
   optionTextActive: { color: '#fff', fontWeight: '700' },

@@ -7,6 +7,8 @@ export const authApi = {
   login: (input: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
   me: () => apiRequest<PublicUser>('/auth/me'),
+  updateProfile: (input: { fullName: string; phone: string }, expectedToken: string) =>
+    apiRequest<PublicUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(input), expectedToken }),
   logout: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
 }
 

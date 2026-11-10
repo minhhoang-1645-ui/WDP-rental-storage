@@ -27,7 +27,7 @@ export const managerSections = {
     ],
   },
   facility: {
-    title: 'Kho & bảng giá', description: 'Tra cứu tình trạng kho và giá thuê; quản lý vật tư, thiết bị bổ sung. Nhân viên tiếp nhận sự cố và thực hiện bảo trì.',
+    title: 'Kho & bảng giá', description: 'Quản lý loại kho, kho vật lý, giá thuê, vật tư và thiết bị. Nhân viên tiếp nhận sự cố và thực hiện bảo trì.',
     items: [
       { title: 'Kho vật lý', description: 'Thêm kho, quản lý vị trí và theo dõi phân bổ.', web: '/manager/units', mobile: '/manager/units' },
       { title: 'Loại kho & bảng giá', description: 'Quản lý loại kho, kích thước và giá thuê.', web: '/manager/catalog', mobile: '/manager/catalog' },

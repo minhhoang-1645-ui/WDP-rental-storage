@@ -39,7 +39,7 @@ export function StorageUnitCard({ rental, onPress }: { rental: Row; onPress?: ()
     <View style={styles.cardHeading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={styles.eyebrow}>{text(rental, 'reservationReference', 'reference') || 'Kho của bạn'}</Text><Text style={styles.cardTitle}>{text(rental, 'storageType.name', 'product.name') || 'Kho đang thuê'}</Text></View><StatusBadge status={status} /></View>
     <View style={styles.divider} />
     <View style={styles.facts}><Fact label="Mã kho" value={unitLabels.join(' · ') || 'Đang chờ cấp kho'} /><Fact label="Kết thúc thuê" value={formatDate(text(rental, 'effectiveEndDate', 'endDate'))} /><Fact label="Còn phải trả" value={formatMoney(Number(rental.billingSummary && typeof rental.billingSummary === 'object' ? ((rental.billingSummary as Row).payableBalance ?? (rental.billingSummary as Row).totalOutstanding) : rental.totalOutstanding) || 0)} /></View>
-    {rental.pendingRenewal ? <Text style={styles.notice}>Có yêu cầu gia hạn đang được WDP xử lý.</Text> : null}
+    {rental.pendingRenewal ? <Text style={styles.notice}>Có yêu cầu gia hạn đang được NestBox xử lý.</Text> : null}
   </>;
   return onPress ? <Pressable accessibilityRole="button" accessibilityLabel={`Mở ${text(rental, 'storageType.name') || 'kho đang thuê'}`} onPress={onPress} style={({ pressed }) => [styles.storageCard, pressed && styles.pressed]}>{content}</Pressable> : <View style={styles.storageCard}>{content}</View>;
 }
@@ -48,7 +48,7 @@ function Fact({ label: factLabel, value }: { label: string; value: string }) {
   return <View style={styles.fact}><Text style={styles.factLabel}>{factLabel}</Text><Text selectable style={styles.factValue}>{value}</Text></View>;
 }
 
-const journeySteps = ['Đã gửi yêu cầu', 'WDP xác nhận', 'Thanh toán', 'Bàn giao', 'Đang thuê'];
+const journeySteps = ['Đã gửi yêu cầu', 'NestBox xác nhận', 'Thanh toán', 'Bàn giao', 'Đang thuê'];
 const journeyIndex: Record<string, number> = { PENDING: 0, CONFIRMED: 1, APPROVED: 1, PENDING_PAYMENT: 2, READY_FOR_HANDOVER: 3, ACTIVE: 4, COMPLETED: 4 };
 
 export function ReservationTimeline({ reservation }: { reservation: Row }) {
@@ -58,7 +58,7 @@ export function ReservationTimeline({ reservation }: { reservation: Row }) {
   return <View style={styles.timeline} accessibilityLabel={`Tiến trình yêu cầu ${codeOf(reservation)}: ${label(status)}`}>
     <View style={styles.timelineHeading}><Text style={styles.cardTitle}>{codeOf(reservation)}</Text><StatusBadge status={status} /></View>
     {journeySteps.map((step, index) => <View key={step} style={styles.timelineRow}><View style={styles.timelineMarker}><View style={[styles.dot, index <= current && !stopped ? styles.dotActive : styles.dotIdle]} />{index < journeySteps.length - 1 && <View style={[styles.line, index < current && !stopped && styles.lineActive]} />}</View><Text style={[styles.timelineText, index === current && !stopped && styles.timelineTextActive]}>{step}{index === current ? ` · ${stopped ? label(status) : 'Hiện tại'}` : ''}</Text></View>)}
-    {stopped && <Text style={styles.notice}>Yêu cầu này đã {label(status).toLocaleLowerCase('vi-VN')}. Hãy mở chi tiết để xem hướng dẫn tiếp theo từ WDP.</Text>}
+    {stopped && <Text style={styles.notice}>Yêu cầu này đã {label(status).toLocaleLowerCase('vi-VN')}. Hãy mở chi tiết để xem hướng dẫn tiếp theo từ NestBox.</Text>}
   </View>;
 }
 

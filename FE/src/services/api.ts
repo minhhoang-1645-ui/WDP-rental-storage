@@ -1,3 +1,4 @@
+import { safeLocalStorage } from './browser-storage';
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import { userMessage } from '../utils/user-message';
 import { notifyDataChanged } from './live-events';
@@ -24,7 +25,7 @@ function rememberRole(token: string, role: string) {
   if (verifiedRoles.size > 8) verifiedRoles.delete(verifiedRoles.keys().next().value!);
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
+const API_URL = import.meta.env.VITE_API_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000/api" : "/api");
 
 export class ApiError extends Error {
   status: number;
@@ -42,9 +43,12 @@ export async function apiRequest<T>(
   options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null; responseType?: 'json' | 'blob' } = {},
 ): Promise<T> {
   const { authenticated = true, timeoutMs = 30000, signal, expectedToken, responseType = 'json', ...request } = options;
-  const token = authenticated ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+  const token = authenticated ? safeLocalStorage.getItem(AUTH_TOKEN_KEY) : null;
+  // Effects already queued when a session expires must not send protected reads
+  // or writes without credentials while the router removes the old workspace.
+  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|auth\/(me|logout))(\/|\?|$)/.test(path)) throw new DOMException('Phiên đăng nhập đã kết thúc.', 'AbortError');
   if (expectedToken !== undefined && token !== expectedToken) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
-  const mutation = /^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && /^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path);
+  const mutation = /^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && (/^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path) || path === '/auth/me' && request.method === 'PATCH');
   const submittedForm = mutation ? document.activeElement?.closest('form') ?? document.querySelector('form[data-wdp-submitting="true"]') : null;
   const submittedVersion = submittedForm?.getAttribute('data-wdp-edit-version');
   const controller = new AbortController();
@@ -59,7 +63,7 @@ export async function apiRequest<T>(
     if (request.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
-    if (token && localStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
+    if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     const apiPath = operationApiPath(path, role, request.method ?? 'GET');
     const response = await fetch(`${API_URL.replace(/\/$/, "")}${apiPath}`, { ...request, signal: controller.signal, headers });
     const payload = response.ok && responseType === 'blob' ? await response.blob() : response.status === 204 ? null : await response.json().catch((error: unknown) => {
@@ -67,11 +71,11 @@ export async function apiRequest<T>(
       return null;
     });
     if (!response.ok) {
-      if (response.status === 401 && token && localStorage.getItem(AUTH_TOKEN_KEY) === token) window.dispatchEvent(new CustomEvent("wdp-session-expired"));
+      if (response.status === 401 && token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) === token) window.dispatchEvent(new CustomEvent("wdp-session-expired"));
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
       throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
-    if (responseType === 'blob' && token && localStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
+    if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
     if (['/auth/login', '/auth/register'].includes(path) && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
     if (mutation) { if (submittedForm?.getAttribute('data-wdp-edit-version') === submittedVersion) submittedForm?.removeAttribute('data-wdp-dirty'); notifyDataChanged(path); }

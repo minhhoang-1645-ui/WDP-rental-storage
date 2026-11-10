@@ -1,6 +1,6 @@
 import { useCustomerOnlinePayment } from './useCustomerOnlinePayment'
 import { useCustomerPagination } from '../../components/customer/useCustomerPagination'
-import { CreditCard, ExternalLink, FileText, History, QrCode, RefreshCw, Wallet } from 'lucide-react'
+import { CreditCard, ExternalLink, FileText, History, RefreshCw, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
@@ -91,8 +91,8 @@ function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineIn
       <td data-label="Thao tác"><div className="payment-actions">
         <button type="button" className="button-secondary payment-table-action" onClick={() => onBankTransfer(invoice)}>{payable ? 'Chi tiết & chuyển khoản' : 'Xem hóa đơn'}</button>
         {payable && (expired ? <p>Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p> : unsigned ? <><p>Bạn cần ký tài liệu trước khi thanh toán.</p><Link className="portal-text-button" to={invoice.signing?.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(invoice.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(invoice.reservation.reference)}`}>Xem và ký tài liệu</Link></> : pendingInvoiceIds.has(invoice.id) ? <span className="payment-pending-label">Đang chờ NestBox xác nhận</span> : ['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) ? <>
-          {!vnpayConfigured ? <><small>Thanh toán trực tuyến hiện chưa khả dụng. Bạn có thể xem chi tiết hóa đơn để chuyển khoản hoặc liên hệ cơ sở thanh toán trực tiếp.</small><Link className="portal-text-button" to={`/customer/support?reservation=${encodeURIComponent(invoice.reservation.id)}`}>Hỗ trợ về hóa đơn</Link></> : <><button type="button" className="button-secondary payment-table-action" disabled={!vnpayConfigured || Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAY')}><ExternalLink size={15} /> Thanh toán VNPay</button>
-          <button type="button" className="button-primary payment-table-action" disabled={!vnpayConfigured || Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAYQR')}><QrCode size={15} />{onlineInvoiceId === invoice.id ? 'Đang mở VNPay QR…' : 'Quét VNPay QR'}</button></>}
+          {!vnpayConfigured ? <><small>Thanh toán trực tuyến hiện chưa khả dụng. Bạn có thể xem chi tiết hóa đơn để chuyển khoản hoặc liên hệ cơ sở thanh toán trực tiếp.</small><Link className="portal-text-button" to={`/customer/support?reservation=${encodeURIComponent(invoice.reservation.id)}`}>Hỗ trợ về hóa đơn</Link></> : <><button type="button" className="button-secondary payment-table-action" disabled={!vnpayConfigured || Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAY')}><ExternalLink size={15} />{onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button>
+          </>}
         </> : null)}
       </div></td>
     </tr>;

@@ -9,6 +9,8 @@ import {
   first,
   label,
   customer,
+  rows,
+  date,
   type Row,
 } from "../../components/manager/portal-data";
 import {
@@ -38,6 +40,7 @@ const finished = (task: Task) =>
 const relatedUnit = (row: Row) =>
   first(
     row,
+    "currentStorageUnit.unitNumber",
     "storageUnit.unitNumber",
     "unit.unitCode",
     "reservation.reference",
@@ -375,6 +378,7 @@ function AssignmentDetail({
         {first(task.row, "subject") && first(task.row, "description") && (
           <p>{first(task.row, "description")}</p>
         )}
+        {task.kind === 'stock-movements' && <section><h3>Kết quả kiểm đếm</h3><p>Hoàn tất: {date(task.row.completedAt, true)} · {first(task.row, 'completedBy.fullName') || 'Chưa hoàn tất'}</p><p>Lý do / ghi chú: {first(task.row, 'completionNote') || 'Chưa ghi nhận'}</p><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Mặt hàng</th><th>Yêu cầu</th><th>Thực tế</th><th>Chênh lệch</th></tr></thead><tbody>{rows(task.row.lines).map(line => <tr key={first(line, 'id')}><td>{first(line, 'storedItem.name')}<small>{first(line, 'storedItem.unit')}</small></td><td>{String(line.requestedQty)}</td><td>{typeof line.actualQty === 'number' ? line.actualQty : 'Chưa kiểm đếm'}</td><td>{typeof line.actualQty === 'number' && typeof line.requestedQty === 'number' ? line.actualQty - line.requestedQty : '—'}</td></tr>)}</tbody></table></div></section>}
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}

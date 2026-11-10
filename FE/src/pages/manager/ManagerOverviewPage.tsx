@@ -20,7 +20,7 @@ import {
 import { money, type Row } from "../../components/manager/portal-data";
 import { WorkHub } from "../../components/workspace/WorkHub";
 import { useApiResource } from "../../services/useApiResource";
-import { usePaginatedResource } from "../../services/usePaginatedResource";
+import type { ManagerReport } from "../../types/manager-report";
 import { useLiveRefresh } from "../../services/live-events";
 import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from "../../utils/work-queue";
 import { activitySources } from "../../utils/activity";
@@ -33,8 +33,9 @@ export function ManagerOverviewPage() {
     user?.id,
     true,
   );
-  const units = usePaginatedResource<Row>("/manager/units", user?.id, true);
-  useLiveRefresh("/manager/*", summary.refresh);
+  const units = useApiResource<ManagerReport>("/manager/dashboard/analytics", user?.id, true);
+  const unitCounts: Record<string, number | undefined> = { AVAILABLE: units.data?.units.available, OCCUPIED: units.data?.units.occupied, RESERVED: units.data?.units.reserved, MAINTENANCE: units.data?.units.maintenance };
+  useLiveRefresh("/manager/*", () => { summary.refresh(); units.refresh(); });
   const refresh = () => {
     summary.refresh();
     units.refresh();
@@ -53,8 +54,8 @@ export function ManagerOverviewPage() {
   ].flatMap((kind) =>
     (activity.data[kind] ?? []).filter((row) => assignmentNeedsAttention(kind, row)),
   );
-  const available = units.data ? units.data.items.filter(row => row.status === 'AVAILABLE').length : summary.data?.availableUnits;
-  const occupied = units.data ? units.data.items.filter(row => row.status === 'OCCUPIED').length : summary.data?.occupiedUnits;
+  const available = units.data?.units.available;
+  const occupied = units.data?.units.occupied;
   const count = (kinds: string[], value: number) =>
     activity.loading ||
     kinds.some(
@@ -128,13 +129,13 @@ export function ManagerOverviewPage() {
       />
       <ActivitySummary />
       <LoadState
-        loading={summary.loading}
-        error={summary.error}
+        loading={summary.loading || units.loading}
+        error={summary.error || units.error}
         retry={summary.refresh}
       />
       <div className="portal-metrics" aria-label="Tình hình cơ sở">
         {[
-          ["Tổng kho vật lý", units.data?.total, "/manager/units"],
+          ["Tổng kho vật lý", units.data?.units.total, "/manager/units"],
           ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
           ["Kho sẵn sàng", available, "/manager/units?status=AVAILABLE"],
           [
@@ -170,7 +171,7 @@ export function ManagerOverviewPage() {
               <div
                 className="portal-capacity"
                 role="img"
-                aria-label={`${units.data.total} kho vật lý`}
+                aria-label={`${units.data.units.total} kho vật lý`}
               >
                 {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
                   (status) => (
@@ -178,7 +179,7 @@ export function ManagerOverviewPage() {
                       key={status}
                       className={`is-${status.toLowerCase()}`}
                       style={{
-                        width: `${units.data!.total ? (units.data!.items.filter((row) => row.status === status).length / units.data!.total) * 100 : 0}%`,
+                        width: `${units.data!.units.total ? ((unitCounts[status] ?? 0) / units.data!.units.total) * 100 : 0}%`,
                       }}
                     />
                   ),
@@ -191,9 +192,7 @@ export function ManagerOverviewPage() {
                       <Status value={status} />
                       <strong>
                         {
-                          units.data!.items.filter(
-                            (row) => row.status === status,
-                          ).length
+                          unitCounts[status]
                         }
                       </strong>
                     </Link>
@@ -247,14 +246,7 @@ export function ManagerOverviewPage() {
         <div>
           <span>Tổng dư nợ hóa đơn</span>
           <strong>
-            {financeReady
-              ? money(
-                  outstandingInvoices.reduce(
-                    (sum, row) => sum + Number(row.balanceDue || 0),
-                    0,
-                  ),
-                )
-              : "—"}
+            {units.data ? money(units.data.finance.outstandingAmount) : "—"}
           </strong>
           <small>
             {financeReady

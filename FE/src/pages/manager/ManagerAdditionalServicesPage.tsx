@@ -1,3 +1,4 @@
+import { serviceUnits, servicePriceBasis } from '../../utils/service-units';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -23,7 +24,7 @@ export function ManagerAdditionalServicesPage() {
     {resource.data && !resource.data.length && <Empty title="Chưa có dịch vụ bổ sung" />}
     {resource.data && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Dịch vụ</th><th>Loại</th><th>Giá</th><th>Trạng thái</th><th>Tồn kho / Công suất</th><th>Thao tác</th></tr></thead><tbody>{resource.data.map(item => {
       const state = inventory.data?.find(entry => entry.serviceId === item.id);
-      return <tr key={item.id}><td>{item.name}<small>{item.code}</small></td><td>{item.kind === 'PURCHASE' ? 'Mua' : 'Thuê'} / {item.billingUnit === 'ONE_TIME' ? 'Một lần' : item.billingUnit === 'DAY' ? 'Ngày' : 'Tháng'}</td><td>{money(item.unitPrice)}</td><td>{item.isActive ? 'Đang hoạt động' : 'Đã tắt'}</td><td>{state ? item.kind === 'PURCHASE' ? `${state.stockOnHand} (đã giữ ${state.reservedQuantity}, còn ${state.availableQuantity})` : state.rentalCapacity : 'Chưa tải được'}</td><td><button className="button-secondary" onClick={() => setActive(item)}>Chỉnh sửa</button><button className="button-secondary" disabled={!state} onClick={() => setStock(item)}>Cập nhật tồn kho</button></td></tr>;
+      return <tr key={item.id}><td>{item.name}<small>{item.code}</small></td><td>{item.kind === 'PURCHASE' ? 'Mua' : 'Thuê'} / {item.billingUnit === 'ONE_TIME' ? 'Một lần' : item.billingUnit === 'DAY' ? 'Ngày' : 'Tháng'}</td><td>{money(item.unitPrice)}<small>{servicePriceBasis(item)}</small></td><td>{item.isActive ? 'Đang hoạt động' : 'Đã tắt'}</td><td>{state ? item.kind === 'PURCHASE' ? `${state.stockOnHand} (đã giữ ${state.reservedQuantity}, còn ${state.availableQuantity})` : state.rentalCapacity : 'Chưa tải được'}</td><td><button className="button-secondary" onClick={() => setActive(item)}>Chỉnh sửa</button><button className="button-secondary" disabled={!state} onClick={() => setStock(item)}>Cập nhật tồn kho</button></td></tr>;
     })}</tbody></table></div>}
     {active && <ServiceForm key={active === 'new' ? 'new' : active.id} item={active === 'new' ? null : active} onClose={() => setActive(null)} onSuccess={() => { setActive(null); setNotice('Đã lưu dịch vụ. Báo giá lịch sử được giữ nguyên.'); refresh(); }} />}
     {stock && <InventoryForm key={stock.id} item={stock} state={inventory.data?.find(item => item.serviceId === stock.id)} onClose={() => setStock(null)} onSuccess={() => { setStock(null); setNotice('Đã cập nhật tồn kho qua hệ thống.'); refresh(); }} />}
@@ -32,6 +33,7 @@ export function ManagerAdditionalServicesPage() {
 
 function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | null; onClose: () => void; onSuccess: () => void }) {
   const [kind, setKind] = useState(item?.kind ?? 'PURCHASE');
+  const [physicalUnit, setPhysicalUnit] = useState(item?.physicalUnit ?? '');
   const [billingUnit, setBillingUnit] = useState(item?.billingUnit ?? 'ONE_TIME');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +43,7 @@ function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | n
     const data = new FormData(event.currentTarget);
     lock.current = true; setBusy(true); setError('');
     try {
-      await mutate(`/manager/additional-services${item ? '/' + encodeURIComponent(item.id) : ''}`, item ? 'PATCH' : 'POST', { code: String(data.get('code')).trim(), name: String(data.get('name')).trim(), description: String(data.get('description')).trim() || null, kind, billingUnit, unitPrice: Number(data.get('unitPrice')), isActive: data.has('isActive') });
+      await mutate(`/manager/additional-services${item ? '/' + encodeURIComponent(item.id) : ''}`, item ? 'PATCH' : 'POST', { code: String(data.get('code')).trim(), name: String(data.get('name')).trim(), description: String(data.get('description')).trim() || null, kind, billingUnit, ...(physicalUnit ? { physicalUnit } : {}), unitPrice: Number(data.get('unitPrice')), isActive: data.has('isActive') });
       onSuccess();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được dịch vụ.'); }
     finally { lock.current = false; setBusy(false); }
@@ -52,7 +54,9 @@ function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | n
       <label className="field-label">Tên dịch vụ<input name="name" required minLength={2} maxLength={120} defaultValue={item?.name} /></label>
       <label className="field-label">Mô tả<textarea name="description" maxLength={1000} defaultValue={item?.description ?? ''} /></label>
       <label className="field-label">Loại<select value={kind} disabled={Boolean(item)} onChange={event => { const value = event.target.value as AdditionalService['kind']; setKind(value); setBillingUnit(value === 'PURCHASE' ? 'ONE_TIME' : 'DAY'); }}><option value="PURCHASE">Mua</option><option value="RENTAL">Thuê</option></select></label>
-      <label className="field-label">Đơn vị tính<select value={billingUnit} onChange={event => setBillingUnit(event.target.value as AdditionalService['billingUnit'])}>{kind === 'PURCHASE' ? <option value="ONE_TIME">Một lần</option> : <><option value="DAY">Ngày</option><option value="MONTH">Tháng</option></>}</select></label>
+      <label className="field-label">Đơn vị vật lý<select aria-label="Đơn vị vật lý" required={!item} value={physicalUnit} disabled={Boolean(item?.physicalUnit)} onChange={event => setPhysicalUnit(event.target.value)}><option value="">Chưa thiết lập</option>{serviceUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
+      <small>Đơn vị đã thiết lập được giữ cố định để không đổi nghĩa số lượng tồn. Dịch vụ cũ chưa có đơn vị cần được đối chiếu thực tế trước khi chọn.</small>
+      <label className="field-label">Chu kỳ tính tiền<select value={billingUnit} onChange={event => setBillingUnit(event.target.value as AdditionalService['billingUnit'])}>{kind === 'PURCHASE' ? <option value="ONE_TIME">Một lần</option> : <><option value="DAY">Ngày</option><option value="MONTH">Tháng</option></>}</select></label>
       <label className="field-label">Giá đã duyệt (VND)<input name="unitPrice" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required defaultValue={item?.unitPrice ?? ''} /></label>
       <label className="portal-checkbox"><input type="checkbox" name="isActive" defaultChecked={item?.isActive ?? true} />Đang hoạt động</label>
       <button type="submit" className="button-primary">{busy ? 'Đang lưu…' : 'Lưu dịch vụ'}</button>
@@ -72,5 +76,5 @@ function InventoryForm({ item, state, onClose, onSuccess }: { item: AdditionalSe
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không cập nhật được tồn kho.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <Modal title={`Tồn kho ${item.name}`} onClose={onClose} busy={busy}><form className="portal-form" onSubmit={submit}>{error && <div className="booking-alert is-error" role="alert">{error}</div>}<fieldset disabled={busy}><label className="field-label">{purchase ? 'Tồn kho thực tế' : 'Công suất cho thuê'}<input name="quantity" type="number" required min={0} max={Number.MAX_SAFE_INTEGER} step={1} defaultValue={purchase ? state?.stockOnHand : state?.rentalCapacity} /></label><p>Hệ thống kiểm tra các số lượng đã giữ trước khi lưu.</p><button type="submit" className="button-primary">{busy ? 'Đang lưu…' : 'Lưu tồn kho'}</button></fieldset></form></Modal>;
+  return <Modal title={`Tồn kho ${item.name}`} onClose={onClose} busy={busy}><form className="portal-form" onSubmit={submit}>{error && <div className="booking-alert is-error" role="alert">{error}</div>}<fieldset disabled={busy}><label className="field-label">{purchase ? 'Tồn kho thực tế' : 'Công suất cho thuê'}<input name="quantity" type="number" required min={0} max={Number.MAX_SAFE_INTEGER} step={1} defaultValue={purchase ? state?.stockOnHand : state?.rentalCapacity} /></label><p>Đơn vị: {item.physicalUnit ?? 'chưa thiết lập'}. Không chuyển đổi số lượng khi đổi nhãn đơn vị. Hệ thống kiểm tra số lượng đã giữ trước khi lưu.</p><button type="submit" className="button-primary">{busy ? 'Đang lưu…' : 'Lưu tồn kho'}</button></fieldset></form></Modal>;
 }

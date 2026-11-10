@@ -24,6 +24,7 @@ export const managerSections = {
       { title: 'Hợp đồng thuê', description: 'Tra cứu thời hạn, chữ ký và các hồ sơ liên quan.', web: '/manager/operations/contracts', mobile: '/manager/contracts' },
       { title: 'Kho đang thuê', description: 'Giám sát thời hạn và công nợ, không bàn giao thay nhân viên.', web: '/manager/operations/rentals', mobile: '/manager/rentals' },
       { title: 'Khách hàng thuê kho', description: 'Tra cứu liên hệ và lịch sử thuê để đối chiếu hồ sơ.', web: '/manager/customers', mobile: '/manager/customers' },
+      { title: 'Hàng đang lưu theo kho', description: 'Tra cứu kho hiện tại, tồn thực tế và phiếu Staff kiểm đếm.', web: '/manager/stored-items', mobile: '/manager/stock-movements' },
     ],
   },
   facility: {

@@ -12,7 +12,6 @@ describe('unit responsibility feature gate and ownership', () => {
     const service = new UnitStaffService(db as never, config(false) as never);
     expect(await service.list(manager)).toMatchObject({ enabled: false, items: [] });
     expect(await service.resolveStaff(db as never, ['unit'])).toBeNull();
-    await service.recoverPendingStockMovements(staff.id);
     await expect(service.assign('unit', { staffUserId: 'staff', expectedAssignmentId: null }, manager)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(db.unitStaffAssignment.findMany).not.toHaveBeenCalled();
     expect(db.$executeRaw).not.toHaveBeenCalled();
@@ -42,7 +41,7 @@ describe('unit responsibility feature gate and ownership', () => {
     expect(tx.unitStaffAssignment.create).not.toHaveBeenCalled();
     expect(await service.assign('unit', { staffUserId: 'staff', expectedAssignmentId: 'old' }, manager)).toMatchObject({ id: 'new' });
     expect(tx.unitStaffAssignment.update).toHaveBeenCalledWith({ where: { id: 'old' }, data: { endedAt: expect.any(Date) } });
-    expect(tx.stockMovement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'REQUESTED' }) }));
+    expect(tx.stockMovement.updateMany).not.toHaveBeenCalled();
   });
   it('retries an unchanged owner without replacing assignment history and picks up contract-linked unassigned support', async () => {
     const assignment = { id: 'assignment', staffUserId: staff.id };
@@ -54,6 +53,6 @@ describe('unit responsibility feature gate and ownership', () => {
     expect(tx.unitStaffAssignment.update).not.toHaveBeenCalled(); expect(tx.unitStaffAssignment.create).not.toHaveBeenCalled();
     expect(tx.supportRequest.updateMany).toHaveBeenCalledWith({ where: { OR: [{ storageUnitId: 'unit' }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnitId: 'unit' } } }], assignedStaffUserId: null, status: 'OPEN', subject: { not: 'Đề nghị trả kho trước hạn' } }, data: { assignedStaffUserId: staff.id, status: 'ASSIGNED' } });
     expect(tx.maintenanceRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'OPEN' }) }));
-    expect(tx.stockMovement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'REQUESTED' }) }));
+    expect(tx.stockMovement.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
 import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
@@ -172,6 +173,7 @@ export function AppRouter() {
           <Route index element={<StaffOperationsPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
+          <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
@@ -196,6 +198,9 @@ export function AppRouter() {
       <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
+          <Route path="stored-items" element={<OperationalStoredItemsPage role="MANAGER" />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
           {operationalRoutes("/manager")}
         </Route>
       </Route>

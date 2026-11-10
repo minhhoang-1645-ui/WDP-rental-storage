@@ -1,283 +1,68 @@
-import { Download, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { usePortalSnapshot } from "../../services/usePortalSnapshot";
-import {
-  code,
-  first,
-  money,
-  type Row,
-} from "../../components/manager/portal-data";
-import {
-  LoadState,
-  PageHeader,
-  Status,
-} from "../../components/manager/PortalUi";
+import { Download, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
+import { money, date } from '../../components/manager/portal-data';
+import { LoadState, PageHeader, Empty } from '../../components/manager/PortalUi';
+import { useApiResource } from '../../services/useApiResource';
+import { useLiveRefresh } from '../../services/live-events';
+import type { ManagerReport } from '../../types/manager-report';
 
-function sum(items: Row[], field: string) {
-  return items.reduce((value, row) => value + Number(row[field]), 0);
-}
 export function ManagerAnalyticsPage() {
-  const { data, loading, error, refresh } = usePortalSnapshot();
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const inPeriod = (row: Row, field: string) => {
-    const value = first(row, field);
-    const day = value
-      ? new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Bangkok",
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }).format(new Date(value))
-      : "";
-    return (!from || day >= from) && (!to || day <= to);
-  };
-  const invoices =
-    data?.invoices.items.filter((row) => inPeriod(row, "issuedAt")) ?? [];
-  const payments =
-    data?.payments.items.filter((row) => inPeriod(row, "receivedAt")) ?? [];
-  const reservations =
-    data?.reservations.items.filter((row) => inPeriod(row, "createdAt")) ?? [];
-  const billed = sum(invoices, "totalAmount");
-  const paid = sum(invoices, "amountPaid");
-  const outstanding = sum(invoices, "balanceDue");
+  const { user } = useAuth();
+  const [from, setFrom] = useState(''), [to, setTo] = useState('');
+  const invalid = Boolean(from && to && from > to);
+  const query = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) });
+  const report = useApiResource<ManagerReport>(invalid ? null : `/manager/dashboard/analytics?${query}`, user?.id, true);
+  useLiveRefresh('/manager/*', report.refresh);
+  const data = report.data;
+  const metrics = data ? [
+    ['Tiền đã thu trong kỳ', money(data.finance.collectedAmount), `${data.finance.paymentCount} khoản thu đã ghi nhận; gồm cọc và dịch vụ.`, '/manager/operations/payments'],
+    ['Cọc trên hóa đơn trả đủ trong kỳ', money(data.finance.depositOnFullyPaidInvoices), 'Theo ngày trả đủ; chưa gồm cọc của hóa đơn trả một phần. Không phải doanh thu thuê.', '/manager/operations/invoices?status=PAID'],
+    ['Công nợ hiện tại', money(data.finance.outstandingAmount), `${data.finance.unpaidInvoices} hóa đơn chưa trả đủ còn dư; không gồm hóa đơn đã hủy.`, '/manager/operations/invoices'],
+    ['Hoàn cọc đã duyệt, chưa kết thúc', money(data.finance.approvedRefundOutstanding), 'Theo quyết toán đã duyệt; chưa gồm cọc đang chờ xét duyệt hoặc chưa quyết toán.', '/manager/operations/deposit-settlements'],
+  ] : [];
   const exportCsv = () => {
-    const escape = (value: unknown) => {
-      const text = String(value ?? "");
-      return (
-        '"' +
-        (/^[=+@\-\t\r]/.test(text) ? "'" : "") +
-        text.replaceAll('"', '""') +
-        '"'
-      );
-    };
-    const output = [
-      [
-        "Mã hóa đơn",
-        "Loại",
-        "Khách hàng",
-        "Ngày phát hành",
-        "Trạng thái",
-        "Tổng tiền VND",
-        "Đã thu VND",
-        "Còn thu VND",
-      ],
-      ...invoices.map((row) => [
-        code(row),
-        row.type,
-        first(row, "reservation.customer.fullName"),
-        row.issuedAt,
-        row.status,
-        row.totalAmount,
-        row.amountPaid,
-        row.balanceDue,
-      ]),
-    ]
-      .map((row) => row.map(escape).join(","))
-      .join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob(["\uFEFF" + output], { type: "text/csv;charset=utf-8" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `nestbox-hoa-don-${from || "tat-ca"}-${to || "hien-tai"}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    if (!data) return;
+    const csv = [['Chỉ số', 'Giá trị', 'Định nghĩa'], ...metrics.map(([name, value, definition]) => [name, value, definition])].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `nestbox-bao-cao-${from || 'tat-ca'}-${to || 'hien-tai'}.csv`; link.click(); URL.revokeObjectURL(url);
   };
-  return (
-    <section>
-      <PageHeader
-        title="Báo cáo vận hành"
-        description="Tổng hợp toàn bộ trang dữ liệu hóa đơn, khoản thu và kho của cơ sở."
-      >
-        <button
-          className="button-secondary"
-          onClick={exportCsv}
-          disabled={!data || loading}
-        >
-          <Download size={16} />
-          Xuất hóa đơn CSV
-        </button>
-        <button
-          className="button-secondary"
-          onClick={refresh}
-          disabled={loading}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      <div className="portal-toolbar">
-        <label className="field-label">
-          Từ ngày
-          <input
-            type="date"
-            max={to || undefined}
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label className="field-label">
-          Đến ngày
-          <input
-            type="date"
-            min={from || undefined}
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-        <button
-          className="button-secondary"
-          onClick={() => {
-            setFrom("");
-            setTo("");
-          }}
-        >
-          Toàn bộ thời gian
-        </button>
-      </div>
-      <LoadState loading={loading} error={error} retry={refresh} />
-      {data && (
-        <>
-          <div className="portal-metrics">
-            <article className="portal-metric">
-              <span>Hóa đơn phát hành trong kỳ</span>
-              <strong>{money(billed)}</strong>
-              <small>{invoices.length} hóa đơn</small>
-            </article>
-            <article className="portal-metric">
-              <span>Đã thu cho hóa đơn trong kỳ</span>
-              <strong>{money(paid)}</strong>
-              <small>
-                {Number.isFinite(billed) && Number.isFinite(paid) ? billed ? Math.round((paid / billed) * 100) : 0 : '—'}% giá trị hóa
-                đơn
-              </small>
-            </article>
-            <article className="portal-metric">
-              <span>Dư nợ hóa đơn trong kỳ</span>
-              <strong>{money(outstanding)}</strong>
-              <small>Số dư tại thời điểm tải dữ liệu</small>
-            </article>
-            <article className="portal-metric">
-              <span>Khoản thu nhận trong kỳ</span>
-              <strong>{money(sum(payments, "amount"))}</strong>
-              <small>{payments.length} khoản thu</small>
-            </article>
-          </div>
-          <p className="portal-report-note">
-            Hóa đơn lọc theo ngày phát hành; khoản thu lọc theo ngày tiếp nhận.
-            Số tiền bao gồm tiền thuê, cọc và phí được duyệt. Tiền hoàn cọc
-            không được trừ trong các chỉ số này.
-          </p>
-          <div className="portal-overview-grid">
-            <section className="manager-section">
-              <h2>Cơ cấu kho hiện tại</h2>
-              <div className="manager-table-wrap">
-                <table className="manager-table">
-                  <thead>
-                    <tr>
-                      <th>Loại kho</th>
-                      <th>Tổng</th>
-                      <th>Sẵn sàng</th>
-                      <th>Đang dùng</th>
-                      <th>Giữ kho / Bảo trì</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      ...new Set(
-                        data.units.items.map((row) =>
-                          first(row, "storageType.name"),
-                        ),
-                      ),
-                    ].map((name) => {
-                      const group = data.units.items.filter(
-                        (row) => first(row, "storageType.name") === name,
-                      );
-                      return (
-                        <tr key={name}>
-                          <td>
-                            <strong>{name}</strong>
-                          </td>
-                          <td>{group.length}</td>
-                          <td>
-                            {
-                              group.filter((row) => row.status === "AVAILABLE")
-                                .length
-                            }
-                          </td>
-                          <td>
-                            {
-                              group.filter((row) => row.status === "OCCUPIED")
-                                .length
-                            }
-                          </td>
-                          <td>
-                            {
-                              group.filter((row) => row.status === "RESERVED")
-                                .length
-                            }{" "}
-                            /{" "}
-                            {
-                              group.filter(
-                                (row) => row.status === "MAINTENANCE",
-                              ).length
-                            }
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            <section className="manager-section">
-              <h2>Đặt kho trong kỳ ({reservations.length})</h2>
-              <div className="portal-stat-list">
-                {[
-                  "PENDING",
-                  "CONFIRMED",
-                  "REJECTED",
-                  "CANCELLED",
-                  "EXPIRED",
-                ].map((status) => (
-                  <div key={status}>
-                    <Status value={status} />
-                    <strong>
-                      {
-                        reservations.filter((row) => row.status === status)
-                          .length
-                      }
-                    </strong>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-          <section className="manager-section">
-            <h2>Hóa đơn theo trạng thái</h2>
-            <div className="portal-stat-list">
-              {["OPEN", "PARTIALLY_PAID", "PAID"].map((status) => (
-                <div key={status}>
-                  <Status value={status} />
-                  <span>
-                    {invoices.filter((row) => row.status === status).length} hóa
-                    đơn
-                  </span>
-                  <strong>
-                    {money(
-                      sum(
-                        invoices.filter((row) => row.status === status),
-                        "totalAmount",
-                      ),
-                    )}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        </>
-      )}
-    </section>
-  );
+  return <section>
+    <PageHeader title="Báo cáo vận hành" description="Tổng hợp toàn bộ bản ghi tại cơ sở, không giới hạn theo trang danh sách.">
+      <button className="button-secondary" disabled={!data || report.refreshing} onClick={exportCsv}><Download size={16} />Xuất KPI tài chính CSV</button>
+      <button className="button-secondary" disabled={report.loading || report.refreshing} onClick={report.refresh}><RefreshCw size={16} />Làm mới</button>
+    </PageHeader>
+    <div className="portal-toolbar">
+      <label className="field-label">Từ ngày<input type="date" value={from} max={to || undefined} onChange={event => setFrom(event.target.value)} /></label>
+      <label className="field-label">Đến ngày<input type="date" value={to} min={from || undefined} onChange={event => setTo(event.target.value)} /></label>
+      <button className="button-secondary" onClick={() => { setFrom(''); setTo(''); }}>Toàn bộ thời gian</button>
+    </div>
+    {invalid && <p role="alert" className="booking-alert is-error">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}
+    <LoadState loading={report.loading} error={report.error} retry={report.refresh} />
+    {data && !report.error && <>
+      <p className="portal-report-note">Cập nhật: {date(data.asOf, true)} · UTC+7. Lọc khoản thu theo ngày nhận tiền, cọc theo ngày hóa đơn trả đủ. Các chỉ số hiện tại không lọc theo kỳ.</p>
+      <div className="portal-metrics">{metrics.map(([title, value, description, path]) => <Link className="portal-metric" to={path} key={title}><span>{title}</span><strong>{value}</strong><small>{description}</small></Link>)}</div>
+      <p className="booking-alert">Tiền đã thu chỉ cộng các khoản tiền đã ghi nhận, không cộng trùng với hóa đơn hay thông báo chuyển khoản. VNPay đang chờ và thông báo chưa xác minh không được tính. Đây là dòng tiền thu, không phải doanh thu kế toán; chưa trừ khoản hoàn.</p>
+      <section className="manager-section"><h2>Kho và hợp đồng hiện tại</h2><div className="portal-metrics">{[
+        ['Tổng kho vật lý', data.units.total, 'Tất cả kho vật lý tại cơ sở.'], ['Kho sẵn sàng', data.units.available, 'Sẵn sàng; còn cần kiểm tra lịch kỳ thuê.'],
+        ['Kho đang dùng', data.units.occupied, 'Đang sử dụng thực tế.'], ['Kho đang giữ', data.units.reserved, 'Đang được giữ, chưa sử dụng.'], ['Kho bảo trì', data.units.maintenance, 'Đang bảo trì, chưa khả dụng.'],
+        ['Tỷ lệ sử dụng', data.units.utilizationPercent === null ? '—' : `${data.units.utilizationPercent}%`, 'Kho đang sử dụng / tổng kho vật lý, gồm cả kho bảo trì trong mẫu số.'],
+        ['Hợp đồng hoạt động', data.activeContracts, 'Hợp đồng đang hoạt động; không phải số đơn đặt.'],
+      ].map(([title, value, description]) => <article className="portal-metric" key={String(title)}><span>{title}</span><strong>{value}</strong><small>{description}</small></article>)}</div><Link className="button-secondary" to="/manager/units">Tra cứu kho</Link></section>
+      <section className="manager-section"><h2>Hồ sơ cần Manager xử lý</h2><div className="portal-stat-list">{[
+        ['unassignedStock', 'Nhập – xuất chưa phân công', '/manager/assignments?kind=stock-movements&assignment=unassigned'],
+        ['unassignedSupport', 'Hỗ trợ chưa phân công', '/manager/assignments?kind=support-requests&assignment=unassigned'],
+        ['unassignedMaintenance', 'Bảo trì chưa phân công', '/manager/assignments?kind=maintenance&assignment=unassigned'],
+        ['escalatedSupport', 'Hỗ trợ chuyển cấp', '/manager/operations/support-requests?status=ESCALATED'],
+        ['maintenanceReview', 'Bảo trì chờ nghiệm thu', '/manager/operations/maintenance?status=AWAITING_VERIFICATION'],
+        ['paymentVerification', 'Chuyển khoản chờ xác minh', '/manager/payment-submissions'], ['depositReview', 'Cọc chờ xét duyệt', '/manager/operations/deposit-settlements'],
+        ['onlineReconciliation', 'Giao dịch cần đối soát / hoàn tiền', '/manager/online-payment-reconciliations'],
+      ].map(([key, title, path]) => <div key={key}><Link to={path}>{title}</Link><strong>{data.queue[key]}</strong></div>)}</div></section>
+      <section className="manager-section"><h2>Việc đang giao cho Staff</h2><p>Đếm việc đã giao chưa hoàn tất trong ba nhóm nhập–xuất, hỗ trợ và bảo trì; không gồm việc đã chuyển quản lý nghiệm thu. Không đại diện toàn bộ công việc của nhân viên.</p>
+        {!data.workload.length ? <Empty title="Chưa có nhân viên" /> : <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Nhân viên</th><th>Nhập – xuất</th><th>Hỗ trợ</th><th>Bảo trì</th><th>Tổng ba nhóm</th></tr></thead><tbody>{data.workload.map(person => <tr key={person.id}><td>{person.fullName}<small>{person.accountStatus === 'ACTIVE' ? 'Đang hoạt động' : 'Tài khoản không hoạt động'}</small></td><td>{person.stock}</td><td>{person.support}</td><td>{person.maintenance}</td><td>{person.stock + person.support + person.maintenance}</td></tr>)}</tbody></table></div>}
+        <Link className="button-secondary" to="/manager/assignments">Phân công và xem kết quả</Link> <Link className="button-secondary" to="/manager/stored-items">Hàng đang lưu theo kho</Link>
+      </section>
+    </>}
+  </section>;
 }

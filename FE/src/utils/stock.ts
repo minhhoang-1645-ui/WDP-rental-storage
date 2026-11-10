@@ -1,3 +1,4 @@
+import { isItemUnit } from './item-units';
 import type { StockDraftLine, StoredItem, StockMovement } from '../types/stock';
 
 export const stockQuantity = (value: unknown) => typeof value === 'string' && value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 1000000;
@@ -22,6 +23,7 @@ export function stockCreateInput(contractId: string, type: 'IN' | 'OUT', lines: 
       seen.add(item.id);
       if (type === 'OUT' && quantity > item.balance) throw new Error(`Dòng ${index + 1}: số lượng xuất vượt tồn hiện tại (${item.balance}).`);
     } else if (type === 'OUT' || !line.name.trim() || !line.unit.trim()) throw new Error(`Dòng ${index + 1}: chọn mặt hàng hoặc nhập tên và đơn vị hàng mới.`);
+    if (!item && !isItemUnit(line.unit.trim())) throw new Error('Chọn đơn vị hàng mới trong danh mục.');
     return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.note.trim() ? { note: line.note.trim() } : {}) };
   });
   return { rentalContractId: contractId, type, lines: parsed, scheduledAt: stockSchedule(scheduledAt), ...(note.trim() ? { note: note.trim() } : {}) };
@@ -30,8 +32,9 @@ export function stockCompleteInput(row: StockMovement, quantities: Record<string
   if (!row.lines.length) throw new Error('Phiếu không có dòng hàng.');
   return { note: note.trim() || undefined, lines: row.lines.map(line => {
     const raw = quantities[line.id];
-    if (!stockQuantity(raw)) throw new Error(`Số lượng thực tế của ${line.storedItem.name} phải là số nguyên từ 1 đến 1.000.000.`);
+    if (typeof raw !== 'string' || !raw.trim() || !Number.isSafeInteger(Number(raw)) || Number(raw) < 0 || Number(raw) > 1000000) throw new Error(`Nhập số lượng thực tế của ${line.storedItem.name}, từ 0 đến 1.000.000.`);
     const actualQty = Number(raw);
+    if (actualQty !== line.requestedQty && !note.trim()) throw new Error('Cần ghi chú lý do chênh lệch số lượng kiểm đếm.');
     if (row.type === 'OUT' && actualQty > line.storedItem.balance) throw new Error(`Không đủ tồn của ${line.storedItem.name}. Tải lại để kiểm tra số lượng mới nhất.`);
     return { lineId: line.id, actualQty };
   }) };

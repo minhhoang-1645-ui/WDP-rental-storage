@@ -332,6 +332,7 @@ model AdditionalService {
   description   String?
   kind          AdditionalServiceKind
   billingUnit   AdditionalServiceBillingUnit
+  physicalUnit  String?
   unitPrice     BigInt?
   imageUrl      String?
   imageAlt      String?
@@ -747,6 +748,7 @@ model StockMovement {
   completedBy           User?               @relation("StockMovementCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
   completedAt           DateTime?
   completionNote        String?
+  storageUnitSnapshot   Json?
   idempotencyKey        String              @unique
   lines                 StockMovementLine[]
   createdAt             DateTime            @default(now())

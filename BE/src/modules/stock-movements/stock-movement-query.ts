@@ -14,3 +14,12 @@ export function parseStockMovementQuery(input: Record<string, unknown>) {
 
 function integer(value: unknown, fallback: number, maximum: number, label: string) { if (value === undefined) return fallback; const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) throw new BadRequestException(`${label} không hợp lệ.`); return parsed; }
 function optional(value: unknown, label: string) { if (value === undefined || value === '') return undefined; if (typeof value !== 'string' || value.trim().length > 120) throw new BadRequestException(`${label} không hợp lệ.`); return value.trim(); }
+
+export function parseStoredItemQuery(input: Record<string, unknown>) {
+  return {
+    page: integer(input.page, 1, 100000, 'page'),
+    limit: integer(input.limit, 20, 100, 'limit'),
+    search: optional(input.search, 'search'),
+    storageUnitId: optional(input.storageUnitId, 'storageUnitId'),
+  };
+}

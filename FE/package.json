@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:rv3-manager": "node scripts/rv3-manager-smoke.mjs",
     "test:inventory": "node scripts/inventory-management-smoke.mjs",
     "test:admin-audit": "node scripts/admin-audit-smoke.mjs",
     "test:priority-notifications": "node scripts/priority-notifications-smoke.mjs",

@@ -753,12 +753,14 @@ try {
     .waitFor();
   await open(staff.page, "/staff/appointments/handover-id");
   const confirmHandover = staff.page.getByRole('button', { name: 'Xác nhận đã bàn giao giấy tờ và chìa khóa', exact: true });
-  assert(await confirmHandover.isDisabled(), 'Future handover cannot be completed');
-  assert.match(await staff.page.locator('#handover-availability').innerText(), /Chưa đến giờ hẹn/);
+  assert(await confirmHandover.isEnabled(), 'Actual key collection is independent of the planned appointment hour');
+  assert.equal(await staff.page.locator('#handover-availability').count(), 0);
   staff.data.staff.appointments[0].scheduledAt = when;
 
   await open(staff.page, "/staff/appointments/handover-id");
-  await staff.page.getByLabel('Người nhận kho', { exact: true }).fill('Khách nhận kho');
+  await staff.page.getByLabel('Người nhận bàn giao', { exact: true }).selectOption('AUTHORIZED');
+  await staff.page.getByLabel('Tên người được ủy quyền', { exact: true }).fill('Khách nhận kho');
+  await staff.page.getByLabel('Căn cứ ủy quyền', { exact: true }).fill('Văn bản ủy quyền đã đối chiếu');
   await staff.page.getByLabel('Hiện trạng cửa, khóa, tường, sàn và thiết bị').fill('Kho sạch, khóa hoạt động.');
   await staff.page.getByLabel('Số chìa khóa/thẻ đã giao').fill('1');
   await staff.page.getByLabel('Đã đối chiếu người nhận kho').check();

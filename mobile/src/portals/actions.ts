@@ -19,7 +19,9 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
   if (resource === 'appointments' && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
     add('Hoàn tất bàn giao', '/complete-handover', [
-      { name: 'recipientName', title: 'Người nhận kho', required: true, minLength: 2, maxLength: 120 },
+      { name: 'recipientType', title: 'Người nhận bàn giao', required: true, initial: 'CUSTOMER', choices: [{ value: 'CUSTOMER', label: `Khách đứng tên: ${text(row, 'reservation.customer.fullName')}` }, { value: 'AUTHORIZED', label: 'Người được ủy quyền' }] },
+      { name: 'recipientName', title: 'Tên người được ủy quyền', required: true, minLength: 2, maxLength: 120, visibleWhen: values => values.recipientType === 'AUTHORIZED' },
+      { name: 'authorizationBasis', title: 'Căn cứ ủy quyền đã đối chiếu', required: true, minLength: 3, maxLength: 500, multiline: true, visibleWhen: values => values.recipientType === 'AUTHORIZED' },
       note('condition', 'Hiện trạng cửa, khóa, tường, sàn và thiết bị', true, 500),
       { name: 'accessItemCount', title: 'Số chìa khóa/thẻ đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
       { name: 'identityVerified', title: 'Đã đối chiếu người nhận kho', checkbox: true, required: true },
@@ -28,7 +30,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
       { name: 'documentsDelivered', title: 'Đã giao giấy tờ cho khách', checkbox: true, required: true },
       note('note', 'Ghi chú bàn giao', false, 1000),
     ], false, 'Chỉ xác nhận sau khi đã bàn giao thực tế đầy đủ mọi kho trong lịch hẹn.');
-    result[result.length - 1].transform = input => ({ note: input.note, handoverReport: { recipientName: input.recipientName, condition: input.condition, accessItemCount: input.accessItemCount, identityVerified: input.identityVerified, unitInspected: input.unitInspected, accessDelivered: input.accessDelivered, documentsDelivered: input.documentsDelivered } });
+    result[result.length - 1].transform = input => ({ note: input.note, handoverReport: { recipientType: input.recipientType, recipientName: input.recipientType === 'AUTHORIZED' ? input.recipientName : text(row, 'reservation.customer.fullName'), authorizationBasis: input.authorizationBasis, condition: input.condition, accessItemCount: input.accessItemCount, identityVerified: input.identityVerified, unitInspected: input.unitInspected, accessDelivered: input.accessDelivered, documentsDelivered: input.documentsDelivered } });
     result[result.length - 1].validate = () => handoverWindowIssue(row, Date.now()) || Date.parse(String(row.scheduledAt)) > Date.now() ? 'Thời điểm bàn giao nằm ngoài kỳ thuê hoặc chưa đến giờ hẹn. Tải lại hồ sơ.' : undefined;
   }
   if (resource === 'maintenance' && assigned) {

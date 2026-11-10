@@ -5,12 +5,12 @@ describe('handover activation window', () => {
   const service = new AppointmentsService({} as never, {} as never, {} as never);
   const reservation = { contracts: [{ startDate: new Date('2026-11-10'), endDate: new Date('2026-12-10') }] };
   it('accepts key collection three days early without requiring the rental start', () => {
-    expect(() => Reflect.get(service, 'assertHandoverExecutionTime').call(service, reservation, new Date('2026-11-07T02:00:00Z'), new Date('2026-11-07T03:00:00Z'))).not.toThrow();
+    expect(() => Reflect.get(service, 'assertHandoverExecutionTime').call(service, reservation, new Date('2026-11-07T03:00:00Z'))).not.toThrow();
   });
-  it('rejects collection before the window or appointment time', () => {
+  it('rejects actual collection outside the pickup window', () => {
     const check = Reflect.get(service, 'assertHandoverExecutionTime').bind(service);
-    expect(() => check(reservation, new Date('2026-11-06T02:00:00Z'), new Date('2026-11-06T03:00:00Z'))).toThrow();
-    expect(() => check(reservation, new Date('2026-11-07T04:00:00Z'), new Date('2026-11-07T03:00:00Z'))).toThrow();
+    expect(() => check(reservation, new Date('2026-11-06T03:00:00Z'))).toThrow();
+    expect(() => check(reservation, new Date('2026-12-09T17:00:00Z'))).toThrow();
   });
   it('only scans completed handovers with contracts due for activation', async () => {
     const findMany = vi.fn().mockResolvedValue([]);

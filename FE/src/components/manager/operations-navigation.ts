@@ -25,6 +25,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/payments', label: 'Lịch sử thanh toán', icon: Receipt, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/rentals', label: 'Kho đang thuê', icon: Repeat2, group: 'Kho & khách hàng' },
   { to: '/manager/units', label: 'Kho vật lý', icon: Warehouse, group: 'Kho & khách hàng' },
+  { to: '/manager/stored-items', label: 'Hàng đang lưu theo kho', icon: ClipboardList, group: 'Kho & khách hàng' },
   { to: '/manager/catalog', label: 'Loại kho & bảng giá', icon: ClipboardList, group: 'Kho & khách hàng' },
   { to: '/manager/operations/maintenance', label: 'Bảo trì kho', icon: HardHat, group: 'Kho & khách hàng' },
   { to: '/manager/customers', label: 'Danh bạ khách hàng', icon: Users, group: 'Kho & khách hàng' },

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ManagerAnalyticsService } from './manager-analytics.service.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { ManagerCustomersController } from './manager-customers.controller.js';
 import { ManagerService } from './manager.service.js';
@@ -10,7 +11,7 @@ import { InventoryManagementService } from './inventory-management.service.js';
 @Module({
   imports: [AuthModule],
   controllers: [ManagerUnitsController, ManagerCustomersController, ManagerDashboardController, InventoryManagementController],
-  providers: [ManagerService, InventoryManagementService],
+  providers: [ManagerService, ManagerAnalyticsService, InventoryManagementService],
   exports: [ManagerService],
 })
 export class ManagerModule {}

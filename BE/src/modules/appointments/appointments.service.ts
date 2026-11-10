@@ -147,7 +147,6 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
   async completeHandover(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được hoàn tất bàn giao.');
-    const handoverNote = handoverReport(input) ?? this.optionalText(input.note, 2000, 'note');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
@@ -157,7 +156,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
         this.assertAppointmentDate(current.reservation, current.scheduledAt);
-        this.assertHandoverExecutionTime(current.reservation, current.scheduledAt, new Date());
+        this.assertHandoverExecutionTime(current.reservation, new Date());
+        const handoverNote = handoverReport(input, current.reservation.customer);
 
         const contracts = current.reservation.contracts;
         const unitIds = contracts.map((contract: any) => contract.reservationUnit.storageUnit.id);
@@ -227,11 +227,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private assertHandoverExecutionTime(reservation: any, scheduledAt: Date, now: Date) {
-    if (now < scheduledAt) throw new ConflictException({ code: 'HANDOVER_BEFORE_APPOINTMENT_TIME', message: 'Không thể hoàn tất bàn giao trước giờ hẹn.' });
+  private assertHandoverExecutionTime(reservation: any, now: Date) {
+    // Confirm actual collection independently of the planned appointment hour.
+    // Rental activation still waits for startDate in completeHandover/activateDueHandovers.
     const today = this.vietnamDate(now);
     if (reservation.contracts.some((contract: any) => today < this.keyPickupStartDate(contract.startDate) || today >= this.isoDate(contract.endDate))) {
-      throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Không thể kích hoạt hợp đồng ngoài kỳ thuê.' });
+      throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Chỉ được bàn giao từ 3 ngày trước ngày thuê đến trước ngày kết thúc thuê.' });
     }
   }
 

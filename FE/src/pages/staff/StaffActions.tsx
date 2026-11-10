@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
@@ -28,14 +28,9 @@ export function StaffActions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
-  useEffect(() => {
-    if (resource !== 'appointments' || row.status !== 'CONFIRMED') return;
-    const timer = window.setInterval(() => setCurrentTime(Date.now()), 15000);
-    return () => window.clearInterval(timer);
-  }, [resource, row.status]);
+  const [recipientType, setRecipientType] = useState('CUSTOMER');
+  const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
   const handoverContracts = rows(row.allocatedUnits);
-  const handoverIssue = resource === 'appointments' ? handoverCompletionIssue(row.scheduledAt, currentTime, handoverContracts) : '';
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
   const assigned = first(row, "assignedStaff.id") === user?.id;
   const run = async (
@@ -82,7 +77,9 @@ export function StaffActions({
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-handover') {
       input.handoverReport = {
-        recipientName: String(data.get('recipientName') ?? '').trim(),
+        recipientType,
+        recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
+        authorizationBasis: recipientType === 'AUTHORIZED' ? String(data.get('authorizationBasis') ?? '').trim() : undefined,
         condition: String(data.get('condition') ?? '').trim(),
         accessItemCount: Number(data.get('accessItemCount')),
         identityVerified: data.get('identityVerified') === 'on',
@@ -122,7 +119,8 @@ export function StaffActions({
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
               <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
-              <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
+              <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
+              {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
               <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>
@@ -133,8 +131,7 @@ export function StaffActions({
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
-              {handoverIssue && <p className="booking-alert" id="handover-availability" role="status">{handoverIssue}</p>}
-              <button type="submit" className="button-primary" disabled={Boolean(handoverIssue)} aria-describedby={handoverIssue ? 'handover-availability' : undefined}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
+              <button type="submit" className="button-primary">Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
             </form>
           ) : (
             <p>

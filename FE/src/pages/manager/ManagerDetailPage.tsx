@@ -1,3 +1,4 @@
+import { ManagerPricingExplanation } from '../../components/manager/ManagerPricingExplanation';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
 import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
@@ -565,9 +566,9 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
               ["Tiền cọc", money(row.depositAmount)],
               ["Dịch vụ bổ sung", money(row.serviceAmount)],
               ["Phí được duyệt", money(row.chargeAmount)],
-              ["Tổng hóa đơn", money(row.totalAmount)],
+              ["Tổng riêng hóa đơn này", money(row.totalAmount)],
               ["Đã thu", money(row.amountPaid)],
-              ["Còn thu", money(row.balanceDue)],
+              ["Còn phải thanh toán hóa đơn này", money(row.balanceDue)],
             ]}
           />
           {row.isPastDue === true && (
@@ -624,54 +625,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
           )}
         </section>
       )}
-      {Object.keys(quote).length > 0 && (
-        <section className="manager-section">
-          <h2>Báo giá tại thời điểm đăng ký</h2>
-          <Facts
-            items={[
-              ["Phương thức", label(quote.paymentPlan)],
-              ...(typeof quote.monthlyUnitPrice === "number"
-                ? [
-                    ["Đơn giá tháng / kho", money(quote.monthlyUnitPrice)] as [
-                      string,
-                      React.ReactNode,
-                    ],
-                  ]
-                : []),
-              ...(typeof quote.discountAmount === "number"
-                ? [
-                    [
-                      `Giảm giá (${quote.discountPercent ?? 0}%)`,
-                      money(quote.discountAmount),
-                    ] as [string, React.ReactNode],
-                  ]
-                : []),
-              ["Tiền thuê toàn kỳ", money(quote.rentalAmount)],
-              ["Tiền cọc", money(quote.depositAmount)],
-              [
-                "Tổng báo giá",
-                money(
-                  quote.quotedTotalAmount ??
-                    quote.totalAmount ??
-                    quote.grandTotal,
-                ),
-              ],
-            ]}
-          />
-          <p className="manager-action-copy">
-            Số tiền cần thu từng kỳ được thể hiện trên hóa đơn tương ứng.
-          </p>
-          {rows(quote.lineItems).map((item) => (
-            <div className="portal-quote-line" key={first(item, "code")}>
-              <span>
-                {first(item, "label")}
-                <small>{first(item, "basis")}</small>
-              </span>
-              <strong>{money(item.amount)}</strong>
-            </div>
-          ))}
-        </section>
-      )}
+      {Object.keys(quote).length > 0 && <ManagerPricingExplanation quote={quote} />}
       <RelatedTable
         title="Kho được phân bổ"
         items={rows(row.allocatedUnits)}

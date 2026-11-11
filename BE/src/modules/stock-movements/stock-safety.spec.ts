@@ -18,7 +18,7 @@ describe('stock movement safety with stubbed transaction', () => {
   it('creates pending requests without assigning the unit owner automatically', async () => {
     const stamp = new Date();
     const movement = { id: 'movement', lines: [], createdAt: stamp, updatedAt: stamp };
-    const tx = { rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE' }) },
+    const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', startDate: new Date('2026-01-01'), endDate: new Date('2035-01-01'), reservationUnit: { storageUnitId: 'unit', storageUnit: { unitNumber: 'A01', floor: '1', zone: 'A' } } }) },
       stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
       storedItem: { create: vi.fn().mockResolvedValue({ id: 'item' }) }, stockMovementLine: { create: vi.fn() } };
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
@@ -34,7 +34,7 @@ describe('stock movement safety with stubbed transaction', () => {
     const end = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const contract = { id: 'contract', status: 'ACTIVE', startDate: new Date(start), endDate: new Date(end) };
     const create = vi.fn();
-    const tx = { rentalContract: { findUnique: vi.fn().mockResolvedValue(contract) }, stockMovement: { create } };
+    const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue(contract) }, stockMovement: { create } };
     const db = { $transaction: vi.fn(operation => operation(tx)), rentalContract: { findFirst: vi.fn().mockResolvedValue(contract) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) } };
     const service = new StockMovementsService(db as never);
     const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
@@ -42,9 +42,17 @@ describe('stock movement safety with stubbed transaction', () => {
     const submit = (scheduledAt: string) => service.create(customer, { ...input, scheduledAt }, 'schedule-check');
 
     await expect(submit(new Date(Date.now() - 60000).toISOString())).rejects.toThrow('phải ở tương lai');
-    await expect(submit(new Date(Date.parse(`${start}T00:00:00+07:00`) - 60000).toISOString())).rejects.toThrow('phải nằm trong kỳ thuê');
-    await expect(submit(`${end}T00:00:00+07:00`)).rejects.toThrow('phải nằm trong kỳ thuê');
+    await expect(submit(new Date(Date.parse(`${start}T00:00:00+07:00`) - 60000).toISOString())).rejects.toThrow('Lịch nhập phải trong kỳ thuê');
+    await expect(submit(`${end}T00:00:00+07:00`)).rejects.toThrow('Lịch nhập phải trong kỳ thuê');
     expect(create).not.toHaveBeenCalled();
+  });
+  it('returns only the customer positive stock with its current warehouse after a transfer', async () => {
+    const warehouse = { id: 'destination', unitNumber: 'KHO-MOI', floor: 'Ground', zone: 'B' };
+    const findMany = vi.fn().mockResolvedValue([{ id: 'item', balance: 12, rentalContract: { id: 'contract', contractCode: 'CONTRACT', reservationUnit: { storageUnit: warehouse } } }]);
+    const service = new StockMovementsService({ storedItem: { findMany } } as never);
+    await expect(service.listStoredItems('customer', 'CONTRACT')).resolves.toEqual([{ id: 'item', balance: 12, rentalContract: { id: 'contract', contractCode: 'CONTRACT' }, storageUnit: warehouse }]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { customerUserId: 'customer', balance: { gt: 0 }, rentalContract: { OR: [{ id: 'CONTRACT' }, { contractCode: 'CONTRACT' }] } } }));
+    expect(findMany.mock.calls[0][0].select.rentalContract.select.reservationUnit.select.storageUnit.select.unitNumber).toBe(true);
   });
   it('rejects aggregate overdraw when two lines reference the same stored item', async () => {
     const state = setup([4, 4]);

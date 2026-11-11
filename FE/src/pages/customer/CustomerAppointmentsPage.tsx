@@ -1,3 +1,4 @@
+import { CopyRecordCode, RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
@@ -221,8 +222,9 @@ export function CustomerAppointmentsPage() {
                 >
                   <div className="customer-record-heading">
                     <div>
-                      <small>{item.appointmentCode}</small>
                       <h2>{formatPortalDate(item.scheduledAt, true)}</h2>
+                      <RecordIdentity row={{ ...item, storageType: contracts.data?.items.find(contract => contract.reservation.id === item.reservation.id)?.storageType }} resource="appointments" showCode={false} />
+                      <CopyRecordCode value={item.appointmentCode} />
                     </div>
                     <CustomerStatus status={item.status} />
                   </div>

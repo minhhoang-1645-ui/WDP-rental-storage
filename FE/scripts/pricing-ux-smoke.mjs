@@ -19,7 +19,7 @@ const browser = await launchTestBrowser(), errors=[],unexpected=[],checks=[];
 const artifacts = 'artifacts/ux-notifications-20261029';
 await mkdir(artifacts,{recursive:true});
 try {
-  for (const {width,product,selections:caseSelections,kind} of [1440,390].flatMap(width=>[{width,product:serviceProduct,selections,kind:'services'},{width,product:lockerProduct,selections:[],kind:'locker'}])) {
+  for (const {width,product,selections:caseSelections,kind} of [1440,390].flatMap(width=>[{width,product:serviceProduct,selections,kind:'services'},{width,product:serviceProduct,selections:[],kind:'deposit'},{width,product:lockerProduct,selections:[],kind:'locker'}])) {
     const context=await browser.newContext({viewport:{width,height:1000}});
     await context.addInitScript(({productId,selections})=>localStorage.setItem('wdp-booking-draft-v1',JSON.stringify({productId,startDate:'2027-01-31',durationMonths:3,periodMode:'duration',quantity:1,services:selections,addonIds:[],paymentPlan:'PAY_MONTHLY'})),{productId:product.id,selections:caseSelections});
     let quote, closing=false;
@@ -50,7 +50,13 @@ try {
       const first=quote.initialPaymentBreakdown;
       assert.equal(first.rentalAmount+first.depositAmount+first.purchaseAddOnAmount+first.rentalAddOnAmount,quote.estimatedInitialAmountDue);
       assert.equal(first.totalAmount+first.remainingAmount,quote.quotedTotalAmount);
-      await assertEventually(async()=>assert.equal(await panel.locator('.quote-breakdown-lines').first().locator(':scope > div').count(),quote.lineItems.length));
+      await assertEventually(async()=>assert.equal(await panel.locator('.quote-cost-details .quote-breakdown-lines').locator(':scope > div').count(),quote.lineItems.length));
+      const term = panel.getByRole('region', { name: 'Tổng tiền cho toàn bộ kỳ thuê' });
+      assert.equal((await term.locator('.quote-breakdown-total strong').innerText()).replace(/\D/g,''), String(quote.quotedTotalAmount));
+      await term.getByText(/Tổng này đã bao gồm khoản thanh toán lần đầu và các kỳ sau/).waitFor();
+      if (first.depositAmount > 0) await panel.getByText('Tiền cọc không phải tiền thuê.', { exact: false }).first().waitFor();
+      const initialPanel = panel.locator('.quote-initial-payment');
+      assert.equal((await initialPanel.locator('.quote-first-amount').innerText()).replace(/\D/g,''), String(quote.estimatedInitialAmountDue));
       const firstFormatted=new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(quote.estimatedInitialAmountDue);
       await assertEventually(async()=>assert.equal((await panel.locator('.quote-first-amount').innerText()).replace(/\s/g,''),firstFormatted.replace(/\s/g,'')));
       const formatted=new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(quote.quotedTotalAmount);
@@ -70,7 +76,7 @@ try {
     await page.screenshot({path:artifacts+'/pricing-'+kind+'-'+width+'.png',fullPage:true});
     await page.locator('.booking-summary').screenshot({path:artifacts+'/pricing-summary-'+kind+'-'+width+'.png'});
     await page.getByRole('button',{name:/^Thanh toán hàng tháng/}).click();await verify('PAY_MONTHLY');
-    checks.push(width+'px '+kind+': '+(kind==='locker' ? '650k upfront, 1.95m full term, two 650k later payments and rent-only prepaid offer' : 'one-time/day/month services, calendar-end dates, item sums, first payment and variable later installments'));
+    checks.push(width+'px '+kind+': '+(kind==='locker' ? '650k upfront, 1.95m full term, two 650k later payments and rent-only prepaid offer' : kind==='deposit' ? 'monthly rent and deposit have distinct purposes, itemized first payment, later payments and full-term total including deposit' : 'one-time/day/month services, calendar-end dates, item sums, first payment and variable later installments'));
     closing=true;
     await context.unrouteAll({behavior:'ignoreErrors'});
     await context.close();

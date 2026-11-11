@@ -1,3 +1,4 @@
+import { internalPageSize } from '../../utils/internal-pagination';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { PageHeader, LoadState, Empty, Pagination } from '../../components/manager/PortalUi';
@@ -8,8 +9,9 @@ import type { StoredItem } from '../../types/stock';
 export function OperationalStoredItemsPage({ role }: { role: 'STAFF' | 'MANAGER' }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
+  const limit = internalPageSize(params);
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1));
-  const query = new URLSearchParams({ page: String(page), limit: '20' });
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   for (const key of ['search', 'storageUnitId']) if (params.get(key)) query.set(key, params.get(key)!);
   const root = role.toLowerCase();
   const data = useApiResource<Page<StoredItem>>(`/${root}/stored-items?${query}`, user?.id, true);
@@ -41,7 +43,7 @@ export function OperationalStoredItemsPage({ role }: { role: 'STAFF' | 'MANAGER'
             <td>{item.balance} {item.unit}</td><td>{item.rentalContract?.id && <Link className="portal-text-button" to={`${role === 'MANAGER' ? '/manager/operations' : '/staff'}/stock-movements?rentalContractId=${encodeURIComponent(item.rentalContract.id)}`}>Phiếu và Staff kiểm đếm</Link>}</td>
           </tr>)}</tbody>
         </table></div>
-        <Pagination page={page} limit={20} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
+        <Pagination page={page} limit={limit} onLimitChange={value => update('limit', String(value))} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
       </>}
     </section>
   );

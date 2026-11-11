@@ -1,4 +1,8 @@
+import { ManagerReportRelease } from '../pages/manager/ManagerReportRelease';
 import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
+import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
+import { OverstayPage } from '../pages/manager/OverstayPage';
+import { AdminPoliciesPage } from '../pages/admin/AdminPoliciesPage';
 import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
@@ -90,6 +94,7 @@ function operationalRoutes(base: string) {
       <Route path="customers" element={<ManagerCustomersPage />} />
       <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
       <Route path="reports" element={<ManagerReportsPage />} />
+      <Route path="reports/details" element={<ManagerReportRelease />} />
       <Route path="operations/:resource" element={<ManagerResourcePage />} />
       <Route
         path="operations/:resource/:id"
@@ -152,7 +157,8 @@ export function AppRouter() {
           element={<CustomerReservationDetailPage />}
         />
         <Route path="rentals" element={<CustomerRentalsPage />} />
-        <Route path="booking-history" element={<CustomerBookingHistoryPage />} />
+        <Route path="damage-claims" element={<DamageClaimsPage />} />
+          <Route path="booking-history" element={<CustomerBookingHistoryPage />} />
         <Route path="stock-movements" element={<StockMovementsPage role="CUSTOMER" />} />
         <Route path="stock-movements/:id" element={<StockMovementsPage role="CUSTOMER" />} />
         <Route path="stored-items" element={<StoredItemsPage />} />
@@ -172,8 +178,10 @@ export function AppRouter() {
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
+          <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
+          <Route path="overstays" element={<OverstayPage />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
@@ -197,10 +205,12 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
+          <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="MANAGER" />} />
           <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
           <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
+          <Route path="overstays" element={<OverstayPage />} />
           {operationalRoutes("/manager")}
         </Route>
       </Route>
@@ -219,7 +229,7 @@ export function AppRouter() {
             path="account-status"
             element={<Navigate to="/admin/users" replace />}
           />
-          <Route path="settings" element={<Navigate to="/admin" replace />} />
+          <Route path="settings" element={<AdminPoliciesPage />} />
           <Route path="facility/assignments" element={<Navigate to="/admin" replace />} />
           <Route path="facility/*" element={<Navigate to="/admin" replace />} />
           <Route path="*" element={<WorkspaceNotFound />} />

@@ -1,9 +1,10 @@
+import { internalPageSize } from '../../utils/internal-pagination';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
 import { Eye, EyeOff, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { allPages, mutate } from "../../services/portal";
+import { mutate } from "../../services/portal";
 import { apiRequest } from "../../services/api";
 import {
   date,
@@ -40,13 +41,19 @@ export function AdminAccountsPage() {
   const search = params.get("search") ?? "";
   const role = params.get("role") ?? "";
   const status = params.get("status") ?? "";
+  const limit = internalPageSize(params);
   const page = Math.max(1, Math.floor(Number(params.get("page")) || 1));
-  const key = `${user?.id}:${revision}`;
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search.trim()) query.set('search', search.trim());
+  if (role) query.set('role', role);
+  if (status) query.set('accountStatus', status);
+  const path = `/admin/users?${query}`;
+  const key = `${user?.id}:${path}:${revision}`;
   const refresh = useCallback(() => setRevision((v) => v + 1), []);
   useLiveRefresh('/admin/users', refresh);
   useEffect(() => {
     const controller = new AbortController();
-    allPages("/admin/users", controller.signal)
+    apiRequest<Page>(path, { signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setState({ key, data });
       })
@@ -61,18 +68,10 @@ export function AdminAccountsPage() {
           });
       });
     return () => controller.abort();
-  }, [key]);
+  }, [key, path]);
   const current = state?.key === key ? state : undefined;
-  const items = (current?.data?.items ?? []).filter(
-    (row) =>
-      (!role || row.role === role) &&
-      (!status || row.accountStatus === status) &&
-      (!search ||
-        [row.fullName, row.email, row.phone]
-          .join(" ")
-          .toLocaleLowerCase("vi")
-          .includes(search.trim().toLocaleLowerCase("vi"))),
-  );
+  const items = current?.data?.items ?? [];
+  const total = current?.data?.total ?? 0;
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {
@@ -84,7 +83,7 @@ export function AdminAccountsPage() {
       },
       { replace: true },
     );
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(items.length / 20)));
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(total / limit)));
   return (
     <section>
       <PageHeader
@@ -155,7 +154,7 @@ export function AdminAccountsPage() {
       {current?.data && (
         <>
           <div className="portal-result-heading">
-            <span>{items.length} tài khoản</span>
+            <span>{total} tài khoản</span>
             <small>Tìm kiếm trên toàn bộ danh sách</small>
           </div>
           {items.length ? (
@@ -172,9 +171,7 @@ export function AdminAccountsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items
-                    .slice((currentPage - 1) * 20, currentPage * 20)
-                    .map((row) => (
+                  {items.map((row) => (
                       <tr key={first(row, "id")}>
                         <td>
                           <strong>{first(row, "fullName")}</strong>
@@ -238,8 +235,9 @@ export function AdminAccountsPage() {
           )}
           <Pagination
             page={currentPage}
-            limit={20}
-            total={items.length}
+            limit={limit}
+            onLimitChange={value => change("limit", String(value))}
+            total={total}
             onChange={(v) => change("page", String(v))}
           />
         </>

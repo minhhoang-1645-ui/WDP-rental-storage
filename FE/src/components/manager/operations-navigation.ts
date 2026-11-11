@@ -5,6 +5,7 @@ import type { InternalNavItem } from '../layout/InternalPortalLayout';
 import { managerPrimaryMenu, managerSections, type ManagerSection } from '../../utils/manager-sections';
 
 const managerNavigation: InternalNavItem[] = [
+  { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
   { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
   { to: '/manager/reports', label: 'Báo cáo & Thống kê', icon: BarChart3, group: 'Tổng quan' },
   { to: '/manager/reservations', label: 'Yêu cầu đặt kho', icon: ClipboardCheck, group: 'Tiếp nhận & phân công' },
@@ -24,18 +25,18 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/contracts', label: 'Hợp đồng thuê', icon: FileText, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/payments', label: 'Lịch sử thanh toán', icon: Receipt, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/rentals', label: 'Kho đang thuê', icon: Repeat2, group: 'Kho & khách hàng' },
-  { to: '/manager/units', label: 'Kho vật lý', icon: Warehouse, group: 'Kho & khách hàng' },
+  { to: '/manager/units', label: 'Danh sách kho', icon: Warehouse, group: 'Kho & khách hàng' },
   { to: '/manager/stored-items', label: 'Hàng đang lưu theo kho', icon: ClipboardList, group: 'Kho & khách hàng' },
   { to: '/manager/catalog', label: 'Loại kho & bảng giá', icon: ClipboardList, group: 'Kho & khách hàng' },
   { to: '/manager/operations/maintenance', label: 'Bảo trì kho', icon: HardHat, group: 'Kho & khách hàng' },
-  { to: '/manager/customers', label: 'Danh bạ khách hàng', icon: Users, group: 'Kho & khách hàng' },
+  { to: '/manager/customers', label: 'Khách hàng', icon: Users, group: 'Kho & khách hàng' },
 ];
 export function operationsNavigation(base = '/manager'): InternalNavItem[] {
-  const icons = [Landmark, Users, ClipboardCheck, WalletCards, FileText, Warehouse, BarChart3];
-  return managerPrimaryMenu.map((item,index) => ({ to: base + (item.key ? '/' + item.key : ''), label: item.title, icon: icons[index], end: !item.key, group: 'Quản lý cơ sở', match: Object.hasOwn(managerSections,item.key) ? managerSections[item.key as ManagerSection].items.map(link => link.web.split('?')[0]) : [] }));
+  const icons: Record<string, typeof Landmark> = { '': Landmark, assignments: Users, reviews: ClipboardCheck, finance: WalletCards, 'rental-records': FileText, facility: Warehouse, catalog: ClipboardList, reports: BarChart3 };
+  return managerPrimaryMenu.map(item => ({ to: base + (item.key ? '/' + item.key : ''), label: item.title, icon: icons[item.key], end: !item.key, group: 'Quản lý cơ sở', match: Object.hasOwn(managerSections,item.key) ? managerSections[item.key as ManagerSection].items.map(link => link.web.split('?')[0]) : [] }));
 }
 export const managerPageNavigation = () => managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '') || isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({...item, label:isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '') ? managerReviewTitle(item.to.split('/').at(-1)!) : item.label }));
 
 export function staffNavigation(): InternalNavItem[] {
-  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));
+  return managerNavigation.filter(item => item.end || isStaffWorkflow(item.to.split('/').at(-1) ?? '') || item.to.endsWith('/rentals') || item.to.endsWith('/damage-claims')).map(item => ({ ...item, to: item.to.replace('/manager', '/staff').replace('/staff/operations/', '/staff/'), label: item.end ? 'Bàn làm việc' : item.label, group: item.group === 'Tiếp nhận & phân công' ? 'Tiếp nhận yêu cầu' : item.group === 'Kho & khách hàng' ? 'Tra cứu & bảo trì' : item.group }));
 }

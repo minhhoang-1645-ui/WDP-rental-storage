@@ -1,3 +1,5 @@
+import { useApiResource } from '../../services/useApiResource';
+import { money } from './portal-data';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { allPages } from '../../services/portal';
@@ -13,16 +15,17 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
 }) {
   const { user } = useAuth();
   const [search, setSearch] = useState(''), [floor, setFloor] = useState(''), [zone, setZone] = useState('');
+  const [otherTypes, setOtherTypes] = useState(false);
   const [showUnavailable, setShowUnavailable] = useState(false), [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ key: string; data?: Page; error?: string }>();
-  const key = `${user?.id}:${transferId}:${revision}`;
+  const key = `${user?.id}:${transferId}:${otherTypes}:${revision}`;
   useEffect(() => {
     const controller = new AbortController();
-    allPages(`/manager/transfers/${encodeURIComponent(transferId)}/destinations`, controller.signal)
+    allPages(`/manager/transfers/${encodeURIComponent(transferId)}/destinations?includeOtherTypes=${otherTypes}`, controller.signal)
       .then(data => { if (!controller.signal.aborted) setState({ key, data }); })
       .catch(error => { if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : 'Không tải được danh sách kho.' }); });
     return () => controller.abort();
-  }, [key, transferId]);
+  }, [key, transferId, otherTypes]);
   const current = state?.key === key ? state : undefined;
   const units = current?.data?.items ?? [], eligible = units.filter(unit => unit.eligible === true);
   const selected = units.find(unit => first(unit, 'id') === value && unit.eligible === true);
@@ -30,10 +33,12 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
   const choices = units.filter(unit => (showUnavailable || unit.eligible === true) && (!floor || unit.floor === floor) && (!zone || unit.zone === zone)
     && normalize([first(unit, 'unitCode'), first(unit, 'storageType.name'), first(unit, 'floor'), first(unit, 'zone')].join(' ')).includes(normalize(search.trim())))
     .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true));
+  const preview = useApiResource<{ sameType: boolean; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; differencePerMonth: number; smaller: boolean } }>(selected && otherTypes ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
   const floors = [...new Set(units.map(unit => first(unit, 'floor')).filter(Boolean))];
   const zones = [...new Set(units.map(unit => first(unit, 'zone')).filter(Boolean))];
   return <section className="transfer-destination-picker" aria-label="Chọn kho đích">
-    <div className="transfer-destination-context"><strong>Kho đang dùng: {first(source, 'unitCode')}</strong><span>{first(source, 'storageType.name')}</span><small>Chuyển cùng loại, giữ nguyên giá và thời hạn hợp đồng.</small></div>
+    <div className="transfer-destination-context"><strong>Kho đang dùng: {first(source, 'unitCode')}</strong><span>{first(source, 'storageType.name')}</span><small>Cùng loại giữ giá. Đổi loại cần phụ lục được khách ký trước khi chuyển; giá mới từ kỳ thu tiếp theo.</small></div>
+    <label className="portal-checkbox"><input type="checkbox" checked={otherTypes} disabled={disabled} onChange={event => { setOtherTypes(event.target.checked); onChange(''); }} />Xem cả loại kho khác để lập phương án đổi loại</label>
     <label className="field-label">Tìm kho đích<input type="search" placeholder="Nhập mã kho, tầng hoặc khu vực…" value={search} disabled={disabled} onChange={event => setSearch(event.target.value)} /></label>
     <div className="transfer-destination-filters">
       <label className="field-label">Tầng<select value={floor} disabled={disabled} onChange={event => setFloor(event.target.value)}><option value="">Tất cả tầng</option>{floors.map(item => <option key={item}>{item}</option>)}</select></label>
@@ -42,9 +47,12 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
     <label className="portal-checkbox"><input type="checkbox" checked={showUnavailable} disabled={disabled} onChange={event => setShowUnavailable(event.target.checked)} />Hiện cả kho chưa thể chuyển để xem lý do</label>
     <button type="button" className="button-secondary" disabled={disabled || !current} onClick={() => setRevision(count => count + 1)}>Kiểm tra lại kho trống</button>
     {!current && <p role="status">Đang kiểm tra toàn bộ kho cùng loại và lịch thuê còn lại…</p>}
+    {preview.loading && <p role="status">Đang lập phương án giá…</p>}
+    {preview.error && <p role="alert">{preview.error}</p>}
+    {preview.data?.snapshot && <div className="booking-alert"><strong>Phụ lục đổi loại cần khách xác nhận</strong><p>Giá hiện tại: {money(preview.data.snapshot.currentRate)}/tháng. Giá mới: {money(preview.data.snapshot.newRate)}/tháng từ {date(preview.data.snapshot.effectiveFrom)}.</p><p>Chênh lệch tháng: {money(Math.abs(preview.data.snapshot.differencePerMonth))} {preview.data.snapshot.differencePerMonth >= 0 ? 'tăng' : 'giảm'}. Kỳ hiện tại và cọc giữ nguyên.</p>{preview.data.snapshot.smaller && <p>Kho nhỏ hơn: khách cần tự đối chiếu kích thước/số đồ. Không bảo đảm hàng vừa kho mới.</p>}</div>}
     {current?.error && <p role="alert">{current.error}</p>}
     {current?.data && <>
-      <p role="status"><strong>{eligible.length} kho có thể chuyển</strong> / {units.length} kho cùng loại khác kho nguồn. {choices.length} kết quả đang hiển thị.</p>
+      <p role="status"><strong>{eligible.length} kho có thể chuyển</strong> / {units.length} kho khác kho nguồn. {choices.length} kết quả đang hiển thị.</p>
       {!eligible.length && <p className="transfer-destination-notice">Chưa có kho cùng loại trống suốt kỳ thuê còn lại. Bạn có thể xem lý do từng kho hoặc kiểm tra lại sau; chưa duyệt chuyển khi chưa có kho phù hợp.</p>}
       <fieldset className="transfer-destination-options" disabled={disabled}><legend>Chọn một kho đích</legend>
         {choices.map(unit => <label key={first(unit, 'id')} className={`transfer-destination-card ${value === unit.id ? 'is-selected' : ''} ${unit.eligible !== true ? 'is-unavailable' : ''}`}>

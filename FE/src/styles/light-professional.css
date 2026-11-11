@@ -1,0 +1,142 @@
+/* Web design tokens. Imported last; no native app or business logic dependencies. */
+:root {
+  --color-primary: #0f766e;
+  --color-primary-hover: #115e59;
+  --color-logo: #183153;
+  --color-ink: #172b3a;
+  --color-slate: #475569;
+  --color-canvas: #f8fafc;
+  --color-surface: #fff;
+  --color-border: #e2e8f0;
+  --color-navy: var(--color-primary);
+  --color-navy-hover: var(--color-primary-hover);
+  --color-orange: var(--color-primary);
+  --color-brand: #e6f4f1;
+  --surface-selected: #e6f4f1;
+  --surface-hover: #f0fdfa;
+  --text-placeholder: #64748b;
+  --wdp-soft: #edf7f5;
+  --wdp-shadow: 0 2px 12px #172b3a06;
+}
+body { min-width:280px; font-size:16px; line-height:1.55; background:var(--color-canvas); color:var(--color-ink); }
+:is(button,input,select,textarea) { accent-color:var(--color-primary); }
+:is(input,textarea)::placeholder { color:var(--text-placeholder); opacity:1; }
+:focus-visible { outline:3px solid var(--color-primary); outline-offset:3px; }
+:is(.button-primary,.button-secondary,.button-light) { border-radius:10px; min-height:44px; padding:10px 18px; font-size:15px; line-height:1.4; box-shadow:none; }
+.button-primary { background:var(--color-primary); color:white; }
+.button-primary:hover:not(:disabled) { background:var(--color-primary-hover); }
+:is(.button-secondary,.button-light) { color:var(--color-ink); background:var(--color-surface); border-color:var(--color-border); }
+:is(.field-label,.portal-form label) { font-size:14px; line-height:1.5; color:var(--color-ink); }
+:is(input,select,textarea,.entity-select-trigger) { font-size:16px; min-height:46px; border-color:var(--color-border); color:var(--color-ink); border-radius:10px; }
+input[type=checkbox], input[type=radio] { min-height:0; }
+:is(.entity-select-options>button small,.entity-select-popup>p,.quote-cost-details>summary,.rental-choice-picker>p,.rental-choice-content>small,.rental-choice-content>span:not(.rental-choice-heading),.document-file small) { font-size:14px; color:var(--color-slate); }
+:is(.manager-page-header,.customer-page-header) h1 { font-size:clamp(26px,2.2vw,30px); line-height:1.25; letter-spacing:-.025em; color:var(--color-ink); }
+:is(.manager-page-header,.customer-page-header) .eyebrow { display:none; }
+:is(.manager-page-header,.customer-page-header) p:not(.eyebrow) { font-size:15px; line-height:1.55; color:var(--color-slate); max-width:76ch; margin-top:8px; }
+:is(.customer-page-header,.manager-page-header) { align-items:center; gap:18px; margin-bottom:24px; }
+:is(.customer-panel,.customer-record-card,.customer-stat-card,.manager-section,.work-hub-card,.internal-priority,.internal-kpi) { background:var(--color-surface); border-color:var(--color-border); box-shadow:none; border-radius:14px; }
+:is(.customer-panel,.customer-record-card,.manager-section) { padding:24px; }
+:is(.customer-panel,.customer-record-card,.customer-state,.manager-section,.internal-priority) h2 { font-size:20px; line-height:1.4; }
+:is(.customer-panel-heading p,.customer-record-card p,.customer-state-content,.customer-state p,.customer-recent-item small,.customer-recent-item span) { font-size:14px; color:var(--color-slate); line-height:1.55; }
+.customer-shell,.manager-shell.internal-web { background:var(--color-canvas); }
+.customer-shell { grid-template-columns:272px minmax(0,1fr); }
+.customer-main { min-width:0; padding:28px 32px 48px; }
+.customer-sidebar { background:var(--color-surface); border-right:1px solid var(--color-border); padding:24px 14px 14px; }
+.customer-brand>span { color:var(--color-logo); font-size:26px; }
+.customer-brand>small { color:var(--color-slate); font-size:13px; text-transform:none; letter-spacing:0; }
+.customer-nav { gap:6px; }
+.customer-nav .customer-nav-link { min-height:44px; gap:10px; border-radius:9px; font-size:15px; font-weight:550; color:var(--color-slate); padding:10px 12px; }
+.customer-nav .customer-nav-link.active,.manager-shell.internal-web nav a.active { color:var(--color-primary); background:var(--surface-selected); font-weight:700; box-shadow:inset 3px 0 var(--color-primary); }
+.customer-nav .customer-nav-link:hover:not(.active) { background:var(--surface-hover); color:var(--color-primary); }
+.customer-nav .customer-booking-shortcut { min-height:44px; border-radius:10px; padding:10px 12px; background:var(--surface-selected); color:var(--color-primary-hover); border:1px solid #bfddd6; font-size:15px; margin:0 0 8px; }
+.customer-nav .workspace-nav-heading { color:var(--color-slate); font-size:13px; letter-spacing:0; padding:12px 10px 6px; }
+.customer-sidebar :is(.customer-account strong,.customer-logout) { color:var(--color-ink); font-size:14px; }
+.customer-sidebar .customer-account small { font-size:13px; color:var(--color-slate); }
+.customer-sidebar-bottom { border-color:var(--color-border); }
+.customer-updates-bar { font-size:14px; margin-bottom:24px; }
+.customer-shell .workspace-home { display:block; }
+.customer-shell .internal-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:24px; }
+.customer-shell .internal-kpi { display:flex; flex-direction:column; gap:9px; padding:22px; border:1px solid var(--color-border); color:var(--color-ink); text-decoration:none; min-width:0; }
+.customer-shell .internal-kpi>span { color:var(--color-slate); font-size:14px; }
+.customer-shell .internal-kpi strong { font-size:30px; line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.customer-shell .internal-kpi small { color:var(--color-slate); font-size:13px; }
+.customer-shell .internal-priority { padding:24px; border:1px solid var(--color-border); margin-bottom:24px; }
+.customer-shell .internal-section-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.customer-shell .internal-section-heading h2 { margin:0; }
+.customer-shell .internal-section-heading a { display:inline-flex; align-items:center; gap:6px; }
+.customer-shell .internal-task-list { list-style:none; margin:0; padding:0; }
+.customer-shell .internal-task-list li+li { border-top:1px solid var(--color-border); }
+.customer-shell .internal-task-list a { display:flex; align-items:center; justify-content:space-between; width:100%; gap:14px; padding:14px 0; color:var(--color-ink); text-decoration:none; }
+.customer-shell .internal-task-list a>div { min-width:0; }
+.customer-shell .internal-task-list strong { display:block; font-size:16px; overflow-wrap:anywhere; }
+.customer-shell .internal-task-list small { display:block; font-size:14px; color:var(--color-slate); margin-top:4px; }
+.customer-shell .internal-shortcuts { display:flex; gap:12px; flex-wrap:wrap; margin-block:22px; }
+.customer-shell .customer-process-guide { padding:14px 18px; border:1px solid var(--color-border); background:white; border-radius:12px; margin-block:24px; font-size:14px; }
+.customer-process-guide>summary { font-weight:650; color:var(--color-primary); }
+.customer-process-guide[open]>summary { margin-bottom:18px; }
+:is(.customer-table-wrap,.manager-table-wrap) { border:1px solid var(--color-border); border-radius:14px; overflow-x:auto; box-shadow:none; }
+:is(.customer-table,.manager-table) { font-size:15px; line-height:1.55; }
+:is(.customer-table,.manager-table) th { font-size:14px; color:var(--color-slate); background:#f1f5f9; text-transform:none; font-weight:650; padding:14px 16px; letter-spacing:0; }
+:is(.customer-table,.manager-table) td { padding:16px; font-size:15px; color:var(--color-ink); border-color:var(--color-border); }
+:is(.customer-table,.manager-table) small { font-size:13px; line-height:1.55; color:var(--color-slate); }
+:is(.customer-table,.manager-table) td:has(>.customer-money),.customer-money { font-variant-numeric:tabular-nums; }
+:is(.customer-status,.manager-status,.status-success,.status-warning) { font-size:13px; line-height:1.4; padding:5px 10px; border-radius:7px; text-transform:none; font-weight:650; }
+.customer-status--paid,.customer-status--active,.customer-status--completed { background:#ecfdf5; color:#166534; }
+.customer-status--pending,.customer-status--open,.customer-status--requested { background:#fff7db; color:#854d0e; }
+.customer-status--cancelled,.customer-status--rejected,.customer-status--expired { background:#fef2f2; color:#991b1b; }
+.portal-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; font-size:14px; margin-top:20px; }
+.portal-pagination>div { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.internal-page-size { display:flex; align-items:center; gap:8px; font-size:14px; }
+.internal-page-size select { width:74px; min-height:40px; }
+.portal-pagination :is(.button-primary,.button-secondary) { margin:0; display:inline-flex; }
+.customer-state { min-height:220px; padding:32px 20px; }
+.customer-state-content { display:grid; justify-items:center; gap:18px; }
+.customer-state-content .button-primary { display:inline-flex; margin:0; }
+.public-header { background:white; border-color:var(--color-border); }
+.public-brand { color:var(--color-logo); }
+.public-brand>span:first-child { background:var(--surface-selected); color:var(--color-primary); }
+.nav-link { font-size:15px; }
+.wdp-public h1 { font-size:clamp(28px,3.2vw,44px); color:var(--color-ink); line-height:1.2; }
+.wdp-public h2 { font-size:clamp(22px,2.4vw,30px); line-height:1.3; }
+.wdp-public :is(.section-space,.storage-search-header) { padding-block:52px; }
+:is(.storage-hero,.storage-search-header,.wdp-public .auth-page,.portal-login) { background:var(--color-canvas); }
+:is(.finder-grid input,.finder-grid select,.storage-card-content p,.storage-card-specs,.storage-card-capacity,.facility-chip) { font-size:14px; }
+.storage-card-condition,.storage-card-image-note,.home-size-capacity,.illustration-label,.image-credit { font-size:13px; }
+.home-bottom-cta { background:var(--surface-selected); color:var(--color-ink); border-block:1px solid var(--color-border); }
+.home-bottom-cta p { color:var(--color-slate); }
+.public-footer { background:#f1f5f9; color:var(--color-ink); border-top:1px solid var(--color-border); }
+.public-footer :is(p,a,#contact p) { color:var(--color-slate); font-size:14px; }
+.public-footer :is(h2,.footer-title) { color:var(--color-ink); }
+.public-footer a:hover { color:var(--color-primary); }
+.public-footer .border-white\/10 { border-color:var(--color-border); }
+:is(.quote-unit-price,.quote-row,.quote-total,.booking-alert,.rental-choice-content,.signature-otp,.portal-report-note) { font-size:14px; line-height:1.55; }
+.quote-cost-details>summary { color:var(--color-primary); }
+.customer-compact-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+:is(.portal-text-button,.customer-panel-heading a,.customer-process-guide summary) { font-size:14px; }
+.manager-shell.internal-web .internal-section-heading .portal-text-button { font-size:14px; }
+.manager-shell.internal-web .manager-account .portal-account-avatar { display:grid; place-items:center; color:var(--color-primary); background:var(--surface-selected); margin:0; flex:none; }
+.wdp-public :is(.field-label,.finder-grid .field-label,.home-finder-note,.booking-note,.booking-help) { font-size:14px; line-height:1.55; }
+.wdp-public :is(.quote-product small,.quote-product span,.quote-cost-details small,.booking-period-summary small) { font-size:13px; }
+.customer-recent-item>div:last-child { display:flex; align-items:center; gap:12px; }
+.record-identity { display:grid; gap:5px; min-width:0; }
+.record-identity>strong { font-size:16px; color:var(--color-ink); line-height:1.4; overflow-wrap:anywhere; }
+.record-identity>span { font-size:14px; color:var(--color-slate); line-height:1.5; }
+.record-identity>span:empty { display:none; }
+.record-code { display:flex; align-items:center; flex-wrap:wrap; gap:5px; font-size:13px; font-weight:400; color:var(--color-slate); margin-block:6px; line-height:1.5; }
+.record-code-value { user-select:all; overflow-wrap:anywhere; }
+.record-copy { display:inline-flex; flex:none; align-items:center; justify-content:center; min-width:32px; min-height:32px; border:1px solid var(--color-border); border-radius:7px; color:var(--color-primary); background:white; padding:5px; }
+.record-new { display:inline-block; background:var(--surface-selected); color:var(--color-primary-hover); padding:3px 8px; border-radius:6px; font-size:13px; font-weight:650; margin:5px; }
+.record-attention { color:#854d0e !important; font-weight:650; }
+.manager-shell.internal-web .manager-open { display:inline-flex; width:auto; height:auto; align-items:center; gap:6px; font-size:14px; padding:8px; white-space:nowrap; }
+.customer-reservation-card .customer-card-top>a { font-size:17px; color:var(--color-ink); }
+@media(max-width:600px) { .record-code { font-size:13px; } .manager-table th,.manager-table td { min-width:130px; } }
+.customer-filter-row { flex-wrap:wrap; gap:16px; padding:18px; border:1px solid var(--color-border); border-radius:12px; background:white; }
+.customer-filter-row>.field-label { flex:1; min-width:180px; }
+.customer-filter-row>select { width:auto; min-width:180px; }
+.customer-table td:is([data-label="Số tiền"],[data-label="Tổng tiền"],[data-label="Đã trả"],[data-label="Còn lại"]) { text-align:right; font-variant-numeric:tabular-nums; }
+.public-footer :is(small,.text-slate-400) { color:var(--color-slate); font-size:13px; }
+.public-footer>div>div:first-child { border-color:var(--color-border); }
+@media(max-width:1100px) { .customer-shell { grid-template-columns:240px minmax(0,1fr); } .customer-main { padding:24px; } .customer-shell .internal-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:760px) { .customer-shell { display:block; } .customer-main { padding:20px 16px 36px; } .customer-sidebar { width:min(300px,calc(100vw - 28px)); } :is(.customer-page-header,.manager-page-header) { align-items:stretch; flex-direction:column; } .customer-page-header-action { width:100%; } .customer-header-actions { flex-wrap:wrap; } .customer-panel { padding:18px; } .wdp-public .section-space { padding-block:36px; } }
+@media(max-width:480px) { .customer-shell .internal-kpis { gap:10px; } .customer-shell .internal-kpi { padding:16px; } .customer-shell .internal-kpi strong { font-size:26px; } .customer-shell .internal-priority { padding:18px; } .portal-pagination>div { width:100%; justify-content:space-between; } .portal-pagination .button-secondary { font-size:14px; padding-inline:12px; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; transition-duration:0s !important; } }

@@ -3,6 +3,7 @@ import {
   Users,
   History,
   LogIn,
+  Settings,
 } from "lucide-react";
 import { InternalPortalLayout } from "../../components/layout/InternalPortalLayout";
 import type { WorkspaceSection } from "../../components/workspace/WorkspaceSectionPage";
@@ -27,11 +28,12 @@ export function AdminLayout() {
         },
         {
           to: "/admin/users",
-          label: "Quản lý tài khoản",
+          label: "Tài khoản",
           icon: Users,
           group: "Quản trị",
         },
-        { to: '/admin/sections/audit', label: 'Nhật ký', icon: History, group: 'Quản trị', match: auditItems.map(item => item.to) },
+        { to: '/admin/sections/audit', label: 'Lịch sử hoạt động', icon: History, group: 'Quản trị', match: auditItems.map(item => item.to) },
+        { to: '/admin/settings', label: 'Chính sách hệ thống', icon: Settings, group: 'Quản trị' },
       ]}
       pageNavigation={auditItems}
     />

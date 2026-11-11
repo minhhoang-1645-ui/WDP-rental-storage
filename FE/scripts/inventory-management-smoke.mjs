@@ -58,8 +58,8 @@ try {
 
   await page.goto(`${base}/manager/units`);
   await page.getByRole('button', { name: 'Thêm kho', exact: true }).click();
-  await selectChoice(page.getByLabel('Loại kho', { exact: true }), 'real-type');
-  await page.getByLabel('Mã kho', { exact: true }).fill('SM-A-002');
+  await selectChoice(page.getByLabel('Loại kho áp dụng', { exact: true }), 'real-type');
+  await page.getByLabel('Mã kho (tùy chọn)', { exact: true }).fill('SM-A-002');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(writes.at(-1).path, 'manager/units');
@@ -68,7 +68,8 @@ try {
 
   await page.goto(`${base}/manager/units/unit`);
   await page.getByRole('button', { name: 'Sửa thông tin kho', exact: true }).click();
-  await page.getByLabel('Khu', { exact: true }).fill('B');
+  await selectChoice(page.getByLabel('Khu', { exact: true }), '__new_location__');
+  await page.getByLabel('Nhập khu mới', { exact: true }).fill('B');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(writes.at(-1).path, 'manager/units/unit');

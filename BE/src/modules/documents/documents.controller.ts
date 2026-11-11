@@ -1,3 +1,4 @@
+import { TransfersService } from '../transfers/transfers.service.js';
 import { Controller, Get, Param, Req, Res, UseGuards, NotFoundException } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -23,7 +24,9 @@ function completedTransfer(record: { transfers: Array<{ id: string; status: stri
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('CUSTOMER')
 export class CustomerDocumentsController {
-  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService) {}
+  @Get('transfer-addenda/:id')
+  async transferAddendum(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.transfers.getCustomerOrder(request.user!, id); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
+  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
   async transfer(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
     const record = await this.contracts.getCustomerContract(request.user!.id, id);
@@ -54,7 +57,9 @@ export class CustomerDocumentsController {
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('MANAGER')
 export class ManagerDocumentsController {
-  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService) {}
+  @Get('transfer-addenda/:id')
+  async transferAddendum(@Param('id') id: string, @Res() response: Response) { const record = await this.transfers.get(id); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
+  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
   async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
     const record = await this.contracts.getManagerContract(id);
@@ -78,7 +83,9 @@ export class ManagerDocumentsController {
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('STAFF')
 export class StaffDocumentsController {
-  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly pdf: PdfDocumentService) {}
+  @Get('transfer-addenda/:id')
+  async transferAddendum(@Param('id') id: string, @Res() response: Response) { const record = await this.transfers.get(id); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
+  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
   async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
     const record = await this.contracts.getManagerContract(id);

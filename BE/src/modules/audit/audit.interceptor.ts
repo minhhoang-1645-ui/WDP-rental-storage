@@ -3,7 +3,7 @@ import { catchError, concatMap, from, mergeMap, throwError } from 'rxjs';
 import { AuditService, type AuditInput } from './audit.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const resources = new Set(['users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
+const resources = new Set(['damage-claims', 'business-policies', 'users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
 type AuditRequest = { method: string; route?: { path?: unknown }; params?: Record<string, string>; body?: Record<string, unknown>; user?: PublicUser; ip?: string; socket?: { remoteAddress?: string } };
 
 /** Server-owned route templates + explicit fields only; never serialize request/result bodies. */

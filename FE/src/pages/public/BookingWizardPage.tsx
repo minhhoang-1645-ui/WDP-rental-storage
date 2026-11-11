@@ -1,3 +1,4 @@
+import { lastCreatedKey } from '../../utils/record-identity';
 import { safeSessionStorage } from '../../services/browser-storage'
 import { vietnamCalendarDate } from '../../utils/business-date'
 import { QuoteBreakdown } from '../../components/booking/QuoteBreakdown';
@@ -397,7 +398,10 @@ export function BookingWizardPage() {
         safeSessionStorage.setItem('wdp-inquiry-token:' + result.id, result.accessToken)
       }
       clearBookingDraft()
-      navigate('/booking/confirmation/' + result.id, { state: { record: result } })
+      if (user) {
+        safeSessionStorage.setItem(lastCreatedKey(user.id), result.id)
+        navigate('/customer/reservations/' + encodeURIComponent(result.id), { state: { createdReservationId: result.id } })
+      } else navigate('/booking/confirmation/' + encodeURIComponent(result.id), { state: { record: result } })
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setAvailability(null)
@@ -449,7 +453,7 @@ export function BookingWizardPage() {
             <div className="booking-preview-heading"><div><p className="eyebrow">{product.code}</p><h2>{product.name}</h2></div><span className={product.status === 'limited' ? 'status-warning' : 'status-success'}>{product.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span></div>
             <dl className="booking-specs"><div><dt>Kích thước</dt><dd>{size.dimensions}</dd></div><div><dt>Diện tích</dt><dd>{size.floorArea}</dd></div><div><dt>Thể tích</dt><dd>{size.volume}</dd></div><div><dt>Điều kiện</dt><dd>{product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</dd></div></dl>
             <p className="booking-preview-description">{product.access}. Bạn chọn loại kho; mã kho vật lý và vị trí được hiển thị sau khi xác nhận. Ảnh tham khảo giống danh sách kho.</p>
-            <div className="booking-listed-price"><span>Giá niêm yết theo tháng</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
+            <div className="booking-listed-price"><span>Giá thuê 1 kho / tháng (chưa gồm cọc, dịch vụ)</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
             <button type="button" className="button-primary booking-preview-cta w-full justify-center" onClick={() => goToStep(2)}>Chọn thời gian <ArrowRight size={18} /></button>
           </div>
         </aside>
@@ -475,7 +479,7 @@ export function BookingWizardPage() {
         </div>
         <aside className="booking-summary">
           <div className="booking-summary-product"><StorageImage className="booking-product-thumb" src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /><div><span>{product.code}</span><strong>{product.name}</strong><small>{size.dimensions} · {draft.quantity} kho</small></div></div>
-          <div className="booking-summary-listed-price"><span>Giá niêm yết theo tháng</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
+          <div className="booking-summary-listed-price"><span>Giá thuê 1 kho / tháng (chưa gồm cọc, dịch vụ)</span><strong>{product.monthlyPrice !== null && product.monthlyPrice > 0 ? quoteText(product.monthlyPrice) : 'Chưa có giá niêm yết'}</strong></div>
           <div className="booking-period"><CalendarDays size={21} /><div><span>Thời gian thuê</span><strong>{draft.startDate ? 'Từ ' + formatDate(draft.startDate) : 'Chưa chọn ngày bắt đầu'}</strong></div></div>
           <dl className="booking-summary-details">
             <div><dt>Ngày bắt đầu</dt><dd>{availability ? formatDate(availability.startDate) : formatDate(draft.startDate)}</dd></div>

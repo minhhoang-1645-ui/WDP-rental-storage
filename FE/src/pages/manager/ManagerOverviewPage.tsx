@@ -1,263 +1,32 @@
-import {
-  ArrowRight,
-  BarChart3,
-  ClipboardCheck,
-  FileText,
-  Headphones,
-  RefreshCw,
-  Warehouse,
-  WalletCards,
-} from "lucide-react";
-import { Link } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
-import { ActivitySummary } from "../../activity/ActivityCenter";
-import { useActivity } from "../../activity/context";
-import {
-  PageHeader,
-  LoadState,
-  Status,
-} from "../../components/manager/PortalUi";
-import { money, type Row } from "../../components/manager/portal-data";
-import { WorkHub } from "../../components/workspace/WorkHub";
-import { useApiResource } from "../../services/useApiResource";
-import type { ManagerReport } from "../../types/manager-report";
-import { useLiveRefresh } from "../../services/live-events";
-import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from "../../utils/work-queue";
-import { activitySources } from "../../utils/activity";
+import { RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
+import { useActivity } from '../../activity/context';
+import { useApiResource } from '../../services/useApiResource';
+import { useLiveRefresh } from '../../services/live-events';
+import type { ManagerReport } from '../../types/manager-report';
+import { PageHeader, LoadState } from '../../components/manager/PortalUi';
+import { money } from '../../components/manager/portal-data';
+import { InternalKpis, InternalPriority } from '../../components/workspace/InternalDashboard';
 
 export function ManagerOverviewPage() {
-  const { user } = useAuth();
-  const activity = useActivity();
-  const summary = useApiResource<Row>(
-    "/manager/dashboard/summary",
-    user?.id,
-    true,
-  );
-  const units = useApiResource<ManagerReport>("/manager/dashboard/analytics", user?.id, true);
-  const unitCounts: Record<string, number | undefined> = { AVAILABLE: units.data?.units.available, OCCUPIED: units.data?.units.occupied, RESERVED: units.data?.units.reserved, MAINTENANCE: units.data?.units.maintenance };
-  useLiveRefresh("/manager/*", () => { summary.refresh(); units.refresh(); });
-  const refresh = () => {
-    summary.refresh();
-    units.refresh();
-    activity.refresh();
-  };
-  const invoices = activity.data.invoices ?? [];
-  const outstandingInvoices = invoices.filter(row => ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0);
-  const overdueInvoices = outstandingInvoices.filter((row) => isOverdueInvoice(row));
-  const submissions = (activity.data["payment-submissions"] ?? []).filter(
-    (row) => row.status === "PENDING_VERIFICATION",
-  );
-  const assignments = [
-    "support-requests",
-    "maintenance",
-    "stock-movements",
-  ].flatMap((kind) =>
-    (activity.data[kind] ?? []).filter((row) => assignmentNeedsAttention(kind, row)),
-  );
-  const available = units.data?.units.available;
-  const occupied = units.data?.units.occupied;
-  const count = (kinds: string[], value: number) =>
-    activity.loading ||
-    kinds.some(
-      (kind) =>
-        !activity.data[kind] ||
-        activity.failed.includes(
-          activitySources("MANAGER").find((source) => source.kind === kind)!
-            .title,
-        ),
-    )
-      ? "—"
-      : value;
-  const financeReady =
-    Boolean(activity.data.invoices) && !activity.failed.includes("Hóa đơn");
-  return (
-    <section className="workspace-home">
-      <PageHeader
-        title="Tổng quan vận hành"
-        description={`Chào ${user?.fullName ?? "bạn"}. Theo dõi cơ sở, phân công công việc và đối chiếu tài chính.`}
-      >
-        <button
-          className="button-secondary"
-          disabled={summary.loading || units.loading || activity.checking}
-          onClick={refresh}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      <WorkHub
-        title="Việc quản lý cần xử lý"
-        description="Ưu tiên hồ sơ chưa có người phụ trách và các khoản cần đối chiếu."
-        actions={[
-          {
-            title: "Phân công nhân viên",
-            description:
-              "Giao người phụ trách hỗ trợ, bảo trì và nhập – xuất hàng.",
-            to: "/manager/assignments?assignment=attention",
-            icon: Headphones,
-            count: count(
-              ["support-requests", "maintenance", "stock-movements"],
-              assignments.length,
-            ),
-            tone: assignments.length ? "attention" : "normal",
-          },
-          {
-            title: "Chờ xác nhận thanh toán",
-            description: "Đối chiếu tiền thực nhận với thông báo khách gửi.",
-            to: "/manager/payment-submissions",
-            icon: ClipboardCheck,
-            count: count(["payment-submissions"], submissions.length),
-            tone: submissions.length ? "attention" : "normal",
-          },
-          {
-            title: "Hóa đơn & công nợ",
-            description: financeReady
-              ? `${outstandingInvoices.length} hóa đơn còn số dư, ${overdueInvoices.length} quá hạn. Mở để đối chiếu hoặc ghi nhận thu tại cơ sở.`
-              : "Xem số tiền còn phải thu và hạn thanh toán.",
-            to: "/manager/operations/invoices",
-            icon: WalletCards,
-            count: count(["invoices"], outstandingInvoices.length),
-            tone: overdueInvoices.length ? "attention" : "normal",
-          },
-          ...[
-            ['support-requests', 'Hỗ trợ cần quyết định', '/manager/operations/support-requests?status=ESCALATED', 'Xử lý các hồ sơ nhân viên chuyển lên.'],
-            ['maintenance', 'Chờ nghiệm thu bảo trì', '/manager/operations/maintenance?status=AWAITING_VERIFICATION', 'Kiểm tra kết quả sửa chữa trước khi mở lại kho.'],
-            ['deposit-settlements', 'Quyết toán tiền cọc', '/manager/operations/deposit-settlements', 'Đối chiếu kiểm tra kho, công nợ và khoản hoàn.'],
-            ['online-payment-reconciliations', 'Đối soát VNPay', '/manager/online-payment-reconciliations', 'Theo dõi giao dịch cần kiểm tra và hoàn tiền.'],
-          ].map(([kind, title, to, description]) => { const pending = (activity.data[kind] ?? []).filter(row => managerNeedsAction(kind, row) && !assignmentNeedsAttention(kind, row)); return { title, to, description, icon: ClipboardCheck, count: count([kind], pending.length), tone: pending.length ? 'attention' as const : 'normal' as const }; }),
-        ]}
-      />
-      <ActivitySummary />
-      <LoadState
-        loading={summary.loading || units.loading}
-        error={summary.error || units.error}
-        retry={summary.refresh}
-      />
-      <div className="portal-metrics" aria-label="Tình hình cơ sở">
-        {[
-          ["Tổng kho vật lý", units.data?.units.total, "/manager/units"],
-          ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
-          ["Kho sẵn sàng", available, "/manager/units?status=AVAILABLE"],
-          [
-            "Kỳ thuê quá hạn",
-            summary.data?.overdueRentals,
-            "/manager/operations/rentals?status=true",
-          ],
-        ].map(([title, value, path]) => (
-          <Link className="portal-metric" key={String(title)} to={String(path)}>
-            <span>{String(title)}</span>
-            <strong>{typeof value === "number" ? value : "—"}</strong>
-            <small>
-              Xem chi tiết <ArrowRight size={14} />
-            </small>
-          </Link>
-        ))}
-      </div>
-      <div className="portal-overview-grid">
-        <section className="manager-section">
-          <div className="portal-section-title">
-            <h2>Tình trạng kho</h2>
-            <Link to="/manager/units">
-              Xem kho <ArrowRight size={14} />
-            </Link>
-          </div>
-          <LoadState
-            loading={units.loading}
-            error={units.error}
-            retry={units.refresh}
-          />
-          {units.data && (
-            <>
-              <div
-                className="portal-capacity"
-                role="img"
-                aria-label={`${units.data.units.total} kho vật lý`}
-              >
-                {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
-                  (status) => (
-                    <div
-                      key={status}
-                      className={`is-${status.toLowerCase()}`}
-                      style={{
-                        width: `${units.data!.units.total ? ((unitCounts[status] ?? 0) / units.data!.units.total) * 100 : 0}%`,
-                      }}
-                    />
-                  ),
-                )}
-              </div>
-              <div className="portal-capacity-legend">
-                {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
-                  (status) => (
-                    <Link key={status} to={`/manager/units?status=${status}`}>
-                      <Status value={status} />
-                      <strong>
-                        {
-                          unitCounts[status]
-                        }
-                      </strong>
-                    </Link>
-                  ),
-                )}
-              </div>
-            </>
-          )}
-          <p className="manager-action-copy">
-            Khả dụng cho khách đặt mới còn phụ thuộc lịch phân bổ trong toàn bộ
-            kỳ thuê. Kho quá hạn vẫn được giữ đến khi khách trả thực tế.
-          </p>
-        </section>
-        <section className="manager-section">
-          <div className="portal-section-title">
-            <h2>Hồ sơ & báo cáo</h2>
-          </div>
-          <div className="workspace-shortcuts">
-            <Link to="/manager/reports">
-              <BarChart3 size={20} />
-              <div>
-                <strong>Báo cáo vận hành</strong>
-                <span>Hóa đơn, khoản thu và tình hình sử dụng kho.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-            <Link to="/manager/operations/contracts">
-              <FileText size={20} />
-              <div>
-                <strong>Hợp đồng thuê</strong>
-                <span>Đối chiếu kỳ thuê, khách hàng và kho đã phân bổ.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-            <Link to="/manager/operations/rentals">
-              <Warehouse size={20} />
-              <div>
-                <strong>Kho đang thuê</strong>
-                <span>Theo dõi sử dụng kho, thời hạn và công nợ.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-          </div>
-          <p className="manager-action-copy">
-            Nhân viên tiếp nhận và xử lý yêu cầu đặt kho, tư vấn, hỗ trợ, bàn
-            giao, hàng hóa, gia hạn, chuyển kho, trả kho và bảo trì.
-          </p>
-        </section>
-      </div>
-      <section className="portal-finance-strip">
-        <div>
-          <span>Tổng dư nợ hóa đơn</span>
-          <strong>
-            {units.data ? money(units.data.finance.outstandingAmount) : "—"}
-          </strong>
-          <small>
-            {financeReady
-              ? `${overdueInvoices.length} hóa đơn quá hạn · ${money(overdueInvoices.reduce((sum, row) => sum + Number(row.balanceDue), 0))}`
-              : "Chưa tải đủ hóa đơn để tổng hợp."}
-          </small>
-        </div>
-        <Link className="button-secondary" to="/manager/operations/invoices">
-          Theo dõi công nợ <ArrowRight size={16} />
-        </Link>
-      </section>
-    </section>
-  );
+  const { user } = useAuth(), activity = useActivity();
+  const report = useApiResource<ManagerReport>('/manager/dashboard/analytics', user?.id, true);
+  useLiveRefresh('/manager/*', report.refresh);
+  const data = report.data;
+  const total = (keys: string[]) => data ? keys.reduce((sum, key) => sum + data.queue[key], 0) : '—';
+  const priority = activity.entries.filter(entry => entry.action);
+  return <section className="workspace-home">
+    <PageHeader title="Tổng quan"><button className="button-secondary" disabled={report.loading || report.refreshing || activity.checking} onClick={() => { report.refresh(); activity.refresh(); }}><RefreshCw size={16} />Làm mới</button></PageHeader>
+    <LoadState loading={report.loading} error={report.error} retry={report.refresh} />
+    <InternalKpis items={[
+      { title: 'Việc cần duyệt', value: total(['escalatedSupport', 'maintenanceReview', 'depositReview']), to: '/manager/reviews', hint: 'Hỗ trợ, bảo trì và tiền cọc' },
+      { title: 'Chờ phân công', value: total(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance']), to: '/manager/assignments?assignment=unassigned', hint: 'Nhập–xuất, hỗ trợ và bảo trì' },
+      { title: 'Kho đang sử dụng', value: data ? `${data.units.occupied} / ${data.units.total}` : '—', to: '/manager/units', hint: 'Đang dùng / tổng kho vật lý' },
+      { title: 'Công nợ hiện tại', value: data ? money(data.finance.outstandingAmount) : '—', to: '/manager/operations/invoices', hint: data ? `${data.finance.unpaidInvoices} hóa đơn chưa trả đủ` : undefined },
+      { title: 'Chờ xác minh tiền', value: data?.queue.paymentVerification ?? '—', to: '/manager/payment-submissions', hint: 'Thông báo chuyển khoản chưa xác minh' },
+    ]} />
+    <InternalPriority entries={priority} to="/manager/notifications?view=action" loading={activity.loading} failed={activity.failed} onRead={activity.markRead} />
+    <div className="internal-shortcuts"><Link className="button-secondary" to="/manager/reports">Báo cáo chi tiết</Link><Link className="button-secondary" to="/manager/online-payment-reconciliations">Đối soát VNPay</Link><Link className="button-secondary" to="/manager/stored-items">Hàng đang lưu</Link></div>
+  </section>;
 }

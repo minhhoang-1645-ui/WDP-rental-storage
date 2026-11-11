@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { handoverReport } from './handover-report.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Logger, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -51,6 +53,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly billing: BillingService = new BillingService(prisma),
     private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
+    @Optional() private readonly policies?: BusinessPolicyService,
   ) {}
 
   async createCustomerAppointment(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -70,7 +73,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         const reservation = await tx.reservation.findUnique({ where: { id: reservationIdentity.id }, include: this.reservationReadinessInclude() });
         if (!reservation) throw new NotFoundException('Không tìm thấy Reservation.');
         this.assertHandoverReady(reservation);
-        this.assertAppointmentDate(reservation, parsed.scheduledAt);
+        await this.assertAppointmentDate(reservation, parsed.scheduledAt);
         if (await tx.handoverAppointment.findFirst({ where: { reservationId: reservation.id, status: 'COMPLETED' }, select: { id: true } })) throw new ConflictException('Đã hoàn tất bàn giao chìa khóa cho đơn này. Hệ thống sẽ kích hoạt khi đến ngày thuê.');
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
@@ -135,7 +138,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (current.status === 'CONFIRMED') return this.toAppointment(current, true);
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
-        this.assertAppointmentDate(current.reservation, current.scheduledAt);
+        await this.assertAppointmentDate(current.reservation, current.scheduledAt);
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
           data: { status: 'CONFIRMED', confirmedByUserId: actor.id, confirmedAt: new Date() },
@@ -155,8 +158,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (current.status === 'COMPLETED') return this.toAppointment(current, true);
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
-        this.assertAppointmentDate(current.reservation, current.scheduledAt);
-        this.assertHandoverExecutionTime(current.reservation, new Date());
+        await this.assertAppointmentDate(current.reservation, current.scheduledAt);
+        await this.assertHandoverExecutionTime(current.reservation, new Date());
         const handoverNote = handoverReport(input, current.reservation.customer);
 
         const contracts = current.reservation.contracts;
@@ -214,12 +217,13 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (reservation.contracts.some((contract: any) => !allocationIds.has(contract.reservationUnitId))) throw new ConflictException('Contract không khớp allocation vật lý của Reservation.');
   }
 
-  private assertAppointmentDate(reservation: any, scheduledAt: Date) {
+  private async assertAppointmentDate(reservation: any, scheduledAt: Date) {
+    const leadDays = this.policies ? await this.policies.value('handoverLeadDays') : 3;
     const appointmentDay = this.vietnamDate(scheduledAt);
-    if (reservation.contracts.some((contract: any) => appointmentDay < this.keyPickupStartDate(contract.startDate))) {
+    if (reservation.contracts.some((contract: any) => appointmentDay < this.keyPickupStartDate(contract.startDate, leadDays))) {
       throw new ConflictException({
         code: 'HANDOVER_BEFORE_PICKUP_WINDOW',
-        message: 'Lịch nhận chìa khóa chỉ được đặt sớm tối đa 3 ngày trước ngày bắt đầu thuê.',
+        message: `Lịch nhận chìa khóa chỉ được đặt sớm tối đa ${leadDays} ngày trước ngày bắt đầu thuê.`,
       });
     }
     if (reservation.contracts.some((contract: any) => appointmentDay >= this.isoDate(contract.endDate))) {
@@ -227,11 +231,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private assertHandoverExecutionTime(reservation: any, now: Date) {
+  private async assertHandoverExecutionTime(reservation: any, now: Date) {
+    const leadDays = this.policies ? await this.policies.value('handoverLeadDays') : 3;
     // Confirm actual collection independently of the planned appointment hour.
     // Rental activation still waits for startDate in completeHandover/activateDueHandovers.
     const today = this.vietnamDate(now);
-    if (reservation.contracts.some((contract: any) => today < this.keyPickupStartDate(contract.startDate) || today >= this.isoDate(contract.endDate))) {
+    if (reservation.contracts.some((contract: any) => today < this.keyPickupStartDate(contract.startDate, leadDays) || today >= this.isoDate(contract.endDate))) {
       throw new ConflictException({ code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW', message: 'Chỉ được bàn giao từ 3 ngày trước ngày thuê đến trước ngày kết thúc thuê.' });
     }
   }
@@ -251,9 +256,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     return value.toISOString().slice(0, 10);
   }
 
-  private keyPickupStartDate(startDate: Date) {
+  private keyPickupStartDate(startDate: Date, leadDays = 3) {
     const date = new Date(`${this.isoDate(startDate)}T00:00:00.000Z`);
-    date.setUTCDate(date.getUTCDate() - 3);
+    date.setUTCDate(date.getUTCDate() - leadDays);
     return date.toISOString().slice(0, 10);
   }
 

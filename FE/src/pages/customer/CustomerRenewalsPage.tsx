@@ -1,3 +1,4 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { useCustomerOnlinePayment } from './useCustomerOnlinePayment';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
@@ -249,7 +250,7 @@ export function CustomerRenewalsPage() {
                 >
                   <div className="customer-record-heading">
                     <div>
-                      <small>{item.renewalCode}</small>
+                      <CopyRecordCode value={item.renewalCode} />
                       <h2>{item.reservation.storageType.name}</h2>
                     </div>
                     <CustomerStatus status={item.status} />

@@ -2,14 +2,14 @@ export interface StockStorageUnit { id: string; unitNumber: string; floor?: stri
 export type StockRole = 'CUSTOMER' | 'MANAGER' | 'STAFF';
 export interface StoredItem {
   id: string; itemCode: string; name: string; unit: string; balance: number;
-  note?: string | null; customer?: { id: string; fullName: string }; currentStorageUnit?: StockStorageUnit | null; rentalContract?: { id: string; contractCode: string; reservationUnit?: { storageUnit: StockStorageUnit } };
+  storageUnit?: StockStorageUnit | null; note?: string | null; customer?: { id: string; fullName: string }; currentStorageUnit?: StockStorageUnit | null; rentalContract?: { id: string; contractCode: string; reservationUnit?: { storageUnit: StockStorageUnit } };
 }
 export interface StockLine { id: string; storedItem: StoredItem; requestedQty: number; actualQty: number | null; note: string | null }
 export interface StockMovement {
   currentStorageUnit?: StockStorageUnit | null; storageUnitAtCompletion?: StockStorageUnit | null;
   id: string; movementCode: string; type: 'IN' | 'OUT'; status: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
   customer: { id: string; fullName: string; email: string; phone?: string };
-  rentalContract: { id: string; contractCode: string; status: string };
+  rentalContract: { id: string; contractCode: string; status: string }; storageUnit?: { id: string; unitNumber: string; floor: string | null; zone: string | null } | null;
   assignedStaff: { id: string; fullName: string } | null;
   assignedBy?: { fullName: string } | null; completedBy?: { fullName: string } | null;
   scheduledAt: string | null; assignedAt?: string | null; completedAt: string | null;

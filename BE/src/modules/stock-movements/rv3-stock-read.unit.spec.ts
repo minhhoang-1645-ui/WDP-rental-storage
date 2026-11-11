@@ -61,7 +61,7 @@ describe('RV3 stored items and historical location', () => {
     const existing = { id: 'old-item', unit: 'bao tải cũ' };
     const movement = { id: 'movement', lines: [], createdAt: stamp, updatedAt: stamp };
     const tx = {
-      rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE' }) },
+      $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', startDate: new Date('2026-01-01'), endDate: new Date('2035-01-01'), reservationUnit: { storageUnitId: 'unit', storageUnit: { unitNumber: 'A01', floor: '1', zone: 'A' } } }) },
       stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
       storedItem: { findFirst: vi.fn().mockResolvedValue(existing), create: vi.fn() },
       stockMovementLine: { create: vi.fn() },

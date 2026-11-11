@@ -1,0 +1,81 @@
+/* Staff, Manager, Admin Web only. Never target Customer or public pages. */
+.manager-shell.internal-web { font-size:16px; line-height:1.55; grid-template-columns:272px minmax(0,1fr); }
+.manager-shell.internal-web .manager-main { padding:28px 32px 48px; min-width:0; }
+.manager-shell.internal-web .portal-workspace { min-width:0; }
+.manager-shell.internal-web .manager-sidebar { padding:22px 14px 14px; }
+.manager-shell.internal-web .manager-sidebar nav a, .manager-shell.internal-web .portal-mobile-nav nav a { min-height:44px; font-size:15px; line-height:1.4; padding:10px 12px; border-radius:9px; }
+.manager-shell.internal-web .manager-sidebar nav a.active, .manager-shell.internal-web .portal-mobile-nav nav a.active { background:var(--surface-selected); color:var(--color-primary); box-shadow:inset 3px 0 var(--color-primary); }
+.manager-shell.internal-web .workspace-nav-heading { font-size:13px; color:var(--color-slate); letter-spacing:.02em; padding:12px 10px 6px; }
+.manager-shell.internal-web .workspace-nav-search { padding:6px 10px 14px; font-size:13px; color:var(--color-slate); }
+.manager-shell.internal-web .workspace-nav-search input { min-height:40px; font-size:14px; }
+.manager-shell.internal-web .portal-brand { padding-bottom:16px; }
+.manager-shell.internal-web .portal-brand small, .manager-shell.internal-web .manager-account small { font-size:13px; color:var(--color-slate); }
+.manager-shell.internal-web .manager-account strong { font-size:14px; }
+.manager-shell.internal-web .portal-topbar { min-height:64px; padding:12px 32px; font-size:14px; }
+.manager-shell.internal-web .manager-page-header { margin-bottom:22px; gap:16px; align-items:center; }
+.manager-shell.internal-web .manager-page-header .eyebrow { display:none; }
+.manager-shell.internal-web .manager-page-header h1 { font-size:clamp(26px,2.2vw,30px); line-height:1.25; letter-spacing:-.025em; margin:0; }
+.manager-shell.internal-web .manager-page-header p:not(.eyebrow) { font-size:15px; color:var(--color-slate); max-width:76ch; margin:8px 0 0; line-height:1.5; }
+.manager-shell.internal-web h2 { font-size:19px; line-height:1.35; }
+.manager-shell.internal-web h3 { font-size:16px; }
+.manager-shell.internal-web :is(.manager-table,.manager-table th,.manager-table td) { font-size:14px; line-height:1.55; }
+.manager-shell.internal-web .manager-table th { color:var(--color-slate); text-transform:none; font-weight:650; white-space:nowrap; }
+.manager-shell.internal-web .manager-table td { padding:14px 16px; vertical-align:middle; color:var(--color-ink); }
+.manager-shell.internal-web .manager-table small { font-size:13px; color:var(--color-slate); line-height:1.5; margin-top:3px; }
+.manager-shell.internal-web .manager-table-wrap { overflow-x:auto; border-radius:12px; border:1px solid var(--color-border); box-shadow:none; }
+.manager-shell.internal-web .manager-table { width:100%; margin:0; }
+.manager-shell.internal-web .manager-table tbody tr:hover { background:var(--surface-hover); }
+.manager-shell.internal-web .manager-table td strong,.manager-shell.internal-web .manager-table code { overflow-wrap:anywhere; }
+.manager-shell.internal-web :is(.field-label,.portal-checkbox,.portal-form label) { font-size:14px; color:var(--color-ink); line-height:1.5; }
+.manager-shell.internal-web :is(input,select,textarea) { font-size:15px; color:var(--color-ink); }
+.manager-shell.internal-web input::placeholder,.manager-shell.internal-web textarea::placeholder { color:var(--text-placeholder); opacity:1; }
+.manager-shell.internal-web :is(.button-primary,.button-secondary) { font-size:14px; min-height:42px; padding:9px 16px; border-radius:9px; justify-content:center; white-space:normal; }
+.manager-shell.internal-web .portal-toolbar { padding:18px; gap:16px; box-shadow:none; border-radius:12px; margin-bottom:20px; }
+.manager-shell.internal-web .portal-actions { gap:8px; flex-wrap:wrap; }
+.manager-shell.internal-web .manager-section { padding:22px; border-radius:12px; box-shadow:none; }
+.manager-shell.internal-web :is(.manager-action-copy,.portal-report-note,.workspace-muted,.staff-assignee-hint,.work-hub-copy p) { font-size:14px; color:var(--color-slate); line-height:1.55; }
+.manager-shell.internal-web .manager-status { font-size:13px; line-height:1.35; padding:5px 10px; }
+.manager-shell.internal-web .manager-facts dt { font-size:13px; text-transform:none; color:var(--color-slate); }
+.manager-shell.internal-web .manager-facts dd { font-size:15px; overflow-wrap:anywhere; }
+.manager-shell.internal-web :is(.booking-alert,.portal-success) { font-size:14px; line-height:1.6; }
+.manager-shell.internal-web .work-hub-card { box-shadow:none; min-height:80px; padding:16px; }
+.manager-shell.internal-web .work-hub-copy strong { font-size:16px; }
+.manager-shell.internal-web .work-hub-heading p { font-size:14px; }
+.manager-shell.internal-web .work-hub-grid { gap:12px; }
+.manager-shell.internal-web .portal-dialog { font-size:16px; max-width:min(760px,calc(100vw - 32px)); }
+.manager-shell.internal-web .portal-pagination { flex-wrap:wrap; gap:16px; margin-top:18px; font-size:14px; align-items:center; }
+.manager-shell.internal-web .portal-pagination > div { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.manager-shell.internal-web .internal-page-size { display:flex; align-items:center; gap:8px; color:var(--color-slate); font-size:14px; }
+.manager-shell.internal-web .internal-page-size select { width:74px; min-height:40px; }
+.manager-shell.internal-web .internal-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:24px; }
+.manager-shell.internal-web .internal-kpi { display:flex; flex-direction:column; gap:8px; padding:20px; background:white; border:1px solid var(--color-border); border-radius:12px; text-decoration:none; color:var(--color-ink); min-width:0; }
+.manager-shell.internal-web .internal-kpi > span { font-size:14px; color:var(--color-slate); }
+.manager-shell.internal-web .internal-kpi strong { font-size:clamp(24px,2vw,30px); line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.manager-shell.internal-web .internal-kpi small { font-size:13px; color:var(--color-slate); }
+.manager-shell.internal-web .internal-priority { background:white; border:1px solid var(--color-border); border-radius:12px; padding:22px; margin-bottom:20px; }
+.manager-shell.internal-web .internal-section-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.manager-shell.internal-web .internal-section-heading h2 { margin:0; }
+.manager-shell.internal-web .internal-task-list { list-style:none; padding:0; margin:0; }
+.manager-shell.internal-web .internal-task-list li + li { border-top:1px solid var(--color-border); }
+.manager-shell.internal-web .internal-task-list a { display:flex; align-items:center; gap:16px; padding:14px 0; color:var(--color-ink); text-decoration:none; }
+.manager-shell.internal-web .internal-task-list a > div { min-width:0; flex:1; }
+.manager-shell.internal-web .internal-task-list strong { display:block; font-size:15px; overflow-wrap:anywhere; }
+.manager-shell.internal-web .internal-task-list small { display:block; font-size:13px; color:var(--color-slate); margin-top:4px; }
+.manager-shell.internal-web .internal-task-list a:hover strong { text-decoration:underline; }
+.manager-shell.internal-web .internal-shortcuts { display:flex; gap:12px; flex-wrap:wrap; margin:20px 0; }
+.manager-shell.internal-web .internal-help { margin:14px 0; font-size:14px; color:var(--color-slate); }
+.manager-shell.internal-web .internal-help > summary { cursor:pointer; font-weight:600; padding:10px 0; }
+.manager-shell.internal-web .internal-skip { position:fixed; top:-100px; left:280px; z-index:1000; background:white; padding:12px 18px; }
+.manager-shell.internal-web .internal-skip:focus { top:8px; }
+.manager-shell.internal-web :focus-visible { outline:3px solid var(--color-primary); outline-offset:3px; }
+@media(max-width:1100px) { .manager-shell.internal-web { grid-template-columns:240px minmax(0,1fr); } .manager-shell.internal-web .manager-main { padding:24px; } .manager-shell.internal-web .portal-topbar { padding-inline:24px; } }
+@media(max-width:900px) { .manager-shell.internal-web { display:block; } .manager-shell.internal-web > .manager-sidebar { display:none; } .manager-shell.internal-web .portal-menu { display:inline-flex; } .manager-shell.internal-web .portal-mobile-nav { width:min(340px,calc(100vw - 28px)); max-height:calc(100dvh - 24px); overflow-y:auto; padding:22px 14px; } .manager-shell.internal-web .portal-topbar { position:sticky; top:0; z-index:25; } }
+@media(max-width:600px) { .manager-shell.internal-web .manager-main { padding:20px 14px; } .manager-shell.internal-web .portal-topbar { padding:10px 14px; } .manager-shell.internal-web .portal-topbar > div:first-child > span:first-of-type,.manager-shell.internal-web .portal-topbar-divider,.manager-shell.internal-web .portal-role { display:none; } .manager-shell.internal-web .manager-page-header { flex-direction:column; align-items:stretch; } .manager-shell.internal-web .internal-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .manager-shell.internal-web .internal-kpi { padding:14px; } .manager-shell.internal-web .internal-kpi strong { font-size:23px; } .manager-shell.internal-web .portal-toolbar { padding:14px; } .manager-shell.internal-web .internal-priority,.manager-shell.internal-web .manager-section { padding:16px; } .manager-shell.internal-web .portal-pagination > div { width:100%; justify-content:space-between; } .manager-shell.internal-web .internal-skip { left:12px; } }
+
+.manager-shell.internal-web .workspace-home { display:block; }
+.manager-shell.internal-web .internal-task-list a { width:100%; box-sizing:border-box; }
+.manager-shell.internal-web .internal-section-heading .portal-text-button { display:inline-flex; align-items:center; gap:6px; }
+
+.manager-shell.internal-web .manager-status:is(.is-disabled,.is-rejected,.is-cancelled) { color:#991b1b; background:#fef2f2; }
+.manager-shell.internal-web .manager-status:is(.is-active,.is-completed,.is-paid) { color:#166534; background:#eaf7ee; }
+.manager-shell.internal-web .manager-status:is(.is-open,.is-requested,.is-pending,.is-pending_verification) { color:#854d0e; background:#fef9c3; }

@@ -5,7 +5,7 @@ import { DateField } from './date-field';
 import { ErrorState, LoadingState } from './screen-state';
 import type { AdditionalService, ServiceSelection } from '@/types/additional-service';
 import { defaultServiceSelection, serviceBillingBasis, serviceEstimatedTotal, serviceSelectionIssue } from '@/utils/service-period';
-import { localizeService } from '@/utils/service-labels';
+import { localizeService, serviceRateUnit } from '@/utils/service-labels';
 
 export function AdditionalServicePicker({ services, selections, start, end, loading, error, retry, onChange }: { services: AdditionalService[]; selections: ServiceSelection[]; start: string; end: string; loading: boolean; error?: string; retry: () => void; onChange: (value: ServiceSelection[]) => void }) {
   const [kind, setKind] = useState<'RENTAL' | 'PURCHASE'>('RENTAL');
@@ -21,7 +21,7 @@ export function AdditionalServicePicker({ services, selections, start, end, load
       const defaults = defaultServiceSelection(service, start, end);
       const subtotal = selection ? serviceEstimatedTotal(service, selection, start, end) : null;
       return <View key={service.id} style={styles.card}>
-        <Text style={styles.title}>{service.name}</Text><Text style={styles.copy}>{money(service.unitPrice)} / {service.billingUnit === 'ONE_TIME' ? 'lần mua' : service.billingUnit === 'DAY' ? 'ngày' : 'tháng'}</Text>
+        <Text style={styles.title}>{service.name}</Text><Text style={styles.copy}>{money(service.unitPrice)} / {serviceRateUnit(service)}</Text>
         <Button title={selection ? 'Bỏ chọn' : 'Thêm dịch vụ'} variant="secondary" disabled={!selection && (!defaults || service.isActive === false || !Number.isSafeInteger(service.unitPrice) || Number(service.unitPrice) <= 0)} onPress={() => onChange(selection ? selections.filter(item => item.serviceId !== service.id) : defaults ? [...selections, defaults] : selections)} />
         {!defaults && service.kind === 'RENTAL' && <Text style={styles.copy}>Kỳ thuê kho chưa đủ thời gian sử dụng thiết bị này. Thiết bị theo tháng cần đủ tháng lịch.</Text>}
         {subtotal !== null && <Text style={styles.title}>Tạm tính: {money(subtotal)}</Text>}

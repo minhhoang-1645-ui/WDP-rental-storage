@@ -1,16 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AppointmentsService } from './appointments.service.js';
 
-describe('handover activation window', () => {
+describe('handover activation window', async () => {
   const service = new AppointmentsService({} as never, {} as never, {} as never);
   const reservation = { contracts: [{ startDate: new Date('2026-11-10'), endDate: new Date('2026-12-10') }] };
-  it('accepts key collection three days early without requiring the rental start', () => {
-    expect(() => Reflect.get(service, 'assertHandoverExecutionTime').call(service, reservation, new Date('2026-11-07T03:00:00Z'))).not.toThrow();
+  it('accepts key collection three days early without requiring the rental start', async () => {
+    await expect(Reflect.get(service, 'assertHandoverExecutionTime').call(service, reservation, new Date('2026-11-07T03:00:00Z'))).resolves.toBeUndefined();
   });
-  it('rejects actual collection outside the pickup window', () => {
+  it('rejects actual collection outside the pickup window', async () => {
     const check = Reflect.get(service, 'assertHandoverExecutionTime').bind(service);
-    expect(() => check(reservation, new Date('2026-11-06T03:00:00Z'))).toThrow();
-    expect(() => check(reservation, new Date('2026-12-09T17:00:00Z'))).toThrow();
+    await expect(check(reservation, new Date('2026-11-06T03:00:00Z'))).rejects.toThrow();
+    await expect(check(reservation, new Date('2026-12-09T17:00:00Z'))).rejects.toThrow();
   });
   it('only scans completed handovers with contracts due for activation', async () => {
     const findMany = vi.fn().mockResolvedValue([]);

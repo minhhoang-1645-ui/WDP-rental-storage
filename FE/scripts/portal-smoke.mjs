@@ -724,6 +724,7 @@ try {
   checks.push("Maintenance create and verify");
   page = managerApp.page;
   await open(page, "/manager/reports");
+  await page.getByRole('button', { name: 'Tất cả', exact: true }).click();
   assert(
     requests.some(
       (row) => row.path === "manager/invoices" && row.query.page === "2",
@@ -828,7 +829,7 @@ try {
   await adminLogin.context.close();
   checks.push("Admin saved Manager URLs return to Admin summary, never expose operations");
   const admin = await setup("ADMIN");
-  const adminLinks = ["/admin", "/admin/users", "/admin/login-history", "/admin/activity"];
+  const adminLinks = ["/admin", "/admin/users", "/admin/sections/audit"];
   for (const path of ["/admin", "/admin/users", "/manager/assignments", "/manager/operations/invoices", "/admin/facility/reports", "/admin/facility/operations/returns", "/admin/assignments", "/admin/activity", "/admin/login-history", "/admin/settings", "/admin/roles", "/admin/account-status"]) {
     await open(admin.page, path);
     const destination = ["/admin/users", "/admin/roles", "/admin/account-status"].includes(path) ? "/admin/users" : ["/admin/login-history", "/admin/activity"].includes(path) ? path : "/admin";

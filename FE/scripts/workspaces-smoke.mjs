@@ -183,7 +183,7 @@ async function open(app, path, detail = false) {
     await app.page
       .getByRole("button", {
         name: detail
-          ? "Làm mới hồ sơ"
+          ? /^Làm mới(?: hồ sơ)?$/
           : path.includes("stock-movements")
             ? "Làm mới"
             : "Làm mới danh sách",
@@ -337,7 +337,7 @@ try {
       () =>
         mobile.page.getByRole("button", { name: "Lưu", exact: true }).click(),
     );
-    await mobile.page.getByText("Đã lưu thành công.", { exact: true }).waitFor();
+    await mobile.page.getByText(kind === 'appointments' ? 'Đã lưu bàn giao.' : 'Đã lưu thành công.', { exact: true }).waitFor();
   }
   await mobileAction("reservations", "Xử lý yêu cầu đặt kho", "/status", () =>
     mobile.page

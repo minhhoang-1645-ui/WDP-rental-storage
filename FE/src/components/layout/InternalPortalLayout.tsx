@@ -1,3 +1,6 @@
+import '../../styles/internal-web.css';
+import { listMemoryKey } from '../workspace/internal-list-memory';
+import { safeSessionStorage } from '../../services/browser-storage';
 import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LogOut,
@@ -37,6 +40,7 @@ export function InternalPortalLayout({
   const activity = useActivity();
   const location = useLocation();
   const navigate = useNavigate();
+  useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
   const [navigationFilter, setNavigationFilter] = useState({ path: location.pathname, value: '' });
   const navigationSearch = navigationFilter.path === location.pathname ? navigationFilter.value : '';
   const signOut = () => {
@@ -46,6 +50,7 @@ export function InternalPortalLayout({
     });
   };
   const mobile = useRef<HTMLDialogElement>(null);
+  const accountDialog = useRef<HTMLDialogElement>(null);
   const groups: Array<{ group: string; items: InternalNavItem[] }> = [];
   for (const item of navigation) {
     const group = item.group ?? "Điều hướng";
@@ -95,7 +100,7 @@ export function InternalPortalLayout({
         const matching = items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
         if (!matching.length) return null;
         const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
-        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:${active ? location.pathname : ''}`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
+        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || index === 1} collapsible={navigation.length > 8 && group !== 'Tổng quan'}>
           {matching.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
             <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive || match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')) ? 'active' : undefined}>
               <Icon size={17} />
@@ -110,7 +115,7 @@ export function InternalPortalLayout({
   );
   const account = (
     <div className="manager-account">
-      <div className="portal-account-avatar">{user?.fullName.slice(0, 1)}</div>
+      <button type="button" className="portal-account-avatar" aria-label="Tài khoản cá nhân" onClick={() => { mobile.current?.close(); accountDialog.current?.showModal(); }}>{user?.fullName.slice(0, 1)}</button>
       <div>
         <strong>{user?.fullName}</strong>
         <small>{roleLabel(user?.role)}</small>
@@ -127,7 +132,8 @@ export function InternalPortalLayout({
     </div>
   );
   return (
-    <div className="manager-shell portal-enhanced">
+    <div className="manager-shell portal-enhanced internal-web">
+      <a className="internal-skip" href="#portal-main">Đến nội dung chính</a>
       <aside className="manager-sidebar">
         {brand}
         {nav}
@@ -156,7 +162,7 @@ export function InternalPortalLayout({
             <span className="portal-role">{roleLabel(user?.role)}</span>
           </div>
         </header>
-        <main className="manager-main" id="portal-main">
+        <main className="manager-main" id="portal-main" tabIndex={-1}>
           <ActivityRefreshNote />
           <Outlet />
         </main>
@@ -176,6 +182,11 @@ export function InternalPortalLayout({
         {brand}
         {nav}
         {account}
+      </dialog>
+      <dialog ref={accountDialog} className="portal-dialog" aria-label="Tài khoản cá nhân">
+        <header><h2>Tài khoản cá nhân</h2><button type="button" className="icon-button" aria-label="Đóng tài khoản" onClick={() => accountDialog.current?.close()}><X size={18} /></button></header>
+        <dl className="manager-facts"><div><dt>Họ tên</dt><dd>{user?.fullName}</dd></div><div><dt>Email</dt><dd>{user?.email}</dd></div><div><dt>Vai trò</dt><dd>{roleLabel(user?.role)}</dd></div></dl>
+        <button type="button" className="button-secondary" onClick={signOut}><LogOut size={18} />Đăng xuất</button>
       </dialog>
     </div>
   );

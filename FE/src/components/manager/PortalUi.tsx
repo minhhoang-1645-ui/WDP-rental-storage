@@ -1,6 +1,7 @@
 import { EntitySelect } from '../EntitySelect';
+import { InternalPagination } from '../workspace/InternalPagination';
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { LoadingSkeleton, type SkeletonLayout } from "../LoadingSkeleton";
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
@@ -81,46 +82,16 @@ export function Pagination({
   total,
   onChange,
   disabled = false,
+  onLimitChange,
 }: {
   page: number;
   limit: number;
   total: number;
   onChange: (page: number) => void;
   disabled?: boolean;
+  onLimitChange?: (limit: number) => void;
 }) {
-  const pages = Math.max(1, Math.ceil(total / limit));
-  return (
-    <footer className="portal-pagination">
-      <span>
-        {total
-          ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total} bản ghi`
-          : "0 bản ghi"}
-      </span>
-      <div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Trang trước"
-          disabled={disabled || page <= 1}
-          onClick={() => onChange(page - 1)}
-        >
-          <ChevronLeft size={17} />
-        </button>
-        <span>
-          Trang {page} / {pages}
-        </span>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Trang sau"
-          disabled={disabled || page >= pages}
-          onClick={() => onChange(page + 1)}
-        >
-          <ChevronRight size={17} />
-        </button>
-      </div>
-    </footer>
-  );
+  return <InternalPagination page={page} limit={limit} total={total} onChange={onChange} disabled={disabled} onLimitChange={onLimitChange} />;
 }
 export function Modal({
   title,
@@ -198,6 +169,7 @@ export function RecordPicker({
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [state, setState] = useState<{
     key: string;
     data?: Page;
@@ -205,12 +177,12 @@ export function RecordPicker({
   }>();
   const [revision, setRevision] = useState(0);
   const [picked, setPicked] = useState<Row>();
-  const key = `${user?.id}:${path}:${local ? "" : search}:${page}:${revision}`;
+  const key = `${user?.id}:${path}:${local ? "" : search}:${page}:${limit}:${revision}`;
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      const url = `${path}${path.includes("?") ? "&" : "?"}page=${page}&limit=20&search=${encodeURIComponent(search.trim())}`;
+      const url = `${path}${path.includes("?") ? "&" : "?"}page=${page}&limit=${limit}&search=${encodeURIComponent(search.trim())}`;
       const request = local
         ? allPages(path, controller.signal)
         : apiRequest<Page>(url, { signal: controller.signal });
@@ -233,7 +205,7 @@ export function RecordPicker({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [key, path, local, page, search]);
+  }, [key, path, local, page, limit, search]);
   const current = state?.key === key ? state : undefined;
   const choices = (current?.data?.items ?? []).filter(
     (row) =>
@@ -294,10 +266,11 @@ export function RecordPicker({
       {current?.data && !choices.length && (
         <small>Không có lựa chọn phù hợp.</small>
       )}
-      {!local && current?.data && current.data.total > 20 && (
+      {!local && current?.data && current.data.total > 5 && (
         <Pagination
           page={page}
-          limit={20}
+          limit={limit}
+          onLimitChange={value => { setLimit(value); setPage(1); }}
           total={current.data.total}
           onChange={setPage}
         />

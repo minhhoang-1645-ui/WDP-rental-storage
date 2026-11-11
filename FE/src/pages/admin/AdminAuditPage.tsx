@@ -1,3 +1,4 @@
+import { internalPageSize } from '../../utils/internal-pagination';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -10,8 +11,9 @@ import { auditAction, auditResource } from './audit-labels';
 export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
+  const limit = internalPageSize(params);
   const page = Math.max(1, Math.min(100000, Math.floor(Number(params.get('page')) || 1)));
-  const query = new URLSearchParams({ category, page: String(page), limit: '20' });
+  const query = new URLSearchParams({ category, page: String(page), limit: String(limit) });
   for (const key of ['search', 'role', 'outcome', 'from', 'to']) if (params.get(key)) query.set(key, params.get(key)!);
   const data = useApiResource<Page>(user?.role === 'ADMIN' ? `/admin/audit-events?${query}` : null, user?.id ?? '');
   const login = category === 'LOGIN';
@@ -49,7 +51,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
           <td style={{ maxWidth: 300, overflowWrap: 'anywhere' }}><details><summary>Xem chi tiết</summary><p>Mã hồ sơ: {first(row, 'resourceId') || '—'}</p><p>HTTP: {first(row, 'httpStatus')} · IP: {first(row, 'ipAddress') || '—'}</p><p>{first(row, 'method')} {first(row, 'route')}</p><small>Mã hành động: {first(row, 'action')}</small></details></td>
         </tr>)}
       </tbody></table></div> : <Empty title="Chưa có nhật ký phù hợp" description="Thử đổi bộ lọc. Lịch sử trước khi bật tính năng không được tạo lại." />}
-      <Pagination page={page} limit={20} total={data.data.total} disabled={data.loading} onChange={next => setParams(previous => { const value = new URLSearchParams(previous); value.set('page', String(next)); return value; })} />
+      <Pagination page={page} limit={limit} onLimitChange={limit => setParams(previous => { const next = new URLSearchParams(previous); next.set('limit', String(limit)); next.delete('page'); return next; }, { replace: true })} total={data.data.total} disabled={data.loading} onChange={next => setParams(previous => { const value = new URLSearchParams(previous); value.set('page', String(next)); return value; })} />
     </>}
   </section>;
 }

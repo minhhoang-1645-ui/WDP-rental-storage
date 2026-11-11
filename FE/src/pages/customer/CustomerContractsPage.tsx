@@ -1,3 +1,4 @@
+import { RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { ContractRenewalHistory } from '../../components/customer/ContractRenewalHistory';
 import { ContractTransferHistory } from '../../components/customer/ContractTransferHistory';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -91,7 +92,7 @@ export function CustomerContractsPage() {
           <table className="customer-table">
             <thead>
               <tr>
-                <th>Mã hợp đồng</th>
+                <th>Hợp đồng</th>
                 <th>Loại kho</th>
                 <th>Kho được cấp</th>
                 <th>Thời hạn</th>
@@ -103,8 +104,8 @@ export function CustomerContractsPage() {
               {contracts.map((contract) => (
                 <tr key={contract.id}>
                   <td data-label="Mã hợp đồng">
-                    <strong>{contract.contractCode}</strong>
-                    <small>{contract.reservation.reference}</small>
+                    <RecordIdentity row={contract} resource="contracts" />
+                    <small>Đơn: {contract.reservation.reference}</small>
                   </td>
                   <td data-label="Loại kho">{contract.storageType.name}</td>
                   <td data-label="Kho được cấp">
@@ -123,7 +124,7 @@ export function CustomerContractsPage() {
                     <CustomerStatus status={contract.status} />
                   </td>
                   <td data-label="Xác nhận">
-                    {contract.terms.acceptedAt ? <div className="customer-contract-confirmation"><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="button-secondary" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="button-secondary" to="/customer/payments">Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="button-secondary" to="/customer/appointments">Đặt lịch bàn giao</Link>}</div> :
+                    {contract.terms.acceptedAt ? <div className="customer-contract-confirmation"><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="button-secondary" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Đặt lịch bàn giao</Link>}</div> :
                       <button type="button" className="button-secondary payment-table-action" onClick={() => setSelected(contract)}>Xem và xác nhận</button>}
                   </td>
                 </tr>

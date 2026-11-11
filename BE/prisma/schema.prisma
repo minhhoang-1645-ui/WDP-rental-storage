@@ -357,6 +357,7 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  damageClaims DamageClaim[]
   authSessions                AuthSession[]
   unitResponsibilities         UnitStaffAssignment[] @relation("UnitStaffAssignee")
   assignedUnitResponsibilities UnitStaffAssignment[] @relation("UnitStaffManager")
@@ -677,6 +678,9 @@ model ReservationUnit {
 }
 
 model RentalContract {
+  damageClaims DamageClaim[]
+  currentMonthlyRate BigInt?
+  rateEffectiveFrom DateTime? @db.Date
   id                String             @id @default(cuid())
   contractCode      String             @unique
   reservationId     String
@@ -737,6 +741,12 @@ model StockMovement {
   customer              User                @relation("StockMovementCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
   rentalContractId      String
   rentalContract        RentalContract      @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  // Immutable physical location at request time; null means unknown legacy location.
+  storageUnitId         String?
+  unitCodeSnapshot      String?
+  floorSnapshot         String?
+  zoneSnapshot          String?
+  locationRecordedAt    DateTime?
   scheduledAt           DateTime?
   note                  String?
   assignedStaffUserId   String?
@@ -758,6 +768,72 @@ model StockMovement {
   @@index([rentalContractId, createdAt])
   @@index([assignedStaffUserId, status, scheduledAt])
   @@index([status, scheduledAt, id])
+}
+
+// Only digests are stored. A challenge is consumed in the document write transaction.
+model SigningChallenge {
+  id          String   @id
+  userId      String
+  documentKey String
+  binding     String
+  codeHash    String
+  recipient   String
+  expiresAt   DateTime
+  attempts    Int      @default(0)
+  deliveredAt DateTime?
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([documentKey, createdAt])
+  @@index([expiresAt])
+}
+
+model BusinessPolicy {
+  key         String   @id
+  value       Int
+  updatedById String
+  updatedAt   DateTime @updatedAt
+}
+
+enum DamageClaimStatus {
+  REPORTED
+  INVESTIGATING
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+model DamageClaim {
+  id                String @id @default(cuid())
+  claimCode         String @unique
+  customerId        String
+  customer          User @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  rentalContractId  String
+  rentalContract    RentalContract @relation(fields: [rentalContractId], references: [id], onDelete: Restrict)
+  unitCodeSnapshot  String
+  status            DamageClaimStatus @default(REPORTED)
+  discoveredOn      DateTime @db.Date
+  description       String
+  affectedItems     Json
+  evidenceLinks     Json
+  estimatedValue    BigInt?
+  assignedStaffId   String?
+  staffFacts        String?
+  factsRecordedAt   DateTime?
+  reviewedById      String?
+  decisionReason    String?
+  decision          String?
+  reviewedAt        DateTime?
+  resolutionNote    String?
+  resolvedAt        DateTime?
+  idempotencyKey    String @unique
+  inputHash         String
+  history           Json @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+  @@index([assignedStaffId, status])
 }
 
 model StockMovementLine {
@@ -867,6 +943,11 @@ model MaintenanceRequest {
 }
 
 model Invoice {
+  pricingSnapshot Json?
+  storageTypeIdSnapshot String?
+  replacesInvoiceId String? @unique
+  replacesInvoice Invoice? @relation("InvoiceRevision", fields: [replacesInvoiceId], references: [id], onDelete: Restrict)
+  replacementInvoice Invoice? @relation("InvoiceRevision")
   id                        String                     @id @default(cuid())
   invoiceCode               String                     @unique
   reservationId             String
@@ -952,6 +1033,11 @@ model SupportRequest {
 }
 
 model TransferRequest {
+  commercialSnapshot Json?
+  commercialSignedSnapshot Json?
+  customerAcceptedAt DateTime?
+  customerAcceptanceName String?
+  customerSignatureImage String?
   id                    String           @id @default(cuid())
   transferCode          String           @unique
   reservationId         String

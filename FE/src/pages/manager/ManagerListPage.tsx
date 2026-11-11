@@ -1,3 +1,6 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { newestFirst, recordIdentity } from '../../utils/record-identity';
+import { internalPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
@@ -39,6 +42,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const limit = internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
   const status = reviewOnly ? managerReviewStatus(resource) : params.get("status") ?? "";
@@ -60,7 +64,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
     config?.local ||
     (resource === "returns" && status === "PENDING_SETTLEMENT"),
   );
-  const query = new URLSearchParams({ page: String(page), limit: "20" });
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
   for (const field of [
@@ -120,9 +124,10 @@ export function ManagerListPage({ resource }: { resource: string }) {
         (!params.get("date") ||
           date(row.createdAt) === date(params.get("date"))),
     );
+  if (local && resource === 'reservations') items = newestFirst(items);
   const total = local ? items.length : (current?.data?.total ?? 0);
-  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / 20))) : page;
-  const visible = local ? items.slice((visiblePage - 1) * 20, visiblePage * 20) : items;
+  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : page;
+  const visible = local ? items.slice((visiblePage - 1) * limit, visiblePage * limit) : items;
   const refresh = () => setRevision((v) => v + 1);
   useLiveRefresh(path, refresh);
   const change = (name: string, value: string) =>
@@ -171,6 +176,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
+        {resource === 'reservations' && user?.role === 'STAFF' && <button type="button" className="button-secondary" onClick={() => change('status', 'PENDING')}>Chờ nhân viên xử lý</button>}
         {config.statuses && !reviewOnly && (
           <label className="field-label">
             Trạng thái
@@ -283,7 +289,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
                 <thead>
                   <tr>
                     <th>
-                      {resource === "customers" ? "Khách hàng" : "Mã hồ sơ"}
+                      {resource === "customers" ? "Khách hàng" : "Hồ sơ"}
                     </th>
                     <th>
                       {["reservations", "inquiries"].includes(resource)
@@ -321,7 +327,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
           )}
           <Pagination
             page={visiblePage}
-            limit={20}
+            limit={limit}
+            onLimitChange={value => change("limit", String(value))}
             total={total}
             onChange={(v) => change("page", String(v))}
           />
@@ -346,6 +353,10 @@ export function ManagerListPage({ resource }: { resource: string }) {
 }
 function ListRow({ resource, row }: { resource: string; row: Row }) {
   const person = customer(row);
+  const { user } = useAuth();
+  const identity = recordIdentity(row, resource);
+  const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'stock-movements', 'rentals'].includes(resource);
+  const needsStaff = resource === 'reservations' && user?.role === 'STAFF' && row.status === 'PENDING';
   const information =
     resource === "units"
       ? first(row, "storageType.name")
@@ -363,23 +374,25 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
     <tr>
       <td>
         <Link className="portal-record-link" to={detailPath(resource, row)}>
-          {code(row)}
+          {recognizable ? identity.person || identity.title : code(row)}
         </Link>
+        {recognizable && <CopyRecordCode value={code(row)} />}
         <small>
           {resource === "customers"
             ? first(row, "phone")
             : date(
-                row.scheduledAt ??
+                row.createdAt ??
+                  row.scheduledAt ??
                   row.receivedAt ??
                   row.requestedAt ??
                   row.issuedAt ??
                   row.createdAt,
-                resource === "appointments",
+                ['appointments', 'reservations', 'inquiries'].includes(resource),
               )}
         </small>
       </td>
       <td>
-        <strong>{information || "—"}</strong>
+        <strong>{recognizable ? identity.title : information || "—"}</strong>
         <small>
           {resource === "units"
             ? [
@@ -507,6 +520,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
       </td>
       <td>
         <Status value={row.status ?? row.rentalState ?? row.accountStatus} />
+        {needsStaff && <small className="record-attention">Nhân viên kiểm tra ngoại lệ</small>}
       </td>
       <td>
         <Link
@@ -514,7 +528,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
           aria-label={`Mở ${code(row)}`}
           to={detailPath(resource, row)}
         >
-          <ArrowRight size={17} />
+          <span>Xem chi tiết</span><ArrowRight size={17} />
         </Link>
       </td>
     </tr>

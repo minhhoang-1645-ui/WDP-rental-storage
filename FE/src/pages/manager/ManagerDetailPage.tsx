@@ -1,3 +1,6 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { recordIdentity } from '../../utils/record-identity';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ManagerPricingExplanation } from '../../components/manager/ManagerPricingExplanation';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
@@ -58,12 +61,13 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
   )
     ? `/manager/${resource}`
     : `/manager/operations/${resource}`;
+  const returnPath = useInternalListReturn(listPath);
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
   const row = data.data;
   return (
     <section>
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
-      <Link className="booking-back" to={listPath}>
+      <Link className="booking-back" to={returnPath}>
         <ArrowLeft size={16} />
         {config.title}
       </Link>
@@ -83,7 +87,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
       />
       {row && (
         <>
-          <PageHeader title={code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : config.description}>
+          <PageHeader title={['reservations','inquiries','contracts','invoices','appointments','renewals','returns','transfers'].includes(resource) ? recordIdentity(row, resource).title : code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : config.description}>
             {resource === 'units' && user?.role === 'MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <Status
               value={row.status ?? row.rentalState ?? row.accountStatus}
@@ -100,6 +104,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
               <RefreshCw size={16} />
             </button>
           </PageHeader>
+          <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">
             {workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">

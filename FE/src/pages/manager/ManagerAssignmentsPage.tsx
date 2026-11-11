@@ -1,3 +1,4 @@
+import { internalPageSize } from '../../utils/internal-pagination';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
 import { RefreshCw } from "lucide-react";
@@ -106,6 +107,7 @@ export function ManagerAssignmentsPage() {
   const kind = params.get("kind") ?? "all";
   const assignment = params.get("assignment") ?? "all";
   const scope = params.get("scope") ?? "active";
+  const limit = internalPageSize(params);
   const page = Math.max(1, Math.floor(Number(params.get("page")) || 1));
   const tasks = allTasks.filter((task) => {
     const assigned = Boolean(first(task.row, "assignedStaff.id"));
@@ -128,7 +130,7 @@ export function ManagerAssignmentsPage() {
     );
   });
   tasks.sort((a, b) => assignmentWorkRank(a.row) - assignmentWorkRank(b.row) || (Date.parse(first(a.row, 'requestedAt', 'createdAt')) || 0) - (Date.parse(first(b.row, 'requestedAt', 'createdAt')) || 0));
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / 20)));
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(tasks.length / limit)));
   const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const workloads = new Map<string, number>();
   for (const task of allTasks) { const staffId = first(task.row, 'assignedStaff.id'); if (staffId && !finished(task)) workloads.set(staffId, (workloads.get(staffId) ?? 0) + 1); }
@@ -155,7 +157,7 @@ export function ManagerAssignmentsPage() {
       {unitAssignmentsOpen && <UnitStaffAssignments onSaved={() => setRevision(value => value + 1)} />}
       <PageHeader
         title="Phân công nhân viên"
-        description="Giao thủ công từng hồ sơ hỗ trợ, bảo trì hoặc phiếu nhập – xuất, kể cả khi kho chưa có người phụ trách."
+        description="Giao việc, đổi nhân viên và xem kết quả xử lý."
       >
         <button
           className="button-secondary"
@@ -241,7 +243,7 @@ export function ManagerAssignmentsPage() {
                 </thead>
                 <tbody>
                   {tasks
-                    .slice((currentPage - 1) * 20, currentPage * 20)
+                    .slice((currentPage - 1) * limit, currentPage * limit)
                     .map((task) => (
                       <tr key={`${task.kind}:${first(task.row, "id")}`}>
                         <td>
@@ -283,7 +285,8 @@ export function ManagerAssignmentsPage() {
           )}
           <Pagination
             page={currentPage}
-            limit={20}
+            limit={limit}
+            onLimitChange={value => change("limit", String(value))}
             total={tasks.length}
             onChange={(value) => change("page", String(value))}
           />

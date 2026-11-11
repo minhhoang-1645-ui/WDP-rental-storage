@@ -1,3 +1,7 @@
+import { RecordIdentity, CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { recordIdentity } from '../../utils/record-identity';
+import { internalPageSize } from '../../utils/internal-pagination';
+import { normalizeRentalSearch } from '../../utils/rental-choice';
 import { ItemUnitSelect } from '../../components/ItemUnitSelect';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -10,6 +14,7 @@ import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from '../../types/stock';
 import { stockCompleteInput, stockCreateInput } from '../../utils/stock';
+import { stockHandlingNote, storedLocation } from '../../utils/stock-units';
 import { vietnamLocalMinute } from '../../utils/handover';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
@@ -29,7 +34,8 @@ export function StockMovementsPage({ role }: { role: StockRole }) {
 }
 function StockList({ role }: { role: StockRole }) {
   const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(false), [notice, setNotice] = useState('');
-  const page = Math.max(1, Math.floor(Number(params.get('page')) || 1)), query = new URLSearchParams({ page: String(page), limit: '20' });
+  const limit = internalPageSize(params);
+  const page = Math.max(1, Math.floor(Number(params.get('page')) || 1)), query = new URLSearchParams({ page: String(page), limit: String(limit) });
   for (const key of ['status', 'type', 'search', 'rentalContractId']) if (params.get(key)) query.set(key, params.get(key)!);
   const data = useApiResource<Page<StockMovement>>(`/${role.toLowerCase()}/stock-movements?${query}`, user?.id, true);
   const update = (key: string, value: string) => setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); return next; }, { replace: true });
@@ -50,8 +56,8 @@ function StockList({ role }: { role: StockRole }) {
     </div>
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
     {!data.loading && !data.error && <>{!data.data?.items.length && <Empty title="Chưa có phiếu phù hợp" />}
-      <div className="stock-grid">{data.data?.items.map(row => <article className="stock-card" key={row.id}><h2>{row.movementCode}</h2><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Hợp đồng', row.rentalContract.contractCode], ['Khách hàng', row.customer.fullName], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công']]} /><Link className="button-secondary" to={`${roleRoot(role)}/${encodeURIComponent(row.id)}`}>Xem phiếu</Link></article>)}</div>
-      <Pagination page={page} limit={20} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
+      <div className="stock-grid">{data.data?.items.map(row => <article className="stock-card" key={row.id}><RecordIdentity row={row} resource="stock-movements" showCreated showPerson={role !== 'CUSTOMER'} /><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Kho hiện tại của hợp đồng', storedLocation(row)], ['Hợp đồng', row.rentalContract.contractCode], ['Khách hàng', row.customer.fullName], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công']]} /><Link className="button-secondary" to={`${roleRoot(role)}/${encodeURIComponent(row.id)}`}>Xem phiếu</Link></article>)}</div>
+      <Pagination page={page} limit={limit} onLimitChange={value => update('limit', String(value))} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
     </>}
   </section>;
 }
@@ -87,7 +93,7 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
     finally { lock.current = false; setBusy(false); }
   };
   return <form className="stock-card stock-form" onSubmit={submit}>
-    <h2>Tạo phiếu nhập / xuất hàng</h2><p>Chọn kho bạn muốn gửi hoặc lấy hàng. Hàng đang lưu chỉ gồm mặt hàng còn tồn. Lịch dự kiến theo giờ Việt Nam (UTC+7).</p>
+    <h2>Tạo phiếu nhập / xuất hàng</h2><p className="booking-alert">{stockHandlingNote}</p><p>Chọn kho bạn muốn gửi hoặc lấy hàng. Hàng đang lưu chỉ gồm mặt hàng còn tồn. Lịch dự kiến theo giờ Việt Nam (UTC+7).</p>
     <LoadState loading={contracts.loading} error={contracts.error} retry={contracts.refresh} />
     <fieldset disabled={busy} className="stock-fields">
       <RentalChoicePicker contracts={contracts.data?.items ?? []} value={contract} disabled={busy} onChange={value => { setContract(value); setLines([freshLine()]); }} />
@@ -116,7 +122,7 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
 function StockDetail({ role, id }: { role: StockRole; id: string }) {
   const { user } = useAuth(), data = useApiResource<StockMovement>(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(id)}`, user?.id, true);
   const [notice, setNotice] = useState('');
-  return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}><PageHeader title={data.data?.movementCode ?? 'Chi tiết nhập – xuất hàng'}><Link className="button-secondary" to={roleRoot(role)}>Về danh sách</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader>{notice && <p role="status" className="booking-alert">{notice}</p>}<LoadState loading={data.loading} error={data.error} retry={data.refresh} />{data.data && <StockRecord key={data.data.updatedAt ?? `${data.data.status}:${data.data.assignedStaff?.id}`} row={data.data} role={role} onSaved={message => { setNotice(message); data.refresh(); }} />}</section>;
+  return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}><PageHeader title={data.data ? recordIdentity(data.data as unknown as Record<string, unknown>, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}><Link className="button-secondary" to={roleRoot(role)}>Về danh sách</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader>{notice && <p role="status" className="booking-alert">{notice}</p>}<LoadState loading={data.loading} error={data.error} retry={data.refresh} />{data.data && <CopyRecordCode value={data.data.movementCode} />}{data.data && <StockRecord key={data.data.updatedAt ?? `${data.data.status}:${data.data.assignedStaff?.id}`} row={data.data} role={role} onSaved={message => { setNotice(message); data.refresh(); }} />}</section>;
 }
 function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRole; onSaved: (message: string) => void }) {
   const { user } = useAuth(), [note, setNote] = useState(''), [quantities, setQuantities] = useState(Object.fromEntries(row.lines.map(line => [line.id, line.actualQty == null ? '' : String(line.actualQty)]))), [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
@@ -144,7 +150,7 @@ export function StoredItemsPage() {
   const contractId = params.get('rentalContractId');
   const data = useApiResource<StoredItem[]>('/customer/stored-items' + (contractId ? '?rentalContractId=' + encodeURIComponent(contractId) : ''), user?.id, true);
   const [search, setSearch] = useState('');
-  const items = data.data?.filter(item => `${item.name} ${item.itemCode} ${item.rentalContract?.contractCode}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))) ?? [];
-  return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Số lượng hàng của bạn đã được kiểm đếm. Yêu cầu đang chờ xử lý chưa làm thay đổi số lượng này."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;
+  const items = data.data?.filter(item => normalizeRentalSearch(`${item.name} ${item.itemCode} ${item.rentalContract?.contractCode} ${storedLocation(item)}`).includes(normalizeRentalSearch(search))) ?? [];
+  return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Số lượng hàng của bạn đã được kiểm đếm. Yêu cầu đang chờ xử lý chưa làm thay đổi số lượng này."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / mã kho / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p><strong>Kho hiện tại: {storedLocation(item)}</strong></p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;
 }
 

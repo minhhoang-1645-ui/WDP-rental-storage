@@ -1,3 +1,4 @@
+import { RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { useCustomerOnlinePayment } from './useCustomerOnlinePayment'
 import { useCustomerPagination } from '../../components/customer/useCustomerPagination'
 import { CreditCard, ExternalLink, FileText, History, RefreshCw, Wallet } from 'lucide-react'
@@ -82,12 +83,12 @@ function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineIn
   const { items: visibleItems, pagination } = useCustomerPagination(items)
   if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện sau khi NestBox xác nhận yêu cầu đặt kho hoặc kỳ thanh toán.</span></PortalEmpty>
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
-  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Mã hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => {
+  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => {
     const payable = !isScheduledRenewalInvoice(invoice) && invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status);
     const unsigned = invoice.signing?.complete === false;
     const expired = paymentWindowClosed(invoice);
     return <tr key={invoice.id}>
-      <td data-label="Mã hóa đơn"><strong>{invoice.invoiceCode}</strong><small>{invoice.reservation.reference}</small></td><td data-label="Kỳ thanh toán">{customerStatusLabel(invoice.type)}</td><td data-label="Tổng tiền">{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td data-label="Đã trả">{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td data-label="Còn lại"><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td data-label="Hạn trả">{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td data-label="Trạng thái"><CustomerStatus status={invoice.status} /></td>
+      <td data-label="Mã hóa đơn"><RecordIdentity row={invoice} resource="invoices" /><small>Lập ngày {formatPortalDate(invoice.issuedAt, true)}</small></td><td data-label="Kỳ thanh toán">{customerStatusLabel(invoice.type)}</td><td data-label="Tổng tiền">{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td data-label="Đã trả">{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td data-label="Còn lại"><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td data-label="Hạn trả">{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td data-label="Trạng thái"><CustomerStatus status={invoice.status} /></td>
       <td data-label="Thao tác"><div className="payment-actions">
         <button type="button" className="button-secondary payment-table-action" onClick={() => onBankTransfer(invoice)}>{payable ? 'Chi tiết & chuyển khoản' : 'Xem hóa đơn'}</button>
         {payable && (expired ? <p>Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p> : unsigned ? <><p>Bạn cần ký tài liệu trước khi thanh toán.</p><Link className="portal-text-button" to={invoice.signing?.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(invoice.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(invoice.reservation.reference)}`}>Xem và ký tài liệu</Link></> : pendingInvoiceIds.has(invoice.id) ? <span className="payment-pending-label">Đang chờ NestBox xác nhận</span> : ['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) ? <>

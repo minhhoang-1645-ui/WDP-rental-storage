@@ -53,6 +53,7 @@ export function CustomerBookingHistoryPage() {
               </div>;
             })}
           </details>
+          {entry.contracts.length > 0 && <div className="customer-actions"><Link className="button-secondary" to={`/customer/contracts?reservation=${encodeURIComponent(entry.reference)}`}>Xem hợp đồng liên quan</Link></div>}
         </article>;
       })}</div>}
       {pagination}

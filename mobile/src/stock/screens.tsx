@@ -17,6 +17,7 @@ import { formatDate } from '@/utils/format';
 import { stockCompleteInput, stockCreateInput, validateStockSchedule } from './validation';
 import type { StockDraftLine, StockMovement, StockRole, StoredItem } from './types';
 import { WorkflowHint } from '@/components/workspace-hub';
+import { stockHandlingNote, storedLocation } from '@/utils/stock-units';
 import { workflowGuide } from '@/utils/workflow-guide';
 import { useDraftGuard } from '@/services/live-events';
 import { RentalChoicePicker } from '@/components/rental-choice-picker';
@@ -65,7 +66,7 @@ function StockCreate({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không gửi được phiếu.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <Panel title="Tạo phiếu nhập / xuất"><Text style={styles.copy}>Chọn kho bạn muốn gửi hoặc lấy hàng. Giờ dự kiến là giờ Việt Nam và có thể bỏ trống.</Text>
+  return <Panel title="Tạo phiếu nhập / xuất"><Text style={styles.copy}>{stockHandlingNote}</Text><Text style={styles.copy}>Chọn kho bạn muốn gửi hoặc lấy hàng. Giờ dự kiến là giờ Việt Nam và có thể bỏ trống.</Text>
     {contracts.loading ? <LoadingState /> : contracts.error ? <ErrorState message={contracts.error} onRetry={contracts.refresh} /> : <>{!contracts.data?.items.some(item => item.status === 'ACTIVE') && <Text style={styles.copy}>Chưa có hợp đồng hoạt động. Hoàn tất bàn giao kho trước.</Text>}<RentalChoicePicker contracts={contracts.data?.items ?? []} value={contract} disabled={busy} onChange={id=>{setContract(id);setLines([freshLine()]);setConfirmed(false);}} /></>}
     <View style={styles.row}>{(['IN', 'OUT'] as const).map(value => <Button key={value} title={`${type === value ? '✓ ' : ''}${value === 'IN' ? 'Nhập hàng' : 'Xuất hàng'}`} variant={type === value ? 'primary' : 'secondary'} disabled={busy} onPress={() => { setType(value); setLines([freshLine()]); setConfirmed(false); }} />)}</View>
     <Disclosure title={date && time ? `Lịch dự kiến · ${formatDate(date)} ${time}` : 'Thêm lịch dự kiến'}>
@@ -109,6 +110,6 @@ function StockRecord({ row, role, refresh }: { row: StockMovement; role: StockRo
 export function StoredItems() {
   const { user } = useAuth(), data = useResource<StoredItem[]>(user?.role === 'CUSTOMER' ? '/customer/stored-items' : null);
   const [search, setSearch] = useState('');
-  const items = data.data?.filter(item => recordMatches(item, search)) ?? [];
-  return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}><Stack.Screen options={{ title: 'Hàng đang lưu' }} /><PageHeader eyebrow="Khách hàng" title="Hàng đang lưu" description="Chỉ hiển thị hàng có tồn lớn hơn 0 đã được xác nhận thực tế." /><Navigation title="Phiếu nhập – xuất" path="/customer/stock-movements" /><Field title="Tìm hàng hoặc hợp đồng" value={search} onChange={setSearch} maxLength={100} /><Button title="Làm mới" onPress={data.refresh} disabled={data.loading} />{data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <>{!items.length && <EmptyState title="Chưa có hàng tồn phù hợp" message="Số lượng hàng được cập nhật sau khi nhân viên giao nhận và kiểm đếm xong." />}{items.map(item => <Panel key={item.id} title={item.name}><Facts values={[["Mã hàng", item.itemCode], ['Hợp đồng', item.rentalContract?.contractCode], ['Tồn', `${item.balance} ${item.unit}`], ['Ghi chú', item.note]]} /></Panel>)}</>}</ScrollView>;
+  const items = data.data?.filter(item => recordMatches({ ...item, location: storedLocation(item) }, search)) ?? [];
+  return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.page}><Stack.Screen options={{ title: 'Hàng đang lưu' }} /><PageHeader eyebrow="Khách hàng" title="Hàng đang lưu" description="Chỉ hiển thị hàng có tồn lớn hơn 0 đã được xác nhận thực tế." /><Navigation title="Phiếu nhập – xuất" path="/customer/stock-movements" /><Field title="Tìm hàng, mã kho hoặc hợp đồng" value={search} onChange={setSearch} maxLength={100} /><Button title="Làm mới" onPress={data.refresh} disabled={data.loading} />{data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <>{!items.length && <EmptyState title="Chưa có hàng tồn phù hợp" message="Số lượng hàng được cập nhật sau khi nhân viên giao nhận và kiểm đếm xong." />}{items.map(item => <Panel key={item.id} title={item.name}><Facts values={[["Mã hàng", item.itemCode], ['Kho hiện tại', storedLocation(item)], ['Hợp đồng', item.rentalContract?.contractCode], ['Tồn', `${item.balance} ${item.unit}`], ['Ghi chú', item.note]]} /></Panel>)}</>}</ScrollView>;
 }

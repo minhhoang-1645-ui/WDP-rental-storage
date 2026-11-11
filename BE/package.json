@@ -34,7 +34,16 @@
     "check:production": "node scripts/check-production-readiness.mjs",
     "test:production-config": "node --test scripts/production-readiness.test.mjs",
     "email:verify-smtp": "npm run build && node dist/scripts/verify-smtp.js",
-    "email:send-test": "npm run build && node dist/scripts/send-test-email.js"
+    "email:send-test": "npm run build && node dist/scripts/send-test-email.js",
+    "seed:rv3-demo": "node scripts/rv3-demo.mjs seed",
+    "demo:rv3:inspect": "node scripts/rv3-demo.mjs inspect",
+    "demo:rv3:bootstrap": "node scripts/rv3-demo.mjs bootstrap",
+    "demo:rv3:cleanup": "node scripts/rv3-demo.mjs cleanup",
+    "demo:rv3:backup": "node scripts/rv3-demo.mjs backup",
+    "demo:rv3:restore": "node scripts/rv3-demo.mjs restore",
+    "demo:rv3:verify": "node scripts/rv3-demo.mjs verify",
+    "test:rv3-demo": "node --test scripts/rv3-demo/safety.test.mjs",
+    "test:rv3-demo:integration": "node scripts/rv3-demo/integration.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

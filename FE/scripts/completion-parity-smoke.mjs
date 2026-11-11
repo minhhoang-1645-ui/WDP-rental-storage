@@ -61,7 +61,7 @@ async function setup(role, mobile = false) {
   });
   await context.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ contentType: 'text/html', body: '<p>Isolated gateway fixture</p>' }));
   const page = await context.newPage(); page.setDefaultTimeout(mobile ? 60000 : 15000); page.on('pageerror', error => errors.push(error.message));
-  return { context, page, data, invoice, bank: value => { bankConfigured = value; }, goto: path => page.goto(`http://127.0.0.1:${mobile ? 8081 : 5173}${path}`, {waitUntil:'domcontentloaded',timeout:60000}), paid: () => { paid = true; invoice.status = 'PAID'; invoice.balanceDue = 0; } };
+  return { context, page, data, invoice, bank: value => { bankConfigured = value; }, goto: path => page.goto(`${mobile ? 'http://127.0.0.1:8081' : process.env.WDP_FE_URL || 'http://127.0.0.1:5173'}${path}`, {waitUntil:'domcontentloaded',timeout:60000}), paid: () => { paid = true; invoice.status = 'PAID'; invoice.balanceDue = 0; } };
 }
 async function draw(page) {
   const canvas = page.locator('canvas[aria-label="Khung vẽ chữ ký"]');
@@ -71,6 +71,7 @@ async function draw(page) {
   await page.mouse.move(box.x + 65, box.y + 30, { steps: 8 }); await page.mouse.move(box.x + 100, box.y + 90, { steps: 8 }); await page.mouse.up();
 }
 try {
+  if (process.env.WDP_WEB_ONLY !== '1') {
   const mobile = await setup('CUSTOMER', true);
   console.log('CHECK mobile invoice'); await mobile.goto('/customer/invoices/invoice-sign');
   await mobile.page.getByText('Bạn cần ký tài liệu trước khi thanh toán.', { exact: true }).waitFor();
@@ -82,6 +83,7 @@ try {
   await mobile.goto('/customer/renewals/renewal-sign'); await draw(mobile.page); await mobile.page.getByRole('checkbox', { name: 'Tôi đã đọc và đồng ý nội dung tài liệu' }).click(); await mobile.page.getByRole('button', { name: 'Gửi mã xác thực qua email', exact: true }).click(); await mobile.page.getByLabel('Mã xác thực chữ ký', {exact:true}).fill(otp); await mobile.page.getByRole('button',{name:'Xác thực và ký tài liệu',exact:true}).click(); await mobile.page.getByText('Đã ký', { exact: true }).first().waitFor();
   checks.push('Mobile: INITIAL blocked until drawn signature + email OTP; matching snapshot and PNG captured for contract and appendix');
   await mobile.context.close();
+  }
 
   const web = await setup('CUSTOMER');
   await web.goto('/customer/payments'); await web.page.getByText('Bạn cần ký tài liệu trước khi thanh toán.', { exact: true }).waitFor();
@@ -101,6 +103,7 @@ try {
   const pendingEmail = await setup('CUSTOMER'); pendingEmail.data.contracts[0].terms.otp = {required:true,emailConfigured:false}; await pendingEmail.goto('/customer/contracts'); await pendingEmail.page.getByRole('button',{name:'Xem và xác nhận',exact:true}).click(); await pendingEmail.page.getByText('Cơ sở chưa cấu hình email xác thực chữ ký.',{exact:false}).waitFor(); assert(await pendingEmail.page.getByRole('button',{name:'Gửi mã xác thực qua email',exact:true}).isDisabled()); await mkdir('artifacts/run-20261030',{recursive:true}); await pendingEmail.page.screenshot({path:'artifacts/run-20261030/contract-email-pending.png',fullPage:true}); await pendingEmail.context.close();
   checks.push('PDF download is authenticated; wrong OTP can be corrected; email/bank missing configuration blocks signing/QR without fake success');
 
+  if (process.env.WDP_WEB_ONLY !== '1') {
   const manager = await setup('MANAGER', true);
   await manager.goto('/manager/maintenance/maintenance-id'); await manager.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).waitFor();
   await manager.goto('/manager/support-requests/support-id'); await manager.page.getByRole('button', { name: 'Giải quyết hỗ trợ', exact: true }).waitFor();
@@ -111,6 +114,7 @@ try {
   assert.equal(await employee.page.getByRole('button', { name: 'Nghiệm thu bảo trì', exact: true }).count(), 0);
   await employee.goto('/staff/assigned-units'); await employee.page.getByText('Phân công cố định theo kho chưa được bật.', { exact: false }).waitFor();
   checks.push('Staff mobile cannot verify maintenance; prepared unit assignments stay disabled before migration'); await employee.context.close();
+  }
   const webEmployee = await setup('STAFF');
   await webEmployee.goto('/staff/assigned-units');
   await webEmployee.page.getByRole('heading', { name: 'Kho tôi phụ trách', exact: true }).waitFor();

@@ -1,163 +1,41 @@
-import { ArrowRight, RefreshCw, ShieldCheck, Users, History, LogIn } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
 import { useLiveRefresh } from '../../services/live-events';
-import { Link } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
-import { WorkHub } from '../../components/workspace/WorkHub';
-import { ActivitySummary } from '../../activity/ActivityCenter';
-import { allPages } from "../../services/portal";
-import { first, label, type Page } from "../../components/manager/portal-data";
-import {
-  LoadState,
-  PageHeader,
-  Status,
-} from "../../components/manager/PortalUi";
+import { apiRequest } from '../../services/api';
+import { first, type Page } from '../../components/manager/portal-data';
+import { LoadState, PageHeader, Status } from '../../components/manager/PortalUi';
+import { InternalKpis } from '../../components/workspace/InternalDashboard';
+
 export function AdminDashboardPage() {
   const { user } = useAuth();
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   useLiveRefresh('/admin/users', refresh);
-  const [state, setState] = useState<{
-    key: string;
-    data?: Page;
-    error?: string;
-  }>();
   const key = `${user?.id}:${revision}`;
+  const [state, setState] = useState<{ key: string; pages?: Page[]; error?: string }>();
   useEffect(() => {
     const controller = new AbortController();
-    allPages("/admin/users", controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setState({ key, data });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted)
-          setState({
-            key,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Không thể tải thống kê.",
-          });
-      });
+    Promise.all(['/admin/users?page=1&limit=5', '/admin/users?page=1&limit=1&role=STAFF', '/admin/users?page=1&limit=1&role=MANAGER', '/admin/users?page=1&limit=1&accountStatus=DISABLED'].map(path => apiRequest<Page>(path, { signal: controller.signal })))
+      .then(pages => { if (!controller.signal.aborted) setState({ key, pages }); })
+      .catch(error => { if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : 'Không thể tải tài khoản.' }); });
     return () => controller.abort();
   }, [key]);
   const current = state?.key === key ? state : undefined;
-  return (
-    <section>
-      <PageHeader
-        title="Tổng quan quản trị"
-        description={`Xin chào ${user?.fullName ?? ""}. Quản lý tài khoản và quyền truy cập hệ thống.`}
-      >
-        <button
-          className="button-secondary"
-          disabled={!current}
-          onClick={() => setRevision((v) => v + 1)}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      <WorkHub title="Quản lý truy cập" description="Tìm tài khoản, cấp tài khoản nhân viên/quản lý và kiểm tra trạng thái truy cập trong cùng một nơi." actions={[
-        { title: 'Lịch sử đăng nhập', description: 'Tra cứu đăng nhập thành công và thất bại.', to: '/admin/login-history', icon: LogIn },
-        { title: 'Nhật ký hoạt động', description: 'Xem người thực hiện và kết quả thao tác nghiệp vụ.', to: '/admin/activity', icon: History },
-        { title: 'Quản lý tài khoản', description: 'Tìm tên hoặc email; xem hồ sơ, tạo tài khoản nội bộ và bật/tắt truy cập.', to: '/admin/users', icon: Users },
-        { title: 'Tra cứu nhân viên kho', description: 'Tìm nhân viên đang hoạt động, lấy mã tài khoản để quản lý phân công.', to: '/admin/users?role=STAFF', icon: ShieldCheck },
-      ]} />
-      <ActivitySummary />
-      <LoadState
-        loading={!current}
-        error={current?.error ?? ""}
-        retry={() => setRevision((v) => v + 1)}
-      />
-      {current?.data && (
-        <>
-          <div className="portal-metrics">
-            {["CUSTOMER", "STAFF", "MANAGER", "ADMIN"].map((role) => (
-              <Link
-                className="portal-metric"
-                key={role}
-                to={`/admin/users?role=${role}`}
-              >
-                <span>{label(role)}</span>
-                <strong>
-                  {
-                    current.data!.items.filter((row) => row.role === role)
-                      .length
-                  }
-                </strong>
-                <small>
-                  {
-                    current.data!.items.filter(
-                      (row) =>
-                        row.role === role && row.accountStatus === "ACTIVE",
-                    ).length
-                  }{" "}
-                  đang hoạt động
-                </small>
-              </Link>
-            ))}
-          </div>
-          <section className="manager-section">
-            <h2>
-              <Users size={20} /> Quản lý tài khoản
-            </h2>
-            <p>
-              Cấp tài khoản nhân viên, quản lý; xem thông tin và bật/tắt quyền
-              truy cập.
-            </p>
-            <div className="portal-actions">
-              <Link className="button-primary" to="/admin/users">
-                Mở danh sách <ArrowRight size={16} />
-              </Link>
-              <Link
-                className="button-secondary"
-                to="/admin/users?status=DISABLED"
-              >
-                Tài khoản vô hiệu hóa
-              </Link>
-            </div>
-          </section>
-          <section className="manager-section">
-            <h2>
-              <ShieldCheck size={20} /> Tài khoản nội bộ
-            </h2>
-            <div className="manager-table-wrap">
-              <table className="manager-table">
-                <thead>
-                  <tr>
-                    <th>Họ tên</th>
-                    <th>Email</th>
-                    <th>Vai trò</th>
-                    <th>Trạng thái</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {current.data.items
-                    .filter((row) => row.role !== "CUSTOMER")
-                    .slice(0, 8)
-                    .map((row) => (
-                      <tr key={first(row, "id")}>
-                        <td>
-                          <strong>{first(row, "fullName")}</strong>
-                        </td>
-                        <td>{first(row, "email")}</td>
-                        <td>
-                          <Status value={row.role} />
-                        </td>
-                        <td>
-                          <Status value={row.accountStatus} />
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-            <Link className="portal-record-link" to="/admin/users">
-              Xem toàn bộ tài khoản →
-            </Link>
-          </section>
-        </>
-      )}
-    </section>
-  );
+  return <section>
+    <PageHeader title="Tổng quan quản trị"><button className="button-secondary" disabled={!current} onClick={refresh}><RefreshCw size={16} />Làm mới</button></PageHeader>
+    <LoadState loading={!current} error={current?.error ?? ''} retry={refresh} />
+    <InternalKpis items={[
+      { title: 'Tổng tài khoản', value: current?.pages?.[0].total ?? '—', to: '/admin/users' },
+      { title: 'Nhân viên', value: current?.pages?.[1].total ?? '—', to: '/admin/users?role=STAFF' },
+      { title: 'Quản lý', value: current?.pages?.[2].total ?? '—', to: '/admin/users?role=MANAGER' },
+      { title: 'Đã vô hiệu hóa', value: current?.pages?.[3].total ?? '—', to: '/admin/users?status=DISABLED' },
+    ]} />
+    {current?.pages && <section className="internal-priority"><div className="internal-section-heading"><h2>Tài khoản gần đây</h2><Link className="portal-text-button" to="/admin/users">Xem tất cả</Link></div>
+      {!current.pages[0].items.length && <p>Chưa có tài khoản.</p>}
+      <ul className="internal-task-list">{current.pages[0].items.slice(0, 5).map(row => <li key={first(row, 'id')}><Link to={`/admin/users?search=${encodeURIComponent(first(row, 'email'))}`}><div><strong>{first(row, 'fullName')}</strong><small>{first(row, 'email')}</small></div><Status value={row.accountStatus} /></Link></li>)}</ul>
+    </section>}
+    <div className="internal-shortcuts"><Link className="button-secondary" to="/admin/login-history">Lịch sử đăng nhập</Link><Link className="button-secondary" to="/admin/activity">Lịch sử hoạt động</Link></div>
+  </section>;
 }

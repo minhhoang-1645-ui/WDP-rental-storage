@@ -1,3 +1,6 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { recordIdentity } from '../../utils/record-identity';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -39,9 +42,10 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
   );
   const [notice, setNotice] = useState("");
   const row = data.data;
+  const returnPath = useInternalListReturn(`/staff/${resource}`);
   return (
     <section>
-      <Link className="booking-back" to={`/staff/${resource}`}>
+      <Link className="booking-back" to={returnPath}>
         <ArrowLeft size={16} />
         {staffResources[resource].title}
       </Link>
@@ -65,7 +69,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
       {row && (
         <>
           <PageHeader
-            title={code(row)}
+            title={recordIdentity(row, resource).title}
             description={staffResources[resource].description}
           >
             <Status value={row.status ?? row.rentalState} />
@@ -74,6 +78,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
               Làm mới hồ sơ
             </button>
           </PageHeader>
+          <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">
             {workflowGuide(resource, row.status, 'staff') && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status, 'staff')}</WorkflowHint></div>}
             <div className="manager-detail-content">

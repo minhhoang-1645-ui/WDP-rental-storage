@@ -1,3 +1,4 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
@@ -260,7 +261,7 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
           >
             <div className="customer-record-heading">
               <div>
-                <small>{item.returnCode}</small>
+                <CopyRecordCode value={item.returnCode} />
                 <h2>{item.reservation.storageType.name}</h2>
               </div>
               <CustomerStatus status={item.status} />
@@ -339,7 +340,7 @@ function SettlementList({ items }: { items: CustomerDepositSettlement[] }) {
           >
             <div className="customer-record-heading">
               <div>
-                <small>{item.settlementCode}</small>
+                <CopyRecordCode value={item.settlementCode} />
                 <h2>{item.reservation.storageType.name}</h2>
               </div>
               <CustomerStatus status={item.status} />

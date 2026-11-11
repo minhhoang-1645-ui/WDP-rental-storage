@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
-const browser = await launchTestBrowser(), base = process.env.WDP_FE_URL || 'http://127.0.0.1:5187';
+const browser = await launchTestBrowser(), base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 try {
   for (const existingAccount of [false, true]) {
     const context = await browser.newContext(); const writes = [], errors = [];

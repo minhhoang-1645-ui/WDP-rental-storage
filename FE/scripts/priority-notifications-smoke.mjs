@@ -56,7 +56,7 @@ async function setup(role, width, mobile = false) {
 }
 
 try {
-  for (const width of [1440, 390]) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
+  for (const width of (process.env.WDP_PRIORITY_FOCUS ? [] : [1440, 390])) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
     const app = await setup(role, width), { page } = app;
     await app.goto(app.home);
     const summary = page.locator('.activity-summary');
@@ -118,24 +118,34 @@ try {
     }
     await app.context.close();
   }
-  for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
+  for (const role of (process.env.WDP_PRIORITY_FOCUS ? [process.env.WDP_PRIORITY_FOCUS] : ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'])) {
     console.log('Checking priority updates on Expo web: ' + role);
     const app = await setup(role, 390, true), { page } = app;
     await app.goto(app.home);
+    if (role === 'STAFF') {
+      const queue = page.getByRole('button').filter({ hasText: /NEW-ASSIGNMENT|OLD-STAFF-/ });
+      await queue.first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
+      assert.equal(await page.getByText(/NEW-RESULT/).count(), 0, 'Completed results belong in notifications, outside the Staff work queue');
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await page.screenshot({ path: `${artifacts}/mobile-staff-priority-390.png`, fullPage: true });
+      await page.getByRole('button', { name: /^Thông báo,/ }).first().click();
+      const notifications = page.getByRole('dialog').getByRole('button').filter({ hasText: /NEW-RESULT|NEW-ASSIGNMENT|OLD-STAFF-/ });
+      await notifications.first().filter({ hasText: 'NEW-RESULT' }).waitFor();
+      await page.getByRole('button', { name: /Cần thực hiện \(/ }).click();
+      await notifications.first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
+      assert.equal(await notifications.filter({ hasText: 'NEW-RESULT' }).count(), 0);
+      await page.getByRole('button', { name: 'Đánh dấu đã đọc', exact: true }).click();
+      await notifications.first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
+      await app.context.close();
+      checks.push('Expo web Staff: current queue prioritizes the latest unfinished assignment; notification bell shows the newest result first; marking read does not complete work');
+      continue;
+    }
     const summary = page.getByRole('heading', { name: 'Việc cần làm', exact: true }).locator('..');
     const records = summary.getByRole('button').filter({ hasText: /NEW-RESULT|NEW-ASSIGNMENT|NEW-RENEWAL|OLD-/ });
     await records.first().filter({ hasText: 'NEW-RESULT' }).waitFor({ timeout: 45000 });
     if (role !== 'ADMIN') assert.equal(await records.count(), 2, role + ' keeps a second actionable dossier beside the newest result');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), role + ' mobile overflows at 390px');
     checks.push(`${role} Expo web 390px: latest result leads home summary with outstanding work preserved`);
-    if (role === 'STAFF') {
-      const priority = page.getByRole('heading', { name: 'Ưu tiên xử lý', exact: true }).locator('..');
-      await priority.getByRole('button').first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
-      assert.equal(await priority.getByText('NEW-RESULT', { exact: false }).count(), 0);
-      await page.screenshot({ path: `${artifacts}/mobile-staff-390.png`, fullPage: true, animations: 'disabled' });
-      await priority.screenshot({ path: `${artifacts}/mobile-staff-priority-390.png`, animations: 'disabled' });
-      checks.push('Expo web Staff: priority uses the same latest actionable record and excludes completed results');
-    }
     if (role === 'CUSTOMER') {
       await app.goto('/customer/services');
       await page.getByRole('button', { name: 'Thay đổi & hỗ trợ', exact: true }).click();
@@ -153,4 +163,4 @@ try {
   }
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
   console.log(JSON.stringify({ passed: checks, browserErrors: errors.length, realDatabaseWrites: 0 }, null, 2));
-} finally { await browser.close(); }
+} catch (error) { for (const context of browser.contexts()) for (const page of context.pages()) { console.error('FAILED PRIORITY STATE', page.url(), (await page.locator('body').innerText()).slice(-7000)); console.error('DIALOGS', await page.getByRole('dialog').count()); await page.screenshot({ path: artifacts + '/priority-failure.png', fullPage: true }); } throw error; } finally { await browser.close(); }

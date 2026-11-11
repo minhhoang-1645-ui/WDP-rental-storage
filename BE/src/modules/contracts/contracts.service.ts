@@ -100,12 +100,10 @@ export class ContractsService {
     const signatureImage = validateSignature(input);
     const snapshot = this.documentSnapshot(contract);
     if (input.snapshotHash !== snapshotHash(snapshot)) throw new ConflictException('Nội dung hợp đồng đã thay đổi. Vui lòng tải lại và kiểm tra trước khi ký.');
-    const proof = this.signing.acquire({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: snapshotHash(snapshot), signatureImage, acceptanceName }, input);
-    try {
-      const changed = await this.prisma.rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsVersion: snapshot.version, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: signedEnvelope(snapshot, proof.evidence) as unknown as Prisma.InputJsonValue, signatureImage } });
+    await this.signing.verifyAndSave({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: snapshotHash(snapshot), signatureImage, acceptanceName }, input, async (evidence, transaction) => {
+      const changed = await (transaction ?? this.prisma).rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsVersion: snapshot.version, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: signedEnvelope(snapshot, evidence) as unknown as Prisma.InputJsonValue, signatureImage } });
       if (changed.count !== 1) throw new ConflictException('Hợp đồng vừa được cập nhật. Vui lòng tải lại.');
-      proof.commit();
-    } catch (error) { proof.release(); throw error; }
+    });
     const updated = await this.prisma.rentalContract.findUniqueOrThrow({ where: { id: contract.id }, include: this.contractInclude() });
     return this.toContract(updated, true);
   }

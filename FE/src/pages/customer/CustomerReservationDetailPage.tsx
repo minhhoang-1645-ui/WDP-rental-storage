@@ -1,3 +1,5 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import {
   ArrowLeft,
   CalendarDays,
@@ -27,6 +29,7 @@ import { CustomerRentalProgress } from '../../components/customer/CustomerRental
 export function CustomerReservationDetailPage() {
   const { id = "" } = useParams();
   const { user } = useAuth();
+  const returnPath = useInternalListReturn("/customer/reservations");
   const {
     data: reservation,
     error,
@@ -47,7 +50,7 @@ export function CustomerReservationDetailPage() {
   if (error || !reservation)
     return (
       <section className="customer-page">
-        <Link to="/customer/reservations" className="customer-back">
+        <Link to={returnPath} className="customer-back">
           <ArrowLeft size={16} /> Quay lại danh sách
         </Link>
         <PortalError
@@ -59,15 +62,16 @@ export function CustomerReservationDetailPage() {
 
   return (
     <section className="customer-page">
-      <Link to="/customer/reservations" className="customer-back">
+      <Link to={returnPath} className="customer-back">
         <ArrowLeft size={16} /> Quay lại danh sách
       </Link>
       <PortalPageHeader
         eyebrow="Chi tiết yêu cầu đặt kho"
-        title={reservation.id}
+        title={`${reservation.product.name} · ${reservation.quantity} kho`}
         description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}. Theo dõi trạng thái yêu cầu và các bước tiếp theo.`}
         action={<ReservationStatus status={reservation.status} />}
       />
+      <CopyRecordCode value={reservation.id} label="Mã đơn" />
       <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
       <div className="customer-detail-grid">
         <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
@@ -206,15 +210,15 @@ export function CustomerReservationDetailPage() {
                   ? "Xem hóa đơn và hợp đồng. Bạn có thể yêu cầu lịch bàn giao khi các hợp đồng đã đủ điều kiện."
                   : "Yêu cầu này không còn chờ xử lý. Bạn có thể gửi yêu cầu đặt kho mới khi cần."}
             </p>
-            <Link className="button-secondary" to="/customer/contracts">
+            {reservation.status === 'CONFIRMED' && <><Link className="button-secondary" to={`/customer/contracts?reservation=${encodeURIComponent(reservation.id)}`}>
               <ReceiptText size={16} /> Xem hợp đồng
             </Link>
-            <Link className="button-secondary" to="/customer/appointments">
+            <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(reservation.id)}`}>
               <CalendarDays size={16} /> Lịch bàn giao
             </Link>
-            <Link className="button-secondary" to="/customer/payments">
-              <PackageOpen size={16} /> Hóa đơn và thanh toán
-            </Link>
+            <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(reservation.id)}`}>
+              <PackageOpen size={16} /> Xem hóa đơn
+            </Link></>}
           </section>
         </aside>
       </div>

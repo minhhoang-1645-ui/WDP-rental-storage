@@ -5,7 +5,8 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date; updatedAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
-export interface UserListFilters { search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
+export const userSorts = ['newest', 'oldest', 'name-asc', 'name-desc'] as const;
+export interface UserListFilters { sort?: typeof userSorts[number]; search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
 type StoredSession = { tokenHash: string; userId: string; expiresAt: Date };
 export abstract class UserRepository {
   abstract saveSession(session: StoredSession): Promise<void>;
@@ -44,7 +45,12 @@ export class MemoryUserRepository extends UserRepository {
     if (!user || user.accountStatus !== 'ACTIVE') return null;
     const updated = { ...user, ...data }; this.users.set(id, updated); return updated;
   }
-  async list(offset: number, limit: number, filters: UserListFilters = {}) { return this.filtered(filters).slice(offset, offset + limit); }
+  async list(offset: number, limit: number, filters: UserListFilters = {}) { const rows = this.filtered(filters);
+    const sort = filters.sort ?? 'newest';
+    const byName = sort === 'name-asc' || sort === 'name-desc';
+    const direction = sort === 'oldest' || sort === 'name-asc' ? 1 : -1;
+    return rows.sort((a, b) => direction * (byName ? a.fullName.localeCompare(b.fullName, 'vi')
+      : (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0)) || a.id.localeCompare(b.id)).slice(offset, offset + limit); }
   async count(filters: UserListFilters = {}) { return this.filtered(filters).length; }
   async updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string) {
     if (actorId) assertStatusActor(this.users.get(actorId), id, accountStatus);
@@ -85,7 +91,11 @@ export class PrismaUserRepository extends UserRepository {
   async deleteSession(tokenHash: string) { await this.prisma.authSession.deleteMany({ where: { tokenHash } }); }
   async deleteUserSessions(userId: string) { await this.prisma.authSession.deleteMany({ where: { userId } }); }
   async list(offset: number, limit: number, filters: UserListFilters = {}) {
-    const users = await this.prisma.user.findMany({ where: this.where(filters), skip: offset, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] });
+    const sort = filters.sort ?? 'newest';
+    const order = sort === 'name-asc' ? { fullName: 'asc' as const }
+      : sort === 'name-desc' ? { fullName: 'desc' as const }
+      : { createdAt: sort === 'oldest' ? 'asc' as const : 'desc' as const };
+    const users = await this.prisma.user.findMany({ where: this.where(filters), skip: offset, take: limit, orderBy: [order, { id: 'asc' }] });
     return users.map(user => ({ ...user, phone: user.phone ?? '' }));
   }
   async count(filters: UserListFilters = {}) { return this.prisma.user.count({ where: this.where(filters) }); }

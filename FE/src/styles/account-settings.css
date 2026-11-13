@@ -1,0 +1,193 @@
+.account-settings {
+  max-width: 1140px;
+  color: var(--workspace-text);
+}
+
+.account-settings-heading {
+  padding-bottom: 24px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+
+.account-settings-heading h1 {
+  margin: 0;
+  font-size: clamp(27px, 3vw, 36px);
+  font-weight: 750;
+  letter-spacing: -.035em;
+}
+
+.account-settings :is(p, small) {
+  color: var(--workspace-secondary);
+}
+
+.account-settings-heading p,
+.account-settings-section-heading p {
+  margin: 6px 0 0;
+}
+
+.account-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 218px) minmax(0, 1fr);
+  gap: clamp(24px, 5vw, 64px);
+}
+
+.account-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.account-settings-nav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--workspace-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.account-settings-nav a:hover { background: var(--workspace-hover); }
+.account-settings-nav a[aria-current="page"] {
+  background: var(--workspace-selected);
+  border-color: var(--workspace-border);
+  color: var(--workspace-primary);
+}
+
+.account-settings-content { min-width: 0; }
+.account-settings-content > [hidden] { display: none; }
+.account-settings-content section { max-width: 690px; }
+.account-settings-section-heading {
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--workspace-border);
+  margin-bottom: 20px;
+}
+.account-settings-section-heading h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.account-settings-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  overflow-wrap: anywhere;
+}
+.account-settings-identity small { display: block; margin-top: 3px; }
+.account-settings-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+  font-weight: 750;
+}
+.account-settings-form {
+  display: grid;
+  gap: 14px;
+  max-width: 580px;
+}
+.account-settings .field-label { color: var(--workspace-text); }
+.account-settings .account-settings-form .field-label input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--workspace-input);
+  color: var(--workspace-text);
+}
+.account-settings .account-settings-form .field-label input[readonly] {
+  background: var(--workspace-surface);
+  color: var(--workspace-secondary);
+}
+.account-settings :is(a, button, input):focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 3px;
+}
+.account-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-settings .account-settings-actions .button-primary {
+  background: var(--workspace-primary);
+  color: var(--workspace-on-primary);
+}
+.account-settings .account-settings-actions .button-secondary {
+  background: var(--workspace-input);
+  color: var(--workspace-text);
+  border-color: var(--workspace-border);
+}
+.account-settings-message { margin: 0; border-radius: 8px; padding: 10px 12px; }
+.account-settings .account-settings-message.is-error { background: var(--workspace-error-bg); color: var(--workspace-error); }
+.account-settings .account-settings-message.is-success { background: var(--workspace-success-bg); color: var(--workspace-success); }
+
+.account-settings-theme { padding: 0; border: 0; min-width: 0; }
+.account-settings-theme legend { padding: 0; font-weight: 650; margin-bottom: 12px; }
+.account-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 205px)); gap: 12px; }
+.account-theme-option {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 2px solid var(--workspace-border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.account-theme-option:has(input:checked) { border-color: var(--workspace-primary); }
+.account-theme-option:has(input:focus-visible) { outline: 2px solid var(--workspace-primary); outline-offset: 3px; }
+.account-theme-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.account-theme-preview {
+  display: grid;
+  grid-template-columns: 30% minmax(0, 1fr);
+  overflow: hidden;
+  min-height: 100px;
+  aspect-ratio: 1.65;
+  border-radius: 7px;
+  background: #f0f4f7;
+  --preview-surface: #fff;
+  --preview-line: #a3b1c1;
+}
+.account-theme-option[data-preview="dark"] .account-theme-preview {
+  background: #10151d;
+  --preview-surface: #252e3b;
+  --preview-line: #8ca2b7;
+}
+.account-preview-sidebar { display: grid; align-content: start; gap: 7px; padding: 10px 6px; background: var(--preview-surface); }
+.account-preview-main { display: grid; align-content: start; gap: 7px; padding: 12px 9px; }
+.account-theme-preview i { display: block; width: 82%; height: 5px; border-radius: 9px; background: var(--preview-line); }
+.account-preview-main i { width: 45%; }
+.account-preview-main b { display: block; height: 19px; border-radius: 4px; background: var(--preview-surface); }
+.account-theme-caption { display: flex; align-items: center; gap: 6px; font-weight: 650; padding: 0 3px 2px; }
+.account-theme-caption svg:last-child:not(:first-child) { margin-left: auto; color: var(--workspace-primary); }
+
+.customer-account-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.customer-account-actions .workspace-profile:has([aria-expanded="true"]) { z-index: 30; }
+.customer-account-actions .workspace-profile-trigger { background: transparent; }
+.customer-shell.customer-settings-shell { background: var(--workspace-background); }
+.customer-settings-shell :is(.customer-sidebar, .customer-mobile-header, .activity-panel) {
+  background: var(--workspace-sidebar);
+  color: var(--workspace-text);
+  border-color: var(--workspace-border);
+}
+.customer-settings-shell .customer-nav .customer-nav-link:hover { background: var(--workspace-hover); }
+.customer-settings-shell .customer-account.active { background: var(--workspace-selected); }
+.customer-settings-shell .customer-updates-bar { color: var(--workspace-secondary); }
+.customer-settings-shell :is(.activity-bell, .activity-panel .button-secondary, .activity-panel input, .activity-panel select) {
+  background: var(--workspace-input);
+  color: var(--workspace-text);
+  border-color: var(--workspace-border);
+}
+
+@media (max-width: 760px) {
+  .account-settings-heading { margin-bottom: 16px; padding-bottom: 16px; }
+  .account-settings-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .account-settings-nav { flex-direction: row; overflow-x: auto; padding: 4px; margin: -4px; }
+  .account-settings-nav a { flex: none; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  .customer-account-actions .workspace-profile-name { display: none; }
+  .account-theme-preview { min-height: 86px; }
+}

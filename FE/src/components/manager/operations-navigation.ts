@@ -1,8 +1,8 @@
-import { BarChart3, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldAlert, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
+import { BarChart3, Bell, Boxes, CalendarClock, ClipboardCheck, ClipboardList, FileText, HardHat, Headphones, Landmark, RefreshCcw, Repeat2, ShieldAlert, ShieldCheck, Undo2, Users, Warehouse, WalletCards, Receipt, Wallet } from 'lucide-react';
 import { isStaffWorkflow } from '../../utils/operation-access';
 import { isManagerReviewWorkflow, managerReviewTitle } from '../../utils/manager-review-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
-import { managerPrimaryMenu, managerSections, type ManagerSection } from '../../utils/manager-sections';
+import { managerSections } from '../../utils/manager-sections';
 
 const managerNavigation: InternalNavItem[] = [
   { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
@@ -31,9 +31,26 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/maintenance', label: 'Bảo trì kho', icon: HardHat, group: 'Kho & khách hàng' },
   { to: '/manager/customers', label: 'Khách hàng', icon: Users, group: 'Kho & khách hàng' },
 ];
-export function operationsNavigation(base = '/manager'): InternalNavItem[] {
-  const icons: Record<string, typeof Landmark> = { '': Landmark, assignments: Users, reviews: ClipboardCheck, finance: WalletCards, 'rental-records': FileText, facility: Warehouse, catalog: ClipboardList, reports: BarChart3 };
-  return managerPrimaryMenu.map(item => ({ to: base + (item.key ? '/' + item.key : ''), label: item.title, icon: icons[item.key], end: !item.key, group: 'Quản lý cơ sở', match: Object.hasOwn(managerSections,item.key) ? managerSections[item.key as ManagerSection].items.map(link => link.web.split('?')[0]) : [] }));
+export function operationsNavigation(): InternalNavItem[] {
+  return [
+    { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Quản lý' },
+    { to: '/manager/reviews', label: 'Việc cần duyệt', icon: ClipboardCheck, group: 'Quản lý', match: managerSections.reviews.items.map(item => item.web.split('?')[0]) },
+    { to: '/manager/assignments', label: 'Phân công', icon: Users, group: 'Quản lý', match: ['/manager/operations/stock-movements'] },
+    { to: '/manager/units', label: 'Danh sách kho', icon: Warehouse, group: 'Kho & khách hàng', match: ['/manager/facility', '/manager/overstays'] },
+    { to: '/manager/stored-items', label: 'Hàng đang lưu', icon: Boxes, group: 'Kho & khách hàng' },
+    { to: '/manager/customers', label: 'Khách hàng', icon: Users, group: 'Kho & khách hàng' },
+    { to: '/manager/operations/contracts', label: 'Hợp đồng', icon: FileText, group: 'Kho & khách hàng', match: ['/manager/rental-records'] },
+    { to: '/manager/operations/rentals', label: 'Kho đang thuê', icon: Repeat2, group: 'Kho & khách hàng' },
+    { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: Receipt, group: 'Tài chính', match: ['/manager/finance'] },
+    { to: '/manager/operations/payments', label: 'Khoản thu', icon: Wallet, group: 'Tài chính' },
+    { to: '/manager/payment-submissions', label: 'Duyệt chuyển khoản', icon: ClipboardCheck, group: 'Tài chính' },
+    { to: '/manager/online-payment-reconciliations', label: 'Đối soát VNPay', icon: ShieldAlert, group: 'Tài chính' },
+    { to: '/manager/operations/deposit-settlements', label: 'Tiền cọc', icon: WalletCards, group: 'Tài chính' },
+    { to: '/manager/catalog', label: 'Loại kho & giá', icon: ClipboardList, end: true, group: 'Danh mục & báo cáo' },
+    { to: '/manager/catalog/additional-services', label: 'Dịch vụ bổ sung', icon: Boxes, group: 'Danh mục & báo cáo' },
+    { to: '/manager/reports', label: 'Báo cáo', icon: BarChart3, group: 'Danh mục & báo cáo' },
+    { to: '/manager/notifications', label: 'Thông báo', icon: Bell, group: 'Tài khoản' },
+  ];
 }
 export const managerPageNavigation = () => managerNavigation.filter(item => !isStaffWorkflow(item.to.split('/').at(-1) ?? '') || isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '')).map(item => ({...item, label:isManagerReviewWorkflow(item.to.split('/').at(-1) ?? '') ? managerReviewTitle(item.to.split('/').at(-1)!) : item.label }));
 

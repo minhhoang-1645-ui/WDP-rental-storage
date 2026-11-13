@@ -52,7 +52,6 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
       {!row && (
         <PageHeader
           title={staffResources[resource].title}
-          description="Thông tin hồ sơ tác nghiệp"
         />
       )}
       <LoadState
@@ -70,7 +69,6 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
         <>
           <PageHeader
             title={recordIdentity(row, resource).title}
-            description={staffResources[resource].description}
           >
             <Status value={row.status ?? row.rentalState} />
             <button className="button-secondary" onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu hoặc đóng biểu mẫu trước khi làm mới hồ sơ.'); return; } data.refresh(); }}>

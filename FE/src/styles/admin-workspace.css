@@ -1,0 +1,213 @@
+.workspace-themed[data-workspace-role="admin"] .admin-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workspace-themed[data-workspace-role="admin"] .admin-kpis .internal-kpi {
+  min-height: 120px;
+}
+
+.admin-kpis .internal-kpi > span,
+.admin-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-dashboard-panels,
+.admin-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.admin-dashboard-panels .internal-section-heading {
+  flex-wrap: wrap;
+}
+
+.admin-dashboard-panels .portal-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.admin-preview {
+  overflow-wrap: anywhere;
+}
+
+.admin-preview li {
+  min-width: 0;
+}
+
+.admin-audit-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-audit-preview > svg,
+.admin-detail-heading > svg {
+  flex-shrink: 0;
+}
+
+.admin-toolbar {
+  gap: 12px;
+}
+
+.admin-toolbar .portal-search {
+  flex: 1 1 230px;
+  min-width: 0;
+}
+
+.admin-audit > nav {
+  margin-bottom: 16px;
+}
+
+.workspace-themed[data-workspace-role="admin"] .admin-accounts .manager-table :is(th, td),
+.workspace-themed[data-workspace-role="admin"] .admin-audit .manager-table :is(th, td) {
+  padding: 10px 14px;
+}
+
+.admin-accounts .manager-table small {
+  overflow-wrap: anywhere;
+}
+
+.admin-account-detail .booking-back {
+  margin-bottom: 14px;
+}
+
+.admin-detail-heading h2 {
+  margin: 0;
+}
+
+.workspace-themed[data-workspace-role="admin"] :is(.portal-danger.button-secondary, .staff-table-popover > .admin-destructive-link) {
+  color: var(--workspace-error);
+}
+
+@media (max-width: 1150px) {
+  .workspace-themed[data-workspace-role="admin"] .admin-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .admin-dashboard-panels,
+  .admin-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.admin-account-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 0 14px;
+}
+
+.admin-account-toolbar input[type="search"] {
+  width: min(100%, 300px);
+}
+
+.admin-account-toolbar label,
+.admin-role,
+.admin-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-filter-label,
+.admin-role svg {
+  color: var(--workspace-muted);
+}
+
+.admin-role svg {
+  flex: none;
+}
+
+.admin-account-toolbar :is(input, select, button) {
+  min-height: 40px;
+}
+
+.admin-accounts .manager-table :is(th, td):first-child {
+  width: 44px;
+}
+
+.admin-accounts input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--workspace-primary);
+}
+
+.workspace-themed[data-workspace-role="admin"] .admin-accounts .manager-table tr[data-selected] > td,
+.workspace-themed[data-workspace-role="admin"] .admin-accounts .staff-table-popover > button[aria-pressed="true"] {
+  background: var(--workspace-selected);
+}
+
+.admin-bulk-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-popover);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+.admin-bulk-result {
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+
+.admin-create-fields > .field-label {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 580px) {
+  .admin-create-fields > .field-label {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.admin-accounts .staff-table-popover > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-accounts .staff-table-popover > button:hover {
+  background: var(--workspace-hover);
+}
+
+.admin-account-toolbar > label {
+  font-size: 14px;
+}
+
+.admin-created {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+
+.admin-created a {
+  text-decoration: underline;
+}

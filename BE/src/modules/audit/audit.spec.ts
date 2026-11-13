@@ -44,10 +44,27 @@ describe('audit persistence and filters (mock DB)', () => {
     const db = database();
     await new AuditService(db as never).list({ category: 'LOGIN', outcome: 'FAILURE', role: 'ADMIN', search: 'manager', from: '2026-11-03', to: '2026-11-03', page: '2', limit: '20' });
     const args = db.auditEvent.findMany.mock.calls[0][0];
-    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { category: 'LOGIN', outcome: 'FAILURE', actorRole: 'ADMIN' } });
+    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { outcome: 'FAILURE', actorRole: 'ADMIN' } });
     expect(args.where.createdAt.gte.toISOString()).toBe('2026-11-02T17:00:00.000Z');
     expect(args.where.createdAt.lt.toISOString()).toBe('2026-11-03T17:00:00.000Z');
     expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(args.where);
+  });
+  it('includes historical logouts in session history and excludes session events from activity before counting and paging', async () => {
+    const db = database(), service = new AuditService(db as never);
+
+    await service.list({ category: 'LOGIN', search: 'staff', page: '2', limit: '5' });
+    const history = db.auditEvent.findMany.mock.calls[0][0];
+    expect(history).toMatchObject({ skip: 5, take: 5, where: { AND: [{ OR: [
+      { category: 'LOGIN', action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } },
+      { category: 'ACTIVITY', action: 'AUTH_LOGOUT' },
+    ] }] } });
+    expect(history.where.OR).toContainEqual({ actorEmail: { contains: 'staff', mode: 'insensitive' } });
+    expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(history.where);
+
+    await service.list({ category: 'ACTIVITY' });
+    const activity = db.auditEvent.findMany.mock.calls[1][0];
+    expect(activity.where).toEqual({ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } });
+    expect(db.auditEvent.count.mock.calls[1][0].where).toEqual(activity.where);
   });
   it.each([{ page: '0' }, { limit: '101' }, { page: '1.5' }, { from: '2026-02-30' }, { from: '2026-11-04', to: '2026-11-03' }, { category: 'OTHER' }, { outcome: 'OTHER' }, { role: 'OTHER' }, { search: ['a', 'b'] }])('rejects invalid query %j', async query => {
     const db = database(); await expect(new AuditService(db as never).list(query)).rejects.toBeInstanceOf(BadRequestException); expect(db.auditEvent.findMany).not.toHaveBeenCalled();
@@ -65,6 +82,14 @@ describe('safe audit interception', () => {
   it('does not log anonymous callbacks, OTP routes, or complete raw URLs', () => {
     for (const path of ['/api/payments/vnpay/ipn', '/api/signing/:token/verify', '/api/auth/password-reset']) expect(auditTarget({ method: 'POST', route: { path } })).toBeUndefined();
     expect(auditTarget({ method: 'PATCH', route: { path: '/api/staff/management/support-requests/:id/resolve' }, user: { ...admin, role: 'STAFF' } })).toMatchObject({ action: 'RESOLVE', resource: 'support-requests', route: '/staff/management/support-requests/:id/resolve' });
+  });
+  it.each([
+    ['login', 'LOGIN', 'AUTH_LOGIN'],
+    ['logout', 'LOGIN', 'AUTH_LOGOUT'],
+    ['register', 'ACTIVITY', 'AUTH_REGISTER'],
+  ])('classifies %s by its purpose', (path, category, action) => {
+    expect(auditTarget({ method: 'POST', route: { path: '/api/auth/' + path }, user: admin }))
+      .toMatchObject({ category, action, resource: 'auth' });
   });
   it('preserves the result/error and records only once', async () => {
     const record = vi.fn().mockResolvedValue(undefined), interceptor = new AuditInterceptor({ record } as never);

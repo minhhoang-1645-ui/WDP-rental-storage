@@ -54,7 +54,7 @@ export function ManagerAssignmentsPage() {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   useLiveRefresh('/manager/*', refresh);
-  const [selected, setSelected] = useState<Task>();
+  const [manualSelection, setSelected] = useState<Task>();
   const [unitAssignmentsOpen, setUnitAssignmentsOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
@@ -105,6 +105,9 @@ export function ManagerAssignmentsPage() {
   const allTasks = current?.tasks ?? [];
   const search = params.get("search") ?? "";
   const kind = params.get("kind") ?? "all";
+  const record = params.get("record");
+  const selected = manualSelection ?? (record ? allTasks.find(task =>
+    task.kind === kind && first(task.row, "id") === record) : undefined);
   const assignment = params.get("assignment") ?? "all";
   const scope = params.get("scope") ?? "active";
   const limit = internalPageSize(params);
@@ -150,6 +153,10 @@ export function ManagerAssignmentsPage() {
       },
       { replace: true },
     );
+  const closeDetails = () => {
+    setSelected(undefined);
+    if (record) change("record", "");
+  };
 
   return (
     <section>
@@ -298,9 +305,9 @@ export function ManagerAssignmentsPage() {
           task={selected}
           knownStaff={knownStaff}
           workloads={workloads}
-          onClose={() => setSelected(undefined)}
+          onClose={closeDetails}
           onAssigned={() => {
-            setSelected(undefined);
+            closeDetails();
             setNotice("Đã cập nhật nhân viên phụ trách.");
             setRevision((value) => value + 1);
           }}

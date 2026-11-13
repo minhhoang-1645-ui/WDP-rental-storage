@@ -1,6 +1,6 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, recordIdentity } from '../../utils/record-identity';
-import { internalPageSize } from '../../utils/internal-pagination';
+import { internalPageSize, staffTaskPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
@@ -36,13 +36,17 @@ import { InventoryEditor } from './InventoryEditor';
 import { TransferRequests } from '../../components/manager/TransferRequests';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 import { normalizeSearch } from '../../utils/notification-tools';
+import { StaffTaskPagination } from '../../components/workspace/StaffTaskTable';
+import { StaffWorkflowTable } from '../staff/StaffWorkflowTable';
+import { isStaffTableWorkflow, staffDay } from '../staff/staff-resources';
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const limit = internalPageSize(params);
+  const staffTable = user?.role === 'STAFF' && isStaffTableWorkflow(resource) ? resource : null;
+  const limit = staffTable ? staffTaskPageSize(params) : internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
   const status = reviewOnly ? managerReviewStatus(resource) : params.get("status") ?? "";
@@ -67,6 +71,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
+  if (staffTable && staffTable !== 'appointments' && params.get('mine') === 'true') query.set('assignedToMe', 'true');
   for (const field of [
     "priority",
     "type",
@@ -145,7 +150,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   return (
     <section>
       {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
-      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.' : config.description}>
+      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.' : user?.role === 'STAFF' ? undefined : config.description}>
         {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
         {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
@@ -163,16 +168,16 @@ export function ManagerListPage({ resource }: { resource: string }) {
         </button>
       </PageHeader>
       {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
-      {resource === 'maintenance' && user?.role === 'STAFF' && <section className="manager-section"><h2>Bảo trì đúng tình trạng kho</h2><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></section>}
+      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></details>}
       {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
-      <div className="portal-toolbar">
+      <div className={`portal-toolbar${staffTable ? ' staff-table-toolbar' : ''}`}>
         <label className="field-label portal-search">
           Tìm kiếm
           <input
             type="search"
             value={search}
             maxLength={100}
-            placeholder="Mã hồ sơ, tên khách, kho…"
+            placeholder={staffTable === 'appointments' ? 'Mã lịch, mã đặt kho, khách hàng…' : staffTable === 'maintenance' ? 'Mã phiếu, kho, nội dung…' : 'Mã hồ sơ, tên khách, kho…'}
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
@@ -239,6 +244,11 @@ export function ManagerListPage({ resource }: { resource: string }) {
             />
           </label>
         )}
+        {staffTable === 'appointments' && <button type="button" className="button-secondary" onClick={() => change('date', staffDay(Date.now()))}>Hôm nay</button>}
+        {staffTable && staffTable !== 'appointments' && <label className="portal-checkbox">
+          <input type="checkbox" checked={params.get('mine') === 'true'} onChange={event => change('mine', event.target.checked ? 'true' : '')} />
+          Việc được giao cho tôi
+        </label>}
         {resource === "units" && (
           <>
             <label className="field-label">
@@ -272,7 +282,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
       />
       {current?.data && (
         <>
-          <div className="portal-result-heading">
+          {!staffTable && <div className="portal-result-heading">
             <span>
               {total.toLocaleString("vi-VN")}{" "}
               {resource === "units" ? "kho" : "hồ sơ"}
@@ -282,8 +292,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
                 ? "Tìm kiếm trên toàn bộ danh sách"
                 : "Dữ liệu từ hệ thống"}
             </small>
-          </div>
-          {visible.length ? (
+          </div>}
+          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={config.title} items={visible} userId={user?.id ?? ''} /> : (
             <div className="manager-table-wrap">
               <table className="manager-table">
                 <thead>
@@ -325,13 +335,14 @@ export function ManagerListPage({ resource }: { resource: string }) {
           ) : (
             <Empty />
           )}
-          <Pagination
+          {staffTable ? <StaffTaskPagination page={visiblePage} limit={limit} total={total}
+            onLimitChange={value => change('limit', String(value))} onChange={value => change('page', String(value))} /> : <Pagination
             page={visiblePage}
             limit={limit}
             onLimitChange={value => change("limit", String(value))}
             total={total}
             onChange={(v) => change("page", String(v))}
-          />
+          />}
         </>
       )}
       {creating && (

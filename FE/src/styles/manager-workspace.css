@@ -1,0 +1,243 @@
+.workspace-themed[data-workspace-role="manager"] {
+  --report-rent: #355a8d;
+  --report-received: #0f766e;
+  --manager-reserved: #966019;
+  --manager-maintenance: #7158a0;
+  --manager-other: #ae375c;
+  --manager-unclassified: #536579;
+}
+
+.workspace-themed[data-workspace-role="manager"][data-workspace-theme="dark"] {
+  --report-rent: #9ebeff;
+  --report-received: #7adbc9;
+  --manager-reserved: #ffd996;
+  --manager-maintenance: #cfbdf4;
+  --manager-other: #f4a6bf;
+  --manager-unclassified: #a8b6c7;
+}
+
+.manager-overview .manager-dashboard-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.manager-overview .manager-dashboard-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  min-height: 142px;
+  padding: clamp(14px, 1.5vw, 24px);
+  border-radius: 12px;
+}
+
+.manager-overview .manager-dashboard-kpi:hover {
+  border-color: var(--workspace-primary);
+}
+
+.manager-kpi-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: auto;
+  color: var(--workspace-secondary);
+  font-size: 14px;
+}
+
+.manager-kpi-heading svg {
+  flex: none;
+  color: var(--workspace-primary);
+}
+
+.manager-overview .manager-dashboard-kpi strong {
+  color: var(--workspace-text);
+  font-size: clamp(20px, 1.8vw, 30px);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.manager-overview .manager-dashboard-kpi small {
+  color: var(--workspace-secondary);
+  font-size: 13px;
+  line-height: 1.35;
+  min-height: 2.7em;
+}
+
+.manager-overview-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.manager-overview-panel {
+  min-width: 0;
+  padding: clamp(16px, 2vw, 28px);
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-surface);
+}
+
+.manager-overview-panel > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.manager-overview-panel h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.manager-panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--workspace-primary);
+  font-size: 14px;
+}
+
+.manager-panel-link:hover { text-decoration: underline; }
+.manager-panel-caption { margin-top: 8px; color: var(--workspace-secondary); font-size: 14px; }
+
+.manager-storage-total { margin-top: 20px; color: var(--workspace-secondary); font-size: 14px; }
+.manager-storage-total strong { color: var(--workspace-text); }
+.manager-storage-bar {
+  display: flex;
+  height: 24px;
+  margin: 8px 0 12px;
+  overflow: hidden;
+  border-radius: 6px;
+}
+.manager-storage-segment,
+.manager-storage-swatch { background: var(--storage-fill); }
+.manager-storage-segment { min-width: 0; }
+.manager-storage-legend {
+  display: grid;
+  gap: 8px;
+  margin-block: 12px 16px;
+  font-size: 14px;
+}
+.manager-storage-legend li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(5ch, auto);
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.manager-storage-legend li > span:last-child { text-align: right; color: var(--workspace-secondary); }
+.manager-storage-swatch { width: 11px; height: 11px; border-radius: 3px; }
+.manager-overview .is-occupied { --storage-fill: var(--report-rent); }
+.manager-overview .is-available { --storage-fill: var(--report-received); }
+.manager-overview .is-reserved { --storage-fill: var(--manager-reserved); }
+.manager-overview .is-maintenance { --storage-fill: var(--manager-maintenance); }
+.manager-overview .is-other { --storage-fill: var(--manager-other); }
+.manager-overview .is-unclassified { --storage-fill: var(--manager-unclassified); }
+
+.manager-shell.internal-web .manager-overview .manager-work-list { margin-top: 12px; }
+.manager-shell.internal-web .manager-work-list li + li { border-top: 1px solid var(--workspace-border); }
+.manager-shell.internal-web .manager-overview .manager-work-list a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px;
+  color: var(--workspace-text);
+}
+.manager-overview .manager-work-list a:hover { background: var(--workspace-hover); }
+.manager-work-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+.manager-work-copy { display: grid; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
+.manager-work-copy strong { font-size: 14px; }
+.manager-work-copy :is(span, small) { color: var(--workspace-secondary); font-size: 13px; }
+.manager-work-arrow { color: var(--workspace-muted); }
+.manager-overview .manager-work-list .manager-status { width: fit-content; max-width: 132px; white-space: normal; }
+.manager-shell.internal-web.workspace-themed .manager-work-list .manager-status.is-approved {
+  background: var(--workspace-warning-bg);
+  color: var(--workspace-warning);
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(
+  .portal-metric, .manager-payment-summary > span, .manager-filter-bar, .manager-payment-search,
+  .manager-submission-card, .manager-review-modal, .document-file, .signature-otp,
+  .portal-finance-strip, .manager-banner-card, .portal-stat-list > div, .work-queue, .workspace-summary
+) {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+  box-shadow: none;
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(.manager-submission-heading small, .manager-submission-facts dt, .manager-submission-facts small, .portal-finance-strip span) {
+  color: var(--workspace-secondary);
+}
+
+.workspace-themed[data-workspace-role="manager"] .manager-submission-heading {
+  flex-wrap: wrap;
+}
+
+.workspace-themed[data-workspace-role="manager"] .manager-submission-heading strong {
+  display: block;
+  color: var(--workspace-text);
+  font-size: 20px;
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(.manager-notice, .payment-submission-status, .report-pie-legend button[aria-pressed="true"]) {
+  background: var(--workspace-info-bg);
+  color: var(--workspace-info);
+  border-color: var(--workspace-border);
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(.manager-notice.is-error, .payment-submission-status.is-rejected, .manager-status.is-refund_required) {
+  background: var(--workspace-error-bg);
+  color: var(--workspace-error);
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(.payment-submission-status.is-pending_verification, .manager-status.is-pending_review, .manager-status.is-pending_verification) {
+  background: var(--workspace-warning-bg);
+  color: var(--workspace-warning);
+}
+
+.manager-shell.internal-web[data-workspace-role="manager"] :is(.payment-submission-status.is-verified, .manager-status.is-reconciled) {
+  background: var(--workspace-success-bg);
+  color: var(--workspace-success);
+}
+
+.workspace-themed[data-workspace-role="manager"] .report-bar-track { background: var(--workspace-table); }
+.workspace-themed[data-workspace-role="manager"] .report-line-chart line { stroke: var(--workspace-border); }
+.workspace-themed[data-workspace-role="manager"] .report-line-chart text { fill: var(--workspace-secondary); }
+.workspace-themed[data-workspace-role="manager"] .report-chart-legend span:first-child { color: var(--report-rent); }
+.workspace-themed[data-workspace-role="manager"] .report-chart-legend span:last-child { color: var(--report-received); }
+.workspace-themed[data-workspace-role="manager"] .report-pie-graphic circle:first-child { stroke: var(--workspace-table); }
+.workspace-themed[data-workspace-role="manager"] .manager-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.workspace-themed[data-workspace-role="manager"] .manager-back-to-list { margin-bottom: 16px; }
+.workspace-themed[data-workspace-role="manager"] .workspace-nav-heading { color: var(--workspace-muted); }
+
+@media (max-width: 1300px) {
+  .manager-overview .manager-dashboard-kpis { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+}
+
+@media (max-width: 1100px) {
+  .manager-overview-panels { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 520px) {
+  .manager-overview .manager-dashboard-kpis { gap: 10px; }
+  .manager-overview .manager-dashboard-kpi { min-height: 120px; }
+  .manager-shell.internal-web .manager-overview .manager-work-list a { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .manager-overview .manager-work-list .manager-status { grid-column: 2; grid-row: 2; }
+  .manager-work-arrow { grid-column: 3; grid-row: 1; }
+}

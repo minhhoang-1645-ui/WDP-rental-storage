@@ -3,5 +3,6 @@ export const auditResources: Record<string, string> = {
 };
 const actions: Record<string, string> = { ONLINE_PAYMENT: 'Mở phiên thanh toán', SIGNATURE_OTP: 'Gửi mã xác nhận', STAFF_ASSIGNMENT: 'Phân công', AUTH_LOGIN: 'Đăng nhập', AUTH_LOGOUT: 'Đăng xuất', AUTH_REGISTER: 'Đăng ký', CREATE: 'Tạo mới', UPDATE: 'Cập nhật', DELETE: 'Xóa', STATUS: 'Đổi trạng thái', APPROVE: 'Phê duyệt', REJECT: 'Từ chối', CONFIRM: 'Xác nhận', COMPLETE: 'Hoàn tất', FINALIZE: 'Hoàn tất', ASSIGN: 'Phân công', RESOLVE: 'Giải quyết', VERIFY: 'Nghiệm thu', REJECT_VERIFICATION: 'Yêu cầu sửa lại', PAYMENTS: 'Ghi nhận thanh toán', SIGN: 'Xác nhận hợp đồng', ACCEPT: 'Chấp thuận', START: 'Bắt đầu', START_INSPECTION: 'Bắt đầu kiểm tra', RECONCILE: 'Đối soát', SUBMIT: 'Gửi yêu cầu' };
 actions.AUTH_PROFILE_UPDATE = 'Cập nhật thông tin liên hệ';
+auditResources['business-policies'] = 'Chính sách hệ thống';
 export const auditAction = (value: unknown) => actions[String(value)] ?? 'Thao tác nghiệp vụ';
 export const auditResource = (value: unknown) => auditResources[String(value)] ?? 'Nghiệp vụ';

@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, 
 import type { AuthenticatedRequest } from './auth.types.js';
 import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CreateAdminUserDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
-import { UserRepository } from '../users/user.repository.js';
+import { UserRepository, userSorts, type UserListFilters } from '../users/user.repository.js';
 import { AuthGuard } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
 import { Roles, RolesGuard } from './roles.guard.js';
@@ -20,11 +20,12 @@ export class AdminUsersController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'staff@test.com', description: 'Tìm tên, email hoặc số điện thoại.' })
   @ApiQuery({ name: 'role', required: false, enum: ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] })
+  @ApiQuery({ name: 'sort', required: false, enum: [...userSorts] })
   @ApiQuery({ name: 'accountStatus', required: false, enum: ['ACTIVE', 'DISABLED'] })
   @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER', accountStatus: 'ACTIVE', createdAt: '2026-10-14T00:00:00.000Z' }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ ADMIN được phép.' })
-  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string) {
+  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string, @Query('sort') sortInput?: string) {
     const page = Number(pageInput);
     const limit = Number(limitInput);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -34,7 +35,9 @@ export class AdminUsersController {
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
     if (roleInput && !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(roleInput)) throw new BadRequestException('role không hợp lệ.');
     if (statusInput && !['ACTIVE', 'DISABLED'].includes(statusInput)) throw new BadRequestException('accountStatus không hợp lệ.');
-    const filters = { ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
+    const sort = userSorts.find(value => value === sortInput);
+    if (sortInput && !sort) throw new BadRequestException('sort không hợp lệ.');
+    const filters: UserListFilters = { ...(sort ? { sort } : {}), ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
     const [total, users] = await Promise.all([this.users.count(filters), this.users.list((page - 1) * limit, limit, filters)]);
     return { page, limit, total, items: users.map(user => this.publicUser(user)) };
   }

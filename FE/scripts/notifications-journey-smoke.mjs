@@ -78,19 +78,18 @@ try {
   await app.page.getByText('Bạn đã xem hết thông báo hiện có.',{exact:false}).waitFor();
   app.data['support-requests'][0].status='RESOLVED'; app.data['support-requests'][0].resolutionNote='Đã kiểm tra và xử lý xong'; await app.pulse();
   await app.page.getByText('1–1 / 1 hồ sơ',{exact:true}).waitFor();
-  await app.page.getByText(/Vừa nhận 1 cập nhật hồ sơ/).waitFor();
+  assert.equal(await app.page.getByText(/Vừa nhận \d+ cập nhật hồ sơ/).count(), 0);
   await app.page.screenshot({path:`${artifacts}/customer-notifications-1440.png`,fullPage:true});
   await app.context.setOffline(true); await app.page.evaluate(()=>window.dispatchEvent(new Event('offline')));
   await app.page.getByText(/Chưa tải được: Kết nối mạng/).waitFor();
   assert.equal(await app.page.locator('.activity-item').count(),1);
   await app.context.setOffline(false); await app.page.evaluate(()=>window.dispatchEvent(new Event('online')));
   await app.page.getByRole('button',{name:'Kiểm tra mới',exact:true}).waitFor();
-  await app.page.getByRole('button',{name:'Đóng nhắc cập nhật',exact:true}).click();
   await app.goto('/customer/support?reservation=NB-JOURNEY');
   await app.page.getByRole('button',{name:/^Thông báo, [1-9]/}).waitFor();
   await app.page.getByLabel('Chi tiết',{exact:true}).fill('Nội dung đang nhập cần giữ nguyên');
   app.data['support-requests'][1].status='RESOLVED'; await app.pulse();
-  await app.page.getByText(/Vừa nhận 1 cập nhật hồ sơ/).waitFor();
+  assert.equal(await app.page.getByText(/Vừa nhận \d+ cập nhật hồ sơ/).count(), 0);
   assert.equal(await app.page.getByLabel('Chi tiết',{exact:true}).inputValue(),'Nội dung đang nhập cần giữ nguyên');
   await app.context.close(); checks.push('Complete paginated inbox >100, accent-free search, durable read state, changed dossier becomes unread, cross-tab update, offline recovery and draft preservation');
   const assignment = await setup('MANAGER');
@@ -107,6 +106,7 @@ try {
     await app.page.getByRole('button',{name:/^Tất cả \(/}).click();
     await app.page.locator('.activity-item').first().waitFor();
     for (const href of await app.page.locator('.activity-item').evaluateAll(items=>items.map(item=>item.getAttribute('href')))) assert(href.startsWith(`/${role.toLowerCase()}/`),href);
+    assert.equal(await app.page.getByText(/Vừa nhận \d+ cập nhật hồ sơ/).count(), 0);
     if (role === 'ADMIN') {
       assert.deepEqual((await app.page.locator('.manager-sidebar nav a').evaluateAll(links => links.map(link => link.getAttribute('href')))).sort(), ['/admin','/admin/users','/admin/sections/audit'].sort());
       await app.goto('/admin/sections/audit');

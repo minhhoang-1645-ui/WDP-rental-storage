@@ -29,7 +29,7 @@ async function setup(width, { signedIn = false, quota = false, corrupt = false }
     if (path === '/auth/me' && method === 'GET') return send(state.user);
     if (path === '/auth/me' && method === 'PATCH') {
       const input = req.postDataJSON(); writes.push({ path, body: input });
-      assert.deepEqual(Object.keys(input).sort(), ['fullName', 'phone']);
+      assert.deepEqual(Object.keys(input), ['phone']);
       if (state.profileFailures-- > 0) return send({ message: 'Kết nối bị gián đoạn, vui lòng thử lại.' }, 503);
       state.user = { ...state.user, ...input }; return send(state.user);
     }

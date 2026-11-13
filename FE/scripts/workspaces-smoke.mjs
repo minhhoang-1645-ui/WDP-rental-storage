@@ -233,10 +233,11 @@ try {
       await selectChoice(app.page
         .getByLabel("Nhân viên phụ trách", { exact: true }), staff.id);
       app.data["support-requests"][0].supportCode = "SUP-LIVE-UPDATED";
-      await app.page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      await app.page
-        .getByText(/Vừa nhận \d+ cập nhật hồ sơ/)
-        .waitFor();
+      await Promise.all([
+        app.page.waitForResponse(response => new URL(response.url()).pathname === '/api/manager/support-requests'),
+        app.page.evaluate(() => window.dispatchEvent(new Event("focus"))),
+      ]);
+      assert.equal(await app.page.getByText(/Vừa nhận \d+ cập nhật hồ sơ/).count(), 0);
       assert.equal(
         await app.page
           .getByLabel("Nhân viên phụ trách", { exact: true })

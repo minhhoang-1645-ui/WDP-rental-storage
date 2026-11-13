@@ -1,19 +1,37 @@
-import { RefreshCw, ShieldAlert } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
 import { moneyLabel, formatPortalDate } from '../../components/customer/CustomerPortalHelpers';
-import { PortalError, PortalLoading, PortalEmpty, PortalPageHeader } from '../../components/customer/CustomerPortalUi';
+import { Empty, LoadState, PageHeader, Pagination, Status } from '../../components/manager/PortalUi';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { internalPageSize } from '../../utils/internal-pagination';
 
 type Reconciliation = {
   id: string; reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; reason: string; amount: number;
   providerTransactionId: string | null; createdAt: string; reviewedAt: string | null; resolutionNote: string | null;
   transaction: { merchantOrderRef: string; invoice: { invoiceCode: string; status: string; reservation: { reference: string; customer: { fullName: string; email: string } } } };
 };
-const labels: Record<Reconciliation['status'], string> = { PENDING_REVIEW: 'Chờ đối soát', REFUND_REQUIRED: 'Cần hoàn tiền', RECONCILED: 'Đã đối soát' };
+const labels = { PENDING_REVIEW: 'Chờ đối soát', REFUND_REQUIRED: 'Cần hoàn tiền', RECONCILED: 'Đã đối soát' };
 
 export function ManagerOnlinePaymentReconciliationsPage() {
   const resource = usePaginatedResource<Reconciliation>('/manager/online-payment-reconciliations?limit=100', 'manager-online-payment-reconciliations', true);
+  const [params, setParams] = useSearchParams();
+  const selectedId = params.get('record');
+  const status = params.get('status') ?? '';
+  const items = (resource.data?.items ?? []).filter(item => selectedId ? item.id === selectedId : !status || item.status === status);
+  const limit = internalPageSize(params);
+  const page = Math.min(Math.max(1, Math.floor(Number(params.get('page')) || 1)), Math.max(1, Math.ceil(items.length / limit)));
+  function changeFilter(key: string, value: string) {
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      if (key !== 'page') next.delete('page');
+      return next;
+    }, { replace: true });
+  }
   const [working, setWorking] = useState('');
   const [actionError, setActionError] = useState('');
   const resolve = async (item: Reconciliation, resolution: 'REFUND_REQUIRED' | 'RECONCILED') => {
@@ -27,8 +45,30 @@ export function ManagerOnlinePaymentReconciliationsPage() {
     finally { setWorking(''); }
   };
   return <section className="manager-page">
-    {actionError && <PortalError message={actionError} onRetry={() => setActionError('')} />}
-    <PortalPageHeader eyebrow="Đối soát thanh toán" title="VNPay thành công cần xử lý" description="Các khoản VNPay trả thành công sau khi hóa đơn hoặc reservation đã hết hiệu lực. Hệ thống không tự kích hoạt lại kho." action={<button className="button-secondary" type="button" onClick={resource.refresh} disabled={resource.loading}><RefreshCw size={16} /> Làm mới</button>} />
-    {resource.loading ? <PortalLoading label="Đang tải hồ sơ đối soát…" /> : resource.error ? <PortalError message={resource.error} onRetry={resource.refresh} /> : !(resource.data?.items.length) ? <PortalEmpty icon={<ShieldAlert size={30} />} title="Chưa có khoản cần đối soát"><span>Khoản VNPay thành công muộn sẽ xuất hiện tại đây.</span></PortalEmpty> : <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Hồ sơ</th><th>Khách hàng / hóa đơn</th><th>Số tiền</th><th>Lý do</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{resource.data.items.map(item => <tr key={item.id}><td><strong>{item.reconciliationCode}</strong><small>{formatPortalDate(item.createdAt, true)}</small></td><td>{item.transaction.invoice.reservation.customer.fullName}<small>{item.transaction.invoice.invoiceCode} · {item.transaction.invoice.reservation.reference}</small></td><td><strong>{moneyLabel(item.amount)}</strong><small>{item.providerTransactionId || item.transaction.merchantOrderRef}</small></td><td>{item.reason}{item.resolutionNote && <small>{item.resolutionNote}</small>}</td><td><span className="status-warning">{labels[item.status]}</span></td><td>{item.status === 'PENDING_REVIEW' ? <div className="manager-inline-actions"><button type="button" className="button-secondary" disabled={working === item.id} onClick={() => resolve(item, 'REFUND_REQUIRED')}>Yêu cầu hoàn tiền</button><button type="button" className="button-primary" disabled={working === item.id} onClick={() => resolve(item, 'RECONCILED')}>Đã đối soát</button></div> : item.status === 'REFUND_REQUIRED' ? <button type="button" className="button-secondary" disabled={working === item.id} onClick={() => resolve(item, 'RECONCILED')}>Ghi nhận đã hoàn tiền</button> : '—'}</td></tr>)}</tbody></table></div>}
+    <PageHeader title="Đối soát VNPay" description="Giao dịch thành công sau khi hóa đơn hoặc đơn đặt kho hết hiệu lực. Hệ thống không tự kích hoạt lại kho.">
+      <button className="button-secondary" type="button" onClick={resource.refresh} disabled={resource.loading || resource.refreshing}><RefreshCw size={16} /> Làm mới</button>
+    </PageHeader>
+    {actionError && <p className="booking-alert is-error" role="alert">{actionError}</p>}
+    {selectedId ? <Link className="button-secondary manager-back-to-list" to="/manager/online-payment-reconciliations">Xem tất cả hồ sơ đối soát</Link> : <div className="portal-toolbar">
+      <label className="field-label">Trạng thái<select value={status} onChange={event => changeFilter('status', event.target.value)}>
+        <option value="">Tất cả</option>
+        {Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+      </select></label>
+    </div>}
+    <LoadState loading={resource.loading} error={resource.error} retry={resource.refresh} />
+    {resource.data && !resource.error && (!items.length ? <Empty title="Chưa có hồ sơ phù hợp" /> : <>
+      <div className="manager-table-wrap"><table className="manager-table">
+        <thead><tr><th>Khách hàng / hóa đơn</th><th>Giao dịch</th><th>Số tiền</th><th>Lý do</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+        <tbody>{items.slice((page - 1) * limit, page * limit).map(item => <tr key={item.id}>
+          <td><strong>{item.transaction.invoice.reservation.customer.fullName}</strong><small>{item.transaction.invoice.invoiceCode} · {item.transaction.invoice.reservation.reference}</small></td>
+          <td><CopyRecordCode value={item.reconciliationCode} /><small>{item.providerTransactionId || item.transaction.merchantOrderRef}</small><small>{formatPortalDate(item.createdAt, true)}</small></td>
+          <td><strong>{moneyLabel(item.amount)}</strong></td>
+          <td>{item.reason}{item.resolutionNote && <small>{item.resolutionNote}</small>}</td>
+          <td><Status value={item.status} text={labels[item.status]} /></td>
+          <td>{item.status === 'PENDING_REVIEW' ? <div className="manager-inline-actions"><button type="button" className="button-secondary" disabled={working === item.id} onClick={() => resolve(item, 'REFUND_REQUIRED')}>Yêu cầu hoàn tiền</button><button type="button" className="button-primary" disabled={working === item.id} onClick={() => resolve(item, 'RECONCILED')}>Đã đối soát</button></div> : item.status === 'REFUND_REQUIRED' ? <button type="button" className="button-secondary" disabled={working === item.id} onClick={() => resolve(item, 'RECONCILED')}>Ghi nhận đã hoàn tiền</button> : '—'}</td>
+        </tr>)}</tbody>
+      </table></div>
+      {!selectedId && <Pagination page={page} total={items.length} limit={limit} onChange={value => changeFilter('page', String(value))} onLimitChange={value => changeFilter('limit', String(value))} />}
+    </>)}
   </section>;
 }

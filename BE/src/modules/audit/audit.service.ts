@@ -60,8 +60,18 @@ export class AuditService {
     };
     const from = date('from'), to = date('to');
     if (from && to && from > to) throw new BadRequestException('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
+    const sessionActions = ['AUTH_LOGIN', 'AUTH_LOGOUT'];
+    const categoryFilter: Prisma.AuditEventWhereInput = category === 'LOGIN'
+      ? { AND: [{ OR: [
+          { category: 'LOGIN', action: { in: sessionActions } },
+          // Older versions recorded logout under ACTIVITY.
+          { category: 'ACTIVITY', action: 'AUTH_LOGOUT' },
+        ] }] }
+      : category === 'ACTIVITY'
+        ? { category: 'ACTIVITY', action: { notIn: sessionActions } }
+        : {};
     const where: Prisma.AuditEventWhereInput = {
-      ...(category ? { category: category as 'LOGIN' | 'ACTIVITY' } : {}),
+      ...categoryFilter,
       ...(outcome ? { outcome: outcome as 'SUCCESS' | 'FAILURE' } : {}),
       ...(role ? { actorRole: role as UserRole } : {}),
       ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: new Date(to.getTime() + 86400000) } : {}) } } : {}),

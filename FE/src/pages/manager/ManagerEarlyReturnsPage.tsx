@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
@@ -9,8 +10,15 @@ export function ManagerEarlyReturnsPage() {
   const { user } = useAuth();
   const data = usePaginatedResource<Row>('/manager/early-return-requests?limit=100', user?.id ?? '', true);
   const [showHistory, setShowHistory] = useState(false);
-  const items = (data.data?.items ?? []).filter(item => showHistory || !item.decision);
-  return <section><PageHeader title="Đề nghị trả trước hạn" description="Đối chiếu công nợ và điều kiện trước khi cho khách tạo hồ sơ trả kho. Quyết định không tự hoàn tiền hoặc sửa hóa đơn."><button className="button-secondary" disabled={data.loading} onClick={data.refresh}>Làm mới đề nghị</button></PageHeader><label className="portal-checkbox"><input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />Xem cả đề nghị đã quyết định</label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && (!items.length ? <Empty title="Không có đề nghị phù hợp" /> : items.map(item => <EarlyReturnReview key={`${first(item, 'id')}:${first(item, 'decision')}`} item={item} refresh={data.refresh} />))}</section>;
+  const [params] = useSearchParams();
+  const record = params.get('record');
+  const items = (data.data?.items ?? []).filter(item => record ? first(item, 'id') === record : showHistory || !item.decision);
+  return <section><PageHeader title="Đề nghị trả trước hạn" description="Đối chiếu công nợ và điều kiện trước khi cho khách tạo hồ sơ trả kho. Quyết định không tự hoàn tiền hoặc sửa hóa đơn."><button className="button-secondary" disabled={data.loading} onClick={data.refresh}>Làm mới đề nghị</button></PageHeader>
+    {record ? <Link className="button-secondary manager-back-to-list" to="/manager/early-returns">Xem tất cả đề nghị</Link>
+      : <label className="portal-checkbox"><input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />Xem cả đề nghị đã quyết định</label>}
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
+    {!data.loading && !data.error && (!items.length ? <Empty title="Không có đề nghị phù hợp" /> : items.map(item => <EarlyReturnReview key={`${first(item, 'id')}:${first(item, 'decision')}`} item={item} refresh={data.refresh} />))}
+  </section>;
 }
 function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }) {
   const [decision, setDecision] = useState('APPROVED'), [note, setNote] = useState(''), [reviewed, setReviewed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');

@@ -3,6 +3,17 @@ import { MemoryUserRepository } from '../users/user.repository.js';
 import { AdminUsersController } from './admin-users.controller.js';
 
 describe('administrator account status changes', () => {
+  it('sorts matching accounts before slicing pages and rejects unsupported sort values', async () => {
+    const users = new MemoryUserRepository();
+    const controller = new AdminUsersController(users, {} as never);
+    for (const [fullName, role] of [['Zoe', 'STAFF'], ['An', 'STAFF'], ['Be', 'STAFF'], ['Anh', 'CUSTOMER']] as const) {
+      await users.create({ fullName, role, email: fullName + '@example.test', phone: '', passwordHash: 'test' });
+    }
+    const result = await controller.list('2', '1', undefined, 'STAFF', undefined, 'name-asc');
+    expect(result.total).toBe(3);
+    expect(result.items.map(user => user.fullName)).toEqual(['Be']);
+    await expect(controller.list('1', '1', undefined, undefined, undefined, 'bad')).rejects.toThrow('sort không hợp lệ');
+  });
   it('returns the existing account update time without exposing authentication data', async () => {
     const row = { id: 'old-user', fullName: 'Nhân viên', email: 'staff@example.test', phone: '0901234567', role: 'STAFF', accountStatus: 'DISABLED', passwordHash: 'must-not-leak', createdAt: new Date('2020-01-01'), updatedAt: new Date('2030-01-01') };
     const users = { list: async () => [row], count: async () => 1, findById: async () => row };

@@ -3,7 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { operationPath } from '../../auth/portal-routing';
-import { Empty, LoadState, Modal, PageHeader } from '../../components/manager/PortalUi';
+import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { money } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
@@ -18,13 +18,13 @@ export function ManagerAdditionalServicesPage() {
   const [notice, setNotice] = useState('');
   const refresh = () => { resource.refresh(); inventory.refresh(); };
   return <section><Link className="booking-back" to={operationPath(user?.role, '/manager/catalog')}>Loại kho & bảng giá</Link>
-    <PageHeader title="Dịch vụ bổ sung" description="Danh mục, giá và tồn kho được lưu qua hệ thống NestBox."><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
+    <PageHeader title="Dịch vụ bổ sung"><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
     {notice && <div className="portal-success" role="status">{notice}</div>}
     <LoadState loading={resource.loading || inventory.loading} error={resource.error || inventory.error} retry={refresh} />
     {resource.data && !resource.data.length && <Empty title="Chưa có dịch vụ bổ sung" />}
     {resource.data && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Dịch vụ</th><th>Loại</th><th>Giá</th><th>Trạng thái</th><th>Tồn kho / Công suất</th><th>Thao tác</th></tr></thead><tbody>{resource.data.map(item => {
       const state = inventory.data?.find(entry => entry.serviceId === item.id);
-      return <tr key={item.id}><td>{item.name}<small>{item.code}</small></td><td>{item.kind === 'PURCHASE' ? 'Mua' : 'Thuê'} / {item.billingUnit === 'ONE_TIME' ? 'Một lần' : item.billingUnit === 'DAY' ? 'Ngày' : 'Tháng'}</td><td>{money(item.unitPrice)}<small>{servicePriceBasis(item)}</small></td><td>{item.isActive ? 'Đang hoạt động' : 'Đã tắt'}</td><td>{state ? item.kind === 'PURCHASE' ? `${state.stockOnHand} (đã giữ ${state.reservedQuantity}, còn ${state.availableQuantity})` : state.rentalCapacity : 'Chưa tải được'}</td><td><button className="button-secondary" onClick={() => setActive(item)}>Chỉnh sửa</button><button className="button-secondary" disabled={!state} onClick={() => setStock(item)}>Cập nhật tồn kho</button></td></tr>;
+      return <tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.kind === 'PURCHASE' ? 'Mua' : 'Thuê'} / {item.billingUnit === 'ONE_TIME' ? 'Một lần' : item.billingUnit === 'DAY' ? 'Ngày' : 'Tháng'}</td><td>{money(item.unitPrice)}<small>{servicePriceBasis(item)}</small></td><td><Status value={item.isActive ? 'ACTIVE' : 'DISABLED'} text={item.isActive ? 'Đang hoạt động' : 'Đã tắt'} /></td><td>{state ? item.kind === 'PURCHASE' ? `${state.stockOnHand} (đã giữ ${state.reservedQuantity}, còn ${state.availableQuantity})` : state.rentalCapacity : 'Chưa tải được'}</td><td><div className="manager-inline-actions"><button className="button-secondary" onClick={() => setActive(item)}>Chỉnh sửa</button><button className="button-secondary" disabled={!state} onClick={() => setStock(item)}>Cập nhật tồn kho</button></div></td></tr>;
     })}</tbody></table></div>}
     {active && <ServiceForm key={active === 'new' ? 'new' : active.id} item={active === 'new' ? null : active} onClose={() => setActive(null)} onSuccess={() => { setActive(null); setNotice('Đã lưu dịch vụ. Báo giá lịch sử được giữ nguyên.'); refresh(); }} />}
     {stock && <InventoryForm key={stock.id} item={stock} state={inventory.data?.find(item => item.serviceId === stock.id)} onClose={() => setStock(null)} onSuccess={() => { setStock(null); setNotice('Đã cập nhật tồn kho qua hệ thống.'); refresh(); }} />}

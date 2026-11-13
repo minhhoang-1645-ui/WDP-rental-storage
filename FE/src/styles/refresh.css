@@ -563,10 +563,10 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 .comparison-tray-items button { flex: none; padding: 5px; }
 .comparison-tray-actions { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
 .comparison-tray-actions .button-primary { min-height: 40px; padding-block: 8px; font-size: 12px; }
-.transfer-request-inbox { border-left: 3px solid #397887; margin-block: 24px; }
+.transfer-request-inbox { border-left: 3px solid var(--workspace-primary, #397887); margin-block: 24px; }
 .transfer-request-inbox > p { font-size: 13px; line-height: 1.8; color: var(--color-slate); margin-block: 12px; }
 .transfer-request-cards { display: grid; gap: 14px; }
-.transfer-request-cards article, .transfer-source-summary, .staff-choice-summary { padding: 16px; border-radius: 10px; border: 1px solid var(--color-border); background: #f6f9fa; overflow-wrap: anywhere; }
+.transfer-request-cards article, .transfer-source-summary, .staff-choice-summary { padding: 16px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--workspace-table, #f6f9fa); overflow-wrap: anywhere; }
 .transfer-request-cards article p, .transfer-source-summary p { font-size: 13px; line-height: 1.8; margin-block: 8px; }
 .transfer-request-cards small, .staff-choice-summary p { font-size: 12px; color: var(--color-slate); line-height: 1.8; }
 .transfer-request-cards .portal-actions { margin-top: 14px; }
@@ -750,15 +750,15 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 
 /* Transfer destinations stay inline inside the operation panel. */
 .transfer-destination-picker{display:grid;gap:14px;min-width:0}
-.transfer-destination-context{display:grid;gap:5px;padding:14px;border-radius:12px;background:#f0f5f6;overflow-wrap:anywhere}
-.transfer-destination-context small,.transfer-destination-card small{color:#627789;line-height:1.6}
+.transfer-destination-context{display:grid;gap:5px;padding:14px;border-radius:12px;background:var(--workspace-table,#f0f5f6);overflow-wrap:anywhere}
+.transfer-destination-context small,.transfer-destination-card small{color:var(--workspace-secondary,#627789);line-height:1.6}
 .transfer-destination-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .transfer-destination-options{border:0;padding:0;margin:0;min-width:0;display:grid;gap:10px}
 .transfer-destination-options legend{padding:0;margin-bottom:10px;font-weight:700}
-.transfer-destination-card{display:flex;align-items:flex-start;gap:10px;padding:15px;border:1px solid #d3dfe5;border-radius:12px;background:#fff;cursor:pointer;overflow-wrap:anywhere;min-width:0}
-.transfer-destination-card>input[type=radio]{width:18px;height:18px;min-height:18px;margin-top:4px;flex:0 0 18px;accent-color:#294955}
+.transfer-destination-card{display:flex;align-items:flex-start;gap:10px;padding:15px;border:1px solid var(--workspace-border,#d3dfe5);border-radius:12px;background:var(--workspace-input,#fff);cursor:pointer;overflow-wrap:anywhere;min-width:0}
+.transfer-destination-card>input[type=radio]{width:18px;height:18px;min-height:18px;margin-top:4px;flex:0 0 18px;accent-color:var(--workspace-primary,#294955)}
 .transfer-destination-card>span{display:grid;gap:5px;min-width:0}
-.transfer-destination-card.is-selected{border:2px solid #345e6c;background:#eef6f5;padding:14px}
-.transfer-destination-card:focus-within{outline:3px solid #9eacb9;outline-offset:2px}
-.transfer-destination-card.is-unavailable{background:#f6f7f8;cursor:default}
-.transfer-destination-notice{padding:14px;border-radius:10px;background:#eef5f5;line-height:1.7}
+.transfer-destination-card.is-selected{border:2px solid var(--workspace-primary,#345e6c);background:var(--workspace-selected,#eef6f5);padding:14px}
+.transfer-destination-card:focus-within{outline:3px solid var(--workspace-primary,#9eacb9);outline-offset:2px}
+.transfer-destination-card.is-unavailable{background:var(--workspace-table,#f6f7f8);cursor:default}
+.transfer-destination-notice{padding:14px;border-radius:10px;background:var(--workspace-info-bg,#eef5f5);line-height:1.7}

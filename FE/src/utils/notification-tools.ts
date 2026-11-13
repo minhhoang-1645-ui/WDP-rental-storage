@@ -26,7 +26,3 @@ export function actionCountForPath(entries: ActivityEntry[], path: string | read
   const paths = typeof path === 'string' ? [path] : path;
   return new Set(entries.filter(item => item.action && paths.some(prefix => item.web.split('?')[0] === prefix || item.web.split('?')[0].startsWith(prefix + '/'))).map(item => item.id)).size;
 }
-export function newActivityCount(previous: ActivityEntry[], next: ActivityEntry[]) {
-  const before = new Set(previous.map(item => item.token));
-  return next.filter(item => !before.has(item.token)).length;
-}

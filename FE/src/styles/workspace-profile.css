@@ -1,0 +1,90 @@
+.workspace-themed .portal-topbar:has(.workspace-profile-trigger[aria-expanded="true"]) {
+  z-index: 30;
+}
+
+@media (min-width: 901px) {
+  .workspace-themed .portal-topbar:has(.workspace-profile-trigger[aria-expanded="true"]) {
+    position: relative;
+  }
+}
+
+.workspace-profile {
+  position: relative;
+  flex: none;
+  color: var(--workspace-text);
+}
+
+.workspace-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 650;
+}
+
+.workspace-profile-initials {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+
+.workspace-profile-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-profile-panel {
+  position: absolute;
+  inset: calc(100% + 8px) 0 auto auto;
+  width: min(280px, calc(100vw - 28px));
+  max-height: calc(100dvh - 80px);
+  overflow: auto;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-popover);
+  color: var(--workspace-text);
+  box-shadow: 0 8px 22px #10151d24;
+  font-size: 14px;
+}
+
+.workspace-profile-identity {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+  color: var(--workspace-secondary);
+}
+
+.workspace-profile-identity b { color: var(--workspace-text); }
+.workspace-profile-actions { border-top: 1px solid var(--workspace-border); padding: 5px; }
+.workspace-profile-actions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  text-align: left;
+  font: inherit;
+}
+.workspace-profile-trigger:hover,
+.workspace-profile-trigger[aria-expanded="true"],
+.workspace-profile-actions button:hover { background: var(--workspace-hover); }
+.workspace-profile button:focus-visible { outline: 2px solid var(--workspace-primary); outline-offset: -2px; }
+.workspace-profile-theme { margin-inline-start: auto; color: var(--workspace-secondary); }
+.workspace-profile-signout { color: var(--workspace-error); }
+
+@media (max-width: 1050px) {
+  .workspace-profile-name { display: none; }
+}

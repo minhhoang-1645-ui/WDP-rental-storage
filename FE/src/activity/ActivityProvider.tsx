@@ -7,7 +7,7 @@ import { DATA_CHANGED, LIVE_REFRESH, markFormDirty } from '../services/live-even
 import { activitySources, buildActivity, type ActivityData, type ActivityRole, type ActivityRow } from '../utils/activity';
 import { ActivityContext } from './context';
 import { AUTH_TOKEN_KEY } from '../data/booking';
-import { ACTIVITY_POLL_MS, ACTIVITY_READ_LIMIT, DATA_PULSE_KEY, newActivityCount } from '../utils/notification-tools';
+import { ACTIVITY_POLL_MS, ACTIVITY_READ_LIMIT, DATA_PULSE_KEY } from '../utils/notification-tools';
 
 function storedRead(key: string): string[] { try { const value: unknown = JSON.parse(safeLocalStorage.getItem(key) ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(-ACTIVITY_READ_LIMIT) : []; } catch { return []; } }
 export function ActivityProvider({ children }: { children: ReactNode }) {
@@ -17,7 +17,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
 function ActivitySession({ children, userId, role }: { children: ReactNode; userId: string; role: ActivityRole }) {
   const storageKey = `wdp-activity-read:${userId}:${role}`;
   const [read, setRead] = useState(() => storedRead(storageKey));
-  const [state, setState] = useState<{ data: ActivityData; checkedAt: number; failed: string[]; checking: boolean; changed: boolean; updateCount: number }>({ data: {}, checkedAt: 0, failed: [], checking: true, changed: false, updateCount: 0 });
+  const [state, setState] = useState<{ data: ActivityData; checkedAt: number; failed: string[]; checking: boolean }>({ data: {}, checkedAt: 0, failed: [], checking: true });
   const trigger = useRef<() => void>(() => {});
   const refresh = useCallback(() => trigger.current(), []);
   const markRead = useCallback((tokens: string[]) => {
@@ -32,7 +32,6 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     const controller = new AbortController(), sources = activitySources(role);
     const sessionToken = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
     const snapshot: ActivityData = {}; let running = false, initialized = false, queued = false, timer: ReturnType<typeof setTimeout>;
-    let previousEntries: ReturnType<typeof buildActivity> = [];
     const load = async () => {
       if (controller.signal.aborted || document.visibilityState === 'hidden') return;
       if (!navigator.onLine) { setState(current => ({ ...current, checking: false, failed: ['Kết nối mạng'] })); return; }
@@ -52,10 +51,8 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
       } };
       await Promise.all([worker(), worker(), worker()]);
       if (controller.signal.aborted) return;
-      const entries = buildActivity(role, userId, snapshot);
-      const added = initialized ? newActivityCount(previousEntries, entries) : 0;
-      previousEntries = entries; initialized = true; running = false;
-      setState(current => ({ data: { ...snapshot }, checkedAt: Date.now(), failed, checking: false, changed: current.changed || added > 0, updateCount: current.updateCount + added }));
+      initialized = true; running = false;
+      setState({ data: { ...snapshot }, checkedAt: Date.now(), failed, checking: false });
       if (changed.length) window.dispatchEvent(new CustomEvent(LIVE_REFRESH, { detail: changed }));
       if (queued) { queued = false; void load(); }
     };
@@ -71,5 +68,5 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     void load().finally(schedule);
     return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('input', dirty, true); document.removeEventListener('change', dirty, true); document.removeEventListener('submit', submit, true); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('offline', resume); window.removeEventListener('focus', resume); window.removeEventListener(DATA_CHANGED, mutation); window.removeEventListener('storage', crossTab); };
   }, [role, userId]);
-  return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, changed: state.changed, updateCount: state.updateCount, refresh, markRead, acknowledge: () => setState(current => ({ ...current, changed: false, updateCount: 0 })) }}>{children}</ActivityContext.Provider>;
+  return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, refresh, markRead }}>{children}</ActivityContext.Provider>;
 }

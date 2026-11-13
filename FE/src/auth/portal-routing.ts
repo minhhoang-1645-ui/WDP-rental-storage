@@ -31,7 +31,7 @@ export function roleReturnPath(role: PublicUser["role"], value: unknown) {
   const destination = new URL(path, "https://portal.invalid");
   const pathname = destination.pathname;
   const ownWorkspace = role === 'ADMIN'
-    ? ['/admin', '/admin/users', '/admin/login-history', '/admin/activity'].includes(pathname)
+    ? ['/admin', '/admin/users', '/admin/login-history', '/admin/activity', '/admin/settings', '/admin/settings/profile', '/admin/settings/appearance'].includes(pathname)
     : pathname === root || pathname.startsWith(root + "/");
   const customerBooking =
     role === "CUSTOMER" &&

@@ -29,8 +29,8 @@ export function ManagerAnalyticsPage() {
     const link = document.createElement('a'); link.href = url; link.download = `nestbox-bao-cao-${from || 'tat-ca'}-${to || 'hien-tai'}.csv`; link.click(); URL.revokeObjectURL(url);
   };
   return <section>
-    <Link className="button-secondary" to="/manager/reports/details">Biểu đồ và báo cáo chi tiết</Link>
-    <PageHeader title="Báo cáo vận hành" description="Tổng hợp toàn bộ bản ghi tại cơ sở, không giới hạn theo trang danh sách.">
+    <PageHeader title="Báo cáo vận hành">
+      <Link className="button-secondary" to="/manager/reports/details">Biểu đồ chi tiết</Link>
       <button className="button-secondary" disabled={!data || report.refreshing} onClick={exportCsv}><Download size={16} />Xuất KPI tài chính CSV</button>
       <button className="button-secondary" disabled={report.loading || report.refreshing} onClick={report.refresh}><RefreshCw size={16} />Làm mới</button>
     </PageHeader>

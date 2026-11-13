@@ -31,7 +31,9 @@ import {
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import type { WorkspaceSection } from '../workspace/WorkspaceSectionPage';
-import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
+import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
+import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown';
+import { ActivityBell } from '../../activity/ActivityCenter';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
 
@@ -71,6 +73,7 @@ export function CustomerLayout() {
   const activity = useActivity();
   const location = useLocation();
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useWorkspaceTheme(true);
   useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
   const [menuOpen, setMenuOpen] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
@@ -147,8 +150,10 @@ export function CustomerLayout() {
     });
   };
 
+  const settings = location.pathname.startsWith('/customer/settings') || location.pathname === '/customer/profile';
   return (
-    <div className="customer-shell">
+    <div className={settings ? 'customer-shell workspace-themed customer-settings-shell' : 'customer-shell'}
+      data-workspace-theme={settings ? theme : undefined}>
       <aside
         id="customer-navigation"
         ref={sidebar}
@@ -186,7 +191,7 @@ export function CustomerLayout() {
           })}
         </nav>
         <div className="customer-sidebar-bottom">
-          <NavLink to="/customer/profile" className="customer-account">
+          <NavLink to="/customer/settings/profile" className="customer-account" onClick={() => setMenuOpen(false)}>
             <span className="customer-avatar">
               <UserRound size={18} />
             </span>
@@ -222,12 +227,18 @@ export function CustomerLayout() {
             <Menu size={20} />
           </button>
           <span>NestBox Storage</span>
-          <NavLink to="/customer/profile" aria-label="Hồ sơ">
-            <UserRound size={20} />
-          </NavLink>
         </header>
-        <div className="customer-updates-bar"><span>Khu vực khách hàng</span><ActivityBell /></div>
-        <ActivityRefreshNote />
+        <div className="customer-updates-bar">
+          <span>Khu vực khách hàng</span>
+          <div className="customer-account-actions">
+            <ActivityBell />
+            <div className="workspace-themed" data-workspace-theme={theme}>
+              <WorkspaceProfileDropdown key={location.pathname} user={user} roleLabel="Khách hàng"
+                theme={theme} onToggleTheme={toggleTheme} onProfile={() => navigate('/customer/settings/profile')}
+                onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
+            </div>
+          </div>
+        </div>
         <Outlet />
       </main>
     </div>

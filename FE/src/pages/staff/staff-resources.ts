@@ -34,6 +34,11 @@ export const staffResources = {
 } as const;
 export type StaffResource = keyof typeof staffResources;
 
+export type StaffTableWorkflow = 'appointments' | 'support-requests' | 'maintenance';
+export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
+  return resource === 'appointments' || resource === 'support-requests' || resource === 'maintenance';
+}
+
 export function staffDay(value: unknown) {
   if (typeof value !== "string" && typeof value !== "number") return "";
   const instant = new Date(value);

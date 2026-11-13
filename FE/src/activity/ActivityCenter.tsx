@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
 import { useActivity } from './context';
 import { useDialog } from '../hooks/useDialog';
-import { hasDraft, LIVE_REFRESH } from '../services/live-events';
+import { LIVE_REFRESH } from '../services/live-events';
 import { filterNotifications, notificationGroup, notificationKinds } from '../utils/notification-tools';
 import { dashboardNotifications, type ActivityEntry } from '../utils/activity';
 
@@ -16,10 +16,11 @@ export function ActivityBell() {
 }
 function ActivityPanel({ onClose }: { onClose: () => void }) {
   const dialog = useDialog(true, false, onClose), path = useInboxPath();
+  const { user } = useAuth();
   return <div className="activity-overlay" onClick={event => { if (event.target === event.currentTarget) onClose(); }}><section className="activity-panel" ref={dialog} role="dialog" aria-modal="true" aria-label="Trung tâm thông báo" tabIndex={-1}>
     <header><div><h2>Thông báo & việc cần làm</h2><p>Chọn một hồ sơ để xem kết quả hoặc thực hiện bước tiếp theo.</p></div><button className="icon-button" type="button" aria-label="Đóng thông báo" onClick={onClose}><X size={20} /></button></header>
     <NotificationList compact onOpen={onClose} />
-    <footer><Link to={path} onClick={onClose}>Mở trung tâm thông báo <ArrowRight size={14} /></Link><p>Đã đọc chỉ ghi nhận bạn đã xem, không hoàn tất công việc. Dấu đọc được lưu theo tài khoản trên trình duyệt này.</p></footer>
+    <footer>{user?.role !== 'ADMIN' && <Link to={path} onClick={onClose}>Mở trung tâm thông báo <ArrowRight size={14} /></Link>}<p>Đã đọc chỉ ghi nhận bạn đã xem, không hoàn tất công việc. Dấu đọc được lưu theo tài khoản trên trình duyệt này.</p></footer>
   </section></div>;
 }
 export function ActivityInboxPage() {
@@ -53,11 +54,6 @@ function ActivityLink({ item, onOpen }: { item: ActivityEntry; onOpen?: () => vo
 export function ActivityStatus() {
   const activity = useActivity();
   return <div className="activity-status"><span className={activity.failed.length ? 'connection-dot is-warning' : 'connection-dot'} aria-hidden="true" /><span>{activity.checking ? 'Đang kiểm tra cập nhật…' : activity.checkedAt ? `Lần kiểm tra: ${new Date(activity.checkedAt).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Đang kết nối thông báo'} · Tự kiểm tra mỗi 15 giây khi mở trang</span>{activity.failed.length > 0 && <p role="status">Chưa tải được: {activity.failed.join(', ')}. Dữ liệu đã có được giữ lại và có thể chưa mới nhất. Kết nối lại để tự cập nhật hoặc bấm Kiểm tra mới.</p>}</div>;
-}
-export function ActivityRefreshNote() {
-  const activity = useActivity(), path = useInboxPath(), [message, setMessage] = useState('');
-  if (!activity.changed) return null;
-  return <div className="activity-update-note" role="status" aria-live="polite"><Bell size={17} /><span>{message || `Vừa nhận ${activity.updateCount} cập nhật hồ sơ. Các màn hình không có nội dung đang nhập đã tự làm mới.`}</span><Link to={path} onClick={activity.acknowledge}>Xem thông báo</Link><button type="button" className="portal-text-button" onClick={() => { if (hasDraft()) { setMessage('Bạn đang nhập nội dung. Hãy lưu hoặc đóng form trước khi cập nhật màn hình để giữ nội dung đang nhập.'); return; } window.dispatchEvent(new CustomEvent(LIVE_REFRESH)); activity.acknowledge(); setMessage(''); }}>Cập nhật màn hình</button><button type="button" className="icon-button" aria-label="Đóng nhắc cập nhật" onClick={activity.acknowledge}><X size={15} /></button></div>;
 }
 export function ActivitySummary() {
   const activity = useActivity(), path = useInboxPath(), [expanded, setExpanded] = useState(false);

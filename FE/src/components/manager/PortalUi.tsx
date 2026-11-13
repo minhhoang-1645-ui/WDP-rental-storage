@@ -9,11 +9,11 @@ import { allPages } from "../../services/portal";
 import { code, first, label, type Page, type Row } from "./portal-data";
 import { normalizeSearch } from '../../utils/notification-tools';
 
-export function Status({ value }: { value: unknown }) {
+export function Status({ value, text }: { value: unknown; text?: string }) {
   const status = typeof value === "string" ? value : "";
   return (
     <span className={`manager-status is-${status.toLowerCase()}`}>
-      {label(status)}
+      {text ?? label(status)}
     </span>
   );
 }

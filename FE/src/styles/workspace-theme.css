@@ -1,0 +1,164 @@
+.workspace-themed {
+  color-scheme: light;
+  --workspace-background: #f8fafc;
+  --workspace-sidebar: #fff;
+  --workspace-surface: #fff;
+  --workspace-border: #e2e8f0;
+  --workspace-text: #172b3a;
+  --workspace-secondary: #475569;
+  --workspace-muted: #536479;
+  --workspace-primary: #0f766e;
+  --workspace-primary-hover: #115e59;
+  --workspace-on-primary: #fff;
+  --workspace-input: #fff;
+  --workspace-table: #f1f5f9;
+  --workspace-popover: #fff;
+  --workspace-selected: #e6f4f1;
+  --workspace-hover: #f0fdfa;
+  --workspace-success: #166534;
+  --workspace-success-bg: #eaf7ee;
+  --workspace-warning: #854d0e;
+  --workspace-warning-bg: #fff4da;
+  --workspace-error: #991b1b;
+  --workspace-error-bg: #fef2f2;
+  --workspace-info: #1e4a70;
+  --workspace-info-bg: #eaf3fb;
+  --color-canvas: var(--workspace-background);
+  --color-surface: var(--workspace-surface);
+  --color-border: var(--workspace-border);
+  --color-ink: var(--workspace-text);
+  --color-slate: var(--workspace-secondary);
+  --color-primary: var(--workspace-primary);
+  --color-primary-hover: var(--workspace-primary-hover);
+  --color-logo: var(--workspace-text);
+  --color-navy: var(--workspace-primary);
+  --color-navy-hover: var(--workspace-primary-hover);
+  --color-orange: var(--workspace-primary);
+  --color-brand: var(--workspace-selected);
+  --surface-selected: var(--workspace-selected);
+  --surface-hover: var(--workspace-hover);
+  --text-placeholder: var(--workspace-muted);
+  --wdp-soft: var(--workspace-selected);
+  color: var(--workspace-text);
+}
+
+.workspace-themed[data-workspace-theme="dark"] {
+  color-scheme: dark;
+  --workspace-background: #10151d;
+  --workspace-sidebar: #151b24;
+  --workspace-surface: #191f2a;
+  --workspace-border: #344050;
+  --workspace-text: #eef3f8;
+  --workspace-secondary: #bdc9d7;
+  --workspace-muted: #a8b6c7;
+  --workspace-primary: #7adbc9;
+  --workspace-primary-hover: #9be8d9;
+  --workspace-on-primary: #102c27;
+  --workspace-input: #111923;
+  --workspace-table: #212b37;
+  --workspace-popover: #1e2733;
+  --workspace-selected: #223e40;
+  --workspace-hover: #222e3b;
+  --workspace-success: #a2e5b8;
+  --workspace-success-bg: #1c372d;
+  --workspace-warning: #ffd996;
+  --workspace-warning-bg: #392e20;
+  --workspace-error: #ffb7b7;
+  --workspace-error-bg: #41272c;
+  --workspace-info: #b8deff;
+  --workspace-info-bg: #23384d;
+}
+
+.manager-shell.internal-web.workspace-themed {
+  background: var(--workspace-background);
+  color: var(--workspace-text);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-sidebar,.portal-topbar) {
+  background: var(--workspace-sidebar);
+  border-color: var(--workspace-border);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-section,.manager-processing,.manager-empty,.manager-table-wrap,.portal-toolbar,.stock-card,.internal-kpi,.internal-priority,.work-hub-card,.activity-summary,.activity-inbox-page,.activity-item,.portal-issue,.portal-role,.internal-skip) {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+  box-shadow: none;
+}
+.manager-shell.internal-web.workspace-themed :is(.portal-mobile-nav,.portal-dialog,.activity-panel,.entity-select-popup) {
+  background: var(--workspace-popover);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-page-header h1,h2,h3,.manager-facts dd,.manager-table td,.manager-table td strong,.portal-topbar strong,.portal-brand strong,.manager-account strong,.record-identity strong) {
+  color: var(--workspace-text);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-facts dt,.manager-table small,.portal-topbar>div>span,.portal-brand small,.manager-account small,.manager-action-copy,.activity-empty,.activity-panel p,.activity-item p,.manager-section p,.portal-form small,.portal-form p,.work-hub-copy p,.record-code,.portal-result-heading) {
+  color: var(--workspace-secondary);
+}
+.manager-shell.internal-web.workspace-themed :is(input:not([type="checkbox"],[type="radio"]),select,textarea,.entity-select-trigger,.entity-select-options>button,.button-secondary,.icon-button,.activity-bell,.manager-open,.record-copy) {
+  background: var(--workspace-input);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+.manager-shell.internal-web.workspace-themed :is(.button-primary,.manager-table .button-primary) {
+  background: var(--workspace-primary);
+  border-color: var(--workspace-primary);
+  color: var(--workspace-on-primary);
+}
+.manager-shell.internal-web.workspace-themed .button-primary:hover:not(:disabled) {
+  background: var(--workspace-primary-hover);
+}
+.manager-shell.internal-web.workspace-themed :is(.button-secondary,.icon-button,.activity-bell,.entity-select-options>button):hover:not(:disabled) {
+  background: var(--workspace-hover);
+}
+.manager-shell.internal-web.workspace-themed :is(.entity-select-options>button[aria-selected="true"],.entity-select-options>button.is-keyboard-active,.activity-tabs button[aria-pressed="true"],.activity-item.is-unread,.navigation-work-count,.work-hub-icon,.portal-account-avatar) {
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+.manager-shell.internal-web.workspace-themed .manager-table th {
+  background: var(--workspace-table);
+  color: var(--workspace-secondary);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-table td,.manager-account,.portal-dialog header,.portal-form fieldset,.portal-form-divider,.manager-detail-block,.stock-line) {
+  border-color: var(--workspace-border);
+}
+.manager-shell.internal-web.workspace-themed .manager-table tbody tr:hover,
+.manager-shell.internal-web.workspace-themed .manager-table tbody tr:hover > td {
+  background: var(--workspace-hover);
+}
+.manager-shell.internal-web.workspace-themed :is(.portal-checkbox,.portal-form label,.stock-confirmation,.record-identity,.entity-select-options small,.workspace-help) {
+  color: var(--workspace-text);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-status,.booking-alert,.workflow-hint,.customer-updates-bar,.activity-update-note) {
+  background: var(--workspace-info-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-info);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-status.is-pending,.manager-status.is-pending_contact,.manager-status.is-requested,.manager-status.is-open,.manager-status.is-pending_payment,.manager-status.is-in_progress,.manager-status.is-awaiting_verification,.manager-status.is-issue_found,.manager-status.is-high,.booking-alert.is-warning) {
+  background: var(--workspace-warning-bg);
+  color: var(--workspace-warning);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-status.is-active,.manager-status.is-confirmed,.manager-status.is-completed,.manager-status.is-resolved,.manager-status.is-approved,.portal-success,.booking-alert.is-success) {
+  background: var(--workspace-success-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-success);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-status.is-cancelled,.manager-status.is-rejected,.manager-status.is-disabled,.manager-status.is-expired,.manager-status.is-overdue,.booking-alert.is-error,.portal-danger) {
+  background: var(--workspace-error-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-error);
+}
+.manager-shell.internal-web.workspace-themed :is(.portal-error-text,.portal-text-button.is-danger) {
+  color: var(--workspace-error);
+}
+.manager-shell.internal-web.workspace-themed :is(.portal-record-link,.portal-text-button,.manager-facts dd a,.activity-item-cta,.booking-back) {
+  color: var(--workspace-primary);
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-status,.booking-alert,.portal-success,.workflow-hint) :is(strong,span,p) {
+  color: inherit;
+}
+.manager-shell.internal-web.workspace-themed :is(.manager-section p,.portal-form small,.portal-form p,.activity-item p,.activity-item small,.activity-item time,.activity-panel footer,.activity-panel header p,.activity-inbox-footnote) {
+  font-size: 14px;
+}
+.manager-shell.internal-web.workspace-themed :is(.portal-mobile-nav,.portal-dialog)::backdrop {
+  background: #0b111ccc;
+}

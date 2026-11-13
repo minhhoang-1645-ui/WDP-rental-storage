@@ -1,271 +1,176 @@
-import { internalPageSize } from '../../utils/internal-pagination';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { useLiveRefresh } from '../../services/live-events';
-import { Eye, EyeOff, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
-import { mutate } from "../../services/portal";
-import { apiRequest } from "../../services/api";
-import {
-  date,
-  first,
-  label,
-  type Page,
-  type Row,
-} from "../../components/manager/portal-data";
-import {
-  Empty,
-  Facts,
-  LoadState,
-  Modal,
-  PageHeader,
-  Pagination,
-  Status,
-} from "../../components/manager/PortalUi";
+import { Ellipsis, Eye, EyeOff, Plus, RefreshCw, UserRoundCheck, UserRoundX, X } from 'lucide-react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { AccountRole } from './AccountRole';
+import { apiRequest } from '../../services/api';
+import { safeLocalStorage } from '../../services/browser-storage';
+import { AUTH_TOKEN_KEY } from '../../data/booking';
+import { useAuth } from '../../auth/auth-context';
+import { mutate } from '../../services/portal';
+import { useInternalListResource } from '../../components/workspace/useInternalListResource';
+import { InternalPagination } from '../../components/workspace/InternalPagination';
+import { StaffTaskTable, TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import { date, first, label, type Row } from '../../components/manager/portal-data';
+import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
+
+const sizes = [10, 20, 50] as const;
+const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
+const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã vô hiệu hóa' };
+type AccountStatus = keyof typeof statuses;
+type BulkResult = { changed: number; skipped: number; failures: { id: string; name: string; reason: string }[] };
 
 export function AdminAccountsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const [state, setState] = useState<{
-    key: string;
-    data?: Page;
-    error?: string;
-  }>();
-  const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<{
-    id: string;
-    changeStatus: boolean;
-  }>();
-  const [notice, setNotice] = useState("");
-  const search = params.get("search") ?? "";
-  const role = params.get("role") ?? "";
-  const status = params.get("status") ?? "";
-  const limit = internalPageSize(params);
-  const page = Math.max(1, Math.floor(Number(params.get("page")) || 1));
+  const [createdAccount, setCreatedAccount] = useState<Row>();
+  const { key: locationKey } = useLocation();
+  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>();
+  const [bulk, setBulk] = useState<{ status: AccountStatus; rows: Row[]; skipped: number }>();
+  const [result, setResult] = useState<BulkResult>();
+  const sort = params.get('sort') ?? 'newest';
+  const search = params.get('search') ?? '';
+  const role = params.get('role') ?? '';
+  const status = params.get('status') ?? '';
+  const limit = sizes.find(size => size === Number(params.get('limit'))) ?? 20;
+  const page = Math.max(1, Math.min(100000, Math.floor(Number(params.get('page')) || 1)));
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set('search', search.trim());
+  if (sort !== 'newest') query.set('sort', sort);
   if (role) query.set('role', role);
   if (status) query.set('accountStatus', status);
-  const path = `/admin/users?${query}`;
-  const key = `${user?.id}:${path}:${revision}`;
-  const refresh = useCallback(() => setRevision((v) => v + 1), []);
-  useLiveRefresh('/admin/users', refresh);
-  useEffect(() => {
-    const controller = new AbortController();
-    apiRequest<Page>(path, { signal: controller.signal })
-      .then((data) => {
-        if (!controller.signal.aborted) setState({ key, data });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted)
-          setState({
-            key,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Không thể tải tài khoản.",
-          });
-      });
-    return () => controller.abort();
-  }, [key, path]);
-  const current = state?.key === key ? state : undefined;
-  const items = current?.data?.items ?? [];
-  const total = current?.data?.total ?? 0;
-  const change = (name: string, value: string) =>
-    setParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        if (value) next.set(name, value);
-        else next.delete(name);
-        if (name !== "page") next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(total / limit)));
-  return (
-    <section>
-      <PageHeader
-        title="Quản lý tài khoản"
-        description="Cấp tài khoản nội bộ, xem vai trò và quản lý quyền truy cập."
-      >
-        <button className="button-primary" onClick={() => setCreating(true)}>
-          <Plus size={17} />
-          Tạo tài khoản
-        </button>
-        <button
-          className="button-secondary"
-          onClick={refresh}
-          disabled={!current}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      {notice && (
-        <div className="portal-success" role="status">
-          {notice}
-        </div>
-      )}
-      <div className="portal-toolbar">
-        <label className="field-label portal-search">
-          Tìm tài khoản
-          <input
-            type="search"
-            value={search}
-            placeholder="Họ tên, email, số điện thoại…"
-            onChange={(e) => change("search", e.target.value)}
-          />
-        </label>
-        <label className="field-label">
-          Vai trò
-          <select value={role} onChange={(e) => change("role", e.target.value)}>
-            <option value="">Tất cả</option>
-            {["CUSTOMER", "STAFF", "MANAGER", "ADMIN"].map((v) => (
-              <option key={v} value={v}>
-                {label(v)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-label">
-          Trạng thái
-          <select
-            value={status}
-            onChange={(e) => change("status", e.target.value)}
-          >
-            <option value="">Tất cả</option>
-            <option value="ACTIVE">Đang hoạt động</option>
-            <option value="DISABLED">Đã vô hiệu hóa</option>
-          </select>
-        </label>
-        {params.size > 0 && (
-          <button className="button-secondary" onClick={() => setParams({})}>
-            Xóa bộ lọc
-          </button>
+  const data = useInternalListResource<Row>(`/admin/users?${query}`, user?.id ?? '', true);
+
+  const rows = data.data?.items ?? [];
+  const eligible = rows.filter(row => first(row, 'id') && row.id !== user?.id
+    && (row.accountStatus === 'ACTIVE' || row.accountStatus === 'DISABLED'));
+  const selectionKey = `${user?.id}:${locationKey}`;
+  const selected = eligible.filter(row => selection?.key === selectionKey && selection.ids.has(first(row, 'id')));
+  const selectedIds = new Set(selected.map(row => first(row, 'id')));
+  const selectAll = useRef<HTMLInputElement>(null);
+  const allChecked = eligible.length > 0 && selected.length === eligible.length;
+  const someChecked = selected.length > 0 && !allChecked;
+  useLayoutEffect(() => {
+    if (selectAll.current) selectAll.current.indeterminate = someChecked;
+  });
+
+  function startBulk(status: AccountStatus) {
+    const targets = selected.filter(row => row.accountStatus !== status);
+    setResult(undefined);
+    setBulk({ status, rows: targets, skipped: selected.length - targets.length });
+  }
+
+  function change(key: string, value: string) {
+    setSelection(undefined);
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      if (key !== 'page') next.delete('page');
+      return next;
+    }, { replace: true });
+  }
+
+  const columns: StaffColumn<Row>[] = [
+    { key: 'selection', label: 'Chọn tài khoản', header: <input ref={selectAll} type="checkbox"
+      aria-label="Chọn tất cả tài khoản đủ điều kiện trên trang" checked={allChecked} disabled={!eligible.length}
+      onChange={event => setSelection({ key: selectionKey, ids: new Set(event.target.checked ? eligible.map(row => first(row, 'id')) : []) })} />,
+      cell: row => {
+        const id = first(row, 'id');
+        return <input type="checkbox" aria-label={`Chọn ${first(row, 'email')}`} checked={selectedIds.has(id)}
+          disabled={!eligible.includes(row)} onChange={event => {
+            const ids = new Set(selectedIds);
+            if (event.target.checked) ids.add(id);
+            else ids.delete(id);
+            setSelection({ key: selectionKey, ids });
+          }} />;
+      } },
+    { key: 'account', label: 'Tài khoản', sort: { direction: sort === 'name-asc' ? 'ascending' : sort === 'name-desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'name-asc' ? 'name-desc' : 'name-asc') }, cell: row => <>
+      <strong>{first(row, 'fullName')}</strong><small>{first(row, 'email')}</small>
+      {row.id === user?.id && <small>Tài khoản của bạn</small>}
+    </> },
+    { key: 'role', label: 'Vai trò', cell: row => <AccountRole value={row.role} /> },
+    { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.accountStatus} /> },
+    { key: 'date', label: 'Ngày tạo', optional: true, sort: { direction: sort === 'oldest' ? 'ascending' : sort === 'newest' ? 'descending' : 'none', toggle: () => change('sort', sort === 'oldest' ? 'newest' : 'oldest') }, cell: row => date(row.createdAt, true) },
+    { key: 'actions', label: 'Thao tác', cell: row => {
+      const id = first(row, 'id');
+      const path = `/admin/users/${encodeURIComponent(id)}`;
+      const active = row.accountStatus === 'ACTIVE';
+      return <div className="staff-table-actions">
+        <TablePopover name={`Thao tác tài khoản ${first(row, 'email', 'fullName')}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
+          <Link to={path}>Xem chi tiết</Link>
+          {eligible.includes(row) && <Link className={active ? 'admin-destructive-link' : undefined}
+            to={`${path}?status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Vô hiệu hóa' : 'Kích hoạt lại'}</Link>}
+        </TablePopover>
+      </div>;
+    } },
+  ];
+
+  return <section className="admin-accounts">
+    <PageHeader title="Quản lý tài khoản">
+      <button type="button" className="button-primary" onClick={() => setCreating(true)}><Plus size={17} />Tạo tài khoản</button>
+      <button type="button" className="button-secondary" onClick={data.refresh} disabled={data.loading}><RefreshCw size={16} />Làm mới</button>
+    </PageHeader>
+    {createdAccount && <div className="portal-success admin-created" role="status">
+      <span>Đã tạo tài khoản {first(createdAccount, 'fullName')}.</span>
+      {first(createdAccount, 'id') && <Link to={`/admin/users/${encodeURIComponent(first(createdAccount, 'id'))}`}>Xem tài khoản vừa tạo</Link>}
+    </div>}
+    {result && <section className="manager-section admin-bulk-result" role="status">
+      <strong>Đã cập nhật {result.changed} · Bỏ qua {result.skipped} · Chưa xác nhận {result.failures.length}</strong>
+      {!!result.failures.length && <ul>{result.failures.map(failure =>
+        <li key={failure.id}>{failure.name} — {failure.reason}</li>
+      )}</ul>}
+    </section>}
+    <div className="admin-account-toolbar">
+      <input type="search" aria-label="Tìm tài khoản" maxLength={120} value={search}
+        placeholder="Tên, email hoặc số điện thoại…" onChange={event => change('search', event.target.value)} />
+      <label><span className="admin-filter-label">Trạng thái</span><select aria-label="Trạng thái" value={status} onChange={event => change('status', event.target.value)}>
+        <option value="">Tất cả</option>{Object.entries(statuses).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
+      </select></label>
+      <TablePopover name="Lọc theo vai trò" trigger={<><Plus size={15} aria-hidden="true" />{roles.includes(role) ? label(role) : 'Vai trò'}</>}>
+        {['', ...roles].map(value =>
+          <button type="button" key={value} aria-pressed={role === value} onClick={event => {
+            event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
+            change('role', value);
+          }}>{value ? <AccountRole value={value} /> : 'Tất cả'}</button>
         )}
-      </div>
-      <LoadState
-        loading={!current}
-        error={current?.error ?? ""}
-        retry={refresh}
-      />
-      {current?.data && (
-        <>
-          <div className="portal-result-heading">
-            <span>{total} tài khoản</span>
-            <small>Tìm kiếm trên toàn bộ danh sách</small>
-          </div>
-          {items.length ? (
-            <div className="manager-table-wrap">
-              <table className="manager-table">
-                <thead>
-                  <tr>
-                    <th>Tài khoản</th>
-                    <th>Liên hệ</th>
-                    <th>Vai trò</th>
-                    <th>Trạng thái</th>
-                    <th>Ngày tạo</th>
-                    <th>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row) => (
-                      <tr key={first(row, "id")}>
-                        <td>
-                          <strong>{first(row, "fullName")}</strong>
-                          <small>Mã tài khoản: <code>{first(row, 'id')}</code></small>
-                          {row.id === user?.id && (
-                            <small>Tài khoản của bạn</small>
-                          )}
-                        </td>
-                        <td>
-                          {first(row, "email")}
-                          <small>{first(row, "phone")}</small>
-                        </td>
-                        <td>
-                          <Status value={row.role} />
-                        </td>
-                        <td>
-                          <Status value={row.accountStatus} />
-                        </td>
-                        <td>
-                          {row.createdAt
-                            ? date(row.createdAt, true)
-                            : "Chưa có dữ liệu"}
-                        </td>
-                        <td>
-                          <div className="portal-actions">
-                            <button
-                              className="button-secondary"
-                              onClick={() =>
-                                setSelected({
-                                  id: first(row, "id"),
-                                  changeStatus: false,
-                                })
-                              }
-                            >
-                              Xem
-                            </button>
-                            {row.id !== user?.id && (
-                              <button
-                                className="button-secondary"
-                                onClick={() =>
-                                  setSelected({
-                                    id: first(row, "id"),
-                                    changeStatus: true,
-                                  })
-                                }
-                              >
-                                {row.accountStatus === "ACTIVE"
-                                  ? "Vô hiệu hóa"
-                                  : "Kích hoạt lại"}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty />
-          )}
-          <Pagination
-            page={currentPage}
-            limit={limit}
-            onLimitChange={value => change("limit", String(value))}
-            total={total}
-            onChange={(v) => change("page", String(v))}
-          />
-        </>
-      )}
-      {creating && (
-        <CreateUser
-          onClose={() => setCreating(false)}
-          onSuccess={(row) => {
-            setCreating(false);
-            setNotice(`Đã tạo tài khoản ${first(row, "fullName")}.`);
-            refresh();
-          }}
-        />
-      )}
-      {selected && (
-        <AccountDetail
-          id={selected.id}
-          statusAction={selected.changeStatus}
-          onClose={() => setSelected(undefined)}
-          onSuccess={(message) => {
-            setNotice(message);
-            refresh();
-          }}
-        />
-      )}
-    </section>
-  );
+      </TablePopover>
+      {(search || role || status) && <button type="button" className="button-secondary" onClick={() => {
+        setSelection(undefined);
+        const next = new URLSearchParams(params);
+        for (const key of ['page', 'search', 'role', 'status']) next.delete(key);
+        setParams(next, { replace: true });
+      }}>Xóa bộ lọc</button>}
+    </div>
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
+    {data.data && <>
+      {data.data.items.length ? <StaffTaskTable title="Danh sách tài khoản" items={data.data.items} columns={columns} rowKey={row => first(row, 'id')} selected={row => selectedIds.has(first(row, 'id'))} />
+        : <Empty title="Không tìm thấy tài khoản" />}
+      <InternalPagination page={page} limit={limit} total={data.data.total} pageSizes={sizes} showBoundaryControls
+        onChange={value => change('page', String(value))} onLimitChange={value => change('limit', String(value))} />
+    </>}
+    {!!selected.length && <div className="admin-bulk-bar" role="group" aria-label="Thao tác tài khoản đã chọn">
+      <button type="button" className="icon-button" aria-label="Bỏ chọn tất cả" onClick={() => setSelection(undefined)}><X size={16} /></button>
+      <span aria-live="polite">Đã chọn {selected.length}</span>
+      <button type="button" className="button-secondary" disabled={!selected.some(row => row.accountStatus === 'DISABLED')}
+        onClick={() => startBulk('ACTIVE')}><UserRoundCheck size={16} />Kích hoạt tài khoản</button>
+      <button type="button" className="button-secondary portal-danger" disabled={!selected.some(row => row.accountStatus === 'ACTIVE')}
+        onClick={() => startBulk('DISABLED')}><UserRoundX size={16} />Vô hiệu hóa tài khoản</button>
+    </div>}
+    {bulk && <BulkStatusDialog {...bulk} onClose={() => setBulk(undefined)} onComplete={outcome => {
+      setBulk(undefined);
+      setSelection(undefined);
+      setResult(outcome);
+      data.refresh();
+    }} />}
+    {creating && <CreateUser onClose={() => setCreating(false)} onSuccess={row => {
+      setCreating(false);
+      setCreatedAccount(row);
+      data.refresh();
+    }} />}
+  </section>;
 }
+
 function CreateUser({
   onClose,
   onSuccess,
@@ -282,6 +187,10 @@ function CreateUser({
     event.preventDefault();
     if (lock.current) return;
     const data = new FormData(event.currentTarget);
+    if (data.get('password') !== data.get('confirmPassword')) {
+      setError('Mật khẩu xác nhận không khớp.');
+      return;
+    }
     lock.current = true;
     setBusy(true);
     setError("");
@@ -305,15 +214,15 @@ function CreateUser({
     }
   };
   return (
-    <Modal title="Cấp tài khoản nội bộ" onClose={onClose} busy={busy}>
+    <Modal title="Tạo tài khoản" onClose={onClose} busy={busy}>
       <form className="portal-form" onSubmit={submit}>
-        <p>Tạo tài khoản cho nhân viên hoặc quản lý cơ sở.</p>
+
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}
           </div>
         )}
-        <fieldset disabled={busy}>
+        <fieldset className="admin-create-fields" disabled={busy}>
           <label className="field-label">
             Họ và tên
             <input
@@ -347,7 +256,7 @@ function CreateUser({
           </label>
           <label className="field-label">
             Vai trò
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <select aria-label="Vai trò" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="STAFF">Nhân viên</option>
               <option value="MANAGER">Quản lý</option>
             </select>
@@ -373,6 +282,11 @@ function CreateUser({
               </button>
             </div>
           </label>
+          <label className="field-label">
+            Xác nhận mật khẩu
+            <input name="confirmPassword" type={showPassword ? 'text' : 'password'} required
+              autoComplete="new-password" maxLength={200} />
+          </label>
         </fieldset>
         <div className="portal-actions">
           <button
@@ -391,158 +305,51 @@ function CreateUser({
     </Modal>
   );
 }
-function AccountDetail({
-  id,
-  statusAction,
-  onClose,
-  onSuccess,
-}: {
-  id: string;
-  statusAction: boolean;
+
+function BulkStatusDialog({ status, rows, skipped, onClose, onComplete }: {
+  status: AccountStatus;
+  rows: Row[];
+  skipped: number;
   onClose: () => void;
-  onSuccess: (message: string) => void;
+  onComplete: (result: BulkResult) => void;
 }) {
-  const { user } = useAuth();
-  const [row, setRow] = useState<Row>();
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
-  const [revision, setRevision] = useState(0);
   const lock = useRef(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    apiRequest<Row>(`/admin/users/${encodeURIComponent(id)}`, {
-      signal: controller.signal,
-    })
-      .then((value) => {
-        if (!controller.signal.aborted) setRow(value);
-      })
-      .catch((caught) => {
-        if (!controller.signal.aborted)
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Không thể tải tài khoản.",
-          );
-      });
-    return () => controller.abort();
-  }, [id, revision]);
-  const changeStatus = async () => {
-    if (!row || !confirmed || lock.current || id === user?.id) return;
+  const disabling = status === 'DISABLED';
+  const action = disabling ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản';
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (lock.current) return;
     lock.current = true;
     setBusy(true);
-    setError("");
-    try {
-      const updated = await mutate(
-        `/admin/users/${encodeURIComponent(id)}/status`,
-        "PATCH",
-        {
-          accountStatus: row.accountStatus === "ACTIVE" ? "DISABLED" : "ACTIVE",
-        },
-      );
-      setRow(updated);
-      setConfirmed(false);
-      onSuccess(
-        `Đã cập nhật trạng thái tài khoản ${first(updated, "fullName")}.`,
-      );
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Không thể cập nhật tài khoản.",
-      );
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      title={
-        statusAction ? "Cập nhật trạng thái tài khoản" : "Thông tin tài khoản"
+    const expectedToken = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
+    const result: BulkResult = { changed: 0, skipped, failures: [] };
+    for (const row of rows) {
+      const id = first(row, 'id');
+      try {
+        await apiRequest(`/admin/users/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH', body: JSON.stringify({ accountStatus: status }), expectedToken,
+        });
+        result.changed++;
+      } catch (error) {
+        result.failures.push({
+          id, name: first(row, 'email', 'fullName'),
+          reason: error instanceof Error ? error.message : 'Không thể xác minh kết quả. Kiểm tra trạng thái trước khi thử lại.',
+        });
       }
-      onClose={onClose}
-      busy={busy}
-    >
-      <div className="portal-form">
-        {error && (
-          <div className="booking-alert is-error" role="alert">
-            {error}
-            <button
-              onClick={() => {
-                setError("");
-                setRevision((v) => v + 1);
-              }}
-            >
-              Thử lại
-            </button>
-          </div>
-        )}
-        {row ? (
-          <>
-            <div className="portal-account-heading">
-              <ShieldCheck size={25} />
-              <strong>{first(row, "fullName")}</strong>
-              <Status value={row.accountStatus} />
-            </div>
-            <Facts
-              items={[
-                ["Email", first(row, "email")],
-                ["Số điện thoại", first(row, "phone") || "Chưa cập nhật"],
-                ["Vai trò", label(row.role)],
-                ["Trạng thái", label(row.accountStatus)],
-                [
-                  "Ngày tạo",
-                  row.createdAt ? date(row.createdAt, true) : "Chưa có dữ liệu",
-                ],
-                ["Mã tài khoản", first(row, "id")],
-              ]}
-            />
-            {row.role === "STAFF" && (
-              <small>Mã tài khoản dùng để phân công hỗ trợ và bảo trì.</small>
-            )}
-            {id === user?.id ? (
-              <p>Bạn đang dùng tài khoản này.</p>
-            ) : (
-              <>
-                <p>
-                  {row.accountStatus === "ACTIVE"
-                    ? "Vô hiệu hóa sẽ chặn đăng nhập và truy cập. Hồ sơ nghiệp vụ vẫn được giữ lại."
-                    : "Kích hoạt lại quyền đăng nhập cho tài khoản này."}
-                </p>
-                <label className="portal-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(e) => setConfirmed(e.target.checked)}
-                    disabled={busy}
-                  />
-                  Xác nhận{" "}
-                  {row.accountStatus === "ACTIVE" ? "vô hiệu hóa" : "kích hoạt"}{" "}
-                  tài khoản
-                </label>
-                <button
-                  className={
-                    row.accountStatus === "ACTIVE"
-                      ? "button-secondary portal-danger"
-                      : "button-primary"
-                  }
-                  disabled={!confirmed || busy}
-                  onClick={changeStatus}
-                >
-                  {busy
-                    ? "Đang lưu…"
-                    : row.accountStatus === "ACTIVE"
-                      ? "Vô hiệu hóa tài khoản"
-                      : "Kích hoạt tài khoản"}
-                </button>
-              </>
-            )}
-          </>
-        ) : (
-          !error && <p role="status">Đang tải thông tin…</p>
-        )}
+    }
+    onComplete(result);
+  }
+  return <Modal title={action} busy={busy} onClose={onClose}>
+    <form className="portal-form" onSubmit={submit}>
+      <p>{disabling ? 'Vô hiệu hóa' : 'Kích hoạt'} <strong>{rows.length} tài khoản</strong>.{skipped > 0 && ` Bỏ qua ${skipped} tài khoản đã ở trạng thái này.`}</p>
+      {disabling && <p>Người dùng bị vô hiệu hóa sẽ mất quyền truy cập theo chính sách phiên đăng nhập hiện tại.</p>}
+      <div className="portal-actions">
+        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
+        <button type="submit" className={disabling ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy}>
+          {busy ? 'Đang xử lý…' : 'Xác nhận'}
+        </button>
       </div>
-    </Modal>
-  );
+    </form>
+  </Modal>;
 }

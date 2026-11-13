@@ -2,7 +2,6 @@ import { ManagerReportRelease } from '../pages/manager/ManagerReportRelease';
 import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
 import { OverstayPage } from '../pages/manager/OverstayPage';
-import { AdminPoliciesPage } from '../pages/admin/AdminPoliciesPage';
 import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
@@ -40,12 +39,14 @@ import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
+import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
 import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
 import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
 import { AdminLayout, adminSections } from "../pages/admin/AdminLayout";
+import { AdminAccountDetailPage } from "../pages/admin/AdminAccountDetailPage";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
 import { AdminAccountsPage } from "../pages/admin/AdminAccountsPage";
 import { AdminAuditPage } from '../pages/admin/AdminAuditPage';
@@ -64,7 +65,7 @@ import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
 import { CustomerReturnsPage } from "../pages/customer/CustomerReturnsPage";
 import { CustomerSupportPage } from "../pages/customer/CustomerSupportPage";
 import { CustomerTransfersPage } from "../pages/customer/CustomerTransfersPage";
-import { CustomerProfilePage } from "../pages/customer/CustomerProfilePage";
+import { AccountSettingsPage } from "../pages/account/AccountSettingsPage";
 import { CustomerReservationDetailPage } from "../pages/customer/CustomerReservationDetailPage";
 import { CustomerReservationsPage } from "../pages/customer/CustomerReservationsPage";
 import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovementsPage';
@@ -170,13 +171,16 @@ export function AppRouter() {
         <Route path="returns" element={<CustomerReturnsPage />} />
         <Route path="transfers" element={<CustomerTransfersPage />} />
         <Route path="support" element={<CustomerSupportPage />} />
-        <Route path="profile" element={<CustomerProfilePage />} />
+        <Route path="profile" element={<AccountSettingsPage />} />
+        <Route path="settings/:section?" element={<AccountSettingsPage />} />
         <Route path="*" element={<WorkspaceNotFound />} />
       </Route>
       <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
         <Route path="staff" element={<StaffLayout />}>
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
+          <Route path="tasks" element={<StaffTasksPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
@@ -205,6 +209,7 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="MANAGER" />} />
@@ -220,16 +225,16 @@ export function AppRouter() {
           <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
           <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
           <Route index element={<AdminDashboardPage />} />
-          <Route path="notifications" element={<ActivityInboxPage />} />
+          <Route path="notifications" element={<Navigate to="/admin" replace />} />
           <Route path="users" element={<AdminAccountsPage />} />
+          <Route path="users/:id" element={<AdminAccountDetailPage />} />
           <Route path="roles" element={<Navigate to="/admin/users" replace />} />
           <Route path="assignments" element={<Navigate to="/admin" replace />} />
-          <Route path="activity" element={<Navigate to="/admin" replace />} />
           <Route
             path="account-status"
             element={<Navigate to="/admin/users" replace />}
           />
-          <Route path="settings" element={<AdminPoliciesPage />} />
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="facility/assignments" element={<Navigate to="/admin" replace />} />
           <Route path="facility/*" element={<Navigate to="/admin" replace />} />
           <Route path="*" element={<WorkspaceNotFound />} />

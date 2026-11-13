@@ -69,7 +69,7 @@ const checks = [];
   checks.push('Dashboard freshness: latest assignment and completed result beat stale backlog; read does not complete work; scoped function updates; transfer deduplication and approval timestamps');
 }
 const { customerProgress } = await import(await moduleUrl(new URL('../src/utils/customer-progress.ts', import.meta.url)));
-const { filterNotifications, newActivityCount, actionCountForPath } = await import(await moduleUrl(new URL('../src/utils/notification-tools.ts', import.meta.url)));
+const { filterNotifications, actionCountForPath } = await import(await moduleUrl(new URL('../src/utils/notification-tools.ts', import.meta.url)));
 const journeyReservation = { id: 'PUBLIC-REFERENCE', reference: 'PUBLIC-REFERENCE', quantity: 1, status: 'CONFIRMED' };
 const journeyRelation = { id: 'private-db-id', reference: 'PUBLIC-REFERENCE' };
 const journey = { contracts: [{ id: 'jc', status: 'PENDING_PAYMENT', endDate: '2099-01-01', reservation: journeyRelation, terms: {} }], invoices: [{ id: 'ji', type: 'INITIAL', status: 'OPEN', balanceDue: 100, reservation: journeyRelation }], appointments: [], returns: [], 'payment-submissions': [] };
@@ -95,8 +95,6 @@ const manyNotifications = buildActivity('ADMIN', 'admin', { users: Array.from({l
 assert.equal(manyNotifications.length, 135, 'All fetched dossiers must be available to the paginated inbox');
 assert.equal(filterNotifications(manyNotifications, [], 'all', 'users', 'nguyen van an').length, 135);
 assert.equal(filterNotifications(manyNotifications, [manyNotifications[0].token], 'unread', 'all', '').length, 134);
-assert.equal(newActivityCount(manyNotifications, manyNotifications), 0);
-assert.equal(newActivityCount([], manyNotifications), 135);
 assert.equal(actionCountForPath([{id:'a',action:true,web:'/staff/transfers/x'},{id:'a',action:true,web:'/staff/transfers/x'},{id:'b',action:false,web:'/staff/transfers/y'}], '/staff/transfers'), 1);
 assert(!buildActivity('CUSTOMER', 'c', { invoices: [{ id: 'void', type: 'INITIAL', status: 'VOID', balanceDue: 10, signing: { complete: false } }] })[0].action);
 assert(!buildActivity('STAFF', 's', { 'support-requests': [{ id: 'closed-transfer', subject: 'Chuyển kho', status: 'RESOLVED' }] })[0].action);

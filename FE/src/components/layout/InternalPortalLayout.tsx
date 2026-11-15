@@ -5,11 +5,11 @@ import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown';
 import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowLeft,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  UserRound,
   Warehouse,
   X,
   type LucideIcon,
@@ -19,6 +19,8 @@ import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
 import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell } from '../../activity/ActivityCenter';
+import { WorkspaceNotificationDropdown } from '../../activity/WorkspaceNotificationDropdown';
+import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
@@ -46,6 +48,8 @@ export function InternalPortalLayout({
   const { user, logout } = useAuth();
   const activity = useActivity();
   const location = useLocation();
+  const notificationRole = user?.role === 'STAFF' || user?.role === 'MANAGER' ? user.role : undefined;
+  const notificationInbox = notificationRole ? workspaceInboxPath(notificationRole) : undefined;
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
   const profileMenu = themed && user && ['STAFF', 'MANAGER', 'ADMIN'].includes(user.role) ? user : null;
@@ -77,7 +81,6 @@ export function InternalPortalLayout({
     if (found) found.items.push(item);
     else groups.push({ group, items: [item] });
   }
-  if (themed && !groups.some(item => item.group === 'Tài khoản')) groups.push({ group: 'Tài khoản', items: [] });
   useEffect(() => {
     mobile.current?.close();
     window.scrollTo(0, 0);
@@ -119,8 +122,7 @@ export function InternalPortalLayout({
       {!iconOnly && navigation.length > 8 && <label className="workspace-nav-search"><span>{themed ? 'Tìm trong menu' : 'Tìm chức năng'}</span><input type="search" value={navigationSearch} onChange={event => setNavigationFilter({ path: location.pathname, value: event.target.value })} placeholder={themed ? user?.role === 'MANAGER' ? 'Phân công, hóa đơn…' : 'Đặt kho, bàn giao…' : 'Đặt kho, bàn giao, hóa đơn…'} /></label>}
       {groups.map(({ group, items }, index) => {
         const matching = iconOnly ? items : items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
-        const showProfile = themed && group === 'Tài khoản' && (!navigationSearch || iconOnly);
-        if (!matching.length && !showProfile) return null;
+        if (!matching.length) return null;
         const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
         return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || (themed ? index <= 2 : index === 1)} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
           {matching.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
@@ -130,7 +132,6 @@ export function InternalPortalLayout({
               {actionCountForPath(activity.entries, [to,...match ?? []]) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, [to,...match ?? []])}</b>}
             </NavLink>
           ))}
-          {showProfile && <button type="button" className="workspace-profile-link" title={iconOnly ? 'Hồ sơ cá nhân' : undefined} aria-label="Hồ sơ cá nhân" onClick={() => openSettings('profile')}><UserRound size={17} /><span>Hồ sơ cá nhân</span></button>}
         </NavigationGroup>;
       })}
       {!iconOnly && navigationSearch && !navigation.some(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim()))) && <p className="workspace-nav-empty">Không có mục phù hợp. Đổi từ khóa để tìm lại.</p>}
@@ -138,7 +139,7 @@ export function InternalPortalLayout({
   );
   const account = (
     <div className="manager-account">
-      <button type="button" className="portal-account-avatar" aria-label="Tài khoản cá nhân" onClick={() => openSettings('profile')}>{user?.fullName.slice(0, 1)}</button>
+      <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>
       <div>
         <strong>{user?.fullName}</strong>
         <small>{roleLabel(user?.role)}</small>
@@ -182,7 +183,8 @@ export function InternalPortalLayout({
             <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : matchesPath(location.pathname, settingsPath) ? "Cài đặt tài khoản" : active?.label ?? "Hồ sơ chi tiết"}</strong>
           </div>
           <div className="portal-topbar-actions">
-            <ActivityBell />
+            {user && notificationRole
+              ? <WorkspaceNotificationDropdown role={notificationRole} userId={user.id} /> : <ActivityBell />}
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}
               roleLabel={roleLabel(profileMenu.role)} theme={theme} onToggleTheme={toggleTheme}
               onProfile={() => openSettings('profile')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />
@@ -190,6 +192,8 @@ export function InternalPortalLayout({
           </div>
         </header>
         <main className="manager-main" id="portal-main" tabIndex={-1}>
+          {notificationInbox && location.state?.notificationInbox === notificationInbox && location.pathname !== notificationInbox &&
+            <Link to={notificationInbox} className="workspace-notification-back"><ArrowLeft size={15} aria-hidden="true" />Về thông báo</Link>}
           <Outlet />
         </main>
       </div>

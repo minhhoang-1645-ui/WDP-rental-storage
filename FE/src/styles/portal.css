@@ -587,8 +587,8 @@
   flex-wrap: wrap;
 }
 .portal-danger {
-  color: #b94444 !important;
-  border-color: #e6bdbd !important;
+  color: var(--workspace-error, #991b1b);
+  border-color: var(--workspace-error, #991b1b);
 }
 .portal-success {
   padding: 12px 16px;

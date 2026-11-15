@@ -6,6 +6,7 @@ import { useApiResource } from "../../services/useApiResource";
 import { ManagerAvailabilityForm } from "./ManagerAvailabilityForm";
 import { Link } from 'react-router-dom';
 import { operationPath } from '../../auth/portal-routing';
+import { managerStorageLabels } from '../../utils/manager-sections';
 import {
   first,
   label,
@@ -35,8 +36,8 @@ export function ManagerCatalogPage() {
   return (
     <section>
       <PageHeader
-        title="Loại kho & bảng giá"
-        description="Danh mục, kích thước và chính sách giá đang được hệ thống áp dụng."
+        title={managerStorageLabels.catalog.title}
+        description={managerStorageLabels.catalog.description}
       >
         {user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setEditor({})}>Thêm loại kho</button>}
         <Link className="button-secondary" to={operationPath(user?.role, '/manager/catalog/additional-services')}>Dịch vụ bổ sung</Link>
@@ -72,7 +73,7 @@ export function ManagerCatalogPage() {
                     {first(row, "code")} · {label(row.condition)}
                   </p>
                   <h2>{first(row, "name")}</h2>
-                  {user?.role === 'MANAGER' && <button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Sửa loại kho & giá</button>}
+                  {user?.role === 'MANAGER' && <button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Sửa loại kho & đơn giá</button>}
                   <Status value={first(row, "status").toUpperCase()} />
                   <dl className="manager-facts">
                     <div>

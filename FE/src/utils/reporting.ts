@@ -1,8 +1,14 @@
 type Row = Record<string, any>;
 export type ReportGroup = "day" | "week" | "month" | "year";
 export type ReportPeriod = ReportGroup | "all" | "custom";
+export function isReportCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+export function isReportDay(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && reportDay(value) === value);
+}
 export function reportMoney(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+  return isReportCount(value)
     ? new Intl.NumberFormat("vi-VN", {
         style: "currency",
         currency: "VND",

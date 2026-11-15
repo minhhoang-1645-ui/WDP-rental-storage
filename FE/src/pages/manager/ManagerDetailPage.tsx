@@ -1,5 +1,7 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { recordIdentity } from '../../utils/record-identity';
+import { managerReviewReturn } from '../../components/manager/manager-table-params';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ManagerPricingExplanation } from '../../components/manager/ManagerPricingExplanation';
 import { DocumentFile } from '../../components/customer/DocumentFile';
@@ -8,7 +10,7 @@ import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
@@ -31,6 +33,7 @@ import {
   Facts,
   LoadState,
   PageHeader,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
@@ -55,23 +58,27 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
     user?.id ?? "",
+    false,
+    true,
   );
   const listPath = ["units", "customers", "reservations", "inquiries"].includes(
     resource,
   )
     ? `/manager/${resource}`
     : `/manager/operations/${resource}`;
+  const [params] = useSearchParams();
   const returnPath = useInternalListReturn(listPath);
+  const reviewReturn = user?.role === 'MANAGER' ? managerReviewReturn(params) : null;
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
   const row = data.data;
   return (
     <section>
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
-      <Link className="booking-back" to={returnPath}>
+      <Link className="booking-back" to={reviewReturn ?? returnPath}>
         <ArrowLeft size={16} />
-        {config.title}
+        {reviewReturn ? 'Về việc cần duyệt' : config.title}
       </Link>
-      {!row && (
+      {!row && !data.loading && (
         <PageHeader title={config.title} description="Thông tin hồ sơ" />
       )}
       {notice && (
@@ -80,10 +87,10 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
         </div>
       )}
       <LoadState
-        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<DetailSkeleton form={['appointments', 'support-requests', 'maintenance', 'deposit-settlements', 'returns', 'renewals', 'transfers'].includes(resource)} history={resource === 'deposit-settlements'} />}
       />
       {row && (
         <>
@@ -103,6 +110,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             >
               <RefreshCw size={16} />
             </button>
+            <RefreshStatus active={data.refreshing} />
           </PageHeader>
           <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">

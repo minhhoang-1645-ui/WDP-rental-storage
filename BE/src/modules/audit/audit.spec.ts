@@ -110,6 +110,21 @@ describe('safe audit interception', () => {
     expect(record.mock.calls[0][0]).toMatchObject({ action: 'ONLINE_PAYMENT', resource: 'invoices', resourceId: 'invoice-1' });
     expect(JSON.stringify(record.mock.calls)).not.toContain('DO_NOT_LOG');
   });
+  it.each([
+    ['/api/customer/booking-requests/:bookingCode/claim', { bookingCode: 'WDPG-fixture' }, 'CLAIM', 'booking-requests', 'WDPG-fixture'],
+    ['/api/customer/transfer-orders/:id/accept', { id: 'transfer-1' }, 'ACCEPT', 'transfer-orders', 'transfer-1'],
+  ])('records the authenticated business action and safe resource identifier for %s', async (path, params, action, resource, resourceId) => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const actor: PublicUser = { ...admin, role: 'CUSTOMER' };
+    const req = { method: 'POST', route: { path }, params, user: actor, body: { otp: 'DO_NOT_LOG' } };
+    const context = { switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({ statusCode: 201 }) }) } as unknown as ExecutionContext;
+    const result = { status: 'SUCCESS', signatureImage: 'DO_NOT_LOG' };
+    expect(await lastValueFrom(new AuditInterceptor({ record } as never).intercept(context, { handle: () => of(result) }))).toBe(result);
+    expect(record).toHaveBeenCalledOnce();
+    expect(record.mock.calls[0][0]).toMatchObject({ category: 'ACTIVITY', action, resource, resourceId, actor, httpStatus: 201 });
+    expect(JSON.stringify(record.mock.calls)).not.toContain('DO_NOT_LOG');
+    expect(auditTarget({ method: 'POST', route: { path } })).toBeUndefined();
+  });
 });
 
 // Real HTTP/guards/auth sessions with isolated in-memory users and a mock audit DB only.

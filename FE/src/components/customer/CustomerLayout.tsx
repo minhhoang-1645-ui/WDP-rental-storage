@@ -1,5 +1,4 @@
 import {
-  Bell,
   History,
   ArrowRightLeft,
   CalendarClock,
@@ -36,6 +35,7 @@ import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown'
 import { ActivityBell } from '../../activity/ActivityCenter';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
+import '../../styles/workspace-theme.css';
 
 const navigation = [
   { to: '/customer/damage-claims', label: 'Sự cố hàng hóa', icon: CircleHelp },
@@ -150,10 +150,8 @@ export function CustomerLayout() {
     });
   };
 
-  const settings = location.pathname.startsWith('/customer/settings') || location.pathname === '/customer/profile';
   return (
-    <div className={settings ? 'customer-shell workspace-themed customer-settings-shell' : 'customer-shell'}
-      data-workspace-theme={settings ? theme : undefined}>
+    <div className="customer-shell workspace-themed" data-workspace-role="customer" data-workspace-theme={theme}>
       <aside
         id="customer-navigation"
         ref={sidebar}
@@ -181,7 +179,6 @@ export function CustomerLayout() {
         <nav className="customer-nav">
           <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Tìm & đặt kho</Link>
           <NavLink to="/customer" end className="customer-nav-link" onClick={() => setMenuOpen(false)}><LayoutDashboard size={18} />Tổng quan</NavLink>
-          <NavLink to="/customer/notifications" className="customer-nav-link" onClick={() => setMenuOpen(false)}><Bell size={18} />Thông báo & việc cần làm</NavLink>
           {customerGroups.map(group => {
             const count = actionCountForPath(activity.entries, group.paths);
             const childActive = group.paths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'));
@@ -191,15 +188,15 @@ export function CustomerLayout() {
           })}
         </nav>
         <div className="customer-sidebar-bottom">
-          <NavLink to="/customer/settings/profile" className="customer-account" onClick={() => setMenuOpen(false)}>
-            <span className="customer-avatar">
+          <div className="customer-account">
+            <span className="customer-avatar" aria-hidden="true">
               <UserRound size={18} />
             </span>
             <span>
               <strong>{user.fullName}</strong>
               <small>{user.email}</small>
             </span>
-          </NavLink>
+          </div>
           <button type="button" className="customer-logout" onClick={signOut}>
             <LogOut size={17} /> Đăng xuất
           </button>
@@ -232,11 +229,9 @@ export function CustomerLayout() {
           <span>Khu vực khách hàng</span>
           <div className="customer-account-actions">
             <ActivityBell />
-            <div className="workspace-themed" data-workspace-theme={theme}>
-              <WorkspaceProfileDropdown key={location.pathname} user={user} roleLabel="Khách hàng"
-                theme={theme} onToggleTheme={toggleTheme} onProfile={() => navigate('/customer/settings/profile')}
-                onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
-            </div>
+            <WorkspaceProfileDropdown key={location.pathname} user={user} roleLabel="Khách hàng"
+              theme={theme} onToggleTheme={toggleTheme} onProfile={() => navigate('/customer/settings/profile')}
+              onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
           </div>
         </div>
         <Outlet />

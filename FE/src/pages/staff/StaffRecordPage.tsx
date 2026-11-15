@@ -1,4 +1,5 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { recordIdentity } from '../../utils/record-identity';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ArrowLeft, RefreshCw } from "lucide-react";
@@ -19,6 +20,7 @@ import {
   Facts,
   LoadState,
   PageHeader,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import { staffResources, type StaffResource } from "./staff-resources";
@@ -39,6 +41,8 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
   const data = useApiResource<Row>(
     `/staff/${resource}/${encodeURIComponent(id)}`,
     user?.id ?? "",
+    false,
+    true,
   );
   const [notice, setNotice] = useState("");
   const row = data.data;
@@ -49,16 +53,16 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
         <ArrowLeft size={16} />
         {staffResources[resource].title}
       </Link>
-      {!row && (
+      {!row && !data.loading && (
         <PageHeader
           title={staffResources[resource].title}
         />
       )}
       <LoadState
-        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<DetailSkeleton form history={resource === 'returns'} />}
       />
       {notice && (
         <div className="portal-success" role="status">
@@ -75,6 +79,7 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
               <RefreshCw size={16} />
               Làm mới hồ sơ
             </button>
+            <RefreshStatus active={data.refreshing} />
           </PageHeader>
           <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">

@@ -140,23 +140,6 @@
   .stage-dimension svg { grid-row: span 2; color: var(--color-orange); }
   .stage-dimension span { font-size: 10px; font-weight: 800; text-transform: uppercase; }
   .stage-dimension strong { color: var(--color-navy); font-size: 14px; }
-  .storage-viewer, .viewer-module-placeholder, .viewer-fallback { position: relative; height: 450px; overflow: hidden; background: #e7eff6; }
-  .storage-viewer canvas { display: block; touch-action: none; }
-  .viewer-controls { position: absolute; top: 16px; right: 16px; display: flex; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 8px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(30,58,95,.08); }
-  .viewer-controls button { display: grid; width: 42px; height: 42px; place-items: center; color: var(--color-navy); }
-  .viewer-controls button + button { border-left: 1px solid var(--color-border); }
-  .viewer-controls button:hover { background: #f1f5f9; }
-  .viewer-badge { position: absolute; top: 17px; left: 17px; display: flex; align-items: center; gap: 7px; border-radius: 4px; background: rgba(30,58,95,.92); padding: 8px 10px; color: white; font-size: 10px; font-weight: 800; text-transform: uppercase; }
-  .viewer-badge span { width: 7px; height: 7px; border-radius: 50%; background: var(--color-orange); }
-  .viewer-hint { position: absolute; bottom: 16px; left: 16px; display: flex; align-items: center; gap: 7px; border-radius: 4px; background: rgba(255,255,255,.92); padding: 8px 10px; color: var(--color-slate); font-size: 11px; font-weight: 700; }
-  .viewer-scene-loading { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 10px; background: #f1f5f8; color: var(--color-navy); font-size: 12px; font-weight: 750; }
-  .viewer-scene-loading span { width: 11px; height: 11px; border: 2px solid #cbd5e1; border-top-color: var(--color-orange); border-radius: 50%; animation: viewer-spin .8s linear infinite; }
-  .viewer-loading { display: flex; align-items: center; gap: 10px; white-space: nowrap; border-radius: 4px; background: white; padding: 11px 14px; color: var(--color-navy); font-size: 12px; font-weight: 750; box-shadow: 0 8px 28px rgba(30,58,95,.12); }
-  .viewer-loading span, .viewer-module-placeholder div span { width: 9px; height: 9px; border: 2px solid #cbd5e1; border-top-color: var(--color-orange); border-radius: 50%; animation: viewer-spin .8s linear infinite; }
-  .viewer-module-placeholder img, .viewer-fallback img { width: 100%; height: 100%; object-fit: cover; opacity: .28; }
-  .viewer-module-placeholder div, .viewer-fallback > div { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--color-navy); font-size: 13px; font-weight: 750; }
-  .viewer-fallback > div { flex-direction: column; padding: 24px; text-align: center; }
-  .viewer-fallback > div span { max-width: 420px; color: var(--color-slate); font-size: 12px; font-weight: 500; }
   .size-guide-details { border: 1px solid var(--color-border); border-top: 0; background: white; }
   .size-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--color-border); }
   .size-metrics > div { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; padding: 18px; }
@@ -181,11 +164,9 @@
   .advice-points p { display: grid; gap: 4px; border-top: 1px solid rgba(255,255,255,.22); padding-top: 15px; }
   .advice-points strong { font-size: 14px; }
   .advice-points span { color: #cbd5e1; font-size: 13px; line-height: 1.6; }
-  @keyframes viewer-spin { to { transform: rotate(360deg); } }
 }
 
 @media (min-width: 768px) {
-  .storage-viewer, .viewer-module-placeholder, .viewer-fallback { height: 470px; }
   .size-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .size-metrics > div { padding: 22px; }
   .size-metrics > div:not(:last-child) { border-right: 1px solid var(--color-border); }
@@ -200,7 +181,6 @@
   .size-guide-tabs { grid-template-columns: 1fr; }
   .size-guide-tabs button { grid-template-columns: auto 1fr auto; min-height: 68px; }
   .selector-measure { display: block; }
-  .storage-viewer, .viewer-module-placeholder, .viewer-fallback { height: 480px; }
   .stage-heading { padding-inline: 30px; }
 }
 
@@ -216,19 +196,11 @@
   .stage-heading { align-items: start; padding: 17px 18px; }
   .stage-heading h2 { font-size: 24px; }
   .stage-dimension { max-width: 132px; }
-  .storage-viewer, .viewer-module-placeholder, .viewer-fallback { height: 340px; }
-  .viewer-controls { top: auto; right: 12px; bottom: 12px; }
-  .viewer-hint { display: none; }
-  .viewer-badge { top: 12px; left: 12px; }
   .size-metrics > div { padding: 15px 13px; }
   .size-metrics strong { font-size: 12px; overflow-wrap: anywhere; }
   .capacity-layout { padding: 28px 20px; }
   .suitable-items ul { grid-template-columns: 1fr; }
   .size-guide-advice h2 { font-size: 28px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .viewer-loading span, .viewer-module-placeholder div span { animation: none; }
 }
 
 @layer components {
@@ -918,7 +890,7 @@
 .payment-submission-status { display: inline-flex; align-items: center; border-radius: 999px; background: #fef3c7; padding: 5px 9px; color: #854d0e; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .payment-submission-status.is-verified { background: #dcfce7; color: #166534; }
 .payment-submission-status.is-rejected { background: #fee2e2; color: #991b1b; }
-.payment-rejection-reason { display: block; max-width: 250px; margin-top: 5px; color: #991b1b !important; white-space: normal; }
+.payment-rejection-reason { display: block; max-width: 250px; margin-top: 5px; color: var(--workspace-error, #991b1b); white-space: normal; }
 .payment-modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; overflow-y: auto; background: rgba(15, 23, 42, .56); padding: 22px; }
 .payment-modal { width: min(100%, 540px); max-height: calc(100vh - 44px); overflow-y: auto; border: 1px solid var(--color-border); border-radius: 12px; background: white; padding: 24px; box-shadow: 0 24px 70px rgba(15, 23, 42, .24); }
 .payment-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--color-border); padding-bottom: 16px; }
@@ -954,33 +926,10 @@
 .vnpay-return-card dt { color: var(--color-slate); }
 .vnpay-return-card dd { color: var(--color-navy); font-weight: 750; overflow-wrap: anywhere; text-align: right; }
 .vnpay-return-card .button-primary { display: inline-flex; align-items: center; gap: 7px; margin-top: 4px; text-decoration: none; }
-.manager-payment-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
-.manager-payment-summary > span { display: grid; gap: 5px; border: 1px solid var(--color-border); border-radius: 8px; background: white; padding: 15px; color: var(--color-navy); font-size: 24px; font-weight: 800; }
-.manager-payment-summary small { color: var(--color-slate); font-size: 11px; font-weight: 650; }
-.manager-filter-bar { display: flex; align-items: end; gap: 10px; margin-bottom: 18px; border: 1px solid var(--color-border); border-radius: 8px; background: white; padding: 14px; }
-.manager-filter-bar .field-label { min-width: 175px; }
-.manager-payment-search { display: flex; min-height: 46px; flex: 1; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: 6px; padding-inline: 11px; color: var(--color-slate); }
-.manager-payment-search input { width: 100%; min-width: 0; border: 0; outline: 0; font-size: 13px; }
-.manager-submission-list { display: grid; gap: 13px; }
-.manager-submission-card { display: grid; gap: 15px; border: 1px solid var(--color-border); border-radius: 9px; background: white; padding: 18px; }
-.manager-submission-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.manager-submission-heading h2 { margin-top: 8px; color: var(--color-navy); font-size: 18px; font-weight: 800; }
-.manager-submission-heading small { display: block; margin-top: 4px; color: var(--color-slate); font-size: 11px; }
-.manager-submission-heading > strong { color: var(--color-navy); font-size: 18px; white-space: nowrap; }
-.manager-submission-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-.manager-submission-facts dt { color: var(--color-slate); font-size: 10px; font-weight: 800; text-transform: uppercase; }
-.manager-submission-facts dd { margin-top: 4px; color: var(--color-ink); font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
-.manager-submission-facts small { display: block; margin-top: 3px; color: var(--color-slate); font-size: 11px; overflow-wrap: anywhere; }
-.manager-submission-note { border-left: 3px solid var(--color-border); padding-left: 10px; color: var(--color-slate); font-size: 12px; }
-.manager-submission-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .manager-notice { margin-block: 10px; border-radius: 6px; background: #eff6ff; padding: 10px 12px; color: #1e40af; font-size: 12px; line-height: 1.5; }
 .manager-notice.is-ok { background: #dcfce7; color: #166534; }
 .manager-notice.is-error { background: #fee2e2; color: #991b1b; }
-.manager-review-modal { width: min(100%, 500px); }
-.manager-review-amount { margin-top: 16px; color: var(--color-slate); font-size: 13px; line-height: 1.6; }
-.manager-review-amount strong { color: var(--color-navy); }
-.manager-review-form { display: grid; gap: 14px; margin-top: 16px; }
-@media (max-width: 680px) { .payment-modal-backdrop { align-items: start; padding: 12px; } .payment-modal { max-height: calc(100vh - 24px); padding: 17px; } .payment-invoice-summary, .manager-payment-summary { grid-template-columns: 1fr; } .manager-filter-bar { align-items: stretch; flex-direction: column; } .manager-filter-bar .field-label { min-width: 0; } .manager-submission-facts { grid-template-columns: 1fr; } .manager-submission-actions > button { flex: 1; justify-content: center; } }
+@media (max-width: 680px) { .payment-modal-backdrop { align-items: start; padding: 12px; } .payment-modal { max-height: calc(100vh - 24px); padding: 17px; } .payment-invoice-summary { grid-template-columns: 1fr; } }
 
 .staff-shell { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); background: #f5f7fb; color: var(--color-ink); }
 .staff-shell-loading { min-height: 100vh; display: grid; place-items: center; background: #f5f7fb; color: var(--color-slate); }

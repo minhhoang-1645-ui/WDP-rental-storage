@@ -1,4 +1,4 @@
-import { ManagerReportRelease } from '../pages/manager/ManagerReportRelease';
+import { ManagerStoredItemsPage } from '../pages/manager/ManagerStoredItemsPage';
 import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
 import { OverstayPage } from '../pages/manager/OverstayPage';
@@ -19,8 +19,6 @@ import { StorageDetailPage } from "../pages/public/StorageDetailPage";
 import { StoragePage } from "../pages/public/StoragePage";
 import { ManagerInquiryDetailPage } from "../pages/manager/ManagerInquiryDetailPage";
 import { ManagerInquiriesPage } from "../pages/manager/ManagerInquiriesPage";
-import { ManagerPaymentSubmissionsPage } from "../pages/manager/ManagerPaymentSubmissionsPage";
-import { ManagerOnlinePaymentReconciliationsPage } from "../pages/manager/ManagerOnlinePaymentReconciliationsPage";
 import { ManagerLayout } from "../pages/manager/ManagerLayout";
 import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
@@ -28,7 +26,7 @@ import { ManagerCustomersPage } from "../pages/manager/ManagerCustomersPage";
 import { ManagerCustomerDetailPage } from "../pages/manager/ManagerCustomerDetailPage";
 import { ManagerReservationsPage } from "../pages/manager/ManagerReservationsPage";
 import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservationDetailPage";
-import { ManagerReportsPage } from "../pages/manager/ManagerReportsPage";
+import { ManagerReportsPage, ManagerReportsRedirect } from "../pages/manager/ManagerReportsPage";
 import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
 import { ManagerAssignmentsPage } from "../pages/manager/ManagerAssignmentsPage";
 import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPage';
@@ -81,9 +79,9 @@ function operationalRoutes(base: string) {
       <Route path="rental-records" element={<ManagerSectionPage section="rental-records" />} />
       <Route path="facility" element={<ManagerSectionPage section="facility" />} />
       <Route path="notifications" element={<ActivityInboxPage />} />
-      <Route path="payment-submissions" element={<ManagerPaymentSubmissionsPage />} />
+      <Route path="payment-submissions/*" element={<Navigate to={`${base}/finance`} replace />} />
       <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
-      <Route path="online-payment-reconciliations" element={<ManagerOnlinePaymentReconciliationsPage />} />
+      <Route path="online-payment-reconciliations/*" element={<Navigate to={`${base}/finance`} replace />} />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
@@ -95,7 +93,7 @@ function operationalRoutes(base: string) {
       <Route path="customers" element={<ManagerCustomersPage />} />
       <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
       <Route path="reports" element={<ManagerReportsPage />} />
-      <Route path="reports/details" element={<ManagerReportRelease />} />
+      <Route path="reports/details" element={<ManagerReportsRedirect />} />
       <Route path="operations/:resource" element={<ManagerResourcePage />} />
       <Route
         path="operations/:resource/:id"
@@ -212,7 +210,7 @@ export function AppRouter() {
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
-          <Route path="stored-items" element={<OperationalStoredItemsPage role="MANAGER" />} />
+          <Route path="stored-items" element={<ManagerStoredItemsPage />} />
           <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
           <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
           <Route path="overstays" element={<OverstayPage />} />

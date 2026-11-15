@@ -56,4 +56,4 @@ Luồng chính: mở Trạng thái tài khoản → tìm/lọc người dùng �
 
 Ngoại lệ: không vô hiệu hóa chính tài khoản đang dùng; không cho gửi lặp khi đang lưu; lỗi API hiển thị để thử lại. Hồ sơ nghiệp vụ của tài khoản vẫn được giữ. Trang này không có thao tác tạo tài khoản.
 
-Xem trạng thái đáp ứng và các giới hạn cụ thể trong [bảng đối chiếu](./MANAGER_ADMIN_REQUIREMENTS_AUDIT.md). Có đủ 7 mục điều hướng không đồng nghĩa với 7 use case đã hoàn tất; UC-A02, UC-A04 và UC-A06 còn thiếu khả năng ở BE/database.
+Trong lần đối chiếu 7 mục điều hướng, UC-A02, UC-A04 và UC-A06 còn thiếu khả năng ở BE/database.

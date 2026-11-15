@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { InternalPagination, type InternalPaginationProps } from './InternalPagination';
 import { safeSessionStorage } from '../../services/browser-storage';
 import { staffTaskPageSizes } from '../../utils/internal-pagination';
+import { TableSkeleton } from '../LoadingSkeleton';
 
 export function StaffTaskPagination(props: InternalPaginationProps) {
   return <InternalPagination {...props} pageSizes={staffTaskPageSizes} />;
@@ -31,30 +32,32 @@ export function TablePopover({ name, trigger, children }: { name: string; trigge
   </>;
 }
 
-export function StaffRowActions({ to, code, primary, onOpen }: {
-  to: string; code: string; primary?: string; onOpen?: () => void;
+export function StaffRowActions({ to, code, primary, onOpen, detailLabel = 'Xem chi tiết' }: {
+  to: string; code: string; primary?: string; onOpen?: () => void; detailLabel?: string;
 }) {
   return <div className="staff-table-actions">
     {primary && <Link className="button-secondary" to={to} onClick={onOpen}>{primary}</Link>}
     <TablePopover name={`Thao tác ${code}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
-      <Link to={to} onClick={onOpen}>Xem chi tiết</Link>
+      <Link to={to} onClick={onOpen}>{detailLabel}</Link>
     </TablePopover>
   </div>;
 }
 
 export type StaffColumn<T> = {
-  key: string; label: string; header?: ReactNode; cell: (row: T) => ReactNode; optional?: boolean;
+  key: string; label: string; header?: ReactNode; cell: (row: T) => ReactNode; optional?: boolean; numeric?: boolean;
   sort?: { direction: 'ascending' | 'descending' | 'none'; toggle: () => void };
 };
 
-export function StaffTaskTable<T>({ title, columns, items, rowKey, emphasized, selected }: {
+export function StaffTaskTable<T>({ title, columns, items, rowKey, emphasized, selected, toolbar, hideTable = false, loadingRows, preferenceScope = 'staff' }: {
   title: string; columns: StaffColumn<T>[]; items: T[]; rowKey: (row: T) => string; emphasized?: (row: T) => boolean; selected?: (row: T) => boolean;
+  toolbar?: ReactNode; hideTable?: boolean; loadingRows?: number; preferenceScope?: string;
 }) {
-  const preference = `nestbox-staff-table-columns:${title}`;
+  const preference = `nestbox-${preferenceScope}-table-columns:${title}`;
   const [hidden, setHidden] = useState(() => (safeSessionStorage.getItem(preference) ?? '').split(',').filter(Boolean));
   const visible = columns.filter(column => !column.optional || !hidden.includes(column.key));
+  const showTable = !hideTable && loadingRows === undefined;
   return <div className="staff-table">
-    <div className="staff-table-options"><TablePopover name="Hiển thị cột" trigger={<><SlidersHorizontal size={15} aria-hidden="true" /> Cột</>}>
+    <div className="staff-table-options">{toolbar}{showTable && columns.some(column => column.optional) && <TablePopover name="Hiển thị cột" trigger={<><SlidersHorizontal size={15} aria-hidden="true" /> Cột</>}>
       {columns.filter(column => column.optional).map(column => <label key={column.key}>
         <input type="checkbox" checked={!hidden.includes(column.key)} onChange={event => {
           const checked = event.target.checked;
@@ -63,16 +66,17 @@ export function StaffTaskTable<T>({ title, columns, items, rowKey, emphasized, s
           setHidden(next);
         }} />{column.label}
       </label>)}
-    </TablePopover></div>
-    <div className="manager-table-wrap staff-table-scroll" tabIndex={0} role="region" aria-label={title}>
+    </TablePopover>}</div>
+    {loadingRows !== undefined && <TableSkeleton columns={visible} rows={loadingRows} pagination />}
+    {showTable && <div className="manager-table-wrap staff-table-scroll" tabIndex={0} role="region" aria-label={title}>
       <table className="manager-table" aria-label={title}>
-        <thead><tr>{visible.map(column => <th key={column.key} scope="col" aria-sort={column.sort?.direction}>
+        <thead><tr>{visible.map(column => <th key={column.key} scope="col" className={column.numeric ? 'table-number' : undefined} aria-sort={column.sort?.direction}>
           {column.sort ? <button type="button" className="staff-table-sort" onClick={column.sort.toggle}>{column.label} <span aria-hidden="true">{column.sort.direction === 'ascending' ? '↑' : column.sort.direction === 'descending' ? '↓' : '↕'}</span></button> : column.header ?? column.label}
         </th>)}</tr></thead>
         <tbody>{items.map(row => <tr key={rowKey(row)} data-selected={selected?.(row) || undefined} className={emphasized?.(row) ? 'is-priority' : undefined}>
-          {visible.map(column => <td key={column.key}>{column.cell(row)}</td>)}
+          {visible.map(column => <td key={column.key} className={column.numeric ? 'table-number' : undefined}>{column.cell(row)}</td>)}
         </tr>)}</tbody>
       </table>
-    </div>
+    </div>}
   </div>;
 }

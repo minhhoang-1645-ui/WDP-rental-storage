@@ -1,4 +1,5 @@
 import { RecordIdentity } from '../../components/workspace/RecordIdentity';
+import { TableSkeleton } from '../../components/LoadingSkeleton';
 import { RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -19,6 +20,7 @@ import {
   LoadState,
   PageHeader,
   Pagination,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import {
@@ -48,7 +50,7 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
   if (status) query.set('status', status);
   if (scheduledDay) query.set('date', scheduledDay);
   if (mine) query.set('assignedToMe', 'true');
-  const data = useInternalListResource<Row>(`/staff/${resource}${serverPaged ? '?' + query : ''}`, user?.id ?? '', serverPaged);
+  const data = useInternalListResource<Row>(`/staff/${resource}${serverPaged ? '?' + query : ''}`, user?.id ?? '', serverPaged, true);
   const filtered = (data.data?.items ?? []).filter(
     (row) =>
       (!status || (row.status ?? row.rentalState) === status) &&
@@ -88,11 +90,12 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
         <button
           className="button-secondary"
           onClick={data.refresh}
-          disabled={data.loading}
+          disabled={data.loading || data.refreshing}
         >
           <RefreshCw size={16} />
           Làm mới
         </button>
+        <RefreshStatus active={data.refreshing} />
       </PageHeader>
       <div className="portal-toolbar">
         <label className="field-label portal-search">
@@ -145,6 +148,7 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<TableSkeleton columns={['record', 'customer', ...(canAssign ? ['assignee'] : []), 'status', 'date', 'actions']} rows={Math.min(limit, 6)} pagination />}
       />
       {data.data && (
         <>

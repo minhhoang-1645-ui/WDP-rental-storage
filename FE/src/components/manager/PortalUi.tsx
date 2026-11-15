@@ -1,7 +1,7 @@
 import { EntitySelect } from '../EntitySelect';
 import { InternalPagination } from '../workspace/InternalPagination';
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Search, X } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import { LoadingSkeleton, type SkeletonLayout } from "../LoadingSkeleton";
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
@@ -44,15 +44,15 @@ export function LoadState({
   error,
   retry,
   layout,
+  placeholder,
 }: {
   loading: boolean;
   error: string;
   retry: () => void;
   layout?: SkeletonLayout;
+  placeholder?: ReactNode;
 }) {
-  return loading ? (
-    <LoadingSkeleton layout={layout} />
-  ) : error ? (
+  return loading ? placeholder ?? <LoadingSkeleton layout={layout} /> : error ? (
     <div className="booking-alert is-error" role="alert">
       {error}
       <button className="button-secondary" onClick={retry}>
@@ -60,6 +60,12 @@ export function LoadState({
       </button>
     </div>
   ) : null;
+}
+export function RefreshStatus({ active }: { active: boolean }) {
+  if (!active) return null;
+  return <span className="workspace-refresh-status" role="status">
+    <RefreshCw size={14} aria-hidden="true" />Đang cập nhật…
+  </span>;
 }
 export function Empty({
   title = "Không tìm thấy dữ liệu",

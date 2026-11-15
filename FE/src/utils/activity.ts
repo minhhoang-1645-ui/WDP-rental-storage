@@ -59,11 +59,10 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
     : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['damage-claims', 'payment-submissions', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements', 'online-payment-reconciliations'];
+      : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';
   names['damage-claims'] = 'Sự cố hàng hóa';
-  names['online-payment-reconciliations'] = 'Đối soát VNPay';
   return kinds.map(kind => ({ kind, title: names[kind], path: role === 'STAFF' && kind === 'damage-claims' ? '/staff/management/damage-claims' : role === 'CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${role.toLowerCase()}/${kind}`, array: role === 'CUSTOMER' && kind === 'reservations' }));
 }
 const customerStates: Record<string, string> = {
@@ -78,7 +77,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     const get = (path: string) => activityText(row, path), kind = source.kind, status = get('status') || get('accountStatus'), id = get('id');
     if (!id) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
-    const code = ['claimCode', 'reconciliationCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
+    const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
     let title = source.title, message = '', action = false, priority = 2;
     let web = `/${role.toLowerCase()}/${kind}/${encodeURIComponent(id)}`, mobile = web;
     if (role === 'CUSTOMER') {
@@ -135,9 +134,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       web = `/admin/users?search=${encodeURIComponent(get('email') || get('fullName'))}`; mobile = web;
     } else {
       if (role === 'MANAGER') {
-        const simple = ['reservations', 'inquiries', 'payment-submissions'].includes(kind);
+        const simple = ['reservations', 'inquiries'].includes(kind);
         web = simple ? `/manager/${kind}/${encodeURIComponent(id)}` : `/manager/operations/${kind}/${encodeURIComponent(id)}`;
-        if (kind === 'payment-submissions') web = '/manager/payment-submissions';
         const assignment = ['support-requests', 'maintenance', 'stock-movements'].includes(kind);
         if (assignment && (kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
@@ -145,12 +143,10 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       } else action = staffNeedsAction(kind, row, userId);
       title = `${source.title} · ${action ? 'Cần xử lý' : 'Theo dõi tiến độ'}`;
       message = workflowGuide(kind, status, role === 'STAFF' ? 'staff' : 'internal') || (action ? 'Mở hồ sơ, đối chiếu thông tin và thực hiện thao tác trong phạm vi của bạn.' : 'Mở hồ sơ để xem kết quả và người phụ trách hiện tại.');
-      if (kind === 'payment-submissions') message = status === 'PENDING_VERIFICATION' ? 'Khách đã gửi thông báo chuyển khoản. Đối chiếu tiền thực nhận trước khi xác nhận.' : 'Xem kết quả đối chiếu thông báo chuyển khoản.';
       if (role === 'MANAGER' && awaitingAssignment(kind, row)) message = 'Chưa có nhân viên phụ trách. Mở Phân công nhân viên để chọn người xử lý và theo dõi tiến độ.';
       if (role === 'MANAGER' && assignmentNeedsAttention(kind, row) && !awaitingAssignment(kind, row)) message = 'Tài khoản nhân viên phụ trách đã bị vô hiệu hóa. Chọn người thay thế để hồ sơ tiếp tục được xử lý.';
       if (role === 'MANAGER' && kind === 'maintenance' && status === 'AWAITING_VERIFICATION') { title = 'Bảo trì · Chờ quản lý nghiệm thu'; message = 'Kiểm tra hiện trạng và kết quả nhân viên đã gửi, rồi nghiệm thu hoặc yêu cầu làm tiếp.'; }
       if (role === 'MANAGER' && kind === 'support-requests' && status === 'ESCALATED') { title = 'Hỗ trợ · Cần quản lý quyết định'; message = 'Nhân viên đã chuyển hồ sơ lên. Đọc nội dung, lý do chuyển và ghi kết quả xử lý cho khách.'; }
-      if (role === 'MANAGER' && kind === 'online-payment-reconciliations') { web = '/manager/online-payment-reconciliations'; mobile = web; title = `Đối soát VNPay · ${status === 'REFUND_REQUIRED' ? 'Cần theo dõi hoàn tiền' : status === 'PENDING_REVIEW' ? 'Cần kiểm tra' : 'Đã xử lý'}`; message = 'Đối chiếu giao dịch thực nhận trước khi quyết định. Chỉ ghi đã hoàn sau khi thực sự hoàn tiền, có tham chiếu.'; }
       if (role === 'MANAGER' && kind === 'invoices') { title = action ? 'Hóa đơn · Quá hạn thanh toán' : 'Hóa đơn · Đang chờ thanh toán'; message = action ? 'Kiểm tra số dư, hạn thanh toán và lịch sử thu tiền trước khi liên hệ khách hàng.' : 'Theo dõi hóa đơn khách chưa thanh toán. Nếu thu tại cơ sở, chỉ ghi nhận sau khi thực tế đã nhận tiền.'; }
       if (role === 'STAFF' && awaitingAssignment(kind, row)) { title = `${source.title} · Chờ quản lý phân công`; message = 'Hồ sơ đã được tiếp nhận và đang chờ quản lý giao người phụ trách. Bạn có thể theo dõi; chưa thực hiện thay nhân viên được giao.'; }
       if (role === 'STAFF' && !action && get('assignedStaff.id') && !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(status)) message = `Nhân viên phụ trách: ${get('assignedStaff.fullName') || 'đã được phân công'}. Bạn có thể theo dõi trạng thái; thao tác thực hiện dành cho người được giao.`;

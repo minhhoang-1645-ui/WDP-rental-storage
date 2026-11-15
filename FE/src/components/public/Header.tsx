@@ -1,20 +1,20 @@
-import { LogIn, Menu, Warehouse, X } from "lucide-react";
+import { LogIn, Menu, Moon, Sun, Warehouse, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import { Container } from "../ui/Container";
 import { ActivityBell } from '../../activity/ActivityCenter';
+import type { WorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 
 const links = [
   ["Kho lưu trữ", "/storage"],
   ["So sánh kho", "/size-guide"],
-  ["Tiện ích", "/#amenities"],
   ["Cách thuê", "/#how-it-works"],
   ["Cơ sở", "/#facility"],
 ];
 
-export function Header() {
+export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceTheme; toggleTheme: () => void } }) {
   const [open, setOpen] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -55,7 +55,7 @@ export function Header() {
           <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
             <Warehouse size={19} />
           </span>
-          <span className="public-wordmark">NestBox <em>Storage</em><small>Không gian vừa với bạn</small></span>
+          <span className="public-wordmark">NestBox <em>Storage</em>{!landingTheme && <small>Không gian vừa với bạn</small>}</span>
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"
@@ -79,6 +79,11 @@ export function Header() {
             {actionLabel}
           </Link>
         </div>
+        {landingTheme && <button type="button" className="icon-button landing-theme-toggle"
+          aria-label={landingTheme.theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          onClick={landingTheme.toggleTheme}>
+          {landingTheme.theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+        </button>}
         {user && <div className="lg:hidden"><ActivityBell /></div>}
         <button
           ref={menuTrigger}

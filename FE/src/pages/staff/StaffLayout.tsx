@@ -1,4 +1,4 @@
-import { Bell, Boxes, ClipboardList, Warehouse } from 'lucide-react';
+import { Boxes, ClipboardList, Warehouse } from 'lucide-react';
 import { InternalPortalLayout, type InternalNavItem } from '../../components/layout/InternalPortalLayout';
 import { staffNavigation } from '../../components/manager/operations-navigation';
 import { OperationsWorkspace } from '../../components/manager/operations-workspace';
@@ -32,7 +32,6 @@ const menu: InternalNavItem[] = [
   { to: '/staff/stored-items', label: 'Hàng đang lưu', icon: Boxes, group: 'Hàng hóa' },
   { to: '/staff/assigned-units', label: 'Kho tôi phụ trách', icon: Warehouse, group: 'Hàng hóa' },
   ...section('Vận hành kho', { rentals: 'Kho đang thuê', renewals: 'Gia hạn', transfers: 'Chuyển kho', returns: 'Trả kho', 'support-requests': 'Hỗ trợ khách hàng', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa' }),
-  { to: '/staff/notifications', label: 'Thông báo', icon: Bell, group: 'Tài khoản' },
 ];
 
 export function StaffLayout() {

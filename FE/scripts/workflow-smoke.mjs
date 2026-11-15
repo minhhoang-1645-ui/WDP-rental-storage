@@ -303,10 +303,7 @@ checks.push(
   "Refreshes follow related resources without crossing role boundaries",
 );
 for (const name of [
-  "activity",
   "workflow-guide",
-  "work-queue",
-  "operation-access",
   "payment-state",
 ])
   assert.equal(
@@ -318,7 +315,7 @@ for (const name of [
     `${name}: web/mobile drift`,
   );
 checks.push(
-  "Web and mobile use identical workflow, notification and permission rules",
+  "Shared workflow guidance and payment-state rules match across Web and Mobile",
 );
 // The latest merge intentionally gives web/mobile different explanatory copy.
 // Compare handover rules, rather than requiring those messages to be identical.
@@ -361,14 +358,17 @@ for (const kind of ['support-requests', 'maintenance', 'stock-movements']) {
   assert(assignmentNeedsAttention(kind, row));
   assert(buildActivity('MANAGER', 'manager', { [kind]: [row] })[0].web.startsWith('/manager/assignments'));
 }
-assert(buildActivity('MANAGER', 'manager', { 'online-payment-reconciliations': [{ id: 'late', status: 'REFUND_REQUIRED' }] })[0].action);
+assert.deepEqual(buildActivity('MANAGER', 'manager', {
+  'payment-submissions': [{ id: 'bank', status: 'PENDING_VERIFICATION' }],
+  'online-payment-reconciliations': [{ id: 'late', status: 'REFUND_REQUIRED' }],
+}), []);
 assert(matchesSource('/staff/returns/return', ['/staff/stock-movements/movement/complete']));
 const { resolveApiBase } = await import(await moduleUrl(new URL('../../mobile/src/services/api-base.ts', import.meta.url)));
 assert.equal(resolveApiBase({ configured: 'https://api.example.org/api/', development: true, hostUri: '192.168.1.9:8081' }), 'https://api.example.org/api');
 assert.equal(resolveApiBase({ development: true, hostUri: '192.168.1.9:8081', platform: 'android' }), 'http://192.168.1.9:3000/api');
 assert.equal(resolveApiBase({ development: true, webHost: '127.0.0.1' }), 'http://127.0.0.1:3000/api');
 assert.equal(resolveApiBase({ development: false, hostUri: '192.168.1.9:8081', platform: 'android' }), 'http://10.0.2.2:3000/api');
-checks.push('Manager reviews are not Staff tasks; disabled assignees need replacement; late-payment follow-up and stock→return refresh; mobile follows current host without overriding explicit configuration');
+checks.push('Manager reviews are not Staff tasks; disabled assignees need replacement; retired Manager Web payment queues and stock→return refresh; mobile follows current host without overriding explicit configuration');
 const { defaultServiceSelection, serviceEstimatedTotal, serviceSelectionIssue } = await import(await moduleUrl(new URL('../src/utils/service-period.ts', import.meta.url)));
 const { serviceDisplayName } = await import(await moduleUrl(new URL('../src/utils/service-labels.ts', import.meta.url)));
 const shelfService = { id:'shelf',code:'SHELF_STANDARD',name:'Storage Shelf',kind:'RENTAL',billingUnit:'MONTH',unitPrice:120000,isActive:true };
@@ -391,7 +391,7 @@ assert.match(documentText('acceptedAt','2026-10-29T01:00:00Z'),/8:00|08:00/);
 checks.push('Equipment defaults, subtotals, monthly end-date boundaries, Vietnamese labels, preserved custom names and matching web/mobile policies');
 const rolePolicy = await import(await moduleUrl(new URL('../src/utils/operation-access.ts',import.meta.url)));
 const sections = await import(await moduleUrl(new URL('../src/utils/manager-sections.ts',import.meta.url)));
-assert.equal(sections.managerPrimaryMenu.length,7);
+assert.equal(sections.managerPrimaryMenu.length,8);
 for(const page of rolePolicy.managerPages) assert(rolePolicy.isManagerDestination(page));
 assert(!rolePolicy.isManagerDestination('invented-module'));
 assert.equal(rolePolicy.staffWorkflows.length,9);
@@ -400,8 +400,12 @@ for(const resource of rolePolicy.managerResources) for(const role of ['STAFF','M
 for(const role of ['STAFF','MANAGER','ADMIN','CUSTOMER']) assert(!rolePolicy.canOperateResource(role,'invented-module'));
 for(const section of Object.values(sections.managerSections)) for(const item of section.items) { assert(item.web.startsWith('/manager/'));assert(item.mobile.startsWith('/manager/')); }
 assert.equal(actionCountForPath([{id:'same',action:true,web:'/manager/operations/invoices/a'}],['/manager','/manager/operations/invoices']),1);
-for(const file of ['manager-sections','manager-review-access']) assert.equal(await readFile(new URL('../src/utils/'+file+'.ts',import.meta.url),'utf8'),await readFile(new URL('../../mobile/src/utils/'+file+'.ts',import.meta.url),'utf8'));
-checks.push('Explicit capability allowlists: nine Staff operations, seven Manager groups, no unknown resource grants, matching web/mobile policy and grouped badges without double counts');
+assert.equal(await readFile(new URL('../src/utils/manager-review-access.ts',import.meta.url),'utf8'),await readFile(new URL('../../mobile/src/utils/manager-review-access.ts',import.meta.url),'utf8'));
+for (const resource of ['payment-submissions', 'online-payment-reconciliations']) {
+  assert(!rolePolicy.isManagerDestination(resource));
+  assert(!sections.managerSections.finance.items.some(item => item.web === '/manager/' + resource));
+}
+checks.push('Explicit capability allowlists: nine Staff operations, Manager groups, retired Web finance links and grouped badges without double counts');
 const { quotePaymentSummary, quotePeriod } = await import(await moduleUrl(new URL('../src/utils/quote-payment-summary.ts',import.meta.url)));
 const lockerQuote={paymentPlan:'PAY_MONTHLY',billingMode:'MONTHLY',termMonths:3,quotedTotalAmount:1950000,estimatedInitialAmountDue:650000,addOnTotalAmount:0,initialPaymentBreakdown:{rentalAmount:650000,depositAmount:0,remainingAmount:1300000}};
 assert.deepEqual(quotePaymentSummary(lockerQuote),{first:650000,total:1950000,remaining:1300000,monthly:true,laterCount:2,laterEach:650000,plan:'Trả theo tháng'});

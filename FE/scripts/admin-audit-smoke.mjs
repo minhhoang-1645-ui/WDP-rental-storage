@@ -1,11 +1,14 @@
 // Browser-only regression; ALL fetch/xhr traffic is mocked, no shared database writes.
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { launchTestBrowser } from './browser-test.mjs';
 
 const browser = await launchTestBrowser(), base = process.env.WDP_FE_URL || 'http://localhost:5173';
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const queries = [], mutations = [], errors = [];
 let unavailable = false;
+let hasNewEvents = false;
+const baseEvent = { actorName: 'Fixture Admin', actorEmail: 'admin@example.test', actorRole: 'ADMIN', createdAt: '2026-11-03T01:00:00.000Z', outcome: 'SUCCESS' };
 const users = Array.from({ length: 25 }, (_, index) => ({
   id: index === 0 ? 'admin' : `user-${index}`,
   fullName: index === 0 ? 'Fixture Admin' : `Fixture User ${index}`,
@@ -51,15 +54,25 @@ await context.route('**/*', async route => {
     queries.push(Object.fromEntries(url.searchParams));
     if (unavailable) return route.fulfill({ status: 503, json: { message: 'Chưa đọc được nhật ký. Kiểm tra kết nối DB và migration nhật ký Admin.' } });
     const login = url.searchParams.get('category') === 'LOGIN';
-    const baseEvent = { actorName: 'Fixture Admin', actorEmail: 'admin@example.test', actorRole: 'ADMIN', createdAt: '2026-11-03T01:00:00.000Z', outcome: 'SUCCESS' };
     const items = login ? [
+      ...(hasNewEvents ? [{ ...baseEvent, id: 'new-session', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Newest Customer', actorRole: 'CUSTOMER', createdAt: '2026-11-04T18:10:00.000Z' }] : []),
       { ...baseEvent, id: 'logout', category: 'ACTIVITY', action: 'AUTH_LOGOUT', resource: 'auth' },
       { ...baseEvent, id: 'login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth' },
       { ...baseEvent, id: 'attempt', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: null, actorEmail: 'attempt@example.test', actorRole: null, outcome: 'FAILURE' },
-    ] : [{ ...baseEvent, id: 'status', category: 'ACTIVITY', action: 'STATUS', resource: 'users' }];
-    const outcome = url.searchParams.get('outcome');
-    return route.fulfill({ json: { page: Number(url.searchParams.get('page') || 1), limit: 20, total: 21,
-      items: items.filter(item => !outcome || item.outcome === outcome) } });
+      { ...baseEvent, id: 'staff-login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Fixture Staff', actorRole: 'STAFF' },
+      { ...baseEvent, id: 'manager-login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Fixture Manager', actorRole: 'MANAGER' },
+    ] : [
+      ...(hasNewEvents ? [{ ...baseEvent, id: 'new-stock', category: 'ACTIVITY', action: 'COMPLETE', resource: 'stock-movements', resourceId: 'stock-1', actorName: 'Newest Staff', actorRole: 'STAFF' }] : []),
+      { ...baseEvent, id: 'stock-assign', category: 'ACTIVITY', action: 'ASSIGN', resource: 'stock-movements', resourceId: 'stock-1', actorName: 'Fixture Manager', actorRole: 'MANAGER' },
+      { ...baseEvent, id: 'support-start', category: 'ACTIVITY', action: 'START', resource: 'support-requests', actorName: 'Fixture Staff', actorRole: 'STAFF' },
+      { ...baseEvent, id: 'status', category: 'ACTIVITY', action: 'STATUS', resource: 'users', resourceId: 'admin' },
+      { ...baseEvent, id: 'unsupported', category: 'ACTIVITY', action: 'UNKNOWN_FIXTURE_ACTION', resource: 'returns', outcome: 'FAILURE' },
+    ];
+    const role = url.searchParams.get('role');
+    const search = url.searchParams.get('search')?.toLowerCase();
+    const limit = Number(url.searchParams.get('limit') || 20);
+    return route.fulfill({ json: { page: Number(url.searchParams.get('page') || 1), limit, total: 21,
+      items: items.filter(item => (!role || item.actorRole === role) && (!search || JSON.stringify(item).toLowerCase().includes(search))).slice(0, limit) } });
   }
   return route.fulfill({ json: { page: 1, limit: 20, total: 0, items: [] } });
 });
@@ -69,9 +82,9 @@ try {
   await page.getByRole('heading', { name: 'Lịch sử đăng nhập', exact: true }).waitFor();
   await page.getByText('attempt@example.test', { exact: true }).waitFor();
   const auditTable = page.getByRole('table');
-  await auditTable.getByText('Đăng nhập', { exact: true }).waitFor();
+  await auditTable.getByText('Đăng nhập', { exact: true }).first().waitFor();
   await auditTable.getByText('Đăng xuất', { exact: true }).waitFor();
-  await auditTable.getByText('Thử đăng nhập', { exact: true }).waitFor();
+  await auditTable.getByText('Đăng nhập thất bại', { exact: true }).waitFor();
   assert.deepEqual(await auditTable.getByRole('columnheader').allTextContents(), ['Thời gian', 'Tài khoản', 'Vai trò', 'Sự kiện']);
   await page.getByLabel('Tìm nhật ký', { exact: true }).fill('attempt@example.test');
   assert.equal(await page.getByLabel('Kết quả', { exact: true }).count(), 0);
@@ -83,12 +96,16 @@ try {
   assert(queries.some(query => query.page === '2'));
   await page.getByRole('link', { name: 'Hoạt động', exact: true }).click();
   await page.getByRole('heading', { name: 'Nhật ký hoạt động', exact: true }).waitFor();
-  await page.getByText('Đổi trạng thái', { exact: true }).waitFor();
+  await page.getByText('Đổi trạng thái tài khoản', { exact: true }).waitFor();
+  await auditTable.getByText('Bắt đầu xử lý hỗ trợ', { exact: true }).waitFor();
+  await auditTable.getByText('Hoạt động chưa có nhãn', { exact: true }).waitFor();
+  await auditTable.getByText('Thất bại', { exact: true }).waitFor();
+  assert.equal(await auditTable.getByText('Thành công', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng nhập', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng xuất', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Xem chi tiết', { exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Kết quả', { exact: true }).count(), 0);
-  assert.deepEqual(await auditTable.getByRole('columnheader').allTextContents(), ['Thời gian', 'Tài khoản', 'Vai trò', 'Hoạt động']);
+  assert.deepEqual(await auditTable.getByRole('columnheader').allTextContents(), ['Thời gian', 'Tài khoản', 'Vai trò', 'Hoạt động', 'Hồ sơ liên quan']);
   unavailable = true;
   await page.getByRole('button', { name: 'Làm mới', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: 'migration' }).waitFor();
@@ -96,10 +113,34 @@ try {
   await page.goto(`${base}/admin`);
   await page.locator('.admin-kpis strong').first().filter({ hasText: /^25$/ }).waitFor();
   assert.deepEqual(await page.locator('.admin-kpis strong').allTextContents(), ['25', '12', '12', '1']);
-  const recent = page.getByRole('region', { name: 'Tài khoản gần đây' });
+  const recent = page.getByRole('region', { name: 'Đăng nhập gần đây' });
+  const recentActivity = page.getByRole('region', { name: 'Hoạt động gần đây' });
+  await recent.getByText('Đăng xuất', { exact: true }).waitFor();
   assert.equal(await recent.locator('li').count(), 5);
-  await page.getByText('Đổi trạng thái tài khoản', { exact: true }).waitFor();
-  await recent.getByRole('link', { name: /Fixture Admin/ }).click();
+  await recentActivity.getByText('Phân công nhập/xuất hàng', { exact: true }).waitFor();
+  assert(queries.some(query => query.category === 'LOGIN' && query.page === '1' && query.limit === '5'));
+  assert(queries.some(query => query.category === 'ACTIVITY' && !query.role && query.page === '1' && query.limit === '5'));
+  assert.equal(await page.getByText('Thành công', { exact: true }).count(), 0);
+  assert.equal(await recent.getByRole('link', { name: 'Xem tất cả lịch sử đăng nhập' }).getAttribute('href'), '/admin/login-history');
+  assert.equal(await recentActivity.getByRole('link', { name: 'Xem tất cả hoạt động' }).getAttribute('href'), '/admin/activity');
+  hasNewEvents = true;
+  await page.getByRole('button', { name: 'Làm mới', exact: true }).click();
+  await recent.locator('li').first().getByText('Newest Customer').waitFor();
+  assert.match(await recent.locator('li').first().locator('time').innerText(), /01:10.*05\/11\/2026/);
+  await recentActivity.locator('li').first().getByText('Hoàn tất nhập/xuất hàng').waitFor();
+  await recent.getByRole('link', { name: 'Xem tất cả lịch sử đăng nhập' }).click();
+  await auditTable.locator('tbody tr').first().getByText('Newest Customer').waitFor();
+  await page.getByLabel('Vai trò', { exact: true }).selectOption('MANAGER');
+  await page.getByRole('button', { name: 'Lọc nhật ký', exact: true }).click();
+  await auditTable.getByText('Fixture Manager', { exact: true }).waitFor();
+  assert.equal(await auditTable.getByText('Newest Customer', { exact: true }).count(), 0);
+  await page.locator('.manager-sidebar').getByRole('link', { name: 'Tổng quan', exact: true }).click();
+  await recentActivity.locator('li').first().getByText('Hoàn tất nhập/xuất hàng').waitFor();
+  await recentActivity.getByRole('link', { name: 'Xem tất cả hoạt động' }).click();
+  await auditTable.locator('tbody tr').first().getByText('Hoàn tất nhập/xuất hàng').waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('role'), null);
+  await page.locator('.manager-sidebar').getByRole('link', { name: 'Tổng quan', exact: true }).click();
+  await recentActivity.getByRole('link', { name: 'Người dùng' }).click();
   await page.waitForURL('**/admin/users/admin');
   await page.getByText('Bạn đang dùng tài khoản này.', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Vô hiệu hóa tài khoản' }).count(), 0);
@@ -161,7 +202,7 @@ try {
   await page.goto(`${base}/admin/notifications`);
   await page.waitForURL(url => url.pathname === '/admin');
   assert.equal(await page.locator('.manager-sidebar a[href="/admin/notifications"]').count(), 0);
-  await page.locator('.manager-sidebar').getByRole('button', { name: 'Hồ sơ cá nhân' }).waitFor();
+  await page.getByRole('button', { name: 'Menu tài khoản' }).waitFor();
   await page.getByRole('button', { name: /^Thông báo,/ }).click();
   const notifications = page.getByRole('dialog', { name: 'Trung tâm thông báo' });
   await notifications.waitFor();
@@ -179,6 +220,26 @@ try {
   await page.getByRole('button', { name: 'Mở rộng thanh bên' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  if (process.env.WDP_AUDIT_SCREENSHOTS === '1') {
+    await mkdir('artifacts/admin-audit', { recursive: true });
+    for (const theme of ['dark', 'light']) {
+      if (theme === 'light') {
+        await page.getByRole('button', { name: 'Menu tài khoản' }).click();
+        await page.getByRole('button', { name: 'Chuyển sang giao diện sáng' }).click();
+      }
+      for (const route of ['', '/login-history', '/activity']) {
+        await page.goto(base + '/admin' + route);
+        await page.locator(route ? 'tbody tr' : '.admin-preview li').first().waitFor();
+        for (const width of [1440, 1024, 768, 390]) {
+          await page.setViewportSize({ width, height: 900 });
+          assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${route || '/admin'} ${theme} at ${width}px`);
+          if (width === 1440 || width === 390) {
+            await page.screenshot({ path: `artifacts/admin-audit/${route.slice(1) || 'dashboard'}-${theme}-${width}.png` });
+          }
+        }
+      }
+    }
+  }
   assert.deepEqual(errors, []);
   console.log('PASS: Admin dashboard, audit, account filtering, pagination, duplicate email, status confirmation, and narrow layout. All APIs mocked.');
 } catch (error) {

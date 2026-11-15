@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useActivity } from '../../activity/context';
 import { useAuth } from '../../auth/auth-context';
 import { date, label } from '../../components/manager/portal-data';
-import { Empty, LoadState, PageHeader, Status } from '../../components/manager/PortalUi';
+import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffRowActions, StaffTaskPagination, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { activitySources, activityText, staffPriorityActivities, type ActivityRow } from '../../utils/activity';
@@ -15,6 +15,7 @@ const sourceNames = new Map(activitySources('STAFF').map(source => [source.kind,
 export function StaffTasksPage() {
   const { user } = useAuth();
   const activity = useActivity();
+  const loading = activity.loading && activity.checking;
   const [params, setParams] = useSearchParams();
   const search = params.get('search') ?? '';
   const type = params.get('type') ?? '';
@@ -73,6 +74,7 @@ export function StaffTasksPage() {
   return <section>
     <PageHeader title="Công việc của tôi">
       <button type="button" className="button-secondary" disabled={activity.checking} onClick={activity.refresh}><RefreshCw size={16} />Làm mới</button>
+      <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>
     <div className="portal-toolbar staff-table-toolbar">
       <label className="field-label portal-search">Tìm công việc<input type="search" maxLength={100} placeholder="Mã hồ sơ, khách hàng, kho…" value={search} onChange={event => change('search', event.target.value)} /></label>
@@ -84,12 +86,11 @@ export function StaffTasksPage() {
       </select></label>
       {(type || status || search || sort) && <button type="button" className="button-secondary" onClick={() => setParams(limit === 20 ? {} : { limit: String(limit) }, { replace: true })}>Xóa bộ lọc</button>}
     </div>
-    <LoadState loading={activity.loading} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
-    {!activity.loading && (filtered.length ? <>
-      <StaffTaskTable title="Danh sách công việc" columns={columns} items={filtered.slice((page - 1) * limit, page * limit)}
-        rowKey={task => task.entry.id} emphasized={task => task.overdue || task.priority === 'HIGH'} />
+    <LoadState loading={false} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
+    {(loading || filtered.length > 0) && <StaffTaskTable title="Danh sách công việc" columns={columns} items={filtered.slice((page - 1) * limit, page * limit)}
+      rowKey={task => task.entry.id} emphasized={task => task.overdue || task.priority === 'HIGH'} loadingRows={loading ? Math.min(limit, 6) : undefined} />}
+    {!loading && (filtered.length ?
       <StaffTaskPagination page={page} limit={limit} total={filtered.length} onChange={value => change('page', String(value))}
-        onLimitChange={value => change('limit', String(value))} />
-    </> : !activity.failed.length && <Empty title="Không có công việc phù hợp" />)}
+        onLimitChange={value => change('limit', String(value))} /> : !activity.failed.length && <Empty title="Không có công việc phù hợp" />)}
   </section>;
 }

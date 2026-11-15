@@ -1,3 +1,8 @@
+export const managerStorageLabels = {
+  units: { title: 'Kho vật lý', description: 'Quản lý vị trí và trạng thái từng kho.' },
+  catalog: { title: 'Loại kho & đơn giá', description: 'Quản lý loại kho, kích thước và giá thuê.' },
+} as const;
+
 /** Management destinations only. Daily customer operations belong to Staff. */
 export const managerSections = {
   reviews: {
@@ -10,12 +15,10 @@ export const managerSections = {
     ],
   },
   finance: {
-    title: 'Tài chính', description: 'Quản lý các khoản thu, công nợ, đối soát và tiền cọc; không thực hiện bàn giao hoặc kiểm đếm.',
+    title: 'Tài chính', description: 'Quản lý hóa đơn, công nợ, khoản thu và tiền cọc.',
     items: [
       { title: 'Hóa đơn & công nợ', description: 'Đối chiếu số phải thu và ghi nhận khoản tiền thực sự đã nhận.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
-      { title: 'Xác nhận chuyển khoản', description: 'Kiểm tra thông báo khách gửi với tiền thực nhận.', web: '/manager/payment-submissions', mobile: '/manager/payment-submissions' },
       { title: 'Quyết toán tiền cọc', description: 'Duyệt khấu trừ và ghi nhận hoàn tiền theo kết quả kiểm tra của nhân viên.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
-      { title: 'Đối soát VNPay', description: 'Xử lý giao dịch bất thường hoặc cần hoàn tiền.', web: '/manager/online-payment-reconciliations', mobile: '/manager/online-payment-reconciliations' },
       { title: 'Lịch sử thu tiền', description: 'Tra cứu các khoản thu đã ghi nhận.', web: '/manager/operations/payments', mobile: '/manager/payments' },
     ],
   },
@@ -30,7 +33,7 @@ export const managerSections = {
   facility: {
     title: 'Kho & hàng hóa', description: 'Quản lý loại kho, kho vật lý, giá thuê, vật tư và thiết bị. Nhân viên tiếp nhận sự cố và thực hiện bảo trì.',
     items: [
-      { title: 'Danh sách kho', description: 'Thêm kho, quản lý vị trí và theo dõi phân bổ.', web: '/manager/units', mobile: '/manager/units' },
+      { ...managerStorageLabels.units, web: '/manager/units', mobile: '/manager/units' },
       { title: 'Hàng đang lưu theo kho', description: 'Tra cứu kho hiện tại, tồn thực tế và phiếu Staff kiểm đếm.', web: '/manager/stored-items', mobile: '/manager/stock-movements' },
     ],
   },

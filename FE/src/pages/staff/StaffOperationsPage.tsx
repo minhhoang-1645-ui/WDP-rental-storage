@@ -4,7 +4,8 @@ import { useActivity } from '../../activity/context';
 import { useAuth } from '../../auth/auth-context';
 import { activitySources, activityText, staffPriorityActivities, type ActivityEntry, type ActivityRow } from '../../utils/activity';
 import { date } from '../../components/manager/portal-data';
-import { PageHeader, Status } from '../../components/manager/PortalUi';
+import { LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { OverstayNotice } from '../../components/workspace/OverstayNotice';
 import { staffDay } from './staff-resources';
 
@@ -36,7 +37,7 @@ function WorkPanel({ title, entries, to, empty, loading, incomplete, onRead }: {
       <h2>{title}</h2>
       <Link to={to}>Xem tất cả <ArrowRight size={15} aria-hidden="true" /></Link>
     </header>
-    {loading && <p className="staff-panel-empty" role="status">Đang tải công việc…</p>}
+    {loading && <DashboardSkeleton variant="activity" />}
     {!loading && entries.length === 0 && <p className="staff-panel-empty">{incomplete ? 'Chưa tải đủ dữ liệu.' : empty}</p>}
     <ul className="staff-task-list">
       {entries.slice(0, 5).map(({ entry, customer, unit, status, scheduledAt, pastSchedule }) => {
@@ -61,6 +62,7 @@ function WorkPanel({ title, entries, to, empty, loading, incomplete, onRead }: {
 export function StaffOperationsPage() {
   const activity = useActivity();
   const { user } = useAuth();
+  const loading = activity.loading && activity.checking;
   const ready = (kind: string) => !activity.loading && Boolean(activity.data[kind]) &&
     !activity.failed.includes(sourceNames.get(kind) ?? '') && !activity.failed.includes('Kết nối mạng');
   const complete = sources.every(source => ready(source.kind));
@@ -106,20 +108,21 @@ export function StaffOperationsPage() {
   return <section className="staff-dashboard">
     <PageHeader title="Bàn làm việc">
       <button type="button" className="button-secondary" disabled={activity.checking} onClick={activity.refresh}>
-        <RefreshCw size={16} />{activity.checking ? 'Đang tải…' : 'Làm mới'}
+        <RefreshCw size={16} />Làm mới
       </button>
+      <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>
-    {activity.failed.length > 0 && <p className="booking-alert is-error" role="alert">Chưa tải được {activity.failed.join(', ')}. Hãy làm mới để cập nhật số liệu.</p>}
-    <div className="staff-metrics" aria-label="Chỉ số công việc" aria-busy={activity.loading}>
-      {metrics.map(({ title, value, icon: Icon, to, hint }) => <Link className="staff-metric" to={to} key={title}>
+    <LoadState loading={false} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
+    <div className="staff-metrics" aria-label="Chỉ số công việc" aria-busy={loading}>
+      {metrics.map(({ title, value, icon: Icon, to, hint }) => loading ? <DashboardSkeleton key={title} variant="metric" cardClass="staff-metric" /> : <Link className="staff-metric" to={to} key={title}>
         <span className="staff-metric-heading"><span>{title}</span><Icon size={19} aria-hidden="true" /></span>
         <strong>{value}</strong>
         <small>{hint}</small>
       </Link>)}
     </div>
     <div className="staff-dashboard-panels">
-      <WorkPanel title="Công việc của tôi" entries={myWork} to={actionPath} empty={queue.length ? 'Các việc hiện có nằm trong danh sách ưu tiên.' : 'Bạn đã xử lý hết công việc hiện có.'} loading={activity.loading} incomplete={!complete} onRead={activity.markRead} />
-      <WorkPanel title="Lịch & việc ưu tiên" entries={priorityPreview} to={actionPath} empty="Chưa có lịch bàn giao hoặc công việc ưu tiên." loading={activity.loading} incomplete={!complete} onRead={activity.markRead} />
+      <WorkPanel title="Công việc của tôi" entries={myWork} to={actionPath} empty={queue.length ? 'Các việc hiện có nằm trong danh sách ưu tiên.' : 'Bạn đã xử lý hết công việc hiện có.'} loading={loading} incomplete={!complete} onRead={activity.markRead} />
+      <WorkPanel title="Lịch & việc ưu tiên" entries={priorityPreview} to={actionPath} empty="Chưa có lịch bàn giao hoặc công việc ưu tiên." loading={loading} incomplete={!complete} onRead={activity.markRead} />
     </div>
     <OverstayNotice />
   </section>;

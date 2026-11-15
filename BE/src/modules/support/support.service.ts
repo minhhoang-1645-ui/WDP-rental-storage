@@ -166,16 +166,29 @@ export class SupportService {
       { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
       { customer: { email: { contains: query.search, mode: 'insensitive' } } }, { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } },
     ] } : {}) };
-    const [total, records] = await this.prisma.$transaction([this.prisma.supportRequest.count({ where }), this.prisma.supportRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() })]);
+    const total = await this.prisma.supportRequest.count({ where });
+    const records = await this.prisma.supportRequest.findMany({
+      where,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      include: this.include(mode),
+    });
     return { page: query.page, limit: query.limit, total, items: records.map((item) => this.toView(item, mode)) };
   }
 
-  private include(): Prisma.SupportRequestInclude { return {
+  private include(mode: ViewMode = 'MANAGER'): Prisma.SupportRequestInclude { return {
     transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rentalContractId: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
-    reservation: { select: { id: true, reservationCode: true, status: true, quoteSnapshot: true } },
+    reservation: { select: { id: true, reservationCode: true, status: true } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
-    storageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } }, reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } } } },
+    storageUnit: { include: {
+      storageType: { select: { id: true, code: true, name: true } },
+      ...(mode === 'MANAGER' ? {
+        maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } },
+        reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } },
+      } : {}),
+    } },
     invoice: { select: { id: true, invoiceCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
     escalatedBy: { select: { id: true, fullName: true, role: true } }, resolvedBy: { select: { id: true, fullName: true, role: true } },
   } }

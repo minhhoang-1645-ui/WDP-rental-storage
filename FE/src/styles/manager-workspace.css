@@ -17,23 +17,23 @@
 }
 
 .manager-overview .manager-dashboard-kpis {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 22px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-16);
+  margin-bottom: var(--space-24);
 }
 
 .manager-overview .manager-dashboard-kpi {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: var(--space-8);
   min-width: 0;
   min-height: 142px;
-  padding: clamp(14px, 1.5vw, 24px);
+  padding: var(--panel-padding);
   border-radius: 12px;
 }
 
-.manager-overview .manager-dashboard-kpi:hover {
+.manager-overview a.manager-dashboard-kpi:hover {
   border-color: var(--workspace-primary);
 }
 
@@ -69,13 +69,13 @@
 .manager-overview-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
+  gap: var(--space-20);
   align-items: start;
 }
 
 .manager-overview-panel {
   min-width: 0;
-  padding: clamp(16px, 2vw, 28px);
+  padding: var(--panel-padding);
   border: 1px solid var(--workspace-border);
   border-radius: 12px;
   background: var(--workspace-surface);
@@ -85,7 +85,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px 14px;
+  gap: var(--space-8) var(--space-12);
   flex-wrap: wrap;
 }
 
@@ -146,8 +146,8 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 10px;
-  padding: 12px 6px;
+  gap: var(--space-12);
+  padding: var(--space-16) var(--space-4);
   color: var(--workspace-text);
 }
 .manager-overview .manager-work-list a:hover { background: var(--workspace-hover); }
@@ -160,9 +160,9 @@
   background: var(--workspace-selected);
   color: var(--workspace-primary);
 }
-.manager-work-copy { display: grid; min-width: 0; gap: 3px; overflow-wrap: anywhere; }
-.manager-work-copy strong { font-size: 14px; }
-.manager-work-copy :is(span, small) { color: var(--workspace-secondary); font-size: 13px; }
+.manager-work-copy { display: grid; min-width: 0; gap: var(--space-4); overflow-wrap: anywhere; }
+.manager-work-copy strong { font-size: var(--type-control); }
+.manager-work-copy :is(span, small) { color: var(--workspace-secondary); font-size: var(--type-meta); }
 .manager-work-arrow { color: var(--workspace-muted); }
 .manager-overview .manager-work-list .manager-status { width: fit-content; max-width: 132px; white-space: normal; }
 .manager-shell.internal-web.workspace-themed .manager-work-list .manager-status.is-approved {
@@ -171,8 +171,7 @@
 }
 
 .manager-shell.internal-web[data-workspace-role="manager"] :is(
-  .portal-metric, .manager-payment-summary > span, .manager-filter-bar, .manager-payment-search,
-  .manager-submission-card, .manager-review-modal, .document-file, .signature-otp,
+  .portal-metric, .document-file, .signature-otp,
   .portal-finance-strip, .manager-banner-card, .portal-stat-list > div, .work-queue, .workspace-summary
 ) {
   background: var(--workspace-surface);
@@ -181,18 +180,8 @@
   box-shadow: none;
 }
 
-.manager-shell.internal-web[data-workspace-role="manager"] :is(.manager-submission-heading small, .manager-submission-facts dt, .manager-submission-facts small, .portal-finance-strip span) {
+.manager-shell.internal-web[data-workspace-role="manager"] .portal-finance-strip span {
   color: var(--workspace-secondary);
-}
-
-.workspace-themed[data-workspace-role="manager"] .manager-submission-heading {
-  flex-wrap: wrap;
-}
-
-.workspace-themed[data-workspace-role="manager"] .manager-submission-heading strong {
-  display: block;
-  color: var(--workspace-text);
-  font-size: 20px;
 }
 
 .manager-shell.internal-web[data-workspace-role="manager"] :is(.manager-notice, .payment-submission-status, .report-pie-legend button[aria-pressed="true"]) {
@@ -240,4 +229,45 @@
   .manager-shell.internal-web .manager-overview .manager-work-list a { grid-template-columns: auto minmax(0, 1fr) auto; }
   .manager-overview .manager-work-list .manager-status { grid-column: 2; grid-row: 2; }
   .manager-work-arrow { grid-column: 3; grid-row: 1; }
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .staff-table-options {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  margin-block: 0 var(--space-12);
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .portal-search {
+  flex: 1 1 250px;
+  max-width: 340px;
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list :is(input:not([type="checkbox"]), select, .button-secondary) {
+  min-height: var(--control-height);
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .staff-table-options > .staff-table-trigger:last-of-type {
+  margin-inline-start: auto;
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .manager-table :is(th, td) {
+  padding: var(--space-12);
+}
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .manager-table td:last-child { width: 1%; }
+.workspace-themed[data-workspace-role="manager"] .manager-task-list .staff-table-trigger { min-width: 38px; padding-inline: 9px; }
+.workspace-themed[data-workspace-role="manager"] .staff-table-popover > button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+}
+.workspace-themed[data-workspace-role="manager"] .staff-table-popover > button:hover { background: var(--workspace-hover); }
+.workspace-themed[data-workspace-role="manager"] .manager-task-note { margin-block: 0 12px; color: var(--workspace-secondary); font-size: 14px; }
+.workspace-themed[data-workspace-role="manager"] .manager-status:is(.is-verified, .is-reconciled) {
+  background: var(--workspace-success-bg);
+  color: var(--workspace-success);
+}
+@media (max-width: 720px) {
+  .workspace-themed[data-workspace-role="manager"] .manager-task-list .portal-search { flex-basis: 100%; max-width: none; }
 }

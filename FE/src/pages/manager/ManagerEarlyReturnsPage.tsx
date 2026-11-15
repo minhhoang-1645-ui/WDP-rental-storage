@@ -1,21 +1,40 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
+import { ManagerTableBack } from '../../components/manager/ManagerTaskTable';
+import { useManagerListRecord } from '../../components/manager/useManagerListRecord';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
 import { first, date, money, rows, type Row } from '../../components/manager/portal-data';
-import { Empty, Facts, LoadState, PageHeader } from '../../components/manager/PortalUi';
+import { Empty, Facts, LoadState, PageHeader, RefreshStatus } from '../../components/manager/PortalUi';
+import { DetailSkeleton } from '../../components/LoadingSkeleton';
 
 export function ManagerEarlyReturnsPage() {
+  const [params] = useSearchParams();
+  const record = params.get('record');
+  return record ? <EarlyReturnRecord id={record} /> : <EarlyReturnList />;
+}
+
+function EarlyReturnRecord({ id }: { id: string }) {
+  const { user } = useAuth();
+  const data = useManagerListRecord<Row & { id: string }>('/manager/early-return-requests', id, user?.id);
+  return <section>
+    <PageHeader title="Đề nghị trả trước hạn"><button className="button-secondary" onClick={data.refresh}>Làm mới đề nghị</button></PageHeader>
+    <ManagerTableBack fallback="/manager/early-returns" />
+    <RefreshStatus active={data.refreshing} />
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton single form heading={false} />} />
+    {data.data ? <EarlyReturnReview key={`${id}:${first(data.data, 'decision')}`} item={data.data} refresh={data.refresh} /> :
+      !data.loading && !data.error && <Empty title="Không tìm thấy đề nghị" />}
+  </section>;
+}
+
+function EarlyReturnList() {
   const { user } = useAuth();
   const data = usePaginatedResource<Row>('/manager/early-return-requests?limit=100', user?.id ?? '', true);
   const [showHistory, setShowHistory] = useState(false);
-  const [params] = useSearchParams();
-  const record = params.get('record');
-  const items = (data.data?.items ?? []).filter(item => record ? first(item, 'id') === record : showHistory || !item.decision);
+  const items = (data.data?.items ?? []).filter(item => showHistory || !item.decision);
   return <section><PageHeader title="Đề nghị trả trước hạn" description="Đối chiếu công nợ và điều kiện trước khi cho khách tạo hồ sơ trả kho. Quyết định không tự hoàn tiền hoặc sửa hóa đơn."><button className="button-secondary" disabled={data.loading} onClick={data.refresh}>Làm mới đề nghị</button></PageHeader>
-    {record ? <Link className="button-secondary manager-back-to-list" to="/manager/early-returns">Xem tất cả đề nghị</Link>
-      : <label className="portal-checkbox"><input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />Xem cả đề nghị đã quyết định</label>}
+    <label className="portal-checkbox"><input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />Xem cả đề nghị đã quyết định</label>
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
     {!data.loading && !data.error && (!items.length ? <Empty title="Không có đề nghị phù hợp" /> : items.map(item => <EarlyReturnReview key={`${first(item, 'id')}:${first(item, 'decision')}`} item={item} refresh={data.refresh} />))}
   </section>;

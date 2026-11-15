@@ -6,7 +6,8 @@
   --workspace-border: #e2e8f0;
   --workspace-text: #172b3a;
   --workspace-secondary: #475569;
-  --workspace-muted: #536479;
+  --workspace-muted: #526174;
+  --workspace-disabled-bg: #e9eef3;
   --workspace-primary: #0f766e;
   --workspace-primary-hover: #115e59;
   --workspace-on-primary: #fff;
@@ -51,6 +52,7 @@
   --workspace-text: #eef3f8;
   --workspace-secondary: #bdc9d7;
   --workspace-muted: #a8b6c7;
+  --workspace-disabled-bg: #252e3a;
   --workspace-primary: #7adbc9;
   --workspace-primary-hover: #9be8d9;
   --workspace-on-primary: #102c27;
@@ -142,7 +144,7 @@
   border-color: var(--workspace-border);
   color: var(--workspace-success);
 }
-.manager-shell.internal-web.workspace-themed :is(.manager-status.is-cancelled,.manager-status.is-rejected,.manager-status.is-disabled,.manager-status.is-expired,.manager-status.is-overdue,.booking-alert.is-error,.portal-danger) {
+.manager-shell.internal-web.workspace-themed :is(.manager-status.is-cancelled,.manager-status.is-rejected,.manager-status.is-disabled,.manager-status.is-expired,.manager-status.is-overdue,.booking-alert.is-error,.portal-danger:not(:disabled)) {
   background: var(--workspace-error-bg);
   border-color: var(--workspace-border);
   color: var(--workspace-error);

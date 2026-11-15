@@ -2,12 +2,6 @@
 
 # Frontend WDP
 
-Kết quả hoàn thiện UI/UX và luồng web/mobile theo API hiện có: [FULL_REVIEW_2026-10-16.md](./FULL_REVIEW_2026-10-16.md). Có hướng dẫn thông tin cơ sở, phân quyền, kiểm thử và phần vẫn cần BE.
-
-Đối chiếu góp ý giảng viên ngày 16/10 (dịch vụ, bàn giao, duyệt gia hạn và đề xuất phần cần BE/schema): [TEACHER_REVIEW_2026-10-16.md](./TEACHER_REVIEW_2026-10-16.md).
-
-Phạm vi hiện tại sau merge và xác nhận của người dùng ngày 15/10/2026: [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Giao diện web/mobile được làm mới theo yêu cầu bổ sung, giữ API và nghiệp vụ: [UI_REFRESH_2026-10-15.md](./UI_REFRESH_2026-10-15.md). Tài liệu ngày 13–14/10 là lịch sử; phạm vi Admin bảy mục trong đó đã được thay thế.
-
 Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 
 ## Chạy local
@@ -50,11 +44,9 @@ Manager đã nối các API kho, khách hàng, tư vấn, đặt kho, bàn giao,
 
 Admin có đúng hai mục: Tổng quan và Quản lý tài khoản. Tạo STAFF/MANAGER, xem hồ sơ và kích hoạt/vô hiệu hóa nằm trong quản lý tài khoản. URL cũ `/admin/facility/*` về `/admin`; không mở menu vận hành Manager trong Admin.
 
-Giới hạn API và kiểm tra sau merge nằm trong [MERGE_AUDIT_2026-10-15.md](./MERGE_AUDIT_2026-10-15.md). Các báo cáo Manager/Admin trước ngày này được giữ làm lịch sử, không dùng để khôi phục các mục Admin đã bỏ.
-
 ## Kiểm tra
 
-Rà soát cả bốn vai trò, đường dẫn, chức năng được phép và phần còn thiếu: [ALL_ROLES_VERIFICATION.md](./ALL_ROLES_VERIFICATION.md). Staff sử dụng API `/staff/*` cho bàn giao, trả/kiểm tra, hỗ trợ, bảo trì và hoàn tất chuyển kho; Customer giữ `/customer/*`. Không coi guard giao diện là thay thế phân quyền backend.
+Staff sử dụng API `/staff/*` cho bàn giao, trả/kiểm tra, hỗ trợ, bảo trì và hoàn tất chuyển kho; Customer giữ `/customer/*`. Không coi guard giao diện là thay thế phân quyền backend.
 
 ```powershell
 npm run build

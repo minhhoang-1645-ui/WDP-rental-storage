@@ -5,10 +5,28 @@ import { Link } from "react-router-dom";
 import { Container } from "../ui/Container";
 import { facility } from '../../config/facility';
 
-export function Footer() {
+export function Footer({ compact = false }: { compact?: boolean }) {
   const { user } = useAuth();
   const accountPath = user ? portalDestination(user.role) : "/account/login";
   const supportPath = !user ? "/account/login?returnTo=%2Fcustomer%2Fsupport" : user.role === "CUSTOMER" ? "/customer/support" : accountPath;
+  const supportLabel = !user || user.role === 'CUSTOMER' ? 'Gửi yêu cầu hỗ trợ' : 'Mở khu vực làm việc';
+  if (compact) return <footer id="facility" className="public-footer landing-footer" aria-labelledby="landing-facility">
+    <Container>
+      <div>
+        <h2 id="landing-facility">Cơ sở NestBox</h2>
+        <address>
+          <p><MapPin size={17} aria-hidden="true" /> {facility.address}</p>
+          <p>{facility.hours}</p>
+          {facility.illustrative && <small>Địa chỉ và giờ mở cửa mang tính minh họa.</small>}
+        </address>
+      </div>
+      <div className="landing-footer-links">
+        {facility.phoneHref && <a href={facility.phoneHref}><Phone size={17} aria-hidden="true" /> {facility.phone}</a>}
+        {facility.emailHref && <a href={facility.emailHref}><Mail size={17} aria-hidden="true" /> {facility.email}</a>}
+        <Link to={supportPath}>{supportLabel}</Link>
+      </div>
+    </Container>
+  </footer>;
   return (
     <footer className="public-footer bg-ink py-14 text-white">
       <Container>

@@ -1,4 +1,5 @@
 import { RecordIdentity, CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DashboardSkeleton, DetailSkeleton } from '../../components/LoadingSkeleton';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { hasDraft } from '../../services/live-events';
 import { recordIdentity } from '../../utils/record-identity';
@@ -10,7 +11,7 @@ import { EntitySelect } from '../../components/EntitySelect';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
-import { PageHeader, LoadState, Empty, Pagination, Facts, Status } from '../../components/manager/PortalUi';
+import { PageHeader, LoadState, Empty, Pagination, Facts, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { date, label, type Page, type Row } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
@@ -45,7 +46,8 @@ function StockList({ role }: { role: StockRole }) {
   const ListPagination = role === 'STAFF' ? StaffTaskPagination : Pagination;
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
     <PageHeader title={role === 'STAFF' ? 'Phiếu nhập – xuất' : 'Nhập – xuất hàng khách'} description={role === 'CUSTOMER' ? 'Gửi yêu cầu gửi/lấy hàng và theo dõi kết quả giao nhận của bạn.' : role === 'MANAGER' ? 'Theo dõi phiếu hàng của khách, phân công nhân viên và đối chiếu kết quả.' : undefined}>
-      <button className="button-secondary" disabled={data.loading || creating} onClick={data.refresh}>Làm mới</button>
+      <button className="button-secondary" disabled={data.loading || creating || role !== 'CUSTOMER' && data.refreshing} onClick={data.refresh}>Làm mới</button>
+      {role !== 'CUSTOMER' && <RefreshStatus active={data.refreshing} />}
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
     {role !== 'CUSTOMER' && <p className="booking-alert">{transportRule}</p>}
@@ -58,7 +60,9 @@ function StockList({ role }: { role: StockRole }) {
       <label className="field-label">Trạng thái<select value={params.get('status') ?? ''} onChange={event => update('status', event.target.value)}><option value="">Tất cả</option>{Object.entries(statuses).map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
       <label className="field-label">Loại phiếu<select value={params.get('type') ?? ''} onChange={event => update('type', event.target.value)}><option value="">Tất cả</option><option value="IN">Nhập hàng</option><option value="OUT">Xuất hàng</option></select></label>
     </div>
-    <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={role === 'STAFF'
+      ? <StaffStockTable items={[]} userId={user?.id ?? ''} loadingRows={Math.min(limit, 6)} />
+      : role === 'MANAGER' ? <div className="stock-grid">{[0, 1].map(index => <div className="stock-card" key={index}><DashboardSkeleton variant="activity" /></div>)}</div> : undefined} />
     {!data.loading && !data.error && <>{!data.data?.items.length && <Empty title="Chưa có phiếu phù hợp" />}
       {role === 'STAFF'
         ? data.data?.items.length ? <StaffStockTable items={data.data.items} userId={user?.id ?? ''} /> : null
@@ -67,7 +71,7 @@ function StockList({ role }: { role: StockRole }) {
     </>}
   </section>;
 }
-function StaffStockTable({ items, userId }: { items: StockMovement[]; userId: string }) {
+function StaffStockTable({ items, userId, loadingRows }: { items: StockMovement[]; userId: string; loadingRows?: number }) {
   const columns: StaffColumn<StockMovement>[] = [
     { key: 'customer', label: 'Khách hàng / Kho', cell: row => <>
       <strong>{row.customer.fullName}</strong><small>
@@ -89,7 +93,7 @@ function StaffStockTable({ items, userId }: { items: StockMovement[]; userId: st
     { key: 'actions', label: 'Thao tác', cell: row => <StaffRowActions to={`/staff/stock-movements/${encodeURIComponent(row.id)}`} code={row.movementCode}
       primary={row.status === 'ASSIGNED' && row.assignedStaff?.id === userId ? 'Xem phiếu' : undefined} /> },
   ];
-  return <StaffTaskTable title="Danh sách phiếu nhập – xuất" columns={columns} items={items} rowKey={row => row.id}
+  return <StaffTaskTable title="Danh sách phiếu nhập – xuất" columns={columns} items={items} rowKey={row => row.id} loadingRows={loadingRows}
     emphasized={row => row.status === 'ASSIGNED' && row.assignedStaff?.id === userId} />;
 }
 function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
@@ -151,7 +155,7 @@ function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () =>
   </form>;
 }
 function StockDetail({ role, id }: { role: StockRole; id: string }) {
-  const { user } = useAuth(), data = useApiResource<StockMovement>(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(id)}`, user?.id, true);
+  const { user } = useAuth(), data = useApiResource<StockMovement>(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(id)}`, user?.id, true, role !== 'CUSTOMER');
   const [notice, setNotice] = useState('');
   const returnPath = useInternalListReturn(roleRoot(role));
   function refresh() {
@@ -165,9 +169,10 @@ function StockDetail({ role, id }: { role: StockRole; id: string }) {
     <PageHeader title={data.data ? recordIdentity(data.data as unknown as Row, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}>
       <Link className="button-secondary" to={role === 'STAFF' ? returnPath : roleRoot(role)}>Về danh sách</Link>
       <button className="button-secondary" onClick={refresh}>Làm mới</button>
+      {role !== 'CUSTOMER' && <RefreshStatus active={data.refreshing} />}
     </PageHeader>
     {notice && <p role="status" className="booking-alert">{notice}</p>}
-    <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={role !== 'CUSTOMER' ? <DetailSkeleton single form={role === 'STAFF'} heading={false} /> : undefined} />
     {data.data && <CopyRecordCode value={data.data.movementCode} />}
     {data.data && <StockRecord key={data.data.updatedAt ?? `${data.data.status}:${data.data.assignedStaff?.id}`} row={data.data} role={role} onSaved={message => { setNotice(message); data.refresh(); }} />}
   </section>;

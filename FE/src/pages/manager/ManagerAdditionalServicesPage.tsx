@@ -1,9 +1,11 @@
 import { serviceUnits, servicePriceBasis } from '../../utils/service-units';
+import { managerStorageLabels } from '../../utils/manager-sections';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { operationPath } from '../../auth/portal-routing';
-import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
+import { Empty, LoadState, Modal, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { TableSkeleton } from '../../components/LoadingSkeleton';
 import { money } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
@@ -17,10 +19,12 @@ export function ManagerAdditionalServicesPage() {
   const [stock, setStock] = useState<AdditionalService | null>(null);
   const [notice, setNotice] = useState('');
   const refresh = () => { resource.refresh(); inventory.refresh(); };
-  return <section><Link className="booking-back" to={operationPath(user?.role, '/manager/catalog')}>Loại kho & bảng giá</Link>
+  return <section><Link className="booking-back" to={operationPath(user?.role, '/manager/catalog')}>{managerStorageLabels.catalog.title}</Link>
     <PageHeader title="Dịch vụ bổ sung"><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
     {notice && <div className="portal-success" role="status">{notice}</div>}
-    <LoadState loading={resource.loading || inventory.loading} error={resource.error || inventory.error} retry={refresh} />
+    <RefreshStatus active={resource.refreshing || inventory.refreshing} />
+    <LoadState loading={resource.loading} error={resource.error || inventory.error} retry={refresh}
+      placeholder={<TableSkeleton columns={['service', 'type', 'price', 'status', 'stock', 'actions']} />} />
     {resource.data && !resource.data.length && <Empty title="Chưa có dịch vụ bổ sung" />}
     {resource.data && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Dịch vụ</th><th>Loại</th><th>Giá</th><th>Trạng thái</th><th>Tồn kho / Công suất</th><th>Thao tác</th></tr></thead><tbody>{resource.data.map(item => {
       const state = inventory.data?.find(entry => entry.serviceId === item.id);

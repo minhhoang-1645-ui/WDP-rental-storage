@@ -1,0 +1,136 @@
+/* Workspace spacing in 4px steps, also used by the web booking form. */
+:is(.workspace-themed[data-workspace-role], .booking-page) {
+  --space-4: .25rem;
+  --space-8: .5rem;
+  --space-12: .75rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+  --page-gutter: var(--space-32);
+  --panel-padding: var(--space-20);
+  --control-height: 40px;
+  --compact-control-height: 36px;
+  --control-radius: 8px;
+}
+
+.internal-web.workspace-themed .manager-main,
+.customer-shell.workspace-themed .customer-main {
+  padding: var(--space-24) var(--page-gutter) calc(var(--space-24) + var(--space-24));
+}
+.internal-web.workspace-themed .portal-topbar {
+  gap: var(--space-12);
+  padding: var(--space-8) var(--page-gutter);
+}
+.internal-web.workspace-themed .portal-topbar > div { gap: var(--space-12); }
+
+.workspace-themed[data-workspace-role] :is(.manager-page-header, .customer-page-header) {
+  align-items: center;
+  gap: var(--space-16);
+  margin-bottom: var(--space-24);
+}
+.workspace-themed[data-workspace-role] :is(.manager-page-header, .customer-page-header) p:not(.eyebrow) {
+  margin-block-start: var(--space-8);
+}
+.workspace-themed[data-workspace-role] :is(.portal-actions, .customer-header-actions, .workspace-profile-actions button) { gap: var(--space-8); }
+.workspace-themed[data-workspace-role] :is(.portal-actions, .customer-header-actions) { flex-wrap: wrap; }
+.workspace-themed[data-workspace-role] .portal-actions:empty { display: none; }
+
+.workspace-themed[data-workspace-role] :is(.button-primary, .button-secondary, .button-light) {
+  min-height: var(--control-height);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--control-radius);
+  gap: var(--space-8);
+  text-align: center;
+}
+.workspace-themed[data-workspace-role] :is(.button-primary, .button-secondary, .button-light) svg { flex: none; }
+.workspace-themed[data-workspace-role] :is(
+  .manager-table .button-secondary, .staff-table-trigger, .portal-pagination .icon-button
+) { min-height: var(--compact-control-height); }
+
+.workspace-themed[data-workspace-role] :is(.portal-toolbar, .customer-filter-row) {
+  align-items: end;
+  column-gap: var(--space-12);
+  row-gap: var(--space-12);
+  padding: var(--space-16);
+  margin-block-end: var(--space-16);
+}
+.workspace-themed[data-workspace-role] :is(.portal-toolbar, .staff-table-options, .customer-filter-row) :is(
+  input:not([type="radio"], [type="checkbox"]), select, .button-primary, .button-secondary
+) {
+  min-height: var(--control-height);
+  padding-block: var(--space-8);
+}
+.workspace-themed[data-workspace-role] :is(.portal-form, .portal-form fieldset, .stock-fields, .customer-module-form, .account-settings-form) {
+  gap: var(--space-16);
+}
+.workspace-themed[data-workspace-role] .field-label { gap: var(--space-8); }
+.workspace-themed[data-workspace-role] :is(.portal-dialog, .manager-section, .manager-processing, .internal-priority, .customer-panel, .customer-record-card, .stock-card) {
+  padding: var(--panel-padding);
+}
+.workspace-themed[data-workspace-role] .portal-dialog > header { gap: var(--space-12); padding-bottom: var(--space-16); }
+.workspace-themed[data-workspace-role] .portal-dialog > header > .icon-button { flex: none; }
+.workspace-themed[data-workspace-role] .workspace-profile-identity { gap: var(--space-4); padding: var(--space-12); }
+.workspace-themed[data-workspace-role] .workspace-profile-actions { padding: var(--space-4); }
+
+.workspace-themed[data-workspace-role] :is(.manager-sidebar, .portal-mobile-nav, .customer-sidebar) .workspace-nav-group {
+  margin-block-end: 0;
+}
+.internal-web.workspace-themed:not(.is-sidebar-collapsed) .manager-sidebar .workspace-nav-group + .workspace-nav-group,
+.workspace-themed[data-workspace-role] :is(.portal-mobile-nav, .customer-sidebar) .workspace-nav-group + .workspace-nav-group {
+  margin-block-start: var(--space-12);
+}
+.workspace-themed[data-workspace-role] .workspace-nav-heading {
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-8) var(--space-4);
+}
+.workspace-themed[data-workspace-role] button.workspace-nav-heading { min-height: var(--compact-control-height); }
+.workspace-themed[data-workspace-role] :is(.manager-sidebar, .portal-mobile-nav, .customer-sidebar) nav a {
+  gap: var(--space-8);
+}
+.workspace-themed[data-workspace-role] .navigation-work-count { padding-inline: var(--space-4); }
+.workspace-themed[data-workspace-role] :is(.manager-account, .customer-sidebar-bottom) { padding-block-start: var(--space-16); }
+.customer-shell.workspace-themed .customer-nav { gap: var(--space-4); margin-block-start: var(--space-20); }
+
+.workspace-themed[data-workspace-role] :is(.manager-status, .customer-status, .payment-submission-status) {
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--control-radius);
+}
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) small { margin-block-start: var(--space-4); }
+.workspace-themed[data-workspace-role] .staff-table .staff-table-actions { gap: var(--space-8); }
+.workspace-themed[data-workspace-role] .staff-table-actions .button-secondary { white-space: nowrap; }
+.workspace-themed[data-workspace-role] .staff-table-popover { padding: var(--space-4); }
+.workspace-themed[data-workspace-role] .portal-pagination { gap: var(--space-12); padding-block: var(--space-8); }
+.workspace-themed[data-workspace-role] .portal-pagination > div { gap: var(--space-8); }
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) .table-number {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.workspace-themed[data-workspace-role] td.table-number { white-space: nowrap; }
+
+.customer-shell.workspace-themed .internal-kpis { gap: var(--space-16); margin-block-end: var(--space-24); }
+.customer-shell.workspace-themed .internal-kpi { padding: var(--panel-padding); gap: var(--space-8); }
+.customer-shell.workspace-themed :is(.customer-card-list, .customer-detail-content, .customer-record-card) { gap: var(--space-16); }
+.customer-shell.workspace-themed .customer-dashboard-grid { gap: var(--space-20); }
+
+.booking-page .booking-form-panel { gap: var(--space-20); padding-block-start: var(--space-24); margin-block-start: var(--space-24); }
+.booking-page :is(.booking-form-panel, .checkout-form) .field-label { gap: var(--space-8); }
+.booking-page .checkout-fieldset { margin-block-start: var(--space-24); padding-block-start: var(--space-20); }
+.booking-page .checkout-fields { gap: var(--space-16); }
+.booking-page :is(.checkout-form, .checkout-quote, .booking-preview-content, .booking-summary) { padding: var(--panel-padding); }
+
+@media (max-width: 1150px) {
+  :is(.workspace-themed[data-workspace-role], .booking-page) { --page-gutter: var(--space-24); }
+}
+@media (max-width: 680px) {
+  :is(.workspace-themed[data-workspace-role], .booking-page) {
+    --page-gutter: var(--space-16);
+    --panel-padding: var(--space-16);
+  }
+  .workspace-themed[data-workspace-role] :is(.manager-page-header, .customer-page-header) { align-items: stretch; flex-direction: column; }
+  .workspace-themed[data-workspace-role] .portal-topbar > div { gap: var(--space-8); }
+  .workspace-themed[data-workspace-role] .portal-pagination > div { justify-content: flex-start; }
+}
+@media (pointer: coarse) {
+  :is(.workspace-themed[data-workspace-role], .booking-page) { --control-height: 44px; --compact-control-height: 44px; }
+}

@@ -71,7 +71,8 @@ try {
       await app.goto('/staff/notifications');
       await page.getByRole('button', { name: /^Cần thực hiện \(/ }).click();
       await page.locator('.activity-items .activity-item').first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
-      await page.getByRole('button', { name: 'Đánh dấu đã đọc', exact: true }).click();
+      await page.locator('.activity-items .activity-item').first().click();
+      await page.waitForURL('**/staff/support-requests/NEW-ASSIGNMENT');
       await app.goto('/staff');
       await queue.locator('.workspace-shortcuts a').first().filter({ hasText: 'NEW-ASSIGNMENT' }).waitFor();
       assert.equal(app.data['support-requests'].find(row => row.id === 'NEW-ASSIGNMENT').status, 'ASSIGNED');

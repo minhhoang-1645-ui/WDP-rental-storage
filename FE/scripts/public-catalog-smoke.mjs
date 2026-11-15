@@ -103,7 +103,8 @@ try {
     assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), first.image);
     if (process.env.WDP_SCREENSHOTS_DIR) await page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/nestbox-booking-${width}.png`, fullPage: true });
     await page.goto('http://127.0.0.1:5173/', { waitUntil: 'domcontentloaded' });
-    await page.locator('.home-group-card').first().waitFor();
+    await page.locator('.landing-size-card').first().waitFor();
+    assert.equal(await page.locator('.landing-size-card').count(), catalog.sizes.length);
     assert(!/Test room|Test capacity|Test only/.test(await page.locator('main').innerText()));
     if (process.env.WDP_SCREENSHOTS_DIR) {
       await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true });

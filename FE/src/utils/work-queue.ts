@@ -115,11 +115,9 @@ export function managerNeedsAction(resource: string, row: WorkRow) {
   return assignmentNeedsAttention(resource, row)
     || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
     || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"
-    || resource === "payment-submissions" && row.status === "PENDING_VERIFICATION"
     || resource === "deposit-settlements" && (row.status === "PENDING_REVIEW" ||
       (row.status === "APPROVED" && typeof row.refundAmount === "number" && row.refundAmount > 0 &&
         row.outstandingAmount === 0 && row.refundedAt === null))
-    || resource === "online-payment-reconciliations" && ["PENDING_REVIEW", "REFUND_REQUIRED"].includes(String(row.status))
     || resource === "invoices" && isOverdueInvoice(row);
 }
 

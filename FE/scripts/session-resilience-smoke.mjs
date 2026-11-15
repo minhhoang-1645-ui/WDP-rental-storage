@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { launchTestBrowser } from './browser-test.mjs';
-import { customer, fixture } from './fixtures/workspace.mjs';
+import { customer } from './fixtures/workspace.mjs';
 
 const browser = await launchTestBrowser(), errors = [], unexpected = [], checks = [];
 const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 await mkdir('artifacts/production-20261104', { recursive: true });
-async function setup(role, { blocked = false, failingSession = false, submission = false } = {}) {
+async function setup(role, { blocked = false, failingSession = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const actor = { ...customer, id: 'resilient-' + role, role, accountStatus: 'ACTIVE' };
   const state = { failingSession, logins: 0 };
@@ -27,8 +27,8 @@ async function setup(role, { blocked = false, failingSession = false, submission
     if (path === '/manager/dashboard/summary') return send({ availableUnits: 0 });
     if (path === '/health') return send({ status: 'ok' });
     if (path === '/manager/unit-staff-assignments' || path === '/staff/assigned-units') return send({ enabled: false, items: [] });
-    const items = path === '/admin/users' ? [actor] : submission && path === '/manager/payment-submissions'
-      ? [{ id: 'sub-review', submissionCode: 'TRANSFER-REVIEW', status: 'PENDING_VERIFICATION', amount: 650000, customer, invoice: fixture.invoices[0], submittedAt: '2026-11-04T04:00:00Z' }] : [];
+    const items = path === '/admin/users' ? [actor] : path === '/manager/early-return-requests'
+      ? [{ id: 'early-return', supportCode: 'EARLY-TEST', status: 'OPEN', subject: 'Đề nghị trả trước hạn', customer }] : [];
     return send({ page: 1, limit: 100, total: items.length, items });
   });
   const page = await context.newPage();
@@ -53,7 +53,7 @@ try {
     await test.page.screenshot({ path: 'artifacts/production-20261104/' + role.toLowerCase() + '-320.png', fullPage: true, animations: 'disabled' });
     await test.page.setViewportSize({ width: 1440, height: 960 });
     await test.page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();
-    await test.page.waitForURL(/\/account\/login$/);
+    await test.page.waitForURL(url => url.pathname === (role === 'CUSTOMER' ? '/account/login' : '/portal/login'));
     assert.equal(await test.page.evaluate(async () => (await import('/src/services/browser-storage.ts')).safeLocalStorage.getItem('wdp-auth-token-v1')), null);
     checks.push(role + ': blocked browser storage still permits login, correct workspace and logout without stale bearer state');
     await test.context.close();
@@ -75,17 +75,15 @@ try {
   await crossTab.page.getByRole('heading', { name: 'Đăng nhập nội bộ', exact: true }).waitFor();
   checks.push('Logout in another tab clears a failed-session retry screen instead of trapping the user');
   await crossTab.context.close();
-  const forms = await setup('MANAGER', { submission: true });
-  await forms.page.goto(base + '/manager/payment-submissions', { waitUntil: 'domcontentloaded' });
-  await forms.page.getByPlaceholder('Mã hóa đơn, yêu cầu, khách hàng, tham chiếu').fill('chuyen kho');
+  const forms = await setup('MANAGER');
+  await forms.page.goto(base + '/manager/reviews', { waitUntil: 'domcontentloaded' });
+  await forms.page.getByRole('searchbox', { name: 'Tìm kiếm', exact: true }).fill('EARLY-TEST');
   const hasDraft = () => forms.page.evaluate(async () => (await import('/src/services/live-events.ts')).hasDraft());
-  assert.equal(await hasDraft(), false);
-  await forms.page.getByRole('button', { name: 'Tìm kiếm', exact: true }).click();
   assert.equal(await hasDraft(), false, 'A read-only search must not freeze automatic updates');
-  await forms.page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-  await forms.page.getByLabel('Mã tham chiếu giao dịch ngân hàng', { exact: true }).fill('UNSAVED-REFERENCE');
-  assert.equal(await hasDraft(), true, 'Actual financial edits still suspend automatic screen refresh');
-  checks.push('Manager search filters do not block live updates; financial edits still preserve the draft');
+  await forms.page.goto(base + '/manager/early-returns', { waitUntil: 'domcontentloaded' });
+  await forms.page.getByLabel('Điều kiện hoặc lý do trả sớm').fill('Khách đề nghị trả trước hạn.');
+  assert.equal(await hasDraft(), true, 'An unsaved review still suspends automatic screen refresh');
+  checks.push('Manager search filters do not block live updates; review edits still preserve the draft');
   await forms.context.close();
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
   console.log(JSON.stringify({ passed: checks, browserErrors: errors.length, realDatabaseWrites: 0 }, null, 2));

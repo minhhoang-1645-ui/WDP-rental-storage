@@ -7,10 +7,7 @@ export const imageCredits = {
 }
 
 export const faqs = [
-  ['Tôi nên chọn kho kích thước nào?', 'Hãy bắt đầu bằng món đồ lớn nhất và số thùng dự kiến. Hướng dẫn kích thước cho phép bạn so sánh theo không gian quen thuộc trước khi xem kho trống.'],
-  ['Tôi có thể vào kho lúc nào?', 'Khung giờ truy cập được xác nhận trong hợp đồng và thông tin bàn giao.'],
-  ['Có kho điều hòa không?', 'Xem bộ lọc điều kiện bảo quản trong danh mục kho để chọn loại đang được cung cấp và kiểm tra khả dụng cho thời gian thuê.'],
-  ['Gửi yêu cầu có phải là hoàn tất thuê không?', 'Gửi yêu cầu tư vấn không giữ kho. Yêu cầu đặt kho cần được xác nhận, thanh toán hóa đơn và bàn giao trước khi bắt đầu thuê.'],
-  ['Sau này tôi có thể đổi sang kho khác không?', 'Có thể, tùy tình trạng kho trống và điều kiện hợp đồng tại thời điểm yêu cầu.'],
-  ['Những vật dụng nào bị cấm?', 'Không lưu trữ chất cháy nổ, hóa chất nguy hiểm, thực phẩm dễ hỏng, sinh vật sống hoặc hàng hóa trái pháp luật.'],
+  ['Khi nào tôi được sử dụng kho?', 'Từ ngày bắt đầu thuê, sau khi đã hoàn tất bàn giao. Khung giờ truy cập được ghi trong hợp đồng và thông tin bàn giao.'],
+  ['Tôi có thể đổi kho không?', 'Có thể, tùy kho trống và điều kiện hợp đồng tại thời điểm yêu cầu.'],
+  ['Kho cấm lưu trữ những gì?', 'Chất cháy nổ, hóa chất nguy hiểm, thực phẩm dễ hỏng, sinh vật sống và hàng hóa trái pháp luật.'],
 ]

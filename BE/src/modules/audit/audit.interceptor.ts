@@ -15,6 +15,12 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
     return { category: action === 'login' || action === 'logout' ? 'LOGIN' : 'ACTIVITY', action: action === 'me' ? 'AUTH_PROFILE_UPDATE' : `AUTH_${action.toUpperCase()}`, resource: 'auth', route };
   }
   if (!request.user) return;
+  if (request.method === 'POST' && route === '/customer/booking-requests/:bookingCode/claim') {
+    return { category: 'ACTIVITY', action: 'CLAIM', resource: 'booking-requests', route };
+  }
+  if (request.method === 'POST' && route === '/customer/transfer-orders/:id/accept') {
+    return { category: 'ACTIVITY', action: 'ACCEPT', resource: 'transfer-orders', route };
+  }
   const segments = route.replace(/^\/(?:customer|manager|admin|staff)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
   const resource = segments[0];
   if (!resources.has(resource)) return;
@@ -33,7 +39,7 @@ export class AuditInterceptor implements NestInterceptor {
     const record = (status: number, result?: unknown) => {
       const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown } : undefined;
       const auth = target.resource === 'auth';
-      const resourceId = ['id', 'invoiceId', 'contractId', 'reservationId', 'renewalId', 'transferId', 'unitId', 'requestId', 'returnId', 'submissionId'].map(key => request.params?.[key]).find(value => typeof value === 'string') ?? data?.id;
+      const resourceId = ['id', 'invoiceId', 'contractId', 'reservationId', 'renewalId', 'transferId', 'unitId', 'requestId', 'returnId', 'submissionId', 'bookingCode'].map(key => request.params?.[key]).find(value => typeof value === 'string') ?? data?.id;
       return this.audit.record({ ...target, method: request.method, httpStatus: status,
         actor: request.user ?? (auth && status < 400 ? data?.user : undefined),
         attemptedEmail: auth && target.action !== 'AUTH_LOGOUT' ? request.body?.email : undefined,

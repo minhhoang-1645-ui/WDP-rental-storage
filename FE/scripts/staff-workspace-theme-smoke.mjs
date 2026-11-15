@@ -180,15 +180,17 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: 'Kho tôi phụ trách' }).waitFor();
   assert.equal(await shell.getAttribute('data-workspace-theme'), 'dark');
-  await page.getByRole('button', { name: 'Tài khoản cá nhân' }).click();
+  await page.getByRole('button', { name: 'Menu tài khoản' }).click();
+  await page.getByRole('button', { name: 'Thông tin cá nhân' }).click();
   await page.getByRole('heading', { name: 'Cài đặt tài khoản' }).waitFor();
   assert.equal(await page.getByLabel('Email đăng nhập').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(25, 31, 42)');
   await page.goto(base + '/staff');
   await page.locator('.staff-task-list li').first().waitFor();
   await page.getByRole('button', { name: /^Thông báo,/ }).click();
-  const notifications = page.getByRole('dialog', { name: 'Trung tâm thông báo' });
+  const notifications = page.getByRole('region', { name: 'Thông báo', exact: true });
   assert.equal(await notifications.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(30, 39, 51)');
-  await page.getByRole('button', { name: 'Đóng thông báo' }).click();
+  await page.keyboard.press('Escape');
+  await notifications.waitFor({ state: 'hidden' });
   for (const width of [1920, 1366, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     assert(await fits(page), `Dashboard overflows at ${width}px`);

@@ -5,7 +5,8 @@ import { useActivity } from '../../activity/context';
 import { useApiResource } from '../../services/useApiResource';
 import { useLiveRefresh } from '../../services/live-events';
 import type { ManagerReport } from '../../types/manager-report';
-import { PageHeader, LoadState, Status } from '../../components/manager/PortalUi';
+import { PageHeader, LoadState, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { date, first, money, rows, type Row } from '../../components/manager/portal-data';
 import type { ActivityEntry } from '../../utils/activity';
 import { assignmentNeedsAttention } from '../../utils/work-queue';
@@ -59,10 +60,10 @@ function StoragePanel({ report, loading, error }: { report?: ManagerReport | nul
   return <section className="manager-overview-panel" aria-labelledby="manager-storage-title">
     <header>
       <h2 id="manager-storage-title">Tình trạng kho</h2>
-      <Link className="manager-panel-link" to="/manager/units">Xem danh sách kho <ArrowRight size={15} aria-hidden="true" /></Link>
+      <Link className="manager-panel-link" to="/manager/units">Xem kho vật lý <ArrowRight size={15} aria-hidden="true" /></Link>
     </header>
     <p className="manager-panel-caption">Phân bổ kho vật lý theo trạng thái hiện tại.</p>
-    {!report ? <p className="manager-panel-caption" role="status">{loading ? 'Đang tải tình trạng kho…' : error ? 'Chưa tải được số liệu kho.' : 'Chưa có số liệu kho.'}</p>
+    {!report ? loading ? <DashboardSkeleton variant="distribution" /> : <p className="manager-panel-caption" role="status">{error ? 'Chưa tải được số liệu kho.' : 'Chưa có số liệu kho.'}</p>
       : !units || !statuses ? <p className="manager-panel-caption" role="status">Số liệu trạng thái kho chưa khớp với tổng kho.</p>
       : <>
         <p className="manager-storage-total">Tổng cộng <strong>{count(units.total)} kho</strong></p>
@@ -89,13 +90,6 @@ function workDetails(entry: ActivityEntry, row: Row) {
     const reassignment = first(row, 'assignedStaff.accountStatus') === 'DISABLED';
     return { title: reassignment ? 'Đổi người phụ trách' : 'Phân công nhân viên', to: `/manager/assignments?kind=${entry.kind}&record=${id}`, status, statusText: reassignment ? 'Cần phân công lại' : 'Chờ phân công' };
   }
-  if (entry.kind === 'payment-submissions') return { title: 'Xác minh chuyển khoản', to: `/manager/payment-submissions?submission=${encodeURIComponent(first(row, 'id'))}`, status, statusText: 'Chờ xác minh' };
-  if (entry.kind === 'online-payment-reconciliations') return {
-    title: status === 'REFUND_REQUIRED' ? 'Theo dõi hoàn tiền VNPay' : 'Đối soát VNPay',
-    to: `/manager/online-payment-reconciliations?record=${encodeURIComponent(first(row, 'id'))}`,
-    status,
-    statusText: status === 'REFUND_REQUIRED' ? 'Cần hoàn tiền' : 'Chờ đối soát',
-  };
   if (entry.kind === 'deposit-settlements') return status === 'APPROVED'
     ? { title: 'Ghi nhận hoàn cọc', to: entry.web, status, statusText: 'Chờ hoàn cọc' }
     : { title: 'Duyệt quyết toán cọc', to: entry.web, status };
@@ -130,17 +124,17 @@ export function ManagerOverviewPage() {
     { title: 'Chờ phân công', value: queueTotal(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance']), hint: 'Hồ sơ chưa có người phụ trách', to: '/manager/assignments?assignment=unassigned', icon: Users },
     { title: 'Kho đang sử dụng', value: isCount(data?.units?.occupied) && isCount(data?.units?.total) && data.units.occupied <= data.units.total ? `${count(data.units.occupied)} / ${count(data.units.total)}` : '—', hint: 'Đang dùng / toàn bộ kho vật lý', to: '/manager/units', icon: Warehouse },
     { title: 'Công nợ hiện tại', value: isCount(data?.finance?.outstandingAmount) ? money(data.finance.outstandingAmount) : '—', hint: isCount(data?.finance?.unpaidInvoices) ? `${count(data.finance.unpaidInvoices)} hóa đơn còn dư nợ` : 'Số dư hóa đơn còn hiệu lực', to: '/manager/operations/invoices', icon: WalletCards },
-    { title: 'Chờ xác minh tiền', value: count(data?.queue?.paymentVerification), hint: 'Thông báo chuyển khoản chờ xác minh', to: '/manager/payment-submissions', icon: ClipboardList },
   ];
 
   return <section className="manager-overview">
     <PageHeader title="Tổng quan">
-      <Link className="button-secondary" to="/manager/reports">Báo cáo vận hành</Link>
+      <Link className="button-secondary" to="/manager/reports">Báo cáo</Link>
       <button type="button" className="button-secondary" disabled={report.loading || report.refreshing || activity.checking} onClick={() => { report.refresh(); activity.refresh(); }}><RefreshCw size={16} />Làm mới</button>
+      <RefreshStatus active={report.refreshing || activity.checking && !activity.loading} />
     </PageHeader>
     {report.error && <LoadState loading={false} error={report.error} retry={report.refresh} />}
     <div className="internal-kpis manager-dashboard-kpis" aria-label="Chỉ số quản lý" aria-busy={report.loading}>
-      {metrics.map(metric => <ManagerMetric key={metric.title} {...metric} />)}
+      {metrics.map(metric => report.loading ? <DashboardSkeleton key={metric.title} variant="metric" cardClass="manager-dashboard-kpi" /> : <ManagerMetric key={metric.title} {...metric} />)}
     </div>
     <div className="manager-overview-panels">
       <StoragePanel report={data} loading={report.loading} error={report.error} />
@@ -149,13 +143,13 @@ export function ManagerOverviewPage() {
           <h2 id="manager-priority-title">Việc cần xử lý</h2>
           <Link className="manager-panel-link" to="/manager/notifications?view=action">Xem tất cả <ArrowRight size={15} aria-hidden="true" /></Link>
         </header>
-        {activity.loading && <p className="manager-panel-caption" role="status">Đang tải công việc…</p>}
-        {activity.failed.length > 0 && <p className="booking-alert is-error" role="alert">Chưa tải được {activity.failed.join(', ')}.</p>}
+        {activity.loading && activity.checking && <DashboardSkeleton variant="activity" />}
+        <LoadState loading={false} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
         {!activity.loading && !activity.failed.length && !priority.length && <p className="manager-panel-caption">Hiện chưa có việc cần xử lý.</p>}
         <ul className="internal-task-list manager-work-list">
           {priority.map(({ entry, row }) => {
             const { title, to, status, statusText } = workDetails(entry, row);
-            const person = first(row, 'customer.fullName', 'reservation.customer.fullName', 'transaction.invoice.reservation.customer.fullName');
+            const person = first(row, 'customer.fullName', 'reservation.customer.fullName');
             const inspectedUnits = rows(row.physicalInspections).map(inspection => first(inspection, 'unit.unitCode')).filter(Boolean);
             const unit = first(row, 'currentStorageUnit.unitNumber', 'storageUnit.unitNumber', 'storageUnit.unitCode', 'unit.unitCode', 'unitCodeSnapshot') || [...new Set(inspectedUnits)].join(', ');
             return <li key={entry.id}><Link to={to} onClick={() => activity.markRead([entry.token])}>

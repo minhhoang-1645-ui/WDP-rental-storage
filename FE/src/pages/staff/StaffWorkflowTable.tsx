@@ -11,8 +11,8 @@ function handoverRecipient(row: Row) {
     /^BIÊN BẢN BÀN GIAO KHO\r?\nNgười nhận: ([^\r\n]+)/.exec(first(row, 'handoverNote'))?.[1] || '—';
 }
 
-export function StaffWorkflowTable({ resource, title, items, userId }: {
-  resource: StaffTableWorkflow; title: string; items: Row[]; userId: string;
+export function StaffWorkflowTable({ resource, title, items, userId, loadingRows }: {
+  resource: StaffTableWorkflow; title: string; items: Row[]; userId: string; loadingRows?: number;
 }) {
   const appointments = resource === 'appointments';
   const maintenance = resource === 'maintenance';
@@ -48,6 +48,6 @@ export function StaffWorkflowTable({ resource, title, items, userId }: {
   columns.push({ key: 'actions', label: 'Thao tác', cell: row =>
     <StaffRowActions to={`/staff/${resource}/${encodeURIComponent(recordId(row))}`} code={code(row)}
       primary={staffNeedsAction(resource, row, userId) ? appointments && row.status === 'CONFIRMED' ? 'Bàn giao' : 'Mở xử lý' : undefined} /> });
-  return <StaffTaskTable title={title} columns={columns} items={items} rowKey={recordId}
+  return <StaffTaskTable title={title} columns={columns} items={items} rowKey={recordId} loadingRows={loadingRows}
     emphasized={row => row.priority === 'HIGH' || overdue(row)} />;
 }

@@ -1,0 +1,242 @@
+/* Shared scale for the authenticated web workspaces. */
+.workspace-themed[data-workspace-role] {
+  --type-title: clamp(1.625rem, 2.2vw, 1.875rem);
+  --type-section: 1.25rem;
+  --type-body: 1rem;
+  --type-control: .9375rem;
+  --type-meta: .875rem;
+  --type-badge: .8125rem;
+  font-size: var(--type-body);
+  line-height: 1.55;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-page-header, .manager-report-header, .customer-page-header, .activity-inbox-page) h1 {
+  color: var(--workspace-text);
+  font-size: var(--type-title);
+  line-height: 1.25;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-section, .manager-processing, .manager-empty, .portal-dialog, .stock-card, .customer-panel, .customer-record-card) h2 {
+  font-size: var(--type-section);
+  line-height: 1.35;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-page-header, .customer-page-header) p:not(.eyebrow) {
+  color: var(--workspace-secondary);
+  font-size: var(--type-body);
+}
+
+.workspace-themed[data-workspace-role] :is(.workspace-nav-heading, .manager-nav-header, .workspace-nav-empty, .portal-brand small, .manager-account small, .customer-account small, .customer-brand small, .portal-topbar > div > span) {
+  color: var(--workspace-secondary);
+  font-size: var(--type-meta);
+  letter-spacing: 0;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-account strong, .customer-account strong, .customer-logout, .portal-topbar strong, .account-settings-nav a, .workspace-profile-trigger, .workspace-profile-panel) {
+  font-size: var(--type-control);
+}
+
+.workspace-themed[data-workspace-role] :is(.workspace-nav-heading, .customer-nav-link) :is(svg, .navigation-work-count) { flex-shrink: 0; }
+.workspace-themed[data-workspace-role] .workspace-nav-heading { line-height: 1.35; }
+.workspace-themed[data-workspace-role] .navigation-work-count {
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+  font-size: var(--type-badge);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-themed[data-workspace-role] :is(.field-label, .portal-form label, .workspace-nav-search, .notification-filters label, .rental-progress header label) {
+  color: var(--workspace-text);
+  font-size: var(--type-control);
+  font-weight: 600;
+}
+
+.workspace-themed[data-workspace-role] :is(input:not([type="checkbox"], [type="radio"]), select, textarea, .entity-select-trigger) {
+  font-size: var(--type-body);
+  line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace-themed[data-workspace-role] :is(input, textarea)::placeholder { color: var(--workspace-muted); opacity: 1; }
+
+.workspace-themed[data-workspace-role] :is(.button-primary, .button-secondary, .button-light, .portal-text-button, .activity-bell, .customer-back, .manager-open, .customer-module-tabs button) {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.workspace-themed[data-workspace-role] :is(.button-primary, .button-secondary, .button-light, .icon-button, .entity-select-trigger, input:not([type="checkbox"], [type="radio"]), select, textarea):disabled {
+  background: var(--workspace-disabled-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-table-wrap, .customer-table-wrap, .manager-report-type-wrap) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) th {
+  background: var(--workspace-table);
+  color: var(--workspace-secondary);
+  font-size: var(--type-meta);
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) td {
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+  font-size: var(--type-control);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) :is(small, time),
+.workspace-themed[data-workspace-role] :is(.record-code, .portal-result-heading small, .account-settings-identity small, .entity-select-options > button small) {
+  color: var(--workspace-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) .record-attention { color: var(--workspace-warning); }
+.workspace-themed[data-workspace-role] .customer-table .payment-rejection-reason { color: var(--workspace-error); }
+.workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) time { font-variant-numeric: tabular-nums; }
+.workspace-themed[data-workspace-role] :is(.manager-status, .customer-status, .record-new, .status-success, .status-warning, .payment-submission-status) {
+  font-size: var(--type-badge);
+  min-height: 26px;
+  line-height: 1.35;
+  font-weight: 650;
+  white-space: normal;
+}
+
+.workspace-themed[data-workspace-role] :is(.portal-result-heading, .portal-pagination, .internal-page-size, .notification-pagination, .manager-facts dt, .customer-facts dt, .customer-record-facts dt, .customer-profile-fields dt, .stock-fields small, .staff-assignee-hint, .staff-assignee-picker small, .workspace-help, .workspace-muted, .workspace-empty, .transfer-request-cards small) {
+  color: var(--workspace-secondary);
+  font-size: var(--type-meta);
+}
+
+.workspace-themed[data-workspace-role] :is(.manager-facts dd, .customer-facts dd, .customer-record-facts dd, .customer-profile-fields dd, .portal-dialog p, .portal-dialog .portal-form p, .customer-recent-item strong) {
+  color: var(--workspace-text);
+  font-size: var(--type-control);
+  overflow-wrap: anywhere;
+}
+
+.workspace-themed[data-workspace-role] :is(.portal-form p, .portal-form small, .portal-dialog small, .entity-select-popup > p, .stock-card small, .customer-record-heading small, .customer-unit-list small, .customer-timeline small, .customer-quote-list small, .customer-note, .customer-module-form > small, .customer-journey li p, .rental-progress-caption, .rental-progress li, .rental-progress-next p, .activity-item :is(p, small, time), .activity-inbox-footnote) {
+  color: var(--workspace-secondary);
+  font-size: var(--type-meta);
+}
+
+.workspace-themed[data-workspace-role] :is(.portal-form, .stock-card, .portal-dialog) .booking-alert {
+  color: var(--workspace-info);
+}
+.workspace-themed[data-workspace-role] :is(.portal-form, .stock-card, .portal-dialog) .booking-alert.is-warning { color: var(--workspace-warning); }
+.workspace-themed[data-workspace-role] :is(.portal-form, .stock-card, .portal-dialog) .booking-alert.is-success { color: var(--workspace-success); }
+.workspace-themed[data-workspace-role] :is(.portal-form, .stock-card, .portal-dialog) .booking-alert.is-error { color: var(--workspace-error); }
+
+.workspace-themed[data-workspace-role] :is(.document-file, .signature-otp, .workspace-waiting) {
+  background: var(--workspace-table);
+  border-color: var(--workspace-border);
+  color: var(--workspace-secondary);
+}
+.workspace-themed[data-workspace-role] .signature-otp input { font-size: 1.375rem; }
+
+/* Customer records also use the workspace theme on the main routes. */
+.customer-shell.workspace-themed :is(.customer-sidebar, .customer-mobile-header, .customer-topbar) {
+  background: var(--workspace-sidebar);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+
+.customer-shell.workspace-themed :is(.customer-panel, .customer-state, .customer-overview-card, .customer-table-wrap, .manager-table-wrap, .customer-process-guide, .customer-journey, .customer-filter-row, .rental-progress, .stock-card, .portal-toolbar, .manager-empty, .activity-inbox-page, .activity-summary, .activity-item, .vnpay-return-card) {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+
+.customer-shell.workspace-themed :is(.activity-panel, .portal-dialog, .entity-select-popup) {
+  background: var(--workspace-popover);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+
+.customer-shell.workspace-themed :is(input:not([type="checkbox"], [type="radio"]), select, textarea, .button-secondary, .button-light, .icon-button, .activity-bell, .record-copy, .entity-select-trigger, .entity-select-options > button):where(:not(:disabled)) {
+  background: var(--workspace-input);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+
+.customer-shell.workspace-themed :is(.button-secondary, .button-light, .icon-button, .activity-bell, .record-copy, .entity-select-options > button):hover:not(:disabled),
+.customer-shell.workspace-themed :is(.manager-table, .customer-table) tbody tr:hover { background: var(--workspace-hover); }
+.customer-shell.workspace-themed .button-primary:not(:disabled) { background: var(--workspace-primary); color: var(--workspace-on-primary); }
+.customer-shell.workspace-themed .button-primary:hover:not(:disabled) { background: var(--workspace-primary-hover); }
+.customer-shell.workspace-themed .customer-nav .customer-booking-shortcut { border-color: var(--workspace-border); }
+.customer-shell.workspace-themed :is(.payment-pending-label, .vnpay-waiting-panel span, .vnpay-waiting-panel small) { font-size: var(--type-meta); }
+.customer-shell.workspace-themed .payment-submission-status { background: var(--workspace-warning-bg); color: var(--workspace-warning); }
+.customer-shell.workspace-themed .payment-pending-label { color: var(--workspace-warning); }
+.customer-shell.workspace-themed .payment-submission-status.is-verified { background: var(--workspace-success-bg); color: var(--workspace-success); }
+.customer-shell.workspace-themed .payment-submission-status.is-rejected { background: var(--workspace-error-bg); color: var(--workspace-error); }
+.customer-shell.workspace-themed .vnpay-waiting-panel { background: var(--workspace-info-bg); color: var(--workspace-info); border-color: var(--workspace-border); }
+.customer-shell.workspace-themed .vnpay-waiting-panel.is-error { background: var(--workspace-error-bg); color: var(--workspace-error); }
+.customer-shell.workspace-themed .vnpay-waiting-panel :is(span, small) { color: inherit; }
+
+.customer-shell.workspace-themed :is(.customer-state-icon, .customer-timeline > div > span, .customer-profile-avatar, .customer-history-status, .journey-number, .rental-progress li > span) {
+  background: var(--workspace-selected);
+  border-color: var(--workspace-border);
+  color: var(--workspace-primary);
+}
+.customer-shell.workspace-themed .rental-progress li { border-color: var(--workspace-border); }
+.customer-shell.workspace-themed .rental-progress li:is(.is-done, .is-current) { border-color: var(--workspace-primary); }
+.customer-shell.workspace-themed .rental-progress li.is-current > span { background: var(--workspace-primary); color: var(--workspace-on-primary); }
+
+.customer-shell.workspace-themed :is(.activity-item.is-unread, .activity-tabs button[aria-selected="true"], .entity-select-options > button[aria-selected="true"], .entity-select-options > button.is-keyboard-active) {
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+
+.customer-shell.workspace-themed :is(.customer-status, .manager-status, .booking-alert, .workflow-hint) { background: var(--workspace-info-bg); color: var(--workspace-info); }
+.customer-shell.workspace-themed :is(.customer-status--pending, .customer-status--pending_payment, .customer-status--open, .customer-status--requested, .customer-status--pending_review, .customer-status--pending_settlement, .manager-status:is(.is-pending, .is-pending_payment, .is-requested, .is-open), .booking-alert.is-warning, .customer-inline-notice) { background: var(--workspace-warning-bg); color: var(--workspace-warning); }
+.customer-shell.workspace-themed :is(.customer-status--paid, .customer-status--active, .customer-status--confirmed, .customer-status--completed, .customer-status--resolved, .customer-status--settled, .manager-status:is(.is-completed, .is-active, .is-approved, .is-confirmed, .is-paid, .is-resolved), .booking-alert.is-success, .customer-form-message.is-ok, .portal-success) { background: var(--workspace-success-bg); color: var(--workspace-success); }
+.customer-shell.workspace-themed :is(.customer-status--overdue, .customer-status--cancelled, .customer-status--expired, .customer-status--rejected, .customer-status--issue_found, .customer-status--escalated, .customer-status--awaiting_outstanding_payment, .manager-status:is(.is-rejected, .is-cancelled, .is-expired, .is-overdue, .is-issue_found), .booking-alert.is-error, .customer-form-message.is-error, .customer-state--error, .portal-danger) { background: var(--workspace-error-bg); color: var(--workspace-error); }
+.customer-shell.workspace-themed .customer-state--error :is(svg, h2, p) { color: var(--workspace-error); }
+.customer-shell.workspace-themed :is(.customer-form-message, .customer-inline-notice) { font-size: var(--type-meta); }
+.customer-shell.workspace-themed :is(.portal-text-button, .activity-item-cta, .portal-record-link, .manager-facts dd a) { color: var(--workspace-primary); }
+.customer-shell.workspace-themed :is(.customer-module-tabs, .customer-page-header-action, .customer-record-heading) { flex-wrap: wrap; }
+.customer-shell.workspace-themed .customer-page-header-action { flex: 0 1 auto; min-width: 0; }
+.customer-shell.workspace-themed .customer-header-actions { flex-wrap: wrap; min-width: 0; }
+.customer-shell.workspace-themed .customer-recent-item strong { white-space: normal; }
+.customer-shell.workspace-themed .customer-journey strong { font-size: var(--type-control); }
+.customer-shell.workspace-themed :is(.invoice-current-balance, .activity-update-note) {
+  background: var(--workspace-info-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-info);
+}
+.customer-shell.workspace-themed .invoice-current-balance :is(span, small) { color: inherit; font-size: var(--type-meta); }
+.customer-shell.workspace-themed .rental-choice-card { background: var(--workspace-input); }
+.customer-shell.workspace-themed :is(.rental-choice-card.is-selected, .rental-choice-picker .rental-choice-confirm) {
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+.customer-shell.workspace-themed .rental-choice-heading { flex-wrap: wrap; }
+.customer-shell.workspace-themed :is(.rental-choice-heading small, .rental-choice-count) { font-size: var(--type-badge); }
+.customer-shell.workspace-themed .rental-choice-heading small { background: var(--workspace-success-bg); color: var(--workspace-success); }
+
+@media (max-width: 680px) {
+  .customer-shell.workspace-themed .customer-responsive-table { background: transparent; }
+  .customer-shell.workspace-themed .customer-responsive-table tr { background: var(--workspace-surface); }
+  .customer-shell.workspace-themed .customer-responsive-table td::before {
+    color: var(--workspace-secondary);
+    font-size: var(--type-meta);
+  }
+  .customer-shell.workspace-themed .customer-responsive-table .customer-date { white-space: normal; }
+  .customer-shell.workspace-themed .customer-responsive-table .payment-actions { min-width: 0; }
+  .customer-shell.workspace-themed .customer-module-tabs button {
+    flex: 1 1 min(86px, 100%);
+    padding-inline: 6px;
+    text-align: center;
+  }
+  .customer-shell.workspace-themed .customer-module-tabs button svg { display: none; }
+  .workspace-themed[data-workspace-role] .portal-pagination .button-secondary { padding-inline: 10px; }
+}

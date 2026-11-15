@@ -2,13 +2,7 @@
 
 # NestBox Storage Mobile
 
-Rà soát UI/UX và bổ sung thao tác Customer/Staff ngày 16/10: [FULL_REVIEW_2026-10-16.md](../FE/FULL_REVIEW_2026-10-16.md). Giữ nguyên BE/database và hai mục Admin.
-
-Bổ sung đối chiếu trước duyệt gia hạn ngày 16/10: [góp ý giảng viên và giới hạn BE](../FE/TEACHER_REVIEW_2026-10-16.md). Các phần nhập/xuất hàng khách, phụ lục có ký và cấu hình Admin cần API/schema mới, chưa được lưu giả trên mobile.
-
-Ứng dụng React Native/Expo dành cho **Customer, Staff, Manager và Admin** của WDP Storage. BE và database được giữ nguyên.
-
-Giao diện được đồng bộ với web ngày 15/10/2026; xem [thiết kế và kiểm thử](../FE/UI_REFRESH_2026-10-15.md). Giữ nguyên API, ô nhập React Native và quyền của từng vai trò.
+Ứng dụng React Native/Expo dành cho **Customer, Staff, Manager và Admin** của WDP Storage.
 
 ## Chức năng hiện có
 
@@ -21,8 +15,6 @@ Giao diện được đồng bộ với web ngày 15/10/2026; xem [thiết kế 
 - Tự động đưa người dùng vào đúng khu vực theo vai trò.
 - Có trạng thái tải, lỗi, không có dữ liệu và thao tác tải lại cho các danh sách API.
 - Danh sách tải đủ trang theo limit BE trả về. Khi quay lại màn hình, tải lại dữ liệu để phản ánh thao tác vừa lưu. Thao tác tài chính cần xác nhận thực tế; retry giữ idempotency key; chặn gửi lặp.
-
-Phạm vi hiện tại và kiểm tra sau merge: [MERGE_AUDIT_2026-10-15.md](../FE/MERGE_AUDIT_2026-10-15.md). [MOBILE_FUNCTIONAL_AUDIT.md](./MOBILE_FUNCTIONAL_AUDIT.md) giữ lịch sử tích hợp; phạm vi Admin bảy mục trong báo cáo cũ đã được thay thế.
 
 ## Đường dẫn theo vai trò
 
@@ -70,5 +62,3 @@ npx expo export --platform web
 ```
 
 Các route nằm trong `src/app`, phần gọi API nằm trong `src/services`, và dữ liệu đăng nhập được quản lý trong `src/auth`.
-
-Ngày 14/10/2026 đã kiểm tra đăng nhập và đăng xuất thật của Admin/Manager trên mobile web và Android Expo Go; kiểm tra Email → Tiếp theo → Mật khẩu → Done bằng bàn phím Android. Form dùng TextInput của React Native, chuẩn hóa email, kiểm tra dữ liệu bắt buộc và gửi đúng mật khẩu vừa nhập. Đã rà soát các trang danh sách/chi tiết, liên kết và phân quyền; kết quả trong MOBILE_FUNCTIONAL_AUDIT.md. Các script và tệp tạm phục vụ kiểm thử đã được dọn theo yêu cầu, không lưu mật khẩu vào mã nguồn. Hai tài khoản mới được giữ lại vì là tài khoản người dùng yêu cầu tạo.

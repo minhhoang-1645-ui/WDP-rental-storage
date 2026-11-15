@@ -6,6 +6,8 @@ import "./styles/index.css";
 import "./styles/portal.css";
 import "./styles/refresh.css";
 import "./styles/light-professional.css";
+import "./styles/web-readability.css";
+import "./styles/web-spacing.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

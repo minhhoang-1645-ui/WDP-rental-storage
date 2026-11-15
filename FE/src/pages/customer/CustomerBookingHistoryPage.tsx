@@ -21,7 +21,7 @@ export function CustomerBookingHistoryPage() {
   const loading = reservations.loading || contracts.loading;
   const refresh = () => { reservations.refresh(); contracts.refresh(); };
   return <section className="customer-page">
-    <PortalPageHeader eyebrow="Kho của bạn" title="Lịch sử đặt kho" description="Xem toàn bộ kho đã đặt, kho đang thuê, kho đã trả và những yêu cầu đã hủy hoặc hết hạn." action={<button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={16} />Làm mới lịch sử</button>} />
+    <PortalPageHeader eyebrow="Kho của bạn" title="Lịch sử đặt kho" action={<button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={16} />Làm mới lịch sử</button>} />
     <div className="customer-filter-row booking-history-filters">
       <label className="field-label">Tìm trong lịch sử<input type="search" value={search} maxLength={150} placeholder="Mã đơn, tên kho, mã kho hoặc hợp đồng…" onChange={event => { setSearch(event.target.value); reset(); }} /></label>
       <label className="field-label">Trạng thái thuê<select aria-label="Trạng thái lịch sử" value={phase} onChange={event => { setPhase(event.target.value); reset(); }}><option value="">Tất cả</option>{[...new Map(entries.map(entry => [entry.phase, entry.phaseLabel]))].map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label>

@@ -26,16 +26,13 @@ export function PageHeader({
   description?: string;
   children?: ReactNode;
 }) {
-  const { user } = useAuth();
-  const workspace = user?.role === 'ADMIN' ? 'QUẢN TRỊ' : user?.role === 'MANAGER' ? 'QUẢN LÝ' : user?.role === 'STAFF' ? 'NHÂN VIÊN' : 'TÀI KHOẢN';
   return (
     <header className="manager-page-header">
       <div>
-        <p className="eyebrow">NESTBOX STORAGE / {workspace}</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>
-      <div className="portal-actions">{children}</div>
+      {children && <div className="portal-actions">{children}</div>}
     </header>
   );
 }

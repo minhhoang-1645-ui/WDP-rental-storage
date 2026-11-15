@@ -9,7 +9,10 @@ auditResources['booking-requests'] = 'Đơn đặt kho';
 auditResources['damage-claims'] = 'Sự cố hàng hóa';
 
 const resourceActions: Record<string, Record<string, string>> = {
-  users: { CREATE: 'Tạo tài khoản', STATUS: 'Đổi trạng thái tài khoản' },
+  users: {
+    CREATE: 'Tạo tài khoản', UPDATE: 'Cập nhật thông tin tài khoản', STATUS: 'Đổi trạng thái tài khoản',
+    DISABLE_ACCOUNT: 'Vô hiệu hóa tài khoản', REACTIVATE_ACCOUNT: 'Kích hoạt lại tài khoản',
+  },
   'stock-movements': { CREATE: 'Tạo phiếu nhập/xuất hàng', ASSIGN: 'Phân công nhập/xuất hàng', COMPLETE: 'Hoàn tất nhập/xuất hàng' },
   'support-requests': { CREATE: 'Gửi yêu cầu hỗ trợ', ASSIGN: 'Phân công xử lý hỗ trợ', START: 'Bắt đầu xử lý hỗ trợ', RESOLVE: 'Giải quyết yêu cầu hỗ trợ', ESCALATE: 'Chuyển yêu cầu hỗ trợ lên quản lý', PRIORITY: 'Đổi mức ưu tiên hỗ trợ' },
   maintenance: { CREATE: 'Tạo phiếu bảo trì', ASSIGN: 'Phân công bảo trì', START: 'Bắt đầu bảo trì', COMPLETE_WORK: 'Báo hoàn thành bảo trì', VERIFY: 'Nghiệm thu bảo trì', REJECT_VERIFICATION: 'Yêu cầu bảo trì lại', PRIORITY: 'Đổi mức ưu tiên bảo trì' },
@@ -41,6 +44,7 @@ export type AuditPage = { page: number; limit: number; total: number; items: Aud
 
 export function auditTitle(event: AuditEvent) {
   if (event.outcome === 'FAILURE') {
+    if (event.action === 'AUTH_LOGIN_ACCOUNT_DISABLED') return 'Đăng nhập thất bại do tài khoản bị vô hiệu hóa';
     if (event.action === 'AUTH_LOGIN') return 'Đăng nhập thất bại';
     if (event.action === 'AUTH_LOGOUT') return 'Đăng xuất thất bại';
   }

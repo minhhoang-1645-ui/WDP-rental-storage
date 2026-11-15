@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { ArrowRight, Info, Ruler, Warehouse, X } from 'lucide-react'
+import { ArrowRight, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useCatalog } from '../../catalog/catalog-context'
 import { ComparisonChoice } from '../../components/public/StorageComparison'
 import { comparisonHref, useStorageComparison } from '../../components/public/comparison-context'
 import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
-import { storageBookingHref, storageMonthlyPrice, storageSpecifications, storageGroupSummary } from '../../utils/storage-selection'
+import { storageBookingHref, storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
 import type { StorageListing } from '../../types/storage'
 
 export function SizeGuidePage() {
@@ -33,30 +33,86 @@ export function SizeGuidePage() {
   const specs = (product: StorageListing) => storageSpecifications(product, getStorageSize(product.sizeId)!)
   const facts: Array<[string, (product: StorageListing) => string]> = [
     ['Diện tích sàn', product => specs(product).floorArea],
-    ['Kích thước (rộng × dài × cao)', product => specs(product).dimensions],
+    ['Rộng × dài × cao', product => specs(product).dimensions],
     ['Thể tích', product => specs(product).volume],
-    ['Điều kiện bảo quản', product => product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'],
+    ['Bảo quản', product => product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'],
     ['Vị trí', product => product.floor || 'Xem khi xác nhận'],
     ['Truy cập kho', product => product.access || 'Theo thỏa thuận khi bàn giao'],
     ['Tiện ích', product => product.features.join(' · ') || 'Chưa công bố'],
     ['Giá thuê cơ bản', product => storageMonthlyPrice(product.monthlyPrice) + (product.monthlyPrice !== null ? ' / tháng / kho' : '')],
     ['Tiền đặt cọc', product => typeof product.depositMonths === 'number' ? `${product.depositMonths} tháng tiền thuê` : 'Xem báo giá theo kỳ thuê'],
     ['Thuê ngắn ngày', product => product.allowDailyRental ? `Có, tối thiểu ${product.minRentalDays ?? 1} ngày` : 'Thuê theo tháng'],
-    ['Tình trạng danh mục', product => product.status === 'limited' ? 'Số lượng hạn chế' : 'Đang nhận yêu cầu'],
+    ['Tình trạng', product => product.status === 'limited' ? 'Số lượng hạn chế' : 'Đang nhận yêu cầu'],
   ]
-  return <>
-    <section className="storage-search-header border-b border-border bg-white py-12"><Container><p className="eyebrow">Hướng dẫn chọn kho</p><h1 className="mt-3 text-4xl font-bold tracking-tight sm:text-5xl">So sánh kho trước khi chọn.</h1><p className="mt-4 max-w-3xl leading-7 text-slate">Chọn từ 2 đến 3 loại kho rồi bấm So sánh. Đối chiếu ảnh, kích thước, điều kiện bảo quản và chi phí cạnh nhau trước khi quyết định.</p></Container></section>
-    <section className="section-space"><Container>
+  return <div className="storage-comparison-page">
+    <header className="public-page-intro"><Container>
+      <h1>So sánh kho</h1>
+      {!comparing && <p>Chọn 2–3 loại kho để xem kích thước, giá thuê và tiền cọc.</p>}
+    </Container></header>
+    <section className="public-page-content"><Container>
       {comparing ? <>
-        <div className="catalog-comparison-heading"><div><h2 ref={comparisonHeading} tabIndex={-1} className="comparison-result-heading">So sánh {compared.length} loại kho</h2><p>Các hàng có nền nhạt chỉ ra thông tin khác nhau. Giá cơ bản chưa gồm cọc và dịch vụ; kiểm tra báo giá theo ngày thuê.</p><p className="comparison-swipe-hint">Vuốt ngang trong bảng để xem các kho cạnh nhau trên màn hình nhỏ.</p></div><button className="button-secondary" onClick={edit}>Thay đổi kho so sánh</button></div>
-        <div className="storage-side-comparison" tabIndex={0} role="region" aria-label="Bảng so sánh kho đã chọn"><table style={{ minWidth: 170 + compared.length * 245 }}><thead><tr><th scope="col">Thông tin so sánh</th>{compared.map(product => <th scope="col" key={product.id} data-product-id={product.id}><button className="comparison-remove" type="button" aria-label={`Bỏ so sánh ${product.name}`} onClick={() => remove(product.id)}><X size={17} /></button><StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /><small>{product.code}</small><h3>{product.name}</h3><strong>{storageMonthlyPrice(product.monthlyPrice)}{product.monthlyPrice !== null && ' / tháng'}</strong><Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link></th>)}</tr></thead><tbody>{facts.map(([title, value]) => <tr key={title} className={new Set(compared.map(value)).size > 1 ? 'is-different' : ''}><th scope="row">{title}</th>{compared.map(product => <td key={product.id}>{value(product)}</td>)}</tr>)}<tr><th scope="row">Tiếp tục</th>{compared.map(product => <td key={product.id}><Link className="button-primary" to={storageBookingHref(product, params.toString())} aria-label={`Chọn kho ${product.name}`}>Chọn kho này <ArrowRight size={15} /></Link></td>)}</tr></tbody></table></div><p className="comparison-mobile-hint">Trên màn hình nhỏ, vuốt ngang trong bảng để xem các kho cạnh nhau.</p>
+        <div className="catalog-comparison-heading">
+          <div>
+            <h2 ref={comparisonHeading} tabIndex={-1} className="comparison-result-heading">{compared.length} loại kho đã chọn</h2>
+            <p>Giá thuê chưa gồm tiền cọc và dịch vụ.</p>
+          </div>
+          <button type="button" className="button-secondary" onClick={edit}>Đổi lựa chọn</button>
+        </div>
+        <p className="comparison-swipe-hint">Vuốt ngang để xem thêm.</p>
+        <div className="storage-side-comparison" tabIndex={0} role="region" aria-label="Bảng so sánh kho đã chọn">
+          <table style={{ minWidth: 170 + compared.length * 245 }}>
+            <thead><tr>
+              <th scope="col">Thông tin</th>
+              {compared.map(product => <th scope="col" key={product.id} data-product-id={product.id}>
+                <button className="comparison-remove" type="button" aria-label={`Bỏ so sánh ${product.name}`} onClick={() => remove(product.id)}><X size={17} /></button>
+                <StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} />
+                <small>{product.code}</small>
+                <h3>{product.name}</h3>
+                <Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link>
+              </th>)}
+            </tr></thead>
+            <tbody>
+              {facts.map(([title, value]) => <tr key={title} className={new Set(compared.map(value)).size > 1 ? 'is-different' : ''}>
+                <th scope="row">{title}</th>
+                {compared.map(product => <td key={product.id}>{value(product)}</td>)}
+              </tr>)}
+              <tr><th scope="row">Đặt kho</th>{compared.map(product => <td key={product.id}>
+                <Link className="button-primary" to={storageBookingHref(product, params.toString())} aria-label={`Chọn kho ${product.name}`}>Chọn kho này <ArrowRight size={15} /></Link>
+              </td>)}</tr>
+            </tbody>
+          </table>
+        </div>
       </> : <>
-        {params.has('compare') && <p className="booking-alert" role="status">Hãy chọn ít nhất 2 loại kho đang được cung cấp để so sánh.</p>}
-        <div className="catalog-size-filters" aria-label="Lọc nhóm kích thước"><button type="button" aria-pressed={selected === 'all'} className={selected === 'all' ? 'is-selected' : ''} onClick={() => choose('all')}><Warehouse size={20} /><strong>Tất cả loại kho</strong><span>{storageListings.length} lựa chọn</span></button>{storageSizes.map(size => <button key={size.id} type="button" aria-pressed={selected === size.id} className={selected === size.id ? 'is-selected' : ''} onClick={() => choose(size.id)}><Ruler size={20} /><strong>{size.name}</strong><span>{storageGroupSummary(storageListings.filter(product => product.sizeId === size.id), size)}</span></button>)}</div>
-        <div className="catalog-comparison-heading"><div><h2>Chọn kho để so sánh</h2><p>Đã chọn {selection.ids.length}/3. Bạn có thể chọn kho ở nhiều nhóm kích thước khác nhau.</p></div>{selection.ids.length >= 2 ? <Link className="button-primary" to={comparisonHref(selection.ids, params.toString())}>So sánh các kho đã chọn</Link> : <button className="button-primary" disabled>Chọn ít nhất 2 kho</button>}</div>
-        <div className="comparison-candidates">{products.map(product => <article className="comparison-candidate" key={product.id} data-candidate-id={product.id}><StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} loading="lazy" /><div><small>{product.code}</small><h3>{product.name}</h3><p>{specs(product).floorArea} · {product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</p><strong>{storageMonthlyPrice(product.monthlyPrice)}{product.monthlyPrice !== null && ' / tháng'}</strong><ComparisonChoice product={product} /><Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link></div></article>)}</div>
+        {params.has('compare') && <p className="booking-alert" role="status">Chọn ít nhất 2 loại kho đang được cung cấp.</p>}
+        <div className="comparison-toolbar">
+          <div className="catalog-size-filters" role="group" aria-label="Lọc theo kích thước">
+            <button type="button" aria-pressed={selected === 'all'} onClick={() => choose('all')}>Tất cả loại kho</button>
+            {storageSizes.map(size => <button key={size.id} type="button" aria-pressed={selected === size.id} onClick={() => choose(size.id)}>{size.name}</button>)}
+          </div>
+          <div className="comparison-submit">
+            <span aria-live="polite">Đã chọn {selection.ids.length}/3</span>
+            {selection.ids.length >= 2
+              ? <Link className="button-primary" to={comparisonHref(selection.ids, params.toString())}>So sánh</Link>
+              : <button type="button" className="button-primary" disabled>So sánh</button>}
+          </div>
+        </div>
+        <div className="comparison-candidates">
+          {products.map(product => <article className="comparison-candidate" key={product.id} data-candidate-id={product.id}>
+            <StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} loading="lazy" />
+            <div>
+              <small>{product.code}</small>
+              <h2>{product.name}</h2>
+              <p>{specs(product).floorArea} · {product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</p>
+              <strong>{storageMonthlyPrice(product.monthlyPrice)}{product.monthlyPrice !== null && ' / tháng'}</strong>
+              <div className="comparison-card-actions">
+                <ComparisonChoice product={product} />
+                <Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link>
+              </div>
+            </div>
+          </article>)}
+        </div>
       </>}
-      <div className="catalog-choice-note"><Info size={20} /><p>Bạn chọn loại và số lượng kho. Mã kho vật lý và vị trí được hiển thị sau khi xác nhận. Ảnh là ảnh tham khảo; cần kiểm tra lịch trống cho toàn kỳ thuê trước khi gửi yêu cầu. Sức chứa phụ thuộc kích thước đồ, cách đóng gói và lối đi cần chừa.</p></div>
+      <p className="comparison-note">Ảnh tham khảo. Số kho trống phụ thuộc vào thời gian thuê.</p>
     </Container></section>
-  </>
+  </div>
 }

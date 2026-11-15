@@ -20,8 +20,7 @@
   gap: var(--space-8);
 }
 
-.admin-dashboard-panels,
-.admin-detail-grid {
+.admin-dashboard-panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
@@ -57,14 +56,16 @@
 .admin-preview .admin-preview-copy small { margin: 0; line-height: 1.4; font-size: var(--type-meta); }
 .admin-preview .admin-preview-copy strong { line-height: 1.4; }
 .admin-preview .admin-audit-preview > svg { color: var(--workspace-secondary); margin-top: 2px; }
-.manager-shell.internal-web .admin-preview .audit-record-link, .admin-audit .audit-record-link { display: inline; padding: 0; color: var(--workspace-primary); text-decoration: underline; text-underline-offset: 2px; }
+.manager-shell.internal-web .admin-preview .audit-record-link { display: inline; padding: 0; color: var(--workspace-primary); text-decoration: underline; text-underline-offset: 2px; }
 .manager-shell.internal-web.workspace-themed .admin-audit-table .audit-failure, .admin-preview .audit-failure { color: var(--workspace-error); }
 .admin-audit-table th:first-child { width: 17%; }
 .admin-audit-table th:nth-child(2) { width: 27%; }
 .admin-audit-table th:nth-child(3) { width: 15%; }
-.admin-audit-table th:nth-child(5) { width: 23%; }
 .admin-audit-table time { white-space: nowrap; }
-.admin-detail-heading > svg { flex-shrink: 0; }
+.admin-audit[data-category="ACTIVITY"] .admin-audit-table th:first-child { width: 18%; }
+.admin-audit[data-category="ACTIVITY"] .admin-audit-table th:nth-child(2) { width: 32%; }
+.admin-audit[data-category="ACTIVITY"] .admin-audit-table th:nth-child(3) { width: 19%; }
+.admin-audit-table td:nth-child(2) { overflow-wrap: anywhere; }
 
 .admin-toolbar {
   gap: 12px;
@@ -95,6 +96,53 @@
 .admin-detail-heading h2 {
   margin: 0;
 }
+.admin-account-detail .manager-page-header { margin-bottom: var(--space-8); }
+.admin-account-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+  color: var(--workspace-secondary);
+  overflow-wrap: anywhere;
+  margin-block: var(--space-8) var(--space-20);
+}
+.admin-account-tabs {
+  display: flex;
+  gap: var(--space-4);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-4);
+  margin-bottom: var(--space-16);
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--control-radius);
+  background: var(--workspace-table);
+}
+.admin-account-tabs button {
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--control-radius);
+  color: var(--workspace-secondary);
+  font-weight: 650;
+}
+.admin-account-tabs button[aria-selected="true"] { color: var(--workspace-primary); background: var(--workspace-selected); }
+.admin-account-tabs button:hover:not([aria-selected="true"]) { background: var(--workspace-hover); }
+.admin-detail-panel { max-width: 840px; }
+.admin-detail-heading { flex-wrap: wrap; margin-bottom: var(--space-12); }
+.admin-profile-editor {
+  margin-block: var(--space-12);
+  padding-block-end: var(--space-16);
+  border-bottom: 1px solid var(--workspace-border);
+}
+.admin-role-access h2 { margin-block: 0 var(--space-8); }
+.admin-role-access ul { display: grid; gap: var(--space-8); padding-inline-start: var(--space-20); list-style: disc; }
+.admin-access-status {
+  margin-top: var(--space-20);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--workspace-border);
+}
+.admin-access-status h3 { margin: 0 var(--space-8) var(--space-8) 0; display: inline-block; font-size: 16px; }
+.admin-access-status p { margin: var(--space-8) 0; }
 
 .workspace-themed[data-workspace-role="admin"] :is(.portal-danger.button-secondary:not(:disabled), .staff-table-popover > .admin-destructive-link) {
   color: var(--workspace-error);
@@ -110,8 +158,7 @@
   .admin-dashboard-panels { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 800px) {
-  .admin-dashboard-panels,
-  .admin-detail-grid {
+  .admin-dashboard-panels {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -154,6 +201,32 @@
 
 .admin-accounts .manager-table :is(th, td):first-child {
   width: 44px;
+}
+
+.admin-accounts .manager-table tbody tr:has(.admin-account-link) {
+  position: relative;
+}
+
+.admin-accounts .admin-account-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-accounts .admin-account-link:is(:hover, :focus-visible) {
+  color: var(--workspace-primary);
+  text-decoration: underline;
+}
+
+.admin-accounts .admin-account-link::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  content: '';
+}
+
+.admin-accounts .manager-table tbody :is(input[type="checkbox"], .staff-table-trigger) {
+  position: relative;
+  z-index: 2;
 }
 
 .admin-accounts input[type="checkbox"] {

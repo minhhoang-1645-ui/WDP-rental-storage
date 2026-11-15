@@ -7,7 +7,6 @@ import { StorageSizeCard } from '../../components/public/StorageSizeCard'
 import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
 import { faqs, imageCredits } from '../../data/storage'
-import '../../styles/landing.css'
 
 const steps = [
   { icon: Search, title: 'Chọn kho', description: 'Chọn kích thước và thời gian thuê.' },

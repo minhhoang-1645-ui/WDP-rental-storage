@@ -6,8 +6,10 @@ import request from 'supertest';
 import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
 import { AuthGuard } from './auth.guard.js';
+import { RolesGuard } from './roles.guard.js';
+import { AdminUsersController } from './admin-users.controller.js';
 import { MemoryUserRepository, UserRepository, PrismaUserRepository } from '../users/user.repository.js';
-import { auditTarget } from '../audit/audit.interceptor.js';
+import { AuditInterceptor, auditTarget } from '../audit/audit.interceptor.js';
 
 const registration = { fullName: 'Khách hàng', email: 'owner@example.test', phone: '0901234567', password: 'fixture-password' };
 describe('Bounded auth resources', () => {
@@ -35,6 +37,7 @@ describe('Bounded auth resources', () => {
 describe('Own-profile HTTP updates, in-memory users only', () => {
   let app: INestApplication, service: AuthService;
   const users = new MemoryUserRepository(), sessions = new Map<string, { token: string; user: { id: string } }>();
+  const recordAudit = vi.fn().mockResolvedValue(undefined);
   beforeAll(async () => {
     service = new AuthService(users);
     const source = await service.register(registration); sessions.set('CUSTOMER', source);
@@ -43,8 +46,11 @@ describe('Own-profile HTTP updates, in-memory users only', () => {
       await users.create({ fullName: role, email: `${role.toLowerCase()}@example.test`, phone: registration.phone, passwordHash: original.passwordHash, role });
       sessions.set(role, await service.login({ email: `${role.toLowerCase()}@example.test`, password: registration.password }));
     }
-    const module = await Test.createTestingModule({ controllers: [AuthController], providers: [{ provide: UserRepository, useValue: users }, { provide: AuthService, useValue: service }, AuthGuard] }).compile();
-    app = module.createNestApplication(); app.setGlobalPrefix('api'); await app.init();
+    const module = await Test.createTestingModule({ controllers: [AuthController, AdminUsersController], providers: [{ provide: UserRepository, useValue: users }, { provide: AuthService, useValue: service }, AuthGuard, RolesGuard] }).compile();
+    app = module.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalInterceptors(new AuditInterceptor({ record: recordAudit } as never));
+    await app.init();
   });
   afterAll(async () => { await app?.close(); });
   it.each(['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'])('allows %s to edit only its own contact fields and keeps its session valid', async role => {
@@ -60,7 +66,16 @@ describe('Own-profile HTTP updates, in-memory users only', () => {
   it('requires authentication, rejects disabled users, and audits only the profile action', async () => {
     await request(app.getHttpServer()).patch('/api/auth/me').send({ fullName: 'Anonymous' }).expect(401);
     const session = sessions.get('STAFF')!; await users.updateStatus(session.user.id, 'DISABLED');
-    await request(app.getHttpServer()).patch('/api/auth/me').set('Authorization', `Bearer ${session.token}`).send({ fullName: 'Disabled' }).expect(401);
+    await request(app.getHttpServer()).patch('/api/auth/me').set('Authorization', `Bearer ${session.token}`).send({ fullName: 'Disabled' }).expect(401)
+      .expect(({ body }) => expect(body).toMatchObject({ code: 'ACCOUNT_DISABLED', message: 'Tài khoản đã bị vô hiệu hóa.' }));
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${session.token}`).expect(401)
+      .expect(({ body }) => expect(body.code).toBe('ACCOUNT_DISABLED'));
+    await users.updateStatus(session.user.id, 'ACTIVE');
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${session.token}`).expect(401)
+      .expect(({ body }) => expect(body.code).toBe('ACCOUNT_DISABLED'));
+    const fresh = await service.login({ ...registration, email: 'staff@example.test' });
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${fresh.token}`).expect(200);
+    sessions.set('STAFF', fresh);
     expect(auditTarget({ method: 'PATCH', route: { path: '/api/auth/me' } })).toMatchObject({ action: 'AUTH_PROFILE_UPDATE', category: 'ACTIVITY' });
   });
   it('conditions the persistent update on the active actor ID even if account status changes after auth', async () => {
@@ -68,5 +83,81 @@ describe('Own-profile HTTP updates, in-memory users only', () => {
     expect(await new PrismaUserRepository(db as never).updateProfile('owner-id', { phone: registration.phone })).toBeNull();
     expect(db.user.updateMany).toHaveBeenCalledWith({ where: { id: 'owner-id', accountStatus: 'ACTIVE' }, data: { phone: registration.phone } });
     expect(db.user.findUnique).not.toHaveBeenCalled();
+  });
+  it('distinguishes a known expired session from an unrecognized bearer', async () => {
+    const session = sessions.get('MANAGER')!;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 8 * 60 * 60 * 1000);
+    try {
+      await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${session.token}`).expect(401)
+        .expect(({ body }) => expect(body.code).toBe('SESSION_EXPIRED'));
+      await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', 'Bearer unknown-session').expect(401)
+        .expect(({ body }) => expect(body.code).toBe('SESSION_INVALID'));
+    } finally { clock.mockRestore(); }
+  });
+  it('lets Admin edit a disabled account contact profile and records only account audit metadata', async () => {
+    const admin = sessions.get('ADMIN')!, target = sessions.get('CUSTOMER')!;
+    const path = '/api/admin/users/' + target.user.id;
+    const original = (await users.findById(target.user.id))!;
+    const bearer = 'Bearer ' + admin.token;
+    await request(app.getHttpServer()).patch(path + '/status').set('Authorization', bearer).send({ accountStatus: 'DISABLED' }).expect(200);
+    expect(recordAudit).toHaveBeenLastCalledWith(expect.objectContaining({ resourceId: target.user.id, action: 'DISABLE_ACCOUNT', httpStatus: 200 }));
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', 'Bearer ' + target.token).expect(401)
+      .expect(({ body }) => expect(body.code).toBe('ACCOUNT_DISABLED'));
+    recordAudit.mockClear();
+    const response = await request(app.getHttpServer()).patch(path).set('Authorization', bearer)
+      .send({ fullName: '  Tên cập nhật  ', phone: '+84 909 123 456' }).expect(200);
+    expect(response.body).toMatchObject({ id: original.id, fullName: 'Tên cập nhật', phone: '+84 909 123 456', email: original.email, role: 'CUSTOMER', accountStatus: 'DISABLED' });
+    expect(response.body).not.toHaveProperty('passwordHash');
+    expect((await users.findById(target.user.id))?.passwordHash).toBe(original.passwordHash);
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ actor: expect.objectContaining({ id: admin.user.id }), resourceId: target.user.id, action: 'UPDATE', httpStatus: 200 }));
+    expect(JSON.stringify(recordAudit.mock.calls)).not.toMatch(/Tên cập nhật|909 123 456|passwordHash/);
+    await request(app.getHttpServer()).patch(path + '/status').set('Authorization', bearer).send({ accountStatus: 'ACTIVE' }).expect(200);
+    expect(recordAudit).toHaveBeenLastCalledWith(expect.objectContaining({ resourceId: target.user.id, action: 'REACTIVATE_ACCOUNT', httpStatus: 200 }));
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', 'Bearer ' + target.token).expect(401)
+      .expect(({ body }) => expect(body.code).toBe('ACCOUNT_DISABLED'));
+    const freshCustomer = await service.login(registration);
+    sessions.set('CUSTOMER', freshCustomer);
+  });
+  it.each(['STAFF', 'MANAGER', 'CUSTOMER'])('denies account edits from %s', async role => {
+    await request(app.getHttpServer()).patch('/api/admin/users/' + sessions.get('ADMIN')!.user.id)
+      .set('Authorization', 'Bearer ' + sessions.get(role)!.token).send({ fullName: 'Tên ngoài quyền' }).expect(403);
+  });
+  it.each([{ email: 'new@example.test' }, { passwordHash: 'changed' }, { role: 'ADMIN' }, { accountStatus: 'DISABLED' }, { id: 'another-id' }])('rejects sensitive keys even with a valid profile field %j', async fields => {
+    const admin = sessions.get('ADMIN')!, target = sessions.get('CUSTOMER')!;
+    const path = '/api/admin/users/' + target.user.id;
+    const original = { ...(await users.findById(target.user.id)) };
+    await request(app.getHttpServer()).patch(path).set('Authorization', 'Bearer ' + admin.token)
+      .send({ fullName: 'Không được lưu', ...fields }).expect(400);
+    expect(await users.findById(target.user.id)).toEqual(original);
+  });
+  it.each(['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'])('lets %s change their own password and keeps only the current session', async role => {
+    const session = sessions.get(role)!;
+    const original = (await users.findById(session.user.id))!;
+    const credentials = { email: original.email, password: registration.password };
+    const other = await service.login(credentials);
+    const server = app.getHttpServer();
+    const path = '/api/auth/change-password';
+    const body = { currentPassword: credentials.password, newPassword: 'new-fixture-password' };
+    const change = (fields: object) => request(server).patch(path).set('Authorization', `Bearer ${session.token}`).send(fields);
+    await request(server).patch(path).send(body).expect(401);
+    await change({ ...body, currentPassword: 'wrong-password' }).expect(400);
+    await change({ ...body, newPassword: 'short' }).expect(400);
+    await change({ ...body, newPassword: body.currentPassword }).expect(400);
+    await change({ ...body, userId: 'another-user' }).expect(400);
+    await change(body).expect(204, '');
+    expect((await users.findById(session.user.id))?.passwordHash).not.toBe(original.passwordHash);
+    await request(server).get('/api/auth/me').set('Authorization', `Bearer ${session.token}`).expect(200);
+    await request(server).get('/api/auth/me').set('Authorization', `Bearer ${other.token}`).expect(401);
+    await request(server).post('/api/auth/login').send(credentials).expect(401);
+    await request(server).post('/api/auth/login').send({ ...credentials, password: body.newPassword }).expect(200)
+      .expect(({ body }) => expect(body.user).toMatchObject({ id: session.user.id, role }));
+  });
+  it('rate-limits incorrect attempts per authenticated account across sessions', async () => {
+    const session = await service.register({ ...registration, email: 'rate-limit@example.test' });
+    const second = await service.login({ ...registration, email: 'rate-limit@example.test' });
+    const attempt = (token: string) => request(app.getHttpServer()).patch('/api/auth/change-password')
+      .set('Authorization', `Bearer ${token}`).send({ currentPassword: 'wrong-password', newPassword: 'new-fixture-password' });
+    for (let attemptNumber = 0; attemptNumber < 5; attemptNumber++) await attempt(session.token).expect(400);
+    await attempt(second.token).expect(429);
   });
 });

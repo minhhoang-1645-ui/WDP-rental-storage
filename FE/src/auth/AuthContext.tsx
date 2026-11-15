@@ -1,10 +1,11 @@
-import { safeLocalStorage, safeSessionStorage } from '../services/browser-storage';
+import { safeLocalStorage } from '../services/browser-storage';
 import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import { authApi } from "../services/booking";
 import type { AuthSession, PublicUser } from "../types/booking";
 import { AuthContext, type AuthContextValue } from "./auth-context";
 import { ApiError, apiRequest } from "../services/api";
+import { clearSessionEndNotice, markSessionEnded, SESSION_ENDED_EVENT, sessionEndReason, syncSessionEndNotice, type SessionEndReason } from './session-end';
 
 function validUser(user: PublicUser) {
   return Boolean(
@@ -30,11 +31,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let mounted = true;
     let activeController: AbortController | null = null;
-    const expire = () => {
+    const expire = (reason: SessionEndReason = 'SESSION_INVALID') => {
       generation.current++;
       pending.current?.abort();
+      markSessionEnded(reason);
       safeLocalStorage.removeItem(AUTH_TOKEN_KEY);
-      safeSessionStorage.setItem("wdp-session-expired", "true");
       failedConnection.current = false;
       setConnectionError('');
       setUser(null);
@@ -65,7 +66,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         })
         .catch((error) => {
           if (!mounted || controller.signal.aborted || version !== generation.current || safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) return;
-          if (error instanceof ApiError && [401, 403].includes(error.status)) expire();
+          if (error instanceof ApiError && [401, 403].includes(error.status)) expire(sessionEndReason(error.payload));
           else {
             failedConnection.current = true;
             setConnectionError('Chưa kết nối được tài khoản của bạn. Phiên đăng nhập vẫn được giữ; hãy kiểm tra kết nối rồi thử lại.');
@@ -88,10 +89,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       failedConnection.current = false;
       setConnectionError('');
       const token = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
+      syncSessionEndNotice();
       setLoading(Boolean(token));
       if (token) validate(token);
     };
-    window.addEventListener("wdp-session-expired", expire);
+    const sessionEnded = (event: Event) => {
+      expire((event as CustomEvent<SessionEndReason>).detail);
+    };
+    window.addEventListener(SESSION_ENDED_EVENT, sessionEnded);
     window.addEventListener("storage", storage);
     window.addEventListener('online', reconnect);
     window.addEventListener('focus', reconnect);
@@ -100,7 +105,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => {
       mounted = false;
       activeController?.abort();
-      window.removeEventListener("wdp-session-expired", expire);
+      window.removeEventListener(SESSION_ENDED_EVENT, sessionEnded);
       window.removeEventListener("storage", storage);
       window.removeEventListener('online', reconnect);
       window.removeEventListener('focus', reconnect);
@@ -112,8 +117,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       throw new Error("Thông tin phiên đăng nhập không hợp lệ.");
     generation.current++;
     pending.current?.abort();
+    clearSessionEndNotice();
     safeLocalStorage.setItem(AUTH_TOKEN_KEY, session.token);
-    safeSessionStorage.removeItem("wdp-session-expired");
     failedConnection.current = false;
     setConnectionError('');
     setUser(session.user);
@@ -141,6 +146,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       void authApi.logout().catch(() => undefined);
       generation.current++;
       pending.current?.abort();
+      clearSessionEndNotice();
       safeLocalStorage.removeItem(AUTH_TOKEN_KEY);
       failedConnection.current = false;
       setConnectionError('');

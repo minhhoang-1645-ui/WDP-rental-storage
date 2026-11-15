@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { BadRequestException, Body, Controller, Inject, Logger, Post, ServiceUnavailableException, UseGuards, type ExecutionContext, type INestApplication } from '@nestjs/common';
+import { BadRequestException, Controller, Logger, Post, ServiceUnavailableException, UseGuards, type ExecutionContext, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import request from 'supertest';
@@ -10,6 +10,7 @@ import { AuditInterceptor, auditTarget } from './audit.interceptor.js';
 import { AdminAuditController } from './admin-audit.controller.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuthService } from '../auth/auth.service.js';
+import { AuthController } from '../auth/auth.controller.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
@@ -55,7 +56,7 @@ describe('audit persistence and filters (mock DB)', () => {
     await service.list({ category: 'LOGIN', search: 'staff', page: '2', limit: '5' });
     const history = db.auditEvent.findMany.mock.calls[0][0];
     expect(history).toMatchObject({ skip: 5, take: 5, where: { AND: [{ OR: [
-      { category: 'LOGIN', action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } },
+      { category: 'LOGIN', action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } },
       { category: 'ACTIVITY', action: 'AUTH_LOGOUT' },
     ] }] } });
     expect(history.where.OR).toContainEqual({ actorEmail: { contains: 'staff', mode: 'insensitive' } });
@@ -63,7 +64,7 @@ describe('audit persistence and filters (mock DB)', () => {
 
     await service.list({ category: 'ACTIVITY' });
     const activity = db.auditEvent.findMany.mock.calls[1][0];
-    expect(activity.where).toEqual({ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT'] } });
+    expect(activity.where).toEqual({ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } });
     expect(db.auditEvent.count.mock.calls[1][0].where).toEqual(activity.where);
   });
   it.each([{ page: '0' }, { limit: '101' }, { page: '1.5' }, { from: '2026-02-30' }, { from: '2026-11-04', to: '2026-11-03' }, { category: 'OTHER' }, { outcome: 'OTHER' }, { role: 'OTHER' }, { search: ['a', 'b'] }])('rejects invalid query %j', async query => {
@@ -128,11 +129,6 @@ describe('safe audit interception', () => {
 });
 
 // Real HTTP/guards/auth sessions with isolated in-memory users and a mock audit DB only.
-@Controller('auth')
-class LoginFixtureController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
-  @Post('login') login(@Body() input: Record<string, unknown>) { return this.auth.login(input); }
-}
 @Controller('admin/users') @UseGuards(AuthGuard, RolesGuard) @Roles('ADMIN')
 class MutationFixtureController {
   @Post() create() { return { id: 'new-user', passwordHash: 'DO_NOT_LOG_HASH', token: 'DO_NOT_LOG_TOKEN' }; }
@@ -148,20 +144,34 @@ describe('audit HTTP registration, authenticated actor and four-role access', ()
       await users.create({ fullName: `Fixture ${role}`, email: `${role.toLowerCase()}@example.test`, phone: '', passwordHash: source.passwordHash, role });
       tokens[role] = (await auth.login({ email: `${role.toLowerCase()}@example.test`, password: 'fixture-password' })).token;
     }
-    const module = await Test.createTestingModule({ controllers: [AdminAuditController, LoginFixtureController, MutationFixtureController], providers: [AuditService, { provide: PrismaService, useValue: db }, { provide: AuthService, useValue: auth }] })
+    const module = await Test.createTestingModule({ controllers: [AdminAuditController, AuthController, MutationFixtureController], providers: [AuditService, { provide: PrismaService, useValue: db }, { provide: AuthService, useValue: auth }] })
       .overrideGuard(AuthGuard).useValue(new AuthGuard(auth)).overrideGuard(RolesGuard).useValue(new RolesGuard(new Reflector())).compile();
     app = module.createNestApplication(); app.setGlobalPrefix('api'); app.useGlobalInterceptors(new AuditInterceptor(module.get(AuditService))); await app.init();
   });
   afterAll(async () => { await app?.close(); });
   it('records real successful and failed HTTP logins without storing passwords or session tokens', async () => {
     db.auditEvent.create.mockClear();
-    const success = await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'admin@example.test', password: 'fixture-password' }).expect(201);
+    const success = await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'admin@example.test', password: 'fixture-password' }).expect(200);
     await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'admin@example.test', password: 'wrong-password' }).expect(401);
     expect(db.auditEvent.create.mock.calls).toHaveLength(2);
     expect(db.auditEvent.create.mock.calls[0][0].data).toMatchObject({ category: 'LOGIN', actorRole: 'ADMIN', outcome: 'SUCCESS' });
     expect(db.auditEvent.create.mock.calls[1][0].data).toMatchObject({ category: 'LOGIN', actorRole: null, outcome: 'FAILURE', httpStatus: 401 });
     const serialized = JSON.stringify(db.auditEvent.create.mock.calls);
     expect(serialized).not.toContain(success.body.token); expect(serialized).not.toContain('fixture-password'); expect(serialized).not.toContain('wrong-password');
+  });
+  it('records the verified account on disabled-login failures without revealing it in the public response', async () => {
+    const source = (await users.findByEmail('customer@example.test'))!;
+    const target = await users.create({ fullName: 'Fixture disabled', role: 'CUSTOMER', email: 'disabled@example.test', phone: source.phone, passwordHash: source.passwordHash, accountStatus: 'DISABLED' });
+    db.auditEvent.create.mockClear();
+    await request(app.getHttpServer()).post('/api/auth/login').send({ email: target.email, password: 'fixture-password' })
+      .expect(401, { statusCode: 401, code: 'ACCOUNT_DISABLED', message: 'Tài khoản đã bị vô hiệu hóa.' });
+    await request(app.getHttpServer()).post('/api/auth/login').send({ email: target.email, password: 'wrong-password' })
+      .expect(401).expect(({ body }) => expect(body.message).toBe('Email hoặc mật khẩu không đúng.'));
+    expect(db.auditEvent.create.mock.calls).toHaveLength(2);
+    const [blocked, unverified] = db.auditEvent.create.mock.calls.map(([entry]) => entry.data);
+    expect(blocked).toMatchObject({ category: 'LOGIN', action: 'AUTH_LOGIN_ACCOUNT_DISABLED', actorId: target.id, actorName: target.fullName, actorRole: target.role, actorEmail: target.email, outcome: 'FAILURE' });
+    expect(unverified).toMatchObject({ category: 'LOGIN', action: 'AUTH_LOGIN', actorId: null, actorName: null, actorRole: null, actorEmail: target.email, outcome: 'FAILURE' });
+    expect(JSON.stringify(blocked)).not.toMatch(/passwordHash|fixture-password|token/);
   });
   it('records the authenticated Admin on mutations instead of user-supplied actor/body secrets', async () => {
     db.auditEvent.create.mockClear();

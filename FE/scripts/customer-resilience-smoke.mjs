@@ -58,9 +58,9 @@ try {
     const test = await setup(width, { signedIn: true, quota: true, corrupt: true });
     const { page, state } = test;
     await page.goto(base + '/booking?date=not-a-date&step=2.5', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('heading', { name: 'Chọn kích thước và loại kho', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Kích thước kho', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Chọn thời gian', exact: true }).click();
-    const date = page.getByLabel('Ngày bắt đầu mong muốn', { exact: true });
+    const date = page.getByLabel('Ngày bắt đầu', { exact: true });
     assert.equal(await date.inputValue(), '');
     assert.equal(state.quoteReads, 0, 'Malformed calendar dates never reach pricing/availability');
     await date.fill('2027-01-31');
@@ -69,9 +69,9 @@ try {
     await page.locator('.quote-first-amount').first().waitFor();
     assert.equal(await date.inputValue(), '2027-01-31');
     await page.getByRole('button', { name: 'Tiếp tục', exact: true }).click();
-    await page.getByText('Bạn cần bổ sung họ tên và số điện thoại hợp lệ trước khi gửi yêu cầu.', { exact: false }).waitFor();
+    await page.getByText('Bổ sung họ tên và số điện thoại trước khi gửi yêu cầu.', { exact: false }).waitFor();
     assert(await page.getByRole('button', { name: 'Bổ sung thông tin liên hệ để tiếp tục', exact: false }).isDisabled());
-    await page.getByRole('link', { name: 'Cập nhật hồ sơ rồi tiếp tục đặt kho', exact: true }).click();
+    await page.getByRole('link', { name: 'Cập nhật thông tin liên hệ', exact: true }).click();
     await page.getByRole('heading', { name: 'Hồ sơ cá nhân', exact: true }).waitFor();
     assert(new URL(page.url()).searchParams.get('returnTo')?.startsWith('/booking?'));
     assert(await page.getByLabel('Email đăng nhập', { exact: true }).isEditable() === false);
@@ -86,7 +86,7 @@ try {
     assert.equal(await page.locator('form[data-wdp-dirty],form[data-wdp-submitting]').count(), 0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px profile overflow`);
     await page.getByRole('link', { name: 'Tiếp tục đặt kho', exact: true }).click();
-    await page.getByRole('heading', { name: 'Thông tin khách hàng và xác nhận yêu cầu', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Xác nhận yêu cầu', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.querySelector('.checkout-form button[type=submit]')?.disabled);
     assert.equal(await page.getByLabel('Số điện thoại', { exact: true }).inputValue(), '0901234567');
@@ -104,7 +104,7 @@ try {
   await guest.page.goto(base + '/booking?step=2', { waitUntil: 'domcontentloaded' });
   await guest.page.getByRole('button', { name: 'Thử lại báo giá', exact: true }).click();
   await guest.page.getByRole('button', { name: 'Tiếp tục', exact: true }).click();
-  await guest.page.getByRole('checkbox', { name: /^Xác minh email để nhận yêu cầu đặt kho/ }).check();
+  await guest.page.getByRole('checkbox', { name: /^Xác minh email để đặt kho/ }).check();
   await guest.page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).click();
   await guest.page.getByRole('alert').filter({ hasText: 'Chưa gửi được yêu cầu.' }).waitFor();
   await guest.page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).click();

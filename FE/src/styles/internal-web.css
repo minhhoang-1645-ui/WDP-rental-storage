@@ -48,11 +48,11 @@
 .manager-shell.internal-web .internal-page-size { display:flex; align-items:center; gap:8px; color:var(--color-slate); font-size:14px; }
 .manager-shell.internal-web .internal-page-size select { width:74px; min-height:40px; }
 .manager-shell.internal-web .internal-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:24px; }
-.manager-shell.internal-web .internal-kpi { display:flex; flex-direction:column; gap:8px; padding:20px; background:white; border:1px solid var(--color-border); border-radius:12px; text-decoration:none; color:var(--color-ink); min-width:0; }
+.manager-shell.internal-web .internal-kpi { display:flex; flex-direction:column; gap:8px; padding:20px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:12px; text-decoration:none; color:var(--color-ink); min-width:0; }
 .manager-shell.internal-web .internal-kpi > span { font-size:14px; color:var(--color-slate); }
 .manager-shell.internal-web .internal-kpi strong { font-size:clamp(24px,2vw,30px); line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .manager-shell.internal-web .internal-kpi small { font-size:13px; color:var(--color-slate); }
-.manager-shell.internal-web .internal-priority { background:white; border:1px solid var(--color-border); border-radius:12px; padding:22px; margin-bottom:20px; }
+.manager-shell.internal-web .internal-priority { background:var(--color-surface); border:1px solid var(--color-border); border-radius:12px; padding:22px; margin-bottom:20px; }
 .manager-shell.internal-web .internal-section-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
 .manager-shell.internal-web .internal-section-heading h2 { margin:0; }
 .manager-shell.internal-web .internal-task-list { list-style:none; padding:0; margin:0; }
@@ -65,7 +65,7 @@
 .manager-shell.internal-web .internal-shortcuts { display:flex; gap:12px; flex-wrap:wrap; margin:20px 0; }
 .manager-shell.internal-web .internal-help { margin:14px 0; font-size:14px; color:var(--color-slate); }
 .manager-shell.internal-web .internal-help > summary { cursor:pointer; font-weight:600; padding:10px 0; }
-.manager-shell.internal-web .internal-skip { position:fixed; top:-100px; left:280px; z-index:1000; background:white; padding:12px 18px; }
+.manager-shell.internal-web .internal-skip { position:fixed; top:-100px; left:280px; z-index:1000; background:var(--color-surface); padding:12px 18px; }
 .manager-shell.internal-web .internal-skip:focus { top:8px; }
 .manager-shell.internal-web :focus-visible { outline:3px solid var(--color-primary); outline-offset:3px; }
 @media(max-width:1100px) { .manager-shell.internal-web { grid-template-columns:240px minmax(0,1fr); } .manager-shell.internal-web .manager-main { padding:24px; } .manager-shell.internal-web .portal-topbar { padding-inline:24px; } }

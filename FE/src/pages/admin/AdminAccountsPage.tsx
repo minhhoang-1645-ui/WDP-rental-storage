@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { AccountRole } from './AccountRole';
 import { apiRequest } from '../../services/api';
-import { safeLocalStorage } from '../../services/browser-storage';
+import { safeLocalStorage, safeSessionStorage } from '../../services/browser-storage';
 import { AUTH_TOKEN_KEY } from '../../data/booking';
 import { useAuth } from '../../auth/auth-context';
 import { mutate } from '../../services/portal';
@@ -19,13 +19,26 @@ const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã vô hiệu h�
 type AccountStatus = keyof typeof statuses;
 type BulkResult = { changed: number; skipped: number; failures: { id: string; name: string; reason: string }[] };
 
+const accountDetailPath = (id: string) => `/admin/users/${encodeURIComponent(id)}`;
+
+function readSelection(storageKey: string): { key: string; ids: Set<string> } | undefined {
+  try {
+    const saved = JSON.parse(safeSessionStorage.getItem(storageKey) ?? 'null');
+    if (typeof saved?.key === 'string' && Array.isArray(saved.ids) && saved.ids.length <= 100 && saved.ids.every((id: unknown) => typeof id === 'string')) {
+      return { key: saved.key, ids: new Set<string>(saved.ids) };
+    }
+  } catch { /* An invalid saved selection starts empty. */ }
+}
+
 export function AdminAccountsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const [createdAccount, setCreatedAccount] = useState<Row>();
-  const { key: locationKey } = useLocation();
-  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>();
+  const { pathname, search: locationSearch } = useLocation();
+  const storageKey = 'nestbox-admin-selection:' + user?.id;
+  const selectionKey = pathname + locationSearch;
+  const [selection, setSelection] = useState(() => readSelection(storageKey));
   const [bulk, setBulk] = useState<{ status: AccountStatus; rows: Row[]; skipped: number }>();
   const [result, setResult] = useState<BulkResult>();
   const sort = params.get('sort') ?? 'newest';
@@ -44,7 +57,6 @@ export function AdminAccountsPage() {
   const rows = data.data?.items ?? [];
   const eligible = rows.filter(row => first(row, 'id') && row.id !== user?.id
     && (row.accountStatus === 'ACTIVE' || row.accountStatus === 'DISABLED'));
-  const selectionKey = `${user?.id}:${locationKey}`;
   const selected = eligible.filter(row => selection?.key === selectionKey && selection.ids.has(first(row, 'id')));
   const selectedIds = new Set(selected.map(row => first(row, 'id')));
   const selectAll = useRef<HTMLInputElement>(null);
@@ -54,6 +66,12 @@ export function AdminAccountsPage() {
     if (selectAll.current) selectAll.current.indeterminate = someChecked;
   });
 
+  function rememberSelection(ids?: Set<string>) {
+    setSelection(ids ? { key: selectionKey, ids } : undefined);
+    if (ids?.size) safeSessionStorage.setItem(storageKey, JSON.stringify({ key: selectionKey, ids: [...ids] }));
+    else safeSessionStorage.removeItem(storageKey);
+  }
+
   function startBulk(status: AccountStatus) {
     const targets = selected.filter(row => row.accountStatus !== status);
     setResult(undefined);
@@ -61,7 +79,7 @@ export function AdminAccountsPage() {
   }
 
   function change(key: string, value: string) {
-    setSelection(undefined);
+    rememberSelection();
     setParams(previous => {
       const next = new URLSearchParams(previous);
       if (value) next.set(key, value);
@@ -74,7 +92,7 @@ export function AdminAccountsPage() {
   const columns: StaffColumn<Row>[] = [
     { key: 'selection', label: 'Chọn tài khoản', header: <input ref={selectAll} type="checkbox"
       aria-label="Chọn tất cả tài khoản đủ điều kiện trên trang" checked={allChecked} disabled={!eligible.length}
-      onChange={event => setSelection({ key: selectionKey, ids: new Set(event.target.checked ? eligible.map(row => first(row, 'id')) : []) })} />,
+      onChange={event => rememberSelection(event.target.checked ? new Set(eligible.map(row => first(row, 'id'))) : undefined)} />,
       cell: row => {
         const id = first(row, 'id');
         return <input type="checkbox" aria-label={`Chọn ${first(row, 'email')}`} checked={selectedIds.has(id)}
@@ -82,25 +100,29 @@ export function AdminAccountsPage() {
             const ids = new Set(selectedIds);
             if (event.target.checked) ids.add(id);
             else ids.delete(id);
-            setSelection({ key: selectionKey, ids });
+            rememberSelection(ids);
           }} />;
       } },
-    { key: 'account', label: 'Tài khoản', sort: { direction: sort === 'name-asc' ? 'ascending' : sort === 'name-desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'name-asc' ? 'name-desc' : 'name-asc') }, cell: row => <>
-      <strong>{first(row, 'fullName')}</strong><small>{first(row, 'email')}</small>
-      {row.id === user?.id && <small>Tài khoản của bạn</small>}
-    </> },
+    { key: 'account', label: 'Tài khoản', sort: { direction: sort === 'name-asc' ? 'ascending' : sort === 'name-desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'name-asc' ? 'name-desc' : 'name-asc') }, cell: row => {
+      const id = first(row, 'id');
+      const name = first(row, 'fullName', 'email');
+      return <>
+        <strong>{id ? <Link className="admin-account-link" to={accountDetailPath(id)}>{name}</Link> : name}</strong>
+        <small>{first(row, 'email')}</small>
+        {id === user?.id && <small>Tài khoản của bạn</small>}
+      </>;
+    } },
     { key: 'role', label: 'Vai trò', cell: row => <AccountRole value={row.role} /> },
     { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.accountStatus} /> },
     { key: 'date', label: 'Ngày tạo', optional: true, sort: { direction: sort === 'oldest' ? 'ascending' : sort === 'newest' ? 'descending' : 'none', toggle: () => change('sort', sort === 'oldest' ? 'newest' : 'oldest') }, cell: row => date(row.createdAt, true) },
     { key: 'actions', label: 'Thao tác', cell: row => {
-      const id = first(row, 'id');
-      const path = `/admin/users/${encodeURIComponent(id)}`;
+      if (!eligible.includes(row)) return null;
+      const path = accountDetailPath(first(row, 'id'));
       const active = row.accountStatus === 'ACTIVE';
       return <div className="staff-table-actions">
         <TablePopover name={`Thao tác tài khoản ${first(row, 'email', 'fullName')}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
-          <Link to={path}>Xem chi tiết</Link>
-          {eligible.includes(row) && <Link className={active ? 'admin-destructive-link' : undefined}
-            to={`${path}?status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Vô hiệu hóa' : 'Kích hoạt lại'}</Link>}
+          <Link className={active ? 'admin-destructive-link' : undefined}
+            to={`${path}?tab=permissions&status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Vô hiệu hóa' : 'Kích hoạt lại'}</Link>
         </TablePopover>
       </div>;
     } },
@@ -113,7 +135,7 @@ export function AdminAccountsPage() {
     </PageHeader>
     {createdAccount && <div className="portal-success admin-created" role="status">
       <span>Đã tạo tài khoản {first(createdAccount, 'fullName')}.</span>
-      {first(createdAccount, 'id') && <Link to={`/admin/users/${encodeURIComponent(first(createdAccount, 'id'))}`}>Xem tài khoản vừa tạo</Link>}
+      {first(createdAccount, 'id') && <Link to={accountDetailPath(first(createdAccount, 'id'))}>Xem tài khoản vừa tạo</Link>}
     </div>}
     {result && <section className="manager-section admin-bulk-result" role="status">
       <strong>Đã cập nhật {result.changed} · Bỏ qua {result.skipped} · Chưa xác nhận {result.failures.length}</strong>
@@ -136,7 +158,7 @@ export function AdminAccountsPage() {
         )}
       </TablePopover>
       {(search || role || status) && <button type="button" className="button-secondary" onClick={() => {
-        setSelection(undefined);
+        rememberSelection();
         const next = new URLSearchParams(params);
         for (const key of ['page', 'search', 'role', 'status']) next.delete(key);
         setParams(next, { replace: true });
@@ -150,7 +172,7 @@ export function AdminAccountsPage() {
         onChange={value => change('page', String(value))} onLimitChange={value => change('limit', String(value))} />
     </>}
     {!!selected.length && <div className="admin-bulk-bar" role="group" aria-label="Thao tác tài khoản đã chọn">
-      <button type="button" className="icon-button" aria-label="Bỏ chọn tất cả" onClick={() => setSelection(undefined)}><X size={16} /></button>
+      <button type="button" className="icon-button" aria-label="Bỏ chọn tất cả" onClick={() => rememberSelection()}><X size={16} /></button>
       <span aria-live="polite">Đã chọn {selected.length}</span>
       <button type="button" className="button-secondary" disabled={!selected.some(row => row.accountStatus === 'DISABLED')}
         onClick={() => startBulk('ACTIVE')}><UserRoundCheck size={16} />Kích hoạt tài khoản</button>
@@ -159,7 +181,7 @@ export function AdminAccountsPage() {
     </div>}
     {bulk && <BulkStatusDialog {...bulk} onClose={() => setBulk(undefined)} onComplete={outcome => {
       setBulk(undefined);
-      setSelection(undefined);
+      rememberSelection();
       setResult(outcome);
       data.refresh();
     }} />}

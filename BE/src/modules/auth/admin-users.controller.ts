@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from './auth.types.js';
 import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
-import { CreateAdminUserDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
+import { CreateAdminUserDto, UpdateAccountProfileDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
 import { UserRepository, userSorts, type UserListFilters } from '../users/user.repository.js';
 import { AuthGuard } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
@@ -57,6 +57,17 @@ export class AdminUsersController {
   @ApiBody({ type: CreateAdminUserDto })
   @ApiCreatedResponse({ description: 'Tài khoản nội bộ ACTIVE đã được tạo; passwordHash không được trả về.' })
   create(@Body() body: Record<string, unknown>) { return this.auth.createInternalUser(body); }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Cập nhật họ tên và số điện thoại tài khoản' })
+  @ApiBody({ type: UpdateAccountProfileDto, description: 'Cần ít nhất một trường. Chỉ chấp nhận fullName và phone.' })
+  @ApiOkResponse({ description: 'Thông tin tài khoản đã cập nhật.' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy tài khoản.' })
+  async updateProfile(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    const user = await this.auth.updateAdminProfile(request.user!, id, body);
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
+    return this.publicUser(user);
+  }
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Bật hoặc vô hiệu hóa tài khoản', description: 'Dữ liệu lịch sử vẫn được giữ nguyên.' })

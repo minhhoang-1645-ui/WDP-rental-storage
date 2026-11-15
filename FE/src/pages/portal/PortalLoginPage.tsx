@@ -1,7 +1,7 @@
-import { safeSessionStorage } from '../../services/browser-storage';
+import { readSessionEndNotice } from '../../auth/session-end';
 import { LockKeyhole, LogIn } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
 import { PasswordInput } from '../../components/ui/PasswordInput';
@@ -12,11 +12,7 @@ export function PortalLoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(() =>
-    safeSessionStorage.getItem("wdp-session-expired")
-      ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục."
-      : "",
-  );
+  const [submitError, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
 
@@ -30,15 +26,15 @@ export function PortalLoginPage() {
 
   if (loading)
     return (
-      <main className="portal-login">
+      <section className="auth-page">
         <p>Đang kiểm tra phiên đăng nhập…</p>
-      </main>
+      </section>
     );
   if (user)
     return (
-      <main className="portal-login">
-        <p role="status">Đang mở cổng quản lý…</p>
-      </main>
+      <section className="auth-page">
+        <p role="status">Đang mở khu vực làm việc…</p>
+      </section>
     );
 
   const submit = async (event: FormEvent) => {
@@ -59,44 +55,42 @@ export function PortalLoginPage() {
     }
   };
 
+  const error = submitError ?? readSessionEndNotice();
   return (
-    <main className="portal-login">
-      <form className="portal-login-panel" onSubmit={submit}>
-        <div className="portal-mark">
+    <section className="auth-page">
+      <form className="auth-panel" onSubmit={submit}>
+        <span className="auth-icon" aria-hidden="true">
           <LockKeyhole size={22} />
-        </div>
-        <p className="eyebrow">NestBox Storage Portal</p>
+        </span>
         <h1>Đăng nhập nội bộ</h1>
-        <p>
-          Dành cho tài khoản nhân viên, quản lý và quản trị viên đã được cấp
-          quyền.
-        </p>
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}
           </div>
         )}
-        <label className="field-label">
-          Email
-          <input
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </label>
-        <label className="field-label">
-          Mật khẩu
-          <PasswordInput
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-          />
-        </label>
+        <div className="auth-fields">
+          <label className="field-label">
+            Email
+            <input
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <label className="field-label">
+            Mật khẩu
+            <PasswordInput
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+        </div>
         <button
-          className="button-primary portal-login-submit w-full justify-center"
+          className="button-primary mt-6 w-full justify-center"
           type="submit"
           disabled={submitting}
         >
@@ -108,8 +102,8 @@ export function PortalLoginPage() {
             </>
           )}
         </button>
-        <small>Không có đăng ký công khai cho tài khoản nội bộ.</small>
+        <Link className="auth-help-link" to="/forgot-password?from=portal">Quên mật khẩu</Link>
       </form>
-    </main>
+    </section>
   );
 }

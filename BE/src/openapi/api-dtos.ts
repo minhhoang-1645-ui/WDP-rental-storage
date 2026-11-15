@@ -37,6 +37,16 @@ export class UpdateAccountStatusDto {
   @ApiProperty({ enum: ['ACTIVE', 'DISABLED'], example: 'DISABLED' }) accountStatus!: 'ACTIVE' | 'DISABLED';
 }
 
+export class ChangePasswordDto {
+  @ApiProperty({ type: 'string', format: 'password', minLength: 1, maxLength: 128, writeOnly: true }) currentPassword!: string;
+  @ApiProperty({ type: 'string', format: 'password', minLength: 8, maxLength: 128, writeOnly: true }) newPassword!: string;
+}
+
+export class UpdateAccountProfileDto {
+  @ApiPropertyOptional({ minLength: 2, maxLength: 120 }) fullName?: string;
+  @ApiPropertyOptional({ minLength: 8, maxLength: 25, example: '0900000011' }) phone?: string;
+}
+
 export class BookingAvailabilityRequestDto {
   @ApiProperty({ example: 'sm-b12', description: 'ID sản phẩm trả về từ GET /api/booking/catalog hoặc GET /api/storage.' })
   productId!: string;

@@ -13,12 +13,13 @@ function fixture() {
     guestBookingRequest: { findUnique: vi.fn().mockResolvedValue(guest), findUniqueOrThrow: vi.fn().mockResolvedValue(guest), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     accountFlowToken: { findUnique: vi.fn().mockResolvedValue(proof), create: vi.fn().mockResolvedValue(proof), update: vi.fn().mockResolvedValue(proof), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     accountFlowLimit: { upsert: vi.fn().mockResolvedValue({ bucket: new Date(Math.floor(Date.now() / 900000) * 900000) }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    user: { findUnique: vi.fn().mockResolvedValue(null), update: vi.fn().mockResolvedValue({}) },
+    user: { findUnique: vi.fn().mockResolvedValue(null), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    authSession: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(),
   };
   db.$transaction.mockImplementation(async callback => callback(db));
   const auth = { register: vi.fn().mockResolvedValue({ token: 'session', user: { role: 'CUSTOMER', email: guest.email } }), encodePassword: vi.fn().mockResolvedValue('scrypt$hash'), revokeUserSessions: vi.fn() };
-  const email = { sendPasswordReset: vi.fn().mockResolvedValue({}), sendBookingClaim: vi.fn().mockResolvedValue({}) };
+  const email = { assertPasswordResetAvailable: vi.fn().mockResolvedValue(undefined), sendPasswordReset: vi.fn().mockResolvedValue({}), sendBookingClaim: vi.fn().mockResolvedValue({}) };
   return { guest, proof, db, auth, email, service: new AccountOnboardingService(db as never, auth as never, email as never) };
 }
 describe('secure guest account onboarding (isolated mocks)', () => {
@@ -71,10 +72,25 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     const raw = email.sendPasswordReset.mock.calls[0][1]; expect(db.accountFlowToken.create.mock.calls[0][0].data.tokenHash).toBe(hash(raw)); expect(JSON.stringify(exists)).not.toContain(raw);
   });
   it('consumes reset once, updates only the password hash, revokes sessions', async () => {
-    const { service, proof, db, auth } = fixture(); proof.kind = 'RESET'; db.user.findUnique.mockResolvedValue({ id: 'u', accountStatus: 'ACTIVE' });
+    const { service, proof, db } = fixture(); proof.kind = 'RESET'; db.user.findUnique.mockResolvedValue({ id: 'u', accountStatus: 'ACTIVE' });
     const input = { token: 'p'.repeat(40), password: 'password123', confirmPassword: 'password123' };
-    await service.reset(input); expect(db.user.update.mock.calls[0][0].data).toEqual({ passwordHash: 'scrypt$hash' }); expect(auth.revokeUserSessions).toHaveBeenCalledWith('u');
-    db.accountFlowToken.updateMany.mockResolvedValue({ count: 0 }); await expect(service.reset(input)).rejects.toThrow(); expect(db.user.update).toHaveBeenCalledOnce();
+    await service.reset(input);
+    expect(db.user.updateMany).toHaveBeenCalledWith({ where: { id: 'u', accountStatus: 'ACTIVE' }, data: { passwordHash: 'scrypt$hash' } });
+    expect(db.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u' } });
+    db.accountFlowToken.updateMany.mockResolvedValue({ count: 0 }); await expect(service.reset(input)).rejects.toThrow(); expect(db.authSession.deleteMany).toHaveBeenCalledOnce();
+  });
+  it('checks provider availability before looking up any account and rejects incorrect, expired or consumed reset proofs', async () => {
+    const { service, proof, db, email, auth } = fixture();
+    email.assertPasswordResetAvailable.mockRejectedValue(new Error('provider unavailable'));
+    await expect(service.requestReset({ email: proof.email })).rejects.toThrow('provider unavailable');
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+    const input = { token: 'p'.repeat(40), password: 'password123', confirmPassword: 'password123' };
+    await expect(service.reset(input)).rejects.toThrow();
+    proof.kind = 'RESET'; proof.expiresAt = new Date(0);
+    await expect(service.reset(input)).rejects.toThrow();
+    proof.expiresAt = new Date(Date.now() + 60000); proof.usedAt = new Date();
+    await expect(service.reset(input)).rejects.toThrow();
+    expect(auth.encodePassword).not.toHaveBeenCalled();
   });
   it('enforces distributed attempt limits', async () => {
     const { service, db } = fixture(); db.accountFlowLimit.updateMany.mockResolvedValue({ count: 0 }); await expect(service.limit('reset', 'x')).rejects.toThrow();

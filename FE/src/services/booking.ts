@@ -9,6 +9,8 @@ export const authApi = {
   me: () => apiRequest<PublicUser>('/auth/me'),
   updateProfile: (input: Partial<Pick<PublicUser, 'fullName' | 'phone'>>, expectedToken: string) =>
     apiRequest<PublicUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(input), expectedToken }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    apiRequest<void>('/auth/change-password', { method: 'PATCH', body: JSON.stringify(input) }),
   logout: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
 }
 

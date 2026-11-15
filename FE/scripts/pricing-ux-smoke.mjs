@@ -43,7 +43,7 @@ try {
     const panel=page.locator('.quote-breakdown').first();
     await panel.getByRole('heading',{name:'Thanh toán lần đầu',exact:true}).waitFor();
     const verify=async plan=>{
-      await page.waitForFunction(plan=>document.querySelector('.payment-option.is-selected')?.textContent.includes(plan==='PREPAID'?'Trả trước':'hàng tháng'),plan);
+      await page.waitForFunction(plan=>document.querySelector('.payment-option[aria-pressed="true"]')?.textContent.includes(plan==='PREPAID'?'Trả trước':'hàng tháng'),plan);
       await page.waitForFunction(()=>!!document.querySelector('.quote-breakdown .quote-initial-payment'));
       await assertEventually(async()=>assert.equal(quote?.paymentPlan,plan));
       assert.equal(quote.lineItems.reduce((sum,row)=>sum+row.amount,0),quote.quotedTotalAmount);
@@ -67,7 +67,7 @@ try {
     await page.locator('.availability-badge.is-available').first().waitFor();
     await page.locator('.booking-summary').screenshot({path:artifacts+'/pricing-'+kind+'-monthly-'+width+'.png'});
 
-    await page.getByRole('button',{name:/^Trả trước toàn bộ kỳ/}).click();await verify('PREPAID');
+    await page.getByRole('button',{name:/^Trả trước cả kỳ/}).click();await verify('PREPAID');
     assert.equal(quote.discountPercent,5);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),width+'px overflow');
     assert(await page.locator('.booking-summary').evaluate(node=>node.scrollHeight<=node.clientHeight+1),'Detailed quote must not hide total/payment inside another scroll area');
@@ -75,7 +75,7 @@ try {
     await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});
     await page.screenshot({path:artifacts+'/pricing-'+kind+'-'+width+'.png',fullPage:true});
     await page.locator('.booking-summary').screenshot({path:artifacts+'/pricing-summary-'+kind+'-'+width+'.png'});
-    await page.getByRole('button',{name:/^Thanh toán hàng tháng/}).click();await verify('PAY_MONTHLY');
+    await page.getByRole('button',{name:/^Trả hàng tháng/}).click();await verify('PAY_MONTHLY');
     checks.push(width+'px '+kind+': '+(kind==='locker' ? '650k upfront, 1.95m full term, two 650k later payments and rent-only prepaid offer' : kind==='deposit' ? 'monthly rent and deposit have distinct purposes, itemized first payment, later payments and full-term total including deposit' : 'one-time/day/month services, calendar-end dates, item sums, first payment and variable later installments'));
     closing=true;
     await context.unrouteAll({behavior:'ignoreErrors'});

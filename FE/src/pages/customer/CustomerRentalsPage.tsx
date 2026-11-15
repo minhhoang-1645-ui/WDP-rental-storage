@@ -48,7 +48,6 @@ export function CustomerRentalsPage() {
       <PortalPageHeader
         eyebrow="Kho đang thuê"
         title="Kho của tôi"
-        description="Theo dõi kho đã bàn giao, thời hạn thuê và số dư hóa đơn."
         action={
           <div className="customer-header-actions"><Link className="button-secondary" to="/customer/booking-history">Lịch sử đặt kho</Link>
             <button

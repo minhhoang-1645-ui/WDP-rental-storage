@@ -4,7 +4,12 @@ import { assignmentNeedsAttention } from '../utils/work-queue';
 import { isEarlyReturnRequest } from '../utils/early-return';
 import { useActivity } from './context';
 
-export type NotificationRole = 'STAFF' | 'MANAGER';
+export type NotificationRole = 'STAFF' | 'MANAGER' | 'ADMIN' | 'CUSTOMER';
+type OperationalRole = Extract<NotificationRole, 'STAFF' | 'MANAGER'>;
+
+export function isCompactNotificationRole(role?: NotificationRole) {
+  return role === 'ADMIN' || role === 'CUSTOMER';
+}
 
 export function workspaceInboxPath(role: NotificationRole) {
   return `/${role.toLowerCase()}/notifications`;
@@ -15,7 +20,7 @@ export function workspaceNotificationLink(role: NotificationRole, item: Activity
   const hasTarget = item.web !== inbox;
   return {
     to: item.web,
-    state: hasTarget ? { notificationInbox: inbox } : undefined,
+    state: hasTarget && role !== 'ADMIN' ? { notificationInbox: inbox } : undefined,
     onClick: (event: MouseEvent<HTMLAnchorElement>) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
       if (hasTarget) markRead([item.token]);
@@ -43,7 +48,7 @@ function forManager(entry: ActivityEntry, row: Record<string, unknown>) {
   return entry.action || entry.kind === 'damage-claims' && row.status === 'RESOLVED';
 }
 
-function workspaceTarget(role: NotificationRole, entry: ActivityEntry, row: Record<string, unknown>) {
+function workspaceTarget(role: OperationalRole, entry: ActivityEntry, row: Record<string, unknown>) {
   const id = activityText(row, 'id');
   if (!id) return workspaceInboxPath(role);
   const encoded = encodeURIComponent(id);
@@ -62,13 +67,40 @@ function workspaceTarget(role: NotificationRole, entry: ActivityEntry, row: Reco
   return `/manager/operations/${entry.kind}/${encoded}`;
 }
 
+const accountRoles: Record<string, string> = { CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên' };
+
+function compactEntry(role: 'ADMIN' | 'CUSTOMER', userId: string, entry: ActivityEntry, row: Record<string, unknown>): ActivityEntry | undefined {
+  const get = (key: string) => activityText(row, key);
+  const id = encodeURIComponent(get('id'));
+  if (role === 'ADMIN') {
+    if (entry.kind !== 'users') return;
+    const status = get('accountStatus');
+    return { ...entry, title: status === 'DISABLED' ? 'Tài khoản đã bị vô hiệu hóa' : status === 'ACTIVE' ? 'Tài khoản đang hoạt động' : 'Thông tin tài khoản',
+      message: [get('fullName') || get('email'), accountRoles[get('role')]].filter(Boolean).join(' · '),
+      web: `/admin/users/${id}` };
+  }
+  const owners = ['customerId', 'customer.id', 'reservation.customerId', 'reservation.customer.id', 'invoice.customerId', 'invoice.customer.id'].map(get).filter(Boolean);
+  if (owners.some(owner => owner !== userId) || !entry.web.startsWith('/customer/')) return;
+  const unit = get('storageUnit.unitCode') || get('unit.unitCode') || get('unitCodeSnapshot') || get('reservation.storageUnit.unitCode');
+  const storage = get('storageType.name') || get('reservation.storageType.name');
+  let web = entry.web;
+  if (entry.kind === 'contracts' && web === '/customer/contracts') web += `?contract=${id}`;
+  if (entry.kind === 'renewals' && web === '/customer/renewals') web += `?renewal=${id}`;
+  return { ...entry, web, message: [storage, unit].filter(Boolean).join(' · ') };
+}
+
 function workspaceEntries(role: NotificationRole, userId: string, data: ActivityData, entries: ActivityEntry[]) {
   const records = new Map<string, Record<string, unknown>>(
     Object.entries(data).flatMap(([kind, rows]) => rows.map(row => [`${kind}:${activityText(row, 'id')}`, row] as const)),
   );
   return entries.flatMap(entry => {
     const row = records.get(entry.id);
-    if (!row || !(role === 'STAFF' ? forStaff(entry, row, userId) : forManager(entry, row))) return [];
+    if (!row) return [];
+    if (role === 'ADMIN' || role === 'CUSTOMER') {
+      const item = compactEntry(role, userId, entry, row);
+      return item ? [item] : [];
+    }
+    if (!(role === 'STAFF' ? forStaff(entry, row, userId) : forManager(entry, row))) return [];
     const target = workspaceTarget(role, entry, row);
     const root = `/${role.toLowerCase()}/`;
     return [{ ...entry, web: target.startsWith(root) ? target : workspaceInboxPath(role) }];

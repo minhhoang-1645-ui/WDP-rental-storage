@@ -10,7 +10,7 @@ await mkdir('artifacts/production-20261104', { recursive: true });
 async function setup(role, { blocked = false, failingSession = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const actor = { ...customer, id: 'resilient-' + role, role, accountStatus: 'ACTIVE' };
-  const state = { failingSession, logins: 0 };
+  const state = { failingSession, sessionError: null, logins: 0 };
   await context.addInitScript(({ blocked }) => {
     if (blocked) for (const key of ['localStorage', 'sessionStorage']) Object.defineProperty(window, key, { get() { throw new DOMException('Blocked storage', 'SecurityError'); } });
     else localStorage.setItem('wdp-auth-token-v1', 'resilient-session');
@@ -22,6 +22,7 @@ async function setup(role, { blocked = false, failingSession = false } = {}) {
     if (path === '/auth/login' && req.method() === 'POST') { state.logins++; return send({ token: 'resilient-session', user: actor }); }
     if (path === '/auth/logout' && req.method() === 'POST') return send({});
     if (req.method() !== 'GET') { unexpected.push(req.method() + ':' + path); return route.abort(); }
+    if (state.sessionError) return send(state.sessionError, 401);
     if (path === '/auth/me') return state.failingSession ? send({ message: 'Kết nối đang gián đoạn.' }, 503) : send(actor);
     if (path === '/reservations' || path === '/customer/stored-items') return send([]);
     if (path === '/manager/dashboard/summary') return send({ availableUnits: 0 });
@@ -68,6 +69,44 @@ try {
   assert.equal(reconnect.state.logins, 0);
   checks.push('A failed saved-session check preserves the token and retries without asking for a password');
   await reconnect.context.close();
+  for (const [role, reason, message, loginPath] of [
+    ['CUSTOMER', 'ACCOUNT_DISABLED', 'Tài khoản đã bị vô hiệu hóa.', '/account/login'],
+    ['STAFF', 'ACCOUNT_DISABLED', 'Tài khoản đã bị vô hiệu hóa.', '/portal/login'],
+    ['CUSTOMER', 'SESSION_EXPIRED', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.', '/account/login'],
+    ['CUSTOMER', 'SESSION_INVALID', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.', '/account/login'],
+  ]) {
+    const test = await setup(role);
+    const other = await test.context.newPage();
+    const workspace = base + '/' + role.toLowerCase();
+    await test.page.goto(workspace);
+    await other.goto(workspace);
+    await Promise.all([test.page, other].map(page => page.getByRole('button', { name: 'Menu tài khoản' }).waitFor()));
+    test.state.sessionError = { code: reason, message: 'Phiên không sử dụng được.' };
+    await test.page.evaluate(async () => {
+      const { apiRequest } = await import('/src/services/api.ts');
+      await apiRequest('/auth/me').catch(() => {});
+    });
+    for (const page of [test.page, other]) {
+      await page.waitForURL(url => url.pathname === loginPath);
+      await page.getByRole('alert').getByText(message, { exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => localStorage.getItem('wdp-auth-token-v1')), null);
+    }
+    checks.push(role + ': ' + reason + ' shows the correct notice in both open tabs');
+    await test.context.close();
+  }
+  for (const [role, loginPath, response] of [
+    ['CUSTOMER', '/account/login', { code: 'ACCOUNT_DISABLED' }],
+    ['STAFF', '/portal/login', { message: 'Tài khoản đã bị vô hiệu hóa.' }],
+  ]) {
+    const test = await setup(role);
+    await test.context.addInitScript(() => sessionStorage.setItem('wdp-session-expired', 'SESSION_EXPIRED'));
+    test.state.sessionError = response;
+    await test.page.goto(base + loginPath);
+    await test.page.getByRole('alert').getByText('Tài khoản đã bị vô hiệu hóa.', { exact: true }).waitFor();
+    assert.equal(await test.page.getByRole('alert').getByText(/hết hạn/).count(), 0);
+    checks.push(role + ': login loaded directly replaces a stale expiry notice with the actual disabled reason');
+    await test.context.close();
+  }
   const crossTab = await setup('STAFF', { failingSession: true });
   await crossTab.page.goto(base + '/staff', { waitUntil: 'domcontentloaded' });
   await crossTab.page.getByRole('heading', { name: 'Chưa kết nối được tài khoản', exact: true }).waitFor();

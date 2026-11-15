@@ -1,4 +1,4 @@
-import { Check, Moon, Palette, Sun, UserRound } from 'lucide-react';
+import { Check, Moon, Palette, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useBeforeUnload, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { label as roleLabel } from '../../components/manager/portal-data';
@@ -6,10 +6,12 @@ import { useAuth } from '../../auth/auth-context';
 import { portalDestination, roleReturnPath } from '../../auth/portal-routing';
 import { useWorkspaceTheme, type WorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import type { PublicUser } from '../../types/booking';
+import { SecuritySettings } from './SecuritySettings';
 import '../../styles/account-settings.css';
 
 const sections = [
   { id: 'profile', label: 'Hồ sơ cá nhân', icon: UserRound },
+  { id: 'security', label: 'Bảo mật', icon: ShieldCheck },
   { id: 'appearance', label: 'Giao diện', icon: Palette },
 ] as const;
 
@@ -27,7 +29,7 @@ export function AccountSettingsPage() {
   return <section className="account-settings">
     <header className="account-settings-heading">
       <h1>Cài đặt tài khoản</h1>
-      <p>Quản lý hồ sơ và giao diện NestBox của bạn.</p>
+      <p>Quản lý hồ sơ, mật khẩu và giao diện NestBox.</p>
     </header>
     <div className="account-settings-layout">
       <nav className="account-settings-nav" aria-label="Cài đặt tài khoản">
@@ -38,6 +40,7 @@ export function AccountSettingsPage() {
       </nav>
       <div className="account-settings-content">
         <div hidden={section !== 'profile'}><ProfileSettings key={user.id} user={user} /></div>
+        {section === 'security' && <SecuritySettings key={user.id} />}
         {section === 'appearance' && <AppearanceSettings />}
       </div>
     </div>

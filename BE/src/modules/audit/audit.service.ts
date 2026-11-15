@@ -6,8 +6,9 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 export type AuditInput = {
   category: 'LOGIN' | 'ACTIVITY'; action: string; resource: string; resourceId?: unknown;
-  method: string; route: string; httpStatus: number; actor?: PublicUser; attemptedEmail?: unknown; ipAddress?: string;
+  method: string; route: string; httpStatus: number; actor?: Pick<PublicUser, 'id' | 'fullName' | 'email' | 'role'>; attemptedEmail?: unknown; ipAddress?: string;
 };
+export const disabledLoginAction = 'AUTH_LOGIN_ACCOUNT_DISABLED';
 const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
 // oxlint-disable-next-line no-control-regex -- Strip control characters from untrusted display fields.
 const clean = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || null : null;
@@ -60,7 +61,7 @@ export class AuditService {
     };
     const from = date('from'), to = date('to');
     if (from && to && from > to) throw new BadRequestException('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
-    const sessionActions = ['AUTH_LOGIN', 'AUTH_LOGOUT'];
+    const sessionActions = ['AUTH_LOGIN', 'AUTH_LOGOUT', disabledLoginAction];
     const categoryFilter: Prisma.AuditEventWhereInput = category === 'LOGIN'
       ? { AND: [{ OR: [
           { category: 'LOGIN', action: { in: sessionActions } },

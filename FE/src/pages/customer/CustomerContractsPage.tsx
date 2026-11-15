@@ -58,7 +58,6 @@ export function CustomerContractsPage() {
       <PortalPageHeader
         eyebrow="Hợp đồng"
         title="Hợp đồng của tôi"
-        description="Theo dõi hợp đồng và kho vật lý được cấp cho từng hợp đồng."
         action={
           <button
             className="button-secondary"

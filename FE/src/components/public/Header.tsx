@@ -14,7 +14,7 @@ const links = [
   ["Cơ sở", "/#facility"],
 ];
 
-export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceTheme; toggleTheme: () => void } }) {
+export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; toggleTheme: () => void } }) {
   const [open, setOpen] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -45,7 +45,7 @@ export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceThem
   const actionPath = isInternalUser ? accountPath : "/booking";
   const actionLabel = isInternalUser ? "Mở khu vực làm việc" : "Đặt kho nhanh";
   return (
-    <header className="public-header sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur-sm">
+    <header className="public-header sticky top-0 z-50 border-b border-border">
       <Container className="flex h-18 items-center justify-between">
         <Link
           to="/"
@@ -55,7 +55,7 @@ export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceThem
           <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
             <Warehouse size={19} />
           </span>
-          <span className="public-wordmark">NestBox <em>Storage</em>{!landingTheme && <small>Không gian vừa với bạn</small>}</span>
+          <span className="public-wordmark">NestBox <em>Storage</em></span>
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"
@@ -79,11 +79,11 @@ export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceThem
             {actionLabel}
           </Link>
         </div>
-        {landingTheme && <button type="button" className="icon-button landing-theme-toggle"
-          aria-label={landingTheme.theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-          onClick={landingTheme.toggleTheme}>
-          {landingTheme.theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
-        </button>}
+        <button type="button" className="icon-button public-theme-toggle"
+          aria-label={appearance.theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          onClick={appearance.toggleTheme}>
+          {appearance.theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+        </button>
         {user && <div className="lg:hidden"><ActivityBell /></div>}
         <button
           ref={menuTrigger}
@@ -99,7 +99,7 @@ export function Header({ landingTheme }: { landingTheme?: { theme: WorkspaceThem
       {open && (
         <nav
           id="mobile-nav"
-          className="border-t border-border bg-white px-5 py-4 lg:hidden"
+          className="border-t border-border px-5 py-4 lg:hidden"
           aria-label="Điều hướng di động"
         >
           <div className="mx-auto flex max-w-7xl flex-col">

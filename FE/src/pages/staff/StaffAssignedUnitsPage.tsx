@@ -9,7 +9,7 @@ export function StaffAssignedUnitsPage() {
   const { user } = useAuth();
   const source = useApiResource<{ enabled: boolean; items: Row[] }>('/staff/assigned-units', user?.id ?? '');
   return <section className="workspace-home">
-    <PageHeader title="Kho tôi phụ trách" description="Người phụ trách từng kho do quản lý phân công." />
+    <PageHeader title="Kho tôi phụ trách" />
     <RefreshStatus active={source.refreshing} />
     <LoadState loading={source.loading} error={source.error} retry={source.refresh} placeholder={<TableSkeleton columns={['unit', 'location', 'assignee']} />} />
     {source.data?.enabled === false ? <p>Phân công cố định theo kho chưa được bật. Bạn vẫn xem và xử lý công việc đã được giao tại bàn làm việc.</p> : source.data?.enabled && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Kho</th><th>Vị trí</th><th>Người phân công</th></tr></thead><tbody>{source.data.items.map(item => <tr key={first(item, 'id')}><td>{first(item, 'storageUnit.unitNumber')}</td><td>{[first(item, 'storageUnit.floor'), first(item, 'storageUnit.zone')].filter(Boolean).join(' · ') || '—'}</td><td>{first(item, 'assignedBy.fullName')}</td></tr>)}</tbody></table>{!source.data.items.length && <p>Quản lý chưa giao kho nào cho bạn.</p>}</div>}

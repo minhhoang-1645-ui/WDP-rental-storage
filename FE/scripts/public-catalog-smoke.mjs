@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import ts from 'typescript';
 import { launchTestBrowser } from './browser-test.mjs';
 
+const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 const source = ts.transpileModule(await readFile(new URL('../src/catalog/public-catalog.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { publicCatalog, isFixtureProduct } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const raw = await fetch((process.env.WDP_API_URL || 'http://127.0.0.1:3000/api') + '/booking/catalog').then(response => { assert(response.ok); return response.json(); });
@@ -41,7 +42,7 @@ try {
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => { if (/https?:\/\/[^/]*\.test\//.test(request.url())) reservedImages.push(request.url()); });
-    await page.goto('http://127.0.0.1:5173/storage', { waitUntil: 'domcontentloaded' });
+    await page.goto(base + '/storage', { waitUntil: 'domcontentloaded' });
     const cards = page.locator('.storage-listing-card');
     await cards.first().waitFor();
     assert.equal(await cards.count(), catalog.products.length);
@@ -65,8 +66,11 @@ try {
     await page.waitForFunction(image => image.complete && image.naturalWidth > 0, await page.locator('figure img').elementHandle());
     const action = page.getByRole('link', { name: 'Bắt đầu đặt kho', exact: true });
     assert.equal(new URL(await action.getAttribute('href'), page.url()).searchParams.get('product'), first.id);
-    await page.goto('http://127.0.0.1:5173/size-guide', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('heading', { name: 'So sánh kho trước khi chọn.', exact: true }).waitFor();
+    await page.goto(base + '/size-guide', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'So sánh kho', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Chuyển sang giao diện tối' }).click();
+    assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
+    assert.equal(await page.locator('.comparison-candidate').first().evaluate(card => getComputedStyle(card).backgroundColor), 'rgb(25, 31, 42)');
     assert.equal(await page.locator('[data-candidate-id]').count(), catalog.products.length);
     assert.equal(await page.locator('.storage-side-comparison').count(), 0);
     assert.equal(await page.locator('canvas').count(), 0);
@@ -85,7 +89,7 @@ try {
     for (const product of chosen) await page.getByRole('checkbox', { name: `So sánh ${product.name}`, exact: true }).check();
     if (catalog.products.length > 3) assert(await page.getByRole('checkbox', { name: `So sánh ${catalog.products[3].name}`, exact: true }).isDisabled());
     await page.getByRole('checkbox', { name: `So sánh ${chosen[2].name}`, exact: true }).uncheck();
-    await page.getByRole('link', { name: 'So sánh các kho đã chọn', exact: true }).click();
+    await page.getByRole('link', { name: 'So sánh', exact: true }).click();
     await page.getByRole('region', { name: 'Bảng so sánh kho đã chọn', exact: true }).waitFor();
     assert.equal(await page.locator('th[data-product-id]').count(), 2);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
@@ -101,14 +105,20 @@ try {
     await page.locator('.booking-preview-heading h2').waitFor();
     assert.equal(await page.locator('.booking-preview-heading h2').innerText(), first.name);
     assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), first.image);
+    assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
+    assert.equal(await page.locator('.booking-preview').evaluate(card => getComputedStyle(card).backgroundColor), 'rgb(25, 31, 42)');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     if (process.env.WDP_SCREENSHOTS_DIR) await page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/nestbox-booking-${width}.png`, fullPage: true });
-    await page.goto('http://127.0.0.1:5173/', { waitUntil: 'domcontentloaded' });
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
     await page.locator('.landing-size-card').first().waitFor();
+    assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
+    await page.getByRole('button', { name: 'Chuyển sang giao diện sáng' }).click();
+    assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'light');
     assert.equal(await page.locator('.landing-size-card').count(), catalog.sizes.length);
     assert(!/Test room|Test capacity|Test only/.test(await page.locator('main').innerText()));
     if (process.env.WDP_SCREENSHOTS_DIR) {
       await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true });
-      await page.goto('http://127.0.0.1:5173/storage');
+      await page.goto(base + '/storage');
       for (const card of await page.locator('.storage-listing-card').all()) { await card.scrollIntoViewIfNeeded(); await card.locator('img').waitFor(); await page.waitForFunction(image => image.complete && image.naturalWidth > 0, await card.locator('img').elementHandle()); }
       await page.evaluate(() => scrollTo(0, 0));
       await page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/nestbox-storage-${width}.png`, fullPage: true });

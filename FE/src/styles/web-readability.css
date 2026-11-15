@@ -223,6 +223,28 @@
 .customer-shell.workspace-themed :is(.rental-choice-heading small, .rental-choice-count) { font-size: var(--type-badge); }
 .customer-shell.workspace-themed .rental-choice-heading small { background: var(--workspace-success-bg); color: var(--workspace-success); }
 
+.workspace-themed :is(.payment-modal, .portal-dialog) {
+  background: var(--workspace-popover);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+.workspace-themed :is(.payment-invoice-summary, .customer-disabled-actions button, .customer-history-status) {
+  background: var(--workspace-table);
+  border-color: var(--workspace-border);
+}
+.workspace-themed :is(.payment-invoice-summary span, .payment-bank-details > div, .payment-transfer-warning, .manager-notice, .staff-notice, .customer-reservation-card dt, .customer-reservation-card dd) { font-size: 14px; }
+.workspace-themed :is(.payment-transfer-warning, .vnpay-return-icon) { background: var(--workspace-warning-bg); color: var(--workspace-warning); }
+.workspace-themed :is(.manager-notice, .staff-notice) { background: var(--workspace-info-bg); color: var(--workspace-info); }
+.workspace-themed :is(.manager-notice.is-ok, .staff-notice.is-ok, .vnpay-return-card.is-success .vnpay-return-icon) { background: var(--workspace-success-bg); color: var(--workspace-success); }
+.workspace-themed :is(.manager-notice.is-error, .staff-notice.is-error, .payment-config-message.is-error, .vnpay-return-card.is-error .vnpay-return-icon) {
+  background: var(--workspace-error-bg);
+  border-color: var(--workspace-border);
+  color: var(--workspace-error);
+}
+.workspace-themed :is(.customer-recent-item, .customer-reservation-card, .customer-overview-card, .stock-card) { min-width: 0; overflow-wrap: anywhere; }
+.workspace-themed :is(.portal-pagination, .manager-pagination, .customer-table-pagination) { flex-wrap: wrap; }
+.workspace-themed :is(.manager-actions, .portal-actions, .customer-actions) > :is(a, button) { max-width: 100%; }
+
 @media (max-width: 680px) {
   .customer-shell.workspace-themed .customer-responsive-table { background: transparent; }
   .customer-shell.workspace-themed .customer-responsive-table tr { background: var(--workspace-surface); }

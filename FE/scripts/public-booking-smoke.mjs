@@ -50,18 +50,26 @@ try {
     await page.locator('.booking-preview-heading h2').waitFor();
     assert.equal(await page.locator('.booking-preview-heading h2').innerText(), product.name);
     assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), product.image);
+    if (width === 390) await page.getByRole('button', { name: 'Chuyển sang giao diện tối' }).click();
     await page.getByRole('button', { name: 'Chọn thời gian', exact: true }).click();
     const next = page.getByRole('button', { name: 'Tiếp tục', exact: true });
     await next.waitFor();
     assert.equal(await page.locator('.booking-summary-product img').getAttribute('data-catalog-image'), product.image); await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Tiếp tục' && !button.disabled));
+    const quoteColors = await page.locator('.quote-initial-payment').evaluate(panel => ({
+      background: getComputedStyle(panel).backgroundColor,
+      amount: getComputedStyle(panel.querySelector('.quote-first-amount')).color,
+    }));
+    assert.deepEqual(quoteColors, width === 390
+      ? { background: 'rgb(122, 219, 201)', amount: 'rgb(16, 44, 39)' }
+      : { background: 'rgb(15, 118, 110)', amount: 'rgb(255, 255, 255)' });
     // Changing the rental period must invalidate previously available inventory.
     unavailable = true;
     const another = new Date(future); another.setUTCDate(another.getUTCDate() + 1);
-    await page.getByLabel('Ngày bắt đầu mong muốn', { exact: true }).fill(another.toISOString().slice(0, 10));
+    await page.getByLabel('Ngày bắt đầu', { exact: true }).fill(another.toISOString().slice(0, 10));
     await page.locator('.availability-badge.is-unavailable').first().waitFor();
     assert(await next.isDisabled());
     unavailable = false;
-    await page.getByLabel('Ngày bắt đầu mong muốn', { exact: true }).fill(startDate);
+    await page.getByLabel('Ngày bắt đầu', { exact: true }).fill(startDate);
     await page.locator('.availability-badge.is-available').first().waitFor();
     await next.click();
     assert.equal(await page.locator('.quote-product img').getAttribute('data-catalog-image'), product.image);

@@ -9,6 +9,7 @@ import { CustomerBookingGuard } from "../components/layout/CustomerBookingGuard"
 import { PublicLayout } from "../components/layout/PublicLayout";
 import { CatalogRouteLayout } from "../components/layout/CatalogRouteLayout";
 import { AuthPage } from "../pages/account/AuthPage";
+import { ForgotPasswordPage, ResetPasswordPage } from '../pages/account/PasswordRecoveryPage';
 import { BookingConfirmationPage } from "../pages/public/BookingConfirmationPage";
 import { BookingWizardPage } from "../pages/public/BookingWizardPage";
 import { ClaimBookingPage } from '../pages/public/ClaimBookingPage';
@@ -110,6 +111,8 @@ export function AppRouter() {
       <Route path="/customer/payments/vnpay-return/mobile/:invoiceId" element={<MobileVnpayReturnPage />} />
       <Route element={<PublicLayout />}>
         <Route path="claim-booking" element={<ClaimBookingPage />} />
+        <Route path="forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route element={<CatalogRouteLayout />}>
           <Route index element={<LandingPage />} />
           <Route path="size-guide" element={<SizeGuidePage />} />
@@ -132,6 +135,7 @@ export function AppRouter() {
         />
         <Route path="account/login" element={<AuthPage mode="login" />} />
         <Route path="account/register" element={<AuthPage mode="register" />} />
+        <Route path="portal/login" element={<PortalLoginPage />} />
         <Route
           path="login"
           element={<Navigate to="/account/login" replace />}
@@ -145,7 +149,6 @@ export function AppRouter() {
           element={<Navigate to="/customer/reservations" replace />}
         />
       </Route>
-      <Route path="portal/login" element={<PortalLoginPage />} />
       <Route path="customer" element={<CustomerLayout />}>
         <Route path="sections/:section" element={<WorkspaceSectionPage sections={customerSections} />} />
         <Route index element={<CustomerDashboardPage />} />

@@ -1,19 +1,20 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { Footer } from '../public/Footer'
 import { Header } from '../public/Header'
 import { usePublicNavigation } from '../../hooks/usePublicNavigation'
 import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme'
+import '../../styles/workspace-theme.css'
+import '../../styles/landing.css'
+import '../../styles/public-booking.css'
 
 export function PublicLayout() {
   usePublicNavigation()
-  const landing = useLocation().pathname === '/'
-  const { theme, toggleTheme } = useWorkspaceTheme(landing)
+  const { theme, toggleTheme } = useWorkspaceTheme(true)
 
-  return <div className={`wdp-public min-h-screen bg-canvas text-ink${landing ? ' landing-public workspace-themed' : ''}`}
-    data-workspace-theme={landing ? theme : undefined}>
+  return <div className="wdp-public public-themed workspace-themed min-h-screen" data-workspace-theme={theme}>
     <a className="skip-link" href="#public-main">Đến nội dung chính</a>
-    <Header landingTheme={landing ? { theme, toggleTheme } : undefined} />
+    <Header appearance={{ theme, toggleTheme }} />
     <main id="public-main" tabIndex={-1}><Outlet /></main>
-    <Footer compact={landing} />
+    <Footer />
   </div>
 }

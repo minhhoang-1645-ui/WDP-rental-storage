@@ -3,6 +3,7 @@ import { AUTH_TOKEN_KEY } from "../data/booking";
 import { userMessage } from '../utils/user-message';
 import { notifyDataChanged } from './live-events';
 import { operationApiPath } from '../utils/operation-access';
+import { SESSION_ENDED_EVENT, sessionEndReason } from '../auth/session-end';
 
 const verifiedRoles = new Map<string, string>();
 const roleLookups = new Map<string, Promise<string>>();
@@ -71,7 +72,9 @@ export async function apiRequest<T>(
       return null;
     });
     if (!response.ok) {
-      if (response.status === 401 && token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) === token) window.dispatchEvent(new CustomEvent("wdp-session-expired"));
+      if (response.status === 401 && token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) === token) {
+        window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: sessionEndReason(payload) }));
+      }
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
       throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }

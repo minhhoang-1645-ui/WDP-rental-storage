@@ -68,7 +68,7 @@ export function CustomerReservationDetailPage() {
       <PortalPageHeader
         eyebrow="Chi tiết yêu cầu đặt kho"
         title={`${reservation.product.name} · ${reservation.quantity} kho`}
-        description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}. Theo dõi trạng thái yêu cầu và các bước tiếp theo.`}
+        description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}`}
         action={<ReservationStatus status={reservation.status} />}
       />
       <CopyRecordCode value={reservation.id} label="Mã đơn" />

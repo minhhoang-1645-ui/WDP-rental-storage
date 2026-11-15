@@ -1,4 +1,4 @@
-.workspace-themed {
+:is(:root[data-workspace-theme], .workspace-themed) {
   color-scheme: light;
   --workspace-background: #f8fafc;
   --workspace-sidebar: #fff;
@@ -35,6 +35,9 @@
   --color-navy: var(--workspace-primary);
   --color-navy-hover: var(--workspace-primary-hover);
   --color-orange: var(--workspace-primary);
+  --color-success: var(--workspace-success);
+  --color-warning: var(--workspace-warning);
+  --color-danger: var(--workspace-error);
   --color-brand: var(--workspace-selected);
   --surface-selected: var(--workspace-selected);
   --surface-hover: var(--workspace-hover);
@@ -43,7 +46,7 @@
   color: var(--workspace-text);
 }
 
-.workspace-themed[data-workspace-theme="dark"] {
+:is(:root, .workspace-themed)[data-workspace-theme="dark"] {
   color-scheme: dark;
   --workspace-background: #10151d;
   --workspace-sidebar: #151b24;
@@ -69,6 +72,16 @@
   --workspace-error-bg: #41272c;
   --workspace-info: #b8deff;
   --workspace-info-bg: #23384d;
+}
+
+:root[data-workspace-theme] :is(.customer-shell-loading, .manager-shell-loading, .staff-shell-loading) {
+  background: var(--workspace-background);
+  color: var(--workspace-secondary);
+}
+:root[data-workspace-theme] :is(.auth-panel, .vnpay-return-card) {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
 }
 
 .manager-shell.internal-web.workspace-themed {

@@ -2,6 +2,71 @@ import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
 const browser = await launchTestBrowser(), base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 try {
+  const recovery = await browser.newContext();
+  const requests = [];
+  let unavailable = true;
+  await recovery.route('**/api/**', async route => {
+    const req = route.request(), path = new URL(req.url()).pathname;
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204 });
+    if (!path.startsWith('/api/guest/account/')) return route.fulfill({ json: { items: [], total: 0 } });
+    const body = req.postDataJSON();
+    requests.push({ path, body });
+    if (path.endsWith('/forgot-password') && unavailable) return route.fulfill({ status: 503, json: { message: 'Dịch vụ email chưa sẵn sàng.' } });
+    if (path.endsWith('/reset-password') && body.token.startsWith('x')) return route.fulfill({ status: 401, json: { message: 'Token đã hết hạn.' } });
+    return route.fulfill({ json: { message: 'OK' } });
+  });
+  const recoveryPage = await recovery.newPage();
+  await recoveryPage.goto(base + '/portal/login');
+  await recoveryPage.getByRole('link', { name: 'Quên mật khẩu', exact: true }).click();
+  await recoveryPage.waitForURL('**/forgot-password?from=portal');
+  assert.equal(await recoveryPage.getByRole('link', { name: 'Quay lại đăng nhập' }).getAttribute('href'), '/portal/login');
+  await recoveryPage.goto(base + '/account/login');
+  await recoveryPage.getByRole('link', { name: 'Quên mật khẩu', exact: true }).click();
+  await recoveryPage.getByRole('heading', { name: 'Quên mật khẩu?' }).waitFor();
+  assert.equal(await recoveryPage.locator('.auth-panel input').count(), 1);
+  const email = recoveryPage.getByLabel('Email', { exact: true });
+  const send = recoveryPage.getByRole('button', { name: 'Gửi liên kết khôi phục' });
+  await email.fill('wrong'); await send.click();
+  await recoveryPage.getByRole('alert').getByText('Nhập email hợp lệ.').waitFor();
+  assert.equal(requests.length, 0);
+  await email.fill('guest@example.test'); await send.click();
+  await recoveryPage.getByRole('alert').getByText('Dịch vụ email chưa sẵn sàng.').waitFor();
+  unavailable = false; await send.click();
+  await recoveryPage.getByRole('heading', { name: 'Kiểm tra email của bạn' }).waitFor();
+  assert(await recoveryPage.getByRole('button', { name: /^Gửi lại liên kết sau/ }).isDisabled());
+  assert.deepEqual(requests[1].body, { email: 'guest@example.test' });
+  await recoveryPage.goto(base + '/reset-password');
+  await recoveryPage.getByRole('link', { name: 'Yêu cầu liên kết mới' }).waitFor();
+  await recoveryPage.goto(base + '/reset-password#token=' + 'x'.repeat(43));
+  const password = recoveryPage.getByLabel('Mật khẩu mới', { exact: true });
+  const confirm = recoveryPage.getByLabel('Xác nhận mật khẩu', { exact: true });
+  const resetButton = recoveryPage.getByRole('button', { name: 'Đặt lại mật khẩu', exact: true });
+  assert.equal(await password.getAttribute('type'), 'password');
+  await recoveryPage.getByRole('button', { name: 'Hiện mật khẩu' }).first().click();
+  assert.equal(await password.getAttribute('type'), 'text');
+  await password.fill('fixture-password'); await confirm.fill('wrong-password'); await resetButton.click();
+  await recoveryPage.getByRole('alert').getByText('Mật khẩu xác nhận không khớp.').waitFor();
+  assert.equal(requests.length, 2);
+  await confirm.fill('fixture-password'); await resetButton.click();
+  await recoveryPage.getByRole('link', { name: 'Yêu cầu liên kết mới' }).waitFor();
+  const token = 't'.repeat(43);
+  await recoveryPage.goto(base + '/claim-booking?resetToken=' + token);
+  await recoveryPage.waitForURL(url => url.pathname === '/reset-password' && url.hash === '#token=' + token);
+  for (const theme of ['light', 'dark']) {
+    await recoveryPage.evaluate(theme => { localStorage.setItem('nestbox-workspace-theme', theme); window.dispatchEvent(new Event('nestbox-workspace-theme-change')); }, theme);
+    await recoveryPage.locator(`html[data-workspace-theme="${theme}"]`).waitFor();
+    for (const width of [1366, 768, 390]) {
+      await recoveryPage.setViewportSize({ width, height: 850 });
+      assert(await recoveryPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    }
+  }
+  await password.fill('fixture-password'); await confirm.fill('fixture-password'); await resetButton.click();
+  await recoveryPage.getByRole('heading', { name: 'Đã đặt lại mật khẩu' }).waitFor();
+  assert.equal(new URL(recoveryPage.url()).hash, '');
+  assert.equal(requests.at(-1).body.token, token);
+  await recoveryPage.getByRole('link', { name: 'Quay lại đăng nhập' }).click();
+  await recoveryPage.waitForURL('**/account/login');
+  await recovery.close();
   for (const existingAccount of [false, true]) {
     const context = await browser.newContext(); const writes = [], errors = [];
     const user = { id: 'customer', role: 'CUSTOMER', fullName: 'Guest', email: 'guest@example.test', phone: '0900000000' };
@@ -36,5 +101,5 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
   }
-  console.log('PASS: new/existing customer, verified readonly email, refresh persistence, automatic claim and reservation redirect; APIs mocked.');
+  console.log('PASS: standalone recovery with validation, legacy links, responsive themes, and new/existing Customer booking claim; APIs mocked.');
 } finally { await browser.close(); }

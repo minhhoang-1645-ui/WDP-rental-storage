@@ -28,6 +28,9 @@ type ResendClient = Pick<Resend, 'emails'>;
 export class EmailService implements OnModuleInit {
   private smtpTransport?: SmtpTransport;
   private resendClient?: ResendClient;
+  private resetEmailUnavailableUntil = 0;
+  private smtpReadyUntil = 0;
+  private smtpProbe?: Promise<unknown>;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -61,18 +64,44 @@ export class EmailService implements OnModuleInit {
     }
   }
 
+  async assertPasswordResetAvailable() {
+    try {
+      if (Date.now() < this.resetEmailUnavailableUntil) throw new Error('Email unavailable');
+      this.passwordResetUrl();
+      if (this.provider() === 'resend') { this.resendConfig(); return; }
+      if (this.provider() !== 'smtp') throw new Error('Email unavailable');
+      if (Date.now() >= this.smtpReadyUntil) {
+        this.smtpProbe ??= this.getSmtpTransport().verify()
+          .then(() => { this.smtpReadyUntil = Date.now() + 30_000; })
+          .finally(() => { this.smtpProbe = undefined; });
+        await this.smtpProbe;
+      }
+    } catch {
+      throw new ServiceUnavailableException('Dịch vụ email chưa sẵn sàng. Vui lòng thử lại sau.');
+    }
+  }
+
   async sendPasswordReset(to: string, token: string) {
     const provider = this.provider();
-    const url = new URL(this.claimUrl(token, true));
-    url.search = ''; url.searchParams.set('resetToken', token);
+    const url = this.passwordResetUrl();
+    url.hash = new URLSearchParams({ token }).toString();
     const text = `NestBox Storage\n\nBạn đã yêu cầu đặt lại mật khẩu. Mở liên kết: ${url}\nLiên kết có hiệu lực 30 phút, dùng một lần. Nếu không yêu cầu, hãy bỏ qua email này. Không chia sẻ liên kết.`;
     if (provider === 'smtp') {
       const config = this.smtpConfig();
-      await this.getSmtpTransport().sendMail({ from: { name: config.fromName, address: config.fromAddress }, to, subject: 'NestBox - Đặt lại mật khẩu', text });
+      try {
+        await this.getSmtpTransport().sendMail({ from: { name: config.fromName, address: config.fromAddress }, to, subject: 'NestBox - Đặt lại mật khẩu', text });
+      } catch (error) {
+        this.smtpReadyUntil = 0;
+        throw error;
+      }
     } else if (provider === 'resend') {
       const config = this.resendConfig();
       const result = await this.getResendClient().emails.send({ from: `${config.fromName} <${config.fromAddress}>`, to: [to], subject: 'NestBox - Đặt lại mật khẩu', text });
-      if (result.error) throw new ServiceUnavailableException('Chưa gửi được email.');
+      if (result.error) {
+        const status = result.error.statusCode ?? 0;
+        if (status === 0 || status === 401 || status === 403 || status === 429 || status >= 500) this.resetEmailUnavailableUntil = Date.now() + 30_000;
+        throw new ServiceUnavailableException('Chưa gửi được email.');
+      }
     } else throw new ServiceUnavailableException('Dịch vụ email chưa sẵn sàng.');
   }
 
@@ -176,11 +205,22 @@ export class EmailService implements OnModuleInit {
   }
 
   private claimUrl(token: string, requireConfiguredUrl: boolean) {
+    return `${this.publicFrontendUrl(requireConfiguredUrl).replace(/\/$/, '')}/claim-booking?token=${encodeURIComponent(token)}`;
+  }
+
+  private passwordResetUrl() {
+    const base = new URL(this.publicFrontendUrl(true));
+    if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error('FRONTEND_PUBLIC_URL không hợp lệ.');
+    base.pathname = `${base.pathname.replace(/\/$/, '')}/reset-password`;
+    return base;
+  }
+
+  private publicFrontendUrl(requireConfiguredUrl: boolean) {
     const appUrl = this.frontendUrl() || (requireConfiguredUrl ? '' : 'http://127.0.0.1:5173');
     if (!appUrl) throw new Error('EMAIL_SMTP_CONFIG_INVALID: Thiếu hoặc không hợp lệ FRONTEND_URL.');
     const parsed = new URL(appUrl.split(',')[0]!);
     if (this.config.get<string>('NODE_ENV') === 'production' && (parsed.protocol !== 'https:' || ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname))) throw new ServiceUnavailableException('FRONTEND_PUBLIC_URL phải là URL HTTPS công khai.');
-    return `${appUrl.split(',')[0]!.replace(/\/$/, '')}/claim-booking?token=${encodeURIComponent(token)}`;
+    return appUrl.split(',')[0]!;
   }
 
   private verificationMinutes() { const value = Number(this.config.get<string>('GUEST_CLAIM_TOKEN_TTL_MINUTES') ?? 60); return Number.isSafeInteger(value) && value >= 5 && value <= 10080 ? value : 60; }

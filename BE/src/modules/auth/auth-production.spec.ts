@@ -94,6 +94,17 @@ describe('Own-profile HTTP updates, in-memory users only', () => {
         .expect(({ body }) => expect(body.code).toBe('SESSION_INVALID'));
     } finally { clock.mockRestore(); }
   });
+  it('records one real account creation event through the Admin endpoint', async () => {
+    const admin = sessions.get('ADMIN')!;
+    recordAudit.mockClear();
+    const created = await request(app.getHttpServer()).post('/api/admin/users').set('Authorization', 'Bearer ' + admin.token)
+      .send({ ...registration, email: 'notify-staff@example.test', role: 'STAFF' }).expect(201);
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'ACTIVITY', action: 'CREATE', resource: 'users', resourceId: created.body.id, httpStatus: 201,
+    }));
+    expect(JSON.stringify(recordAudit.mock.calls)).not.toContain(registration.password);
+  });
   it('lets Admin edit a disabled account contact profile and records only account audit metadata', async () => {
     const admin = sessions.get('ADMIN')!, target = sessions.get('CUSTOMER')!;
     const path = '/api/admin/users/' + target.user.id;
@@ -101,6 +112,9 @@ describe('Own-profile HTTP updates, in-memory users only', () => {
     const bearer = 'Bearer ' + admin.token;
     await request(app.getHttpServer()).patch(path + '/status').set('Authorization', bearer).send({ accountStatus: 'DISABLED' }).expect(200);
     expect(recordAudit).toHaveBeenLastCalledWith(expect.objectContaining({ resourceId: target.user.id, action: 'DISABLE_ACCOUNT', httpStatus: 200 }));
+    await request(app.getHttpServer()).patch(path + '/status').set('Authorization', bearer).send({ accountStatus: 'DISABLED' })
+      .expect(200).expect(({ body }) => expect(body.statusChanged).toBe(false));
+    expect(recordAudit).toHaveBeenLastCalledWith(expect.objectContaining({ resourceId: target.user.id, action: 'ACCOUNT_STATUS_UNCHANGED', httpStatus: 200 }));
     await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', 'Bearer ' + target.token).expect(401)
       .expect(({ body }) => expect(body.code).toBe('ACCOUNT_DISABLED'));
     recordAudit.mockClear();

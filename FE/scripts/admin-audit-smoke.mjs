@@ -62,13 +62,14 @@ await context.route('**/*', async route => {
   }
   if (path === 'admin/audit-events') {
     queries.push(Object.fromEntries(url.searchParams));
+    if (url.searchParams.get('category') === 'ACCOUNT_NOTICES') return route.fulfill({ json: { page: 1, limit: 100, total: 0, items: [] } });
     if (unavailable) return route.fulfill({ status: 503, json: { message: 'Chưa đọc được nhật ký. Kiểm tra kết nối DB và migration nhật ký Admin.' } });
     const login = url.searchParams.get('category') === 'LOGIN';
     const items = login ? [
       ...(hasNewEvents ? [{ ...baseEvent, id: 'new-session', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Newest Customer', actorRole: 'CUSTOMER', createdAt: '2026-11-04T18:10:00.000Z' }] : []),
       { ...baseEvent, id: 'logout', category: 'ACTIVITY', action: 'AUTH_LOGOUT', resource: 'auth' },
       { ...baseEvent, id: 'login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth' },
-      { ...baseEvent, id: 'attempt', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: null, actorEmail: 'attempt@example.test', actorRole: null, outcome: 'FAILURE' },
+      { ...baseEvent, id: 'attempt', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: null, attemptAccountName: 'Fixture Attempt', actorEmail: 'attempt@example.test', actorRole: null, outcome: 'FAILURE' },
       { ...baseEvent, id: 'disabled-login', category: 'LOGIN', action: 'AUTH_LOGIN_ACCOUNT_DISABLED', resource: 'auth', actorName: 'Fixture Disabled', actorEmail: 'disabled@example.test', actorRole: 'CUSTOMER', outcome: 'FAILURE' },
       { ...baseEvent, id: 'staff-login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Fixture Staff', actorRole: 'STAFF' },
       { ...baseEvent, id: 'manager-login', category: 'LOGIN', action: 'AUTH_LOGIN', resource: 'auth', actorName: 'Fixture Manager', actorRole: 'MANAGER' },
@@ -76,7 +77,7 @@ await context.route('**/*', async route => {
       ...(hasNewEvents ? [{ ...baseEvent, id: 'new-stock', category: 'ACTIVITY', action: 'COMPLETE', resource: 'stock-movements', resourceId: 'stock-1', actorName: 'Newest Staff', actorRole: 'STAFF' }] : []),
       { ...baseEvent, id: 'stock-assign', category: 'ACTIVITY', action: 'ASSIGN', resource: 'stock-movements', resourceId: 'stock-1', actorName: 'Fixture Manager', actorRole: 'MANAGER' },
       { ...baseEvent, id: 'support-start', category: 'ACTIVITY', action: 'START', resource: 'support-requests', actorName: 'Fixture Staff', actorRole: 'STAFF' },
-      { ...baseEvent, id: 'status', category: 'ACTIVITY', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'admin' },
+      { ...baseEvent, id: 'status', category: 'ACTIVITY', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'admin', targetAccount: { fullName: 'Fixture Affected Account', role: 'CUSTOMER' } },
       { ...baseEvent, id: 'status-active', category: 'ACTIVITY', action: 'REACTIVATE_ACCOUNT', resource: 'users' },
       { ...baseEvent, id: 'unsupported', category: 'ACTIVITY', action: 'UNKNOWN_FIXTURE_ACTION', resource: 'returns', outcome: 'FAILURE' },
     ];
@@ -102,6 +103,7 @@ try {
   await blocked.getByText('Fixture Disabled', { exact: true }).waitFor();
   await blocked.getByText('Khách hàng', { exact: true }).waitFor();
   await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Chưa xác thực', { exact: true }).waitFor();
+  await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Fixture Attempt', { exact: true }).waitFor();
   assert.deepEqual(await auditTable.getByRole('columnheader').allTextContents(), ['Thời gian', 'Tài khoản', 'Vai trò', 'Sự kiện']);
   const auditSearch = page.getByRole('searchbox', { name: 'Tìm nhật ký', exact: true });
   const waitForAuditQuery = condition => page.waitForResponse(response => {
@@ -134,6 +136,8 @@ try {
   await auditTable.getByText('Bắt đầu xử lý hỗ trợ', { exact: true }).waitFor();
   await auditTable.getByText('Hoạt động chưa có nhãn', { exact: true }).waitFor();
   await auditTable.getByText('Thất bại', { exact: true }).waitFor();
+  const disabledAccount = auditTable.getByRole('row').filter({ hasText: 'Vô hiệu hóa tài khoản' });
+  assert.equal(await disabledAccount.getByRole('link', { name: 'Fixture Affected Account' }).getAttribute('href'), '/admin/users/admin');
   assert.equal(await auditTable.getByText('Thành công', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng nhập', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng xuất', { exact: true }).count(), 0);
@@ -282,9 +286,9 @@ try {
   assert.equal(await page.locator('.manager-sidebar a[href="/admin/notifications"]').count(), 0);
   await page.getByRole('button', { name: 'Menu tài khoản' }).waitFor();
   await page.getByRole('button', { name: /^Thông báo,/ }).click();
-  const notifications = page.getByRole('dialog', { name: 'Trung tâm thông báo' });
+  const notifications = page.getByRole('dialog', { name: 'Thông báo', exact: true });
   await notifications.waitFor();
-  assert.equal(await notifications.getByRole('link', { name: /Mở trung tâm thông báo/ }).count(), 0);
+  assert.equal(await notifications.getByRole('link', { name: /Xem tất cả thông báo/ }).count(), 0);
   await notifications.getByRole('button', { name: 'Đóng thông báo' }).click();
   await page.goto(`${base}/admin/settings`);
   await page.getByRole('heading', { name: 'Cài đặt tài khoản', exact: true }).waitFor();

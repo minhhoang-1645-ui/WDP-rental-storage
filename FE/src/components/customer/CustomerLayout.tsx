@@ -234,6 +234,8 @@ export function CustomerLayout() {
               onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
           </div>
         </div>
+        {location.state?.notificationInbox === '/customer/notifications' && location.pathname !== '/customer/notifications' &&
+          <Link to="/customer/notifications" className="workspace-notification-back">Về thông báo</Link>}
         <Outlet />
       </main>
     </div>

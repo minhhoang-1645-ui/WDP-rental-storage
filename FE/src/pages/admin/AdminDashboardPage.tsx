@@ -71,7 +71,7 @@ function AuditPreview({ id, title, to, data, session = false }: {
           <Icon size={17} aria-hidden="true" />
           <div className="admin-preview-copy">
             <strong>{session ? auditActor(event) : auditTitle(event)}</strong>
-            {session && event.actorEmail && <small>{event.actorEmail}</small>}
+            {session && event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}
             {session ? <small>{event.actorRole ? label(event.actorRole) : 'Chưa xác thực'} · <span className={event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</span></small>
               : <small>{event.actorName || event.actorEmail || auditActor(event)} · {recordPath ? <Link className="audit-record-link" to={recordPath}>{auditResource(event.resource)}</Link> : auditResource(event.resource)}{event.outcome === 'FAILURE' && <span className="audit-failure"> · Thất bại</span>}</small>}
             <small><time dateTime={event.createdAt}>{date(event.createdAt, true)}</time></small>

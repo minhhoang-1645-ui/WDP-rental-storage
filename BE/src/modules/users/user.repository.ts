@@ -27,7 +27,7 @@ export abstract class UserRepository {
   abstract create(input: CreateStoredUser): Promise<StoredUser>;
   abstract list(offset: number, limit: number, filters?: UserListFilters): Promise<StoredUser[]>;
   abstract count(filters?: UserListFilters): Promise<number>;
-  abstract updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string): Promise<StoredUser | null>;
+  abstract updateStatus(id: string, accountStatus: StoredUser['accountStatus'], actorId?: string): Promise<(StoredUser & { statusChanged: boolean }) | null>;
   abstract updateProfile(id: string, data: UserProfileChanges): Promise<StoredUser | null>;
   abstract updateAdminProfile(id: string, data: UserProfileChanges, actorId: string): Promise<StoredUser | null>;
 }
@@ -106,7 +106,7 @@ export class MemoryUserRepository extends UserRepository {
       if (accountStatus === 'DISABLED') assertCanDisableAccount(actorId, id);
     }
     const user = this.users.get(id); if (!user) return null;
-    if (user.accountStatus === accountStatus) return user;
+    if (user.accountStatus === accountStatus) return { ...user, statusChanged: false };
     const now = Date.now();
     for (const [hash, session] of this.sessions) {
       if (session.userId !== id || hash.startsWith(disabledSessionPrefix) || session.expiresAt.getTime() <= now) continue;
@@ -114,7 +114,7 @@ export class MemoryUserRepository extends UserRepository {
       this.sessions.delete(hash);
       this.sessions.set(disabledHash, { ...session, tokenHash: disabledHash });
     }
-    const updated = { ...user, accountStatus, updatedAt: new Date() }; this.users.set(id, updated); return updated;
+    const updated = { ...user, accountStatus, updatedAt: new Date() }; this.users.set(id, updated); return { ...updated, statusChanged: true };
   }
   async create(input: CreateStoredUser) {
     // Check and insert without an await so concurrent registrations cannot overwrite each other.
@@ -201,14 +201,14 @@ export class PrismaUserRepository extends UserRepository {
       if (actorId && accountStatus === 'DISABLED') assertCanDisableAccount(actorId, id);
       const target = await tx.user.findUnique({ where: { id } });
       if (!target) return null;
-      if (target.accountStatus === accountStatus) return { ...target, phone: target.phone ?? '' };
+      if (target.accountStatus === accountStatus) return { ...target, phone: target.phone ?? '', statusChanged: false };
       const updated = await tx.user.update({ where: { id }, data: { accountStatus } });
       // Keep a revoked hash to explain the logout even if the account is reactivated first.
       // Also revoke any legacy sessions that predate marking on disable.
       await tx.$executeRaw`UPDATE "AuthSession"
         SET "tokenHash" = ${disabledSessionPrefix} || "tokenHash"
         WHERE "userId" = ${id} AND "expiresAt" > ${new Date()} AND NOT starts_with("tokenHash", ${disabledSessionPrefix})`;
-      return { ...updated, phone: updated.phone ?? '' };
+      return { ...updated, phone: updated.phone ?? '', statusChanged: true };
     });
   }
   private async lockAdminChanges(tx: Prisma.TransactionClient, actorId?: string) {

@@ -17,6 +17,8 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
   const from = params.get('from') ?? '', to = params.get('to') ?? '';
   const invalidRange = Boolean(from && to && from > to);
   const query = new URLSearchParams({ category, page: String(page), limit: String(limit) });
+  const eventId = category === 'ACTIVITY' ? params.get('event') : null;
+  if (eventId) query.set('event', eventId);
   for (const key of auditFilterKeys) {
     const value = params.get(key)?.trim();
     if (value) query.set(key, value);
@@ -30,6 +32,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
       if (value) next.set(key, value);
       else next.delete(key);
       next.delete('page');
+      next.delete('event');
       return next;
     }, { replace: true });
   }
@@ -39,6 +42,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
       const next = new URLSearchParams(previous);
       for (const key of auditFilterKeys) next.delete(key);
       next.delete('page');
+      next.delete('event');
       return next;
     }, { replace: true });
   }
@@ -54,7 +58,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
       <label className="field-label">Vai trò<select aria-label="Vai trò" name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].map(role => <option key={role} value={role}>{label(role)}</option>)}</select></label>
       <label className="field-label">Từ ngày<input type="date" name="from" value={from} onChange={event => changeFilter('from', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
       <label className="field-label">Đến ngày<input type="date" name="to" value={to} onChange={event => changeFilter('to', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
-      <button type="button" className="button-secondary" onClick={clearFilters}>Xóa bộ lọc</button>
+      <button type="button" className="button-secondary" onClick={clearFilters}>{eventId ? 'Xem toàn bộ nhật ký' : 'Xóa bộ lọc'}</button>
     </div>
     {invalidRange && <p id="audit-date-error" className="booking-alert is-error" role="alert">Ngày kết thúc phải từ ngày bắt đầu trở đi.</p>}
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
@@ -63,9 +67,15 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
         {data.data.items.map(event => (
           <tr key={event.id}>
             <td><time dateTime={event.createdAt}>{date(event.createdAt, true)}</time></td>
-            <td><strong>{auditActor(event)}</strong>{event.actorEmail && <small>{event.actorEmail}</small>}</td>
+            <td><strong>{auditActor(event)}</strong>{event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}</td>
             <td>{event.actorRole ? label(event.actorRole) : 'Chưa xác thực'}</td>
-            <td><strong className={login && event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</strong>{!login && event.outcome === 'FAILURE' && <small className="audit-failure">Thất bại</small>}</td>
+            <td>
+              <strong className={login && event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</strong>
+              {!login && event.targetAccount && event.resourceId && <small>
+                Tài khoản <Link className="audit-target-link" to={`/admin/users/${encodeURIComponent(event.resourceId)}`}>{event.targetAccount.fullName}</Link>
+              </small>}
+              {!login && event.outcome === 'FAILURE' && <small className="audit-failure">Thất bại</small>}
+            </td>
           </tr>
         ))}
       </tbody></table></div> : <Empty title="Chưa có nhật ký phù hợp" description="Thử đổi bộ lọc. Lịch sử trước khi bật tính năng không được tạo lại." />}

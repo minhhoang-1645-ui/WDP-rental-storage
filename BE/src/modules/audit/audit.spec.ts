@@ -21,6 +21,35 @@ function database() {
   return { auditEvent: { create: vi.fn().mockResolvedValue({ id: 'event' }), count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ id: 'event', action: 'AUTH_LOGIN' }]) } };
 }
 describe('audit persistence and filters (mock DB)', () => {
+  it('selects only successful account events and resolves only public target fields', async () => {
+    const db = database();
+    const item = { id: 'notice', resource: 'users', resourceId: 'target', action: 'UPDATE', outcome: 'SUCCESS' };
+    db.auditEvent.findMany.mockResolvedValue([item]);
+    const findMany = vi.fn().mockResolvedValue([{ id: 'target', fullName: 'Fixture Staff', role: 'STAFF' }]);
+    const service = new AuditService({ ...db, user: { findMany } } as never);
+    const page = await service.list({ category: 'ACCOUNT_NOTICES' });
+    const where = { category: 'ACTIVITY', resource: 'users', resourceId: { not: null }, outcome: 'SUCCESS',
+      action: { in: ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'] } };
+    expect(db.auditEvent.count).toHaveBeenCalledWith({ where });
+    expect(db.auditEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true },
+    }));
+    expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['target'] } }, select: { id: true, fullName: true, role: true } });
+    expect(page.items).toEqual([{ ...item, targetAccount: { fullName: 'Fixture Staff', role: 'STAFF' } }]);
+    await service.list({ category: 'ACTIVITY', event: 'notice' });
+    expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where: expect.objectContaining({ category: 'ACTIVITY', id: 'notice' }) });
+  });
+  it('looks up the account name for old failed login rows without changing their unauthenticated attribution', async () => {
+    const db = database();
+    const matched = { id: 'matched', action: 'AUTH_LOGIN', outcome: 'FAILURE', actorEmail: 'known@example.test', actorId: null, actorRole: null, actorName: null };
+    const unmatched = { ...matched, id: 'unmatched', actorEmail: 'unknown@example.test' };
+    db.auditEvent.findMany.mockResolvedValue([matched, unmatched]);
+    const findMany = vi.fn().mockResolvedValue([{ email: matched.actorEmail, fullName: 'Known Account' }]);
+    const page = await new AuditService({ ...db, user: { findMany } } as never).list({ category: 'LOGIN' });
+    expect(page.items).toEqual([{ ...matched, attemptAccountName: 'Known Account' }, unmatched]);
+    expect(findMany).toHaveBeenCalledWith({ where: { email: { in: [matched.actorEmail, unmatched.actorEmail] } }, select: { email: true, fullName: true } });
+    expect(db.auditEvent.create).not.toHaveBeenCalled();
+  });
   it('stores an explicit minimal snapshot, never arbitrary credential/body fields', async () => {
     const db = database(), service = new AuditService(db as never);
     await service.record({ category: 'ACTIVITY', action: 'CREATE', resource: 'users', resourceId: 'new-user', method: 'POST', route: '/admin/users', httpStatus: 201, actor: admin, ipAddress: '127.0.0.1', password: 'NEVER_STORE', token: 'NEVER_STORE', otp: 'NEVER_STORE', body: { signature: 'NEVER_STORE' } } as never);
@@ -182,6 +211,7 @@ describe('audit HTTP registration, authenticated actor and four-role access', ()
   });
   it.each(['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'])('enforces %s read access', async role => {
     await request(app.getHttpServer()).get('/api/admin/audit-events?category=LOGIN').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'ADMIN' ? 200 : 403);
+    await request(app.getHttpServer()).get('/api/admin/audit-events?category=ACCOUNT_NOTICES').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'ADMIN' ? 200 : 403);
   });
   it('requires authentication and exposes no edit/delete audit endpoint', async () => {
     await request(app.getHttpServer()).get('/api/admin/audit-events').expect(401);

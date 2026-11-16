@@ -66,6 +66,7 @@
 .admin-audit[data-category="ACTIVITY"] .admin-audit-table th:nth-child(2) { width: 32%; }
 .admin-audit[data-category="ACTIVITY"] .admin-audit-table th:nth-child(3) { width: 19%; }
 .admin-audit-table td:nth-child(2) { overflow-wrap: anywhere; }
+.admin-audit-table .audit-target-link { color: var(--workspace-primary); text-decoration: underline; }
 
 .admin-toolbar {
   gap: 12px;

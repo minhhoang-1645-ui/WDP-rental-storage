@@ -77,7 +77,7 @@ export class AdminUsersController {
     if (body.accountStatus !== 'ACTIVE' && body.accountStatus !== 'DISABLED') throw new BadRequestException('accountStatus phải là ACTIVE hoặc DISABLED.');
     const user = await this.users.updateStatus(id, body.accountStatus, request.user!.id);
     if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
-    return this.publicUser(user);
+    return { ...this.publicUser(user), statusChanged: user.statusChanged };
   }
 
   private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string; createdAt?: Date; updatedAt?: Date }) {

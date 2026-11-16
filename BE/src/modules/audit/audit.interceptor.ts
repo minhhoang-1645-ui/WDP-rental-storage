@@ -38,13 +38,14 @@ export class AuditInterceptor implements NestInterceptor {
     const target = auditTarget(request);
     if (!target) return next.handle();
     const record = (status: number, result?: unknown, error?: unknown) => {
-      const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown } : undefined;
+      const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown; statusChanged?: unknown } : undefined;
       const auth = target.resource === 'auth';
       const disabledLogin = target.action === 'AUTH_LOGIN' && error instanceof AccountDisabledException ? error : undefined;
       let action = disabledLogin ? disabledLoginAction : target.action;
       if (status < 400 && target.resource === 'users' && target.action === 'STATUS' && request.method === 'PATCH') {
-        if (data?.accountStatus === 'DISABLED') action = 'DISABLE_ACCOUNT';
-        if (data?.accountStatus === 'ACTIVE') action = 'REACTIVATE_ACCOUNT';
+        if (data?.statusChanged === false) action = 'ACCOUNT_STATUS_UNCHANGED';
+        if (data?.statusChanged === true && data.accountStatus === 'DISABLED') action = 'DISABLE_ACCOUNT';
+        if (data?.statusChanged === true && data.accountStatus === 'ACTIVE') action = 'REACTIVATE_ACCOUNT';
       }
       const resourceId = ['id', 'invoiceId', 'contractId', 'reservationId', 'renewalId', 'transferId', 'unitId', 'requestId', 'returnId', 'submissionId', 'bookingCode'].map(key => request.params?.[key]).find(value => typeof value === 'string') ?? data?.id;
       return this.audit.record({ ...target, action, method: request.method, httpStatus: status,

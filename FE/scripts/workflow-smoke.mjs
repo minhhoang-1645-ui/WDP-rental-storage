@@ -91,8 +91,18 @@ journey.returns[0].status = 'COMPLETED';
 assert.equal(customerProgress(journeyReservation, journey).stage, 6);
 assert(customerProgress({ ...journeyReservation, status: 'EXPIRED' }, journey).closed);
 assert.match(customerProgress(journeyReservation, { ...journey, contracts: [], returns: [], invoices: [{ ...journey.invoices[0], status: 'VOID' }] }).cta, /hỗ trợ/);
-const manyNotifications = buildActivity('ADMIN', 'admin', { users: Array.from({length: 135}, (_, i) => ({id: `user-${i}`, fullName: 'Nguyễn Văn An', email: `${i}@example.test`, accountStatus: 'ACTIVE', role: 'STAFF'})) });
-assert.equal(manyNotifications.length, 135, 'All fetched dossiers must be available to the paginated inbox');
+const noticeRows = Array.from({ length: 135 }, (_, i) => ({
+  id: `event-${i}`, resource: 'users', resourceId: `user-${i}`, action: 'CREATE', outcome: 'SUCCESS',
+  createdAt: '2026-11-15T04:00:00.000Z', targetAccount: { fullName: 'Nguyễn Văn An', role: 'STAFF' },
+}));
+const manyNotifications = buildActivity('ADMIN', 'admin', { 'account-notices': [
+  ...noticeRows, noticeRows[0], { ...noticeRows[0], id: 'login', action: 'AUTH_LOGIN' },
+  { ...noticeRows[0], id: 'no-op', action: 'ACCOUNT_STATUS_UNCHANGED' },
+  { ...noticeRows[0], id: 'failed', outcome: 'FAILURE' },
+] });
+assert.equal(manyNotifications.length, 135, 'Only unique qualifying audit events appear in the inbox');
+assert.equal(buildActivity('ADMIN', 'admin', { users: [{ id: 'active', accountStatus: 'ACTIVE' }] }).length, 0);
+assert.equal(buildActivity('ADMIN', 'admin', { 'account-notices': [{ ...noticeRows[0], targetAccount: null }] })[0].web, '/admin/activity?event=event-0');
 assert.equal(filterNotifications(manyNotifications, [], 'all', 'users', 'nguyen van an').length, 135);
 assert.equal(filterNotifications(manyNotifications, [manyNotifications[0].token], 'unread', 'all', '').length, 134);
 assert.equal(actionCountForPath([{id:'a',action:true,web:'/staff/transfers/x'},{id:'a',action:true,web:'/staff/transfers/x'},{id:'b',action:false,web:'/staff/transfers/y'}], '/staff/transfers'), 1);
@@ -280,7 +290,7 @@ assert.notEqual(beforeTransfer.token, afterTransfer.token);
 assert.match(afterTransfer.title, /A102/);
 assert.deepEqual(
   activitySources("ADMIN").map((source) => source.path),
-  ["/admin/users"],
+  ["/admin/audit-events?category=ACCOUNT_NOTICES"],
 );
 checks.push(
   "Ready contracts request one handover; Admin activity remains account-only",

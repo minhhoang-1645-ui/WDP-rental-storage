@@ -8,9 +8,16 @@ import { LIVE_REFRESH } from '../services/live-events';
 import { filterNotifications, notificationGroup, notificationKinds } from '../utils/notification-tools';
 import { dashboardNotifications, type ActivityEntry } from '../utils/activity';
 import { useWorkspaceNotifications, workspaceNotificationLink, type NotificationRole } from './workspace-notifications';
+import { CompactNotificationList, WorkspaceNotificationDropdown } from './WorkspaceNotificationDropdown';
 
 function useInboxPath() { const { user } = useAuth(); return `/${user?.role.toLowerCase() ?? 'customer'}/notifications`; }
 export function ActivityBell() {
+  const { user } = useAuth();
+  if (user?.role === 'ADMIN' || user?.role === 'CUSTOMER') return <WorkspaceNotificationDropdown role={user.role} userId={user.id} />;
+  return <LegacyActivityBell />;
+}
+
+function LegacyActivityBell() {
   const activity = useActivity(), [open, setOpen] = useState(false);
   const unread = activity.entries.filter(item => !activity.read.includes(item.token)).length;
   return <><button type="button" className="activity-bell" aria-label={`Thông báo, ${unread} chưa đọc`} onClick={() => setOpen(true)}><Bell size={18} /><span className="activity-bell-label">Thông báo</span>{unread > 0 && <b>{unread > 99 ? '99+' : unread}</b>}</button>{open && <ActivityPanel onClose={() => setOpen(false)} />}</>;
@@ -27,8 +34,22 @@ function ActivityPanel({ onClose }: { onClose: () => void }) {
 export function ActivityInboxPage() {
   const path = useInboxPath(), home = path.replace('/notifications', '');
   const { user } = useAuth();
+  if (user?.role === 'CUSTOMER') return <CustomerNotificationInbox userId={user.id} />;
   const workspace = user?.role === 'STAFF' || user?.role === 'MANAGER';
   return <section className="activity-inbox-page"><Link to={home} className="customer-back"><ArrowLeft size={16} />Về tổng quan</Link><header className="work-hub-heading"><div><h1>Thông báo & việc cần làm</h1><p>Tra cứu trạng thái mới nhất của từng hồ sơ và mở đúng nơi cần xử lý.</p></div></header><NotificationList workspace={workspace} /><p className="activity-inbox-footnote">{workspace ? 'Mỗi mục hiển thị trạng thái mới nhất của một hồ sơ. Dấu đã đọc được lưu theo tài khoản trên trình duyệt này.' : 'Mỗi mục phản ánh trạng thái hiện tại của một hồ sơ, không phải toàn bộ lịch sử sự kiện. Xem chi tiết hồ sơ để đối chiếu quá trình xử lý. Dấu đọc lưu trên trình duyệt này; chưa có thông báo đẩy khi ứng dụng đóng.'}</p></section>;
+}
+
+function CustomerNotificationInbox({ userId }: { userId: string }) {
+  const [params] = useSearchParams();
+  const actionView = params.get('view') === 'action';
+  const viewData = useWorkspaceNotifications('CUSTOMER', userId);
+  return <section className="activity-inbox-page workspace-notification-inbox">
+    <Link to="/customer" className="customer-back"><ArrowLeft size={16} />Về tổng quan</Link>
+    <header className="work-hub-heading"><div><h1>Thông báo</h1><p aria-live="polite">{viewData.activity.loading ? 'Đang tải…' : `${viewData.unread.size} chưa đọc`}</p></div></header>
+    <div className="workspace-notification-compact">
+      <CompactNotificationList key={String(actionView)} role="CUSTOMER" viewData={viewData} actionView={actionView} />
+    </div>
+  </section>;
 }
 function NotificationList({ compact = false, onOpen, workspace = false }: { compact?: boolean; onOpen?: () => void; workspace?: boolean }) {
   const { user } = useAuth();

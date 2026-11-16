@@ -12,6 +12,7 @@ const resourceActions: Record<string, Record<string, string>> = {
   users: {
     CREATE: 'Tạo tài khoản', UPDATE: 'Cập nhật thông tin tài khoản', STATUS: 'Đổi trạng thái tài khoản',
     DISABLE_ACCOUNT: 'Vô hiệu hóa tài khoản', REACTIVATE_ACCOUNT: 'Kích hoạt lại tài khoản',
+    ACCOUNT_STATUS_UNCHANGED: 'Giữ nguyên trạng thái tài khoản',
   },
   'stock-movements': { CREATE: 'Tạo phiếu nhập/xuất hàng', ASSIGN: 'Phân công nhập/xuất hàng', COMPLETE: 'Hoàn tất nhập/xuất hàng' },
   'support-requests': { CREATE: 'Gửi yêu cầu hỗ trợ', ASSIGN: 'Phân công xử lý hỗ trợ', START: 'Bắt đầu xử lý hỗ trợ', RESOLVE: 'Giải quyết yêu cầu hỗ trợ', ESCALATE: 'Chuyển yêu cầu hỗ trợ lên quản lý', PRIORITY: 'Đổi mức ưu tiên hỗ trợ' },
@@ -34,7 +35,9 @@ export type AuditEvent = {
   action: string;
   resource: string;
   resourceId?: string | null;
+  targetAccount?: { fullName: string; role: string } | null;
   actorName?: string | null;
+  attemptAccountName?: string | null;
   actorEmail?: string | null;
   actorRole?: string | null;
   createdAt: string;
@@ -52,7 +55,7 @@ export function auditTitle(event: AuditEvent) {
 }
 
 export const auditResource = (value: string) => auditResources[value] ?? 'Hồ sơ nghiệp vụ';
-export const auditActor = (event: AuditEvent) => event.actorName || (event.actorEmail ? 'Chưa xác định tên' : 'Không xác định tài khoản');
+export const auditActor = (event: AuditEvent) => event.actorName || event.attemptAccountName || event.actorEmail || 'Không xác định tài khoản';
 
 export function auditRecordPath(event: AuditEvent) {
   if (event.resource === 'users' && event.outcome === 'SUCCESS' && event.resourceId) {

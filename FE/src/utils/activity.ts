@@ -55,7 +55,7 @@ export function activityHash(text: string) {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 export function activitySources(role: ActivityRole): ActivitySource[] {
-  if (role === 'ADMIN') return [{ kind: 'users', path: '/admin/users', title: 'Tài khoản' }];
+  if (role === 'ADMIN') return [{ kind: 'account-notices', path: '/admin/audit-events?category=ACCOUNT_NOTICES', title: 'Thông báo quản trị' }];
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
     : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
@@ -68,7 +68,33 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
 const customerStates: Record<string, string> = {
   PENDING: 'Đang chờ xét duyệt', REQUESTED: 'Yêu cầu của bạn đã được gửi', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', REJECTED: 'Cần xem kết quả xử lý', EXPIRED: 'Yêu cầu đã hết hạn', OPEN: 'Chưa thanh toán', PARTIALLY_PAID: 'Chưa thanh toán đủ', PAID: 'Đã thanh toán đủ', PENDING_VERIFICATION: 'Đang chờ xác nhận chuyển khoản', VERIFIED: 'Đã xác nhận khoản chuyển', APPROVED_PENDING_PAYMENT: 'Gia hạn đã duyệt · cần thanh toán', ASSIGNED: 'Đã có nhân viên tiếp nhận', IN_PROGRESS: 'Đang được xử lý', ESCALATED: 'Đã chuyển bộ phận phụ trách xem xét', RESOLVED: 'Đã có kết quả hỗ trợ', COMPLETED: 'Đã hoàn tất', ACTIVE: 'Kho của bạn đã sẵn sàng sử dụng', READY_FOR_HANDOVER: 'Bạn có thể đặt lịch nhận kho', PENDING_SETTLEMENT: 'Đang đối chiếu tiền cọc', INSPECTION_IN_PROGRESS: 'Đang kiểm tra trả kho', ISSUE_FOUND: 'Có vấn đề cần đối chiếu', PENDING_REVIEW: 'Đang chờ đối chiếu tiền cọc', APPROVED: 'Đã duyệt', AWAITING_OUTSTANDING_PAYMENT: 'Còn khoản cần thanh toán', SETTLED: 'Đã hoàn tất quyết toán', VOID: 'Hóa đơn đã hủy',
 };
+const accountNoticeTitles: Record<string, string> = {
+  CREATE: 'Tài khoản đã được tạo',
+  UPDATE: 'Đã cập nhật thông tin tài khoản',
+  DISABLE_ACCOUNT: 'Đã vô hiệu hóa tài khoản',
+  REACTIVATE_ACCOUNT: 'Đã kích hoạt lại tài khoản',
+};
+const accountRoleLabels: Record<string, string> = { STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên', CUSTOMER: 'Khách hàng' };
+
+function adminNotices(rows: ActivityRow[]): ActivityEntry[] {
+  const notices = new Map<string, ActivityEntry>();
+  for (const row of rows) {
+    const id = activityText(row, 'id'), target = activityText(row, 'resourceId');
+    if (row.resource !== 'users' || row.outcome !== 'SUCCESS' || !id || !target) continue;
+    const action = activityText(row, 'action');
+    if (!Object.hasOwn(accountNoticeTitles, action)) continue;
+    const name = activityText(row, 'targetAccount.fullName');
+    const web = row.targetAccount ? `/admin/users/${encodeURIComponent(target)}` : `/admin/activity?event=${encodeURIComponent(id)}`;
+    const key = `admin-audit:${id}`;
+    notices.set(id, { id: key, token: key, kind: 'users', code: '', title: accountNoticeTitles[action],
+      message: [name, accountRoleLabels[activityText(row, 'targetAccount.role')]].filter(Boolean).join(' · '),
+      web, mobile: '', action: false, priority: 2, at: activityText(row, 'createdAt') });
+  }
+  return [...notices.values()].sort(activityOrder);
+}
+
 export function buildActivity(role: ActivityRole, userId: string, data: ActivityData): ActivityEntry[] {
+  if (role === 'ADMIN') return adminNotices(data['account-notices'] ?? []);
   const result: ActivityEntry[] = [];
   const handoverReservations = new Set<string>();
   const pendingInvoiceIds = new Set((data['payment-submissions'] ?? []).filter(row => row.status === 'PENDING_VERIFICATION').map(row => activityText(row, 'invoice.id')));
@@ -128,10 +154,6 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (kind === 'reservations' && status === 'PENDING') message = 'Yêu cầu đặt kho của bạn đã được gửi. NestBox đang kiểm tra kho và sẽ cập nhật kết quả tại đây.';
       if (kind === 'reservations' && status === 'CONFIRMED') message = get('expiresAt') ? `Đặt kho đã xác nhận. Thanh toán trước ${new Date(get('expiresAt')).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })} (UTC+7) để tiếp tục giữ kho.` : 'Đặt kho đã xác nhận. Xem hợp đồng, thanh toán và các bước nhận kho trong tài khoản.';
       if (kind === 'reservations' && status === 'EXPIRED') message = 'Thời hạn giữ kho đã kết thúc. Kiểm tra hóa đơn và đặt kho mới nếu bạn vẫn có nhu cầu; nếu đã chuyển tiền, hãy gửi hỗ trợ.';
-    } else if (role === 'ADMIN') {
-      title = `${get('fullName') || 'Tài khoản'} · ${status === 'DISABLED' ? 'Đã vô hiệu hóa' : 'Đang hoạt động'}`;
-      message = `${get('email')} · ${{ CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên' }[get('role')] ?? 'Người dùng'}`;
-      web = `/admin/users?search=${encodeURIComponent(get('email') || get('fullName'))}`; mobile = web;
     } else {
       if (role === 'MANAGER') {
         const simple = ['reservations', 'inquiries'].includes(kind);

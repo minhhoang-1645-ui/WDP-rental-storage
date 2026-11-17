@@ -35,6 +35,7 @@
         }
       ],
       "expo-secure-store",
+      ["expo-image-picker", {"photosPermission":"Cho phép NestBox chọn ảnh hàng hóa của bạn.","cameraPermission":"Cho phép NestBox chụp ảnh hàng hóa.","microphonePermission":false}],
       "expo-sharing"
     ],
     "experiments": {

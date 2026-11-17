@@ -10,14 +10,14 @@ type Tab = { key: string; label: string; icon: typeof Home; path: string; match:
 const customerTabs: Tab[] = [
   { key: 'home', label: 'Trang chủ', icon: Home, path: '/customer', match: ['/customer'] },
   { key: 'discover', label: 'Tìm kho', icon: Search, path: '/customer/discover', match: ['/customer/discover', '/customer/booking', '/customer/floor-plan', '/customer/size-finder'] },
-  { key: 'rentals', label: 'Kho thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/contracts', '/customer/renewals', '/customer/returns', '/customer/booking-history'] },
+  { key: 'rentals', label: 'Kho thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/contracts', '/customer/contract-document', '/customer/contract-sign', '/customer/renewals', '/customer/returns', '/customer/booking-history', '/customer/stored-items', '/customer/stock-movements'] },
   { key: 'payments', label: 'Thanh toán', icon: CreditCard, path: '/customer/invoices', match: ['/customer/invoices', '/customer/payments', '/customer/payment-history', '/customer/payment-submissions'] },
-  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/account', '/customer/stored-items', '/customer/stock-movements', '/customer/support-requests', '/customer/deposit-settlements', '/customer/transfers', '/customer/reservations', '/customer/appointments'] },
+  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/account', '/customer/support-requests', '/customer/deposit-settlements', '/customer/transfers', '/customer/reservations', '/customer/appointments'] },
 ];
 
 const staffTabs: Tab[] = [
-  { key: 'home', label: 'Công việc', icon: ClipboardList, path: '/staff', match: ['/staff'] },
-  { key: 'tasks', label: 'Vận hành', icon: Wrench, path: '/staff/tasks', match: ['/staff/tasks', '/staff/appointments', '/staff/reservations', '/staff/inquiries', '/staff/support-requests', '/staff/stock-movements', '/staff/renewals', '/staff/transfers', '/staff/returns', '/staff/maintenance', '/staff/contracts', '/staff/rentals', '/staff/units'] },
+  { key: 'home', label: 'Hôm nay', icon: ClipboardList, path: '/staff', match: ['/staff'] },
+  { key: 'tasks', label: 'Vận hành', icon: Wrench, path: '/staff/tasks', match: ['/staff/tasks', '/staff/assigned-units', '/staff/appointments', '/staff/reservations', '/staff/inquiries', '/staff/support-requests', '/staff/stock-movements', '/staff/renewals', '/staff/transfers', '/staff/returns', '/staff/maintenance', '/staff/contracts', '/staff/rentals', '/staff/units'] },
   { key: 'account', label: 'Tài khoản', icon: User, path: '/staff/account', match: ['/staff/account'] },
 ];
 
@@ -40,7 +40,7 @@ export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | '
   const tabs = { CUSTOMER: customerTabs, STAFF: staffTabs, MANAGER: managerTabs, ADMIN: adminTabs }[role];
   const navigate = useCallback((path: string) => { router.navigate(path as Href); }, []);
 
-  return <View style={[styles.wrap, { height: 60 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }]}>
+  return <View style={[styles.wrap, { minHeight: 68 + Math.max(insets.bottom, 8), height: 'auto', paddingTop: 8, paddingBottom: Math.max(insets.bottom, 8) }, role === 'STAFF' && { position: 'relative', height: 'auto', minHeight: 60 + Math.max(insets.bottom, 8), paddingTop: 8 }]}>
     {tabs.map(tab => {
       const active = tab.match.some(m => pathname === m || !['/customer', '/staff', '/manager', '/admin'].includes(m) && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;
@@ -48,7 +48,7 @@ export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | '
       return <Pressable key={tab.key} accessibilityRole="tab" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} onPress={() => navigate(tab.path)} style={styles.tab}>
         {active && <View style={styles.dot} />}
         <Icon size={22} color={color} strokeWidth={active ? 2.2 : 1.6} />
-        <Text style={[styles.label, active && styles.labelActive]}>{tab.label}</Text>
+        <Text style={[styles.label, active && styles.labelActive, role === 'STAFF' && { fontSize: 13, lineHeight: 18 }]}>{tab.label}</Text>
       </Pressable>;
     })}
   </View>;
@@ -58,7 +58,7 @@ const BOTTOM_INSET = Platform.OS === 'ios' ? 28 : 6;
 
 const styles = StyleSheet.create({
   wrap: {
-    position: 'absolute',
+    position: 'relative',
     bottom: 0,
     left: 0,
     right: 0,
@@ -73,7 +73,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 4,
+    minHeight: 48,
   },
   dot: {
     position: 'absolute',
@@ -84,7 +85,8 @@ const styles = StyleSheet.create({
     backgroundColor: WdpColors.teal,
   },
   label: {
-    fontSize: 10,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '500',
     color: WdpColors.muted,
   },

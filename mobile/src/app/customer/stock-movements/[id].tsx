@@ -1,3 +1,2 @@
-import { StockDetail } from '@/stock/screens';
-export default function Screen() { return <StockDetail role="CUSTOMER" />; }
+export { CustomerStockDetail as default } from '@/components/customer-stock-detail';
 

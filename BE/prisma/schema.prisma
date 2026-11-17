@@ -766,6 +766,7 @@ model StockMovementLine {
   storedItem      StoredItem    @relation(fields: [storedItemId], references: [id], onDelete: Restrict)
   requestedQty    Int
   actualQty       Int?
+  customerPhotos  Json                @default("[]")
   note            String?
   createdAt       DateTime      @default(now())
 

@@ -107,7 +107,7 @@ export function ManagerActions({
         </select>
       </label>
       {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
-        {resource === "deposit-settlements" ? "Mã tham chiếu giao dịch" : "Mã giao dịch ngân hàng đã đối soát"}
+        {resource === "deposit-settlements" ? "Mã giao dịch hoàn tiền" : "Mã giao dịch ngân hàng đã kiểm tra"}
         <input
           value={reference}
           maxLength={200}
@@ -140,7 +140,7 @@ export function ManagerActions({
     </>
   );
   if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
-  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Đề nghị trả trước hạn thuộc quản lý xem xét công nợ và điều kiện. Nhân viên xử lý hồ sơ trả kho sau khi đề nghị được chấp thuận.</p>;
+  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Quản lý duyệt thời điểm trả sớm. Sau đó nhân viên xử lý yêu cầu trả kho khi khách đã thanh toán đủ.</p>;
   if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
   return (
     <div className="portal-form">
@@ -161,7 +161,7 @@ export function ManagerActions({
               }}
             >
               <p>
-                Xác nhận sẽ kiểm tra lại khả dụng và phân bổ đủ{" "}
+                Khi xác nhận, hệ thống kiểm tra và cấp đủ{" "}
                 {first(row, "quantity")} kho cho toàn bộ kỳ thuê.
               </p>
               <label className="field-label">
@@ -283,10 +283,10 @@ export function ManagerActions({
           (row.status === "PENDING" ? (
             <>
               <p>
-                Duyệt sẽ kiểm tra xung đột lịch và tạo hóa đơn gia hạn. Thời hạn
+                Khi duyệt, hệ thống kiểm tra kho trống và lập hóa đơn gia hạn. Hạn thuê
                 chỉ được cập nhật khi hoàn tất thanh toán theo quy định.
               </p>
-              <p className="manager-action-copy">Đối chiếu khách hàng, hợp đồng/kho, hạn cũ–mới, báo giá chốt và kế hoạch hóa đơn ở mục “Thông tin đối chiếu gia hạn”.</p>
+              <p className="manager-action-copy">Kiểm tra khách hàng, kho, thời gian và số tiền gia hạn trước khi duyệt.</p>
               {renewalReviewIssue(row) && <p className="booking-alert is-error" role="alert">{renewalReviewIssue(row)}</p>}
               <label className="portal-checkbox"><input type="checkbox" checked={renewalReviewed} onChange={event => setRenewalReviewed(event.target.checked)} />Tôi đã đối chiếu thông tin và báo giá gia hạn</label>
               <button
@@ -612,7 +612,7 @@ export function ManagerActions({
                   Nghiệm thu hoàn tất sẽ đưa kho trở lại trạng thái sẵn sàng.
                 </p>
                 <label className="field-label">
-                  Ghi chú nghiệm thu
+                  Nhận xét sau kiểm tra
                   <textarea
                     maxLength={4000}
                     value={note}

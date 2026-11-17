@@ -107,7 +107,7 @@ export function CustomerReturnsPage() {
     setSubmitting(true);
     try {
       const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
-      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Chỉ được gửi yêu cầu trả kho sau khi thanh toán đủ toàn bộ công nợ, gồm các kỳ đã cam kết nhưng chưa đến hạn.');
+      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Hãy thanh toán đủ các hóa đơn còn hiệu lực, kể cả các kỳ đã cam kết chưa đến hạn, trước khi gửi yêu cầu trả kho.');
       await mutate<CustomerReturnRequest>(
         "/customer/returns",
         "POST",
@@ -213,14 +213,14 @@ export function CustomerReturnsPage() {
                 <option value="">Chọn kho muốn trả</option>
                 {eligibleRentals.map((item) => (
                   <option key={item.reservationId} value={item.reservationId}>
-                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần đối chiếu công nợ' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
+                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần kiểm tra khoản còn thiếu' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
                   </option>
                 ))}
               </EntitySelect>
             </label>
             {selectedRental && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
-              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối chiếu công nợ' : 'Cần thanh toán trước khi trả kho'}</strong>
-              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và quyết toán tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
+              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần kiểm tra khoản còn thiếu' : 'Cần thanh toán trước khi trả kho'}</strong>
+              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và xử lý tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
               {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selectedRental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
             </div>}
             <label className="field-label">
@@ -294,9 +294,9 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
               {formatPortalDate(item.requestedAt, true)}
             </p>
             {item.returnReadiness && !item.physicallyReturnedAt && !item.returnReadiness.canReturn && <div className="customer-inline-notice">
-              <strong>Cần tất toán trước khi nhân viên nhận trả kho</strong>
-              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được đầy đủ công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
-              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và tất toán</Link>
+              <strong>Cần thanh toán đủ trước khi trả kho</strong>
+              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
+              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và thanh toán</Link>
             </div>}
             <dl className="customer-record-facts">
               <div>

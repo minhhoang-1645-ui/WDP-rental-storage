@@ -497,7 +497,7 @@ async function verifyManagerWorkspace() {
   await page.getByRole('button', { name: 'Thao tác ITEM-TEST' }).click();
   assert.match(await page.getByRole('link', { name: 'Xem phiếu nhập – xuất', exact: true }).getAttribute('href'), /rentalContractId=contract/);
   await page.goto(`${base}/manager/units`);
-  await page.getByRole('table', { name: 'Kho vật lý' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Danh sách kho' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
   await page.goto(`${base}/manager/assignments?scope=all&kind=stock-movements`);
   await page.getByRole('button', { name: 'Thao tác MOV-TEST', exact: true }).click();
   await page.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();

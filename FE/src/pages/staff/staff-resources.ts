@@ -1,12 +1,12 @@
 export const staffResources = {
   appointments: {
     title: "Lịch bàn giao",
-    description: "Xem lịch được quản lý phân công và ghi nhận bàn giao kho thực tế.",
+    description: "Xem lịch được phân công và ghi nhận việc bàn giao kho.",
     statuses: ["REQUESTED", "CONFIRMED", "COMPLETED", "CANCELLED"],
   },
   rentals: {
     title: "Kho đang thuê",
-    description: "Theo dõi kho đang sử dụng, quá hạn và vị trí kho.",
+    description: "Xem kho đang thuê và các kho quá hạn.",
     statuses: ["ACTIVE", "OVERDUE"],
   },
   returns: {
@@ -22,13 +22,13 @@ export const staffResources = {
   },
   maintenance: {
     title: "Bảo trì kho",
-    description: "Báo sự cố và xử lý công việc bảo trì được phân công.",
+    description: "Xử lý công việc bảo trì được phân công.",
     statuses: ["OPEN", "IN_PROGRESS", "AWAITING_VERIFICATION", "COMPLETED"],
   },
   "support-requests": {
     title: "Hỗ trợ khách hàng",
     description:
-      "Tiếp nhận và xử lý phần việc hỗ trợ được quản lý giao.",
+      "Xử lý yêu cầu được quản lý phân công.",
     statuses: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ESCALATED", "RESOLVED"],
   },
 } as const;

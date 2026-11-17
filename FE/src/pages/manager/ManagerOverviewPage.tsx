@@ -95,7 +95,7 @@ function workDetails(entry: ActivityEntry, row: Row) {
     : { title: 'Duyệt quyết toán cọc', to: entry.web, status };
   if (entry.kind === 'support-requests' && isEarlyReturnRequest(row)) return { title: 'Duyệt trả trước hạn', to: `/manager/early-returns?record=${id}`, status, statusText: 'Chờ quyết định' };
   if (entry.kind === 'support-requests') return { title: 'Xử lý hỗ trợ chuyển cấp', to: entry.web, status, statusText: 'Chờ xử lý' };
-  if (entry.kind === 'maintenance') return { title: 'Nghiệm thu bảo trì', to: entry.web, status };
+  if (entry.kind === 'maintenance') return { title: 'Kiểm tra bảo trì', to: entry.web, status };
   if (entry.kind === 'damage-claims') return status === 'INVESTIGATING'
     ? { title: 'Quyết định xử lý sự cố hàng hóa', to: entry.web, status, statusText: 'Chờ quyết định' }
     : { title: 'Ghi kết quả xử lý sự cố', to: entry.web, status, statusText: 'Chờ ghi kết quả' };

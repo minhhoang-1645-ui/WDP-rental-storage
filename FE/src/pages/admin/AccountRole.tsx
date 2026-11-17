@@ -8,13 +8,13 @@ const adminRoles = {
   },
   STAFF: {
     label: 'Nhân viên', icon: ClipboardCheck,
-    description: 'Thực hiện công việc vận hành theo phân công.',
+    description: 'Xử lý công việc tại kho được phân công.',
     access: ['Tiếp nhận yêu cầu đặt kho, tư vấn và bàn giao kho.', 'Kiểm đếm khi nhập/xuất và xử lý hồ sơ gia hạn, chuyển kho, trả kho theo quy trình.', 'Xử lý yêu cầu hỗ trợ và bảo trì được giao.'],
   },
   MANAGER: {
     label: 'Quản lý', icon: BriefcaseBusiness,
     description: 'Điều phối hoạt động của cơ sở NestBox.',
-    access: ['Phân công nhân viên và theo dõi kho, khách hàng, hợp đồng, kết quả kiểm đếm.', 'Duyệt hồ sơ chuyển cấp và nghiệm thu trong phạm vi được giao.', 'Xác minh khoản thanh toán, đối soát và xử lý tiền cọc theo quy trình.', 'Theo dõi tài chính, bảng giá và báo cáo.'],
+    access: ['Phân công nhân viên và theo dõi kho, khách hàng, hợp đồng, kết quả kiểm đếm.', 'Duyệt yêu cầu nhân viên chuyển lên và kết quả bảo trì.', 'Kiểm tra khoản thu và quyết định khấu trừ, hoàn tiền cọc.', 'Theo dõi tài chính, bảng giá và báo cáo.'],
   },
   ADMIN: {
     label: 'Quản trị viên', icon: ShieldCheck,

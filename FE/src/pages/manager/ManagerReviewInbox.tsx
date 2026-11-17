@@ -25,11 +25,11 @@ type Task = { queue: Queue; row: Row; status: string; statusText: string; create
 
 const titles: Record<Queue, string> = {
   deposits: 'Quyết toán cọc',
-  maintenance: 'Nghiệm thu bảo trì', support: 'Hỗ trợ chuyển cấp', early: 'Trả kho trước hạn', damage: 'Sự cố hàng hóa',
+  maintenance: 'Kiểm tra bảo trì', support: 'Hỗ trợ cần quyết định', early: 'Trả kho trước hạn', damage: 'Sự cố hàng hóa',
 };
 const statusNames: Record<string, string> = {
   PENDING_REVIEW: 'Chờ duyệt',
-  AWAITING_VERIFICATION: 'Chờ nghiệm thu', ESCALATED: 'Đã chuyển cấp', EARLY_REVIEW: 'Chờ quyết định',
+  AWAITING_VERIFICATION: 'Chờ kiểm tra kết quả', ESCALATED: 'Cần quản lý quyết định', EARLY_REVIEW: 'Chờ quyết định',
   INVESTIGATING: 'Chờ quyết định sự cố', APPROVED: 'Đã chấp thuận · chờ kết thúc', REJECTED: 'Đã từ chối · chờ kết thúc',
 };
 const queueStates: Record<Queue, string[]> = {
@@ -132,16 +132,16 @@ export function ManagerReviewInbox() {
   return <section>
     <PageHeader title="Việc cần duyệt"><button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button></PageHeader>
     {errors.length > 0 && <div className="booking-alert is-error" role="alert">Chưa tải được {errors.join(', ')}. <button className="button-secondary" type="button" onClick={refresh}>Thử lại</button></div>}
-    {bounded && <p className="manager-task-note" role="status">Bảng đang hiển thị các hồ sơ gần nhất từ từng nghiệp vụ. Mở danh sách nghiệp vụ để tra cứu hồ sơ cũ hơn.</p>}
+    {bounded && <p className="manager-task-note" role="status">Đang hiển thị các yêu cầu gần nhất. Mở danh sách đầy đủ để tìm yêu cầu cũ.</p>}
     <ManagerTaskTable title="Việc cần duyệt" loading={loading} refreshing={refreshing} retry={refresh} items={matching.slice((page - 1) * limit, page * limit)}
       columns={columns} rowKey={task => task.queue + ':' + first(task.row, 'id')} total={matching.length} page={page} limit={limit} update={update}
-      emptyTitle="Chưa có hồ sơ cần duyệt" emptyDescription={errors.length ? 'Kết quả chỉ gồm các nghiệp vụ tải thành công.' : undefined}
+      emptyTitle="Chưa có hồ sơ cần duyệt" emptyDescription={errors.length ? 'Một số nhóm yêu cầu chưa tải được. Hãy thử lại.' : undefined}
       toolbar={<>
         <ManagerTableSearch value={term} onChange={value => update('search', value)} placeholder="Tên khách, mã hồ sơ hoặc kho…" />
         <ManagerTableFilter label="Loại yêu cầu" value={queue} onChange={value => update('kind', value)}
           options={[[ '', 'Tất cả' ], ...Object.entries(titles)]} />
         <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)} options={[[ '', 'Tất cả' ], ...states.map(value => [value, statusNames[value]] as [string, string])]} />
-        {queue && <Link className="button-secondary" to={fullLists[queue]}>Mở danh sách nghiệp vụ</Link>}
+        {queue && <Link className="button-secondary" to={fullLists[queue]}>Xem danh sách đầy đủ</Link>}
       </>} />
   </section>;
 }

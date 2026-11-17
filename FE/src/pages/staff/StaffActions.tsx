@@ -122,7 +122,7 @@ export function StaffActions({
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
-              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
+              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu nhận kho sớm, khách chỉ được sử dụng từ ngày bắt đầu thuê khi đã đủ điều kiện.</p>
               <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
               {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
@@ -148,7 +148,7 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải tất toán trước khi nhận trả kho</strong><p>{returnPaid ? 'Khách đã thanh toán đủ công nợ hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được công nợ. Làm mới hồ sơ để đối chiếu trước khi nhận trả kho.'}</p></div>}
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -252,7 +252,7 @@ export function StaffActions({
             )}
           </>
         )}
-        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
+        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đang chờ quản lý duyệt thời điểm trả sớm. Nhân viên tiếp nhận khi khách đã được duyệt và gửi yêu cầu trả kho.</p>}
         {resource === "support-requests" && !isEarlyReturnRequest(row) && !isTransferRequest(row) && (
           <>
             {!assigned &&

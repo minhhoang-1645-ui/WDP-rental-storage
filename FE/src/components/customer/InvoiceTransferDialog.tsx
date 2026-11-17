@@ -49,7 +49,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
       {(saved || pending) && <p role="status">Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận. Bạn chưa cần chuyển thêm cho cùng khoản tiền.</p>}
       {onlinePending && <p role="status">Đang theo dõi VNPay. Không chuyển khoản thêm cho cùng hóa đơn.</p>}
       {scheduled && <p role="status">Hóa đơn gia hạn chưa đến kỳ thanh toán.</p>}
-      {row.closeoutPaymentAllowed && row.balanceDue > 0 && isScheduledRenewalInvoice(row) && <p role="status">Kho đã được duyệt trả trước hạn. Bạn có thể thanh toán sớm hóa đơn kỳ này để tất toán toàn bộ công nợ trước khi trả kho.</p>}
+      {row.closeoutPaymentAllowed && row.balanceDue > 0 && isScheduledRenewalInvoice(row) && <p role="status">Kho đã được duyệt trả trước hạn. Bạn có thể thanh toán sớm hóa đơn kỳ này để trả đủ các khoản còn thiếu trước khi trả kho.</p>}
       {paymentWindowClosed(row) && <p role="alert">Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p>}
       {submissions.error && <PortalError message={submissions.error} onRetry={submissions.refresh} />}
       {payable && (bank.loading ? <PortalLoading label="Đang tải thông tin ngân hàng…" /> : bank.error ? <PortalError message={bank.error} onRetry={bank.refresh} /> : !bank.data?.configured ? <p>Chuyển khoản chưa khả dụng. {bank.data?.vnpayConfigured === true ? 'Bạn có thể thanh toán qua VNPay trên danh sách hóa đơn.' : 'Bạn có thể thanh toán tại cơ sở; hóa đơn chỉ cập nhật sau khi NestBox xác nhận thu tiền.'} <Link to={`/customer/support?reservation=${encodeURIComponent(row.reservation.id)}`}>Gửi hỗ trợ về hóa đơn</Link></p> : <form className="portal-form" onSubmit={event => void submit(event)}>

@@ -305,7 +305,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async listReservations(userId: string) {
     const records = await this.prisma.reservation.findMany({
       where: { customerId: userId },
-      include: { customer: true, storageType: true },
+      include: this.customerReservationInclude(),
       orderBy: { createdAt: 'desc' },
     });
     return records.map((record) => this.toReservation(record));
@@ -335,7 +335,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async getReservation(user: PublicUser, id: string) {
     const record = await this.prisma.reservation.findFirst({
       where: { OR: [{ id }, { reservationCode: id }] },
-      include: { customer: true, storageType: true },
+      include: this.customerReservationInclude(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
     if (record.customerId !== user.id && !['STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) {
@@ -823,6 +823,16 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private customerReservationInclude() {
+    return {
+      customer: true, storageType: true,
+      contracts: { include: { reservationUnit: { include: { storageUnit: true } } } },
+      invoices: { where: { status: { not: 'VOID' as const } } },
+      renewals: { include: { invoices: { where: { status: { not: 'VOID' as const } } } }, orderBy: { createdAt: 'asc' as const } },
+      transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'asc' as const } },
+    };
+  }
+
   private toReservation(record: any): PendingReservation {
     const quote = record.quoteSnapshot as QuoteSnapshot;
     return {
@@ -845,6 +855,24 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       customer: { id: record.customer.id, fullName: record.customer.fullName, email: record.customer.email, phone: record.customer.phone ?? '', role: record.customer.role },
       product: this.toProduct(record.storageType),
       quote,
+      ...(record.contracts ? { rentalSummary: {
+        currentUnits: record.contracts.filter((contract: any) => contract.status !== 'CANCELLED').map((contract: any) => ({
+          contractId: contract.id, contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber,
+          floor: contract.reservationUnit.storageUnit.floor, zone: contract.reservationUnit.storageUnit.zone,
+        })),
+        totalInvoiced: (record.invoices ?? []).reduce((sum: number, invoice: any) => sum + Number(invoice.totalAmount), 0),
+        totalPaid: (record.invoices ?? []).reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0),
+        renewalPaid: (record.renewals ?? []).reduce((sum: number, renewal: any) => sum + renewal.invoices.reduce((paid: number, invoice: any) => paid + Number(invoice.amountPaid), 0), 0),
+        renewals: (record.renewals ?? []).map((renewal: any) => ({ id: renewal.id, code: renewal.renewalCode, status: renewal.status,
+          months: renewal.termMonths, previousEndDate: this.isoDate(renewal.previousEndDate), endDate: this.isoDate(renewal.requestedEndDate),
+          amount: Number(renewal.quoteSnapshot?.totalAmount ?? 0), discount: Number(renewal.quoteSnapshot?.discountAmount ?? 0),
+          paid: renewal.invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0),
+        })),
+        transfers: (record.transferRequests ?? []).map((transfer: any) => ({ id: transfer.id, code: transfer.transferCode,
+          from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
+          handoverReport: transfer.handoverReport ?? null,
+        })),
+      } } : {}),
       unitAssignment: null,
       paymentStatus: 'NOT_STARTED',
       persistence: 'DATABASE',

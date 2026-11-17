@@ -35,7 +35,8 @@
     "test:pricing": "node scripts/pricing-ux-smoke.mjs",
     "test:stock-picker": "node scripts/stock-picker-smoke.mjs",
     "test:review-business": "node scripts/review-business-smoke.mjs",
-    "test:review-ui": "node scripts/review-ui-smoke.mjs"
+    "test:review-ui": "node scripts/review-ui-smoke.mjs",
+    "test:rental-lifecycle": "node scripts/rental-lifecycle-review-smoke.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -43,6 +43,12 @@ export interface AvailabilityResult {
 }
 
 export interface PendingReservation extends ReservationDraft {
+  rentalSummary?: {
+    currentUnits: Array<{ contractId: string; contractCode: string; unitCode: string; floor: string | null; zone: string | null }>;
+    totalInvoiced: number; totalPaid: number; renewalPaid: number;
+    renewals: Array<{ id: string; code: string; status: string; months: number; previousEndDate: string; endDate: string; amount: number; discount: number; paid: number }>;
+    transfers: Array<{ id: string; code: string; from: string; to: string; completedAt: string | null; handoverReport: unknown }>;
+  };
   id: string;
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
   createdAt: string;

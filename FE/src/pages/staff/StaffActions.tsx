@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
+import { ReturnInventoryNotice } from '../../components/customer/ReturnInventoryNotice';
 import { mutate } from "../../services/portal";
 import {
   first,
@@ -154,7 +155,7 @@ export function StaffActions({
             )}
             {inspecting && (
               <>
-                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <p role="status" className="portal-error">Còn {first(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {first(row, 'inventory.pendingMovements') || '0'} phiếu giao nhận chưa hoàn tất. Khách cần gửi phiếu lấy hết hàng; nhân viên hoàn tất giao nhận trước khi nhận trả kho.</p>}
+                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <ReturnInventoryNotice staff remainingItemTypes={Number(first(row, 'inventory.remainingItemTypes')) || 0} pendingMovements={Number(first(row, 'inventory.pendingMovements')) || 0} />}
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
                   phí do quản lý duyệt.
@@ -188,7 +189,7 @@ export function StaffActions({
                   </button>
                   {!allInspected && (
                     <small>
-                      Cần ghi kết quả cho tất cả kho trước khi hoàn tất.
+                      Cần xuất hết hàng, hoàn tất các phiếu giao nhận và ghi đủ kết quả kiểm tra trước khi nhận lại kho.
                     </small>
                   )}
                 </form>

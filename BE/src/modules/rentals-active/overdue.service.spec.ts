@@ -105,8 +105,8 @@ describe('Overdue Rental V1', () => {
 
   it('derives ACTIVE before end and OVERDUE exactly at the exclusive end boundary deterministically', () => {
     const end = new Date('2027-05-10T00:00:00.000Z');
-    expect(deriveOverdueState(end, new Date('2027-05-09T23:59:59.999Z'))).toMatchObject({ isOverdue: false, overdueSince: null, rentalState: 'ACTIVE' });
-    expect(deriveOverdueState(end, new Date('2027-05-10T00:00:00.000Z'))).toMatchObject({ effectiveEndDate: '2027-05-10', isOverdue: true, overdueSince: '2027-05-10', rentalState: 'OVERDUE' });
+    expect(deriveOverdueState(end, new Date('2027-05-09T23:59:59.999+07:00'))).toMatchObject({ isOverdue: false, overdueSince: null, rentalState: 'ACTIVE' });
+    expect(deriveOverdueState(end, new Date('2027-05-10T00:00:00.000+07:00'))).toMatchObject({ effectiveEndDate: '2027-05-10', isOverdue: true, overdueSince: '2027-05-10', rentalState: 'OVERDUE' });
   });
 
   it('exposes overdue without mutating ACTIVE contracts, OCCUPIED units, invoices or recurring cycles', async () => {

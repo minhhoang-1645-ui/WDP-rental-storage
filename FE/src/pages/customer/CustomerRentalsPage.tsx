@@ -115,7 +115,7 @@ export function CustomerRentalsPage() {
               </dl>
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
-                  <div key={contract.id}>
+                  <div key={contract.id} className="customer-unit-inventory">
                     <span>
                       <button type="button" className="portal-text-button" onClick={() => setDetail({ rental, kind: "contracts", contractId: contract.id })}><strong>{contract.unit.unitCode}</strong></button>
                       <small>
@@ -125,6 +125,12 @@ export function CustomerRentalsPage() {
                       </small>
                     </span>
                     <CustomerStatus status={contract.status} />
+                    <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
+                      <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
+                      {contract.storedItems === undefined ? <p><Link to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng đang lưu trong kho này</Link></p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
+                      <div className="customer-header-actions"><Link className="button-secondary" to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng trong kho</Link><Link className="button-secondary" to={`/customer/stock-movements?rentalContractId=${encodeURIComponent(contract.id)}`}>Tạo / xem phiếu nhập – xuất</Link></div>
+                      {contract.transfers?.map(transfer => <p className="rental-transfer-note" key={transfer.code}>Đã chuyển {transfer.from} → <strong>{transfer.to}</strong> ngày {formatPortalDate(transfer.completedAt ?? '', true)}. Hàng hiện được lưu tại kho {contract.unit.unitCode}.</p>)}
+                    </section>
                   </div>
                 ))}
               </div>

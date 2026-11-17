@@ -1,6 +1,8 @@
 import { ManagerTaskTable, ManagerTableSearch, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { StockReconciliation } from '../../components/stock/StockReconciliation';
+import type { StockLine } from '../../types/stock';
 import { TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
@@ -264,6 +266,7 @@ function AssignmentDetail({
       title={`${workName(task.kind)} · ${code(task.row)}`}
       onClose={onClose}
       busy={busy}
+      className="assignment-dialog"
     >
       <div className="portal-form">
         <Facts
@@ -287,7 +290,7 @@ function AssignmentDetail({
         {first(task.row, "subject") && first(task.row, "description") && (
           <p>{first(task.row, "description")}</p>
         )}
-        {task.kind === 'stock-movements' && <section><h3>Kết quả kiểm đếm</h3><p>Hoàn tất: {date(task.row.completedAt, true)} · {first(task.row, 'completedBy.fullName') || 'Chưa hoàn tất'}</p><p>Lý do / ghi chú: {first(task.row, 'completionNote') || 'Chưa ghi nhận'}</p><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Mặt hàng</th><th>Yêu cầu</th><th>Thực tế</th><th>Chênh lệch</th></tr></thead><tbody>{rows(task.row.lines).map(line => <tr key={first(line, 'id')}><td>{first(line, 'storedItem.name')}<small>{first(line, 'storedItem.unit')}</small></td><td>{String(line.requestedQty)}</td><td>{typeof line.actualQty === 'number' ? line.actualQty : 'Chưa kiểm đếm'}</td><td>{typeof line.actualQty === 'number' && typeof line.requestedQty === 'number' ? line.actualQty - line.requestedQty : '—'}</td></tr>)}</tbody></table></div></section>}
+        {task.kind === 'stock-movements' && <section><h3>Hàng hóa cần giao nhận</h3><p>{task.row.completedAt ? `Hoàn tất ${date(task.row.completedAt, true)}` : 'Nhân viên được giao sẽ kiểm đếm và ghi nhận số lượng thực tế.'}</p><StockReconciliation lines={rows(task.row.lines) as unknown as StockLine[]} /><p>Ghi chú kiểm đếm: {first(task.row, 'completionNote') || 'Chưa ghi nhận'}</p></section>}
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}

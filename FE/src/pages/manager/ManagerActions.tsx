@@ -12,6 +12,7 @@ import {
   type Row,
 } from "../../components/manager/portal-data";
 import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
+import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
@@ -149,7 +150,7 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
-        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <form className="portal-form" onSubmit={event => { event.preventDefault(); void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST'); }}><p>Chỉ xác nhận sau khi đã chuyển hàng thực tế sang kho đích.</p><label className="portal-checkbox"><input type="checkbox" required />Tôi đã đối chiếu và hoàn tất chuyển kho thực tế</label><button className="button-primary" disabled={busy || Boolean(row.commercial && typeof row.commercial === 'object' && !('acceptedAt' in row.commercial && row.commercial.acceptedAt))}>Hoàn tất chuyển kho</button></form>}
+        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
         {resource === "reservations" &&
           (row.status === "PENDING" ? (
             <form

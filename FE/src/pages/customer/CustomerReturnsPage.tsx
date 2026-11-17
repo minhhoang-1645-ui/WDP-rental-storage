@@ -29,6 +29,7 @@ import { EarlyReturnPanel } from '../../components/customer/EarlyReturnPanel';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
 import { isCurrentEarlyReturnApproval } from '../../utils/early-return';
 import { vietnamCalendarDate } from '../../utils/business-date';
+import { ReturnInventoryNotice } from '../../components/customer/ReturnInventoryNotice';
 import type {
   CustomerDepositSettlement,
   CustomerRental,
@@ -133,6 +134,7 @@ export function CustomerReturnsPage() {
           </button>
         }
       />
+      <ReturnInventoryNotice />
       <div className="customer-module-layout">
         <section className="customer-panel">
           <div className="customer-module-tabs" role="tablist">

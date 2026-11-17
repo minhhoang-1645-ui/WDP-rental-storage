@@ -1,3 +1,4 @@
+import { transferHandover } from './transfers.service.js';
 import { describe, expect, it, vi } from 'vitest';
 import { TransfersService } from './transfers.service.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
@@ -27,12 +28,12 @@ describe('Transfer completion and linked customer request, with memory-only depe
   it('returns the actual latest modification time separately from the old creation time', async () => {
     const app = setup('COMPLETED');
     app.transfer.updatedAt = new Date('2026-11-06T05:00:00Z');
-    const result = await app.service.complete('transfer', app.actor);
+    const result = await app.service.complete('transfer', app.actor, handover);
     expect(result.updatedAt).toBe('2026-11-06T05:00:00.000Z');
     expect(result.createdAt).toBe('2026-10-27T13:00:00.000Z');
   });
   it('completes physical movement and resolves the linked request in the same transaction', async () => {
-    const app = setup(); const result = await app.service.complete('transfer', app.actor);
+    const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
     expect(result.status).toBe('COMPLETED'); expect(result.supportRequest.status).toBe('RESOLVED');
     expect(app.support.resolutionNote).toContain('A101 sang A102'); expect(app.support.resolutionNote).toContain('CON-1');
     expect(app.tx.supportRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ reservationId: 'reservation' }), data: expect.objectContaining({ resolvedByUserId: app.actor.id, resolutionType: 'ON_SITE_RESOLVED' }) }));
@@ -40,47 +41,70 @@ describe('Transfer completion and linked customer request, with memory-only depe
     expect(app.maintenance).toHaveLength(1); expect(app.maintenance[0].storageUnitId).toBe('source'); expect(result.sourceMaintenance?.id).toBe('maintenance-created');
   });
   it('repairs a previously completed transfer without moving stock or replacing allocations again', async () => {
-    const app = setup('COMPLETED'); await app.service.complete('transfer', app.actor); await app.service.complete('transfer', app.actor);
+    const app = setup('COMPLETED'); await app.service.complete('transfer', app.actor, handover); await app.service.complete('transfer', app.actor, handover);
     expect(app.support.status).toBe('RESOLVED'); expect(app.tx.supportRequest.updateMany).toHaveBeenCalledTimes(1);
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.rentalContract.update).not.toHaveBeenCalled(); expect(app.tx.reservationUnit.update).not.toHaveBeenCalled();
   });
   it('updates an earlier transfer recommendation with the actual completed result', async () => {
     const app = setup('COMPLETED', 'RESOLVED'); app.support.resolutionType = 'TRANSFER_RECOMMENDED';
-    await app.service.complete('transfer', app.actor); expect(app.support.resolutionType).toBe('ON_SITE_RESOLVED'); expect(app.support.resolutionNote).toContain('A102');
+    await app.service.complete('transfer', app.actor, handover); expect(app.support.resolutionType).toBe('ON_SITE_RESOLVED'); expect(app.support.resolutionNote).toContain('A102');
   });
   it('does not overwrite a separately resolved support result', async () => {
     const app = setup('COMPLETED', 'RESOLVED'); app.support.resolutionType = 'ON_SITE_RESOLVED'; app.support.resolutionNote = 'Đã xác nhận với khách';
-    await app.service.complete('transfer', app.actor); expect(app.support.resolutionNote).toBe('Đã xác nhận với khách'); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
+    await app.service.complete('transfer', app.actor, handover); expect(app.support.resolutionNote).toBe('Đã xác nhận với khách'); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
   it('does not close unrelated support or support for another contract', async () => {
-    const app = setup('COMPLETED'); app.support.subject = 'Kiểm tra hóa đơn'; await app.service.complete('transfer', app.actor); expect(app.support.status).toBe('IN_PROGRESS');
-    app.support.subject = 'Yêu cầu chuyển kho'; app.support.rentalContractId = 'another-contract'; await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('không khớp'); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
+    const app = setup('COMPLETED'); app.support.subject = 'Kiểm tra hóa đơn'; await app.service.complete('transfer', app.actor, handover); expect(app.support.status).toBe('IN_PROGRESS');
+    app.support.subject = 'Yêu cầu chuyển kho'; app.support.rentalContractId = 'another-contract'; await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('không khớp'); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
   it('rejects the transaction if customer-result persistence fails', async () => {
     const app = setup(); app.tx.supportRequest.updateMany.mockRejectedValueOnce(new Error('write failed'));
-    await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('write failed'); expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
+    await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('write failed'); expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
   });
   it('does not finish an unapproved transfer', async () => {
-    const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
+    const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
   it('supports transfers without a linked customer request', async () => {
-    const app = setup(); app.transfer.supportRequestId = null; expect((await app.service.complete('transfer', app.actor)).status).toBe('COMPLETED'); expect(app.tx.supportRequest.findUnique).not.toHaveBeenCalled();
+    const app = setup(); app.transfer.supportRequestId = null; expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED'); expect(app.tx.supportRequest.findUnique).not.toHaveBeenCalled();
   });
   it('repairs missing source maintenance on legacy completion and does not create duplicate cases', async () => {
     const app = setup('COMPLETED', 'RESOLVED'); app.support.resolutionType = 'ON_SITE_RESOLVED';
-    await app.service.complete('transfer', app.actor); await app.service.complete('transfer', app.actor);
+    await app.service.complete('transfer', app.actor, handover); await app.service.complete('transfer', app.actor, handover);
     expect(app.maintenance).toHaveLength(1); expect(app.tx.maintenanceRequest.create).toHaveBeenCalledTimes(1); expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
   });
   it('preserves an existing active maintenance case and its assignee', async () => {
     const app = setup('COMPLETED'); app.maintenance.push({ id: 'existing', activeKey: 'MAINTENANCE:source', assignedStaffUserId: 'another-staff' });
-    await app.service.complete('transfer', app.actor); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled(); expect(app.maintenance[0].assignedStaffUserId).toBe('another-staff');
+    await app.service.complete('transfer', app.actor, handover); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled(); expect(app.maintenance[0].assignedStaffUserId).toBe('another-staff');
   });
   it('does not reblock a repaired or reoccupied source or recreate a completed maintenance case', async () => {
-    for (const status of ['AVAILABLE', 'OCCUPIED', 'RESERVED']) { const app = setup('COMPLETED'); app.transfer.fromStorageUnit.status = status; await app.service.complete('transfer', app.actor); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled(); }
-    const app = setup('COMPLETED'); app.maintenance.push({ id: 'old', activeKey: null, createIdempotencyKey: 'TRANSFER:transfer', status: 'COMPLETED' }); await app.service.complete('transfer', app.actor); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled();
+    for (const status of ['AVAILABLE', 'OCCUPIED', 'RESERVED']) { const app = setup('COMPLETED'); app.transfer.fromStorageUnit.status = status; await app.service.complete('transfer', app.actor, handover); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled(); }
+    const app = setup('COMPLETED'); app.maintenance.push({ id: 'old', activeKey: null, createIdempotencyKey: 'TRANSFER:transfer', status: 'COMPLETED' }); await app.service.complete('transfer', app.actor, handover); expect(app.tx.maintenanceRequest.create).not.toHaveBeenCalled();
   });
   it('rejects the whole completion transaction if maintenance cannot be persisted', async () => {
     const app = setup(); app.tx.maintenanceRequest.create.mockRejectedValueOnce(new Error('maintenance persistence failed'));
-    await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('maintenance persistence failed'); expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
+    await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('maintenance persistence failed'); expect(app.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+const handover = { oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 2, note: '' };
+describe('Transfer keys are required before a new physical completion', () => {
+  it('rejects missing confirmations before changing occupancy', async () => {
+    const app = setup();
+    await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('chìa khóa');
+    expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
+    expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
+  });
+  it('stores the key exchange with the completed transfer', async () => {
+    const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
+    expect(result.handoverReport).toMatchObject({ returnedKeyCount: 1, deliveredKeyCount: 2, recipientName: 'Khách kiểm thử', oldKeysReturned: true, newKeysDelivered: true });
+    expect(result.handoverReport.recordedByUserId).toBe(app.actor.id);
+  });
+  it('requires evidence for access codes when no physical keys are exchanged', () => {
+    expect(() => transferHandover({ ...handover, returnedKeyCount: 0 })).toThrow('quyền truy cập');
+    expect(transferHandover({ ...handover, returnedKeyCount: 0, deliveredKeyCount: 0, note: 'Đã vô hiệu mã cũ và cấp mã mới cho khách.' })).toMatchObject({ returnedKeyCount: 0, deliveredKeyCount: 0 });
+  });
+  it('rejects invalid key counts and an unconfirmed delivery', () => {
+    for (const count of [-1, 1.5, 51, '1']) expect(() => transferHandover({ ...handover, returnedKeyCount: count })).toThrow();
+    expect(() => transferHandover({ ...handover, newKeysDelivered: false })).toThrow();
   });
 });

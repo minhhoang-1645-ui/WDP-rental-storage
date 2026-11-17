@@ -44,7 +44,15 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
       add('Chuyển bộ phận phụ trách xem xét', '/escalate', [note('reason', 'Lý do chuyển bộ phận phụ trách', true, 4000)], true);
     }
   }
-  if (resource === 'transfers' && row.status === 'APPROVED') add('Hoàn tất chuyển kho', '/complete', [], false, 'Đối chiếu kho nguồn, kho đích và hợp đồng. Chỉ xác nhận sau khi đã chuyển thực tế.');
+  if (resource === 'transfers' && row.status === 'APPROVED') add('Hoàn tất chuyển kho', '/complete', [
+    { name: 'recipientName', title: 'Người nhận kho mới', required: true, minLength: 2, maxLength: 120 },
+    { name: 'returnedKeyCount', title: 'Số chìa khóa/thẻ kho cũ đã thu', required: true, numeric: true, minimum: 0, maximum: 50 },
+    { name: 'deliveredKeyCount', title: 'Số chìa khóa/thẻ kho mới đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
+    { name: 'goodsMoved', title: 'Đã chuyển toàn bộ hàng sang kho mới', checkbox: true, required: true },
+    { name: 'oldKeysReturned', title: 'Đã thu chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ', checkbox: true, required: true },
+    { name: 'newKeysDelivered', title: 'Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới', checkbox: true, required: true },
+    note('note', 'Ghi chú bàn giao; nếu không có chìa khóa vật lý, ghi cách thu hồi/cấp mã truy cập'),
+  ], false, 'Đối chiếu kho nguồn, kho đích và hợp đồng. Chỉ xác nhận sau khi đã chuyển hàng và đổi chìa khóa thực tế.');
   if (resource === 'returns') {
     if (row.status === 'REQUESTED') add('Bắt đầu kiểm tra', '/start-inspection');
     if (['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(String(row.status))) {

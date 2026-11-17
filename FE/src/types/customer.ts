@@ -30,6 +30,8 @@ export interface CustomerContract {
 }
 
 export interface RentalContractSummary {
+  storedItems?: Array<{ id: string; itemCode: string; name: string; unit: string; balance: number }>
+  transfers?: Array<{ code: string; from: string; to: string; completedAt: string | null }>
   id: string
   contractCode: string
   status: string

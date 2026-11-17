@@ -3,7 +3,9 @@ import { at, code, customer, date, first, object, rows, type Row } from '../comp
 /** Presentation only: read explicit objects returned by APIs; never match code prefixes. */
 export function recordIdentity(row: Row, resource: string) {
   const typeName = first(row, 'product.name', 'storageType.name', 'reservation.storageType.name', 'reservation.product.name', 'rentalContract.storageType.name', 'unit.storageType.name', 'fromUnit.storageType.name');
-  const candidates = [row.storageUnit, row.unit, row.currentStorageUnit, at(row, 'rentalContract.storageUnit'), row.fromUnit, ...rows(row.allocatedUnits), ...rows(row.units), ...rows(row.contracts).map(contract => contract.unit ?? contract.storageUnit)];
+  const candidates = resource === 'stock-movements'
+    ? [row.currentStorageUnit ?? at(row, 'rentalContract.reservationUnit.storageUnit') ?? row.storageUnit]
+    : [row.storageUnit, row.unit, row.currentStorageUnit, at(row, 'rentalContract.storageUnit'), row.fromUnit, ...rows(row.allocatedUnits), ...rows(row.units), ...rows(row.contracts).map(contract => contract.unit ?? contract.storageUnit)];
   const unitCodes = [...new Set(candidates.map(value => first(object(value), 'unitCode', 'unitNumber', 'storageUnit.unitCode', 'storageUnit.unitNumber')).filter(Boolean))];
   const location = unitCodes.join(', ');
   const quantity = first(row, 'quantity', 'reservation.quantity');

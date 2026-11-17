@@ -20,4 +20,5 @@ assert.equal(unallocated.location,'','A StorageType code must never become a phy
 assert.equal(unallocated.quantity,'2 kho');
 assert.equal(unallocated.created,'','No fabricated creation timestamp');
 assert.equal(recordIdentity({storageType:{name:'Kho nhỏ'},allocatedUnits:[{unitCode:'REAL-001'}]},'appointments').location,'REAL-001');
+assert.equal(recordIdentity({type:'IN',storageUnit:{unitNumber:'OLD-001'},currentStorageUnit:{unitNumber:'NEW-002'}},'stock-movements').location,'NEW-002','Current goods location must not be merged with the historical movement location');
 console.log('PASS identity helpers: actual dates, stable non-mutating sort, exact created ID/time window, absent data, StorageType vs physical StorageUnit.');

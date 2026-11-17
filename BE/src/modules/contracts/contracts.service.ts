@@ -159,6 +159,7 @@ export class ContractsService {
       },
       reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
       transferRequests: { orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
+        handoverReport: true,
         id: true, transferCode: true, status: true, reason: true, createdAt: true, approvedAt: true, completedAt: true,
         fromStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
         toStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
@@ -212,6 +213,7 @@ export class ContractsService {
         invoices: renewal.invoices.map((invoice: any) => ({ id: invoice.id, invoiceCode: invoice.invoiceCode, status: invoice.status, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue), paidAt: invoice.paidAt?.toISOString() ?? null })),
       })),
       transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
+        handoverReport: transfer.handoverReport ?? null,
         id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, reason: transfer.reason,
         fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber, floor: transfer.fromStorageUnit.floor, zone: transfer.fromStorageUnit.zone },
         toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber, floor: transfer.toStorageUnit.floor, zone: transfer.toStorageUnit.zone } : null,

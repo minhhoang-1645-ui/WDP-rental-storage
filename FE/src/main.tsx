@@ -8,6 +8,7 @@ import "./styles/refresh.css";
 import "./styles/light-professional.css";
 import "./styles/web-readability.css";
 import "./styles/web-spacing.css";
+import "./styles/operations-review.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

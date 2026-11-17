@@ -1,4 +1,5 @@
 import { RecordIdentity, CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { StockReconciliation } from '../../components/stock/StockReconciliation';
 import { DashboardSkeleton, DetailSkeleton } from '../../components/LoadingSkeleton';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { hasDraft } from '../../services/live-events';
@@ -37,7 +38,7 @@ export function StockMovementsPage({ role }: { role: StockRole }) {
   return id ? <StockDetail key={`${user?.id}:${id}`} role={role} id={id} /> : <StockList key={`${user?.id}:${role}`} role={role} />;
 }
 function StockList({ role }: { role: StockRole }) {
-  const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(false), [notice, setNotice] = useState('');
+  const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(() => role === 'CUSTOMER' && params.get('create') === '1'), [notice, setNotice] = useState('');
   const limit = role === 'STAFF' ? staffTaskPageSize(params) : internalPageSize(params);
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1)), query = new URLSearchParams({ page: String(page), limit: String(limit) });
   for (const key of ['status', 'type', 'search', 'rentalContractId']) if (params.get(key)) query.set(key, params.get(key)!);
@@ -97,9 +98,10 @@ function StaffStockTable({ items, userId, loadingRows }: { items: StockMovement[
     emphasized={row => row.status === 'ASSIGNED' && row.assignedStaff?.id === userId} />;
 }
 function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
+  const [params] = useSearchParams();
   const { user } = useAuth(), contracts = usePaginatedResource<CustomerContract>('/customer/contracts', user?.id);
   const [contract, setContract] = useScopedSelection('rentalContractId', (contracts.data?.items ?? []).filter(row => row.status === 'ACTIVE').map(row => ({ value: row.id })), true);
-  const [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
+  const [type, setType] = useState<'IN' | 'OUT'>(() => params.get('type') === 'OUT' ? 'OUT' : 'IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
   const items = useApiResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null, user?.id, true);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
   const [now, setNow] = useState(() => Date.now());
@@ -192,7 +194,7 @@ function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRo
   } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được phiếu.'); } finally { lock.current = false; setBusy(false); } };
   return <article className="stock-card stock-form">{role !== 'CUSTOMER' && <p className="booking-alert">{transportRule}</p>}<Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Khách hàng', `${row.customer.fullName} · ${row.customer.email}`], ['Kho hiện tại', row.currentStorageUnit ? [row.currentStorageUnit.unitNumber, row.currentStorageUnit.floor, row.currentStorageUnit.zone].filter(Boolean).join(' · ') : 'Chưa có thông tin'], ['Kho tại lúc hoàn tất', row.storageUnitAtCompletion ? [row.storageUnitAtCompletion.unitNumber, row.storageUnitAtCompletion.floor, row.storageUnitAtCompletion.zone].filter(Boolean).join(' · ') : 'Chưa ghi nhận vị trí lịch sử'], ['Hợp đồng', `${row.rentalContract.contractCode} · ${label(row.rentalContract.status)}`], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công'], ['Người phân công', row.assignedBy?.fullName], ['Ngày phân công', dateTime(row.assignedAt)], ['Ngày hoàn tất', dateTime(row.completedAt)], ['Người hoàn tất', row.completedBy?.fullName], ['Ghi chú phiếu', row.note], ['Ghi chú hoàn tất', row.completionNote]]} />
     <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>
-    <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2>{row.lines.map(line => <div className="stock-line" key={line.id}><h3>{line.storedItem.name}</h3><p>{line.storedItem.itemCode} · Đơn vị: {line.storedItem.unit}</p><p>Yêu cầu: {line.requestedQty} · Thực tế: {line.actualQty ?? 'Chưa kiểm đếm'} · Tồn hiện tại: {line.storedItem.balance}</p>{line.actualQty != null && <p>Chênh lệch: {line.actualQty - line.requestedQty > 0 ? '+' : ''}{line.actualQty - line.requestedQty} {line.storedItem.unit}</p>}{completable && quantities[line.id]?.trim() && Number.isFinite(Number(quantities[line.id])) && <p>Chênh lệch kiểm đếm: {Number(quantities[line.id]) - line.requestedQty} {line.storedItem.unit}</p>}{line.note && <p>{line.note}</p>}{completable && <label className="field-label">Số lượng thực tế · {line.storedItem.name}<input required type="number" min={0} max={row.type === 'OUT' ? Math.min(1000000, line.storedItem.balance) : 1000000} step={1} value={quantities[line.id]} onChange={event => { setQuantities(current => ({ ...current, [line.id]: event.target.value })); setConfirmed(false); }} /></label>}</div>)}
+    <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2><StockReconciliation lines={row.lines} movementType={row.type} quantities={quantities} onQuantityChange={completable ? (lineId, value) => { setQuantities(current => ({ ...current, [lineId]: value })); setConfirmed(false); } : undefined} />
       {completable && <><label className="field-label">Ghi chú kiểm đếm{discrepancy ? ' (bắt buộc khi chênh lệch)' : ''}<textarea required={discrepancy} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></label><p>Hoàn tất sẽ {row.type === 'IN' ? 'tăng' : 'giảm'} tồn theo số lượng thực tế, có thể khác số lượng yêu cầu.</p></>}
       {completable && <><label className="stock-confirmation"><input type="checkbox" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế</span></label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<div className="portal-actions"><button className="button-primary" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Hoàn tất phiếu'}</button></div></>}
     </fieldset></form>

@@ -1,4 +1,5 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { ReservationLifecycle } from '../../components/customer/ReservationLifecycle';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import {
   ArrowLeft,
@@ -73,6 +74,7 @@ export function CustomerReservationDetailPage() {
       />
       <CopyRecordCode value={reservation.id} label="Mã đơn" />
       <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
+      <div className="customer-panel"><ReservationLifecycle summary={reservation.rentalSummary} /></div>
       <div className="customer-detail-grid">
         <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
@@ -107,7 +109,7 @@ export function CustomerReservationDetailPage() {
             </div>
           </section>
           <section className="customer-panel">
-            <h2>Thời gian thuê yêu cầu</h2>
+            <h2>Thời gian thuê hiện tại</h2>
             <div className="customer-facts">
               <div>
                 <dt>Ngày bắt đầu</dt>
@@ -124,7 +126,7 @@ export function CustomerReservationDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt>Hình thức thời hạn</dt>
+                <dt>Kỳ thuê ban đầu</dt>
                 <dd>
                   {reservation.periodMode === "duration"
                     ? `${reservation.durationMonths} tháng`
@@ -155,7 +157,7 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
-            <p className="customer-note">{reservation.quote.message}</p>
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Đây là báo giá gốc tại lúc đặt. Các lần gia hạn, tiền đã thu và kho sau chuyển được ghi riêng trong phần cập nhật kỳ thuê.' : reservation.quote.message}</p>
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>

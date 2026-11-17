@@ -1,3 +1,4 @@
+import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
 import { safeSessionStorage } from '../../services/browser-storage';
@@ -16,7 +17,6 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import {
   formatPortalDate,
-  quoteLabel,
 } from "../../components/customer/CustomerPortalHelpers";
 import { useApiResource } from "../../services/useApiResource";
 import type { PendingReservation } from "../../types/booking";
@@ -123,7 +123,7 @@ export function CustomerReservationsPage() {
                       <th>Số lượng / kích thước</th>
                       <th>Thời gian thuê</th>
                       <th>Ưu tiên</th>
-                      <th>Báo giá</th>
+                      <th>Thanh toán</th>
                       <th>Trạng thái</th>
                       <th>Tạo lúc</th>
                     </tr>
@@ -139,7 +139,7 @@ export function CustomerReservationsPage() {
                             {item.product.name}
                           </Link>
                           {isJustCreated(item, savedId) && <span className="record-new">Vừa gửi</span>}
-                          <CopyRecordCode value={item.id} label="Mã đơn" />
+                          <CopyRecordCode value={item.id} label="Mã đơn" />{item.rentalSummary?.currentUnits.length ? <small>Kho hiện tại: {item.rentalSummary.currentUnits.map(unit => unit.unitCode).join(", ")}</small> : null}
                           <Link className="portal-text-button" to={`/customer/reservations/${encodeURIComponent(item.id)}`}>Xem chi tiết</Link>
                         </td>
                         <td>
@@ -160,10 +160,7 @@ export function CustomerReservationsPage() {
                             : "Không yêu cầu"}
                         </td>
                         <td>
-                          {quoteLabel(
-                            item.quote.quotedTotalAmount ??
-                              item.quote.grandTotal,
-                          )}
+                          <ReservationPaymentSummary summary={item.rentalSummary} original={item.quote.quotedTotalAmount ?? item.quote.grandTotal} />
                         </td>
                         <td>
                           <ReservationStatus status={item.status} />
@@ -198,8 +195,8 @@ export function CustomerReservationsPage() {
                         </dd>
                       </div>
                       <div>
-                        <dt>Báo giá</dt>
-                        <dd>{quoteLabel(item.quote.grandTotal)}</dd>
+                        <dt>Thanh toán</dt>
+                        <dd><ReservationPaymentSummary summary={item.rentalSummary} original={item.quote.quotedTotalAmount ?? item.quote.grandTotal} /></dd>
                       </div>
                     </dl>
                     <Link

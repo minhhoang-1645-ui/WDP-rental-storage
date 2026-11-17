@@ -90,7 +90,10 @@ export class ActiveRentalsService {
       storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
       contracts: {
         where: { status: 'ACTIVE' as const },
-        include: { reservationUnit: { include: { storageUnit: { select: {
+        include: {
+          storedItems: { where: { balance: { gt: 0 } }, select: { id: true, itemCode: true, name: true, unit: true, balance: true }, orderBy: { name: 'asc' as const } },
+          transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
+          reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
@@ -139,6 +142,10 @@ export class ActiveRentalsService {
         id: contract.id, contractCode: contract.contractCode, status: contract.status,
         startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate), activatedAt: contract.activatedAt?.toISOString() ?? null,
         unit: mode === 'CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
+        ...(mode === 'CUSTOMER' ? { storedItems: contract.storedItems ?? [],
+        transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
+          code: transfer.transferCode, from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
+        })) } : {}),
         ...(mode === 'CUSTOMER' ? {} : { hasCurrentAllocationConflict: overdue.isOverdue && future !== undefined && future.plannedStartDate <= now }),
       };
     });

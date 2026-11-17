@@ -1,0 +1,99 @@
+.stock-reconciliation { display: grid; gap: 14px; min-width: 0; }
+.stock-item-review { border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; background: var(--color-surface); min-width: 0; }
+.stock-item-review > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 16px 20px; background: var(--color-canvas); }
+.stock-item-review h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+.stock-item-review small { display: block; color: var(--color-slate); overflow-wrap: anywhere; }
+.stock-item-unit { font-size: 13px; color: var(--color-slate); white-space: nowrap; }
+.stock-item-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; padding: 18px 20px; }
+.stock-item-counts > div { display: grid; gap: 6px; }
+.stock-item-counts > div > span { font-size: 13px; color: var(--color-slate); }
+.stock-item-counts strong { font-size: 17px; line-height: 1.5; }
+.stock-item-counts strong small { display: inline; font-size: 13px; font-weight: 400; }
+.stock-count-editor { display: grid; grid-template-columns: minmax(160px,220px) minmax(0,1fr); align-items: end; gap: 20px; padding: 16px 20px; border-top: 1px solid var(--color-border); }
+.stock-count-editor p { margin: 0 0 10px; color: var(--color-slate); font-size: 14px; }
+.stock-item-note, .stock-item-difference { margin: 0; padding: 0 20px 16px; font-size: 14px; }
+.manager-shell.internal-web .portal-dialog.assignment-dialog { width: min(880px,calc(100vw - 32px)); max-width: min(880px,calc(100vw - 32px)); overflow-x: hidden; }
+.assignment-dialog > header h2 { min-width: 0; overflow-wrap: anywhere; }
+.assignment-dialog > header .icon-button { flex: 0 0 42px; }
+.assignment-dialog :is(.portal-form, form, .manager-facts, .manager-facts > div, section) { min-width: 0; max-width: 100%; }
+.assignment-dialog .manager-facts { gap: 16px 24px; }
+.assignment-dialog .manager-facts dd { display: block; overflow-wrap: anywhere; margin-left: 0; }
+.assignment-dialog .staff-assignee-picker { width: 100%; min-width: 0; }
+.reservation-payment-summary { display: grid; gap: 6px; min-width: 170px; font-size: 13px; }
+.reservation-payment-summary > span { display: block; }
+.reservation-payment-summary strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reservation-payment-summary small { color: var(--color-slate); font-size: 11px; }
+.reservation-paid-total { color: var(--color-navy); }
+.reservation-lifecycle { display: grid; gap: 16px; min-width: 0; margin-block: 14px; }
+.reservation-lifecycle h3 { font-size: 18px; font-weight: 700; margin: 0; }
+.reservation-lifecycle h4 { font-size: 15px; font-weight: 700; }
+.lifecycle-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.lifecycle-totals > div { background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 10px; padding: 14px; min-width: 0; }
+.lifecycle-totals dt { font-size: 13px; color: var(--color-slate); }
+.lifecycle-totals dd { margin: 8px 0 0; font-weight: 700; font-size: 18px; }
+.lifecycle-events { display: grid; gap: 10px; }
+.lifecycle-events > article { display: grid; gap: 5px; border-left: 3px solid var(--color-navy); border-radius: 0 10px 10px 0; padding: 12px 16px; background: var(--color-canvas); font-size: 14px; }
+.lifecycle-events small { color: var(--color-slate); overflow-wrap: anywhere; }
+.customer-unit-list > .customer-unit-inventory { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 16px; }
+.rental-goods { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--color-border); padding-top: 16px; }
+.rental-goods h3 { font-size: 15px; margin-bottom: 12px; }
+.rental-goods ul { list-style: none; margin: 0 0 16px; padding: 0; }
+.rental-goods li { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.rental-goods li > span { min-width: 0; }
+.rental-goods li strong { white-space: nowrap; }
+.rental-goods small { display: block; color: var(--color-slate); font-size: 12px; }
+.rental-transfer-note { margin-top: 14px; background: var(--color-canvas); padding: 12px; border-radius: 8px; font-size: 13px; }
+.damage-claims-page { display: grid; gap: 20px; min-width: 0; }
+.damage-claim-form { display: grid; gap: 20px; min-width: 0; }
+.damage-claim-form .field-label { display: grid; gap: 8px; min-width: 0; }
+.damage-claim-form .claim-affected-items { border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.claim-affected-items legend { padding-inline: 8px; font-size: 14px; font-weight: 600; }
+.damage-claim-form .claim-affected-items .stock-confirmation { display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-canvas); }
+.damage-claim-form .claim-affected-items .stock-confirmation input[type="checkbox"] { width: 18px; height: 18px; min-width: 18px; min-height: 18px; margin: 0; padding: 0; flex: 0 0 18px; }
+.damage-claim-form .claim-affected-items .stock-confirmation span { flex: 1; text-align: left; min-width: 0; }
+.damage-claim-form > .button-primary { justify-self: start; }
+.damage-claim-record { display: grid; gap: 16px; min-width: 0; }
+.damage-claim-record > p { margin: 0; }
+.damage-claim-record .portal-section-title { display: flex; justify-content: space-between; align-items: start; gap: 16px; flex-wrap: wrap; }
+.damage-claim-record .portal-section-title h2 { overflow-wrap: anywhere; }
+.claim-record-editor { display: grid; gap: 14px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.damage-claim-record > .button-secondary { justify-self: start; }
+.return-inventory-notice { padding: 20px; border: 1px solid var(--color-border); border-left: 4px solid var(--color-navy); background: var(--color-surface); border-radius: 12px; margin-block: 18px; min-width: 0; }
+.return-inventory-notice h3 { font-weight: 700; font-size: 17px; margin: 0 0 10px; }
+.return-inventory-notice p { margin: 0 0 12px; line-height: 1.7; }
+.return-inventory-notice ol { margin: 14px 0 18px; padding-left: 22px; list-style: decimal; display: grid; gap: 8px; }
+.return-inventory-notice.is-blocked { border-left-color: #b7791f; background: #fffbeb; color: #594215; }
+.return-stock-counts { display: flex; flex-wrap: wrap; gap: 12px; }
+.return-stock-counts > span { padding: 8px 12px; border-radius: 8px; background: #fff; border: 1px solid #eadbb7; }
+.transfer-destination-context { display: grid; gap: 16px; min-width: 0; }
+.transfer-destination-picker .transfer-destination-options { display: grid; gap: 12px; padding: 12px 2px; border: 0; max-height: 480px; overflow-y: auto; }
+.portal-form .transfer-destination-options .transfer-destination-card { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 14px; align-items: start; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 12px; padding: 16px; cursor: pointer; min-width: 0; }
+.portal-form .transfer-destination-options .transfer-destination-card.is-selected { border: 2px solid var(--color-navy); background: color-mix(in srgb, var(--color-navy) 8%, var(--color-surface)); padding: 15px; }
+.portal-form .transfer-destination-options .transfer-destination-card.is-unavailable { opacity: .7; background: var(--color-canvas); cursor: not-allowed; }
+.transfer-destination-card > span { display: grid; gap: 5px; min-width: 0; }
+.transfer-destination-card small { display: block; color: var(--color-slate); overflow-wrap: anywhere; }
+.portal-form .transfer-destination-card input[type="radio"] { width: 18px; height: 18px; min-height: 18px; margin: 3px 0 0; padding: 0; }
+.transfer-destination-picker > .portal-checkbox, .transfer-handover-form .portal-checkbox { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; }
+.transfer-destination-picker > .portal-checkbox input[type="checkbox"], .transfer-handover-form .portal-checkbox input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin-top: 3px; padding: 0; }
+.transfer-handover-form { display: grid; gap: 16px; }
+.transfer-key-counts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.transfer-route { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 16px; align-items: center; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; }
+.transfer-route > span { display: grid; gap: 6px; min-width: 0; }
+.transfer-route small { color: var(--color-slate); }
+@media (min-width: 1200px) {
+  .portal-enhanced .manager-detail-grid.transfer-detail-grid { grid-template-columns: minmax(0,1fr) minmax(380px,.85fr); }
+}
+@media (max-width: 1199px) {
+  .portal-enhanced .manager-detail-grid.transfer-detail-grid { grid-template-columns: minmax(0,1fr); }
+  .portal-enhanced .transfer-detail-grid > .manager-processing { position: static; }
+}
+@media (max-width: 640px) {
+  .stock-item-review > header { flex-direction: column; gap: 8px; padding: 14px; }
+  .stock-item-counts { grid-template-columns: 1fr; gap: 10px; padding: 14px; }
+  .stock-item-counts > div { grid-template-columns: minmax(0,1fr) auto; align-items: center; }
+  .stock-count-editor, .lifecycle-totals, .transfer-key-counts { grid-template-columns: 1fr; }
+  .stock-count-editor { padding: 14px; gap: 10px; }
+  .return-inventory-notice { padding: 16px; }
+  .return-inventory-notice .portal-actions > a { width: 100%; justify-content: center; }
+  .assignment-dialog .manager-facts { grid-template-columns: 1fr; }
+}

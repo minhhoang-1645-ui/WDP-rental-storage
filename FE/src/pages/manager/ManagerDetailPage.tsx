@@ -113,7 +113,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
           <CopyRecordCode value={code(row)} />
-          <div className="manager-detail-grid">
+          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}`}>
             {workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}

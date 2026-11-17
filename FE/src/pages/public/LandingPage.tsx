@@ -1,7 +1,6 @@
 import { ArrowRight, CalendarCheck, ChevronDown, ClipboardCheck, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCatalog } from '../../catalog/catalog-context'
-import { ImageCredit } from '../../components/public/ImageCredit'
 import { QuickFinder } from '../../components/public/QuickFinder'
 import { StorageSizeCard } from '../../components/public/StorageSizeCard'
 import { StorageImage } from '../../components/public/StorageImage'
@@ -34,7 +33,6 @@ export function LandingPage() {
           </div>
           <figure>
             <StorageImage src={photo.src} alt="Thùng hàng được xếp trên kệ trong kho" fetchPriority="high" />
-            <ImageCredit label={photo.label} href={photo.href} />
           </figure>
         </div>
         <div className="landing-finder"><QuickFinder /></div>

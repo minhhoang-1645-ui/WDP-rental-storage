@@ -1033,6 +1033,7 @@ model SupportRequest {
 }
 
 model TransferRequest {
+  handoverReport Json?
   commercialSnapshot Json?
   commercialSignedSnapshot Json?
   customerAcceptedAt DateTime?

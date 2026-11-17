@@ -228,7 +228,7 @@ export function CustomerAppointmentsPage() {
                     <CustomerStatus status={item.status} />
                   </div>
                   <div className={`appointment-assignment${item.assignmentStatus === 'ASSIGNED' ? ' is-assigned' : ''}`}>
-                    <strong>{item.status === 'CANCELLED' ? 'Lịch đã hủy' : item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang phân công lại nhân viên' : item.assignedStaff ? `Phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Đã bàn giao kho' : 'Yêu cầu của bạn đã được gửi'}</strong>
+                    <strong>{item.status === 'CANCELLED' ? 'Lịch đã hủy' : item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang phân công lại nhân viên' : item.assignedStaff ? `Phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Đã bàn giao kho' : 'Đang chờ quản lý phân công'}</strong>
                   </div>
                   <details className="appointment-request-detail"><summary>Chi tiết yêu cầu</summary>
                   <p>Đơn đặt kho: <strong>{item.reservation.reference}</strong></p>

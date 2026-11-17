@@ -152,18 +152,8 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
-<<<<<<< Updated upstream
-            {reservation.quote.estimatedInitialAmountDue !== undefined }
-            <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
-=======
-<<<<<<< HEAD
             {reservation.quote.estimatedInitialAmountDue !== undefined && <p>Dự kiến lần thanh toán đầu tiên: <strong>{quoteLabel(reservation.quote.estimatedInitialAmountDue)}</strong> (theo báo giá lúc đặt).</p>}
             <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Giá được ghi nhận khi đặt kho.' : reservation.quote.message}</p>
-=======
-            {reservation.quote.estimatedInitialAmountDue !== undefined }
-            <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>

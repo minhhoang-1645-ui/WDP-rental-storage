@@ -107,7 +107,7 @@ export function CustomerRentalsPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Số Lượng Kho</dt>
+                  <dt>Số kho</dt>
                   <dd>{rental.unitCount}</dd>
                 </div>
                 <div><dt>Đã thanh toán</dt><dd>{moneyLabel(rental.paymentDetails?.totalPaid ?? rental.billingSummary.totalPaid)}</dd></div>
@@ -116,14 +116,6 @@ export function CustomerRentalsPage() {
                   <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
-<<<<<<< Updated upstream
-              
-=======
-<<<<<<< HEAD
-=======
-              
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
                   <div key={contract.id} className="customer-unit-inventory">
@@ -138,15 +130,7 @@ export function CustomerRentalsPage() {
                     <CustomerStatus status={contract.status} />
                     <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
                       <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
-<<<<<<< HEAD
                       {contract.storedItems === undefined ? <p>Chưa tải được danh sách hàng.</p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
-=======
-                      {contract.storedItems === undefined ? <p><Link to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng đang lưu trong kho này</Link></p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
-                      
-<<<<<<< Updated upstream
-=======
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
                       {contract.transfers?.map(transfer => <p className="rental-transfer-note" key={transfer.code}>Đã chuyển {transfer.from} → <strong>{transfer.to}</strong> ngày {formatPortalDate(transfer.completedAt ?? '', true)}. Hàng hiện được lưu tại kho {contract.unit.unitCode}.</p>)}
                     </section>
                   </div>
@@ -156,14 +140,6 @@ export function CustomerRentalsPage() {
                 <button type="button" className="button-primary" onClick={() => setDetail({ rental, kind: "invoices" })}>Xem hóa đơn</button>
                 <button type="button" className="button-secondary" onClick={() => setDetail({ rental, kind: "contracts" })}>Xem hợp đồng</button>
               </div>
-<<<<<<< Updated upstream
-              
-=======
-<<<<<<< HEAD
-=======
-              
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
               {rental.pendingRenewal && (
                 <p className="customer-inline-notice">
                   Yêu cầu gia hạn {rental.pendingRenewal.renewalCode} đang được

@@ -8,17 +8,9 @@ import { useApiResource } from '../../services/useApiResource';
 import { PortalEmpty, PortalError, PortalLoading, PortalPageHeader, ReservationStatus } from '../../components/customer/CustomerPortalUi';
 import { CustomerSessionExpired } from '../../components/customer/CustomerSessionExpired';
 import { formatPortalDate, moneyLabel } from '../../components/customer/CustomerPortalHelpers';
-<<<<<<< Updated upstream
-import { InternalKpis, InternalPriority } from '../../components/workspace/InternalDashboard';
-=======
-<<<<<<< HEAD
 
 import { InternalKpis, InternalPriority } from '../../components/workspace/InternalDashboard';
 
-=======
-import { InternalKpis, InternalPriority } from '../../components/workspace/InternalDashboard';
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
 import type { PendingReservation } from '../../types/booking';
 import type { CustomerAppointment, CustomerInvoice, CustomerRental } from '../../types/customer';
 
@@ -51,13 +43,5 @@ export function CustomerDashboardPage() {
       {reservations.status === 401 ? <CustomerSessionExpired /> : reservations.loading ? <PortalLoading label="Đang tải đơn…" /> : reservations.error ? null : !recent.length ? <PortalEmpty title="Bạn chưa có đơn đặt kho" action={<Link className="button-primary" to="/booking">Tìm kho phù hợp</Link>}>Chọn kho và thời gian thuê để bắt đầu.</PortalEmpty> : <div className="customer-recent-list">{recent.map(item => <Link key={item.id} to={`/customer/reservations/${encodeURIComponent(item.id)}`} className="customer-recent-item"><div><strong>{item.product.name} · {item.quantity} kho</strong><span>{item.id} · {formatPortalDate(item.createdAt, true)}</span></div><div><ReservationStatus status={item.status} /><ArrowRight size={17} /></div></Link>)}</div>}
     </section>
     <div className="internal-shortcuts"><Link className="button-secondary" to="/customer/stock-movements"><Boxes size={18} />Nhập – xuất hàng</Link><Link className="button-secondary" to="/customer/support"><CircleHelp size={18} />Gửi hỗ trợ</Link></div>
-<<<<<<< Updated upstream
-    
-=======
-<<<<<<< HEAD
-=======
-    
->>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
->>>>>>> Stashed changes
   </section>;
 }

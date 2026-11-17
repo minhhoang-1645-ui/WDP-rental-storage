@@ -164,7 +164,7 @@ export class ActiveRentalsService {
       termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan,
     }));
     const pendingRenewalSummary = pendingRenewal ? { renewalCode: pendingRenewal.renewalCode, status: pendingRenewal.status, requestedEndDate: this.isoDate(pendingRenewal.requestedEndDate) } : null;
-    if (mode === 'STAFF') return { ...base, pendingRenewal: pendingRenewalSummary, futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict }, renewalHistory: renewalHistory.map(({ paymentPlan: _paymentPlan, ...renewal }: any) => renewal), billingReadiness: { hasUnpaidInvoices: outstanding > 0n } };
+    if (mode === 'STAFF') return { ...base, pendingRenewal: null, futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict }, renewalHistory: renewalHistory.filter((renewal: any) => renewal.status === 'COMPLETED').map(({ paymentPlan: _paymentPlan, ...renewal }: any) => renewal), billingReadiness: { hasUnpaidInvoices: outstanding > 0n } };
     return {
       ...base,
       paymentPlan: snapshot.paymentPlan ?? null,

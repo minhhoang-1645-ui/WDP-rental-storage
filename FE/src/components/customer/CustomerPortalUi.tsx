@@ -15,7 +15,7 @@ export function ReservationStatus({ status }: { status: string }) {
     <span
       className={"customer-status customer-status--" + status.toLowerCase()}
     >
-      {labels[status] ?? status}
+      {labels[status] ?? customerStatusLabel(status)}
     </span>
   );
 }

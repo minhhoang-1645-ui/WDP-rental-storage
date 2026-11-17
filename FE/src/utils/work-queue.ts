@@ -24,14 +24,9 @@ export const staffWorkGroups = [
     description: "Kiểm đếm phiếu được giao; tồn chỉ đổi sau khi hoàn tất.",
   },
   {
-    resource: "renewals",
-    title: "Gia hạn kho",
-    description: "Đối chiếu hạn cũ – mới và báo giá trước khi duyệt.",
-  },
-  {
     resource: "transfers",
     title: "Chuyển kho",
-    description: "Duyệt kho đích và ghi nhận chuyển kho thực tế.",
+    description: "Ghi nhận việc chuyển kho đã được giao.",
   },
   {
     resource: "returns",
@@ -57,6 +52,31 @@ function assignee(row: WorkRow) {
     : undefined;
 }
 
+const assignableStates: Record<string, readonly string[]> = {
+  'support-requests': ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'],
+  maintenance: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'],
+  'stock-movements': ['REQUESTED', 'ASSIGNED'],
+  appointments: ['REQUESTED', 'CONFIRMED'],
+  returns: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'],
+  transfers: ['APPROVED'],
+  'damage-claims': ['REPORTED', 'INVESTIGATING'],
+};
+
+export function needsStaffAssignment(resource: string) {
+  return Object.hasOwn(assignableStates, resource);
+}
+
+export function canAssignWork(resource: string, row: WorkRow) {
+  return !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
+    Boolean(assignableStates[resource]?.includes(String(row.status)));
+}
+
+export function isAssignedStaffWork(resource: string, row: WorkRow, userId: string) {
+  return Boolean(userId && assignee(row) === userId) &&
+    !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
+    (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status)));
+}
+
 /** Receiving a request does not grant an employee authority to assign it. */
 export function staffNeedsAction(
   resource: string,
@@ -64,6 +84,7 @@ export function staffNeedsAction(
   userId: string,
 ) {
   const status = String(row.status ?? "");
+  if (needsStaffAssignment(resource) && !isAssignedStaffWork(resource, row, userId)) return false;
   switch (resource) {
     case "reservations":
       return status === "PENDING";
@@ -74,47 +95,41 @@ export function staffNeedsAction(
       );
     case "appointments":
       return ["REQUESTED", "CONFIRMED"].includes(status);
-    case "renewals":
-      return status === "PENDING";
     case "transfers":
-      return ["REQUESTED", "APPROVED"].includes(status);
+      return status === "APPROVED";
     case "returns":
       return ["REQUESTED", "INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
         status,
       );
     case "stock-movements":
-      return status === "ASSIGNED" && assignee(row) === userId;
+      return status === "ASSIGNED";
     case "support-requests":
-      return !isEarlyReturnRequest(row) && ["ASSIGNED", "IN_PROGRESS"].includes(status) && assignee(row) === userId;
+      return ["ASSIGNED", "IN_PROGRESS"].includes(status);
     case "maintenance":
-      return ["OPEN", "IN_PROGRESS"].includes(status) && assignee(row) === userId;
+      return ["OPEN", "IN_PROGRESS"].includes(status);
     default:
       return false;
   }
 }
 
 export function awaitingAssignment(resource: string, row: WorkRow) {
-  return (
-    !(resource === "support-requests" && isEarlyReturnRequest(row)) &&
-    ["support-requests", "maintenance", "stock-movements"].includes(resource) &&
-    ["OPEN", "REQUESTED"].includes(String(row.status)) &&
-    !assignee(row)
-  );
+  return canAssignWork(resource, row) && !assignee(row);
 }
 
 /** Disabled assignees need an explicit replacement; their work is never silently reassigned. */
 export function assignmentNeedsAttention(resource: string, row: WorkRow) {
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
-  const disabled = person && typeof person === "object" && (person as WorkRow).accountStatus === "DISABLED";
-  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "stock-movements" ? ["ASSIGNED"] : [];
-  return Boolean(disabled && !isEarlyReturnRequest(row) && states.includes(String(row.status)));
+  const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'STAFF'));
+  return Boolean(disabled && canAssignWork(resource, row));
 }
 
 export function managerNeedsAction(resource: string, row: WorkRow) {
   return assignmentNeedsAttention(resource, row)
     || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
     || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"
+    || resource === "transfers" && row.status === "REQUESTED"
+    || resource === "renewals" && row.status === "PENDING"
     || resource === "deposit-settlements" && (row.status === "PENDING_REVIEW" ||
       (row.status === "APPROVED" && typeof row.refundAmount === "number" && row.refundAmount > 0 &&
         row.outstandingAmount === 0 && row.refundedAt === null))

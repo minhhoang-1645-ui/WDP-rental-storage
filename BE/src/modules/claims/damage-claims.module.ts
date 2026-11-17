@@ -8,12 +8,18 @@ import { DamageClaimsService } from './damage-claims.service.js';
 class CustomerDamageClaimsController {
   constructor(private readonly service: DamageClaimsService) {}
   @Get() list(@Req() r: AuthenticatedRequest, @Query() q: Record<string, unknown>) { return this.service.list(r.user!, q); }
+  @Get(':id') get(@Req() r: AuthenticatedRequest, @Param('id') id: string) { return this.service.get(r.user!, id); }
   @Post() create(@Req() r: AuthenticatedRequest, @Body() b: Record<string, unknown>, @Headers('idempotency-key') key?: string) { return this.service.create(r.user!, b, key); }
 }
 @Controller(['staff/management/damage-claims', 'manager/damage-claims']) @UseGuards(AuthGuard, RolesGuard) @Roles('STAFF', 'MANAGER')
 class OperationalDamageClaimsController {
   constructor(private readonly service: DamageClaimsService) {}
   @Get() list(@Req() r: AuthenticatedRequest, @Query() q: Record<string, unknown>) { return this.service.list(r.user!, q); }
+  @Get(':id') get(@Req() r: AuthenticatedRequest, @Param('id') id: string) { return this.service.get(r.user!, id); }
+  @Roles('MANAGER') @Patch(':id/assign')
+  assign(@Req() r: AuthenticatedRequest, @Param('id') id: string, @Body() b: Record<string, unknown>) { return this.service.assign(r.user!, id, b); }
+  @Roles('MANAGER') @Patch(':id/compensation/handover')
+  recordHandover(@Req() r: AuthenticatedRequest, @Param('id') id: string, @Body() b: Record<string, unknown>) { return this.service.recordHandover(r.user!, id, b); }
   @Patch(':id') action(@Req() r: AuthenticatedRequest, @Param('id') id: string, @Body() b: Record<string, unknown>) { return this.service.action(r.user!, id, b); }
 }
 @Module({ imports: [AuthModule], controllers: [CustomerDamageClaimsController, OperationalDamageClaimsController], providers: [DamageClaimsService] })

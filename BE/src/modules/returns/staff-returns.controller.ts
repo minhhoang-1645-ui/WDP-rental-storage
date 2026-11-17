@@ -26,14 +26,14 @@ export class StaffReturnsController {
   @ApiOkResponse({ description: 'Customer contact, contracts/units, inspection progress và renewal context.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
-  list(@Query() input: Record<string, unknown>) { return this.returns.listStaffReturns(this.query(input)); }
+  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return this.returns.listStaffReturns(this.query(input), req.user!); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết tác vụ kiểm tra trả kho' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiOkResponse({ description: 'Danh sách inspection theo contract và physical unit.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu trả kho.' })
-  get(@Param('id') id: string) { return this.returns.getStaffReturn(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.returns.getStaffReturn(id, req.user!); }
 
   @Post(':id/start-inspection')
   @ApiOperation({ summary: 'Bắt đầu kiểm tra', description: 'REQUESTED → INSPECTION_IN_PROGRESS. Chưa thay đổi Contract, allocation hoặc Unit.' })

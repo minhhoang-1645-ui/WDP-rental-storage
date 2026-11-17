@@ -27,8 +27,8 @@ export class StaffAppointmentsController {
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
-  list(@Query() query: Record<string, unknown>) {
-    return this.appointments.listOperationalAppointments(this.query(query));
+  list(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    return this.appointments.listOperationalAppointments(this.query(query), req.user!);
   }
 
   @Get(':id')
@@ -38,8 +38,8 @@ export class StaffAppointmentsController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
-  get(@Param('id') id: string) {
-    return this.appointments.getOperationalAppointment(id);
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.appointments.getOperationalAppointment(id, req.user!);
   }
 
   @Post(':id/complete-handover')

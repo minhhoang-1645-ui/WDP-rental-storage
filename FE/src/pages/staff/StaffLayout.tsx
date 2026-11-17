@@ -31,7 +31,7 @@ const menu: InternalNavItem[] = [
   ...section('Hàng hóa', { 'stock-movements': 'Phiếu nhập – xuất' }),
   { to: '/staff/stored-items', label: 'Hàng đang lưu', icon: Boxes, group: 'Hàng hóa' },
   { to: '/staff/assigned-units', label: 'Kho tôi phụ trách', icon: Warehouse, group: 'Hàng hóa' },
-  ...section('Vận hành kho', { rentals: 'Kho đang thuê', renewals: 'Gia hạn', transfers: 'Chuyển kho', returns: 'Trả kho', 'support-requests': 'Hỗ trợ khách hàng', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa' }),
+  ...section('Vận hành kho', { rentals: 'Kho đang thuê', transfers: 'Chuyển kho', returns: 'Trả kho', 'support-requests': 'Hỗ trợ khách hàng', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa' }),
 ];
 
 export function StaffLayout() {

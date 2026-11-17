@@ -1,11 +1,12 @@
-import { StaffWorkflow } from '../auth/operation-access.js';
-import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { ManagerAssignment, StaffWorkflow } from '../auth/operation-access.js';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { ReturnsService, type ReturnListQuery } from './returns.service.js';
 
-const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'COMPLETED'] as const;
+const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'PENDING_SETTLEMENT', 'COMPLETED'] as const;
 
 @Controller(['manager/returns', 'staff/management/returns'])
 @StaffWorkflow()
@@ -26,14 +27,18 @@ export class ManagerReturnsController {
   @ApiOkResponse({ description: 'Stable pagination theo createdAt desc, id asc.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
-  list(@Query() input: Record<string, unknown>) { return this.returns.listManagerReturns(this.query(input)); }
+  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = this.query(input); return req.user!.role === 'STAFF' ? this.returns.listStaffReturns(query, req.user!) : this.returns.listManagerReturns(query); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết yêu cầu trả kho cho nhân viên' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiOkResponse({ description: 'Customer, rental, inspections, billing, renewals và future allocations.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu trả kho.' })
-  get(@Param('id') id: string) { return this.returns.getManagerReturn(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'STAFF' ? this.returns.getStaffReturn(id, req.user!) : this.returns.getManagerReturn(id); }
+
+  @ManagerAssignment()
+  @Patch(':id/assign')
+  assign(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() body: Record<string, unknown>) { return this.returns.assign(id, body, req.user!); }
 
   private query(input: Record<string, unknown>): ReturnListQuery {
     const page = this.integer(input.page, 1, 100000, 'page');

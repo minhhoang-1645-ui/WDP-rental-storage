@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { businessToday } from '../../business-date.js';
 import { AppointmentsService } from './appointments.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
@@ -7,10 +8,11 @@ const report = { condition: 'Kho sạch, cửa và khóa bình thường', acces
 
 function setup(status = 'CONFIRMED') {
   const now = new Date();
-  const startDate = new Date(now.getTime() + 86400000);
-  const endDate = new Date(now.getTime() + 31 * 86400000);
+  const today = businessToday(now).getTime();
+  const startDate = new Date(today + 86400000);
+  const endDate = new Date(today + 31 * 86400000);
   const row = {
-    id: 'appointment', appointmentCode: 'A01', status,
+    id: 'appointment', appointmentCode: 'A01', status, assignedStaffUserId: staff.id,
     scheduledAt: new Date(now.getTime() - 60000), createdAt: now, updatedAt: now,
     handoverNote: status === 'COMPLETED' ? 'Ghi chú bàn giao cũ' : null,
     reservation: {

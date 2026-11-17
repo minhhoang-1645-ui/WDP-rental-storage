@@ -203,7 +203,7 @@ try {
   assert(roleCell);
   await page.mouse.click(roleCell.x + roleCell.width / 2, roleCell.y + roleCell.height / 2);
   await page.waitForURL('**/admin/users/user-23');
-  await page.getByRole('tabpanel', { name: 'Thông tin tài khoản' }).getByText('Fixture User 23', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Fixture User 23', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Về danh sách tài khoản' }).click();
   await accountLink.press('Enter');
   await page.waitForURL('**/admin/users/user-23');
@@ -234,7 +234,7 @@ try {
   assert.equal(await profile.locator('input').count(), 2);
   await profile.getByLabel('Họ và tên', { exact: true }).fill('Thay đổi sẽ hủy');
   await profile.getByRole('button', { name: 'Hủy', exact: true }).click();
-  await profile.getByText('Fixture User 23', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Fixture User 23', exact: true }).waitFor();
   await profile.getByRole('button', { name: 'Chỉnh sửa', exact: true }).click();
   await profile.getByLabel('Họ và tên', { exact: true }).fill('Fixture Updated Staff');
   await profile.getByLabel('Số điện thoại', { exact: true }).fill('0901234567');

@@ -1,4 +1,5 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { PageHeader } from '../../components/manager/PortalUi';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import {
   ArrowLeft,
@@ -15,7 +16,6 @@ import { CustomerSessionExpired } from "../../components/customer/CustomerSessio
 import {
   PortalError,
   PortalLoading,
-  PortalPageHeader,
   ReservationStatus,
 } from "../../components/customer/CustomerPortalUi";
 import {
@@ -65,16 +65,14 @@ export function CustomerReservationDetailPage() {
       <Link to={returnPath} className="customer-back">
         <ArrowLeft size={16} /> Quay lại danh sách
       </Link>
-      <PortalPageHeader
-        eyebrow="Chi tiết yêu cầu đặt kho"
+      <PageHeader
         title={`${reservation.product.name} · ${reservation.quantity} kho`}
-        description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}`}
-        action={<ReservationStatus status={reservation.status} />}
+        status={<ReservationStatus status={reservation.status} />}
+        meta={<CopyRecordCode value={reservation.id} label="Mã đơn" />}
       />
-      <CopyRecordCode value={reservation.id} label="Mã đơn" />
       <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
       <div className="customer-detail-grid">
-        <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
+        {reservation.status === 'CONFIRMED' && <div className="workspace-full-row"><WorkflowHint>Ký hợp đồng và thanh toán trước khi đặt lịch nhận kho.</WorkflowHint></div>}
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
         <div className="customer-detail-content">
           <section className="customer-panel">

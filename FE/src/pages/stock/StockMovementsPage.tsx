@@ -45,7 +45,7 @@ function StockList({ role }: { role: StockRole }) {
   const update = (key: string, value: string) => setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); return next; }, { replace: true });
   const ListPagination = role === 'STAFF' ? StaffTaskPagination : Pagination;
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
-    <PageHeader title={role === 'STAFF' ? 'Phiếu nhập – xuất' : 'Nhập – xuất hàng khách'} description={role === 'CUSTOMER' ? 'Gửi yêu cầu gửi/lấy hàng và theo dõi kết quả giao nhận của bạn.' : role === 'MANAGER' ? 'Theo dõi phiếu hàng của khách, phân công nhân viên và đối chiếu kết quả.' : undefined}>
+    <PageHeader title={role === 'STAFF' ? 'Phiếu nhập – xuất' : 'Nhập – xuất hàng khách'}>
       <button className="button-secondary" disabled={data.loading || creating || role !== 'CUSTOMER' && data.refreshing} onClick={data.refresh}>Làm mới</button>
       {role !== 'CUSTOMER' && <RefreshStatus active={data.refreshing} />}
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
@@ -166,14 +166,15 @@ function StockDetail({ role, id }: { role: StockRole; id: string }) {
     data.refresh();
   }
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
-    <PageHeader title={data.data ? recordIdentity(data.data as unknown as Row, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}>
-      <Link className="button-secondary" to={role === 'STAFF' ? returnPath : roleRoot(role)}>Về danh sách</Link>
+    <Link className="booking-back" to={role === 'STAFF' ? returnPath : roleRoot(role)}>Về danh sách</Link>
+    <PageHeader title={data.data ? recordIdentity(data.data as unknown as Row, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}
+      status={data.data && <Status value={data.data.status} text={statuses[data.data.status]} />}
+      meta={data.data && <CopyRecordCode value={data.data.movementCode} />}>
       <button className="button-secondary" onClick={refresh}>Làm mới</button>
       {role !== 'CUSTOMER' && <RefreshStatus active={data.refreshing} />}
     </PageHeader>
     {notice && <p role="status" className="booking-alert">{notice}</p>}
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={role !== 'CUSTOMER' ? <DetailSkeleton single form={role === 'STAFF'} heading={false} /> : undefined} />
-    {data.data && <CopyRecordCode value={data.data.movementCode} />}
     {data.data && <StockRecord key={data.data.updatedAt ?? `${data.data.status}:${data.data.assignedStaff?.id}`} row={data.data} role={role} onSaved={message => { setNotice(message); data.refresh(); }} />}
   </section>;
 }

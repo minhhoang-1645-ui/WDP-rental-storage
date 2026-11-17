@@ -38,8 +38,7 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
   const search = params.get("search") ?? "",
     status = params.get("status") ?? "",
     scheduledDay =
-      resource === "appointments" ? (params.get("date") ?? "") : "",
-    mine = params.get("mine") === "true";
+      resource === "appointments" ? (params.get("date") ?? "") : "";
   const canAssign =
     resource === "maintenance" || resource === "support-requests";
   const limit = internalPageSize(params);
@@ -49,13 +48,11 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
   if (search.trim()) query.set('search', search.trim());
   if (status) query.set('status', status);
   if (scheduledDay) query.set('date', scheduledDay);
-  if (mine) query.set('assignedToMe', 'true');
   const data = useInternalListResource<Row>(`/staff/${resource}${serverPaged ? '?' + query : ''}`, user?.id ?? '', serverPaged, true);
   const filtered = (data.data?.items ?? []).filter(
     (row) =>
       (!status || (row.status ?? row.rentalState) === status) &&
       (!scheduledDay || staffDay(row.scheduledAt) === scheduledDay) &&
-      (!mine || first(row, "assignedStaff.id") === user?.id) &&
       [
         code(row),
         first(customer(row), "fullName", "email"),
@@ -129,18 +126,6 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
               value={scheduledDay}
               onChange={(event) => change("date", event.target.value)}
             />
-          </label>
-        )}
-        {canAssign && (
-          <label className="portal-checkbox">
-            <input
-              type="checkbox"
-              checked={mine}
-              onChange={(event) =>
-                change("mine", event.target.checked ? "true" : "")
-              }
-            />
-            Chỉ việc được giao cho tôi
           </label>
         )}
       </div>

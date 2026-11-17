@@ -708,7 +708,7 @@ export function ManagerActions({
           row.resolutionType === "TRANSFER_RECOMMENDED" && (
             <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
           )}
-        {resource === "transfers" &&
+        {resource === "transfers" && user?.role === 'MANAGER' &&
           (row.status === "REQUESTED" ? (
             <>
               <form
@@ -741,7 +741,8 @@ export function ManagerActions({
             </>
           ) : (
             <p>
-              {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích. Chỉ hoàn tất khi đã chuyển hàng và bàn giao thực tế.'}
+              {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích.'}
+              {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>Phân công chuyển kho</Link></>}
             </p>
           ))}
         {[

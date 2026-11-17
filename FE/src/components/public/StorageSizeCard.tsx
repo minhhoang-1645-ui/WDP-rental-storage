@@ -12,7 +12,6 @@ export function StorageSizeCard({ size, products, duration }: { size: StorageSiz
     <Link to={path}>
       <div className="landing-size-image">
         {size.image?.endsWith('/storage-size-atlas.jpg') ? <StorageIllustration sizeId={size.id} /> : <StorageImage src={size.image} loading="lazy" alt="" />}
-        <span>Ảnh minh họa</span>
       </div>
       <div className="landing-size-copy">
         <div><h3>{size.name}</h3><p>{size.floorArea}</p></div>

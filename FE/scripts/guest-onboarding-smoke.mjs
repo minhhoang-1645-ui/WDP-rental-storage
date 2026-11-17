@@ -13,6 +13,7 @@ try {
     requests.push({ path, body });
     if (path.endsWith('/forgot-password') && unavailable) return route.fulfill({ status: 503, json: { message: 'Dịch vụ email chưa sẵn sàng.' } });
     if (path.endsWith('/reset-password') && body.token.startsWith('x')) return route.fulfill({ status: 401, json: { message: 'Token đã hết hạn.' } });
+    if (path.endsWith('/reset-password') && body.password === 'fixture-password') return route.fulfill({ status: 400, json: { code: 'PASSWORD_REUSED' } });
     return route.fulfill({ json: { message: 'OK' } });
   });
   const recoveryPage = await recovery.newPage();
@@ -33,6 +34,7 @@ try {
   await recoveryPage.getByRole('alert').getByText('Dịch vụ email chưa sẵn sàng.').waitFor();
   unavailable = false; await send.click();
   await recoveryPage.getByRole('heading', { name: 'Kiểm tra email của bạn' }).waitFor();
+  assert.equal(await recoveryPage.getByText(/Nếu email đã đăng ký/).count(), 0);
   assert(await recoveryPage.getByRole('button', { name: /^Gửi lại liên kết sau/ }).isDisabled());
   assert.deepEqual(requests[1].body, { email: 'guest@example.test' });
   await recoveryPage.goto(base + '/reset-password');
@@ -61,7 +63,12 @@ try {
     }
   }
   await password.fill('fixture-password'); await confirm.fill('fixture-password'); await resetButton.click();
-  await recoveryPage.getByRole('heading', { name: 'Đã đặt lại mật khẩu' }).waitFor();
+  const reused = recoveryPage.getByRole('alert').getByText('Mật khẩu mới phải khác mật khẩu đang sử dụng.');
+  await reused.waitFor();
+  assert.equal(await password.getAttribute('aria-describedby'), await reused.getAttribute('id'));
+  assert.equal(new URL(recoveryPage.url()).hash, '#token=' + token);
+  await password.fill('new-fixture-password'); await confirm.fill('new-fixture-password'); await resetButton.click();
+  await recoveryPage.getByRole('heading', { name: 'Đặt lại mật khẩu thành công.' }).waitFor();
   assert.equal(new URL(recoveryPage.url()).hash, '');
   assert.equal(requests.at(-1).body.token, token);
   await recoveryPage.getByRole('link', { name: 'Quay lại đăng nhập' }).click();

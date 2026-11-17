@@ -15,7 +15,7 @@ export function StorageListingCard({ unit }: { unit: StorageListing }) {
   const path = `/storage/${encodeURIComponent(unit.id)}${location.search}`
   const monthlyPrice = typeof unit.monthlyPrice === 'number' && Number.isFinite(unit.monthlyPrice) && unit.monthlyPrice >= 0 ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(unit.monthlyPrice) : null
   return <article className="storage-listing-card">
-    <Link className="storage-card-image" to={path} aria-label={`Xem chi tiết ${unit.name}`}><StorageImage src={unit.image} loading="lazy" alt={`Ảnh minh họa cho ${unit.name}`} /><span className="storage-card-condition">{unit.condition === 'climate' ? <Snowflake size={13} /> : <Warehouse size={13} />}{unit.condition === 'climate' ? 'Điều hòa' : 'Tiêu chuẩn'}</span><span className="storage-card-image-note">Ảnh minh họa</span></Link>
+    <Link className="storage-card-image" to={path} aria-label={`Xem chi tiết ${unit.name}`}><StorageImage src={unit.image} loading="lazy" alt="" /><span className="storage-card-condition">{unit.condition === 'climate' ? <Snowflake size={13} /> : <Warehouse size={13} />}{unit.condition === 'climate' ? 'Điều hòa' : 'Tiêu chuẩn'}</span></Link>
     <div className="storage-card-content">
       <div className="storage-card-heading">
         <p>{unit.code}</p>

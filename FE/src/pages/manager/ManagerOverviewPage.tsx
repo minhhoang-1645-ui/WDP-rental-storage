@@ -96,6 +96,7 @@ function workDetails(entry: ActivityEntry, row: Row) {
   if (entry.kind === 'support-requests' && isEarlyReturnRequest(row)) return { title: 'Duyệt trả trước hạn', to: `/manager/early-returns?record=${id}`, status, statusText: 'Chờ quyết định' };
   if (entry.kind === 'support-requests') return { title: 'Xử lý hỗ trợ chuyển cấp', to: entry.web, status, statusText: 'Chờ xử lý' };
   if (entry.kind === 'maintenance') return { title: 'Nghiệm thu bảo trì', to: entry.web, status };
+  if (entry.kind === 'damage-claims' && first(row, 'compensation.status') === 'AWAITING_HANDOVER') return { title: 'Ghi nhận giao tiền bồi thường', to: entry.web, status: 'PENDING', statusText: 'Chờ giao tiền' };
   if (entry.kind === 'damage-claims') return status === 'INVESTIGATING'
     ? { title: 'Quyết định xử lý sự cố hàng hóa', to: entry.web, status, statusText: 'Chờ quyết định' }
     : { title: 'Ghi kết quả xử lý sự cố', to: entry.web, status, statusText: 'Chờ ghi kết quả' };
@@ -120,8 +121,8 @@ export function ManagerOverviewPage() {
     return entry.action && row && first(row, 'id') ? [{ entry, row }] : [];
   }).slice(0, 5);
   const metrics = [
-    { title: 'Việc cần duyệt', value: queueTotal(['escalatedSupport', 'maintenanceReview', 'depositReview']), hint: 'Hỗ trợ, nghiệm thu và cọc', to: '/manager/reviews', icon: ClipboardCheck },
-    { title: 'Chờ phân công', value: queueTotal(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance']), hint: 'Hồ sơ chưa có người phụ trách', to: '/manager/assignments?assignment=unassigned', icon: Users },
+    { title: 'Việc cần duyệt', value: queueTotal(['escalatedSupport', 'maintenanceReview', 'depositReview', 'earlyReturnReview', 'transferReview', 'renewalReview', 'damageReview']), hint: 'Hồ sơ đang chờ quyết định', to: '/manager/reviews', icon: ClipboardCheck },
+    { title: 'Chờ phân công', value: queueTotal(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance', 'unassignedAppointments', 'unassignedReturns', 'unassignedTransfers', 'unassignedClaims']), hint: 'Hồ sơ cần giao hoặc đổi người', to: '/manager/assignments?assignment=attention', icon: Users },
     { title: 'Kho đang sử dụng', value: isCount(data?.units?.occupied) && isCount(data?.units?.total) && data.units.occupied <= data.units.total ? `${count(data.units.occupied)} / ${count(data.units.total)}` : '—', hint: 'Đang dùng / toàn bộ kho vật lý', to: '/manager/units', icon: Warehouse },
     { title: 'Công nợ hiện tại', value: isCount(data?.finance?.outstandingAmount) ? money(data.finance.outstandingAmount) : '—', hint: isCount(data?.finance?.unpaidInvoices) ? `${count(data.finance.unpaidInvoices)} hóa đơn còn dư nợ` : 'Số dư hóa đơn còn hiệu lực', to: '/manager/operations/invoices', icon: WalletCards },
   ];

@@ -38,7 +38,10 @@ describe('Transfer attachment in the signed contract file', () => {
     expect(pdf.transferRecord).toHaveBeenCalledTimes(1);
     record.transfers[0].status = 'COMPLETED';
     await new ManagerDocumentsController(contracts as never, {} as never, {} as never, pdf as never).transfer('c1', 't1', response as never);
-    await new StaffDocumentsController(contracts as never, {} as never, pdf as never).transfer('c1', 't1', response as never);
+    const transfers = { getForStaff: vi.fn().mockResolvedValue({ id: 't1' }) };
+    const user = { id: 'staff', role: 'STAFF' };
+    await new StaffDocumentsController(contracts as never, pdf as never, transfers as never).transfer({ user } as never, 'c1', 't1', response as never);
+    expect(transfers.getForStaff).toHaveBeenCalledWith('t1', user);
     contracts.getCustomerContract.mockRejectedValue(new Error('Không tìm thấy hợp đồng.'));
     await expect(customer.transfer({ user: { id: 'other' } } as never, 'c1', 't1', response as never)).rejects.toThrow();
     expect(pdf.transferRecord).toHaveBeenCalledTimes(3);

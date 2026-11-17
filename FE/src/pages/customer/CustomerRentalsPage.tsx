@@ -170,7 +170,7 @@ function RentalInvoices({ rental, onClose, onSaved }: { rental: CustomerRental; 
     {invoices.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoices.error ? <PortalError message={invoices.error} onRetry={invoices.refresh} /> : related.length ? (
       <div className="portal-actions">
         {related.map(invoice => <button key={invoice.id} type="button" className="button-secondary" onClick={() => setSelectedId(invoice.id)}>
-          {invoice.invoiceCode} · {moneyLabel(invoice.totalAmount)} {invoice.balanceDue > 0 && isScheduledRenewalInvoice(invoice) ? <span>Chưa đến kỳ · {formatPortalDate(invoice.dueAt)}</span> : <CustomerStatus status={invoice.status} />}
+          {invoice.invoiceCode} · {invoice.breakdown?.units.length ?? invoice.reservation.quantity} kho · {moneyLabel(invoice.totalAmount)} {invoice.balanceDue > 0 && isScheduledRenewalInvoice(invoice) ? <span>Chưa đến kỳ · {formatPortalDate(invoice.dueAt)}</span> : <CustomerStatus status={invoice.status} />}
         </button>)}
       </div>
     ) : <p>Đơn thuê này chưa có hóa đơn.</p>}

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException, HttpException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuthService } from '../auth/auth.service.js';
@@ -66,19 +66,32 @@ export class AccountOnboardingService {
   async reset(input: Record<string, unknown>) {
     if (typeof input?.password !== 'string' || input.password !== input.confirmPassword) throw new BadRequestException('Mật khẩu xác nhận không khớp.');
     const proof = await this.proof(input.token, 'RESET');
-    const passwordHash = await this.auth.encodePassword(input.password);
-    await this.prisma.$transaction(async tx => {
-      // Lock the account before touching tokens, using the same order for all reset requests.
-      const user = await tx.user.findUnique({ where: { email: proof.email }, select: { id: true } });
-      if (!user) throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
-      const updated = await tx.user.updateMany({ where: { id: user.id, accountStatus: 'ACTIVE' }, data: { passwordHash } });
-      if (!updated.count) throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
+    const user = await this.prisma.user.findUnique({ where: { email: proof.email }, select: { id: true, accountStatus: true, passwordHash: true } });
+    if (!user || user.accountStatus !== 'ACTIVE') throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
+    const currentHash = user.passwordHash;
+    const passwordHash = await this.auth.encodeReplacementPassword(input.password, currentHash);
+    if (!passwordHash) {
+      await this.proof(input.token, 'RESET');
+      throw new BadRequestException({ code: 'PASSWORD_REUSED', message: 'Mật khẩu mới phải khác mật khẩu đang sử dụng.' });
+    }
+    const saved = await this.prisma.$transaction(async tx => {
+      // Keep hashing outside the transaction and only update the account version we verified.
+      const updated = await tx.user.updateMany({ where: { id: user.id, email: proof.email, accountStatus: 'ACTIVE', passwordHash: currentHash }, data: { passwordHash } });
+      if (!updated.count) return false;
       const changed = await tx.accountFlowToken.updateMany({ where: { id: proof.id, usedAt: null, expiresAt: { gt: new Date() } }, data: { usedAt: new Date() } });
-      if (!changed.count) throw new UnauthorizedException('Liên kết đã được dùng.');
+      if (!changed.count) throw new UnauthorizedException('Liên kết đã hết hạn hoặc đã được dùng.');
       await tx.accountFlowToken.updateMany({ where: { email: proof.email, kind: 'RESET', usedAt: null }, data: { usedAt: new Date() } });
       await tx.authSession.deleteMany({ where: { userId: user.id } });
+      return true;
+    }).catch(error => {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new ServiceUnavailableException('Chưa đặt lại được mật khẩu. Vui lòng thử lại.');
     });
-    return { message: 'Đã đặt lại mật khẩu. Hãy đăng nhập bằng mật khẩu mới để tiếp tục.' };
+    if (!saved) {
+      await this.proof(input.token, 'RESET');
+      throw new ConflictException('Thông tin đăng nhập vừa thay đổi. Vui lòng thử lại.');
+    }
+    return { message: 'Đặt lại mật khẩu thành công.' };
   }
   async resend(input: Record<string, unknown>) {
     const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';

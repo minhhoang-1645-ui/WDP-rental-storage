@@ -6,8 +6,6 @@
 .manager-shell.internal-web .manager-sidebar nav a, .manager-shell.internal-web .portal-mobile-nav nav a { min-height:44px; font-size:15px; line-height:1.4; padding:10px 12px; border-radius:9px; }
 .manager-shell.internal-web .manager-sidebar nav a.active, .manager-shell.internal-web .portal-mobile-nav nav a.active { background:var(--surface-selected); color:var(--color-primary); box-shadow:inset 3px 0 var(--color-primary); }
 .manager-shell.internal-web .workspace-nav-heading { font-size:13px; color:var(--color-slate); letter-spacing:.02em; padding:12px 10px 6px; }
-.manager-shell.internal-web .workspace-nav-search { padding:6px 10px 14px; font-size:13px; color:var(--color-slate); }
-.manager-shell.internal-web .workspace-nav-search input { min-height:40px; font-size:14px; }
 .manager-shell.internal-web .portal-brand { padding-bottom:16px; }
 .manager-shell.internal-web .portal-brand small, .manager-shell.internal-web .manager-account small { font-size:13px; color:var(--color-slate); }
 .manager-shell.internal-web .manager-account strong { font-size:14px; }
@@ -43,8 +41,6 @@
 .manager-shell.internal-web .work-hub-heading p { font-size:14px; }
 .manager-shell.internal-web .work-hub-grid { gap:12px; }
 .manager-shell.internal-web .portal-dialog { font-size:16px; max-width:min(760px,calc(100vw - 32px)); }
-.manager-shell.internal-web .portal-pagination { flex-wrap:wrap; gap:16px; margin-top:18px; font-size:14px; align-items:center; }
-.manager-shell.internal-web .portal-pagination > div { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .manager-shell.internal-web .internal-page-size { display:flex; align-items:center; gap:8px; color:var(--color-slate); font-size:14px; }
 .manager-shell.internal-web .internal-page-size select { width:74px; min-height:40px; }
 .manager-shell.internal-web .internal-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:24px; }

@@ -52,7 +52,7 @@ export function ForgotPasswordPage() {
   }
 
   return <RecoveryCard title={sent ? 'Kiểm tra email của bạn' : 'Quên mật khẩu?'}>
-    <p>{sent ? 'Nếu email đã đăng ký, chúng tôi sẽ gửi liên kết đặt lại mật khẩu.' : 'Nhập email để nhận liên kết đặt lại mật khẩu.'}</p>
+    {!sent && <p>Nhập email để nhận liên kết đặt lại mật khẩu.</p>}
     <form className="auth-fields" onSubmit={submit} noValidate>
       {!sent && <label className="field-label">Email<input type="email" name="email" autoComplete="email" required maxLength={254}
         value={email} onChange={event => { setEmail(event.target.value); setError(''); }} disabled={busy} aria-describedby={error ? 'recovery-error' : undefined} /></label>}
@@ -72,7 +72,7 @@ export function ResetPasswordPage() {
   const auth = useAuth();
   const token = new URLSearchParams(hash.slice(1)).get('token') ?? params.get('token') ?? '';
   const [password, setPassword] = useState(''), [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ message: string; field?: 'password' | 'confirm' } | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const locked = useRef(false);
@@ -81,11 +81,11 @@ export function ResetPasswordPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!usable || locked.current) return;
-    if (!password.trim() || password.length < 8 || password.length > 128) { setError('Mật khẩu phải có 8–128 ký tự.'); return; }
-    if (password !== confirm) { setError('Mật khẩu xác nhận không khớp.'); return; }
+    if (!password.trim() || password.length < 8 || password.length > 128) { setError({ field: 'password', message: 'Mật khẩu phải có 8–128 ký tự.' }); return; }
+    if (password !== confirm) { setError({ field: 'confirm', message: 'Mật khẩu xác nhận không khớp.' }); return; }
     locked.current = true;
     setBusy(true);
-    setError('');
+    setError(null);
     try {
       await requestRecovery('reset-password', { token, password, confirmPassword: confirm });
       if (auth.user) auth.logout();
@@ -95,18 +95,26 @@ export function ResetPasswordPage() {
       navigate('/reset-password', { replace: true });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) setInvalid(true);
-      else setError(caught instanceof Error ? caught.message : 'Chưa đặt lại được mật khẩu. Vui lòng thử lại.');
+      else if (caught instanceof ApiError && caught.payload && typeof caught.payload === 'object' && 'code' in caught.payload && caught.payload.code === 'PASSWORD_REUSED') {
+        setError({ field: 'password', message: 'Mật khẩu mới phải khác mật khẩu đang sử dụng.' });
+      } else setError({ message: caught instanceof Error ? caught.message : 'Chưa đặt lại được mật khẩu. Vui lòng thử lại.' });
     } finally { locked.current = false; setBusy(false); }
   }
 
-  return <RecoveryCard title={done ? 'Đã đặt lại mật khẩu' : 'Đặt mật khẩu mới'}>
+  return <RecoveryCard title={done ? 'Đặt lại mật khẩu thành công.' : 'Đặt mật khẩu mới'}>
     {done ? <p role="status">Hãy đăng nhập bằng mật khẩu mới để tiếp tục.</p> : !usable ? <>
       <p className="booking-alert is-error" role="alert">Liên kết đặt lại mật khẩu không hợp lệ, đã hết hạn hoặc đã được dùng.</p>
       <Link className="button-primary mt-4" to="/forgot-password">Yêu cầu liên kết mới</Link>
     </> : <form className="auth-fields" onSubmit={submit} noValidate>
-      <label className="field-label">Mật khẩu mới<PasswordInput name="password" autoComplete="new-password" required minLength={8} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy} aria-describedby={error ? 'reset-error' : undefined} /></label>
-      <label className="field-label">Xác nhận mật khẩu<PasswordInput name="confirmPassword" autoComplete="new-password" required maxLength={128} value={confirm} onChange={event => setConfirm(event.target.value)} disabled={busy} aria-describedby={error ? 'reset-error' : undefined} /></label>
-      {error && <p id="reset-error" className="booking-alert is-error" role="alert">{error}</p>}
+      <div>
+        <label className="field-label">Mật khẩu mới<PasswordInput name="password" autoComplete="new-password" required minLength={8} maxLength={128} value={password} onChange={event => { setPassword(event.target.value); setError(null); }} disabled={busy} aria-invalid={error?.field === 'password' || undefined} aria-describedby={error?.field === 'password' ? 'reset-error' : undefined} /></label>
+        {error?.field === 'password' && <p id="reset-error" className="booking-alert is-error" role="alert">{error.message}</p>}
+      </div>
+      <div>
+        <label className="field-label">Xác nhận mật khẩu<PasswordInput name="confirmPassword" autoComplete="new-password" required maxLength={128} value={confirm} onChange={event => { setConfirm(event.target.value); if (error?.field === 'confirm') setError(null); }} disabled={busy} aria-invalid={error?.field === 'confirm' || undefined} aria-describedby={error?.field === 'confirm' ? 'reset-error' : undefined} /></label>
+        {error?.field === 'confirm' && <p id="reset-error" className="booking-alert is-error" role="alert">{error.message}</p>}
+      </div>
+      {error && !error.field && <p className="booking-alert is-error" role="alert">{error.message}</p>}
       <button className="button-primary w-full justify-center" disabled={busy}>{busy ? 'Đang đặt lại…' : 'Đặt lại mật khẩu'}</button>
     </form>}
     <Link className="auth-help-link" to="/account/login">Quay lại đăng nhập</Link>

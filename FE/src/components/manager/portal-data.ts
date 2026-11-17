@@ -27,6 +27,7 @@ export function first(row: Row, ...paths: string[]): string {
   return paths.map((path) => textValue(at(row, path))).find(Boolean) ?? "";
 }
 export function code(row: Row): string {
+  if (typeof row.claimCode === 'string') return row.claimCode;
   return first(
     row,
     "movementCode",

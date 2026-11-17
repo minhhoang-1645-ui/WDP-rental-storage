@@ -182,7 +182,7 @@ export function CustomerReturnsPage() {
           >
             <h2>Gửi yêu cầu trả kho</h2>
             <p>
-              Chọn yêu cầu thuê đã đến hạn hoặc đã được quản lý chấp thuận trả sớm. Nhân viên sẽ kiểm tra từng kho trước khi quyết toán cọc.
+              Chọn đơn đã đến hạn hoặc được duyệt trả sớm. Yêu cầu áp dụng cho toàn bộ kho trong đơn.
             </p>
             <label className="field-label">
               Yêu cầu thuê đủ điều kiện trả

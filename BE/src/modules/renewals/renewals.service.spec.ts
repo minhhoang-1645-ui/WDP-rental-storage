@@ -187,7 +187,7 @@ describe('Renewal V1', () => {
     const pending = await request(first.reservation.id);
     await resetRenewalToPending(pending.id);
     await addFutureConflict(first.reservation.id, first.units[0].id);
-    await expect(renewals.approve(pending.id, staff)).rejects.toMatchObject({ response: { code: 'RENEWAL_ALLOCATION_CONFLICT' } });
+    await expect(renewals.approve(pending.id, manager)).rejects.toMatchObject({ response: { code: 'RENEWAL_ALLOCATION_CONFLICT' } });
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('PENDING');
   });
 
@@ -200,7 +200,7 @@ describe('Renewal V1', () => {
     const draft = { productId: storageTypeId, startDate: '2027-05-10', periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' };
     expect((await booking.checkAvailability(draft)).available).toBe(true);
     await prisma.storageUnit.update({ where: { id: units[0].id }, data: { status: 'OCCUPIED' } });
-    await renewals.approve(pending.id, staff);
+    await renewals.approve(pending.id, manager);
     await prisma.storageUnit.update({ where: { id: units[0].id }, data: { status: 'AVAILABLE' } });
     expect((await booking.checkAvailability(draft)).available).toBe(false);
 
@@ -212,8 +212,8 @@ describe('Renewal V1', () => {
   it('approves PREPAID idempotently and creates one discounted invoice without deposit', async () => {
     const { reservation } = await activeRental({ quantity: 2 });
     const pending = await request(reservation.id, 3, 'PREPAID');
-    const approved = await renewals.approve(pending.id, staff);
-    const retry = await renewals.approve(pending.id, staff);
+    const approved = await renewals.approve(pending.id, manager);
+    const retry = await renewals.approve(pending.id, manager);
     expect(approved.status).toBe('APPROVED_PENDING_PAYMENT');
     expect(retry.invoices).toHaveLength(1);
     expect(retry.invoices[0]).toMatchObject({ type: 'RENEWAL', renewalCycle: 1, rentalAmount: 17670000, depositAmount: 0, totalAmount: 17670000, status: 'OPEN' });
@@ -224,13 +224,14 @@ describe('Renewal V1', () => {
   it('creates PAY_MONTHLY calendar periods and completes extension after the first renewal invoice is paid', async () => {
     const { reservation, units } = await activeRental({ quantity: 2 });
     const pending = await request(reservation.id, 3, 'PAY_MONTHLY');
-    const approved = await renewals.approve(pending.id, staff);
+    const approved = await renewals.approve(pending.id, manager);
     expect(approved.invoices.map((invoice: any) => [invoice.renewalCycle, invoice.billingPeriodStart, invoice.billingPeriodEnd, invoice.dueAt, invoice.totalAmount, invoice.depositAmount])).toEqual([
       [1, '2027-05-10', '2027-06-10', '2027-05-10', 6200000, 0],
     ]);
     const contractCount = await prisma.rentalContract.count({ where: { reservationId: reservation.id } });
     const allocationCount = await prisma.reservationUnit.count({ where: { reservationId: reservation.id } });
     const firstInvoice = approved.invoices[0];
+    await prisma.renewalRequest.update({ where: { id: pending.id }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customerId } });
     await billing.recordPayment(firstInvoice.id, { amount: 2000000, method: 'BANK_TRANSFER', reference: `renew-partial-ref-${runId}` }, `renew-partial-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('APPROVED_PENDING_PAYMENT');
     await billing.recordPayment(firstInvoice.id, { amount: 4200000, method: 'BANK_TRANSFER', reference: `renew-final-ref-${runId}` }, `renew-final-${runId}`, manager);
@@ -260,8 +261,9 @@ describe('Renewal V1', () => {
   it('requires full PREPAID payment, then extends all contracts atomically and safely ignores later completion retries', async () => {
     const { reservation } = await activeRental({ quantity: 3 });
     const pending = await request(reservation.id, 3, 'PREPAID');
-    const approved = await renewals.approve(pending.id, staff);
+    const approved = await renewals.approve(pending.id, manager);
     const invoice = approved.invoices[0];
+    await prisma.renewalRequest.update({ where: { id: pending.id }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customerId } });
     await billing.recordPayment(invoice.id, { amount: 1000000, method: 'CASH' }, `prepaid-part-${runId}`, manager);
     expect((await prisma.renewalRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('APPROVED_PENDING_PAYMENT');
     await billing.recordPayment(invoice.id, { amount: invoice.balanceDue - 1000000, method: 'BANK_TRANSFER', reference: `prepaid-full-ref-${runId}` }, `prepaid-full-${runId}`, manager);
@@ -274,17 +276,17 @@ describe('Renewal V1', () => {
     const { reservation } = await activeRental();
     const pending = await request(reservation.id);
     await resetRenewalToPending(pending.id);
-    await expect(renewals.reject(pending.id, { reason: 'No' }, staff)).rejects.toThrow();
-    const rejected = await renewals.reject(pending.id, { reason: 'Customer requested a different date.' }, staff);
+    await expect(renewals.reject(pending.id, { reason: 'No' }, manager)).rejects.toThrow();
+    const rejected = await renewals.reject(pending.id, { reason: 'Customer requested a different date.' }, manager);
     expect(rejected).toMatchObject({ status: 'REJECTED', rejectionReason: 'Customer requested a different date.' });
     expect((await renewals.listCustomerRenewals(customerId, 1, 20)).total).toBe(1);
     expect((await renewals.listManagerRenewals({ page: 1, limit: 20, search: 'Renewal Customer', status: 'REJECTED' })).total).toBe(1);
     expect(JSON.stringify(await renewals.getManagerRenewal(pending.id))).not.toContain('secret-hash');
-    await expect(renewals.approve(pending.id, manager)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(renewals.approve(pending.id, staff)).rejects.toBeInstanceOf(ForbiddenException);
 
     const guard = new RolesGuard(new Reflector());
     const matrix: Array<[typeof CustomerRenewalsController | typeof ManagerRenewalsController, PublicUser['role'][]]> = [
-      [CustomerRenewalsController, ['CUSTOMER']], [ManagerRenewalsController, ['MANAGER', 'ADMIN']],
+      [CustomerRenewalsController, ['CUSTOMER']], [ManagerRenewalsController, ['MANAGER']],
     ];
     for (const [controller, roles] of matrix) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
       const context = { getHandler: () => function renewalOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;

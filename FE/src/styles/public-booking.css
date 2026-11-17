@@ -6,7 +6,7 @@
 .public-themed .public-page-intro h1 {
   margin: 0;
   color: var(--workspace-text);
-  font-size: clamp(26px, 3vw, 30px);
+  font-size: var(--type-title);
   font-weight: 760;
   letter-spacing: -.035em;
   line-height: 1.12;
@@ -111,7 +111,6 @@
 }
 .public-themed .booking-page :is(.booking-specs dd, .booking-summary-details dd, .quote-breakdown-lines > div, .quote-breakdown-total) { font-size: 15px; }
 .public-themed .booking-preview-visual { height: clamp(145px, 18vw, 210px); }
-.public-themed .booking-preview-visual::after { font-size: 12px; }
 .public-themed .booking-preview-heading h2 { margin: 0; color: var(--workspace-text); }
 .public-themed .booking-preview-heading { flex-wrap: wrap; }
 .public-themed .booking-preview-content .booking-listed-price { margin-bottom: 0; border-top: 0; }

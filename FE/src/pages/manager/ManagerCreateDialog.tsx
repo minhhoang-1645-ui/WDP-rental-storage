@@ -65,7 +65,7 @@ export function ManagerCreateDialog({
   };
   return (
     <Modal
-      title={maintenance ? "Tạo yêu cầu bảo trì" : "Tạo yêu cầu chuyển kho"}
+      title={maintenance ? "Tạo yêu cầu bảo trì" : "Gửi đề nghị chuyển kho"}
       onClose={onClose}
       busy={busy}
     >

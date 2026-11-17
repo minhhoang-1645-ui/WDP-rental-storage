@@ -1,6 +1,6 @@
 import { useMemo, type MouseEvent } from 'react';
 import { activityText, type ActivityData, type ActivityEntry } from '../utils/activity';
-import { assignmentNeedsAttention } from '../utils/work-queue';
+import { assignmentNeedsAttention, isAssignedStaffWork, needsStaffAssignment } from '../utils/work-queue';
 import { isEarlyReturnRequest } from '../utils/early-return';
 import { useActivity } from './context';
 
@@ -30,21 +30,17 @@ export function workspaceNotificationLink(role: NotificationRole, item: Activity
 }
 
 function forStaff(entry: ActivityEntry, row: Record<string, unknown>, userId: string) {
-  if (entry.kind === 'support-requests' && isEarlyReturnRequest(row)) return false;
-  const assignee = activityText(row, 'assignedStaff.id') || activityText(row, 'assignedStaffId');
-  if (assignee) return assignee === userId;
-  if (['stock-movements', 'support-requests', 'maintenance'].includes(entry.kind)) return false;
-  return entry.action || activityText(row, 'completedBy.id') === userId;
+  return needsStaffAssignment(entry.kind) && isAssignedStaffWork(entry.kind, row, userId);
 }
 
 function forManager(entry: ActivityEntry, row: Record<string, unknown>) {
   if (['deposit-settlements', 'invoices'].includes(entry.kind)) return true;
+  if (assignmentNeedsAttention(entry.kind, row)) return true;
   if (entry.kind === 'support-requests') {
-    return isEarlyReturnRequest(row) || assignmentNeedsAttention(entry.kind, row) ||
+    return isEarlyReturnRequest(row) ? entry.action :
       row.status === 'ESCALATED' || activityText(row, 'resolvedBy.role') === 'MANAGER';
   }
-  if (entry.kind === 'maintenance') return assignmentNeedsAttention(entry.kind, row) || row.status === 'AWAITING_VERIFICATION' || Boolean(row.verifiedAt);
-  if (entry.kind === 'stock-movements') return assignmentNeedsAttention(entry.kind, row) || Boolean(activityText(row, 'assignedBy.id'));
+  if (entry.kind === 'maintenance') return row.status === 'AWAITING_VERIFICATION';
   return entry.action || entry.kind === 'damage-claims' && row.status === 'RESOLVED';
 }
 
@@ -55,14 +51,14 @@ function workspaceTarget(role: OperationalRole, entry: ActivityEntry, row: Recor
   if (role === 'STAFF') {
     return entry.kind === 'support-requests' && !entry.web.startsWith('/staff/transfers/') ? `/staff/support-requests/${encoded}` : entry.web;
   }
+  if (assignmentNeedsAttention(entry.kind, row)) {
+    return `/manager/assignments?${new URLSearchParams({ kind: entry.kind, record: id })}`;
+  }
   switch (entry.kind) {
     case 'damage-claims': return `/manager/damage-claims?claim=${encoded}`;
     case 'support-requests':
       if (isEarlyReturnRequest(row)) return `/manager/early-returns?record=${encoded}`;
       break;
-  }
-  if (assignmentNeedsAttention(entry.kind, row)) {
-    return `/manager/assignments?${new URLSearchParams({ kind: entry.kind, record: id })}`;
   }
   return `/manager/operations/${entry.kind}/${encoded}`;
 }

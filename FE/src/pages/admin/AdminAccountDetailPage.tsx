@@ -64,7 +64,9 @@ export function AdminAccountDetailPage() {
 
   return <section className="admin-account-detail">
     <Link className="booking-back" to={back}><ArrowLeft size={17} aria-hidden="true" />Về danh sách tài khoản</Link>
-    <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}>
+    <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}
+      status={row && <Status value={row.accountStatus} />}
+      meta={row && <><span>{first(row, 'email')}</span><AccountRole value={row.role} /></>}>
       <button type="button" className="button-secondary" disabled={detail.loading || detail.refreshing || editingId === id} onClick={detail.refresh}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới
       </button>
@@ -72,9 +74,6 @@ export function AdminAccountDetailPage() {
     {saved?.id === id && <p className="portal-success" role="status">{saved.text}</p>}
     <LoadState loading={detail.loading} error={detail.error} retry={detail.refresh} />
     {row && <>
-      <div className="admin-account-summary">
-        <span>{first(row, 'email')}</span><AccountRole value={row.role} /><Status value={row.accountStatus} />
-      </div>
       <div className="admin-account-tabs" role="tablist" aria-label="Chi tiết tài khoản">
         {tabs.map(({ id: value, label }) => <button key={value} type="button" role="tab" id={'admin-tab-' + value}
           aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} aria-controls={'admin-panel-' + value}
@@ -95,12 +94,8 @@ export function AdminAccountDetailPage() {
           }} />}
           <Facts items={[
             ...(editingId === id ? [] : [
-              ['Họ và tên', first(row, 'fullName')],
               ['Số điện thoại', first(row, 'phone') || 'Chưa cập nhật'],
             ] as [string, string][]),
-            ['Email', first(row, 'email')],
-            ['Vai trò', <AccountRole key="role" value={row.role} />],
-            ['Trạng thái', <Status key="status" value={row.accountStatus} />],
             ['Ngày tạo', date(row.createdAt, true)],
             ['Cập nhật gần nhất', date(row.updatedAt, true)],
           ]} />

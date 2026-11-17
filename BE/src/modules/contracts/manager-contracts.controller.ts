@@ -1,6 +1,7 @@
 import { StaffLookup } from '../auth/operation-access.js';
-import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { ContractsService, type ContractListQuery } from './contracts.service.js';
@@ -26,8 +27,8 @@ export class ManagerContractsController {
   @ApiBadRequestResponse({ description: 'Pagination, search hoặc status không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
-  list(@Query() query: Record<string, unknown>) {
-    return this.contracts.listManagerContracts(this.parseQuery(query));
+  list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    return this.contracts.listManagerContracts(this.parseQuery(query), request.user!.role === 'STAFF' ? request.user!.id : undefined);
   }
 
   @Get(':id')
@@ -37,8 +38,8 @@ export class ManagerContractsController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy hợp đồng.' })
-  get(@Param('id') id: string) {
-    return this.contracts.getManagerContract(id);
+  get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.contracts.getManagerContract(id, request.user!.role === 'STAFF' ? request.user!.id : undefined);
   }
 
   private parseQuery(query: Record<string, unknown>): ContractListQuery {

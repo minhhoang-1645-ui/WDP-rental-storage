@@ -1,3 +1,4 @@
+import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -38,17 +39,34 @@ export class ManagerAnalyticsService {
       const collected = await tx.payment.aggregate({ where: { receivedAt: range, OR: [{ onlinePaymentTransactionId: null }, { onlinePaymentTransaction: { is: { status: 'SUCCESS' } } }] }, _sum: { amount: true }, _count: { _all: true } });
       const deposits = await tx.invoice.aggregate({ where: { status: 'PAID', paidAt: { not: null, ...range } }, _sum: { depositAmount: true } });
       const refunds = await tx.depositSettlement.aggregate({ where: { status: { in: ['APPROVED', 'AWAITING_OUTSTANDING_PAYMENT'] }, refundedAt: null }, _sum: { refundAmount: true }, _count: { _all: true } });
+      const staff = await tx.user.findMany({ where: { role: 'STAFF' }, select: { id: true, fullName: true, accountStatus: true }, orderBy: { fullName: 'asc' } });
+      const missingAssignee = { OR: [
+        { assignedStaffUserId: null },
+        { assignedStaff: { is: { OR: [{ role: { not: 'STAFF' as const } }, { accountStatus: 'DISABLED' as const }] } } },
+      ] };
+      const ordinarySupport = { subject: { not: EARLY_RETURN_SUBJECT } };
       const queue = {
-        unassignedStock: await tx.stockMovement.count({ where: { status: 'REQUESTED', assignedStaffUserId: null } }),
-        unassignedSupport: await tx.supportRequest.count({ where: { status: 'OPEN', assignedStaffUserId: null } }),
-        unassignedMaintenance: await tx.maintenanceRequest.count({ where: { status: 'OPEN', assignedStaffUserId: null } }),
-        escalatedSupport: await tx.supportRequest.count({ where: { status: 'ESCALATED' } }),
+        unassignedStock: await tx.stockMovement.count({ where: { status: { in: ['REQUESTED', 'ASSIGNED'] }, ...missingAssignee } }),
+        unassignedSupport: await tx.supportRequest.count({ where: { status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'] }, ...ordinarySupport, ...missingAssignee } }),
+        unassignedMaintenance: await tx.maintenanceRequest.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] }, ...missingAssignee } }),
+        unassignedAppointments: await tx.handoverAppointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, ...missingAssignee } }),
+        unassignedReturns: await tx.returnRequest.count({ where: { status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] }, ...missingAssignee } }),
+        unassignedTransfers: await tx.transferRequest.count({ where: { status: 'APPROVED', ...missingAssignee } }),
+        unassignedClaims: await tx.damageClaim.count({ where: { status: { in: ['REPORTED', 'INVESTIGATING'] }, OR: [
+          { assignedStaffId: null }, { assignedStaffId: { notIn: staff.filter(person => person.accountStatus === 'ACTIVE').map(person => person.id) } },
+        ] } }),
+        escalatedSupport: await tx.supportRequest.count({ where: { status: 'ESCALATED', ...ordinarySupport } }),
+        earlyReturnReview: await tx.supportRequest.count({ where: { status: { in: ['OPEN', 'ESCALATED'] }, category: 'OTHER', subject: EARLY_RETURN_SUBJECT } }),
+        renewalReview: await tx.renewalRequest.count({ where: { status: 'PENDING' } }),
+        transferReview: await tx.transferRequest.count({ where: { status: 'REQUESTED' } }),
+        damageReview: await tx.damageClaim.count({ where: { OR: [
+          { status: 'INVESTIGATING', staffFacts: { not: null } }, { status: { in: ['APPROVED', 'REJECTED'] } },
+        ] } }),
         maintenanceReview: await tx.maintenanceRequest.count({ where: { status: 'AWAITING_VERIFICATION' } }),
         paymentVerification: await tx.paymentSubmission.count({ where: { status: 'PENDING_VERIFICATION' } }),
         depositReview: await tx.depositSettlement.count({ where: { status: 'PENDING_REVIEW' } }),
         onlineReconciliation: await tx.onlinePaymentReconciliation.count({ where: { status: { in: ['PENDING_REVIEW', 'REFUND_REQUIRED'] } } }),
       };
-      const staff = await tx.user.findMany({ where: { role: 'STAFF' }, select: { id: true, fullName: true, accountStatus: true }, orderBy: { fullName: 'asc' } });
       const stock = await tx.stockMovement.groupBy({ by: ['assignedStaffUserId'], where: { status: 'ASSIGNED' }, _count: { _all: true } });
       const support = await tx.supportRequest.groupBy({ by: ['assignedStaffUserId'], where: { status: { in: ['ASSIGNED', 'IN_PROGRESS'] } }, _count: { _all: true } });
       const maintenance = await tx.maintenanceRequest.groupBy({ by: ['assignedStaffUserId'], where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, _count: { _all: true } });

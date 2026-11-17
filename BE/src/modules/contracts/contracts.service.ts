@@ -108,7 +108,7 @@ export class ContractsService {
     return this.toContract(updated, true);
   }
 
-  async listManagerContracts(query: ContractListQuery) {
+  async listManagerContracts(query: ContractListQuery, staffId?: string) {
     const where: Prisma.RentalContractWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.search ? {
@@ -127,28 +127,28 @@ export class ContractsService {
       skip: (query.page - 1) * query.limit,
       take: query.limit,
       orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      include: this.contractInclude(),
+      include: this.contractInclude(staffId),
     });
     return { page: query.page, limit: query.limit, total, items: contracts.map((contract) => this.toContract(contract, true)) };
   }
 
-  async getManagerContract(id: string) {
+  async getManagerContract(id: string, staffId?: string) {
     const contract = await this.prisma.rentalContract.findFirst({
       where: { OR: [{ id }, { contractCode: id }] },
-      include: this.contractInclude(),
+      include: this.contractInclude(staffId),
     });
     if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng.');
     return this.toContract(contract, true);
   }
 
-  private contractInclude() {
+  private contractInclude(staffId?: string) {
     return {
       reservation: {
         include: {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
           services: true,
-          renewals: { orderBy: [{ requestedAt: 'asc' as const }, { id: 'asc' as const }], select: {
+          renewals: { ...(staffId ? { where: { status: 'COMPLETED' as const } } : {}), orderBy: [{ requestedAt: 'asc' as const }, { id: 'asc' as const }], select: {
             id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true, termMonths: true, paymentPlan: true, quoteSnapshot: true,
             requestedAt: true, reviewedAt: true, approvedAt: true, rejectedAt: true, rejectionReason: true,
             requestedBy: { select: { fullName: true } }, reviewedBy: { select: { fullName: true } },
@@ -158,7 +158,9 @@ export class ContractsService {
         },
       },
       reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
-      transferRequests: { orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
+      transferRequests: {
+        ...(staffId ? { where: { assignedStaffUserId: staffId, status: { in: ['APPROVED' as const, 'COMPLETED' as const] } } } : {}),
+        orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
         id: true, transferCode: true, status: true, reason: true, createdAt: true, approvedAt: true, completedAt: true,
         fromStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
         toStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },

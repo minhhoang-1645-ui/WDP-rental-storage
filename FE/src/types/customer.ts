@@ -59,6 +59,13 @@ export interface CustomerRental {
 }
 
 export interface CustomerInvoice {
+  breakdown?: {
+    periodStart: string; periodEnd: string; adjustmentAmount: number;
+    units: Array<{ contractId: string; contractCode: string; unitCode: string; storageTypeName: string; monthlyRate: number; rentalAmount: number; depositAmount: number }>;
+    sharedServices: Array<{ id: string; name: string; quantity: number; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; physicalUnit?: string; billablePeriods?: number; amount: number }>;
+  } | null
+  replacesInvoice?: { id: string; invoiceCode: string } | null
+  replacementInvoice?: { id: string; invoiceCode: string } | null
   signing?: { required: boolean; complete: boolean; contracts: { id: string; code: string }[]; renewalId: string | null }
   id: string
   invoiceCode: string

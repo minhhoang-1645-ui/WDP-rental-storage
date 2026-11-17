@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
+import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude } from '../billing/invoice-breakdown.js';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -74,7 +75,10 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
           await this.prisma.$transaction(async tx => {
             const renewal = await tx.renewalRequest.findFirst({
               where: { ...eligible, id },
-              include: { invoices: { select: { renewalCycle: true } } },
+              include: {
+                reservation: { select: { storageTypeId: true, quantity: true, contracts: { include: invoiceContractInclude } } },
+                invoices: { select: { renewalCycle: true } },
+              },
             });
             if (!renewal) return;
             const snapshot = this.snapshot(renewal);
@@ -355,13 +359,21 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       const end = snapshot.paymentPlan === 'PREPAID'
         ? renewal.requestedEndDate
         : cycle === count ? renewal.requestedEndDate : this.addCalendarMonths(renewal.previousEndDate, cycle);
-      const rentalAmount = BigInt(snapshot.paymentPlan === 'PREPAID' ? snapshot.rentalAmount : snapshot.monthlyUnitPrice * snapshot.quantity);
+      const contracts = renewal.reservation.contracts;
+      if (contracts.length !== snapshot.quantity || (cycle > 1 && contracts.some((contract: { status: string; endDate: Date }) => contract.status !== 'ACTIVE' || contract.endDate < end))) {
+        throw new ConflictException('Các hợp đồng không còn bao phủ đủ kỳ gia hạn. Cần đối soát trước khi lập hóa đơn.');
+      }
+      const monthlyRate = BigInt(snapshot.monthlyUnitPrice);
+      const rentalAmount = snapshot.paymentPlan === 'PREPAID' ? BigInt(snapshot.rentalAmount) : monthlyRate * BigInt(snapshot.quantity);
+      const units = homogeneousInvoiceUnits(contracts, monthlyRate, rentalAmount, 0n, snapshot.storageTypeName);
+      const breakdown = invoiceBreakdown(start, end, units, [], { rentalAmount, depositAmount: 0n, serviceAmount: 0n, totalAmount: rentalAmount });
       await tx.invoice.upsert({
         where: { renewalRequestId_renewalCycle: { renewalRequestId: renewal.id, renewalCycle: cycle } },
         update: {},
         create: {
           invoiceCode: `${renewal.renewalCode}-I${String(cycle).padStart(2, '0')}`,
           reservationId: renewal.reservationId, renewalRequestId: renewal.id, type: 'RENEWAL', billingCycle: null, renewalCycle: cycle,
+          storageTypeIdSnapshot: snapshot.storageTypeId, pricingSnapshot: { ...snapshot, breakdown },
           billingPeriodStart: start, billingPeriodEnd: end, dueAt: start, status: 'OPEN', rentalAmount,
           depositAmount: 0n, totalAmount: rentalAmount, amountPaid: 0n, balanceDue: rentalAmount, currency: 'VND',
         },
@@ -457,6 +469,9 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private createInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    if (['rentalContractId', 'contractId', 'storageUnitId', 'reservationUnitId', 'rentalContractIds', 'contractIds', 'storageUnitIds', 'reservationUnitIds'].some(key => input[key] != null)) {
+      throw new BadRequestException('Gia hạn áp dụng cho toàn bộ đơn thuê. Chưa hỗ trợ gia hạn riêng từng kho.');
+    }
     const reservationId = typeof input.reservationId === 'string' ? input.reservationId.trim() : '';
     if (!reservationId) throw new BadRequestException('reservationId là bắt buộc.');
     const termMonths = Number(input.termMonths);
@@ -500,7 +515,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertManager(actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý gia hạn.');
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định yêu cầu gia hạn chờ xử lý.');
   }
 
   private lockUnits(tx: Prisma.TransactionClient, unitIds: string[]) {

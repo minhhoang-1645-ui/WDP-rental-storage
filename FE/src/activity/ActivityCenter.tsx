@@ -85,7 +85,10 @@ function ActivityLink({ item, onOpen, role }: { item: ActivityEntry; onOpen?: ()
 }
 export function ActivityStatus() {
   const activity = useActivity();
-  return <div className="activity-status"><span className={activity.failed.length ? 'connection-dot is-warning' : 'connection-dot'} aria-hidden="true" /><span>{activity.checking ? 'Đang kiểm tra cập nhật…' : activity.checkedAt ? `Lần kiểm tra: ${new Date(activity.checkedAt).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Đang kết nối thông báo'} · Tự kiểm tra mỗi 15 giây khi mở trang</span>{activity.failed.length > 0 && <p role="status">Chưa tải được: {activity.failed.join(', ')}. Dữ liệu đã có được giữ lại và có thể chưa mới nhất. Kết nối lại để tự cập nhật hoặc bấm Kiểm tra mới.</p>}</div>;
+  if (!activity.checking && !activity.failed.length) return null;
+  return <div className="activity-status" role="status">
+    {activity.checking ? <span>Đang cập nhật…</span> : <span>Chưa tải được {activity.failed.join(', ')}. Dữ liệu có thể chưa mới nhất.</span>}
+  </div>;
 }
 export function ActivitySummary() {
   const activity = useActivity(), path = useInboxPath(), [expanded, setExpanded] = useState(false);

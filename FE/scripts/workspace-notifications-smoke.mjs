@@ -63,7 +63,12 @@ try {
     ...Array.from({ length: 102 }, (_, i) => support(`staff-${i}`, staff, i)),
     support('other-staff', { id: 'other-user', fullName: 'Nhân viên khác' }, 300),
     support('needs-manager', null, 310, 'ESCALATED'),
-  ] };
+    support('early-return-review', staff, 311, 'OPEN', 'Đề nghị trả kho trước hạn'),
+  ],
+    appointments: [{ id: 'unassigned-handover', status: 'CONFIRMED', updatedAt: date(312) }],
+    returns: [{ id: 'other-return', status: 'REQUESTED', assignedStaff: { id: 'other-user' }, updatedAt: date(313) }],
+    transfers: [{ id: 'pending-transfer', status: 'REQUESTED', assignedStaff: staff, updatedAt: date(314) }],
+  };
   const employee = await setup('STAFF', staffData);
   const page = employee.page;
   await page.goto(`${base}/staff`);
@@ -105,7 +110,7 @@ try {
 
   employee.setSupportFailure(true);
   await pulse(page);
-  await page.getByText(/Chưa tải được: Hỗ trợ/).waitFor();
+  await page.getByText(/Chưa tải được Hỗ trợ/).waitFor();
   await bell(page).click();
   await popup(page).getByText('Chưa tải đủ thông báo.').waitFor();
   await count(page, 101);

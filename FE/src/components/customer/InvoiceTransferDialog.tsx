@@ -8,8 +8,9 @@ import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { customerBillingApi } from '../../services/billing';
 import { buildVietQrPayload } from '../../utils/vietqr';
 import { isScheduledRenewalInvoice, paymentWindowClosed } from '../../utils/payment-state';
-import { moneyLabel } from './CustomerPortalHelpers';
-import { PortalError, PortalLoading } from './CustomerPortalUi';
+import { formatPortalDate, moneyLabel } from './CustomerPortalHelpers';
+import { CustomerStatus, PortalError, PortalLoading } from './CustomerPortalUi';
+import { InvoiceBreakdown } from './InvoiceBreakdown';
 import { Modal } from '../manager/PortalUi';
 import type { CustomerInvoice } from '../../types/customer';
 import type { BankTransferConfig, PaymentSubmission } from '../../types/payment';
@@ -43,8 +44,12 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
   return <Modal title={row && ['PAID', 'VOID'].includes(row.status) ? 'Chi tiết hóa đơn' : 'Chi tiết hóa đơn và chuyển khoản'} onClose={onClose} busy={busy}>
     {invoice.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoice.error ? <PortalError message={invoice.error} onRetry={invoice.refresh} /> : row && <>
       <DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(row.id)}`} name={row.invoiceCode} signed={row.signing?.complete} /><h3>{row.invoiceCode}</h3><p>Đơn {row.reservation.reference}</p>
+      <p>{formatPortalDate(row.issuedAt)} · Kỳ {formatPortalDate(row.billingPeriodStart)} – {formatPortalDate(row.billingPeriodEnd)} <CustomerStatus status={row.status} /></p>
+      {row.type === 'INITIAL' && row.reservation.quantity > 1 && <p>Đơn này có {row.reservation.quantity} kho dùng chung một hóa đơn ban đầu. Cần thanh toán đủ và hoàn tất điều kiện hợp đồng trước khi bàn giao.</p>}
+      <InvoiceBreakdown details={row.breakdown} currency={row.currency} />
+      <h3>Tổng thanh toán</h3>
       {['OPEN','PARTIALLY_PAID'].includes(row.status) && row.balanceDue>0 && <section className="invoice-current-balance" aria-label="Số tiền còn phải thanh toán"><span>Còn phải thanh toán cho hóa đơn này</span><strong>{moneyLabel(row.balanceDue)}</strong><small>{pending || onlinePending ? 'Có giao dịch đang chờ đối chiếu. Không chuyển thêm cho cùng hóa đơn.' : 'Đây là số còn lại sau khi trừ các khoản đã được xác nhận thanh toán.'}</small></section>}
-      <dl className="manager-facts"><div><dt>Tiền thuê</dt><dd>{moneyLabel(row.rentalAmount)}</dd></div><div><dt>Tiền cọc</dt><dd>{moneyLabel(row.depositAmount)}</dd></div><div><dt>Dịch vụ</dt><dd>{moneyLabel(row.serviceAmount ?? 0)}</dd></div><div><dt>Phí được duyệt</dt><dd>{moneyLabel(row.chargeAmount ?? 0)}</dd></div><div><dt>Đã thanh toán</dt><dd>{moneyLabel(row.amountPaid)}</dd></div><div><dt>Còn phải thanh toán</dt><dd>{moneyLabel(row.balanceDue)}</dd></div></dl>
+      <dl className="manager-facts"><div><dt>Tiền thuê</dt><dd>{moneyLabel(row.rentalAmount)}</dd></div><div><dt>Tiền cọc</dt><dd>{moneyLabel(row.depositAmount)}</dd></div><div><dt>Dịch vụ</dt><dd>{moneyLabel(row.serviceAmount ?? 0)}</dd></div><div><dt>Phí được duyệt</dt><dd>{moneyLabel(row.chargeAmount ?? 0)}</dd></div><div><dt>Tổng hóa đơn</dt><dd>{moneyLabel(row.totalAmount)}</dd></div><div><dt>Đã thanh toán</dt><dd>{moneyLabel(row.amountPaid)}</dd></div><div><dt>Còn phải thanh toán</dt><dd>{moneyLabel(row.balanceDue)}</dd></div></dl>
       {row.signing?.complete === false && <p role="status">Bạn cần <Link to={row.signing.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(row.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(row.reservation.reference)}`}>đọc và ký tài liệu</Link> trước khi thanh toán.</p>}
       {(saved || pending) && <p role="status">Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận. Bạn chưa cần chuyển thêm cho cùng khoản tiền.</p>}
       {onlinePending && <p role="status">Đang theo dõi VNPay. Không chuyển khoản thêm cho cùng hóa đơn.</p>}

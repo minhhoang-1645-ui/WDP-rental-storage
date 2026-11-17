@@ -13,6 +13,9 @@ import { StaffActiveRentalsController } from '../rentals-active/staff-active-ren
 import { BillingService } from './billing.service.js';
 import { CustomerBillingController } from './customer-billing.controller.js';
 import { ManagerBillingController } from './manager-billing.controller.js';
+import { ReturnsService } from '../returns/returns.service.js';
+import { RenewalsService } from '../renewals/renewals.service.js';
+import { BookingService } from '../booking/booking.service.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `billing-facility-${runId}`;
@@ -97,7 +100,7 @@ describe('Invoice and Payment V1', () => {
     const units = await prisma.storageUnit.findMany({ where: { storageTypeId }, orderBy: { unitNumber: 'asc' }, take: quantity });
     for (const [index, unit] of units.entries()) {
       const allocation = await prisma.reservationUnit.create({ data: { reservationId: reservation.id, storageUnitId: unit.id, plannedStartDate: reservation.startDate, plannedEndDate: reservation.endDate } });
-      await prisma.rentalContract.create({ data: { contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: reservation.id, reservationUnitId: allocation.id, startDate: reservation.startDate, endDate: reservation.endDate } });
+      await prisma.rentalContract.create({ data: { contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: reservation.id, reservationUnitId: allocation.id, startDate: reservation.startDate, endDate: reservation.endDate, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer } });
     }
     return reservation;
   }
@@ -120,7 +123,37 @@ describe('Invoice and Payment V1', () => {
     expect(second.id).toBe(first.id);
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(1);
     expect(first).toMatchObject({ rentalAmount: 3000000n, depositAmount: 3000000n, totalAmount: 6000000n, balanceDue: 6000000n });
+    const view = await service.getCustomerInvoice(customerId, first.id);
+    expect(view.breakdown?.units.map(unit => [unit.unitCode, unit.rentalAmount, unit.depositAmount])).toEqual(unitCodes.map(code => [code, 1000000, 1000000]));
+    expect((await service.getManagerInvoice(first.id)).breakdown).toEqual(view.breakdown);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: reservation.id } })).quoteSnapshot).toEqual(snapshot);
+  });
+
+  it.each([1, 2])('creates one invoice from the real booking flow for %i physical units', async quantity => {
+    const booking = new BookingService(prisma);
+    const order = await booking.createReservation(actor(customerId, 'CUSTOMER'), {
+      productId: storageTypeId, startDate: '2032-11-01', periodMode: 'duration', durationMonths: 3,
+      quantity, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
+    });
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: order.id } });
+    if (reservation.status === 'PENDING') await booking.updateManagerReservationStatus(order.id, { status: 'CONFIRMED' }, actor(staffId, 'STAFF'));
+    const invoices = await prisma.invoice.findMany({ where: { reservationId: reservation.id, type: 'INITIAL' } });
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0].totalAmount).toBe(3000000n * BigInt(quantity));
+    expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id } })).toBe(quantity);
+    expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id } })).toBe(quantity);
+    expect((await service.getCustomerInvoice(customerId, invoices[0].id)).breakdown?.units).toHaveLength(quantity);
+  });
+
+  it('keeps older invoices as totals and assigns the last dong deterministically for homogeneous units', async () => {
+    const reservation = await confirmedReservation(quote({ quantity: 2, billingMode: 'DAILY', monthlyUnitPrice: 1000000, rentalAmount: 66667, depositAmount: 66667 }), 2);
+    const invoice = await ensure(reservation.id);
+    const detailed = await service.getCustomerInvoice(customerId, invoice.id);
+    expect(detailed.breakdown?.units.map(unit => [unit.rentalAmount, unit.depositAmount])).toEqual([[33334, 33334], [33333, 33333]]);
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { pricingSnapshot: Prisma.DbNull } });
+    const legacy = await service.getCustomerInvoice(customerId, invoice.id);
+    expect(legacy).toMatchObject({ totalAmount: 133334, breakdown: null });
+    expect((await ensure(reservation.id)).pricingSnapshot).toBeNull();
   });
 
   it('creates cycles 2-6 once for a six-month PAY_MONTHLY rental and protects historical quantity pricing', async () => {
@@ -137,6 +170,40 @@ describe('Invoice and Payment V1', () => {
     expect(first.map((invoice) => invoice.billingCycle)).toEqual([2, 3, 4, 5, 6]);
     expect(first.every((invoice) => invoice.rentalAmount === 4500000n && invoice.depositAmount === 0n && invoice.totalAmount === 4500000n)).toBe(true);
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id, billingCycle: { gt: 6 } } })).toBe(0);
+  });
+
+  it('bills a missing future cycle only for the contract covering the period, using its effective rate', async () => {
+    const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1500000, depositAmount: 3000000 }), 2);
+    const initial = await ensure(reservation.id);
+    await service.recordPayment(initial.id, { amount: 6000000, method: 'CASH' }, `completed-initial-${runId}`, actor(managerId, 'MANAGER'));
+    const contracts = await prisma.rentalContract.findMany({ where: { reservationId: reservation.id }, orderBy: { contractCode: 'asc' } });
+    const boundary = new Date('2026-12-01');
+    await prisma.rentalContract.update({ where: { id: contracts[0].id }, data: { status: 'COMPLETED', endDate: boundary, completedAt: boundary } });
+    await prisma.rentalContract.update({ where: { id: contracts[1].id }, data: { status: 'ACTIVE', rateEffectiveFrom: boundary, currentMonthlyRate: 2000000n } });
+
+    const invoices = await prisma.$transaction(tx => service.ensureRecurringInvoices(tx, reservation.id));
+    expect(invoices).toHaveLength(5);
+    for (const invoice of invoices) {
+      expect(invoice.totalAmount).toBe(2000000n);
+      const view = await service.getCustomerInvoice(customerId, invoice.id);
+      expect(view.breakdown?.units).toEqual([expect.objectContaining({ contractId: contracts[1].id, unitCode: unitCodes[1], rentalAmount: 2000000 })]);
+    }
+    const retry = await prisma.$transaction(tx => service.ensureRecurringInvoices(tx, reservation.id));
+    expect(retry.map(it => it.id)).toEqual(invoices.map(it => it.id));
+    expect(await prisma.invoice.findUnique({ where: { id: initial.id } })).toMatchObject({ status: 'PAID', totalAmount: 6000000n, pricingSnapshot: initial.pricingSnapshot });
+    expect(await prisma.payment.count({ where: { invoiceId: initial.id } })).toBe(1);
+  });
+
+  it('rejects explicit partial return and renewal without recording a request or billing change', async () => {
+    const reservation = await confirmedReservation(quote({ quantity: 2 }), 2);
+    const contract = await prisma.rentalContract.findFirstOrThrow({ where: { reservationId: reservation.id } });
+    const invoices = await prisma.invoice.count({ where: { reservationId: reservation.id } });
+    const input = { reservationId: reservation.id, rentalContractId: contract.id };
+    await expect(new ReturnsService(prisma).createCustomerReturn(actor(customerId, 'CUSTOMER'), input, 'partial-return-test')).rejects.toThrow('Chưa hỗ trợ trả riêng từng kho');
+    await expect(new RenewalsService(prisma).createCustomerRenewal(customerId, { ...input, termMonths: 2, paymentPlan: 'PREPAID' }, 'partial-renewal-test')).rejects.toThrow('Chưa hỗ trợ gia hạn riêng từng kho');
+    expect(await prisma.returnRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
+    expect(await prisma.renewalRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
+    expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(invoices);
   });
 
   it.each([
@@ -216,8 +283,8 @@ describe('Invoice and Payment V1', () => {
     const guard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerActiveRentalsController | typeof ManagerActiveRentalsController | typeof StaffActiveRentalsController, PublicUser['role'][]]> = [
       [CustomerActiveRentalsController, ['CUSTOMER']],
-      [ManagerActiveRentalsController, ['MANAGER', 'ADMIN']],
-      [StaffActiveRentalsController, ['STAFF', 'MANAGER', 'ADMIN']],
+      [ManagerActiveRentalsController, ['MANAGER']],
+      [StaffActiveRentalsController, ['STAFF', 'MANAGER']],
     ];
     for (const [controller, roles] of allowed) {
       for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
@@ -255,16 +322,19 @@ describe('Invoice and Payment V1', () => {
   });
 
   it('supports partial then final payment and transitions all contracts only to READY_FOR_HANDOVER', async () => {
-    const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1450000, rentalAmount: 17400000, depositAmount: 2900000 }), 2);
+    const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1500000, rentalAmount: 18000000, depositAmount: 3000000 }), 2);
     const invoice = await ensure(reservation.id);
     const manager = actor(managerId, 'MANAGER');
     const partial = await service.recordPayment(invoice.id, { amount: 3000000, method: 'BANK_TRANSFER', reference: 'PART-1' }, `partial-${runId}`, manager);
-    expect(partial.invoice).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 2800000 });
+    expect(partial.invoice).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 3000000 });
     expect(partial.contracts.every((contract) => contract.status === 'PENDING_PAYMENT')).toBe(true);
     expect((await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).paidAt).toBeNull();
 
-    const final = await service.recordPayment(invoice.id, { amount: 2800000, method: 'CASH' }, `final-${runId}`, manager);
-    expect(final.invoice).toMatchObject({ status: 'PAID', amountPaid: 5800000, balanceDue: 0 });
+    const final = await service.recordPayment(invoice.id, { amount: 3000000, method: 'CASH' }, `final-${runId}`, manager);
+    expect(final.invoice).toMatchObject({ status: 'PAID', amountPaid: 6000000, balanceDue: 0 });
+    const replay = await service.recordPayment(invoice.id, { amount: 3000000, method: 'CASH' }, `final-${runId}`, manager);
+    expect(replay.payment.id).toBe(final.payment.id);
+    expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(2);
     expect(final.contracts).toHaveLength(2);
     expect(final.contracts.every((contract) => contract.status === 'READY_FOR_HANDOVER')).toBe(true);
     expect((await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).paidAt).not.toBeNull();
@@ -414,7 +484,7 @@ describe('Invoice and Payment V1', () => {
     const guard = new RolesGuard(new Reflector());
     const controllers: Array<[typeof CustomerBillingController | typeof ManagerBillingController, PublicUser['role'][]]> = [
       [CustomerBillingController, ['CUSTOMER']],
-      [ManagerBillingController, ['MANAGER', 'ADMIN']],
+      [ManagerBillingController, ['MANAGER']],
     ];
     for (const [controller, allowedRoles] of controllers) {
       for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {

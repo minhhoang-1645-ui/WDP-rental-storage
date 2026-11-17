@@ -18,7 +18,7 @@ function fixture() {
     $transaction: vi.fn(),
   };
   db.$transaction.mockImplementation(async callback => callback(db));
-  const auth = { register: vi.fn().mockResolvedValue({ token: 'session', user: { role: 'CUSTOMER', email: guest.email } }), encodePassword: vi.fn().mockResolvedValue('scrypt$hash'), revokeUserSessions: vi.fn() };
+  const auth = { register: vi.fn().mockResolvedValue({ token: 'session', user: { role: 'CUSTOMER', email: guest.email } }), encodeReplacementPassword: vi.fn().mockResolvedValue('scrypt$new'), revokeUserSessions: vi.fn() };
   const email = { assertPasswordResetAvailable: vi.fn().mockResolvedValue(undefined), sendPasswordReset: vi.fn().mockResolvedValue({}), sendBookingClaim: vi.fn().mockResolvedValue({}) };
   return { guest, proof, db, auth, email, service: new AccountOnboardingService(db as never, auth as never, email as never) };
 }
@@ -72,10 +72,10 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     const raw = email.sendPasswordReset.mock.calls[0][1]; expect(db.accountFlowToken.create.mock.calls[0][0].data.tokenHash).toBe(hash(raw)); expect(JSON.stringify(exists)).not.toContain(raw);
   });
   it('consumes reset once, updates only the password hash, revokes sessions', async () => {
-    const { service, proof, db } = fixture(); proof.kind = 'RESET'; db.user.findUnique.mockResolvedValue({ id: 'u', accountStatus: 'ACTIVE' });
+    const { service, proof, db } = fixture(); proof.kind = 'RESET'; db.user.findUnique.mockResolvedValue({ id: 'u', accountStatus: 'ACTIVE', passwordHash: 'scrypt$old' });
     const input = { token: 'p'.repeat(40), password: 'password123', confirmPassword: 'password123' };
     await service.reset(input);
-    expect(db.user.updateMany).toHaveBeenCalledWith({ where: { id: 'u', accountStatus: 'ACTIVE' }, data: { passwordHash: 'scrypt$hash' } });
+    expect(db.user.updateMany).toHaveBeenCalledWith({ where: { id: 'u', email: proof.email, accountStatus: 'ACTIVE', passwordHash: 'scrypt$old' }, data: { passwordHash: 'scrypt$new' } });
     expect(db.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u' } });
     db.accountFlowToken.updateMany.mockResolvedValue({ count: 0 }); await expect(service.reset(input)).rejects.toThrow(); expect(db.authSession.deleteMany).toHaveBeenCalledOnce();
   });
@@ -90,7 +90,48 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     await expect(service.reset(input)).rejects.toThrow();
     proof.expiresAt = new Date(Date.now() + 60000); proof.usedAt = new Date();
     await expect(service.reset(input)).rejects.toThrow();
-    expect(auth.encodePassword).not.toHaveBeenCalled();
+    expect(auth.encodeReplacementPassword).not.toHaveBeenCalled();
+  });
+  it.each(['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const)('rejects reused passwords and allows retry for %s', async role => {
+    const { proof, db, email } = fixture();
+    proof.kind = 'RESET';
+    const rawToken = 'p'.repeat(40);
+    const users = new MemoryUserRepository(), auth = new AuthService(users);
+    const oldPassword = 'fixture-old-password', newPassword = 'fixture-new-password';
+    const oldHash = await auth.encodePassword(oldPassword);
+    const user = await users.create({ fullName: 'Fixture Account', email: proof.email, phone: '0900000000', role, passwordHash: oldHash });
+    const currentSession = await auth.login({ email: user.email, password: oldPassword });
+    db.user.findUnique.mockImplementation(async () => ({ ...user }));
+    db.user.updateMany.mockImplementation(async ({ where, data }) => {
+      if (where.passwordHash !== user.passwordHash) return { count: 0 };
+      user.passwordHash = data.passwordHash;
+      return { count: 1 };
+    });
+    db.accountFlowToken.updateMany.mockImplementation(async ({ data }) => {
+      if (proof.usedAt) return { count: 0 };
+      proof.usedAt = data.usedAt;
+      return { count: 1 };
+    });
+    db.authSession.deleteMany.mockImplementation(async () => { await users.deleteUserSessions(user.id); return { count: 1 }; });
+    const service = new AccountOnboardingService(db as never, auth, email as never);
+    const reset = (password: string) => service.reset({ token: rawToken, password, confirmPassword: password });
+    await expect(reset('short')).rejects.toThrow('Mật khẩu phải có 8–128 ký tự.');
+    const reused = await reset(oldPassword).catch(error => error);
+    expect(reused.getStatus()).toBe(400);
+    expect(reused.getResponse()).toEqual({ code: 'PASSWORD_REUSED', message: 'Mật khẩu mới phải khác mật khẩu đang sử dụng.' });
+    expect(user.passwordHash).toBe(oldHash);
+    expect(proof.usedAt).toBeNull();
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(db.authSession.deleteMany).not.toHaveBeenCalled();
+    const attempts = await Promise.allSettled([reset(newPassword), reset('other-fixture-password')]);
+    const success = attempts.findIndex(attempt => attempt.status === 'fulfilled');
+    expect(attempts.filter(attempt => attempt.status === 'fulfilled')).toEqual([{ status: 'fulfilled', value: { message: 'Đặt lại mật khẩu thành công.' } }]);
+    expect(proof.usedAt).toBeInstanceOf(Date);
+    expect(db.authSession.deleteMany).toHaveBeenCalledOnce();
+    await expect(reset(oldPassword)).rejects.toMatchObject({ status: 401 });
+    await expect(auth.getUserByToken(currentSession.token)).rejects.toMatchObject({ status: 401 });
+    await expect(auth.login({ email: user.email, password: oldPassword })).rejects.toMatchObject({ status: 401 });
+    await expect(auth.login({ email: user.email, password: success === 0 ? newPassword : 'other-fixture-password' })).resolves.toMatchObject({ user: { role } });
   });
   it('enforces distributed attempt limits', async () => {
     const { service, db } = fixture(); db.accountFlowLimit.updateMany.mockResolvedValue({ count: 0 }); await expect(service.limit('reset', 'x')).rejects.toThrow();

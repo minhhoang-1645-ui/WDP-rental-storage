@@ -73,15 +73,15 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
         <>
           <PageHeader
             title={recordIdentity(row, resource).title}
+            status={<Status value={row.status ?? row.rentalState} />}
+            meta={<CopyRecordCode value={code(row)} />}
           >
-            <Status value={row.status ?? row.rentalState} />
             <button className="button-secondary" onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu hoặc đóng biểu mẫu trước khi làm mới hồ sơ.'); return; } data.refresh(); }}>
               <RefreshCw size={16} />
               Làm mới hồ sơ
             </button>
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
-          <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">
             {workflowGuide(resource, row.status, 'staff') && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status, 'staff')}</WorkflowHint></div>}
             <div className="manager-detail-content">

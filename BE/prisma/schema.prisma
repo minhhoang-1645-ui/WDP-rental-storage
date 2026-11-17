@@ -358,6 +358,8 @@ model AdditionalServiceInventory {
 
 model User {
   damageClaims DamageClaim[]
+  approvedDamageCompensations DamageClaimCompensation[] @relation("DamageCompensationApprover")
+  recordedDamageHandovers DamageClaimCompensation[] @relation("DamageCompensationRecorder")
   authSessions                AuthSession[]
   unitResponsibilities         UnitStaffAssignment[] @relation("UnitStaffAssignee")
   assignedUnitResponsibilities UnitStaffAssignment[] @relation("UnitStaffManager")
@@ -409,6 +411,9 @@ model User {
   completedTransfers          TransferRequest[]          @relation("TransferCompleter")
   createdAt                   DateTime                   @default(now())
   updatedAt                   DateTime                   @updatedAt
+  returnAssigneeTasks ReturnRequest[] @relation("ReturnAssignee")
+  handoverAssigneeTasks HandoverAppointment[] @relation("HandoverAssignee")
+  transferAssigneeTasks TransferRequest[] @relation("TransferAssignee")
 }
 
 model AuthSession {
@@ -829,11 +834,33 @@ model DamageClaim {
   idempotencyKey    String @unique
   inputHash         String
   history           Json @default("[]")
+  compensation      DamageClaimCompensation?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   @@index([customerId, createdAt])
   @@index([status, createdAt])
   @@index([assignedStaffId, status])
+}
+
+model DamageClaimCompensation {
+  damageClaimId              String      @id
+  damageClaim                DamageClaim @relation(fields: [damageClaimId], references: [id], onDelete: Restrict)
+  approvedCompensationAmount BigInt
+  approvalReason             String
+  approvedById               String
+  approvedBy                 User        @relation("DamageCompensationApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+  approvedAt                 DateTime
+  method                     String      @default("CASH")
+  paidCompensationAmount     BigInt?
+  deliveredBy                String?
+  receivedBy                 String?
+  handedOverAt               DateTime?
+  handoverNote               String?
+  recordedById               String?
+  recordedBy                 User?       @relation("DamageCompensationRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt                 DateTime?
+  createdAt                  DateTime    @default(now())
+  updatedAt                  DateTime    @updatedAt
 }
 
 model StockMovementLine {
@@ -879,6 +906,10 @@ model ReturnRequest {
 
   @@index([reservationId, createdAt])
   @@index([status, createdAt])
+  assignedStaffUserId String?
+  assignedStaff User? @relation("ReturnAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+
+  @@index([assignedStaffUserId, status])
 }
 
 model ReturnInspection {
@@ -1072,6 +1103,10 @@ model TransferRequest {
   @@index([reservationId, createdAt])
   @@index([fromStorageUnitId, status])
   @@index([toStorageUnitId, status])
+  assignedStaffUserId String?
+  assignedStaff User? @relation("TransferAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+
+  @@index([assignedStaffUserId, status])
 }
 
 model DepositSettlement {
@@ -1290,4 +1325,8 @@ model HandoverAppointment {
   @@index([reservationId, createdAt])
   @@index([status, scheduledAt])
   @@index([scheduledAt, id])
+  assignedStaffUserId String?
+  assignedStaff User? @relation("HandoverAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+
+  @@index([assignedStaffUserId, status])
 }

@@ -31,12 +31,12 @@ export class ManagerMaintenanceController {
   @ApiQuery({ name: 'category', required: false, enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'] })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-MNT' })
   @ApiOkResponse({ description: 'Danh sách maintenance phân trang.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
-  list(@Query() query: Record<string, unknown>) { return this.maintenance.listManager(parseMaintenanceQuery(query)); }
+  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = parseMaintenanceQuery(input); return req.user!.role === 'STAFF' ? this.maintenance.listStaff(query, req.user!) : this.maintenance.listManager(query); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết maintenance và future allocation risk' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiOkResponse({ description: 'Bao gồm ReturnInspection context và next confirmed allocation; không thay đổi allocation.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
-  get(@Param('id') id: string) { return this.maintenance.getManager(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'STAFF' ? this.maintenance.getStaff(id, req.user!) : this.maintenance.getManager(id); }
 
   @ManagerAssignment() @Patch(':id/assign')
   @ApiOperation({ summary: 'Giao/reassign case chưa hoàn tất cho STAFF' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-assign-001' }) @ApiBody({ type: AssignMaintenanceRequestDto })

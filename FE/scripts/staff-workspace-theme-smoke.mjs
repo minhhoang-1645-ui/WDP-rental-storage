@@ -120,6 +120,8 @@ async function checkProfile(page, roleLabel, dark) {
   assert.equal(await panel.getByText('Đổi mật khẩu', { exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Thông tin cá nhân');
   await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Bảo mật');
+  await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Cài đặt giao diện');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), dark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối');
@@ -354,7 +356,9 @@ try {
     const app = await setup(role);
     await app.page.goto(`${base}/${role.toLowerCase()}`);
     await app.page.locator('main h1').waitFor();
-    assert.equal(await app.page.locator('[data-workspace-theme]').count(), 1);
+    const workspace = app.page.locator('[data-workspace-role][data-workspace-theme]');
+    assert.equal(await workspace.count(), 1);
+    assert.equal(await workspace.getAttribute('data-workspace-theme'), await app.page.locator('html').getAttribute('data-workspace-theme'));
     assert.equal(await app.page.locator('.workspace-profile').count(), 1);
     if (role === 'MANAGER') {
       assert.equal(await app.page.locator('[data-workspace-role="manager"]').getAttribute('data-workspace-theme'), 'dark');

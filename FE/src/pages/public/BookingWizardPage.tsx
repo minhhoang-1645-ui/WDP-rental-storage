@@ -161,7 +161,7 @@ function CheckoutStep({ draft, quote, quoteState, quoteError, productName, produ
     </form>
 
     <aside className="checkout-quote">
-      <div className="quote-product"><StorageImage className="booking-product-thumb" src={productImage} alt={`Ảnh tham khảo cho ${productName}`} /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
+      <div className="quote-product"><StorageImage className="booking-product-thumb" src={productImage} alt="" /><div><span>{productCode}</span><strong>{productName}</strong><small>{productDimensions} · {draft.quantity} kho</small></div></div>
       <div className="quote-heading"><h3>Báo giá</h3></div>
       {quoteState === 'loading' && <div className="booking-alert" role="status"><LoaderCircle className="availability-spinner" size={18} /> Đang tính báo giá mới nhất…</div>}
       {quoteState === 'error' && <div className="booking-alert is-error" role="alert"><Info size={18} /><span>{quoteError || 'Không thể tạo báo giá cho lựa chọn này.'}</span><button type="button" onClick={onRetryQuote}>Thử lại báo giá</button></div>}
@@ -462,7 +462,7 @@ export function BookingWizardPage() {
           <div className="booking-option-block"><div className="flex items-center justify-between gap-4"><div><h3>Số lượng kho</h3><p>Tối đa 3 kho trong một yêu cầu.</p></div><div className="quantity-stepper" aria-label="Số lượng kho"><button type="button" onClick={() => updateDraft({ quantity: Math.max(1, draft.quantity - 1), adjacencyPreference: draft.quantity - 1 > 1 && draft.adjacencyPreference })} disabled={draft.quantity === 1} aria-label="Giảm số lượng"><Minus size={17} /></button><output aria-live="polite">{draft.quantity}</output><button type="button" onClick={() => updateDraft({ quantity: Math.min(3, draft.quantity + 1) })} disabled={draft.quantity === 3} aria-label="Tăng số lượng"><Plus size={17} /></button></div></div>{draft.quantity > 1 && <label className="booking-checkbox"><input type="checkbox" checked={draft.adjacencyPreference} onChange={(event) => updateDraft({ adjacencyPreference: event.target.checked })} /><span><strong>Ưu tiên các kho liền kề</strong><small>Đây là mong muốn, không phải cam kết vị trí.</small></span></label>}</div>
         </div>
         <aside className="booking-preview">
-          <div className="booking-preview-visual"><StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /></div>
+          <div className="booking-preview-visual"><StorageImage src={product.image} alt="" /></div>
           <div className="booking-preview-content">
             <div className="booking-preview-heading"><div><p className="eyebrow">{product.code}</p><h2>{product.name}</h2></div><span className={product.status === 'limited' ? 'status-warning' : 'status-success'}>{product.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span></div>
             <dl className="booking-specs"><div><dt>Kích thước</dt><dd>{size.dimensions}</dd></div><div><dt>Diện tích</dt><dd>{size.floorArea}</dd></div><div><dt>Thể tích</dt><dd>{size.volume}</dd></div><div><dt>Điều kiện</dt><dd>{product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</dd></div></dl>
@@ -499,12 +499,11 @@ export function BookingWizardPage() {
           </div>
         </div>
         <aside className="booking-summary">
-          <div className="booking-summary-product"><StorageImage className="booking-product-thumb" src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} /><div><span>{product.code}</span><strong>{product.name}</strong><small>{size.dimensions} · {draft.quantity} kho</small></div></div>
+          <div className="booking-summary-product"><StorageImage className="booking-product-thumb" src={product.image} alt="" /><div><span>{product.code}</span><strong>{product.name}</strong><small>{size.dimensions} · {draft.quantity} kho</small></div></div>
           <dl className="booking-summary-details">
             <div><dt>Ngày bắt đầu</dt><dd>{availability ? formatDate(availability.startDate) : formatDate(draft.startDate)}</dd></div>
             <div><dt>Ngày kết thúc sử dụng</dt><dd>{pricingQuote ? inclusiveEndDate(pricingQuote.endDate) : 'Chờ báo giá hợp lệ'}</dd></div>
             <div><dt>Thời hạn</dt><dd>{pricingQuote ? pricingQuote.billingMode === 'DAILY' ? `${pricingQuote.billableDays} ngày` : `${pricingQuote.termMonths} tháng` : (draft.periodMode === 'duration' ? draft.durationMonths + ' tháng' : 'Chờ ngày kết thúc')}</dd></div>
-            <div><dt>Số lượng</dt><dd>{draft.quantity} kho</dd></div>
             <div><dt>Thanh toán</dt><dd>{draft.paymentPlan === 'PREPAID' ? 'Trả trước cả kỳ' : 'Trả hàng tháng'}</dd></div>
           </dl>
           <div className="booking-pricing">

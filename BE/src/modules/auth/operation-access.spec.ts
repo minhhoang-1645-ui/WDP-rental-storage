@@ -17,7 +17,7 @@ import { MemoryUserRepository } from '../users/user.repository.js';
 
 const workflows = [
   ['reservations', ManagerReservationsController], ['inquiries', ManagerInquiriesController],
-  ['appointments', ManagerAppointmentsController], ['renewals', ManagerRenewalsController],
+  ['appointments', ManagerAppointmentsController],
   ['transfers', ManagerTransfersController], ['stock-movements', ManagerStockMovementsController],
   ['support-requests', ManagerSupportController], ['maintenance', ManagerMaintenanceController],
   ['returns', ManagerReturnsController],
@@ -52,6 +52,15 @@ describe('Staff workflow ownership after role transfer', () => {
       }
     });
   }
+
+  it('reserves pending renewal reviews for Manager', () => {
+    expect(Reflect.getMetadata('path', ManagerRenewalsController)).toBe('manager/renewals');
+    for (const [name, method] of [['get', 'GET'], ['approve', 'POST']] as const) {
+      const handler = Object.getOwnPropertyDescriptor(ManagerRenewalsController.prototype, name)!.value as object;
+      expect(guard.canActivate(context(ManagerRenewalsController, handler, 'MANAGER', '/api/manager/renewals/record', method))).toBe(true);
+      expect(() => guard.canActivate(context(ManagerRenewalsController, handler, 'STAFF', '/api/staff/management/renewals/record', method))).toThrow(ForbiddenException);
+    }
+  });
 
   it('permits Staff context reads without granting Manager configuration mutations', () => {
     const handler = Object.getOwnPropertyDescriptor(ManagerUnitsController.prototype, 'list')!.value as object;

@@ -1,4 +1,5 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
+import { Link } from 'react-router-dom';
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
@@ -28,6 +29,7 @@ export function StaffActions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
+  const returnRequirementsId = useId();
   const [recipientType, setRecipientType] = useState('CUSTOMER');
   const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
   const handoverContracts = rows(row.allocatedUnits);
@@ -95,13 +97,23 @@ export function StaffActions({
     String(row.status),
   );
   const allInspected =
-    Number(first(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(first(row, 'inventory.pendingMovements') || 0) === 0 &&
     inspections.length > 0 &&
     inspections.every(
       (item) =>
         ["PASS", "ISSUE_FOUND"].includes(String(item.result)) &&
         (item.result !== "ISSUE_FOUND" || first(item, "issueType")),
     );
+  const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
+  const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
+  const canFinalize = allInspected && remainingItems === 0 && pendingMovements === 0;
+  const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
+  const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
+  const stockMovementsPath = contractId
+    ? `/staff/stock-movements?${new URLSearchParams({ rentalContractId: contractId })}`
+    : '/staff/stock-movements';
+  const storedItemsPath = storageUnitId
+    ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
+    : '/staff/stored-items';
   return (
     <section className="manager-section">
       <h2>Thao tác nhân viên</h2>
@@ -154,7 +166,6 @@ export function StaffActions({
             )}
             {inspecting && (
               <>
-                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <p role="status" className="portal-error">Còn {first(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {first(row, 'inventory.pendingMovements') || '0'} phiếu giao nhận chưa hoàn tất. Khách cần gửi phiếu lấy hết hàng; nhân viên hoàn tất giao nhận trước khi nhận trả kho.</p>}
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
                   phí do quản lý duyệt.
@@ -176,21 +187,32 @@ export function StaffActions({
                   className="portal-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (allInspected) void run("/finalize");
+                    if (canFinalize) void run("/finalize");
                   }}
                 >
+                  {!canFinalize && (
+                    <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
+                      <strong>Chưa thể xác nhận nhận kho trả</strong>
+                      <ul>
+                        {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
+                        {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
+                        {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
+                      </ul>
+                      {(remainingItems > 0 || pendingMovements > 0) && <div className="portal-actions">
+                        {remainingItems > 0 && <Link className="button-secondary" to={storedItemsPath}>Xem hàng đang lưu</Link>}
+                        {pendingMovements > 0 && <Link className="button-secondary" to={stockMovementsPath}>Mở phiếu nhập – xuất</Link>}
+                      </div>}
+                    </div>
+                  )}
                   <label className="portal-checkbox">
-                    <input type="checkbox" required disabled={!allInspected} />
+                    <input type="checkbox" required disabled={!canFinalize}
+                      aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
                     Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra
                   </label>
-                  <button className="button-primary" disabled={!allInspected}>
+                  <button type="submit" className="button-primary" disabled={!canFinalize}
+                    aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
                     Hoàn tất nhận kho trả
                   </button>
-                  {!allInspected && (
-                    <small>
-                      Cần ghi kết quả cho tất cả kho trước khi hoàn tất.
-                    </small>
-                  )}
                 </form>
               </>
             )}
@@ -379,6 +401,7 @@ function InspectionEditor({
   return (
     <form className="portal-form portal-inspection-form" onSubmit={submit}>
       <h3>Kiểm tra kho {first(inspection, "unit.unitCode")}</h3>
+      {inspection.result === "PENDING" && <small>Chưa lưu kết quả kiểm tra</small>}
       <label className="field-label">
         Kết quả kiểm tra
         <select

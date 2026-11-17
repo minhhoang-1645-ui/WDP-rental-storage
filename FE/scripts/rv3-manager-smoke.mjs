@@ -21,7 +21,10 @@ const reportCategories = [
 const report = {
   asOf: '2026-11-10T09:00:00Z', period: { from: null, to: null, timeZone: 'Asia/Ho_Chi_Minh' }, units: { total: 120, occupied: 30, available: 75, reserved: 5, maintenance: 10, utilizationPercent: 25 }, activeContracts: 31,
   finance: { unpaidInvoices: 2, outstandingAmount: 600000, collectedAmount: 3000000, paymentCount: 1, depositOnFullyPaidInvoices: 1500000, approvedRefundOutstanding: 1000000 },
-  queue: { unassignedStock: 1, unassignedSupport: 0, unassignedMaintenance: 0, escalatedSupport: 0, maintenanceReview: 0, paymentVerification: 1, depositReview: 0, onlineReconciliation: 1 },
+  queue: { unassignedStock: 1, unassignedSupport: 0, unassignedMaintenance: 0,
+    unassignedAppointments: 0, unassignedReturns: 0, unassignedTransfers: 0, unassignedClaims: 0,
+    escalatedSupport: 0, maintenanceReview: 0, earlyReturnReview: 1, transferReview: 0, renewalReview: 0, damageReview: 0,
+    paymentVerification: 1, depositReview: 0, onlineReconciliation: 1 },
   workload: [{ id: 'staff', fullName: 'Nhân viên kiểm thử', accountStatus: 'ACTIVE', stock: 3, support: 0, maintenance: 0 }],
 };
 const addon = { id: 'addon', code: 'SHELF', name: 'Kệ kiểm thử', physicalUnit: 'bộ', billingUnit: 'MONTH', kind: 'RENTAL', unitPrice: 150000, isActive: true };
@@ -339,7 +342,7 @@ async function verifyReportTable(table) {
 async function verifyManagerWorkspace() {
   await page.goto(`${base}/manager`);
   await page.locator('.manager-dashboard-kpi').filter({ hasText: 'Kho đang sử dụng' }).getByText('30 / 120', { exact: true }).waitFor();
-  assert.deepEqual(await page.locator('.manager-dashboard-kpi strong').allTextContents().then(values => values.map(value => value.replace(/\s/g, ' '))), ['0', '1', '30 / 120', '600.000 ₫']);
+  assert.deepEqual(await page.locator('.manager-dashboard-kpi strong').allTextContents().then(values => values.map(value => value.replace(/\s/g, ' '))), ['1', '1', '30 / 120', '600.000 ₫']);
   const chart = page.getByRole('region', { name: 'Tình trạng kho' });
   await chart.getByText('Hiện có 75/120 kho ở trạng thái sẵn sàng.', { exact: true }).waitFor();
   const legend = chart.locator('.manager-storage-legend li');
@@ -451,7 +454,7 @@ async function verifyManagerWorkspace() {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${base}/manager`);
   await page.locator('.manager-dashboard-kpi').filter({ hasText: 'Chờ phân công' }).click();
-  await page.waitForURL('**/manager/assignments?assignment=unassigned');
+  await page.waitForURL('**/manager/assignments?assignment=attention');
   await page.goto(`${base}/manager`);
   for (const width of [1920, 1366, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });

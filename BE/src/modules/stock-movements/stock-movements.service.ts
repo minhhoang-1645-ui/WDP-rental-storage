@@ -100,10 +100,12 @@ export class StockMovementsService {
         const end = Date.parse(`${activeContract.endDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
         if (time < start || parsed.type === 'IN' && time >= end) throw new BadRequestException('Lịch nhập phải trong kỳ thuê. Lịch xuất có thể sau hạn để lấy hết hàng và trả kho.');
       }
+      const responsibility = await this.unitStaff?.resolveStaff(tx, [activeContract.reservationUnit.storageUnitId]);
       const movement = await tx.stockMovement.create({
         data: {
           movementCode: this.code(), type: parsed.type, customerUserId: customer.id, rentalContractId: contract.id,
           storageUnitId: activeContract.reservationUnit.storageUnitId,
+          ...(responsibility ? { status: 'ASSIGNED', assignedStaffUserId: responsibility.staffUserId, assignedByUserId: responsibility.assignedByUserId, assignedAt: new Date() } : {}),
           unitCodeSnapshot: activeContract.reservationUnit.storageUnit.unitNumber,
           floorSnapshot: activeContract.reservationUnit.storageUnit.floor,
           zoneSnapshot: activeContract.reservationUnit.storageUnit.zone,

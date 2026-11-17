@@ -97,16 +97,6 @@
 .admin-detail-heading h2 {
   margin: 0;
 }
-.admin-account-detail .manager-page-header { margin-bottom: var(--space-8); }
-.admin-account-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-8) var(--space-16);
-  color: var(--workspace-secondary);
-  overflow-wrap: anywhere;
-  margin-block: var(--space-8) var(--space-20);
-}
 .admin-account-tabs {
   display: flex;
   gap: var(--space-4);

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -33,7 +34,7 @@ export class UnitStaffService {
         const assigned = unchanged
           ? await tx.unitStaffAssignment.findUniqueOrThrow({ where: { id: current.id }, include: this.include() })
           : await tx.unitStaffAssignment.create({ data: { storageUnitId: unitId, staffUserId, assignedByUserId: actor.id, assignedAt: now }, include: this.include() });
-        await tx.supportRequest.updateMany({ where: { OR: [{ storageUnitId: unitId }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnitId: unitId } } }], assignedStaffUserId: null, status: 'OPEN', subject: { not: 'Đề nghị trả kho trước hạn' } }, data: { assignedStaffUserId: staffUserId, status: 'ASSIGNED' } });
+        await tx.supportRequest.updateMany({ where: { OR: [{ storageUnitId: unitId }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnitId: unitId } } }], assignedStaffUserId: null, status: 'OPEN', subject: { not: EARLY_RETURN_SUBJECT } }, data: { assignedStaffUserId: staffUserId, status: 'ASSIGNED' } });
         await tx.maintenanceRequest.updateMany({ where: { storageUnitId: unitId, assignedStaffUserId: null, status: 'OPEN' }, data: { assignedStaffUserId: staffUserId } });
         return assigned;
       }, { isolationLevel: 'Serializable', timeout: 20000 });

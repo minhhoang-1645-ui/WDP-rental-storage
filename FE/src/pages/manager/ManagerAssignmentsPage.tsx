@@ -25,27 +25,34 @@ import {
 import { allPages, mutate } from "../../services/portal";
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
-import { assignmentNeedsAttention, assignmentWorkRank } from '../../utils/work-queue';
+import { assignmentNeedsAttention, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { UnitStaffAssignments } from '../../components/manager/UnitStaffAssignments';
 import { normalizeSearch } from '../../utils/notification-tools';
 
-type WorkKind = "support-requests" | "maintenance" | "stock-movements";
+const workNames = {
+  'support-requests': 'Hỗ trợ',
+  maintenance: 'Bảo trì',
+  'stock-movements': 'Nhập – xuất hàng',
+  appointments: 'Lịch bàn giao',
+  returns: 'Trả kho',
+  transfers: 'Chuyển kho',
+  'damage-claims': 'Sự cố hàng hóa',
+};
+type WorkKind = keyof typeof workNames;
 type Task = { kind: WorkKind; row: Row };
-
-const workName = (kind: WorkKind) =>
-  kind === "maintenance" ? "Bảo trì" : kind === 'stock-movements' ? 'Nhập – xuất hàng' : "Hỗ trợ";
-const finished = (task: Task) =>
-  task.row.status === "COMPLETED" || task.row.status === "RESOLVED" || task.row.status === 'CANCELLED';
-const canAssign = (task: Task) => task.kind === 'stock-movements'
-  ? ['REQUESTED', 'ASSIGNED'].includes(first(task.row, 'status'))
-  : !finished(task);
+const workKinds = Object.keys(workNames) as WorkKind[];
+const workName = (kind: WorkKind) => workNames[kind];
+const finished = (task: Task) => ['COMPLETED', 'RESOLVED', 'CANCELLED', 'REJECTED', 'PENDING_SETTLEMENT'].includes(String(task.row.status));
+const canAssign = (task: Task) => canAssignWork(task.kind, task.row);
 const relatedUnit = (row: Row) =>
   first(
     row,
     "currentStorageUnit.unitNumber",
     "storageUnit.unitNumber",
     "unit.unitCode",
+    "fromUnit.unitCode",
+    "unitCodeSnapshot",
     "reservation.reference",
     'rentalContract.contractCode',
   ) || "—";
@@ -69,27 +76,19 @@ export function ManagerAssignmentsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      allPages("/manager/support-requests", controller.signal),
-      allPages("/manager/maintenance", controller.signal),
-      allPages('/manager/stock-movements', controller.signal),
-    ])
-      .then(([support, maintenance, movements]) => {
+    Promise.all(workKinds.map(async kind => {
+      const { items } = await allPages(`/manager/${kind}`, controller.signal);
+      return items
+        .filter(row => !(kind === 'support-requests' && isEarlyReturnRequest(row)) &&
+          !(kind === 'transfers' && ['REQUESTED', 'REJECTED'].includes(String(row.status))))
+        .map(row => ({ kind, row }));
+    }))
+      .then(groups => {
         if (controller.signal.aborted) return;
         setState({
           key,
           revision,
-          tasks: [
-            ...movements.items.map(row => ({ kind: 'stock-movements' as const, row })),
-            ...support.items.filter(row => !isEarlyReturnRequest(row)).map((row) => ({
-              kind: "support-requests" as const,
-              row,
-            })),
-            ...maintenance.items.map((row) => ({
-              kind: "maintenance" as const,
-              row,
-            })),
-          ],
+          tasks: groups.flat(),
         });
       })
       .catch((error: unknown) => {
@@ -190,7 +189,7 @@ export function ManagerAssignmentsPage() {
         toolbar={<>
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã, kho hoặc nhân viên…" />
           <ManagerTableFilter label="Nhóm" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
-            options={[[ 'all', 'Tất cả' ], ...(['support-requests', 'maintenance', 'stock-movements'] as const).map(value => [value, workName(value)] as [string, string])]} />
+            options={[[ 'all', 'Tất cả' ], ...workKinds.map(value => [value, workName(value)] as [string, string])]} />
           <ManagerTableFilter label="Phân công" value={assignment} onChange={value => update('assignment', value === 'all' ? '' : value)}
             options={[[ 'all', 'Tất cả' ], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người'], ['assigned', 'Đã phân công']]} />
           <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
@@ -316,7 +315,7 @@ function AssignmentDetail({
         )}
         <Link
           className="button-secondary"
-          to={`/manager/operations/${task.kind}/${encodeURIComponent(id)}`}
+          to={task.kind === 'damage-claims' ? `/manager/damage-claims?claim=${encodeURIComponent(id)}` : `/manager/operations/${task.kind}/${encodeURIComponent(id)}`}
           onClick={onClose}
         >
           Xem hồ sơ công việc

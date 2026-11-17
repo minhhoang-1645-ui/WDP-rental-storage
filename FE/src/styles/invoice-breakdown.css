@@ -1,0 +1,8 @@
+.invoice-breakdown { display: grid; gap: 16px; margin-block: 16px; min-width: 0; }
+.invoice-breakdown h3 { margin: 0 0 8px; }
+.invoice-breakdown .customer-table th[scope='row'] { text-align: start; vertical-align: top; }
+.invoice-breakdown .customer-table small { display: block; color: var(--workspace-muted, var(--color-slate)); }
+.invoice-breakdown-note { color: var(--workspace-muted, var(--color-slate)); }
+@media (max-width: 680px) {
+  .invoice-breakdown .customer-table th[scope='row'] { display: block; padding: 8px 0; background: transparent; }
+}

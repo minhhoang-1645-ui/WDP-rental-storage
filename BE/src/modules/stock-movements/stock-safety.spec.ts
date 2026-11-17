@@ -15,18 +15,18 @@ function setup(quantities: number[], initial = 6, type = 'OUT') {
   return { service: new StockMovementsService(db as never), tx, balance: () => balance };
 }
 describe('stock movement safety with stubbed transaction', () => {
-  it('creates pending requests without assigning the unit owner automatically', async () => {
+  it('automatically assigns a movement to the active responsible employee', async () => {
     const stamp = new Date();
     const movement = { id: 'movement', lines: [], createdAt: stamp, updatedAt: stamp };
     const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', startDate: new Date('2026-01-01'), endDate: new Date('2035-01-01'), reservationUnit: { storageUnitId: 'unit', storageUnit: { unitNumber: 'A01', floor: '1', zone: 'A' } } }) },
       stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
       storedItem: { create: vi.fn().mockResolvedValue({ id: 'item' }) }, stockMovementLine: { create: vi.fn() } };
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
-    const responsibility = { resolveStaff: vi.fn() };
+    const responsibility = { resolveStaff: vi.fn().mockResolvedValue({ staffUserId: 'staff', assignedByUserId: 'manager' }) };
     const service = new StockMovementsService(db as never, responsibility as never);
     await service.create({ id: 'customer', role: 'CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'create-manual-assignment');
-    expect(responsibility.resolveStaff).not.toHaveBeenCalled();
-    expect(tx.stockMovement.create.mock.calls[0][0].data).not.toHaveProperty('assignedStaffUserId');
+    expect(responsibility.resolveStaff).toHaveBeenCalledWith(tx, ['unit']);
+    expect(tx.stockMovement.create.mock.calls[0][0].data).toMatchObject({ status: 'ASSIGNED', assignedStaffUserId: 'staff', assignedByUserId: 'manager' });
   });
 
   it('rejects new scheduled movements in the past or outside the Vietnam rental dates', async () => {

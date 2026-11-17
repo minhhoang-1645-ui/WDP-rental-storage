@@ -24,7 +24,6 @@ import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
-const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
 export interface InternalNavItem {
   to: string;
   label: string;
@@ -60,8 +59,6 @@ export function InternalPortalLayout({
     setCollapsed(!collapsed);
   }
   useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
-  const [navigationFilter, setNavigationFilter] = useState({ path: location.pathname, value: '' });
-  const navigationSearch = navigationFilter.path === location.pathname ? navigationFilter.value : '';
   const signOut = () => {
     startTransition(() => {
       logout();
@@ -70,7 +67,7 @@ export function InternalPortalLayout({
   };
   const mobile = useRef<HTMLDialogElement>(null);
   const settingsPath = `/${user?.role.toLowerCase()}/settings`;
-  const openSettings = (section: 'profile' | 'appearance') => {
+  const openSettings = (section: 'profile' | 'security' | 'appearance') => {
     mobile.current?.close();
     navigate(`${settingsPath}/${section}`);
   };
@@ -119,13 +116,10 @@ export function InternalPortalLayout({
   );
   const nav = (iconOnly = false) => (
     <nav aria-label={`Điều hướng ${label}`}>
-      {!iconOnly && navigation.length > 8 && <label className="workspace-nav-search"><span>{themed ? 'Tìm trong menu' : 'Tìm chức năng'}</span><input type="search" value={navigationSearch} onChange={event => setNavigationFilter({ path: location.pathname, value: event.target.value })} placeholder={themed ? user?.role === 'MANAGER' ? 'Phân công, hóa đơn…' : 'Đặt kho, bàn giao…' : 'Đặt kho, bàn giao, hóa đơn…'} /></label>}
       {groups.map(({ group, items }, index) => {
-        const matching = iconOnly ? items : items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
-        if (!matching.length) return null;
         const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
-        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || (themed ? index <= 2 : index === 1)} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
-          {matching.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
+        return <NavigationGroup key={group} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
+          {items.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
             <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined} aria-label={iconOnly ? itemLabel : undefined} className={({ isActive }) => isActive || match?.some(path => matchesPath(location.pathname, path)) ? 'active' : undefined}>
               <Icon size={17} />
               <span>{itemLabel}</span>
@@ -134,7 +128,6 @@ export function InternalPortalLayout({
           ))}
         </NavigationGroup>;
       })}
-      {!iconOnly && navigationSearch && !navigation.some(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim()))) && <p className="workspace-nav-empty">Không có mục phù hợp. Đổi từ khóa để tìm lại.</p>}
     </nav>
   );
   const account = (
@@ -174,20 +167,22 @@ export function InternalPortalLayout({
             >
               <Menu size={19} />
             </button>
-            <span>{label}</span>
-            <span className="portal-topbar-divider">/</span>
-            {parent && <>
-              <Link className="portal-topbar-parent" to={parent.to}>{parent.label}</Link>
-              <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
-            </>}
-            <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : matchesPath(location.pathname, settingsPath) ? "Cài đặt tài khoản" : active?.label ?? "Hồ sơ chi tiết"}</strong>
+            <nav className="portal-breadcrumb" aria-label="Đường dẫn">
+              <span className="portal-breadcrumb-root">{label}</span>
+              <span className="portal-topbar-divider" aria-hidden="true">/</span>
+              {parent && <>
+                <Link className="portal-topbar-parent" to={parent.to}>{parent.label}</Link>
+                <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
+              </>}
+              <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo' : matchesPath(location.pathname, settingsPath) ? "Cài đặt tài khoản" : active?.label ?? "Hồ sơ chi tiết"}</strong>
+            </nav>
           </div>
           <div className="portal-topbar-actions">
             {user && notificationRole
               ? <WorkspaceNotificationDropdown role={notificationRole} userId={user.id} /> : <ActivityBell />}
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}
               roleLabel={roleLabel(profileMenu.role)} theme={theme} onToggleTheme={toggleTheme}
-              onProfile={() => openSettings('profile')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />
+              onProfile={() => openSettings('profile')} onSecurity={() => openSettings('security')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />
               : <span className="portal-role">{roleLabel(user?.role)}</span>}
           </div>
         </header>

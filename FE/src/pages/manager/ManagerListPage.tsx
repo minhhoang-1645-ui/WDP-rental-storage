@@ -7,7 +7,7 @@ import { internalPageSize, staffTaskPageSize } from '../../utils/internal-pagina
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { apiRequest } from "../../services/api";
@@ -48,14 +48,17 @@ import { managerStorageLabels } from '../../utils/manager-sections';
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const [notice, setNotice] = useState("");
   const [params, setParams] = useSearchParams();
   const staffTable = user?.role === 'STAFF' && isStaffTableWorkflow(resource) ? resource : null;
   const managerTable = user?.role === 'MANAGER' && isManagerTaskResource(resource) ? resource : null;
   const limit = staffTable || managerTable ? staffTaskPageSize(params) : internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
-  const status = reviewOnly ? managerReviewStatus(resource) : params.get("status") ?? "";
+  const staffTransferList = user?.role === 'STAFF' && resource === 'transfers';
+  const statuses = staffTransferList ? ['APPROVED', 'COMPLETED'] : config?.statuses ?? [];
+  const suppliedStatus = params.get('status') ?? '';
+  const status = reviewOnly ? managerReviewStatus(resource) : staffTransferList && !statuses.includes(suppliedStatus) ? '' : suppliedStatus;
   const page = Math.min(
     100000,
     Math.max(1, Math.floor(Number(params.get("page")) || 1)),
@@ -78,7 +81,6 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
-  if (staffTable && staffTable !== 'appointments' && params.get('mine') === 'true') query.set('assignedToMe', 'true');
   for (const field of [
     "priority",
     "type",
@@ -180,7 +182,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
               onChange={(event) => change("status", event.target.value)}
             >
               <option value="">Tất cả</option>
-              {config.statuses.map((value) => (
+              {statuses.map((value) => (
                 <option key={value} value={value}>
                   {resource === "rentals"
                     ? value === "true"
@@ -235,10 +237,6 @@ export function ManagerListPage({ resource }: { resource: string }) {
           </label>
         )}
         {staffTable === 'appointments' && <button type="button" className="button-secondary" onClick={() => change('date', staffDay(Date.now()))}>Hôm nay</button>}
-        {staffTable && staffTable !== 'appointments' && <label className="portal-checkbox">
-          <input type="checkbox" checked={params.get('mine') === 'true'} onChange={event => change('mine', event.target.checked ? 'true' : '')} />
-          Việc được giao cho tôi
-        </label>}
         {resource === "units" && (
           <>
             <label className="field-label">
@@ -273,7 +271,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
         {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} />
-            {resource === "maintenance" ? "Tạo bảo trì" : "Tạo chuyển kho"}
+            {resource === "maintenance" ? "Tạo bảo trì" : "Gửi đề nghị chuyển kho"}
           </button>
         )}
         <button
@@ -367,6 +365,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
         </>
       )}
       </>}
+      {notice && <div className="portal-success" role="status">{notice}</div>}
       {creating && (
         <ManagerCreateDialog
           resource={resource}
@@ -377,7 +376,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
             setTransferSource(undefined);
             refresh();
             if (resource === 'maintenance') setCreatedMaintenance({ owner: user?.id ?? '', row: created });
-            if (resource === 'transfers' && user?.role === 'STAFF' && first(created, 'id')) navigate(`/staff/transfers/${encodeURIComponent(first(created, 'id'))}`);
+            if (resource === 'transfers') setNotice('Đã gửi đề nghị chuyển kho cho quản lý.');
           }}
         />
       )}
@@ -482,6 +481,8 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         {resource === "invoices" ? (
           <>
             <strong>{money(row.totalAmount)}</strong>
+            <small>{first(row, 'reservation.reference')} · {(row.breakdown as { units: unknown[] } | null)?.units.length ?? first(row, 'reservation.quantity')} kho</small>
+            <small>Đã thu {money(row.amountPaid)}</small>
             <small>{Number(row.balanceDue) > 0 && isScheduledRenewalInvoice(row) ? "Chưa đến kỳ" : `Còn thu: ${money(row.balanceDue)}`}</small>
             {row.isPastDue === true && <Status value="OVERDUE" />}
           </>

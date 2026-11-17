@@ -150,7 +150,7 @@ export function CustomerRenewalsPage() {
             }
           >
             <h2>Tạo yêu cầu mới</h2>
-            <p>Chỉ kho thuê theo tháng và chưa có yêu cầu gia hạn chờ xử lý được chọn.</p>
+            <p>Gia hạn áp dụng cho toàn bộ kho trong đơn thuê theo tháng.</p>
             <label className="field-label">
               Kho đang thuê
               <EntitySelect

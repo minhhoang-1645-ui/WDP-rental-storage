@@ -60,73 +60,23 @@ export function ManagerCatalogPage() {
       {resource.data && (
         <>
           {products.length > 0 && (
-            <ManagerAvailabilityForm key={user?.id} products={products} />
+            <details className="catalog-availability"><summary>Kiểm tra kho trống</summary><ManagerAvailabilityForm key={user?.id} products={products} /></details>
           )}
           <div className="booking-alert">
             Giá mới chỉ áp dụng cho báo giá mới. Hợp đồng và hóa đơn đã lập giữ nguyên dữ liệu.
           </div>
           {products.length ? (
-            <div className="portal-catalog-grid">
-              {products.map((row) => (
-                <article className="manager-section" key={first(row, "id")}>
-                  <p className="eyebrow">
-                    {first(row, "code")} · {label(row.condition)}
-                  </p>
-                  <h2>{first(row, "name")}</h2>
-                  {user?.role === 'MANAGER' && <button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Sửa loại kho & đơn giá</button>}
-                  <Status value={first(row, "status").toUpperCase()} />
-                  <dl className="manager-facts">
-                    <div>
-                      <dt>Nhóm kích thước</dt>
-                      <dd>
-                        {categories.get(first(row, "sizeId")) ||
-                          "Chưa cập nhật"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Kích thước</dt>
-                      <dd>{first(row, "dimensions")}</dd>
-                    </div>
-                    <div>
-                      <dt>Diện tích / Thể tích</dt>
-                      <dd>
-                        {first(row, "floorArea")} / {first(row, "volume")}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Giá thuê / tháng</dt>
-                      <dd>{money(row.monthlyPrice)}</dd>
-                    </div>
-                    <div>
-                      <dt>Số tháng cọc</dt>
-                      <dd>
-                        {row.depositMonths == null
-                          ? "Cần xác nhận"
-                          : first(row, "depositMonths")}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Thời gian thuê tối thiểu</dt>
-                      <dd>
-                        {row.minRentalDays == null
-                          ? "Cần xác nhận"
-                          : `${first(row, "minRentalDays")} ngày`}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Thuê theo ngày</dt>
-                      <dd>
-                        {row.allowDailyRental == null
-                          ? "Cần xác nhận"
-                          : row.allowDailyRental
-                            ? "Có hỗ trợ"
-                            : "Không hỗ trợ"}
-                      </dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
+            <div className="manager-table-wrap catalog-table-wrap"><table className="manager-table catalog-table" aria-label="Loại kho và đơn giá">
+              <thead><tr><th>Loại kho</th><th>Kích thước</th><th>Giá thuê / tháng</th><th>Điều kiện thuê</th><th>Trạng thái</th>{user?.role === 'MANAGER' && <th>Thao tác</th>}</tr></thead>
+              <tbody>{products.map(row => <tr key={first(row, 'id')}>
+                <td><strong>{first(row, 'name')}</strong><small>{first(row, 'code')} · {label(row.condition)}</small><small>{categories.get(first(row, 'sizeId')) || 'Chưa phân nhóm'}</small></td>
+                <td>{first(row, 'dimensions')}<small>{[first(row, 'floorArea'), first(row, 'volume')].filter(Boolean).join(' / ')}</small></td>
+                <td><strong>{money(row.monthlyPrice)}</strong></td>
+                <td><span>Cọc: {row.depositMonths == null ? 'Chưa thiết lập' : `${first(row, 'depositMonths')} tháng`}</span><small>Thuê tối thiểu: {row.minRentalDays == null ? 'Chưa thiết lập' : `${first(row, 'minRentalDays')} ngày`}</small><small>Theo ngày: {row.allowDailyRental == null ? 'Chưa thiết lập' : row.allowDailyRental ? 'Có' : 'Không'}</small></td>
+                <td><Status value={first(row, 'status').toUpperCase()} /></td>
+                {user?.role === 'MANAGER' && <td><div className="manager-inline-actions"><button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Chỉnh sửa</button></div></td>}
+              </tr>)}</tbody>
+            </table></div>
           ) : (
             <Empty />
           )}

@@ -18,36 +18,35 @@ export function RentalPeriodDetails({ period }: { period: RentalPeriodSummary })
   </div>;
 }
 
-const invoiceTitle = (invoice: RentalInvoiceLine) => invoice.type === 'INITIAL' ? 'Hóa đơn lần đầu' : invoice.type === 'RECURRING' ? 'Tiền thuê kỳ tiếp theo của đơn ban đầu' : invoice.type === 'RENEWAL' ? 'Hóa đơn gia hạn' : 'Phí quyết toán';
+const invoiceTitle = (invoice: RentalInvoiceLine) => invoice.type === 'INITIAL' ? 'Kỳ đầu' : invoice.type === 'RECURRING' ? 'Tiền thuê' : invoice.type === 'RENEWAL' ? 'Gia hạn' : 'Phí quyết toán';
+const groupTitle = (type: string, title: string) => ({ INITIAL: 'Kỳ đầu (gồm cọc)', RECURRING: 'Các kỳ tiếp theo', RENEWAL: 'Gia hạn' })[type] ?? title;
 
 export function RentalPaymentDetailsView({ details }: { details?: RentalPaymentDetails }) {
   if (!details) return null;
   return <section className="rental-account-details" aria-label="Chi tiết các khoản thanh toán">
-    <h3>Đã thu và các khoản còn lại</h3>
-    <dl className="lifecycle-totals">
-      <div><dt>Tổng đã thu, gồm tiền cọc</dt><dd>{moneyLabel(details.totalPaid)}</dd></div>
-      <div><dt>Còn lại theo hóa đơn</dt><dd>{moneyLabel(details.totalOutstanding)}</dd></div>
-      <div><dt>Tổng giá trị đã lập hóa đơn</dt><dd>{moneyLabel(details.totalInvoiced)}</dd></div>
+    <h3>Thanh toán</h3>
+    <dl className="lifecycle-totals lifecycle-totals--compact">
+      <div><dt>Đã thu (gồm cọc)</dt><dd>{moneyLabel(details.totalPaid)}</dd></div>
+      <div><dt>Chưa thanh toán</dt><dd>{moneyLabel(details.totalOutstanding)}</dd></div>
     </dl>
     {details.groups.length === 0 ? <p>Chưa có hóa đơn hoặc giao dịch thanh toán được ghi nhận cho đơn này.</p> : details.groups.map(group => <section className="rental-account-group" key={group.type} aria-label={group.title}>
-      <header><h4>{group.title}</h4><p>Đã thu <strong>{moneyLabel(group.paid)}</strong> · Còn lại <strong>{moneyLabel(group.balance)}</strong></p></header>
+      <details className="rental-account-group-disclosure"><summary><strong>{groupTitle(group.type, group.title)}</strong><span>Đã thu <b>{moneyLabel(group.paid)}</b> · Chưa thanh toán <b>{moneyLabel(group.balance)}</b></span></summary>
       <ul>{group.invoices.map((invoice, index) => <li key={invoice.id || index}>
         <div className="rental-invoice-description"><strong>{invoiceTitle(invoice)}</strong>
           {invoice.periodStart && invoice.periodEnd && <span>Kỳ: {formatPortalDate(invoice.periodStart)} – {formatPortalDate(invoice.periodEnd)}</span>}
-          <span className="rental-invoice-components">Hóa đơn gồm: {[
+          <span className="rental-invoice-components">{[
             invoice.rental > 0 ? `tiền thuê ${moneyLabel(invoice.rental)}` : '',
             invoice.deposit > 0 ? `tiền cọc ${moneyLabel(invoice.deposit)}` : '',
             invoice.services > 0 ? `dịch vụ ${moneyLabel(invoice.services)}` : '',
-            invoice.charges > 0 ? `phí được duyệt ${moneyLabel(invoice.charges)}` : '',
+            invoice.charges > 0 ? `phí ${moneyLabel(invoice.charges)}` : '',
           ].filter(Boolean).join(' + ') || moneyLabel(invoice.total)}</span>
           <small>{invoice.code}</small>
         </div>
-        <dl className="rental-invoice-amounts"><div><dt>Thành tiền</dt><dd>{moneyLabel(invoice.total)}</dd></div><div><dt>Đã thu</dt><dd>{moneyLabel(invoice.paid)}</dd></div><div><dt>Còn lại</dt><dd>{moneyLabel(invoice.balance)}</dd></div></dl>
-        <p className={`rental-invoice-due${invoice.dueState === 'OVERDUE' && invoice.balance > 0 ? ' is-overdue' : ''}`}>
-          {invoice.balance === 0 ? 'Đã thanh toán đủ hóa đơn này' : invoice.dueAt ? `${invoice.dueState === 'UPCOMING' ? 'Chưa đến hạn' : invoice.dueState === 'OVERDUE' ? 'Đã quá hạn' : 'Đến hạn hôm nay'} · Hạn thanh toán ${formatPortalDate(invoice.dueAt)}` : 'Chưa thanh toán đủ · Xem hóa đơn để kiểm tra hạn thanh toán'}
-        </p>
-      </li>)}</ul>
+        <dl className="rental-invoice-amounts"><div><dt>Đã thu</dt><dd>{moneyLabel(invoice.paid)}</dd></div><div><dt>Chưa thanh toán</dt><dd>{moneyLabel(invoice.balance)}</dd></div></dl>
+        {invoice.balance > 0 && <p className={`rental-invoice-due${invoice.dueState === 'OVERDUE' ? ' is-overdue' : ''}`}>
+          {invoice.dueAt ? `${invoice.dueState === 'UPCOMING' ? 'Chưa đến hạn' : invoice.dueState === 'OVERDUE' ? 'Quá hạn' : 'Đến hạn'} · ${formatPortalDate(invoice.dueAt)}` : 'Xem hóa đơn để kiểm tra hạn thanh toán'}
+        </p>}
+      </li>)}</ul></details>
     </section>)}
-    <p className="customer-note">Các khoản còn lại được ghi riêng theo từng hóa đơn; thanh toán gia hạn không thay thế tiền thuê còn thiếu của kỳ ban đầu. Ngày kết thúc mỗi kỳ không được tính thêm tiền thuê.</p>
   </section>;
 }

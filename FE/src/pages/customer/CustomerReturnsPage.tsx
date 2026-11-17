@@ -83,12 +83,14 @@ export function CustomerReturnsPage() {
   const eligibleRentals = (rentals.data?.items ?? []).filter(
     (item) =>
       (item.effectiveEndDate.slice(0, 10) <= vietnamCalendarDate(checkedAt) || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
-      isFullySettled(item) &&
       !item.pendingRenewal &&
       !activeReturnIds.has(item.reservationId),
   );
   const current = view === "returns" ? returns : settlements;
   const [reservationId, setReservationId] = useScopedSelection('reservation', eligibleRentals.map(item => ({ value: item.reservationId, aliases: [item.reservationReference] })));
+  const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
+  const selectedDebt = selectedRental ? outstandingForReturn(selectedRental) : null;
+  const canSubmitReturn = Boolean(selectedRental && isFullySettled(selectedRental));
   const refresh = () => {
     setCheckedAt(Date.now());
     returns.refresh();
@@ -136,7 +138,7 @@ export function CustomerReturnsPage() {
       <PortalPageHeader
         eyebrow="Kết thúc thuê"
         title="Trả kho và quyết toán tiền cọc"
-        description="Trả trước hạn và trả đúng hạn đều phải thanh toán đủ toàn bộ công nợ trước khi gửi yêu cầu trả kho. Theo dõi kiểm tra và quyết toán tiền cọc tại đây."
+        description="Gửi yêu cầu trả kho, theo dõi kiểm tra và quyết toán tiền cọc."
         action={
           <button
             className="button-secondary"
@@ -149,15 +151,6 @@ export function CustomerReturnsPage() {
         }
       />
       <ReturnInventoryNotice />
-      <section className="customer-panel" aria-label="Điều kiện thanh toán trước khi trả kho">
-        <h2>Thanh toán đủ trước khi trả kho</h2>
-        <p>Bạn cần thanh toán đủ tất cả hóa đơn còn hiệu lực theo hợp đồng, gồm tiền thuê các kỳ đã cam kết nhưng chưa đến hạn. Chấp thuận trả sớm xác nhận thời điểm trả; nhân viên chỉ nhận trả khi công nợ đã được tất toán.</p>
-        {(rentals.data?.items ?? []).filter(item => !isFullySettled(item)).map(item => <div className="customer-inline-notice" key={item.reservationId}>
-          <strong>{item.storageType.name} · {item.reservationReference}</strong>
-          <p>{outstandingForReturn(item) === null ? 'Chưa xác định được công nợ. Hãy làm mới dữ liệu hoặc liên hệ nhân viên để đối chiếu trước khi trả kho.' : <>Còn phải thanh toán trước khi trả: <strong>{moneyLabel(outstandingForReturn(item))}</strong>.</>}</p>
-          <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(item.reservationId)}`}>Xem hóa đơn và tất toán</Link>
-        </div>)}
-      </section>
       <div className="customer-module-layout">
         <section className="customer-panel">
           <div className="customer-module-tabs" role="tablist">
@@ -195,7 +188,7 @@ export function CustomerReturnsPage() {
             <SettlementList items={settlements.data?.items ?? []} />
           )}
         </section>
-        <div className="customer-return-forms"><form className="customer-panel customer-module-form" onSubmit={submit}>
+        <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources resources={[rentals, returns, approvals]} retry={refresh} />
           <fieldset
             disabled={
@@ -207,7 +200,7 @@ export function CustomerReturnsPage() {
           >
             <h2>Gửi yêu cầu trả kho</h2>
             <p>
-              Chọn yêu cầu thuê đã đến hạn hoặc đã được quản lý chấp thuận trả sớm và đã thanh toán đủ công nợ. Nhân viên sẽ kiểm tra từng kho trước khi quyết toán cọc.
+              Chọn kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Cần thanh toán đủ mọi hóa đơn, kể cả các kỳ cam kết chưa đến hạn, trước khi gửi yêu cầu.
             </p>
             <label className="field-label">
               Yêu cầu thuê đủ điều kiện trả
@@ -217,18 +210,23 @@ export function CustomerReturnsPage() {
                 value={reservationId}
                 onValueChange={(selectedValue) => setReservationId(selectedValue)}
               >
-                <option value="">Chọn kho đủ điều kiện trả</option>
+                <option value="">Chọn kho muốn trả</option>
                 {eligibleRentals.map((item) => (
                   <option key={item.reservationId} value={item.reservationId}>
-                    {item.storageType.name} · Kho {item.contracts.map(contract => contract.unit.unitCode).join(', ')} · hết hạn {formatPortalDate(item.effectiveEndDate)} · {item.reservationReference}
+                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần đối chiếu công nợ' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
                   </option>
                 ))}
               </EntitySelect>
             </label>
+            {selectedRental && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
+              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối chiếu công nợ' : 'Cần thanh toán trước khi trả kho'}</strong>
+              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và quyết toán tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
+              {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selectedRental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
+            </div>}
             <label className="field-label">
               Ghi chú
               <textarea
-                rows={4}
+                rows={2}
                 maxLength={2000}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
@@ -246,14 +244,14 @@ export function CustomerReturnsPage() {
             <button
               className="button-primary"
               type="submit"
-              disabled={submitting || !reservationId}
+              disabled={submitting || !canSubmitReturn}
             >
               <RotateCcw size={17} />{" "}
               {submitting ? "Đang gửi…" : "Gửi yêu cầu trả kho"}
             </button>
             {!rentals.loading && eligibleRentals.length === 0 && (
               <small>
-                Chưa có kho đủ điều kiện trả ngay. Hãy tất toán toàn bộ công nợ; nếu trả trước hạn, cần thêm chấp thuận của quản lý ở phần bên dưới.
+                Chưa có kho đến hạn hoặc được chấp thuận trả sớm. Bạn có thể gửi đề nghị trả trước hạn bên dưới.
               </small>
             )}
           </fieldset>

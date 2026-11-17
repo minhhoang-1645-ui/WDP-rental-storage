@@ -29,7 +29,11 @@ const returned = { ...contract, id: 'returned-contract', contractCode: 'CON-RETU
 const goods = [{ id: 'item', name: 'Trực thăng mô hình', itemCode: 'ITEM-ACCOUNT', unit: 'thùng', balance: 1 }];
 const rental = { ...fixture.rentals[0], reservationReference: reservation.id, rentalState: 'ACTIVE', startDate: '2026-11-17', effectiveEndDate: '2027-05-17', unitCount: 1, quantity: 1, paymentDetails, rentalPeriod,
   contracts: [{ ...contract, unit: contract.storageUnit, storedItems: goods }], billingSummary: { totalInvoiced: 10275000, totalPaid: 7275000, totalOutstanding: 3000000 }, pendingRenewal: null };
-const movement = { ...fixture['stock-movements'][0], status: 'COMPLETED', completedAt: when, lines: [{ id: 'line', storedItem: goods[0], requestedQty: 1, actualQty: 1, note: null }] };
+const movement = { ...fixture['stock-movements'][0], status: 'COMPLETED', completedAt: when, storageUnit: { ...unit, unitNumber: 'OLD-UNIT' }, currentStorageUnit: { ...unit, unitNumber: 'RV10-SM-04', floor: 'Ground', zone: 'RV10' }, lines: [{ id: 'line', storedItem: goods[0], requestedQty: 1, actualQty: 1, note: null }] };
+const appointments = [0, 1].map(index => ({ ...fixture.appointments[0], id: `appointment-${index}`, appointmentCode: `APP-${index}`, status: 'COMPLETED', assignedStaff: null, completedAt: when }));
+const renewals = [0, 1].map(index => ({ ...fixture.renewals[0], id: `renewal-${index}`, renewalCode: `REN-${index}`, status: 'COMPLETED', reservation: { ...fixture.renewals[0].reservation, storageType: reservation.product }, appendix: null }));
+const support = [0, 1].map(index => ({ ...fixture['support-requests'][0], id: `support-${index}`, supportCode: `SUP-${index}`, status: 'RESOLVED', resolutionNote: 'Đã kiểm tra và xử lý yêu cầu của bạn.' }));
+const claims = [0, 1].map(index => ({ id: `claim-${index}`, claimCode: `CLAIM-${index}`, status: 'RESOLVED', discoveredOn: '2026-11-17', unitCodeSnapshot: index ? 'SM-C08-004' : 'RV10-SM-04', description: 'Hàng hóa cần kiểm tra tình trạng tại kho.', updatedAt: when, estimatedValue: 500000, affectedItems: [{ id: 'item', name: 'Trực thăng mô hình', unit: 'thùng' }], evidenceLinks: [], staffFacts: 'Đã kiểm tra hàng tại kho.', decisionReason: 'Đã đối chiếu thông tin.', resolutionNote: 'Đã thông báo kết quả cho bạn.', decision: 'APPROVED' }));
 
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 await context.addInitScript(() => localStorage.setItem('wdp-auth-token-v1', 'customer-account-fixture'));
@@ -41,7 +45,7 @@ await context.route('**/api/**', async route => {
   if (path === 'reservations') return route.fulfill({ json: [reservation] });
   if (path.startsWith('reservations/')) return route.fulfill({ json: reservation });
   if (path.endsWith('/stored-items')) return route.fulfill({ json: goods });
-  const kind = path.split('/').at(-1), sources = { rentals: [rental], contracts: [active ? contract : { ...contract, status: 'COMPLETED' }, returned], 'stock-movements': [movement], 'damage-claims': [] };
+  const kind = path.split('/').at(-1), sources = { rentals: [rental], contracts: [active ? contract : { ...contract, status: 'COMPLETED' }, returned], 'stock-movements': [movement], 'damage-claims': claims, appointments, renewals, 'support-requests': support };
   const items = sources[kind] ?? [];
   return route.fulfill({ json: { items, total: items.length, page: 1, limit: 100 } });
 });
@@ -55,19 +59,24 @@ async function shot(name) {
 try {
   await page.goto(base + '/customer/reservations');
   const payment = page.locator('.reservation-payment-summary').first();
-  await payment.getByText('Lần đầu đã thu:', { exact: false }).waitFor();
-  assert.match(await payment.innerText(), /3\.000\.000/);
+  await payment.getByText('Đã thu:', { exact: false }).waitFor();
+  assert.match(await payment.innerText(), /7\.275\.000/);
+  assert.match(await payment.innerText(), /Chưa thanh toán:[\s\S]*3\.000\.000/);
+  assert.equal(await payment.locator('span').count(), 2);
   assert.doesNotMatch(await payment.innerText(), /6\.000\.000/);
   assert.match(await page.locator('main').innerText(), /3 tháng ban đầu \+ 3 tháng gia hạn = 6 tháng/);
   await shot('reservation-payment-summary');
 
   await page.goto(base + '/customer/reservations/RES-ACCOUNT');
+  await page.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
   const account = page.getByRole('region', { name: 'Chi tiết các khoản thanh toán' });
   await account.waitFor();
   assert.match(await account.innerText(), /7\.275\.000/);
   const initialGroup = account.getByRole('region', { name: 'Lần thanh toán đầu tiên' });
+  await initialGroup.locator('summary').click();
   assert.match(await initialGroup.innerText(), /tiền thuê 1\.500\.000.*tiền cọc 1\.500\.000/);
   const recurringGroup = account.getByRole('region', { name: 'Các kỳ còn lại của đơn thuê ban đầu' });
+  await recurringGroup.locator('summary').click();
   assert.equal(await recurringGroup.locator('li').count(), 2);
   assert.match(await recurringGroup.innerText(), /17\/12\/2026 – 17\/01\/2027/);
   assert.match(await recurringGroup.innerText(), /17\/01\/2027 – 17\/02\/2027/);
@@ -79,7 +88,7 @@ try {
   await page.goto(base + '/customer/rentals');
   await page.getByRole('heading', { name: 'Hàng đang lưu · 1 mặt hàng' }).waitFor();
   assert.equal(await page.locator('.customer-unit-inventory').count(), 1);
-  await page.getByText('Xem chi tiết tiền đã thu và các khoản còn lại', { exact: true }).click();
+  await page.getByText('Xem thanh toán', { exact: true }).click();
   await account.waitFor();
   assert.match(await account.innerText(), /4\.275\.000/);
   await shot('rental-account-details');
@@ -87,11 +96,37 @@ try {
   await page.goto(base + '/customer/stock-movements');
   const items = page.getByRole('region', { name: 'Hàng hóa trong phiếu' });
   await items.getByText('Trực thăng mô hình', { exact: true }).waitFor();
-  assert.equal(await page.locator('.stock-card').first().evaluate(card => card.firstElementChild?.className), 'stock-movement-items');
+  assert(await page.locator('.stock-card').first().evaluate(card => card.firstElementChild?.classList.contains('stock-movement-items')));
+  assert.equal(await page.locator('.stock-card .record-identity').count(), 0);
+  assert.doesNotMatch(await items.innerText(), /ITEM-ACCOUNT|Số lượng yêu cầu|Hàng hóa trong phiếu/);
+  assert.match(await page.locator('.stock-card').first().innerText(), /RV10-SM-04 · Tầng trệt · Khu RV10/);
+  assert.doesNotMatch(await page.locator('.stock-card').first().innerText(), /OLD-UNIT/);
   assert.match(await items.innerText(), /1 thùng/);
   await shot('customer-stock-item-names');
   await page.setViewportSize({ width: 390, height: 844 }); await shot('customer-stock-item-names-mobile');
   await page.setViewportSize({ width: 1440, height: 1000 });
+
+  for (const [path, selector, summary, name] of [
+    ['/customer/appointments', '.appointment-request-card', 'Chi tiết yêu cầu', 'appointment-cards'],
+    ['/customer/renewals', '.customer-request-card', 'Chi tiết gia hạn', 'renewal-cards'],
+    ['/customer/support', '.customer-request-card', 'Chi tiết và phản hồi', 'support-cards'],
+    ['/customer/damage-claims', '.customer-claim-card', 'Chi tiết sự cố', 'claim-cards'],
+  ]) {
+    await page.goto(base + path);
+    if (path.endsWith('appointments')) await page.getByRole('tab', { name: 'Đã hoàn tất / hủy' }).click();
+    const cards = page.locator(selector);
+    await cards.nth(1).waitFor();
+    assert.equal(await cards.count(), 2);
+    const disclosure = cards.first().locator('details').filter({ has: page.locator('summary').getByText(summary, { exact: true }) }).first();
+    assert.equal(await disclosure.getAttribute('open'), null);
+    await cards.first().getByText(summary, { exact: true }).click();
+    assert.notEqual(await disclosure.getAttribute('open'), null);
+    await cards.first().getByText(summary, { exact: true }).click();
+    assert.equal(await disclosure.getAttribute('open'), null);
+    await shot(name);
+    await page.setViewportSize({ width: 390, height: 844 }); await shot(`${name}-mobile`);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
 
   await page.goto(base + '/customer/damage-claims');
   await page.getByRole('button', { name: 'Báo sự cố', exact: true }).click();

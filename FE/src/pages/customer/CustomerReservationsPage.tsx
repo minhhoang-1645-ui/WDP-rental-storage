@@ -162,7 +162,7 @@ export function CustomerReservationsPage() {
                             : "Không yêu cầu"}
                         </td>
                         <td>
-                          <ReservationPaymentSummary summary={item.rentalSummary} original={item.quote.quotedTotalAmount ?? item.quote.grandTotal} />
+                          <ReservationPaymentSummary summary={item.rentalSummary} />
                         </td>
                         <td>
                           <ReservationStatus status={item.status} />
@@ -199,7 +199,7 @@ export function CustomerReservationsPage() {
                       </div>
                       <div>
                         <dt>Thanh toán</dt>
-                        <dd><ReservationPaymentSummary summary={item.rentalSummary} original={item.quote.quotedTotalAmount ?? item.quote.grandTotal} /></dd>
+                        <dd><ReservationPaymentSummary summary={item.rentalSummary} /></dd>
                       </div>
                     </dl>
                     <Link

@@ -22,8 +22,7 @@ export function ManagerPricingExplanation({ quote }: { quote: Row }) {
       ['Tiền thuê kỳ đầu', money(initial.rentalAmount)], ['Cọc thu lần đầu', money(initial.depositAmount)],
       ['Mua dịch vụ lần đầu', money(initial.purchaseAddOnAmount)], ['Thuê dịch vụ kỳ đầu', money(initial.rentalAddOnAmount)],
       ['Tổng lần đầu', money(initial.totalAmount)], ['Dự kiến các kỳ tiếp theo', money(initial.remainingAmount)],
-    ]} /></> : <p className="manager-action-copy">Snapshot cũ chưa có phân tách lần đầu/các kỳ sau. Đối chiếu hóa đơn, không suy ra số tiền phải trả ngay từ tổng cả kỳ.</p>}
-    <p className="manager-action-copy">Các khoản trên lấy từ snapshot BE. Số còn phải trả hiện tại nằm trên từng hóa đơn; tổng cả kỳ gồm cọc không phải toàn bộ chi phí không hoàn lại.</p>
-    <details><summary>Chi tiết cách tính đã lưu</summary>{rows(quote.lineItems).map((item, index) => <div className="portal-quote-line" key={`${first(item, 'code')}:${index}`}><span>{first(item, 'label')}<small>{first(item, 'basis')}</small></span><strong>{money(item.amount)}</strong></div>)}</details>
+    ]} /></> : null}
+    {rows(quote.lineItems).length > 0 && <details><summary>Chi tiết cách tính</summary>{rows(quote.lineItems).map((item, index) => <div className="portal-quote-line" key={`${first(item, 'code')}:${index}`}><span>{first(item, 'label')}<small>{first(item, 'basis')}</small></span><strong>{money(item.amount)}</strong></div>)}</details>}
   </section>;
 }

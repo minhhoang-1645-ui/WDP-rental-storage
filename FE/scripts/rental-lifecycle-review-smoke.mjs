@@ -69,16 +69,25 @@ async function shot(page, name) {
 try {
   const app = await setup('CUSTOMER'), page = app.page;
   await page.goto(base + '/customer/reservations');
-  await page.getByText('Gia hạn đã thu:', { exact: false }).first().waitFor();
+  await page.getByText('Đã thu:', { exact: false }).first().waitFor();
   assert.match(await page.locator('main').innerText(), /9\.215\.000/);
   await shot(page, 'customer-reservations');
   await page.goto(base + '/customer/reservations/RES-TEST');
-  await page.getByRole('heading', { name: 'Kho hiện tại và các lần thay đổi' }).waitFor();
+  await page.getByRole('heading', { name: 'Kho và thanh toán' }).waitFor();
+  await page.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
   assert.match(await page.locator('main').innerText(), /5\.415\.000/);
   await shot(page, 'customer-reservation-detail');
   await page.goto(base + '/customer/booking-history');
+  const historyCard = page.locator('.booking-history-card').first();
+  await historyCard.getByRole('button', { name: 'Xem chi tiết', exact: true }).waitFor();
+  assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);
+  await shot(page, 'customer-booking-history-collapsed');
+  await historyCard.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
+  await historyCard.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
   await page.getByRole('heading', { name: 'Lịch sử gia hạn' }).waitFor();
   await shot(page, 'customer-booking-history');
+  await historyCard.getByRole('button', { name: 'Ẩn chi tiết', exact: true }).click();
+  assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);
   await page.goto(base + '/customer/rentals');
   await page.getByRole('heading', { name: 'Hàng đang lưu · 1 mặt hàng' }).waitFor();
   await page.locator('.rental-goods li').filter({ hasText: 'Máy lạnh' }).waitFor();

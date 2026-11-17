@@ -111,11 +111,11 @@ export function CustomerRentalsPage() {
                   <dd>{rental.unitCount}</dd>
                 </div>
                 <div>
-                  <dt>Còn lại theo hóa đơn</dt>
+                  <dt>Chưa thanh toán</dt>
                   <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
-              <details className="rental-account-disclosure"><summary>Xem chi tiết tiền đã thu và các khoản còn lại</summary><RentalPaymentDetailsView details={rental.paymentDetails} /></details>
+              <details className="rental-account-disclosure"><summary>Xem thanh toán</summary><RentalPaymentDetailsView details={rental.paymentDetails} /></details>
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
                   <div key={contract.id} className="customer-unit-inventory">

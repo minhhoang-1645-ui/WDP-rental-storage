@@ -1,6 +1,7 @@
 import { selectChoice } from './select-choice.mjs';
 // Fully intercepted API traffic: this test never writes to the development/shared DB.
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { launchTestBrowser } from './browser-test.mjs';
 
 const browser = await launchTestBrowser();
@@ -52,7 +53,18 @@ try {
   await catalogGroup.click();
   assert.equal(await catalogGroup.getAttribute('aria-expanded'), 'true');
   await catalogLink.waitFor();
-  await page.getByRole('button', { name: 'Sửa loại kho & đơn giá', exact: true }).click();
+  const catalogTable = page.getByRole('table', { name: 'Loại kho và đơn giá' });
+  await catalogTable.getByRole('cell', { name: '1.500.000 ₫', exact: false }).waitFor();
+  assert.equal(await catalogTable.locator('tbody tr').count(), 1);
+  assert.equal(await page.locator('.portal-catalog-grid').count(), 0);
+  assert.equal(await page.locator('.catalog-availability').getAttribute('open'), null);
+  await mkdir('artifacts/catalog-table', { recursive: true });
+  await page.screenshot({ path: 'artifacts/catalog-table/desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Catalog overflows viewport');
+  await page.screenshot({ path: 'artifacts/catalog-table/mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Chỉnh sửa', exact: true }).click();
   await page.getByLabel('Giá tháng (VND)', { exact: true }).fill('1800000');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });

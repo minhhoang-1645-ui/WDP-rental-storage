@@ -23,8 +23,13 @@
 .reservation-payment-summary { display: grid; gap: 6px; min-width: 170px; font-size: 13px; }
 .reservation-payment-summary > span { display: block; }
 .reservation-payment-summary strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reservation-payment-summary > span { display: grid; gap: 2px; }
 .reservation-payment-summary small { color: var(--color-slate); font-size: 11px; }
 .reservation-paid-total { color: var(--color-navy); }
+.booking-history-toggle { justify-self: start; }
+.booking-history-toggle svg { transition: transform .15s ease; }
+.booking-history-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.booking-history-details:not([hidden]) { display: grid; gap: 18px; border-top: 1px solid var(--color-border); padding-top: 18px; }
 .rental-period-caption { display: block; margin-top: 8px; line-height: 1.6; font-size: 13px; color: var(--color-navy); font-weight: 600; }
 .rental-period-details { display: grid; gap: 18px; }
 .rental-account-details { display: grid; gap: 18px; margin-block: 20px; min-width: 0; }
@@ -73,6 +78,86 @@
 .lifecycle-events { display: grid; gap: 10px; }
 .lifecycle-events > article { display: grid; gap: 5px; border-left: 3px solid var(--color-navy); border-radius: 0 10px 10px 0; padding: 12px 16px; background: var(--color-canvas); font-size: 14px; }
 .lifecycle-events small { color: var(--color-slate); overflow-wrap: anywhere; }
+.lifecycle-totals--compact { grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; }
+.lifecycle-totals--compact > div { padding: 12px 14px; }
+.lifecycle-current-unit { margin: 0; }
+.lifecycle-disclosure, .early-return-disclosure, .customer-request-disclosure, .appointment-request-detail { min-width: 0; border-top: 1px solid var(--color-border); padding-top: 12px; }
+:is(.lifecycle-disclosure, .early-return-disclosure, .customer-request-disclosure, .appointment-request-detail) > summary { cursor: pointer; color: var(--color-navy); font-weight: 600; font-size: 14px; }
+.lifecycle-disclosure > .lifecycle-events { margin-top: 16px; }
+.rental-account-group-disclosure > summary { cursor: pointer; padding: 14px 18px; background: var(--color-canvas); font-size: 14px; }
+.rental-account-group-disclosure > summary > span { display: block; margin-top: 6px; font-size: 13px; color: var(--color-slate); }
+.rental-account-group-disclosure b { color: var(--color-ink); font-variant-numeric: tabular-nums; }
+.rental-account-group-disclosure > ul { list-style: none; margin: 0; padding: 0; }
+.rental-account-group-disclosure > ul > li { display: grid; grid-template-columns: minmax(0,1fr) minmax(230px,.65fr); gap: 12px 20px; padding: 16px 18px; border-top: 1px solid var(--color-border); }
+.rental-account-group-disclosure .rental-invoice-amounts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.return-payment-state { display: grid; gap: 8px; padding: 14px; border: 1px solid #ead4a2; border-radius: 10px; background: #fff9eb; font-size: 14px; }
+.return-payment-state.is-settled { background: #edf7f1; border-color: #cfe5d7; }
+.return-payment-state p { margin: 0; }
+.return-payment-state > a { justify-self: start; }
+.early-return-panel { display: grid; gap: 12px; }
+.early-return-panel > :is(h2,p) { margin: 0; }
+.early-return-panel h2 { font-size: 18px; }
+.early-return-panel p { font-size: 14px; }
+.early-return-panel fieldset { display: grid; gap: 14px; padding-top: 14px; }
+.early-return-history { display: grid; gap: 12px; }
+.early-return-history h3 { margin: 0; font-size: 14px; }
+.early-return-history summary > span { display: inline-grid; gap: 5px; max-width: 90%; vertical-align: top; overflow-wrap: anywhere; }
+.early-return-history summary small { color: var(--color-slate); font-weight: 400; }
+.early-return-request-detail { display: grid; gap: 10px; padding-top: 12px; font-size: 14px; overflow-wrap: anywhere; }
+.early-return-request-detail p { margin: 0; }
+.customer-request-section, .customer-appointments-list { min-width: 0; display: grid; gap: 16px; }
+.customer-request-section .customer-panel-heading { margin: 0; }
+.customer-request-section .customer-panel-heading h2 { font-size: 18px; font-weight: 700; }
+.customer-request-card, .appointment-request-card { background: var(--color-surface); box-shadow: 0 3px 10px rgb(26 46 60 / 4%); }
+.customer-request-card .customer-record-heading h2 { font-size: 18px; font-weight: 700; margin-top: 6px; }
+.appointment-request-list { gap: 18px; }
+.appointment-request-card .customer-record-heading h2 { font-size: 18px; font-weight: 700; }
+.appointment-request-time { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 14px; color: var(--color-slate); }
+.appointment-request-card .appointment-assignment { background: transparent; border: 0; margin: 4px 0; padding: 0; font-size: 14px; }
+.appointment-request-detail > :not(summary) { margin-top: 12px; }
+.customer-request-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.customer-request-disclosure > :not(summary) { margin-top: 14px; }
+.stock-movement-items.is-compact { padding: 0; border: 0; margin: 0 0 16px; }
+.stock-movement-items.is-compact li { flex-direction: row; padding: 12px; }
+.stock-movement-items.is-compact .stock-movement-item-quantity { white-space: nowrap; }
+.stock-card-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.booking-history-summary { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.customer-claim-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; align-items: start; }
+.claim-record-list { display: grid; gap: 20px; }
+.customer-claim-card { display: grid; gap: 12px; min-width: 0; padding: 20px; border: 1px solid var(--color-border); }
+.customer-claim-card > p { margin: 0; }
+.customer-claim-card .claim-review-heading h2 { font-size: 18px; font-weight: 700; }
+.customer-claim-card .claim-review-results { margin-top: 12px; }
+.staff-claim-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; align-items: start; }
+.staff-claim-card { display: grid; gap: 12px; padding: 20px; min-width: 0; }
+.staff-claim-card .claim-review-heading h2 { font-size: 18px; font-weight: 700; }
+.staff-claim-card .claim-status { white-space: normal; }
+.staff-claim-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--color-slate); }
+.staff-claim-facts { background: var(--color-canvas); border-radius: 8px; padding: 12px; }
+.staff-claim-facts h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.staff-claim-facts p { margin: 0; font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.staff-claim-card .claim-record-editor h3 { font-size: 15px; }
+.staff-claim-card .claim-record-editor .portal-actions { flex-wrap: wrap; }
+.customer-claims-page > .manager-page-header, .staff-claims-page > .manager-page-header { flex-wrap: wrap; }
+.customer-claims-page > .manager-page-header > div, .staff-claims-page > .manager-page-header > div { min-width: 0; }
+.catalog-availability { margin-bottom: 16px; border: 1px solid var(--color-border); border-radius: 12px; padding: 14px 18px; background: var(--color-surface); }
+.catalog-availability > summary { color: var(--color-navy); font-weight: 600; cursor: pointer; }
+.catalog-availability > .manager-section { margin-top: 16px; }
+.catalog-table td { vertical-align: top; }
+.catalog-table td:first-child { min-width: 190px; }
+.catalog-table td:nth-child(3) { white-space: nowrap; }
+.catalog-table td:nth-child(4) { min-width: 180px; }
+@media (max-width: 1100px) {
+  .staff-claim-list { grid-template-columns: minmax(0,1fr); }
+  .customer-claim-list { grid-template-columns: minmax(0,1fr); }
+  .booking-history-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .rental-account-group-disclosure > ul > li { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 640px) {
+  .booking-history-summary { grid-template-columns: minmax(0,1fr); }
+  .lifecycle-totals--compact { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .lifecycle-totals--compact dd { font-size: 15px; }
+}
 .customer-unit-list > .customer-unit-inventory { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 16px; }
 .rental-goods { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--color-border); padding-top: 16px; }
 .rental-goods h3 { font-size: 15px; margin-bottom: 12px; }

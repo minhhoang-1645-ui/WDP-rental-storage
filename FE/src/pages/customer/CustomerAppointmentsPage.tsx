@@ -1,4 +1,4 @@
-import { CopyRecordCode, RecordIdentity } from '../../components/workspace/RecordIdentity';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
@@ -172,7 +172,7 @@ export function CustomerAppointmentsPage() {
         }
       />
       <div className="customer-module-layout">
-        <section className="customer-panel">
+        <section className="customer-appointments-list" aria-label="Các yêu cầu bàn giao">
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -214,38 +214,29 @@ export function CustomerAppointmentsPage() {
               <span>Lịch bàn giao của bạn sẽ được hiển thị tại đây.</span>
             </PortalEmpty>
           ) : (
-            <div className="customer-card-list">
+            <div className="customer-card-list appointment-request-list">
               {visible.map((item) => (
                 <article
-                  className="customer-record-card customer-record-card--compact"
+                  className="customer-record-card customer-record-card--compact appointment-request-card"
                   key={item.id}
                 >
                   <div className="customer-record-heading">
                     <div>
-                      <h2>{formatPortalDate(item.scheduledAt, true)}</h2>
-                      <RecordIdentity row={{ ...item, storageType: contracts.data?.items.find(contract => contract.reservation.id === item.reservation.id)?.storageType }} resource="appointments" showCode={false} />
-                      <CopyRecordCode value={item.appointmentCode} />
+                      <h2>{item.allocatedUnits.map(unit => unit.unitCode).join(', ') || 'Chờ cấp kho'}</h2>
+                      <p className="appointment-request-time"><CalendarClock size={16} aria-hidden="true" />{formatPortalDate(item.scheduledAt, true)}</p>
                     </div>
                     <CustomerStatus status={item.status} />
                   </div>
-                  <p>
-                    Yêu cầu đặt kho: <strong>{item.reservation.reference}</strong>
-                  </p>
-                  {item.allocatedUnits.length > 0 && (
-                    <p>
-                      Kho:{" "}
-                      {item.allocatedUnits
-                        .map((unit) => unit.unitCode)
-                        .join(", ")}
-                    </p>
-                  )}
                   <div className={`appointment-assignment${item.assignmentStatus === 'ASSIGNED' ? ' is-assigned' : ''}`}>
-                    <strong>{item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang bố trí lại nhân viên bàn giao' : item.assignedStaff ? `Nhân viên phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Lịch đã hoàn tất bàn giao' : 'Đang chờ quản lý phân công nhân viên'}</strong>
-                    {['REQUESTED', 'CONFIRMED'].includes(item.status) && <span>{item.assignedStaff && item.assignmentStatus !== 'NEEDS_REASSIGNMENT' ? 'Nhân viên này sẽ tiếp nhận và bàn giao kho cho bạn theo lịch hẹn.' : 'Xác nhận giờ hẹn chưa đồng nghĩa đã có người phụ trách. Thông tin sẽ cập nhật tại đây sau khi quản lý phân công.'}</span>}
+                    <strong>{item.status === 'CANCELLED' ? 'Lịch đã hủy' : item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang phân công lại nhân viên' : item.assignedStaff ? `Phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Đã bàn giao kho' : 'Đang chờ quản lý phân công'}</strong>
                   </div>
+                  <details className="appointment-request-detail"><summary>Chi tiết yêu cầu</summary>
+                  <p>Đơn đặt kho: <strong>{item.reservation.reference}</strong></p>
+                  <CopyRecordCode value={item.appointmentCode} />
                   {item.note && <p>Ghi chú: {item.note}</p>}
                   {item.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Đã nhận giấy tờ, hướng dẫn và chìa khóa. Chờ ngày bắt đầu thuê để sử dụng kho và đưa hàng vào; hệ thống tự kích hoạt khi đủ điều kiện.</p>}
                   {item.usageStatus !== 'WAITING_FOR_RENTAL_START' && workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
+                  </details>
                 </article>
               ))}
             </div>

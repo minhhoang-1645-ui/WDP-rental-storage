@@ -46,14 +46,18 @@ try {
   for (const timing of ['early', 'normal']) {
     early = timing === 'early'; debt = readinessDebt = 3000000;
     await page.goto(base + '/customer/returns');
-    const policy = page.getByRole('region', { name: 'Điều kiện thanh toán trước khi trả kho' });
-    await policy.waitFor();
-    await policy.getByText('3.000.000', { exact: false }).waitFor();
     assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
     const choice = page.getByRole('combobox', { name: 'Yêu cầu thuê đủ điều kiện trả', exact: true });
     await choice.click();
-    assert.equal(await page.locator(`[role="option"][data-value="${rental().reservationId}"]`).count(), 0);
-    await page.keyboard.press('Escape');
+    const option = page.locator(`[role="option"][data-value="${rental().reservationId}"]`);
+    await option.waitFor();
+    assert.match(await option.innerText(), /Cần thanh toán/);
+    await option.click();
+    const payment = page.getByRole('region', { name: 'Thanh toán của kho muốn trả' });
+    await payment.getByText('3.000.000', { exact: false }).waitFor();
+    assert.equal(await payment.getByRole('link').getAttribute('href'), `/customer/payments?reservation=${rental().reservationId}`);
+    assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
+    assert.equal(await page.getByRole('region', { name: 'Điều kiện thanh toán trước khi trả kho' }).count(), 0);
     if (timing === 'early') {
       await shot(page, 'customer-scheduled-debt-blocked');
       await page.setViewportSize({ width: 390, height: 844 }); await shot(page, 'customer-scheduled-debt-blocked-mobile');
@@ -66,6 +70,7 @@ try {
   }
   readinessDebt = null;
   await page.reload();
+  await selectChoice(page.getByRole('combobox', { name: 'Yêu cầu thuê đủ điều kiện trả', exact: true }), rental().reservationId);
   await page.getByText('Chưa xác định được công nợ.', { exact: false }).waitFor();
   assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
 
@@ -85,5 +90,5 @@ try {
   assert.equal(await manager.page.locator('select').count(), 0);
   assert.equal(await manager.page.locator('textarea').count(), 0);
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-  console.log('PASS: early and normal returns block all scheduled debt, full payment enables return, unknown ledger blocks return, Manager timing approval stays available and waiver controls are removed. All requests mocked.');
+  console.log('PASS: approved early/normal rentals stay selectable with scoped payment CTA; all debt blocks submission, full settlement enables return, unknown ledger blocks return; Manager approval unchanged. All requests mocked.');
 } finally { await browser.close(); }

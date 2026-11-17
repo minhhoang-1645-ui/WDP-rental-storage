@@ -22,7 +22,7 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import type { CustomerRenewal, CustomerRental } from "../../types/customer";
-import { RenewalReview } from '../../components/manager/RenewalReview';
+
 import { Link, useSearchParams } from 'react-router-dom';
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
@@ -284,10 +284,9 @@ export function CustomerRenewalsPage() {
                   {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-secondary" to={invoice ? `/customer/payments?invoice=${encodeURIComponent(invoice.id)}` : '/customer/payments'}>Xem hóa đơn gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
                   {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
-                    ? <details className="customer-request-disclosure"><summary>Phụ lục đã ký</summary><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} signed /></details>
+                    ? null
                     : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và xác nhận phụ lục {item.appendix.code}</button>)}
                   {selectedAppendix?.id === item.id && item.appendix && <div><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} /><SignatureAgreement key={`${item.id}:${item.appendix.snapshotHash}`} label="Xác thực và ký phụ lục" busy={Boolean(acceptingAppendixId)} otpConfigured={item.appendix.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: item.appendix?.snapshotHash }) })} onSubmit={(signature, proof) => acceptAppendix(item, signature, proof)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
-                  <details className="renewal-review-details customer-request-disclosure"><summary>Chi tiết gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ); })}
             </div>

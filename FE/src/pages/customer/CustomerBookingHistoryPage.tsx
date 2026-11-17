@@ -47,7 +47,7 @@ export function CustomerBookingHistoryPage() {
           <dl className="customer-record-facts booking-history-summary"><div><dt>Thời gian thuê</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd></div><div><dt>Kho · {Number(entry.reservation.quantity ?? 0)}</dt><dd>{entry.unitCodes.join(', ') || 'Chưa cấp kho'}</dd></div><div><dt>Đã đóng</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalPaid ?? summary.totalPaid) : 'Chưa có dữ liệu'}</dd></div><div><dt>Chưa thanh toán</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalOutstanding ?? Math.max(0, summary.totalInvoiced - summary.totalPaid)) : 'Chưa có dữ liệu'}</dd></div></dl>
           <div id={detailId} className="booking-history-details" hidden={!isExpanded}>
 
-          <ReservationLifecycle summary={summary} />
+          <ReservationLifecycle summary={summary} monthlyAmount={typeof (entry.reservation.quote as Row | undefined)?.monthlyUnitPrice === 'number' ? Number((entry.reservation.quote as Row).monthlyUnitPrice) * Number(entry.reservation.quantity ?? 1) : undefined} />
           <details className="customer-inline-notice">
             <summary>Các mốc xử lý</summary>
             <ul>

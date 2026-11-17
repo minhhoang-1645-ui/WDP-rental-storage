@@ -16,7 +16,7 @@ const summary = { currentUnits: [{ contractId: 'contract-id', contractCode: 'CON
   renewals: [{ id: 'renewal', code: 'REN-TEST', status: 'COMPLETED', months: 3, previousEndDate: '2026-12-17', endDate: '2027-03-17', amount: 5415000, discount: 285000, paid: 5415000 }],
   transfers: [{ id: 'transfer-id', code: 'TRF-TEST', from: oldUnit.unitCode, to: newUnit.unitCode, completedAt: when, handoverReport: null }] };
 const reservation = { ...fixture.reservations[0], id: 'RES-TEST', status: 'CONFIRMED', startDate: '2026-11-17', endDateExclusive: '2027-03-17', periodMode: 'duration', durationMonths: 1, rentalSummary: summary,
-  product: { ...fixture.reservations[0].product, dimensions: '1,5 × 2,0 × 2,4 m' }, quote: { ...fixture.reservations[0].quote, quotedTotalAmount: 3800000, grandTotal: 3800000, message: 'Báo giá ban đầu' } };
+  product: { ...fixture.reservations[0].product, dimensions: '1,5 × 2,0 × 2,4 m' }, quote: { ...fixture.reservations[0].quote, monthlyUnitPrice: 1900000, quotedTotalAmount: 3800000, grandTotal: 3800000, message: 'Báo giá ban đầu' } };
 const contract = { ...fixture.contracts[0], storageUnit: newUnit, reservation: { ...fixture.contracts[0].reservation, reference: 'RES-TEST' }, startDate: '2026-11-17', endDate: '2027-03-17' };
 const rental = { ...fixture.rentals[0], reservationReference: 'RES-TEST', rentalState: 'ACTIVE', startDate: '2026-11-17', effectiveEndDate: '2027-03-17', quantity: 1, unitCount: 1, historicalPricing: { billingMode: 'MONTHLY' }, pendingRenewal: null,
   contracts: [{ ...contract, unit: newUnit, storedItems: goods, transfers: [{ code: 'TRF-TEST', from: oldUnit.unitCode, to: newUnit.unitCode, completedAt: when }] }], billingSummary: { payableBalance: 0, totalOutstanding: 0 } };
@@ -69,13 +69,12 @@ async function shot(page, name) {
 try {
   const app = await setup('CUSTOMER'), page = app.page;
   await page.goto(base + '/customer/reservations');
-  await page.getByText('Đã thu:', { exact: false }).first().waitFor();
-  assert.match(await page.locator('main').innerText(), /9\.215\.000/);
+  await page.locator('.reservation-original-price').first().waitFor();
+  assert.match(await page.locator('main').innerText(), /3\.800\.000/);
   await shot(page, 'customer-reservations');
   await page.goto(base + '/customer/reservations/RES-TEST');
   await page.getByRole('heading', { name: 'Kho và thanh toán' }).waitFor();
-  await page.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
-  assert.match(await page.locator('main').innerText(), /5\.415\.000/);
+  assert.match(await page.getByRole('region', { name: 'Cập nhật kỳ thuê' }).innerText(), /9\.215\.000/);
   await shot(page, 'customer-reservation-detail');
   await page.goto(base + '/customer/booking-history');
   const historyCard = page.locator('.booking-history-card').first();
@@ -83,8 +82,7 @@ try {
   assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);
   await shot(page, 'customer-booking-history-collapsed');
   await historyCard.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
-  await historyCard.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
-  await page.getByRole('heading', { name: 'Lịch sử gia hạn' }).waitFor();
+  await historyCard.getByRole('heading', { name: 'Kho và thanh toán' }).waitFor();
   await shot(page, 'customer-booking-history');
   await historyCard.getByRole('button', { name: 'Ẩn chi tiết', exact: true }).click();
   assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);

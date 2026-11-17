@@ -26,7 +26,7 @@ import {
 } from "../../components/customer/CustomerPortalHelpers";
 import { useApiResource } from "../../services/useApiResource";
 import type { PendingReservation } from "../../types/booking";
-import { CustomerRentalProgress } from '../../components/customer/CustomerRentalProgress';
+
 
 export function CustomerReservationDetailPage() {
   const { id = "" } = useParams();
@@ -74,8 +74,8 @@ export function CustomerReservationDetailPage() {
         action={<ReservationStatus status={reservation.status} />}
       />
       <CopyRecordCode value={reservation.id} label="Mã đơn" />
-      <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
-      <div className="customer-panel"><ReservationLifecycle summary={reservation.rentalSummary} /></div>
+
+      <div className="customer-panel"><ReservationLifecycle summary={reservation.rentalSummary} monthlyAmount={typeof reservation.quote.monthlyUnitPrice === 'number' ? reservation.quote.monthlyUnitPrice * reservation.quantity : undefined} /></div>
       <div className="customer-detail-grid">
         <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
@@ -127,14 +127,6 @@ export function CustomerReservationDetailPage() {
                   {formatPortalDate(reservation.endDateExclusive)}
                 </dd>
               </div>
-              <div>
-                <dt>Kỳ thuê ban đầu</dt>
-                <dd>
-                  {reservation.periodMode === "duration"
-                    ? `${reservation.durationMonths} tháng`
-                    : "Theo ngày kết thúc"}
-                </dd>
-              </div>
             </div>
             )}
           </section>
@@ -160,8 +152,18 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
+<<<<<<< Updated upstream
             {reservation.quote.estimatedInitialAmountDue !== undefined }
             <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
+=======
+<<<<<<< HEAD
+            {reservation.quote.estimatedInitialAmountDue !== undefined && <p>Dự kiến lần thanh toán đầu tiên: <strong>{quoteLabel(reservation.quote.estimatedInitialAmountDue)}</strong> (theo báo giá lúc đặt).</p>}
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Giá được ghi nhận khi đặt kho.' : reservation.quote.message}</p>
+=======
+            {reservation.quote.estimatedInitialAmountDue !== undefined }
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
+>>>>>>> 4bd1e7de83f07343ad3beb349a9f8b4b3080e218
+>>>>>>> Stashed changes
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>

@@ -83,7 +83,7 @@ function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineIn
   const { items: visibleItems, pagination } = useCustomerPagination(items)
   if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện sau khi NestBox xác nhận yêu cầu đặt kho hoặc kỳ thanh toán.</span></PortalEmpty>
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
-  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => {
+  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table customer-invoices-table"><thead><tr><th>Hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => {
     const payable = !invoicePaymentBlockedBySchedule(invoice) && invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status);
     const unsigned = invoice.signing?.complete === false;
     const expired = paymentWindowClosed(invoice);

@@ -26,6 +26,60 @@
 .reservation-payment-summary > span { display: grid; gap: 2px; }
 .reservation-payment-summary small { color: var(--color-slate); font-size: 11px; }
 .reservation-paid-total { color: var(--color-navy); }
+.reservation-original-price { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rental-summary-facts { grid-template-columns: minmax(250px,1.5fr) repeat(3,minmax(0,1fr)); align-items: start; }
+.rental-summary-facts > div:first-child dd { flex-wrap: nowrap; white-space: nowrap; }
+.rental-summary-facts dd svg { flex: none; }
+.customer-contract-dialog { width: min(860px,calc(100vw - 32px)); max-width: calc(100vw - 32px); }
+.customer-contract-dialog > header { align-items: start; gap: 16px; }
+.customer-contract-dialog > header h2 { overflow-wrap: anywhere; min-width: 0; }
+.customer-contract-dialog > header .icon-button { flex: none; }
+.customer-contract-dialog .document-file { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 14px; margin-block: 16px; }
+.customer-contract-dialog .document-file > div { min-width: 0; }
+.customer-contract-dialog .document-file-actions, .customer-contract-dialog .document-file > [role="alert"] { grid-column: 1 / -1; }
+.customer-contract-dialog .document-file strong { overflow-wrap: anywhere; }
+.customer-contract-dialog .document-file-actions { flex-wrap: wrap; }
+.customer-contract-confirmation { display: grid; gap: 8px; justify-items: start; }
+.claim-detail-facts { display: grid; gap: 0; margin: 14px 0 0; border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; }
+.claim-detail-facts > div { padding: 12px 14px; }
+.claim-detail-facts > div + div { border-top: 1px solid var(--color-border); }
+.claim-detail-facts dt { color: var(--color-slate); font-size: 12px; font-weight: 600; }
+.claim-detail-facts dd { margin: 5px 0 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.claim-detail-facts small { display: block; margin-top: 5px; color: var(--color-slate); font-size: 12px; }
+.claim-detail-outcome { background: var(--color-canvas); }
+.stock-movement-grid { grid-template-columns: repeat(auto-fill,minmax(min(100%,340px),1fr)); align-items: start; }
+.stock-movement-card { padding: 20px; min-width: 0; }
+.stock-movement-facts { display: grid; gap: 14px; margin: 0; }
+.stock-movement-facts > div { min-width: 0; }
+.stock-movement-facts dt { font-size: 12px; color: var(--color-slate); }
+.stock-movement-facts dd { margin: 4px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.stock-record-compact .manager-facts { gap: 16px 24px; }
+.renewal-review-compact .manager-facts { gap: 16px 24px; }
+.renewal-review-compact .manager-facts dt { font-size: 13px; }
+.renewal-review-compact .manager-facts dd { font-size: 14px; margin-top: 5px; }
+@media (min-width: 761px) {
+  .customer-invoices-table { table-layout: auto; min-width: 1160px; }
+  .customer-invoices-table th, .customer-invoices-table td { overflow-wrap: normal; word-break: normal; }
+  .customer-invoices-table :is(th,td):nth-child(n+3):nth-child(-n+6) { white-space: nowrap; }
+  .customer-invoices-table td:first-child { min-width: 220px; }
+  .customer-invoices-table td:nth-child(8) { min-width: 220px; }
+  .customer-invoices-table td:nth-child(7) { min-width: 130px; }
+  .customer-invoices-table .customer-status { white-space: nowrap; }
+  .customer-invoices-table .payment-actions { display: grid; gap: 8px; justify-items: start; }
+  .customer-invoices-table .payment-table-action { white-space: nowrap; }
+  .customer-contracts-table { table-layout: auto; min-width: 1000px; }
+  .customer-contracts-table td:nth-child(4) { white-space: nowrap; min-width: 190px; }
+  .customer-contracts-table td:nth-child(6) { min-width: 210px; }
+  .customer-contracts-table .customer-status { white-space: nowrap; }
+  .customer-contracts-table .customer-contract-confirmation .button-secondary { white-space: nowrap; }
+}
+@media (max-width: 1100px) {
+  .rental-summary-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 640px) {
+  .rental-summary-facts { grid-template-columns: minmax(0,1fr); }
+  .stock-movement-card { padding: 16px; }
+}
 .saved-quote { display: grid; gap: 14px; min-width: 0; }
 .saved-quote > header h2 { margin: 0; font-size: 18px; font-weight: 700; }
 .saved-quote > header p { margin: 5px 0 0; font-size: 13px; color: var(--color-slate); }

@@ -4,7 +4,6 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import { Container } from "../ui/Container";
-import { ActivityBell } from '../../activity/ActivityCenter';
 import type { WorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 
 const links = [
@@ -68,7 +67,6 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
           ))}
         </nav>
         <div className="hidden items-center gap-4 lg:flex">
-          {user && <ActivityBell />}
           <Link
             to={accountPath}
             className="nav-link inline-flex items-center gap-2"
@@ -84,7 +82,6 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
           onClick={appearance.toggleTheme}>
           {appearance.theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
         </button>
-        {user && <div className="lg:hidden"><ActivityBell /></div>}
         <button
           ref={menuTrigger}
           className="icon-button lg:hidden"

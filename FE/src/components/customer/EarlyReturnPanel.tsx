@@ -1,5 +1,6 @@
 
 import { EntitySelect } from '../EntitySelect';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
@@ -24,8 +25,8 @@ export function EarlyReturnPanel({ rentals, activeReturnIds, onUpdated, checkedA
   return <section className="customer-panel early-return-panel">
     <h2>Muốn trả kho trước hạn?</h2>
     <p>Xin quản lý chấp thuận thời điểm trả sớm.</p>
-    {requests.error ? <div role="alert">{requests.error}<button className="button-secondary" onClick={requests.refresh}>Tải lại đề nghị trả sớm</button></div> : <details className="early-return-disclosure">
-      <summary>Gửi đề nghị mới</summary>
+    {requests.error ? <div role="alert">{requests.error}<button className="button-secondary" onClick={requests.refresh}>Tải lại đề nghị trả sớm</button></div> : <details className="early-return-disclosure early-return-create">
+      <summary><Plus size={18} aria-hidden="true" /><span>Gửi đề nghị mới</span><ChevronDown className="early-return-create-chevron" size={18} aria-hidden="true" /></summary>
       <form className="customer-module-form" onSubmit={submit}>
         <fieldset disabled={busy || requests.loading}>
           <label className="field-label">Kho muốn trả sớm

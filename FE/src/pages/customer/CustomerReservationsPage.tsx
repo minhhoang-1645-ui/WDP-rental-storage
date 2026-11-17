@@ -1,3 +1,4 @@
+import { RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
 import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
@@ -150,9 +151,10 @@ export function CustomerReservationsPage() {
                         <td>
                           <span className="customer-date">
                             <CalendarDays size={15} />{" "}
-                            {formatPortalDate(item.startDate)} –{" "}
-                            {formatPortalDate(item.endDateExclusive)}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentStartDate ?? item.startDate)} –{" "}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
                           </span>
+                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
                         </td>
                         <td>
                           {item.adjacencyPreference
@@ -191,7 +193,8 @@ export function CustomerReservationsPage() {
                         <dt>Thời gian thuê</dt>
                         <dd>
                           {formatPortalDate(item.startDate)} –{" "}
-                          {formatPortalDate(item.endDateExclusive)}
+                          {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
+                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
                         </dd>
                       </div>
                       <div>

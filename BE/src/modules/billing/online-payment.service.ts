@@ -1,4 +1,4 @@
-import { isScheduledRenewalInvoice } from './renewal-invoice-schedule.js';
+import { closeoutReservationSelect, invoicePaymentBlockedBySchedule } from './renewal-invoice-schedule.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -34,10 +34,10 @@ export class OnlinePaymentService {
     }
     const transaction = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${identity.id} FOR UPDATE`);
-      const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: true } });
+      const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: { select: closeoutReservationSelect } } });
       if (!invoice || invoice.reservation.customerId !== customer.id) throw new NotFoundException('Không tìm thấy hóa đơn thuộc tài khoản này.');
       if (invoice.status === 'VOID') throw new ConflictException({ code: 'INVOICE_CANCELLED', message: 'Hóa đơn đã hủy; không thể tạo phiên thanh toán mới.' });
-      if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
+      if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
       await this.billing.assertSignedBeforePayment(tx, invoice);
       if (invoice.reservation.status === 'EXPIRED' || (invoice.type === 'INITIAL' && invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())) throw new ConflictException({ code: 'RESERVATION_PAYMENT_WINDOW_EXPIRED', message: 'Thời hạn giữ kho đã hết. Vui lòng tạo yêu cầu đặt kho mới.' });
       if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });

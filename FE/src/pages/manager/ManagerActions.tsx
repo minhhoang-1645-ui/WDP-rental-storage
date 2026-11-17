@@ -1,4 +1,4 @@
-import { isScheduledRenewalInvoice } from '../../utils/payment-state';
+import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
@@ -261,7 +261,7 @@ export function ManagerActions({
               </button>
             </form>
           ))}
-        {resource === "appointments" &&
+        {resource === "appointments" && first(row, "assignedStaff.id") === user?.id &&
           (row.status === "REQUESTED" ? (
             <>
               <p>
@@ -326,7 +326,7 @@ export function ManagerActions({
             </p>
           ))}
         {resource === "invoices" &&
-          (Number(row.balanceDue) > 0 && isScheduledRenewalInvoice(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
+          (Number(row.balanceDue) > 0 && invoicePaymentBlockedBySchedule(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
             <form
               className="portal-form"
               onSubmit={(event) => {
@@ -732,13 +732,10 @@ export function ManagerActions({
                   Duyệt chuyển kho
                 </button>
               </form>
-              <button
-                className="button-secondary"
-                disabled={busy}
-                onClick={() => run(`${root}/reject`, "POST")}
-              >
-                Từ chối chuyển kho
-              </button>
+              <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
+                <label className="field-label">Lý do từ chối chuyển kho<textarea required minLength={3} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="Ghi rõ nguyên nhân để khách hàng biết kết quả xem xét." /></label>
+                <button className="button-secondary" disabled={busy || reason.trim().length < 3}>Từ chối chuyển kho</button>
+              </form>
             </>
           ) : (
             <p>

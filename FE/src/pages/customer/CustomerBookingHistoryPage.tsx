@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
 import { ReservationLifecycle } from '../../components/customer/ReservationLifecycle';
 import type { ReservationRentalSummary } from '../../types/booking';
 import { Link } from 'react-router-dom';
@@ -34,7 +35,7 @@ export function CustomerBookingHistoryPage() {
         const product = entry.reservation.product as Row | undefined, quote = entry.reservation.quote as Row | undefined;
         return <article key={entry.reference} className="customer-panel customer-record-card booking-history-card">
           <div className="customer-record-heading"><div><small>{entry.reference} · Đặt ngày {formatPortalDate(String(entry.reservation.createdAt))}</small><h2>{String(product?.name ?? 'Kho đã đặt')}</h2></div><strong className="customer-history-status">{entry.phaseLabel}</strong></div>
-          <dl className="customer-record-facts"><div><dt>Thời hạn theo hợp đồng / đơn</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd></div><div><dt>Số kho đã đặt</dt><dd>{Number(entry.reservation.quantity ?? 0)}</dd></div><div><dt>Kho được cấp theo hợp đồng</dt><dd>{entry.unitCodes.join(', ') || 'Chưa được cấp kho'}</dd></div><div><dt>Báo giá tại thời điểm đặt</dt><dd>{quoteLabel(Number(quote?.quotedTotalAmount ?? quote?.grandTotal))}</dd></div></dl>
+          <dl className="customer-record-facts"><div><dt>Thời hạn theo hợp đồng / đơn</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd><RentalPeriodCaption period={(entry.reservation.rentalSummary as ReservationRentalSummary | undefined)?.rentalPeriod} /></div><div><dt>Số kho đã đặt</dt><dd>{Number(entry.reservation.quantity ?? 0)}</dd></div><div><dt>Kho được cấp theo hợp đồng</dt><dd>{entry.unitCodes.join(', ') || 'Chưa được cấp kho'}</dd></div><div><dt>Báo giá toàn bộ kỳ thuê ban đầu, gồm cọc</dt><dd>{quoteLabel(Number(quote?.quotedTotalAmount ?? quote?.grandTotal))}</dd></div></dl>
           <ReservationLifecycle summary={entry.reservation.rentalSummary as ReservationRentalSummary | undefined} />
           <details className="customer-inline-notice">
             <summary>Xem các mốc của lần đặt này</summary>

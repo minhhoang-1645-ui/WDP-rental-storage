@@ -44,6 +44,7 @@ export function StaffWorkflowTable({ resource, title, items, userId, loadingRows
       : { key: 'assignee', label: 'Người phụ trách', optional: true, cell: row =>
         first(row, 'assignedStaff.fullName') || 'Chưa phân công' },
   ];
+  if (appointments) columns.push({ key: 'assignee', label: 'Nhân viên bàn giao', cell: row => first(row, 'assignedStaff.fullName', 'completedBy.fullName') || 'Chưa có phân công lưu' });
   if (!appointments) columns.push({ key: 'priority', label: 'Ưu tiên', optional: true, cell: row => row.priority ? <Status value={row.priority} /> : '—' });
   columns.push({ key: 'actions', label: 'Thao tác', cell: row =>
     <StaffRowActions to={`/staff/${resource}/${encodeURIComponent(recordId(row))}`} code={code(row)}

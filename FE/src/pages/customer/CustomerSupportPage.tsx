@@ -1,3 +1,4 @@
+import { EarlyReturnFinancialNotice } from '../../components/customer/EarlyReturnFinancialNotice';
 import { moneyLabel } from '../../components/customer/CustomerPortalHelpers';
 import type { PendingReservation } from '../../types/booking';
 import { EntitySelect } from '../../components/EntitySelect';
@@ -390,7 +391,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     {item.unit ? ` · ${item.unit.unitCode}` : ""}
                   </p>
                   <p>{item.description}</p>
-                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
                       <strong>Kết quả:</strong> {item.resolutionNote}

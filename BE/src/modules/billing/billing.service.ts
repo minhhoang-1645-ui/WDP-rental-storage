@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { isScheduledRenewalInvoice } from './renewal-invoice-schedule.js';
+import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule } from './renewal-invoice-schedule.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { invoiceSigningRequirements } from './payment-eligibility.js';
 
@@ -215,9 +215,9 @@ export class BillingService {
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
           return this.paymentResult(duplicate);
         }
-        const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: { id: true } } } });
+        const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: closeoutReservationSelect } } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
-        if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
+        if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
         await this.assertSignedBeforePayment(tx, invoice);
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền thanh toán không được vượt quá số dư hóa đơn.');
@@ -290,10 +290,10 @@ export class BillingService {
           this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
           return this.toPaymentSubmission(duplicate);
         }
-        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true } });
+        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true, reservation: { select: closeoutReservationSelect } } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
-        if (isScheduledRenewalInvoice(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán.' });
+        if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
         if (!['OPEN', 'PARTIALLY_PAID'].includes(invoice.status)) throw new ConflictException('Hóa đơn hiện không thể nhận yêu cầu thanh toán.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền gửi xác nhận không được vượt quá số dư hiện tại.');
         const sequence = await tx.paymentSubmission.count({ where: { invoiceId: invoice.id } }) + 1;
@@ -668,7 +668,15 @@ export class BillingService {
   }
 
   private async invoicePage(where: Prisma.InvoiceWhereInput, page: number, limit: number, includeCustomer: boolean) {
-    where = { AND: [where, { NOT: { type: 'RENEWAL', renewalCycle: { gt: 1 }, dueAt: { gt: new Date() }, status: 'OPEN', amountPaid: 0n } }] };
+    const candidates = await this.prisma.reservation.findMany({
+      where: { invoices: { some: where }, contracts: { some: { status: { in: ['ACTIVE', 'COMPLETED'] } } }, supportRequests: { some: closeoutReservationSelect.supportRequests.where } },
+      select: closeoutReservationSelect,
+    });
+    const closeoutIds = candidates.filter(reservation => closeoutPaymentAllowed(reservation)).map(reservation => reservation.id);
+    where = { AND: [where, { OR: [
+      { NOT: { type: 'RENEWAL', renewalCycle: { gt: 1 }, dueAt: { gt: new Date() }, status: 'OPEN', amountPaid: 0n } },
+      { reservationId: { in: closeoutIds } },
+    ] }] };
     const [total, items] = await Promise.all([
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ issuedAt: 'desc' }, { id: 'asc' }], include: this.invoiceInclude() }),
@@ -691,6 +699,7 @@ export class BillingService {
         storageType: { select: { id: true, code: true, name: true, condition: true } },
         services: true,
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
+        supportRequests: closeoutReservationSelect.supportRequests,
       } },
       payments: { include: { recordedBy: { select: { id: true, fullName: true, role: true } } }, orderBy: { receivedAt: 'asc' as const } },
       renewalRequest: { select: { id: true, renewalCode: true, status: true, quoteSnapshot: true, appendixAcceptedAt: true } },
@@ -722,8 +731,10 @@ export class BillingService {
       billingPeriodStart: this.isoDate(record.billingPeriodStart),
       billingPeriodEnd: this.isoDate(record.billingPeriodEnd),
       dueAt: this.isoDate(record.dueAt),
-      isPastDue: record.dueAt !== null && record.dueAt < new Date() && record.status !== 'PAID',
+      isPastDue: record.dueAt !== null && record.dueAt < new Date() && !['PAID', 'VOID'].includes(record.status),
       status: record.status,
+      voidReason: record.voidReason ?? null, voidedAt: record.voidedAt?.toISOString() ?? null,
+      closeoutPaymentAllowed: closeoutPaymentAllowed(reservation),
       reservation: {
         id: reservation.id,
         reference: reservation.reservationCode,

@@ -11,6 +11,9 @@ function setup(status = 'CONFIRMED') {
   const endDate = new Date(now.getTime() + 31 * 86400000);
   const row = {
     id: 'appointment', appointmentCode: 'A01', status,
+    assignedStaffUserId: status === 'COMPLETED' ? null : staff.id,
+    assignedStaff: status === 'COMPLETED' ? null : { ...staff, accountStatus: 'ACTIVE' },
+    completedByUserId: status === 'COMPLETED' ? staff.id : null,
     scheduledAt: new Date(now.getTime() - 60000), createdAt: now, updatedAt: now,
     handoverNote: status === 'COMPLETED' ? 'Ghi chú bàn giao cũ' : null,
     reservation: {
@@ -49,6 +52,7 @@ describe('RV3 handover completion service', () => {
     const { service, update } = setup();
     const result = await service.completeHandover('appointment', { handoverReport: report }, staff);
     expect(result.handoverNote).toContain('Người nhận: Khách thuê');
+    expect(result.handoverReport).toMatchObject({ recipientName: 'Khách thuê', accessItemCount: 1, identityVerified: true, documentsDelivered: true });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completedByUserId: staff.id, completedAt: expect.any(Date) }) }));
     expect(result.usageStatus).toBe('WAITING_FOR_RENTAL_START');
   });

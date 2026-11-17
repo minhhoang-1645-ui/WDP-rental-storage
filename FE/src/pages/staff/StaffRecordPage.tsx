@@ -1,3 +1,4 @@
+import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { recordIdentity } from '../../utils/record-identity';
@@ -113,13 +114,14 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
                     ["Lịch hẹn", date(row.scheduledAt, true)],
                     ["Ngày kết thúc thuê", date(row.effectiveEndDate)],
                     ["Mô tả", first(row, "description", "note")],
-                    ["Ghi chú bàn giao", first(row, "handoverNote")],
+                    ["Ghi chú bàn giao", resource === 'appointments' ? '' : first(row, "handoverNote")],
                     ["Kết quả sửa chữa", first(row, "workNote")],
                     ["Kết quả hỗ trợ", first(row, "resolutionNote")],
                     ["Lý do chuyển bộ phận phụ trách", first(row, "escalationReason")],
                   ]}
                 />
               </section>
+              {resource === 'appointments' && <HandoverReportCard appointment={row} />}
               {(rows(row.allocatedUnits).length > 0 ||
                 rows(row.contracts).length > 0) && (
                 <section className="manager-section">

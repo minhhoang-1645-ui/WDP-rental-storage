@@ -32,5 +32,5 @@ export class ManagerTransfersController {
   @Post(':id/approve') @ApiOperation({ summary: 'Duyệt và reserve unit đích cùng StorageType' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.approve(id, body, req.user!); }
   @Post(':id/reject') @ApiOperation({ summary: 'Từ chối Transfer REQUESTED' })
-  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.transfers.reject(id, req.user!); }
+  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.reject(id, req.user!, body); }
 }

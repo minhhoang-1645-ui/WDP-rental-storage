@@ -59,7 +59,7 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
     : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements'];
+      : ['damage-claims', 'appointments', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';
   names['damage-claims'] = 'Sự cố hàng hóa';
@@ -158,8 +158,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'MANAGER') {
         const simple = ['reservations', 'inquiries'].includes(kind);
         web = simple ? `/manager/${kind}/${encodeURIComponent(id)}` : `/manager/operations/${kind}/${encodeURIComponent(id)}`;
-        const assignment = ['support-requests', 'maintenance', 'stock-movements'].includes(kind);
-        if (assignment && (kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
+        const assignment = ['appointments', 'support-requests', 'maintenance', 'stock-movements'].includes(kind);
+        if (assignment && (kind === 'appointments' || kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
         if (kind === 'invoices' && (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0)) continue;
       } else action = staffNeedsAction(kind, row, userId);
@@ -192,7 +192,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'CUSTOMER') { web = '/customer/transfers'; mobile = web; }
       if (role === 'STAFF') { web = transfer ? `/staff/transfers/${encodeURIComponent(activityText(transfer, 'id'))}` : '/staff/transfers'; mobile = web; action = transfer ? ['REQUESTED', 'APPROVED'].includes(transferStatus) : !['RESOLVED', 'CANCELLED'].includes(status); }
       if (!transfer && ['RESOLVED', 'CANCELLED'].includes(status)) { title = 'Chuyển kho · Đã có kết quả xử lý'; message = get('resolutionNote') || 'Yêu cầu đã đóng. Mở hồ sơ để xem kết quả; chưa có lệnh chuyển kho liên kết.'; }
-      if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
+      if (transfer && transferStatus === 'REJECTED') message = activityText(transfer, 'rejectionReason') || get('resolutionNote') || 'Mở yêu cầu chuyển kho để xem lý do từ chối.';
+      else if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
     }
     if (kind === 'support-requests' && isEarlyReturnRequest(row)) {
       const decision = get('earlyReturnDecision');

@@ -11,6 +11,7 @@ import {
 import type { StaffResource } from "./staff-resources";
 import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
+import { isTransferRequest } from '../../utils/transfer-request';
 
 export function StaffActions({
   resource,
@@ -95,6 +96,8 @@ export function StaffActions({
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
     String(row.status),
   );
+  const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
+  const returnPaid = returnDebt?.canReturn === true && returnDebt.totalOutstanding === 0;
   const allInspected =
     Number(first(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(first(row, 'inventory.pendingMovements') || 0) === 0 &&
     inspections.length > 0 &&
@@ -113,7 +116,7 @@ export function StaffActions({
       )}
       <fieldset className="portal-action-fieldset" disabled={busy}>
         {resource === "appointments" &&
-          (row.status === "CONFIRMED" ? (
+          (row.status === "CONFIRMED" && assigned ? (
             <form
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
@@ -136,7 +139,7 @@ export function StaffActions({
             </form>
           ) : (
             <p>
-              {row.status === "REQUESTED"
+              {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !assigned ? 'Chỉ nhân viên được quản lý phân công mới được bàn giao lịch này.' : row.status === "REQUESTED"
                 ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
                 : row.usageStatus === 'WAITING_FOR_RENTAL_START'
                   ? 'Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.'
@@ -145,6 +148,7 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải tất toán trước khi nhận trả kho</strong><p>{returnPaid ? 'Khách đã thanh toán đủ công nợ hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được công nợ. Làm mới hồ sơ để đối chiếu trước khi nhận trả kho.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -184,7 +188,7 @@ export function StaffActions({
                     <input type="checkbox" required disabled={!allInspected} />
                     Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra
                   </label>
-                  <button className="button-primary" disabled={!allInspected}>
+                  <button className="button-primary" disabled={!allInspected || !returnPaid}>
                     Hoàn tất nhận kho trả
                   </button>
                   {!allInspected && (
@@ -249,7 +253,7 @@ export function StaffActions({
           </>
         )}
         {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
-        {resource === "support-requests" && !isEarlyReturnRequest(row) && (
+        {resource === "support-requests" && !isEarlyReturnRequest(row) && !isTransferRequest(row) && (
           <>
             {!assigned &&
               !["ESCALATED", "RESOLVED"].includes(String(row.status)) && (

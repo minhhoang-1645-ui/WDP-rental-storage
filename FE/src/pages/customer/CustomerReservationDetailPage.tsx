@@ -1,4 +1,5 @@
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { RentalPeriodDetails } from '../../components/customer/RentalAccountDetails';
 import { ReservationLifecycle } from '../../components/customer/ReservationLifecycle';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import {
@@ -110,6 +111,7 @@ export function CustomerReservationDetailPage() {
           </section>
           <section className="customer-panel">
             <h2>Thời gian thuê hiện tại</h2>
+            {reservation.rentalSummary?.rentalPeriod ? <RentalPeriodDetails period={reservation.rentalSummary.rentalPeriod} /> : (
             <div className="customer-facts">
               <div>
                 <dt>Ngày bắt đầu</dt>
@@ -134,9 +136,10 @@ export function CustomerReservationDetailPage() {
                 </dd>
               </div>
             </div>
+            )}
           </section>
           <section className="customer-panel">
-            <h2>Báo giá tại thời điểm gửi</h2>
+            <h2>Báo giá toàn bộ kỳ thuê ban đầu</h2>
             <div className="customer-quote-list">
               {reservation.quote.lineItems.map((line) => (
                 <div key={line.code}>
@@ -148,7 +151,7 @@ export function CustomerReservationDetailPage() {
                 </div>
               ))}
               <div>
-                <strong>Tổng báo giá</strong>
+                <strong>Tổng báo giá kỳ ban đầu, gồm cọc</strong>
                 <b>
                   {quoteLabel(
                     reservation.quote.quotedTotalAmount ??
@@ -157,7 +160,8 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
-            <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Đây là báo giá gốc tại lúc đặt. Các lần gia hạn, tiền đã thu và kho sau chuyển được ghi riêng trong phần cập nhật kỳ thuê.' : reservation.quote.message}</p>
+            {reservation.quote.estimatedInitialAmountDue !== undefined && <p>Dự kiến lần thanh toán đầu tiên: <strong>{quoteLabel(reservation.quote.estimatedInitialAmountDue)}</strong> (theo báo giá lúc đặt).</p>}
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Đây là tổng giá trị kỳ thuê ban đầu, không phải số tiền đã thanh toán. Xem từng hóa đơn và tiền đã thu trong phần trên.' : reservation.quote.message}</p>
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>

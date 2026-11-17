@@ -1,6 +1,7 @@
 import { ManagerTaskTable, ManagerTableSearch, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { StockReconciliation } from '../../components/stock/StockReconciliation';
 import type { StockLine } from '../../types/stock';
 import { TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
@@ -32,18 +33,19 @@ import { isEarlyReturnRequest } from '../../utils/early-return';
 import { UnitStaffAssignments } from '../../components/manager/UnitStaffAssignments';
 import { normalizeSearch } from '../../utils/notification-tools';
 
-type WorkKind = "support-requests" | "maintenance" | "stock-movements";
+type WorkKind = "support-requests" | "maintenance" | "stock-movements" | "appointments";
 type Task = { kind: WorkKind; row: Row };
 
 const workName = (kind: WorkKind) =>
-  kind === "maintenance" ? "Bảo trì" : kind === 'stock-movements' ? 'Nhập – xuất hàng' : "Hỗ trợ";
+  kind === 'appointments' ? 'Lịch bàn giao' : kind === "maintenance" ? "Bảo trì" : kind === 'stock-movements' ? 'Nhập – xuất hàng' : "Hỗ trợ";
 const finished = (task: Task) =>
   task.row.status === "COMPLETED" || task.row.status === "RESOLVED" || task.row.status === 'CANCELLED';
 const canAssign = (task: Task) => task.kind === 'stock-movements'
   ? ['REQUESTED', 'ASSIGNED'].includes(first(task.row, 'status'))
+  : task.kind === 'appointments' ? ['REQUESTED', 'CONFIRMED'].includes(first(task.row, 'status'))
   : !finished(task);
 const relatedUnit = (row: Row) =>
-  first(
+  rows(row.allocatedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ') || first(
     row,
     "currentStorageUnit.unitNumber",
     "storageUnit.unitNumber",
@@ -75,13 +77,15 @@ export function ManagerAssignmentsPage() {
       allPages("/manager/support-requests", controller.signal),
       allPages("/manager/maintenance", controller.signal),
       allPages('/manager/stock-movements', controller.signal),
+      allPages('/manager/appointments', controller.signal),
     ])
-      .then(([support, maintenance, movements]) => {
+      .then(([support, maintenance, movements, appointments]) => {
         if (controller.signal.aborted) return;
         setState({
           key,
           revision,
           tasks: [
+            ...appointments.items.map(row => ({ kind: 'appointments' as const, row })),
             ...movements.items.map(row => ({ kind: 'stock-movements' as const, row })),
             ...support.items.filter(row => !isEarlyReturnRequest(row)).map((row) => ({
               kind: "support-requests" as const,
@@ -157,7 +161,7 @@ export function ManagerAssignmentsPage() {
   };
   const statuses = [...new Set(allTasks.map(task => first(task.row, 'status')).filter(Boolean))];
   const columns: StaffColumn<Task>[] = [
-    { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} /></> },
+    { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
     { key: 'kind', label: 'Nhóm', optional: true, cell: task => workName(task.kind) },
     { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}</> },
     { key: 'staff', label: 'Nhân viên phụ trách', cell: ({ row }) => <>{first(row, 'assignedStaff.fullName') || 'Chưa phân công'}{first(row, 'assignedStaff.accountStatus') === 'DISABLED' && <small>Đã vô hiệu hóa · cần đổi người</small>}</> },
@@ -175,7 +179,7 @@ export function ManagerAssignmentsPage() {
 
   return (
     <section>
-      <PageHeader title="Phân công nhân viên">
+      <PageHeader title="Phân công nhân viên" description="Lịch nhận kho cần quản lý chọn người phụ trách trước khi nhân viên thực hiện bàn giao.">
         <button type="button" className="button-secondary" onClick={() => setUnitAssignmentsOpen(value => !value)}>{unitAssignmentsOpen ? 'Thu gọn phân công theo kho' : 'Phân công theo kho'}</button>
         <button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>
       </PageHeader>
@@ -192,7 +196,7 @@ export function ManagerAssignmentsPage() {
         toolbar={<>
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã, kho hoặc nhân viên…" />
           <ManagerTableFilter label="Nhóm" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
-            options={[[ 'all', 'Tất cả' ], ...(['support-requests', 'maintenance', 'stock-movements'] as const).map(value => [value, workName(value)] as [string, string])]} />
+            options={[[ 'all', 'Tất cả' ], ...(['appointments', 'support-requests', 'maintenance', 'stock-movements'] as const).map(value => [value, workName(value)] as [string, string])]} />
           <ManagerTableFilter label="Phân công" value={assignment} onChange={value => update('assignment', value === 'all' ? '' : value)}
             options={[[ 'all', 'Tất cả' ], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người'], ['assigned', 'Đã phân công']]} />
           <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
@@ -246,7 +250,7 @@ function AssignmentDetail({
       await mutate(
         `/manager/${task.kind}/${encodeURIComponent(id)}/assign`,
         "PATCH",
-        { staffUserId: staffId.trim() },
+        { staffUserId: staffId.trim(), ...(task.kind === 'appointments' ? { expectedAssignedStaffUserId: first(task.row, 'assignedStaff.id') || null } : {}) },
         true,
       );
       onAssigned();
@@ -273,23 +277,25 @@ function AssignmentDetail({
           items={[
             ['Khách hàng', first(customer(task.row), 'fullName') || '—'],
             ['Liên hệ', first(customer(task.row), 'phone', 'email') || '—'],
-            ['Hợp đồng', first(task.row, 'contract.contractCode', 'rentalContract.contractCode') || '—'],
+            ...(task.kind === 'appointments' ? [['Giờ hẹn bàn giao', date(task.row.scheduledAt, true)] as [string, string]] : []),
+            ['Hợp đồng', rows(task.row.allocatedUnits).map(unit => first(unit, 'contractCode')).filter(Boolean).join(', ') || first(task.row, 'contract.contractCode', 'rentalContract.contractCode') || '—'],
             [
               "Trạng thái",
               <Status key="work-status" value={task.row.status} />,
             ],
-            ["Ưu tiên", label(task.row.priority)],
+            ...(task.kind !== 'appointments' ? [["Ưu tiên", label(task.row.priority)] as [string, string]] : []),
             ["Kho / Đặt thuê", relatedUnit(task.row)],
             [
               "Nhân viên hiện tại",
               first(task.row, "assignedStaff.fullName") || "Chưa phân công",
             ],
-            ["Nội dung", first(task.row, "subject", "description") || "—"],
+            ...(task.kind !== 'appointments' || task.row.note ? [["Nội dung", first(task.row, "subject", "description", "note") || "—"] as [string, string]] : []),
           ]}
         />
         {first(task.row, "subject") && first(task.row, "description") && (
           <p>{first(task.row, "description")}</p>
         )}
+        {task.kind === 'appointments' && <HandoverReportCard appointment={task.row} />}
         {task.kind === 'stock-movements' && <section><h3>Hàng hóa cần giao nhận</h3><p>{task.row.completedAt ? `Hoàn tất ${date(task.row.completedAt, true)}` : 'Nhân viên được giao sẽ kiểm đếm và ghi nhận số lượng thực tế.'}</p><StockReconciliation lines={rows(task.row.lines) as unknown as StockLine[]} /><p>Ghi chú kiểm đếm: {first(task.row, 'completionNote') || 'Chưa ghi nhận'}</p></section>}
         {error && (
           <div className="booking-alert is-error" role="alert">
@@ -317,13 +323,13 @@ function AssignmentDetail({
             </div>
           </form>
         )}
-        <Link
+        {task.kind !== 'appointments' && <Link
           className="button-secondary"
           to={`/manager/operations/${task.kind}/${encodeURIComponent(id)}`}
           onClick={onClose}
         >
           Xem hồ sơ công việc
-        </Link>
+        </Link>}
       </div>
     </Modal>
   );

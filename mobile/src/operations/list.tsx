@@ -1,4 +1,4 @@
-import { isScheduledRenewalInvoice } from '@/utils/payment-state';
+import { invoicePaymentBlockedBySchedule } from '@/utils/payment-state';
 import { ManagerParentLink } from '@/operations/manager-parent-link';
 import { canAccessManagerReview, isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '@/utils/manager-review-access';
 import { isStaffWorkflow } from '@/utils/operation-access';
@@ -36,7 +36,7 @@ function List({ resource }: { resource: string }) {
   const root = operationRoot(user?.role ?? '');
   if (!allowed || !config) return <View style={styles.page}><EmptyState title="Không tìm thấy phân hệ" message="Đường dẫn không có trong khu vực này." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : (data.data as Row | undefined)?.[config.shape === 'catalog' ? 'products' : 'items']);
-  const shown = items.filter(item => (resource !== 'invoices' || item.status !== 'OPEN' || Number(item.amountPaid) > 0 || !isScheduledRenewalInvoice(item)) && (resource !== 'inquiries' || item.requestType === 'INQUIRY') && (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && recordMatches(item, search));
+  const shown = items.filter(item => (resource !== 'invoices' || item.status !== 'OPEN' || Number(item.amountPaid) > 0 || !invoicePaymentBlockedBySchedule(item)) && (resource !== 'inquiries' || item.requestType === 'INQUIRY') && (!status || (item.status ?? item.rentalState ?? (item.isOverdue ? 'OVERDUE' : resource === 'rentals' ? 'ACTIVE' : '')) === status) && recordMatches(item, search));
   const create = (user?.role === 'STAFF' ? isStaffWorkflow(resource) : !isStaffWorkflow(resource)) ? createAction(resource) : undefined;
   if (create && user?.role === 'STAFF' && ['maintenance', 'transfers'].includes(resource)) create.path = `/staff/management/${resource}`;
   const header = <View style={{ gap: 12 }}><PageHeader eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? "Chỉ hồ sơ cần quản lý quyết định; nhân viên tiếp nhận và thực hiện." : "Dữ liệu thực tế và thao tác theo quyền hiện có."} />

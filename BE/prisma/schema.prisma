@@ -357,6 +357,8 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  assignedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssignee")
+  delegatedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssigner")
   damageClaims DamageClaim[]
   authSessions                AuthSession[]
   unitResponsibilities         UnitStaffAssignment[] @relation("UnitStaffAssignee")
@@ -943,6 +945,8 @@ model MaintenanceRequest {
 }
 
 model Invoice {
+  voidReason String?
+  voidedAt DateTime?
   pricingSnapshot Json?
   storageTypeIdSnapshot String?
   replacesInvoiceId String? @unique
@@ -989,6 +993,7 @@ model Invoice {
 }
 
 model SupportRequest {
+  earlyReturnFinancialReview Json?
   id                       String                 @id @default(cuid())
   supportCode              String                 @unique
   customerUserId           String
@@ -1033,6 +1038,7 @@ model SupportRequest {
 }
 
 model TransferRequest {
+  rejectionReason String?
   handoverReport Json?
   commercialSnapshot Json?
   commercialSignedSnapshot Json?
@@ -1266,6 +1272,12 @@ model OnlinePaymentReconciliation {
 }
 
 model HandoverAppointment {
+  assignedStaffUserId String?
+  assignedStaff User? @relation("AppointmentAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
+  assignedByUserId String?
+  assignedBy User? @relation("AppointmentAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt DateTime?
+  handoverReport Json?
   id                String            @id @default(cuid())
   appointmentCode   String            @unique
   reservationId     String
@@ -1291,4 +1303,5 @@ model HandoverAppointment {
   @@index([reservationId, createdAt])
   @@index([status, scheduledAt])
   @@index([scheduledAt, id])
+  @@index([assignedStaffUserId, status, scheduledAt])
 }

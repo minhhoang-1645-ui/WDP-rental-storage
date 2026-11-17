@@ -21,11 +21,13 @@ export function ManagerAssignments() {
   const support = useResource<Row>(allowed ? '/manager/support-requests' : null, true);
   const maintenance = useResource<Row>(allowed ? '/manager/maintenance' : null, true);
   const movements = useResource<Row>(allowed ? '/manager/stock-movements' : null, true);
+  const appointments = useResource<Row>(allowed ? '/manager/appointments' : null, true);
   const [action, setAction] = useState<FormAction>();
   const [search, setSearch] = useState(params.search ?? ''), [kind, setKind] = useState(params.kind ?? ''), [assignment, setAssignment] = useState(params.assignment ?? ''), [history, setHistory] = useState(false);
-  const loading = support.loading || maintenance.loading || movements.loading, error = support.error || maintenance.error || movements.error;
-  const refresh = () => { support.refresh(); maintenance.refresh(); movements.refresh(); };
+  const loading = support.loading || maintenance.loading || movements.loading || appointments.loading, error = support.error || maintenance.error || movements.error || appointments.error;
+  const refresh = () => { support.refresh(); maintenance.refresh(); movements.refresh(); appointments.refresh(); };
   const tasks: Row[] = [
+    ...rows(appointments.data?.items).map(row => ({ ...row, resource: 'appointments' })),
     ...rows(movements.data?.items).map(row => ({ ...row, resource: 'stock-movements' })),
     ...rows(support.data?.items).filter(row => !isEarlyReturnRequest(row)).map(row => ({ ...row, resource: 'support-requests' })),
     ...rows(maintenance.data?.items).map(row => ({ ...row, resource: 'maintenance' })),
@@ -38,13 +40,13 @@ export function ManagerAssignments() {
   return <FlatList keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}
     data={loading || error ? [] : tasks} keyExtractor={row => `${row.resource}:${idOf(row)}`}
     ListHeaderComponent={<View style={{ gap: 12 }}>
-      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Chọn người phụ trách theo kho hoặc giao thủ công từng hồ sơ hỗ trợ, bảo trì và nhập – xuất." />
+      <PageHeader eyebrow="Quản lý" title="Phân công nhân viên" description="Chọn người phụ trách theo kho hoặc giao thủ công từng hồ sơ hỗ trợ, bảo trì, nhập – xuất và lịch bàn giao." />
       <Navigation title="Về tổng quan" path="/manager" />
       <Disclosure title="Phân công nhân viên phụ trách từng kho"><UnitStaffAssignments onSaved={refresh} /></Disclosure>
       {action && <OperationForm key={action.path} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); refresh(); }} />}
       <Button title="Làm mới phân công" onPress={refresh} disabled={loading} />
       <Field title="Tìm công việc, kho hoặc nhân viên" value={search} onChange={setSearch} maxLength={120} />
-      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì'], ['stock-movements', 'Nhập – xuất hàng']].map(([value, title]) => <Button key={value} variant={kind === value ? 'primary' : 'secondary'} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
+      <View style={styles.row}>{[['', 'Tất cả nhóm'], ['appointments', 'Lịch bàn giao'], ['support-requests', 'Hỗ trợ'], ['maintenance', 'Bảo trì'], ['stock-movements', 'Nhập – xuất hàng']].map(([value, title]) => <Button key={value} variant={kind === value ? 'primary' : 'secondary'} title={`${kind === value ? '✓ ' : ''}${title}`} onPress={() => setKind(value)} />)}</View>
       <View style={styles.row}>{[['', 'Tất cả phân công'], ['assigned', 'Đã phân công'], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người']].map(([value, title]) => <Button key={value} variant={assignment === value ? 'primary' : 'secondary'} title={`${assignment === value ? '✓ ' : ''}${title}`} onPress={() => setAssignment(value)} />)}</View>
       <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chưa hoàn tất' : 'Chỉ xem chưa hoàn tất · Xem cả lịch sử'} onPress={() => setHistory(value => !value)} />
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <Text style={styles.copy}>{tasks.length} công việc phù hợp</Text>}

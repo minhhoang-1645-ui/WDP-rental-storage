@@ -37,6 +37,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
+import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
 import { StaffActions } from '../staff/StaffActions';
@@ -120,7 +121,7 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
               {(['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/${user?.role === 'STAFF' ? 'staff/management' : 'manager'}/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}<DetailContent row={row} resource={resource} />
               {resource === 'support-requests' && user?.role === 'STAFF' && isTransferRequest(row) && <TransferSupportAction row={row} onCreate={() => setCreatingTransfer(true)} />}
               {resource === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
-              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
+              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
                   key={`${user?.id}:${id}:${row.updatedAt ?? ""}`}
@@ -357,6 +358,11 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
                   [string, React.ReactNode]
                 >)
               : []),
+            ...(resource === 'appointments' ? [
+              ['Nhân viên được phân công', first(row, 'assignedStaff.fullName') || (row.status === 'COMPLETED' ? 'Lịch cũ chưa lưu phân công' : 'Chưa được quản lý phân công')],
+              ['Người phân công', first(row, 'assignedBy.fullName') || '—'],
+              ['Thời điểm phân công', date(row.assignedAt, true)],
+            ] as Array<[string, React.ReactNode]> : []),
             ...(row.priority
               ? ([
                   ["Ưu tiên", label(row.priority)],
@@ -376,7 +382,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
               .filter(([field]) => first(row, `${field}.fullName`))
               .map(
                 ([field, title]) =>
-                  [title, first(row, `${field}.fullName`)] as [
+                  [field === 'approvedBy' && row.status === 'REJECTED' ? 'Người từ chối' : title, first(row, `${field}.fullName`)] as [
                     string,
                     React.ReactNode,
                   ],
@@ -419,7 +425,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
           "rejectionReason",
           "reviewNote",
         ]
-          .filter((key) => row[key])
+          .filter((key) => row[key] && !(resource === 'appointments' && key === 'handoverNote'))
           .map((key) => (
             <div className="portal-note" key={key}>
               <small>{noteLabels[key]}</small>
@@ -427,6 +433,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
             </div>
           ))}
       </section>
+      {resource === 'appointments' && <HandoverReportCard appointment={row} />}
       {Object.keys(availability).length > 0 && (
         <section className="manager-section">
           <h2>Khả dụng tại lần kiểm tra gần nhất</h2>

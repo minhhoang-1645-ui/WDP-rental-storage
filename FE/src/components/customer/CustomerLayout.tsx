@@ -183,7 +183,7 @@ export function CustomerLayout() {
             const count = actionCountForPath(activity.entries, group.paths);
             const childActive = group.paths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'));
             return <NavigationGroup key={group.key} title={group.title} active={childActive} count={count} expanded={group.key === 'booking'}>
-              {group.paths.map(path => { const item = navigation.find(entry => entry.to === path)!; const ItemIcon = item.icon; return <NavLink key={path} to={path} className="customer-nav-link" onClick={() => setMenuOpen(false)}><ItemIcon size={18} /><span>{item.label}</span></NavLink>; })}
+              {group.paths.map(path => { const item = navigation.find(entry => entry.to === path)!; const ItemIcon = item.icon; const itemCount = actionCountForPath(activity.entries, path); return <NavLink key={path} to={path} className="customer-nav-link" onClick={() => setMenuOpen(false)}><ItemIcon size={18} /><span>{item.label}</span>{itemCount > 0 && <b className="navigation-work-count" aria-label={`${itemCount} việc cần thực hiện`}>{itemCount}</b>}</NavLink>; })}
             </NavigationGroup>;
           })}
         </nav>

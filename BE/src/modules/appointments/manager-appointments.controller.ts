@@ -1,5 +1,5 @@
-import { StaffWorkflow } from '../auth/operation-access.js';
-import { BadRequestException, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { StaffWorkflow, ManagerAssignment } from '../auth/operation-access.js';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -28,8 +28,8 @@ export class ManagerAppointmentsController {
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
-  list(@Query() query: Record<string, unknown>) {
-    return this.appointments.listOperationalAppointments(this.query(query));
+  list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    return this.appointments.listOperationalAppointments(this.query(query), request.user!);
   }
 
   @Get(':id')
@@ -39,8 +39,15 @@ export class ManagerAppointmentsController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
-  get(@Param('id') id: string) {
-    return this.appointments.getOperationalAppointment(id);
+  get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.appointments.getOperationalAppointment(id, request.user!);
+  }
+
+  @ManagerAssignment()
+  @Patch(':id/assign')
+  @ApiOperation({ summary: 'Quản lý phân công hoặc đổi nhân viên bàn giao' })
+  assign(@Param('id') id: string, @Body() input: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    return this.appointments.assignAppointment(id, input, request.user!);
   }
 
   @Patch(':id/confirm')

@@ -149,6 +149,8 @@ export interface PendingReservation extends BookingDraft {
 }
 
 export interface ReservationRentalSummary {
+  rentalPeriod?: import('./rental-account').RentalPeriodSummary
+  paymentDetails?: import('./rental-account').RentalPaymentDetails
   currentUnits: Array<{ contractId: string; contractCode: string; unitCode: string; floor: string | null; zone: string | null }>
   totalInvoiced: number
   totalPaid: number

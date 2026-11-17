@@ -1,5 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 
+export function handoverReportData(input: Record<string, unknown>, customer: { id: string; fullName: string }) {
+  handoverReport(input, customer);
+  const report = input.handoverReport as Record<string, unknown>;
+  const recipientType = report.recipientType === 'AUTHORIZED' ? 'AUTHORIZED' : 'CUSTOMER';
+  return {
+    recipientType, recipientName: recipientType === 'CUSTOMER' ? customer.fullName.trim() : String(report.recipientName).trim(),
+    customerName: customer.fullName, authorizationBasis: recipientType === 'AUTHORIZED' ? String(report.authorizationBasis).trim() : null,
+    condition: String(report.condition).trim(), accessItemCount: report.accessItemCount as number,
+    identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: report.documentsDelivered === true,
+    note: typeof input.note === 'string' ? input.note.trim() : '',
+  };
+}
+
 /** Structured staff attestation stored as a readable report in the existing handoverNote field. */
 export function handoverReport(input: Record<string, unknown>, customer?: { id: string; fullName: string }) {
   const note = typeof input.note === 'string' ? input.note.trim() : '';

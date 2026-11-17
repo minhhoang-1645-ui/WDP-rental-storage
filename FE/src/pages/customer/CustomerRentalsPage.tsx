@@ -1,3 +1,4 @@
+import { RentalPaymentDetailsView, RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { useState } from "react";
@@ -100,8 +101,9 @@ export function CustomerRentalsPage() {
                   <dt>Thời hạn</dt>
                   <dd>
                     <CalendarClock size={15} />{" "}
-                    {formatPortalDate(rental.startDate)} –{" "}
-                    {formatPortalDate(rental.effectiveEndDate)}
+                    {formatPortalDate(rental.rentalPeriod?.currentStartDate ?? rental.startDate)} –{" "}
+                    {formatPortalDate(rental.rentalPeriod?.currentEndDate ?? rental.effectiveEndDate)}
+                    <RentalPeriodCaption period={rental.rentalPeriod} />
                   </dd>
                 </div>
                 <div>
@@ -109,10 +111,11 @@ export function CustomerRentalsPage() {
                   <dd>{rental.unitCount}</dd>
                 </div>
                 <div>
-                  <dt>Còn phải trả</dt>
-                  <dd>{moneyLabel(rental.billingSummary.payableBalance ?? rental.billingSummary.totalOutstanding)}</dd>
+                  <dt>Còn lại theo hóa đơn</dt>
+                  <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
+              <details className="rental-account-disclosure"><summary>Xem chi tiết tiền đã thu và các khoản còn lại</summary><RentalPaymentDetailsView details={rental.paymentDetails} /></details>
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
                   <div key={contract.id} className="customer-unit-inventory">

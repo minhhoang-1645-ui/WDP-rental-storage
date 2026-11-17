@@ -3,6 +3,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { deriveOverdueState } from './overdue-state.js';
+import { rentalAccountSummary } from '../billing/rental-account-summary.js';
+import { returnReadiness } from '../returns/early-return-finance.js';
 
 export interface ActiveRentalListQuery {
   page: number;
@@ -154,6 +156,7 @@ export class ActiveRentalsService {
     const pendingRenewal = record.renewals.find((renewal: any) => ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status));
     const base = {
       reservationId: record.id,
+      returnReadiness: returnReadiness(record.invoices),
       reservationReference: record.reservationCode,
       storageType: record.storageType,
       quantity: record.quantity,
@@ -195,6 +198,7 @@ export class ActiveRentalsService {
         scheduledBalance: this.money(scheduledBalance),
         nextInvoice: nextInvoice ? this.invoiceSummary(nextInvoice) : null,
       },
+      ...(mode === 'CUSTOMER' ? rentalAccountSummary(record, now) : {}),
     };
   }
 

@@ -135,7 +135,7 @@ export function CustomerAppointmentsPage() {
         },
         true,
       );
-      setMessage({ kind: "ok", text: created.status === "CONFIRMED" ? "Lịch nhận kho hợp lệ đã được xác nhận tự động." : "Đã ghi nhận lịch nhận kho. Vui lòng xem trạng thái xử lý trong danh sách." });
+      setMessage({ kind: "ok", text: created.status === "CONFIRMED" ? "Giờ hẹn nhận kho đã được xác nhận. Quản lý sẽ phân công nhân viên phụ trách." : "Đã ghi nhận lịch nhận kho. Vui lòng xem trạng thái xử lý trong danh sách." });
       setReservationId("");
       setScheduledAt("");
       setNote("");
@@ -159,7 +159,7 @@ export function CustomerAppointmentsPage() {
       <PortalPageHeader
         eyebrow="Lịch hẹn"
         title="Lịch bàn giao của tôi"
-        description="Đặt lịch khi hợp đồng đủ điều kiện. Lịch hợp lệ được xác nhận tự động và chuyển cho nhân viên bàn giao kho."
+        description="Lịch hợp lệ được xác nhận giờ hẹn tự động. Quản lý sẽ phân công nhân viên; bạn có thể theo dõi người phụ trách tại đây."
         action={
           <button
             className="button-secondary"
@@ -239,6 +239,10 @@ export function CustomerAppointmentsPage() {
                         .join(", ")}
                     </p>
                   )}
+                  <div className={`appointment-assignment${item.assignmentStatus === 'ASSIGNED' ? ' is-assigned' : ''}`}>
+                    <strong>{item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang bố trí lại nhân viên bàn giao' : item.assignedStaff ? `Nhân viên phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Lịch đã hoàn tất bàn giao' : 'Đang chờ quản lý phân công nhân viên'}</strong>
+                    {['REQUESTED', 'CONFIRMED'].includes(item.status) && <span>{item.assignedStaff && item.assignmentStatus !== 'NEEDS_REASSIGNMENT' ? 'Nhân viên này sẽ tiếp nhận và bàn giao kho cho bạn theo lịch hẹn.' : 'Xác nhận giờ hẹn chưa đồng nghĩa đã có người phụ trách. Thông tin sẽ cập nhật tại đây sau khi quản lý phân công.'}</span>}
+                  </div>
                   {item.note && <p>Ghi chú: {item.note}</p>}
                   {item.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Đã nhận giấy tờ, hướng dẫn và chìa khóa. Chờ ngày bắt đầu thuê để sử dụng kho và đưa hàng vào; hệ thống tự kích hoạt khi đủ điều kiện.</p>}
                   {item.usageStatus !== 'WAITING_FOR_RENTAL_START' && workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}

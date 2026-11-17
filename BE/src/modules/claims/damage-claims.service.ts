@@ -26,13 +26,15 @@ export class DamageClaimsService {
     if (!key || !/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Cần khóa gửi yêu cầu hợp lệ.');
     const idempotencyKey = createHash('sha256').update(`${actor.id}:${key}`).digest('hex');
     const inputHash = createHash('sha256').update(JSON.stringify([contractId, description, date, estimated, links, [...ids].sort()])).digest('hex');
-    const contract = await this.prisma.rentalContract.findFirst({ where: { id: contractId, reservation: { customerId: actor.id }, status: { in: ['ACTIVE', 'COMPLETED'] } }, include: { reservationUnit: { include: { storageUnit: true } } } });
-    if (!contract) throw new NotFoundException('Không tìm thấy kho đã nhận thuộc tài khoản của bạn.');
-    const affected = await this.prisma.storedItem.findMany({ where: { id: { in: ids as string[] }, rentalContractId: contract.id, customerUserId: actor.id }, select: { id: true, name: true, unit: true, itemCode: true } });
-    if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
     const duplicate = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey } });
     if (duplicate) { if (duplicate.inputHash !== inputHash) throw new ConflictException('Khóa gửi đã dùng cho nội dung khác.'); return this.view(duplicate); }
     return this.prisma.$transaction(async tx => {
+      // Serialize against physical return, which also updates this contract.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "RentalContract" WHERE id = ${contractId} FOR UPDATE`);
+      const contract = await tx.rentalContract.findFirst({ where: { id: contractId, reservation: { customerId: actor.id }, status: 'ACTIVE', reservationUnit: { releasedAt: null } }, include: { reservationUnit: { include: { storageUnit: true } } } });
+      if (!contract) throw new NotFoundException('Chỉ được báo sự cố cho kho đang thuê thuộc tài khoản của bạn. Kho đã trả hoặc hợp đồng đã kết thúc không thể gửi yêu cầu mới.');
+      const affected = await tx.storedItem.findMany({ where: { id: { in: ids as string[] }, rentalContractId: contract.id, customerUserId: actor.id }, select: { id: true, name: true, unit: true, itemCode: true } });
+      if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
       const responsibility = await this.unitStaff?.resolveStaff(tx, [contract.reservationUnit.storageUnitId]);
       const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, estimatedValue: estimated === null ? null : BigInt(estimated as number), assignedStaffId: responsibility?.staffUserId, idempotencyKey, inputHash } });
       return this.view(row);
@@ -59,7 +61,11 @@ export class DamageClaimsService {
       const row = await tx.damageClaim.findUnique({ where: { id } }); if (!row) throw new NotFoundException();
       if (input.expectedUpdatedAt !== row.updatedAt.toISOString()) throw new ConflictException('Hồ sơ vừa thay đổi. Tải lại trước khi lưu.');
       let data: Prisma.DamageClaimUpdateInput;
-      if (actor.role === 'STAFF' && ['REPORTED', 'INVESTIGATING'].includes(row.status)) {
+      if (actor.role === 'MANAGER' && input.action === 'amend-decision' && ['APPROVED', 'REJECTED', 'RESOLVED'].includes(row.status)) {
+        data = { status: row.status, decisionReason: this.text(input.decisionReason, 'Lý do quyết định', 10), reviewedById: actor.id, reviewedAt: new Date() };
+      } else if (actor.role === 'MANAGER' && input.action === 'amend-resolution' && row.status === 'RESOLVED') {
+        data = { status: row.status, resolutionNote: this.text(input.resolutionNote, 'Kết quả đã thông báo', 10) };
+      } else if (actor.role === 'STAFF' && ['REPORTED', 'INVESTIGATING'].includes(row.status)) {
         if (row.assignedStaffId && row.assignedStaffId !== actor.id) throw new ForbiddenException('Hồ sơ đã giao nhân viên khác.');
         data = { status: 'INVESTIGATING', assignedStaffId: actor.id, staffFacts: this.text(input.staffFacts, 'Ghi nhận thực tế', 10), factsRecordedAt: new Date() };
       } else if (actor.role === 'MANAGER' && row.status === 'INVESTIGATING' && ['APPROVED', 'REJECTED'].includes(String(input.decision))) {
@@ -68,7 +74,7 @@ export class DamageClaimsService {
       } else if (actor.role === 'MANAGER' && ['APPROVED', 'REJECTED'].includes(row.status) && input.action === 'resolve') {
         data = { status: 'RESOLVED', resolutionNote: this.text(input.resolutionNote, 'Kết quả đã thông báo cho khách', 10), resolvedAt: new Date() };
       } else throw new ForbiddenException('Bạn không được thực hiện bước này ở trạng thái hiện tại.');
-      data.history = [...(Array.isArray(row.history) ? row.history : []), { actorId: actor.id, role: actor.role, at: new Date().toISOString(), from: row.status, to: data.status as string, staffFacts: row.staffFacts, decisionReason: row.decisionReason, resolutionNote: row.resolutionNote }];
+      data.history = [...(Array.isArray(row.history) ? row.history : []), { actorId: actor.id, role: actor.role, action: typeof input.action === 'string' ? input.action : 'transition', at: new Date().toISOString(), from: row.status, to: data.status as string, staffFacts: row.staffFacts, decision: row.decision, decisionReason: row.decisionReason, resolutionNote: row.resolutionNote }];
       return this.view(await tx.damageClaim.update({ where: { id }, data }));
     });
   }

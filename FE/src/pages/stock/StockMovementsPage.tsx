@@ -1,5 +1,6 @@
 import { RecordIdentity, CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StockReconciliation } from '../../components/stock/StockReconciliation';
+import { StockMovementItems } from '../../components/stock/StockMovementItems';
 import { DashboardSkeleton, DetailSkeleton } from '../../components/LoadingSkeleton';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { hasDraft } from '../../services/live-events';
@@ -67,7 +68,7 @@ function StockList({ role }: { role: StockRole }) {
     {!data.loading && !data.error && <>{!data.data?.items.length && <Empty title="Chưa có phiếu phù hợp" />}
       {role === 'STAFF'
         ? data.data?.items.length ? <StaffStockTable items={data.data.items} userId={user?.id ?? ''} /> : null
-        : <div className="stock-grid">{data.data?.items.map(row => <article className="stock-card" key={row.id}><RecordIdentity row={row} resource="stock-movements" showCreated showPerson={role !== 'CUSTOMER'} /><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Kho hiện tại của hợp đồng', storedLocation(row)], ['Hợp đồng', row.rentalContract.contractCode], ['Khách hàng', row.customer.fullName], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công']]} /><Link className="button-secondary" to={`${roleRoot(role)}/${encodeURIComponent(row.id)}`}>Xem phiếu</Link></article>)}</div>}
+        : <div className="stock-grid">{data.data?.items.map(row => <article className="stock-card" key={row.id}><StockMovementItems movement={row} /><RecordIdentity row={row} resource="stock-movements" showCreated showPerson={role !== 'CUSTOMER'} /><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Kho hiện tại của hợp đồng', storedLocation(row)], ['Hợp đồng', row.rentalContract.contractCode], ['Khách hàng', row.customer.fullName], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công']]} /><Link className="button-secondary" to={`${roleRoot(role)}/${encodeURIComponent(row.id)}`}>Xem phiếu</Link></article>)}</div>}
       <ListPagination page={page} limit={limit} onLimitChange={value => update('limit', String(value))} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
     </>}
   </section>;

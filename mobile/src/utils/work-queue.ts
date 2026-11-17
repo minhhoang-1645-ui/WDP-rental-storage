@@ -73,7 +73,7 @@ export function staffNeedsAction(
         ["PENDING_CONTACT", "CONTACTED", "IN_REVIEW"].includes(status)
       );
     case "appointments":
-      return ["REQUESTED", "CONFIRMED"].includes(status);
+      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId;
     case "renewals":
       return status === "PENDING";
     case "transfers":
@@ -96,8 +96,8 @@ export function staffNeedsAction(
 export function awaitingAssignment(resource: string, row: WorkRow) {
   return (
     !(resource === "support-requests" && isEarlyReturnRequest(row)) &&
-    ["support-requests", "maintenance", "stock-movements"].includes(resource) &&
-    ["OPEN", "REQUESTED"].includes(String(row.status)) &&
+    ["support-requests", "maintenance", "stock-movements", "appointments"].includes(resource) &&
+    ["OPEN", "REQUESTED", "CONFIRMED"].includes(String(row.status)) &&
     !assignee(row)
   );
 }
@@ -107,7 +107,7 @@ export function assignmentNeedsAttention(resource: string, row: WorkRow) {
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
   const disabled = person && typeof person === "object" && (person as WorkRow).accountStatus === "DISABLED";
-  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "stock-movements" ? ["ASSIGNED"] : [];
+  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "stock-movements" ? ["ASSIGNED"] : resource === "appointments" ? ["REQUESTED", "CONFIRMED"] : [];
   return Boolean(disabled && !isEarlyReturnRequest(row) && states.includes(String(row.status)));
 }
 

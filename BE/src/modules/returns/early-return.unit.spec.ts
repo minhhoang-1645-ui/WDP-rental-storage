@@ -49,17 +49,19 @@ describe('Early return approval with memory-only persistence', () => {
   it('requires authoritative approval for the current rental period, then permits return before expiry', async () => {
     const app = setup(), now = new Date('2029-01-01'); expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow('quản lý chấp thuận');
     await app.service.decideEarlyReturn('proposal', app.input, app.actor); app.reservation.supportRequests.push(app.request);
+    expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow('thanh toán đủ');
+    app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n;
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', now).unitIds).toEqual(['unit-new']);
     app.request.resolvedBy = { role: 'STAFF' }; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     app.request.resolvedBy = app.actor; app.request.lastActionIdempotencyKey = 'early-return:proposal:2029-04-01'; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     expect(() => app.internal.assertReturnEligible(app.reservation, 'another-customer', now)).toThrow('thuộc khách hàng');
   });
   it('retains normal expiry returns and excludes released transfer allocations in both read and eligibility queries', () => {
-    const app = setup(); expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-04-02')).unitIds).toEqual(['unit-new']);
+    const app = setup(); app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n; expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-04-02')).unitIds).toEqual(['unit-new']);
     expect(app.internal.eligibilityInclude().units.where).toEqual({ releasedAt: null }); expect(app.internal.include().reservation.include.units.where).toEqual({ releasedAt: null });
   });
   it('accepts normal returns from the exclusive end date at Vietnamese midnight', () => {
-    const app = setup();
+    const app = setup(); app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n;
     expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T16:59:59.999Z'))).toThrow('quản lý chấp thuận');
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T17:00:00Z')).unitIds).toEqual(['unit-new']);
   });

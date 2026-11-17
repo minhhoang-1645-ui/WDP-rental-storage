@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
+import { Link } from 'react-router-dom';
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
   formatPortalDate,
@@ -37,11 +38,21 @@ import type {
   CustomerSupportRequest,
 } from "../../types/customer";
 
+function outstandingForReturn(rental: CustomerRental): number | null {
+  const value = rental.returnReadiness ? rental.returnReadiness.totalOutstanding : rental.paymentDetails?.totalOutstanding ?? rental.billingSummary?.totalOutstanding;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isFullySettled(rental: CustomerRental) {
+  return outstandingForReturn(rental) === 0 && rental.returnReadiness?.canReturn !== false;
+}
+
 export function CustomerReturnsPage() {
   const { user } = useAuth();
   const rentals = usePaginatedResource<CustomerRental>(
     "/customer/rentals?limit=100",
     user?.id ?? "",
+    true,
   );
   const returns = usePaginatedResource<CustomerReturnRequest>(
     "/customer/returns?limit=100",
@@ -72,6 +83,7 @@ export function CustomerReturnsPage() {
   const eligibleRentals = (rentals.data?.items ?? []).filter(
     (item) =>
       (item.effectiveEndDate.slice(0, 10) <= vietnamCalendarDate(checkedAt) || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
+      isFullySettled(item) &&
       !item.pendingRenewal &&
       !activeReturnIds.has(item.reservationId),
   );
@@ -92,6 +104,8 @@ export function CustomerReturnsPage() {
     setMessage(null);
     setSubmitting(true);
     try {
+      const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
+      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Chỉ được gửi yêu cầu trả kho sau khi thanh toán đủ toàn bộ công nợ, gồm các kỳ đã cam kết nhưng chưa đến hạn.');
       await mutate<CustomerReturnRequest>(
         "/customer/returns",
         "POST",
@@ -122,7 +136,7 @@ export function CustomerReturnsPage() {
       <PortalPageHeader
         eyebrow="Kết thúc thuê"
         title="Trả kho và quyết toán tiền cọc"
-        description="Trả kho khi đến hạn hoặc gửi đề nghị trả trước hạn để quản lý xem xét. Theo dõi kiểm tra và quyết toán tiền cọc."
+        description="Trả trước hạn và trả đúng hạn đều phải thanh toán đủ toàn bộ công nợ trước khi gửi yêu cầu trả kho. Theo dõi kiểm tra và quyết toán tiền cọc tại đây."
         action={
           <button
             className="button-secondary"
@@ -135,6 +149,15 @@ export function CustomerReturnsPage() {
         }
       />
       <ReturnInventoryNotice />
+      <section className="customer-panel" aria-label="Điều kiện thanh toán trước khi trả kho">
+        <h2>Thanh toán đủ trước khi trả kho</h2>
+        <p>Bạn cần thanh toán đủ tất cả hóa đơn còn hiệu lực theo hợp đồng, gồm tiền thuê các kỳ đã cam kết nhưng chưa đến hạn. Chấp thuận trả sớm xác nhận thời điểm trả; nhân viên chỉ nhận trả khi công nợ đã được tất toán.</p>
+        {(rentals.data?.items ?? []).filter(item => !isFullySettled(item)).map(item => <div className="customer-inline-notice" key={item.reservationId}>
+          <strong>{item.storageType.name} · {item.reservationReference}</strong>
+          <p>{outstandingForReturn(item) === null ? 'Chưa xác định được công nợ. Hãy làm mới dữ liệu hoặc liên hệ nhân viên để đối chiếu trước khi trả kho.' : <>Còn phải thanh toán trước khi trả: <strong>{moneyLabel(outstandingForReturn(item))}</strong>.</>}</p>
+          <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(item.reservationId)}`}>Xem hóa đơn và tất toán</Link>
+        </div>)}
+      </section>
       <div className="customer-module-layout">
         <section className="customer-panel">
           <div className="customer-module-tabs" role="tablist">
@@ -184,7 +207,7 @@ export function CustomerReturnsPage() {
           >
             <h2>Gửi yêu cầu trả kho</h2>
             <p>
-              Chọn yêu cầu thuê đã đến hạn hoặc đã được quản lý chấp thuận trả sớm. Nhân viên sẽ kiểm tra từng kho trước khi quyết toán cọc.
+              Chọn yêu cầu thuê đã đến hạn hoặc đã được quản lý chấp thuận trả sớm và đã thanh toán đủ công nợ. Nhân viên sẽ kiểm tra từng kho trước khi quyết toán cọc.
             </p>
             <label className="field-label">
               Yêu cầu thuê đủ điều kiện trả
@@ -230,7 +253,7 @@ export function CustomerReturnsPage() {
             </button>
             {!rentals.loading && eligibleRentals.length === 0 && (
               <small>
-                Chưa có kho đủ điều kiện trả ngay. Nếu muốn trả trước hạn, gửi đề nghị ở phần bên dưới.
+                Chưa có kho đủ điều kiện trả ngay. Hãy tất toán toàn bộ công nợ; nếu trả trước hạn, cần thêm chấp thuận của quản lý ở phần bên dưới.
               </small>
             )}
           </fieldset>
@@ -272,6 +295,11 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
               {item.reservation.reference} · yêu cầu ngày{" "}
               {formatPortalDate(item.requestedAt, true)}
             </p>
+            {item.returnReadiness && !item.physicallyReturnedAt && !item.returnReadiness.canReturn && <div className="customer-inline-notice">
+              <strong>Cần tất toán trước khi nhân viên nhận trả kho</strong>
+              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được đầy đủ công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
+              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và tất toán</Link>
+            </div>}
             <dl className="customer-record-facts">
               <div>
                 <dt>Đã kiểm tra</dt>

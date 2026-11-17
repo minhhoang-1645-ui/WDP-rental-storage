@@ -4,6 +4,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessDate } from '../../business-date.js';
+import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
@@ -856,6 +857,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       product: this.toProduct(record.storageType),
       quote,
       ...(record.contracts ? { rentalSummary: {
+        ...rentalAccountSummary(record),
         currentUnits: record.contracts.filter((contract: any) => contract.status !== 'CANCELLED').map((contract: any) => ({
           contractId: contract.id, contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber,
           floor: contract.reservationUnit.storageUnit.floor, zone: contract.reservationUnit.storageUnit.zone,

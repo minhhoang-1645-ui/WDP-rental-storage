@@ -1,7 +1,7 @@
 export const staffResources = {
   appointments: {
     title: "Lịch bàn giao",
-    description: "Xem lịch đã xác nhận và ghi nhận bàn giao kho thực tế.",
+    description: "Xem lịch được quản lý phân công và ghi nhận bàn giao kho thực tế.",
     statuses: ["REQUESTED", "CONFIRMED", "COMPLETED", "CANCELLED"],
   },
   rentals: {

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import type { OnlinePaymentPollingStatus, OnlinePaymentStatusResult } from '../../types/payment'
 
 import type { CustomerInvoice } from '../../types/customer'
-import { isScheduledRenewalInvoice, paymentWindowClosed } from '../../utils/payment-state'
+import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '../../utils/payment-state'
 import { vnpayDestination } from '../../utils/vnpay-destination'
 
 export function useCustomerOnlinePayment(customerId: string, refreshInvoices: () => void, refreshPayments?: () => void, invoices?: CustomerInvoice[]) {
@@ -84,8 +84,8 @@ export function useCustomerOnlinePayment(customerId: string, refreshInvoices: ()
     return () => { stopped = true; controller?.abort(); window.clearTimeout(timer) }
   }, [pendingOnline, navigate, refreshInvoices, refreshPayments])
 
-  const createOnlinePayment = async (invoice: Pick<CustomerInvoice, 'id' | 'invoiceCode' | 'type'> & Partial<Pick<CustomerInvoice, 'signing' | 'reservation' | 'renewalCycle' | 'dueAt'>>, mode: 'VNPAY' | 'VNPAYQR' = 'VNPAY') => {
-    if (!customerId || onlineLock.current || pendingOnline || invoice.signing?.complete === false || paymentWindowClosed(invoice) || isScheduledRenewalInvoice(invoice) || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) return
+  const createOnlinePayment = async (invoice: Pick<CustomerInvoice, 'id' | 'invoiceCode' | 'type'> & Partial<Pick<CustomerInvoice, 'signing' | 'reservation' | 'renewalCycle' | 'dueAt' | 'closeoutPaymentAllowed'>>, mode: 'VNPAY' | 'VNPAYQR' = 'VNPAY') => {
+    if (!customerId || onlineLock.current || pendingOnline || invoice.signing?.complete === false || paymentWindowClosed(invoice) || invoicePaymentBlockedBySchedule(invoice) || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) return
     const paymentWindow = window.open('about:blank', '_blank')
     if (!paymentWindow) { setOnlineError('Trình duyệt đã chặn tab VNPay. Hãy cho phép popup rồi thử lại.'); return }
     paymentWindow.opener = null

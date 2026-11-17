@@ -42,6 +42,9 @@ export interface RentalContractSummary {
 }
 
 export interface CustomerRental {
+  returnReadiness?: { requiresFullSettlement: true; totalOutstanding: number | null; canReturn: boolean }
+  rentalPeriod?: import('./rental-account').RentalPeriodSummary
+  paymentDetails?: import('./rental-account').RentalPaymentDetails
   reservationId: string
   reservationReference: string
   storageType: CustomerStorageType
@@ -61,6 +64,9 @@ export interface CustomerRental {
 }
 
 export interface CustomerInvoice {
+  closeoutPaymentAllowed?: boolean
+  voidReason?: string | null
+  voidedAt?: string | null
   signing?: { required: boolean; complete: boolean; contracts: { id: string; code: string }[]; renewalId: string | null }
   id: string
   invoiceCode: string
@@ -97,6 +103,10 @@ export interface CustomerPayment {
 }
 
 export interface CustomerAppointment {
+  assignedStaff?: { id: string; fullName: string } | null;
+  assignmentStatus?: 'UNASSIGNED' | 'ASSIGNED' | 'NEEDS_REASSIGNMENT';
+  assignedAt?: string | null;
+  handoverReport?: Record<string, unknown> | null;
   usageStatus?: 'WAITING_FOR_RENTAL_START' | 'ACTIVE' | null;
   id: string
   appointmentCode: string
@@ -132,9 +142,10 @@ export interface CustomerRenewal {
 export type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER'
 
 export interface CustomerSupportRequest {
+  earlyReturnFinancialReview?: import('../components/customer/EarlyReturnFinancialNotice').EarlyReturnFinancialDecision | null
   earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
   earlyReturnForEndDate?: string | null
-  transfers?: Array<{ id: string; transferCode: string; status: string; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
+  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
   id: string
   supportCode: string
   category: SupportCategory
@@ -155,6 +166,7 @@ export interface CustomerSupportRequest {
 }
 
 export interface CustomerReturnRequest {
+  returnReadiness?: { requiresFullSettlement: true; totalOutstanding: number | null; canReturn: boolean }
   inventory?: { remainingItemTypes: number; pendingMovements: number }
   id: string
   returnCode: string

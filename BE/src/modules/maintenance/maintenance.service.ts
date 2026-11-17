@@ -37,8 +37,8 @@ export class MaintenanceService {
     return this.list(query, 'STAFF', query.assignedToMe ? actor.id : undefined);
   }
 
-  listManager(query: MaintenanceListQuery) {
-    return this.list(query, 'MANAGER');
+  listManager(query: MaintenanceListQuery, assignedStaffUserId?: string) {
+    return this.list(query, 'MANAGER', assignedStaffUserId);
   }
 
   async getStaff(id: string) {

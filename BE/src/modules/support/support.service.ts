@@ -80,7 +80,7 @@ export class SupportService {
 
   listCustomer(customerId: string, query: SupportListQuery) { return this.list({ customerUserId: customerId }, query, 'CUSTOMER'); }
   listStaff(query: SupportListQuery, actor: PublicUser) { return this.list(query.assignedToMe ? { assignedStaffUserId: actor.id } : {}, query, 'STAFF'); }
-  listManager(query: SupportListQuery) { return this.list({}, query, 'MANAGER'); }
+  listManager(query: SupportListQuery, assignedStaffUserId?: string) { return this.list(assignedStaffUserId ? { assignedStaffUserId } : {}, query, 'MANAGER'); }
 
   async getCustomer(customerId: string, id: string) {
     const record = await this.prisma.supportRequest.findFirst({ where: { customerUserId: customerId, OR: [{ id }, { supportCode: id }] }, include: this.include() });

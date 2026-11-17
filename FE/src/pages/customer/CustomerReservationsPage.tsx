@@ -1,8 +1,12 @@
+import { RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
+import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
+import { safeSessionStorage } from '../../services/browser-storage';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { label } from "../../components/manager/portal-data";
 import { CalendarDays, Filter, Plus, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
@@ -14,7 +18,6 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import {
   formatPortalDate,
-  quoteLabel,
 } from "../../components/customer/CustomerPortalHelpers";
 import { useApiResource } from "../../services/useApiResource";
 import type { PendingReservation } from "../../types/booking";
@@ -24,16 +27,17 @@ export function CustomerReservationsPage() {
   const { data, error, status, loading, refresh } = useApiResource<
     PendingReservation[]
   >("/reservations", user?.id ?? "", true);
-  const [filter, setFilter] = useState("ALL");
-  const reservations = data ?? [];
+  const [params, setParams] = useSearchParams();
+  const filter = params.get('status') || 'ALL';
+  const search = params.get('search') || '';
+  const updateFilter = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(previous); if (value && value !== 'ALL') next.set(key, value); else next.delete(key); next.delete('page'); return next; }, { replace: true });
+  const reservations = newestFirst(data ?? []);
+  const savedId = user ? safeSessionStorage.getItem(lastCreatedKey(user.id)) : null;
   const {
     items: visibleItems,
     pagination,
-    reset,
   } = useCustomerPagination(
-    filter === "ALL"
-      ? reservations
-      : reservations.filter((item) => item.status === filter),
+    reservations.filter(item => (filter === 'ALL' || item.status === filter) && `${item.id} ${item.product.name}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))),
   );
   const statuses = Array.from(new Set(reservations.map((item) => item.status)));
 
@@ -80,14 +84,14 @@ export function CustomerReservationsPage() {
       ) : (
         <>
           <div className="customer-filter-row">
+            <label className="field-label">Tìm đơn<input type="search" value={search} onChange={event => updateFilter('search', event.target.value)} placeholder="Mã đơn hoặc tên kho" /></label>
             <span>
               <Filter size={16} /> Lọc theo trạng thái
             </span>
             <select
               value={filter}
               onChange={(event) => {
-                setFilter(event.target.value);
-                reset();
+                updateFilter('status', event.target.value);
               }}
               aria-label="Lọc theo trạng thái"
             >
@@ -105,7 +109,7 @@ export function CustomerReservationsPage() {
               <button
                 className="button-secondary"
                 type="button"
-                onClick={() => setFilter("ALL")}
+                onClick={() => setParams(previous => { const next = new URLSearchParams(previous); next.delete('status'); next.delete('search'); next.delete('page'); return next; }, { replace: true })}
               >
                 Xóa bộ lọc
               </button>
@@ -116,11 +120,11 @@ export function CustomerReservationsPage() {
                 <table className="customer-table">
                   <thead>
                     <tr>
-                      <th>Mã yêu cầu đặt kho</th>
-                      <th>Kho</th>
+                      <th>Đơn thuê</th>
+                      <th>Số lượng / kích thước</th>
                       <th>Thời gian thuê</th>
                       <th>Ưu tiên</th>
-                      <th>Báo giá</th>
+                      <th>Thanh toán</th>
                       <th>Trạng thái</th>
                       <th>Tạo lúc</th>
                     </tr>
@@ -133,11 +137,13 @@ export function CustomerReservationsPage() {
                             className="customer-table-reference"
                             to={`/customer/reservations/${encodeURIComponent(item.id)}`}
                           >
-                            {item.id}
+                            {item.product.name}
                           </Link>
+                          {isJustCreated(item, savedId) && <span className="record-new">Vừa gửi</span>}
+                          <CopyRecordCode value={item.id} label="Mã đơn" />{item.rentalSummary?.currentUnits.length ? <small>Kho hiện tại: {item.rentalSummary.currentUnits.map(unit => unit.unitCode).join(", ")}</small> : null}
+                          <Link className="portal-text-button" to={`/customer/reservations/${encodeURIComponent(item.id)}`}>Xem chi tiết</Link>
                         </td>
                         <td>
-                          <strong>{item.product.name}</strong>
                           <small>
                             {item.quantity} kho · {item.product.dimensions}
                           </small>
@@ -145,9 +151,10 @@ export function CustomerReservationsPage() {
                         <td>
                           <span className="customer-date">
                             <CalendarDays size={15} />{" "}
-                            {formatPortalDate(item.startDate)} –{" "}
-                            {formatPortalDate(item.endDateExclusive)}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentStartDate ?? item.startDate)} –{" "}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
                           </span>
+                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
                         </td>
                         <td>
                           {item.adjacencyPreference
@@ -155,15 +162,12 @@ export function CustomerReservationsPage() {
                             : "Không yêu cầu"}
                         </td>
                         <td>
-                          {quoteLabel(
-                            item.quote.quotedTotalAmount ??
-                              item.quote.grandTotal,
-                          )}
+                          <ReservationPaymentSummary summary={item.rentalSummary} />
                         </td>
                         <td>
                           <ReservationStatus status={item.status} />
                         </td>
-                        <td>{formatPortalDate(item.createdAt)}</td>
+                        <td>{formatPortalDate(item.createdAt, true)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -173,12 +177,14 @@ export function CustomerReservationsPage() {
                 {visibleItems.map((item) => (
                   <article key={item.id} className="customer-reservation-card">
                     <div className="customer-card-top">
-                      <Link to={`/customer/reservations/${item.id}`}>
-                        {item.id}
+                      <Link to={`/customer/reservations/${encodeURIComponent(item.id)}`}>
+                        {item.product.name}
                       </Link>
                       <ReservationStatus status={item.status} />
                     </div>
-                    <h2>{item.product.name}</h2>
+                    {isJustCreated(item, savedId) && <span className="record-new">Vừa gửi</span>}
+                    <CopyRecordCode value={item.id} label="Mã đơn" />
+                    <p>Tạo lúc {formatPortalDate(item.createdAt, true)}</p>
                     <p>
                       {item.quantity} kho · {item.product.dimensions}
                     </p>
@@ -187,12 +193,13 @@ export function CustomerReservationsPage() {
                         <dt>Thời gian thuê</dt>
                         <dd>
                           {formatPortalDate(item.startDate)} –{" "}
-                          {formatPortalDate(item.endDateExclusive)}
+                          {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
+                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
                         </dd>
                       </div>
                       <div>
-                        <dt>Báo giá</dt>
-                        <dd>{quoteLabel(item.quote.grandTotal)}</dd>
+                        <dt>Thanh toán</dt>
+                        <dd><ReservationPaymentSummary summary={item.rentalSummary} /></dd>
                       </div>
                     </dl>
                     <Link

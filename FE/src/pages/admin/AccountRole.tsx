@@ -1,0 +1,45 @@
+import { BriefcaseBusiness, ClipboardCheck, ShieldCheck, UserRound } from 'lucide-react';
+
+const adminRoles = {
+  CUSTOMER: {
+    label: 'Khách hàng', icon: UserRound,
+    description: 'Quản lý hồ sơ và dịch vụ lưu trữ của mình.',
+    access: ['Đặt kho và theo dõi yêu cầu của mình.', 'Xem hợp đồng, hóa đơn, thanh toán và hàng đang lưu của mình.', 'Gửi yêu cầu nhập/xuất, gia hạn, chuyển kho, trả kho hoặc hỗ trợ.'],
+  },
+  STAFF: {
+    label: 'Nhân viên', icon: ClipboardCheck,
+    description: 'Thực hiện công việc vận hành theo phân công.',
+    access: ['Tiếp nhận yêu cầu đặt kho, tư vấn và bàn giao kho.', 'Kiểm đếm khi nhập/xuất và xử lý hồ sơ gia hạn, chuyển kho, trả kho theo quy trình.', 'Xử lý yêu cầu hỗ trợ và bảo trì được giao.'],
+  },
+  MANAGER: {
+    label: 'Quản lý', icon: BriefcaseBusiness,
+    description: 'Điều phối hoạt động của cơ sở NestBox.',
+    access: ['Phân công nhân viên và theo dõi kho, khách hàng, hợp đồng, kết quả kiểm đếm.', 'Duyệt hồ sơ chuyển cấp và nghiệm thu trong phạm vi được giao.', 'Xác minh khoản thanh toán, đối soát và xử lý tiền cọc theo quy trình.', 'Theo dõi tài chính, bảng giá và báo cáo.'],
+  },
+  ADMIN: {
+    label: 'Quản trị viên', icon: ShieldCheck,
+    description: 'Quản trị tài khoản và theo dõi nhật ký hệ thống.',
+    access: ['Tạo tài khoản nhân viên hoặc quản lý.', 'Cập nhật thông tin liên hệ và quản lý trạng thái tài khoản.', 'Xem lịch sử đăng nhập và nhật ký hoạt động.'],
+  },
+};
+
+function roleInfo(value: unknown) {
+  return typeof value === 'string' && Object.hasOwn(adminRoles, value) ? adminRoles[value as keyof typeof adminRoles] : undefined;
+}
+
+export function AccountRole({ value }: { value: unknown }) {
+  const role = roleInfo(value);
+  if (!role) return <span>—</span>;
+  const { label, icon: Icon } = role;
+  return <span className="admin-role"><Icon size={16} aria-hidden="true" />{label}</span>;
+}
+
+export function AccountRoleAccess({ value }: { value: unknown }) {
+  const role = roleInfo(value);
+  if (!role) return <p>Chưa xác định vai trò của tài khoản.</p>;
+  return <div className="admin-role-access">
+    <h2><AccountRole value={value} /></h2>
+    <p>{role.description}</p>
+    <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
+  </div>;
+}

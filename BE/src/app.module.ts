@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { DamageClaimsModule } from './modules/claims/damage-claims.module.js';
+import { BusinessPolicyModule } from './modules/policies/business-policy.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ConfigModule } from '@nestjs/config';
@@ -29,6 +31,8 @@ import { UnitStaffModule } from './modules/unit-staff/unit-staff.module.js';
 
 @Module({
   imports: [
+    DamageClaimsModule,
+    BusinessPolicyModule,
     DocumentsModule,
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,

@@ -100,12 +100,10 @@ export class ContractsService {
     const signatureImage = validateSignature(input);
     const snapshot = this.documentSnapshot(contract);
     if (input.snapshotHash !== snapshotHash(snapshot)) throw new ConflictException('Nội dung hợp đồng đã thay đổi. Vui lòng tải lại và kiểm tra trước khi ký.');
-    const proof = this.signing.acquire({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: snapshotHash(snapshot), signatureImage, acceptanceName }, input);
-    try {
-      const changed = await this.prisma.rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsVersion: snapshot.version, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: signedEnvelope(snapshot, proof.evidence) as unknown as Prisma.InputJsonValue, signatureImage } });
+    await this.signing.verifyAndSave({ userId: customer.id, email: customer.email, kind: 'contract', documentId: contract.id, documentHash: snapshotHash(snapshot), signatureImage, acceptanceName }, input, async (evidence, transaction) => {
+      const changed = await (transaction ?? this.prisma).rentalContract.updateMany({ where: { id: contract.id, termsAcceptedAt: null, updatedAt: contract.updatedAt, status: { not: 'CANCELLED' } }, data: { termsVersion: snapshot.version, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer.id, acceptanceName, acceptanceNote: acceptanceNote || null, signedSnapshot: signedEnvelope(snapshot, evidence) as unknown as Prisma.InputJsonValue, signatureImage } });
       if (changed.count !== 1) throw new ConflictException('Hợp đồng vừa được cập nhật. Vui lòng tải lại.');
-      proof.commit();
-    } catch (error) { proof.release(); throw error; }
+    });
     const updated = await this.prisma.rentalContract.findUniqueOrThrow({ where: { id: contract.id }, include: this.contractInclude() });
     return this.toContract(updated, true);
   }
@@ -161,6 +159,7 @@ export class ContractsService {
       },
       reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
       transferRequests: { orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
+        handoverReport: true,
         id: true, transferCode: true, status: true, reason: true, createdAt: true, approvedAt: true, completedAt: true,
         fromStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
         toStorageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true } },
@@ -214,6 +213,7 @@ export class ContractsService {
         invoices: renewal.invoices.map((invoice: any) => ({ id: invoice.id, invoiceCode: invoice.invoiceCode, status: invoice.status, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue), paidAt: invoice.paidAt?.toISOString() ?? null })),
       })),
       transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
+        handoverReport: transfer.handoverReport ?? null,
         id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, reason: transfer.reason,
         fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber, floor: transfer.fromStorageUnit.floor, zone: transfer.fromStorageUnit.zone },
         toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber, floor: transfer.toStorageUnit.floor, zone: transfer.toStorageUnit.zone } : null,

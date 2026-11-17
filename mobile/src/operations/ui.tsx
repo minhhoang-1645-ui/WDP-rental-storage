@@ -10,6 +10,7 @@ import { formatMoney } from '@/utils/format';
 import { staffStyles } from '@/components/staff-ui';
 import { hasStaffValue } from '@/utils/staff-values';
 import { useCustomerPresentation } from '@/components/customer-presentation';
+import { openWorkspaceEntry } from '@/utils/workspace-navigation';
 
 export const styles = StyleSheet.create({
   page: { gap: WdpSpacing.md, padding: WdpSpacing.md, paddingBottom: 120 },
@@ -39,11 +40,11 @@ export function Button({ title, onPress, disabled = false, variant = 'primary' }
     {busy ? <ActivityIndicator size="small" color={color} /> : Icon ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{createElement(Icon, { size: 18, color })}</View> : null}
     <Text style={[styles.buttonText, variant === 'secondary' && styles.secondaryButtonText, staff && { fontSize: 16, lineHeight: 24 }]}>{shortLabel(title.replace(/^✓\s*/, ''))}</Text></Pressable>;
 }
-export function Navigation({ title, path, description, compact = false }: { title: string; path: string; description?: string; compact?: boolean }) {
+export function Navigation({ title, path, description, compact = false, mode = 'push' }: { title: string; path: string; description?: string; compact?: boolean; mode?: 'push' | 'new-flow' | 'back-to' }) {
   const customer = useCustomerPresentation();
   compact = true;
   const Icon = featureIcon(path);
-  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={() => router.push(path as Href)} style={({ pressed }) => [compact ? { paddingVertical: 12, paddingHorizontal: 8 } : styles.card, styles.navigation, compact && { minHeight: 56 }, pressed && styles.pressed]}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={() => { if (mode === 'new-flow') openWorkspaceEntry(path); else if (mode === 'back-to') router.dismissTo(path as Href); else router.push(path as Href); }} style={({ pressed }) => [compact ? { paddingVertical: 12, paddingHorizontal: 8 } : styles.card, styles.navigation, compact && { minHeight: 56 }, pressed && styles.pressed]}>
     <View accessibilityElementsHidden style={{ padding: 8, backgroundColor: featureAccent(path), borderRadius: 10 }}>{createElement(Icon, { size: 21, color: WdpColors.surface })}</View>
     <View style={styles.navigationCopy}><Text style={[styles.navigationTitle, compact && { fontSize: 16 }]}>{shortLabel(title)}</Text>{Boolean(description) && <Text style={[styles.copy, customer && { fontSize: 14, lineHeight: 20 }]}>{description}</Text>}</View><View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><ChevronRight size={18} color={WdpColors.muted} /></View></Pressable>;
 }
@@ -55,9 +56,14 @@ export function Disclosure({ title, children }: { title: string; children: React
   if (staff) return <View style={{ gap: expanded ? 8 : 0, paddingBottom: expanded ? 12 : 0, borderBottomWidth: 0.5, borderBottomColor: WdpColors.border }}><Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={{ minHeight: 48, flexDirection: 'row', gap: 8, alignItems: 'center' }}><Text style={[staffStyles.body, { flex: 1, fontWeight: '600' }]}>{shortLabel(title)}</Text>{expanded ? <ChevronDown size={18} color={WdpColors.muted} /> : <ChevronRight size={18} color={WdpColors.muted} />}</Pressable>{expanded && children}</View>;
   return <View style={styles.card}><Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={{ minHeight: 44, flexDirection: 'row', gap: 10, alignItems: 'center' }}>{createElement(Icon, { size: 20, color: WdpColors.navy })}<Text style={[styles.title, { flex: 1 }]}>{shortLabel(title)}</Text>{expanded ? <ChevronDown size={18} color={WdpColors.muted} /> : <ChevronRight size={18} color={WdpColors.muted} />}</Pressable>{expanded && children}</View>;
 }
-export function Facts({ values }: { values: [string, unknown][] }) {
-  const staff = true;
-  return <View style={{ gap: WdpSpacing.sm }}>{values.filter(([, value]) => !staff || hasStaffValue(value)).map(([name, value], index) => <View key={`${name}:${index}`}><Text style={staff ? staffStyles.secondary : styles.label}>{name}</Text><Text selectable style={staff ? staffStyles.body : styles.copy}>{value === null || value === undefined || value === '' ? '—' : staff && typeof value === 'boolean' ? value ? 'Có' : 'Không' : String(value)}</Text></View>)}</View>;
+export function Facts({ values }: { values: [label: string, value: unknown, fieldId?: string][] }) {
+  const occurrences = new Map<string, number>();
+  return <View style={{ gap: WdpSpacing.sm }}>{values.filter(([, value]) => hasStaffValue(value)).map(([name, value, fieldId]) => {
+    const occurrence = (occurrences.get(name) ?? 0) + 1;
+    occurrences.set(name, occurrence);
+    const key = fieldId ? `field:${fieldId}` : `label:${occurrence}:${name}`;
+    return <View key={key}><Text style={staffStyles.secondary}>{name}</Text><Text selectable style={staffStyles.body}>{typeof value === 'boolean' ? value ? 'Có' : 'Không' : String(value)}</Text></View>;
+  })}</View>;
 }
 export const money = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? formatMoney(value) : 'Cần xác nhận báo giá';
 const baseFieldStyles = styles;

@@ -1,3 +1,4 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { useCustomerOnlinePayment } from './useCustomerOnlinePayment';
 import { EntitySelect } from '../../components/EntitySelect';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
@@ -214,11 +215,10 @@ export function CustomerRenewalsPage() {
             )}
           </fieldset>
         </form>
-        <section className="customer-panel">
+        <section className="customer-request-section" aria-label="Lịch sử gia hạn">
           <div className="customer-panel-heading">
             <div>
               <h2>Lịch sử gia hạn</h2>
-              <p>Theo dõi kết quả xét duyệt, thanh toán và thời hạn mới của bạn.</p>
             </div>
             <CalendarRange size={20} />
           </div>
@@ -244,26 +244,26 @@ export function CustomerRenewalsPage() {
                   && invoice && invoice.status !== 'PAID' && invoice.status !== 'VOID' && invoice.balanceDue > 0;
                 return (
                 <article
-                  className="customer-record-card customer-record-card--compact"
+                  className="customer-record-card customer-record-card--compact customer-request-card"
                   key={item.id}
                 >
                   <div className="customer-record-heading">
                     <div>
-                      <small>{item.renewalCode}</small>
+                      <CopyRecordCode value={item.renewalCode} />
                       <h2>{item.reservation.storageType.name}</h2>
                     </div>
                     <CustomerStatus status={item.status} />
                   </div>
                   <dl className="customer-record-facts">
                     <div>
-                      <dt>Kỳ gia hạn (không gồm ngày kết thúc)</dt>
+                      <dt>Gia hạn · {item.termMonths} tháng</dt>
                       <dd>
                         {formatPortalDate(item.previousEndDate)} –{" "}
                         {formatPortalDate(item.requestedEndDate)}
                       </dd>
                     </div>
                     <div>
-                      <dt>Báo giá</dt>
+                      <dt>Tiền gia hạn</dt>
                       <dd>
                         {moneyLabel(
                           item.quoteSnapshot.totalAmount,
@@ -277,17 +277,17 @@ export function CustomerRenewalsPage() {
                       {item.rejectionReason}
                     </p>
                   )}
-                  <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>
+                  {item.status !== 'COMPLETED' && <WorkflowHint>{workflowGuide('renewals', item.status, 'customer')}</WorkflowHint>}
                   {canPay && <button type="button" className="button-primary" disabled={Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => void createOnlinePayment({ ...invoice, type: 'RENEWAL' })}>
                     {onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}
                   </button>}
                   {item.status === 'APPROVED_PENDING_PAYMENT' && item.appendix?.acceptedAt && <Link className="button-secondary" to={invoice ? `/customer/payments?invoice=${encodeURIComponent(invoice.id)}` : '/customer/payments'}>Xem hóa đơn gia hạn</Link>}
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
                   {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
-                    ? <div><p className="customer-form-message is-ok">Phụ lục {item.appendix.code} đã được xác nhận.</p><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} signed /></div>
+                    ? <details className="customer-request-disclosure"><summary>Phụ lục đã ký</summary><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} signed /></details>
                     : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và xác nhận phụ lục {item.appendix.code}</button>)}
                   {selectedAppendix?.id === item.id && item.appendix && <div><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} /><SignatureAgreement key={`${item.id}:${item.appendix.snapshotHash}`} label="Xác thực và ký phụ lục" busy={Boolean(acceptingAppendixId)} otpConfigured={item.appendix.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: item.appendix?.snapshotHash }) })} onSubmit={(signature, proof) => acceptAppendix(item, signature, proof)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
-                  <details className="renewal-review-details"><summary>Xem thời hạn và chi phí gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
+                  <details className="renewal-review-details customer-request-disclosure"><summary>Chi tiết gia hạn</summary><RenewalReview row={{ ...item, customer: user }} showContracts={false} audience="customer" /></details>
                 </article>
               ); })}
             </div>

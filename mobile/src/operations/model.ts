@@ -33,6 +33,7 @@ export const resources: Record<string, ResourceDefinition> = {
   'support-requests': { title: 'Hỗ trợ khách hàng', path: '/manager/support-requests', statuses: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED', 'RESOLVED'] },
 };
 export const adminSections = [
+  ['settings', 'Chính sách hệ thống'],
   ['dashboard', 'Tổng quan hệ thống'], ['users', 'Quản lý tài khoản người dùng'],
   ['login-history', 'Lịch sử đăng nhập'], ['activity', 'Nhật ký hoạt động'],
 ] as const;

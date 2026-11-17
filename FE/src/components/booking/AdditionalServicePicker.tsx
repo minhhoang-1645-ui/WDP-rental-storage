@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../services/api';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '../../types/additional-service';
 import { defaultServiceSelection, serviceEstimatedTotal, serviceBillingBasis, serviceSelectionIssue } from '../../utils/service-period';
-import { localizeService } from '../../utils/service-labels';
+import { localizeService, serviceRateUnit } from '../../utils/service-labels';
 
 function serviceGroup(service: AdditionalService): 'DAY' | 'MONTH' | 'ONE_TIME' {
   return service.billingUnit;
@@ -62,7 +62,7 @@ export function AdditionalServicePicker({ services: rawServices, selections, sta
           const suggested = defaultServiceSelection(service, startDate, endDate);
           const subtotal = selected ? serviceEstimatedTotal(service, selected, startDate, endDate) : null;
           return <div className="addon-service-item" key={service.id}>
-            <label className="booking-checkbox"><input aria-label={service.name} type="checkbox" checked={Boolean(selected)} disabled={!selected && (!suggested || service.isActive === false || service.unitPrice === null || service.unitPrice <= 0)} onChange={event => onChange(event.target.checked && suggested ? [...selections, suggested] : selections.filter(item => item.serviceId !== service.id))} /><span><strong>{service.name}</strong><small>{service.unitPrice === null ? 'Cần xác nhận báo giá' : `${new Intl.NumberFormat('vi-VN').format(service.unitPrice)} đ / ${service.billingUnit === 'DAY' ? 'ngày' : service.billingUnit === 'MONTH' ? 'tháng lịch' : 'sản phẩm'}`}</small>{service.description && <small>{service.description}</small>}{!suggested && isRental && <small>Chọn kỳ thuê kho phù hợp; thiết bị theo tháng cần ít nhất một tháng lịch.</small>}</span></label>
+            <label className="booking-checkbox"><input aria-label={service.name} type="checkbox" checked={Boolean(selected)} disabled={!selected && (!suggested || service.isActive === false || service.unitPrice === null || service.unitPrice <= 0)} onChange={event => onChange(event.target.checked && suggested ? [...selections, suggested] : selections.filter(item => item.serviceId !== service.id))} /><span><strong>{service.name}</strong><small>{service.unitPrice === null ? 'Cần xác nhận báo giá' : `${new Intl.NumberFormat('vi-VN').format(service.unitPrice)} đ / ${serviceRateUnit(service)}`}</small>{service.description && <small>{service.description}</small>}{!suggested && isRental && <small>Chọn kỳ thuê kho phù hợp; thiết bị theo tháng cần ít nhất một tháng lịch.</small>}</span></label>
             {selected && <div className="checkout-fields">
               <label className="field-label">Số lượng {service.name}<input type="number" min={1} max={100} step={1} required value={selected.quantity} onChange={event => change(service.id, { quantity: Number(event.target.value) })} /></label>
               {isRental && <><label className="field-label">Ngày bắt đầu {service.name}<input type="date" required min={startDate} max={endDate} value={selected.serviceStartDate ?? ''} onChange={event => change(service.id, { serviceStartDate: event.target.value })} /></label><label className="field-label">Ngày kết thúc {service.name}<input type="date" required min={selected.serviceStartDate || startDate} max={endDate} value={selected.serviceEndDate ?? ''} onChange={event => change(service.id, { serviceEndDate: event.target.value })} /></label></>}

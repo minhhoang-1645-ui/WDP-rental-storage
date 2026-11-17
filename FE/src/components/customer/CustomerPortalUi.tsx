@@ -98,7 +98,7 @@ export function PortalPageHeader({
 }: {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
@@ -106,7 +106,7 @@ export function PortalPageHeader({
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {action && <div className="customer-page-header-action">{action}</div>}
     </header>

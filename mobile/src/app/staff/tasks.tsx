@@ -13,7 +13,7 @@ import { WdpColors as C } from '@/constants/wdp-theme';
 const views = [['mine', 'Của tôi'], ['progress', 'Đang làm'], ['waiting', 'Chờ giao'], ['shared', 'Tiếp nhận']] as const;
 type QueueView = typeof views[number][0];
 type QueueItem = { key: string; resource: string; title: string; row: Row };
-const assignedModules = new Set(['support-requests', 'maintenance', 'stock-movements']);
+const assignedModules = new Set(['support-requests', 'maintenance', 'stock-movements', 'appointments']);
 
 export default function StaffTasksScreen() {
   const { user } = useAuth();

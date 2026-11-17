@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 import { codeOf, idOf, label, object, rows, text, type Row } from './model';
-import { Facts, Navigation, Panel, money, styles } from './ui';
+import { Facts, Navigation, money } from './ui';
 import { relatedResource } from '@/portals/resources';
 import { formatDate } from '@/utils/format';
 import { useStaffPresentation } from '@/components/staff-ui';
@@ -42,31 +42,22 @@ function display(key: string, value: unknown) {
   return typeof value === 'string' ? label(value) : value;
 }
 
+const lookupLinks = new Set(['reservation', 'latestReservation', 'customer', 'unit', 'storageUnit', 'fromUnit', 'toUnit']);
+
 export function RecordView({ row, root, depth = 0 }: { row: Row; root: string; depth?: number }) {
   const staff = useStaffPresentation();
-  if (!staff) return <View style={{gap: 12}}><Facts values={Object.entries(row).filter(([key, value]) => names[key] && hasStaffValue(value) && typeof value !== 'object').map(([key, value]) => [names[key], display(key, value)] as [string, unknown])}/>{depth < 4 && Object.entries(nested).map(([key, title]) => {
+  if (!staff) return <View style={{gap: 12}}><Facts values={Object.entries(row).filter(([key, value]) => names[key] && (key !== 'deposit' || value !== row.depositAmount) && hasStaffValue(value) && typeof value !== 'object').map(([key, value]) => [names[key], display(key, value)] as [string, unknown])}/>{depth < 4 && Object.entries(nested).map(([key, title]) => {
     const value = row[key];
     if (!hasStaffValue(value) || typeof value !== 'object') return null;
     const items = Array.isArray(value) ? rows(value) : [object(value)];
-    return <View key={key} style={{gap: 8, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: WdpColors.border}}><Text style={{fontSize: 17, lineHeight: 24, color: WdpColors.navy, fontWeight: '600'}}>{title}</Text>{items.map((item, index) => <View key={`${key}:${idOf(item)}:${index}`} style={{gap: 8}}>{related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation compact title={`Xem ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`}/>}<RecordView row={item} root={root} depth={depth + 1}/></View>)}</View>;
+    return <View key={key} style={{gap: 8, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: WdpColors.border}}><Text style={{fontSize: 17, lineHeight: 24, color: WdpColors.navy, fontWeight: '600'}}>{title}</Text>{items.map((item, index) => <View key={`${key}:${idOf(item)}:${index}`} style={{gap: 8}}>{related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation compact title={`Xem ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} mode={lookupLinks.has(key) ? 'new-flow' : 'push'}/>}<RecordView row={item} root={root} depth={depth + 1}/></View>)}</View>;
   })}</View>;
-  const facts = Object.entries(row).filter(([key, value]) => names[key] && (value === null || typeof value !== 'object') && (!staff || hasStaffValue(value) && !/^id$|Id$/.test(key))).map(([key, value]) => [names[key], display(key, value)] as [string, unknown]);
-  if (staff) return <View style={{ gap: 12 }}><StaffInfoGrid values={facts.filter((item, index) => facts.findIndex(other => other[0] === item[0] && other[1] === item[1]) === index)} />{depth < 4 && Object.entries(nested).map(([key, title]) => {
+  const facts = Object.entries(row).filter(([key, value]) => names[key] && (key !== 'deposit' || value !== row.depositAmount) && (value === null || typeof value !== 'object') && (!staff || hasStaffValue(value) && !/^id$|Id$/.test(key))).map(([key, value]) => [names[key], display(key, value)] as [string, unknown]);
+  return <View style={{ gap: 12 }}><StaffInfoGrid values={facts.filter((item, index) => facts.findIndex(other => other[0] === item[0] && other[1] === item[1]) === index)} />{depth < 4 && Object.entries(nested).map(([key, title]) => {
     const value = row[key];
     if (!hasStaffValue(value) || typeof value !== 'object') return null;
     const items = Array.isArray(value) ? rows(value) : [object(value)];
-    return <View key={key} style={{ gap: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: WdpColors.border }}><Text accessibilityRole="header" style={staffStyles.section}>{title}</Text>{items.map((item, index) => <View key={`${key}:${idOf(item) || codeOf(item)}:${index}`} style={{ gap: 8 }}>{items.length > 1 && <Text style={staffStyles.secondary}>{codeOf(item) !== idOf(item) ? codeOf(item) : `${title} ${index + 1}`}</Text>}{related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation compact title={`Xem ${title.toLowerCase()}`} path={related[key] === 'contracts' ? `/staff/contract-details?id=${encodeURIComponent(idOf(item))}` : `${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} />}<RecordView row={item} root={root} depth={depth + 1} /></View>)}</View>;
-  })}</View>;
-  return <View style={{ gap: 12 }}><Facts values={facts} />{depth < 4 && Object.entries(nested).flatMap(([key, title]) => {
-    const value = row[key];
-    if (!value || typeof value !== 'object' || staff && !hasStaffValue(value)) return [];
-    const items = Array.isArray(value) ? rows(value) : [object(value)];
-    if (!items.length) return [];
-    return [<Panel key={key} title={title}>{items.map((item, index) => <View key={`${idOf(item) || codeOf(item)}:${index}`} style={{ gap: 8 }}>
-      {items.length > 1 && <Text style={styles.label}>{codeOf(item) || `${title} ${index + 1}`}</Text>}
-      {related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation title={`Mở ${title.toLowerCase()}`} path={`${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} />}
-      <RecordView row={item} root={root} depth={depth + 1} />
-    </View>)}</Panel>];
+    return <View key={key} style={{ gap: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: WdpColors.border }}><Text accessibilityRole="header" style={staffStyles.section}>{title}</Text>{items.map((item, index) => <View key={`${key}:${idOf(item) || codeOf(item)}:${index}`} style={{ gap: 8 }}>{items.length > 1 && <Text style={staffStyles.secondary}>{codeOf(item) !== idOf(item) ? codeOf(item) : `${title} ${index + 1}`}</Text>}{related[key] && relatedResource(root, related[key]) && idOf(item) && <Navigation compact title={`Xem ${title.toLowerCase()}`} path={related[key] === 'contracts' ? `/staff/contract-details?id=${encodeURIComponent(idOf(item))}` : `${root}/${relatedResource(root, related[key])}/${encodeURIComponent(idOf(item))}`} mode={lookupLinks.has(key) ? 'new-flow' : 'push'} />}<RecordView row={item} root={root} depth={depth + 1} /></View>)}</View>;
   })}</View>;
 }
 export function summary(row: Row, statusText?: string) { return [text(row, 'customer.fullName', 'reservation.customer.fullName', 'fullName'), statusText ?? label(row.status ?? row.rentalState ?? row.accountStatus ?? (row.isOverdue ? 'OVERDUE' : undefined)), text(row, 'storageType.name', 'product.name', 'subject', 'email')].filter(value => value && value !== '—').join(' · '); }

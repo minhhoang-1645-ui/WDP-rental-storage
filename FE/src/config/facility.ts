@@ -11,7 +11,8 @@ export const facility = {
   phone: configured.phone || 'Hỗ trợ qua tài khoản',
   email: configured.email || 'hotro@nestbox.example',
   hours: configured.hours || '08:00–18:00 · Thứ Hai đến Chủ Nhật',
-  illustrative: !Object.values(configured).every(Boolean),
+  addressIllustrative: !configured.address,
+  hoursIllustrative: !configured.hours,
   phoneHref: configured.phone && /^\+?[\d\s().-]{8,25}$/.test(configured.phone) && /[1-9]/.test(configured.phone) ? `tel:${configured.phone.replace(/[^\d+]/g, '')}` : undefined,
   emailHref: configured.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configured.email) && !configured.email.endsWith('.example') ? `mailto:${configured.email}` : undefined,
 }

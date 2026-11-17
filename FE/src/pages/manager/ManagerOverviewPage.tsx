@@ -1,271 +1,170 @@
-import {
-  ArrowRight,
-  BarChart3,
-  ClipboardCheck,
-  FileText,
-  Headphones,
-  RefreshCw,
-  Warehouse,
-  WalletCards,
-} from "lucide-react";
-import { Link } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
-import { ActivitySummary } from "../../activity/ActivityCenter";
-import { useActivity } from "../../activity/context";
-import {
-  PageHeader,
-  LoadState,
-  Status,
-} from "../../components/manager/PortalUi";
-import { money, type Row } from "../../components/manager/portal-data";
-import { WorkHub } from "../../components/workspace/WorkHub";
-import { useApiResource } from "../../services/useApiResource";
-import { usePaginatedResource } from "../../services/usePaginatedResource";
-import { useLiveRefresh } from "../../services/live-events";
-import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from "../../utils/work-queue";
-import { activitySources } from "../../utils/activity";
+import { ArrowRight, ClipboardCheck, ClipboardList, RefreshCw, Users, WalletCards, Warehouse, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
+import { useActivity } from '../../activity/context';
+import { useApiResource } from '../../services/useApiResource';
+import { useLiveRefresh } from '../../services/live-events';
+import type { ManagerReport } from '../../types/manager-report';
+import { PageHeader, LoadState, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { DashboardSkeleton } from '../../components/LoadingSkeleton';
+import { date, first, money, rows, type Row } from '../../components/manager/portal-data';
+import type { ActivityEntry } from '../../utils/activity';
+import { assignmentNeedsAttention } from '../../utils/work-queue';
+import { isEarlyReturnRequest } from '../../utils/early-return';
+
+const number = new Intl.NumberFormat('vi-VN');
+const percent = new Intl.NumberFormat('vi-VN', { style: 'percent', maximumFractionDigits: 1 });
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const count = (value?: number) => isCount(value) ? number.format(value) : '—';
+const storageStatuses = [
+  { key: 'occupied', label: 'Đang sử dụng', color: 'occupied' },
+  { key: 'available', label: 'Sẵn sàng', color: 'available' },
+  { key: 'reserved', label: 'Đang giữ', color: 'reserved' },
+  { key: 'maintenance', label: 'Bảo trì', color: 'maintenance' },
+] as const;
+
+function storageBreakdown(units: ManagerReport['units']) {
+  if (!isCount(units.total)) return null;
+  const statuses: { key: string; label: string; color: string; value: number }[] = storageStatuses.map(
+    ({ key, label, color }) => ({ key, label, color, value: units[key] }),
+  );
+  if (!statuses.every(({ value }) => isCount(value))) return null;
+  const subtotal = statuses.reduce((sum, { value }) => sum + value, 0);
+  if (subtotal > units.total) return null;
+  const extra = Object.entries(units).flatMap(([key, value]) =>
+    key !== 'total' && key !== 'utilizationPercent' && !statuses.some(status => status.key === key) && isCount(value)
+      ? [{ key, label: `Trạng thái khác (${key})`, color: 'other', value }] : []);
+  const extraTotal = extra.reduce((sum, { value }) => sum + value, 0);
+  const remaining = units.total - subtotal;
+  // Analytics exposes four named status counts today. A residual is meaningful,
+  // but its status cannot be identified until the API returns the breakdown.
+  if (extraTotal > remaining) return null;
+  const unclassified = remaining - extraTotal;
+  return [...statuses, ...extra, ...(unclassified > 0
+    ? [{ key: 'unclassified', label: 'Chưa có chi tiết trạng thái', color: 'unclassified', value: unclassified }] : [])];
+}
+
+function ManagerMetric({ title, value, hint, to, icon: Icon }: {
+  title: string; value: string; hint: string; to: string; icon: LucideIcon;
+}) {
+  return <Link className="internal-kpi manager-dashboard-kpi" to={to}>
+    <span className="manager-kpi-heading">{title}<Icon size={19} aria-hidden="true" /></span>
+    <strong>{value}</strong>
+    <small>{hint}</small>
+  </Link>;
+}
+
+function StoragePanel({ report, loading, error }: { report?: ManagerReport | null; loading: boolean; error: string }) {
+  const units = report?.units;
+  const statuses = units ? storageBreakdown(units) : null;
+  return <section className="manager-overview-panel" aria-labelledby="manager-storage-title">
+    <header>
+      <h2 id="manager-storage-title">Tình trạng kho</h2>
+      <Link className="manager-panel-link" to="/manager/units">Xem kho vật lý <ArrowRight size={15} aria-hidden="true" /></Link>
+    </header>
+    <p className="manager-panel-caption">Phân bổ kho vật lý theo trạng thái hiện tại.</p>
+    {!report ? loading ? <DashboardSkeleton variant="distribution" /> : <p className="manager-panel-caption" role="status">{error ? 'Chưa tải được số liệu kho.' : 'Chưa có số liệu kho.'}</p>
+      : !units || !statuses ? <p className="manager-panel-caption" role="status">Số liệu trạng thái kho chưa khớp với tổng kho.</p>
+      : <>
+        <p className="manager-storage-total">Tổng cộng <strong>{count(units.total)} kho</strong></p>
+        {units.total > 0 && <div className="manager-storage-bar" aria-hidden="true">
+          {statuses.filter(status => status.value > 0).map(({ key, color, value }) =>
+            <span key={key} className={`manager-storage-segment is-${color}`} style={{ flex: `${value} 0 0%` }} />)}
+        </div>}
+        <ul className="manager-storage-legend" aria-label="Số lượng và tỷ lệ kho theo trạng thái">
+          {statuses.map(({ key, label, color, value }) => <li key={key} className={`is-${color}`}>
+            <span className="manager-storage-swatch" aria-hidden="true" />
+            <span>{label}</span><strong>{count(value)} kho</strong><span>{percent.format(units.total ? value / units.total : 0)}</span>
+          </li>)}
+        </ul>
+        <p className="manager-panel-caption">{units.total ? `Hiện có ${count(units.available)}/${count(units.total)} kho ở trạng thái sẵn sàng.` : 'Chưa có kho vật lý trong hệ thống.'}</p>
+        <p className="manager-panel-caption">Cập nhật {date(report.asOf, true)} (UTC+7)</p>
+      </>}
+  </section>;
+}
+
+function workDetails(entry: ActivityEntry, row: Row) {
+  const status = first(row, 'status');
+  const id = encodeURIComponent(first(row, 'id'));
+  if (assignmentNeedsAttention(entry.kind, row)) {
+    const reassignment = first(row, 'assignedStaff.accountStatus') === 'DISABLED';
+    return { title: reassignment ? 'Đổi người phụ trách' : 'Phân công nhân viên', to: `/manager/assignments?kind=${entry.kind}&record=${id}`, status, statusText: reassignment ? 'Cần phân công lại' : 'Chờ phân công' };
+  }
+  if (entry.kind === 'deposit-settlements') return status === 'APPROVED'
+    ? { title: 'Ghi nhận hoàn cọc', to: entry.web, status, statusText: 'Chờ hoàn cọc' }
+    : { title: 'Duyệt quyết toán cọc', to: entry.web, status };
+  if (entry.kind === 'support-requests' && isEarlyReturnRequest(row)) return { title: 'Duyệt trả trước hạn', to: `/manager/early-returns?record=${id}`, status, statusText: 'Chờ quyết định' };
+  if (entry.kind === 'support-requests') return { title: 'Xử lý hỗ trợ chuyển cấp', to: entry.web, status, statusText: 'Chờ xử lý' };
+  if (entry.kind === 'maintenance') return { title: 'Nghiệm thu bảo trì', to: entry.web, status };
+  if (entry.kind === 'damage-claims') return status === 'INVESTIGATING'
+    ? { title: 'Quyết định xử lý sự cố hàng hóa', to: entry.web, status, statusText: 'Chờ quyết định' }
+    : { title: 'Ghi kết quả xử lý sự cố', to: entry.web, status, statusText: 'Chờ ghi kết quả' };
+  if (entry.kind === 'invoices') return { title: 'Kiểm tra hóa đơn quá hạn', to: entry.web, status, statusText: 'Quá hạn' };
+  return { title: entry.title, to: entry.web, status };
+}
 
 export function ManagerOverviewPage() {
   const { user } = useAuth();
   const activity = useActivity();
-  const summary = useApiResource<Row>(
-    "/manager/dashboard/summary",
-    user?.id,
-    true,
-  );
-  const units = usePaginatedResource<Row>("/manager/units", user?.id, true);
-  useLiveRefresh("/manager/*", summary.refresh);
-  const refresh = () => {
-    summary.refresh();
-    units.refresh();
-    activity.refresh();
+  const report = useApiResource<ManagerReport>('/manager/dashboard/analytics', user?.id, true);
+  useLiveRefresh('/manager/*', report.refresh);
+  const data = report.error ? null : report.data;
+  const queueTotal = (keys: string[]) => {
+    const values = keys.map(key => data?.queue?.[key]);
+    return values.every(isCount) ? count(values.reduce((sum, value) => sum + value, 0)) : '—';
   };
-  const invoices = activity.data.invoices ?? [];
-  const outstandingInvoices = invoices.filter(row => ['OPEN', 'PARTIALLY_PAID'].includes(String(row.status)) && Number(row.balanceDue) > 0);
-  const overdueInvoices = outstandingInvoices.filter((row) => isOverdueInvoice(row));
-  const submissions = (activity.data["payment-submissions"] ?? []).filter(
-    (row) => row.status === "PENDING_VERIFICATION",
-  );
-  const assignments = [
-    "support-requests",
-    "maintenance",
-    "stock-movements",
-  ].flatMap((kind) =>
-    (activity.data[kind] ?? []).filter((row) => assignmentNeedsAttention(kind, row)),
-  );
-  const available = units.data ? units.data.items.filter(row => row.status === 'AVAILABLE').length : summary.data?.availableUnits;
-  const occupied = units.data ? units.data.items.filter(row => row.status === 'OCCUPIED').length : summary.data?.occupiedUnits;
-  const count = (kinds: string[], value: number) =>
-    activity.loading ||
-    kinds.some(
-      (kind) =>
-        !activity.data[kind] ||
-        activity.failed.includes(
-          activitySources("MANAGER").find((source) => source.kind === kind)!
-            .title,
-        ),
-    )
-      ? "—"
-      : value;
-  const financeReady =
-    Boolean(activity.data.invoices) && !activity.failed.includes("Hóa đơn");
-  return (
-    <section className="workspace-home">
-      <PageHeader
-        title="Tổng quan vận hành"
-        description={`Chào ${user?.fullName ?? "bạn"}. Theo dõi cơ sở, phân công công việc và đối chiếu tài chính.`}
-      >
-        <button
-          className="button-secondary"
-          disabled={summary.loading || units.loading || activity.checking}
-          onClick={refresh}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      <WorkHub
-        title="Việc quản lý cần xử lý"
-        description="Ưu tiên hồ sơ chưa có người phụ trách và các khoản cần đối chiếu."
-        actions={[
-          {
-            title: "Phân công nhân viên",
-            description:
-              "Giao người phụ trách hỗ trợ, bảo trì và nhập – xuất hàng.",
-            to: "/manager/assignments?assignment=attention",
-            icon: Headphones,
-            count: count(
-              ["support-requests", "maintenance", "stock-movements"],
-              assignments.length,
-            ),
-            tone: assignments.length ? "attention" : "normal",
-          },
-          {
-            title: "Chờ xác nhận thanh toán",
-            description: "Đối chiếu tiền thực nhận với thông báo khách gửi.",
-            to: "/manager/payment-submissions",
-            icon: ClipboardCheck,
-            count: count(["payment-submissions"], submissions.length),
-            tone: submissions.length ? "attention" : "normal",
-          },
-          {
-            title: "Hóa đơn & công nợ",
-            description: financeReady
-              ? `${outstandingInvoices.length} hóa đơn còn số dư, ${overdueInvoices.length} quá hạn. Mở để đối chiếu hoặc ghi nhận thu tại cơ sở.`
-              : "Xem số tiền còn phải thu và hạn thanh toán.",
-            to: "/manager/operations/invoices",
-            icon: WalletCards,
-            count: count(["invoices"], outstandingInvoices.length),
-            tone: overdueInvoices.length ? "attention" : "normal",
-          },
-          ...[
-            ['support-requests', 'Hỗ trợ cần quyết định', '/manager/operations/support-requests?status=ESCALATED', 'Xử lý các hồ sơ nhân viên chuyển lên.'],
-            ['maintenance', 'Chờ nghiệm thu bảo trì', '/manager/operations/maintenance?status=AWAITING_VERIFICATION', 'Kiểm tra kết quả sửa chữa trước khi mở lại kho.'],
-            ['deposit-settlements', 'Quyết toán tiền cọc', '/manager/operations/deposit-settlements', 'Đối chiếu kiểm tra kho, công nợ và khoản hoàn.'],
-            ['online-payment-reconciliations', 'Đối soát VNPay', '/manager/online-payment-reconciliations', 'Theo dõi giao dịch cần kiểm tra và hoàn tiền.'],
-          ].map(([kind, title, to, description]) => { const pending = (activity.data[kind] ?? []).filter(row => managerNeedsAction(kind, row) && !assignmentNeedsAttention(kind, row)); return { title, to, description, icon: ClipboardCheck, count: count([kind], pending.length), tone: pending.length ? 'attention' as const : 'normal' as const }; }),
-        ]}
-      />
-      <ActivitySummary />
-      <LoadState
-        loading={summary.loading}
-        error={summary.error}
-        retry={summary.refresh}
-      />
-      <div className="portal-metrics" aria-label="Tình hình cơ sở">
-        {[
-          ["Tổng kho vật lý", units.data?.total, "/manager/units"],
-          ["Kho đang sử dụng", occupied, "/manager/units?status=OCCUPIED"],
-          ["Kho sẵn sàng", available, "/manager/units?status=AVAILABLE"],
-          [
-            "Kỳ thuê quá hạn",
-            summary.data?.overdueRentals,
-            "/manager/operations/rentals?status=true",
-          ],
-        ].map(([title, value, path]) => (
-          <Link className="portal-metric" key={String(title)} to={String(path)}>
-            <span>{String(title)}</span>
-            <strong>{typeof value === "number" ? value : "—"}</strong>
-            <small>
-              Xem chi tiết <ArrowRight size={14} />
-            </small>
-          </Link>
-        ))}
-      </div>
-      <div className="portal-overview-grid">
-        <section className="manager-section">
-          <div className="portal-section-title">
-            <h2>Tình trạng kho</h2>
-            <Link to="/manager/units">
-              Xem kho <ArrowRight size={14} />
-            </Link>
-          </div>
-          <LoadState
-            loading={units.loading}
-            error={units.error}
-            retry={units.refresh}
-          />
-          {units.data && (
-            <>
-              <div
-                className="portal-capacity"
-                role="img"
-                aria-label={`${units.data.total} kho vật lý`}
-              >
-                {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
-                  (status) => (
-                    <div
-                      key={status}
-                      className={`is-${status.toLowerCase()}`}
-                      style={{
-                        width: `${units.data!.total ? (units.data!.items.filter((row) => row.status === status).length / units.data!.total) * 100 : 0}%`,
-                      }}
-                    />
-                  ),
-                )}
-              </div>
-              <div className="portal-capacity-legend">
-                {["OCCUPIED", "AVAILABLE", "RESERVED", "MAINTENANCE"].map(
-                  (status) => (
-                    <Link key={status} to={`/manager/units?status=${status}`}>
-                      <Status value={status} />
-                      <strong>
-                        {
-                          units.data!.items.filter(
-                            (row) => row.status === status,
-                          ).length
-                        }
-                      </strong>
-                    </Link>
-                  ),
-                )}
-              </div>
-            </>
-          )}
-          <p className="manager-action-copy">
-            Khả dụng cho khách đặt mới còn phụ thuộc lịch phân bổ trong toàn bộ
-            kỳ thuê. Kho quá hạn vẫn được giữ đến khi khách trả thực tế.
-          </p>
-        </section>
-        <section className="manager-section">
-          <div className="portal-section-title">
-            <h2>Hồ sơ & báo cáo</h2>
-          </div>
-          <div className="workspace-shortcuts">
-            <Link to="/manager/reports">
-              <BarChart3 size={20} />
-              <div>
-                <strong>Báo cáo vận hành</strong>
-                <span>Hóa đơn, khoản thu và tình hình sử dụng kho.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-            <Link to="/manager/operations/contracts">
-              <FileText size={20} />
-              <div>
-                <strong>Hợp đồng thuê</strong>
-                <span>Đối chiếu kỳ thuê, khách hàng và kho đã phân bổ.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-            <Link to="/manager/operations/rentals">
-              <Warehouse size={20} />
-              <div>
-                <strong>Kho đang thuê</strong>
-                <span>Theo dõi sử dụng kho, thời hạn và công nợ.</span>
-              </div>
-              <ArrowRight size={16} />
-            </Link>
-          </div>
-          <p className="manager-action-copy">
-            Nhân viên tiếp nhận và xử lý yêu cầu đặt kho, tư vấn, hỗ trợ, bàn
-            giao, hàng hóa, gia hạn, chuyển kho, trả kho và bảo trì.
-          </p>
-        </section>
-      </div>
-      <section className="portal-finance-strip">
-        <div>
-          <span>Tổng dư nợ hóa đơn</span>
-          <strong>
-            {financeReady
-              ? money(
-                  outstandingInvoices.reduce(
-                    (sum, row) => sum + Number(row.balanceDue || 0),
-                    0,
-                  ),
-                )
-              : "—"}
-          </strong>
-          <small>
-            {financeReady
-              ? `${overdueInvoices.length} hóa đơn quá hạn · ${money(overdueInvoices.reduce((sum, row) => sum + Number(row.balanceDue), 0))}`
-              : "Chưa tải đủ hóa đơn để tổng hợp."}
-          </small>
-        </div>
-        <Link className="button-secondary" to="/manager/operations/invoices">
-          Theo dõi công nợ <ArrowRight size={16} />
-        </Link>
+  const records = new Map<string, Row>(Object.entries(activity.data).flatMap(([kind, rows]) =>
+    rows.map(row => [`${kind}:${first(row, 'id')}`, row])));
+  const priority = activity.entries.flatMap(entry => {
+    const row = records.get(entry.id);
+    return entry.action && row && first(row, 'id') ? [{ entry, row }] : [];
+  }).slice(0, 5);
+  const metrics = [
+    { title: 'Việc cần duyệt', value: queueTotal(['escalatedSupport', 'maintenanceReview', 'depositReview']), hint: 'Hỗ trợ, nghiệm thu và cọc', to: '/manager/reviews', icon: ClipboardCheck },
+    { title: 'Chờ phân công', value: queueTotal(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance']), hint: 'Hồ sơ chưa có người phụ trách', to: '/manager/assignments?assignment=unassigned', icon: Users },
+    { title: 'Kho đang sử dụng', value: isCount(data?.units?.occupied) && isCount(data?.units?.total) && data.units.occupied <= data.units.total ? `${count(data.units.occupied)} / ${count(data.units.total)}` : '—', hint: 'Đang dùng / toàn bộ kho vật lý', to: '/manager/units', icon: Warehouse },
+    { title: 'Công nợ hiện tại', value: isCount(data?.finance?.outstandingAmount) ? money(data.finance.outstandingAmount) : '—', hint: isCount(data?.finance?.unpaidInvoices) ? `${count(data.finance.unpaidInvoices)} hóa đơn còn dư nợ` : 'Số dư hóa đơn còn hiệu lực', to: '/manager/operations/invoices', icon: WalletCards },
+  ];
+
+  return <section className="manager-overview">
+    <PageHeader title="Tổng quan">
+      <Link className="button-secondary" to="/manager/reports">Báo cáo</Link>
+      <button type="button" className="button-secondary" disabled={report.loading || report.refreshing || activity.checking} onClick={() => { report.refresh(); activity.refresh(); }}><RefreshCw size={16} />Làm mới</button>
+      <RefreshStatus active={report.refreshing || activity.checking && !activity.loading} />
+    </PageHeader>
+    {report.error && <LoadState loading={false} error={report.error} retry={report.refresh} />}
+    <div className="internal-kpis manager-dashboard-kpis" aria-label="Chỉ số quản lý" aria-busy={report.loading}>
+      {metrics.map(metric => report.loading ? <DashboardSkeleton key={metric.title} variant="metric" cardClass="manager-dashboard-kpi" /> : <ManagerMetric key={metric.title} {...metric} />)}
+    </div>
+    <div className="manager-overview-panels">
+      <StoragePanel report={data} loading={report.loading} error={report.error} />
+      <section className="manager-overview-panel" aria-labelledby="manager-priority-title">
+        <header>
+          <h2 id="manager-priority-title">Việc cần xử lý</h2>
+          <Link className="manager-panel-link" to="/manager/notifications?view=action">Xem tất cả <ArrowRight size={15} aria-hidden="true" /></Link>
+        </header>
+        {activity.loading && activity.checking && <DashboardSkeleton variant="activity" />}
+        <LoadState loading={false} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
+        {!activity.loading && !activity.failed.length && !priority.length && <p className="manager-panel-caption">Hiện chưa có việc cần xử lý.</p>}
+        <ul className="internal-task-list manager-work-list">
+          {priority.map(({ entry, row }) => {
+            const { title, to, status, statusText } = workDetails(entry, row);
+            const person = first(row, 'customer.fullName', 'reservation.customer.fullName');
+            const inspectedUnits = rows(row.physicalInspections).map(inspection => first(inspection, 'unit.unitCode')).filter(Boolean);
+            const unit = first(row, 'currentStorageUnit.unitNumber', 'storageUnit.unitNumber', 'storageUnit.unitCode', 'unit.unitCode', 'unitCodeSnapshot') || [...new Set(inspectedUnits)].join(', ');
+            return <li key={entry.id}><Link to={to} onClick={() => activity.markRead([entry.token])}>
+              <span className="manager-work-icon"><ClipboardList size={17} aria-hidden="true" /></span>
+              <span className="manager-work-copy">
+                <strong>{title}</strong>
+                {(person || unit) && <span>{[person, unit].filter(Boolean).join(' · ')}</span>}
+                <small>{[entry.at ? date(entry.at, true) : '', entry.code].filter(Boolean).join(' · ')}</small>
+              </span>
+              {status && <Status value={status} text={statusText} />}
+              <ArrowRight className="manager-work-arrow" size={16} aria-hidden="true" />
+            </Link></li>;
+          })}
+        </ul>
       </section>
-    </section>
-  );
+    </div>
+  </section>;
 }

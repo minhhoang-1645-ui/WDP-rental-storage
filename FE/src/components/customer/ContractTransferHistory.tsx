@@ -13,6 +13,7 @@ export function ContractTransferHistory({ contract: value, scope }: { contract: 
       <small>Lý do: {label(transfer.reason)} · Lập ngày {date(transfer.createdAt, true)}</small>
       {transfer.status === 'COMPLETED' ? <>
         <p>Đã chuyển thực tế: {date(transfer.completedAt, true)} · Người xác nhận: {first(transfer, 'completedBy.fullName') || 'Chưa ghi nhận'}</p>
+        {transfer.handoverReport ? <p>Đã thu {first(transfer, 'handoverReport.returnedKeyCount')} chìa khóa/thẻ kho cũ và giao {first(transfer, 'handoverReport.deliveredKeyCount')} chìa khóa/thẻ kho mới. Người nhận: {first(transfer, 'handoverReport.recipientName')}. {first(transfer, 'handoverReport.note')}</p> : <p>Hồ sơ cũ chưa có biên nhận đổi chìa khóa. Liên hệ nhân viên để đối chiếu việc thu chìa khóa kho cũ và nhận chìa khóa kho mới.</p>}
         <DocumentFile path={`/${scope}/documents/contracts/${encodeURIComponent(first(contract, 'id'))}/transfers/${encodeURIComponent(first(transfer, 'id'))}`} name={`${first(transfer, 'transferCode')}-BB`} description="Biên bản ghi nhận chuyển kho đính kèm hợp đồng; không phải lần ký mới của khách." />
       </> : <p>{transfer.status === 'APPROVED' ? 'Đã giữ kho đích, chờ chuyển và xác nhận thực tế. Kho sử dụng chưa thay đổi.' : transfer.status === 'REJECTED' ? 'Yêu cầu đã bị từ chối; không thay đổi kho thuê.' : 'Đang lựa chọn và kiểm tra kho đích; chưa chuyển kho.'}</p>}
     </article>)}

@@ -1,68 +1,45 @@
-import { useAuth } from "../../auth/auth-context";
-import { portalDestination } from "../../auth/portal-routing";
-import { Mail, MapPin, Phone, Warehouse } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Container } from "../ui/Container";
-import { facility } from '../../config/facility';
+import { Mail, MapPin, Phone, Warehouse } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
+import { facility } from '../../config/facility'
+import { Container } from '../ui/Container'
 
 export function Footer() {
-  const { user } = useAuth();
-  const accountPath = user ? portalDestination(user.role) : "/account/login";
-  const supportPath = !user ? "/account/login?returnTo=%2Fcustomer%2Fsupport" : user.role === "CUSTOMER" ? "/customer/support" : accountPath;
-  return (
-    <footer className="public-footer bg-ink py-14 text-white">
-      <Container>
-        <div className="grid gap-10 border-b border-white/15 pb-12 md:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <div className="flex items-center gap-2 text-lg font-bold">
-              <Warehouse size={22} /> NestBox Storage
-            </div>
-            <p className="mt-4 max-w-xs text-sm leading-6 text-slate-300">
-              Quản lý thuê kho tự quản tại một cơ sở. Theo dõi đặt kho, hợp đồng
-              và hỗ trợ trong khu vực của bạn.
-            </p>
-          </div>
-          <div>
-            <h2 className="footer-title">Chọn kho</h2>
-            <Link to="/storage">Kho đang nhận yêu cầu</Link>
-            <Link to="/size-guide">So sánh loại kho</Link>
-            <Link to="/storage?type=climate&size=all&duration=3">
-              Kho điều hòa
-            </Link>
-          </div>
-          <div>
-            <h2 className="footer-title">Hỗ trợ</h2>
-            <Link to="/#how-it-works">Cách thuê kho</Link>
+  const { user } = useAuth()
+  const supportPath = user
+    ? user.role === 'CUSTOMER' ? '/customer/support' : portalDestination(user.role)
+    : '/account/login?returnTo=%2Fcustomer%2Fsupport'
+  const supportLabel = !user || user.role === 'CUSTOMER' ? 'Gửi yêu cầu hỗ trợ' : 'Khu vực làm việc'
+
+  return <footer id="facility" className="public-footer landing-footer" aria-label="Thông tin NestBox">
+    <Container>
+      <div className="public-footer-grid">
+        <div>
+          <Link to="/" className="public-brand public-footer-brand" aria-label="NestBox Storage - Trang chủ">
+            <span><Warehouse size={18} aria-hidden="true" /></span>
+            <strong>NestBox <span>Storage</span></strong>
+          </Link>
+          <nav className="public-footer-links" aria-label="Liên kết cuối trang">
+            <Link to="/storage">Xem kho</Link>
+            <Link to="/size-guide">So sánh kho</Link>
             <Link to="/#faq">Câu hỏi thường gặp</Link>
-            <Link to={accountPath}>Khu vực của bạn</Link>
-            <a href="#legal">Thông tin dự án</a>
-          </div>
-          <div id="contact">
-            <h2 className="footer-title">Thông tin liên hệ</h2>
-            <p>
-              <MapPin size={16} /> {facility.address}
-            </p>
-            <p>
-              <Phone size={16} /> {facility.phoneHref ? <a href={facility.phoneHref}>{facility.phone}</a> : facility.phone}
-            </p>
-            <p>
-              <Mail size={16} /> {facility.emailHref ? <a href={facility.emailHref}>{facility.email}</a> : <Link to={supportPath}>{!user || user.role === "CUSTOMER" ? "Gửi yêu cầu hỗ trợ" : "Mở khu vực làm việc"}</Link>}
-            </p>
-            <p>{facility.hours}</p>
-            {facility.illustrative && <small className="text-slate-400">Thông tin liên hệ minh họa cho đồ án.</small>}
-          </div>
+            <Link to={supportPath}>{supportLabel}</Link>
+          </nav>
         </div>
-        <div
-          id="legal"
-          className="flex flex-col justify-between gap-3 pt-6 text-xs text-slate-400 sm:flex-row"
-        >
-          <p>© 2026 NestBox Storage.</p>
-          <p>
-            Thông tin liên hệ cần được cơ sở xác nhận. Báo giá được hiển thị
-            theo dữ liệu của từng hồ sơ.
-          </p>
+        <div>
+          <h2>Cơ sở NestBox</h2>
+          <address>
+            <p><MapPin size={17} aria-hidden="true" /> {facility.address}{facility.addressIllustrative && ' (minh họa)'}</p>
+            <p>{facility.hours}{facility.hoursIllustrative && ' (minh họa)'}</p>
+            <div className="public-footer-links">
+              {facility.phoneHref && <a href={facility.phoneHref}><Phone size={17} aria-hidden="true" /> {facility.phone}</a>}
+              {facility.emailHref && <a href={facility.emailHref}><Mail size={17} aria-hidden="true" /> {facility.email}</a>}
+            </div>
+          </address>
         </div>
-      </Container>
-    </footer>
-  );
+      </div>
+      <small className="public-footer-copyright">© 2026 NestBox Storage</small>
+    </Container>
+  </footer>
 }

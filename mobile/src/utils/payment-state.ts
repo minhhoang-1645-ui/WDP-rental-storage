@@ -2,6 +2,11 @@ export function isScheduledRenewalInvoice(invoice: { type?: unknown; renewalCycl
   return invoice.type === 'RENEWAL' && typeof invoice.renewalCycle === 'number' && invoice.renewalCycle > 1 && typeof invoice.dueAt === 'string' && Date.parse(invoice.dueAt) > now
 }
 
+/** Future installments become payable only after the API validates a current-period early-return approval. */
+export function invoicePaymentBlockedBySchedule(invoice: { type?: unknown; renewalCycle?: unknown; dueAt?: unknown; closeoutPaymentAllowed?: unknown }, now = Date.now()) {
+  return isScheduledRenewalInvoice(invoice, now) && invoice.closeoutPaymentAllowed !== true
+}
+
 export function paymentWindowClosed(invoice: { type?: unknown; reservation?: { status?: unknown; expiresAt?: unknown } }, now = Date.now()) {
   if (invoice.reservation?.status === 'EXPIRED') return true
   const deadline = invoice.reservation?.expiresAt

@@ -3,6 +3,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { deriveOverdueState } from './overdue-state.js';
+import { rentalAccountSummary } from '../billing/rental-account-summary.js';
+import { returnReadiness } from '../returns/early-return-finance.js';
 
 export interface ActiveRentalListQuery {
   page: number;
@@ -90,7 +92,10 @@ export class ActiveRentalsService {
       storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
       contracts: {
         where: { status: 'ACTIVE' as const },
-        include: { reservationUnit: { include: { storageUnit: { select: {
+        include: {
+          storedItems: { where: { balance: { gt: 0 } }, select: { id: true, itemCode: true, name: true, unit: true, balance: true }, orderBy: { name: 'asc' as const } },
+          transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
+          reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
@@ -139,6 +144,10 @@ export class ActiveRentalsService {
         id: contract.id, contractCode: contract.contractCode, status: contract.status,
         startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate), activatedAt: contract.activatedAt?.toISOString() ?? null,
         unit: mode === 'CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
+        ...(mode === 'CUSTOMER' ? { storedItems: contract.storedItems ?? [],
+        transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
+          code: transfer.transferCode, from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
+        })) } : {}),
         ...(mode === 'CUSTOMER' ? {} : { hasCurrentAllocationConflict: overdue.isOverdue && future !== undefined && future.plannedStartDate <= now }),
       };
     });
@@ -147,6 +156,7 @@ export class ActiveRentalsService {
     const pendingRenewal = record.renewals.find((renewal: any) => ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status));
     const base = {
       reservationId: record.id,
+      returnReadiness: returnReadiness(record.invoices),
       reservationReference: record.reservationCode,
       storageType: record.storageType,
       quantity: record.quantity,
@@ -188,6 +198,7 @@ export class ActiveRentalsService {
         scheduledBalance: this.money(scheduledBalance),
         nextInvoice: nextInvoice ? this.invoiceSummary(nextInvoice) : null,
       },
+      ...(mode === 'CUSTOMER' ? rentalAccountSummary(record, now) : {}),
     };
   }
 

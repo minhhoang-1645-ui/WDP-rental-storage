@@ -15,7 +15,6 @@ export function handoverWindow(contracts: { startDate: string; endDate: string }
 export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: { contractStartDate?: string; contractEndDate?: string }[] = []) {
   const planned = typeof scheduledAt === 'string' ? Date.parse(scheduledAt) : NaN
   if (!Number.isFinite(planned)) return 'Chưa có thời điểm bàn giao hợp lệ. Vui lòng kiểm tra lại lịch.'
-  if (planned > now) return 'Chưa đến thời điểm hẹn. Chỉ ghi nhận khi đã bàn giao thực tế, không hoàn tất trước lịch.'
   const today = vietnamLocalMinute(now).slice(0, 10)
   if (contracts.some(contract => contract.contractStartDate && today < keyCollectionStartDate(contract.contractStartDate))) return 'Chỉ được bàn giao chìa khóa sớm tối đa 3 ngày trước ngày thuê.'
   if (contracts.some(contract => contract.contractEndDate && today >= contract.contractEndDate)) return 'Không thể hoàn tất bàn giao sau ngày kết thúc thuê.'

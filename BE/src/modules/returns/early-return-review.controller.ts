@@ -18,4 +18,7 @@ export class EarlyReturnReviewController {
   @Post(':id/decision')
   @ApiOperation({ summary: 'Manager chấp thuận/từ chối trả sớm; không tự điều chỉnh tiền thuê hoặc tiền cọc' })
   decide(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.decideEarlyReturn(id, body, request.user!); }
+  @Post(':id/financial-review')
+  @ApiOperation({ summary: 'Đã ngừng: phải thanh toán đủ toàn bộ công nợ trước khi trả kho' })
+  financialReview(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.reviewEarlyReturnFinance(id, body, request.user!); }
 }

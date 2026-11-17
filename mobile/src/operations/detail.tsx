@@ -24,6 +24,7 @@ import { isTransferRequest } from '@/utils/transfer-request';
 import { transferFromSupport, transferIntakeAllowed } from './transfer-inbox';
 import { staffStyles } from '@/components/staff-ui';
 import { StaffRecordSections } from '@/components/staff-record-sections';
+import { HandoverDetail } from './handover-detail';
 
 export function ResourceDetail() {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>();
@@ -47,10 +48,13 @@ function Detail({ resource, id }: { resource: string; id: string }) {
   const refresh = () => { data.refresh(); stock.refresh(); };
   if (!allowed || !config || resource === 'catalog') return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
   const row: Row | undefined = data.data ? { ...data.data, ...(stock.data ? { inventory: stock.data } : {}) } : undefined;
+  if (user?.role === 'STAFF' && resource === 'appointments') {
+    return <HandoverDetail row={row} loading={data.loading} error={data.error} refresh={refresh} userId={user.id} now={now} />;
+  }
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" refreshControl={user?.role === 'STAFF' ? <RefreshControl refreshing={data.loading} onRefresh={() => { if (!action) refresh(); }} /> : undefined} contentContainerStyle={user?.role === 'STAFF' ? [staffStyles.page, { gap: 12, paddingBottom: 24 }] : styles.page}>
     {user?.role !== 'STAFF' && <PageHeader eyebrow={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? managerReviewTitle(resource) : config.title} title={config.title} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả chờ nghiệm thu; nhân viên thực hiện vận hành.' : 'Thông tin, lịch sử và thao tác theo vai trò của bạn.'} />}
     {user?.role === 'MANAGER' && <ManagerParentLink resource={resource} />}
-    {user?.role !== 'STAFF' && <><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} /></>}
+    {user?.role !== 'STAFF' && <><Navigation mode="back-to" title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}
     {data.loading ? <LoadingState layout="detail" /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>
@@ -59,7 +63,7 @@ function Detail({ resource, id }: { resource: string; id: string }) {
         <Text style={staffStyles.section}>Kiểm tra và thao tác</Text>
         <Text style={staffStyles.secondary}>{workflowGuide(resource, row.status, 'staff')}</Text>
         {resource === 'renewals' && (action ? <RenewalReview row={row} /> : <Disclosure title="Đối chiếu gia hạn"><RenewalReview row={row} /></Disclosure>)}
-        {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : [...recordActions(resource, row, 'STAFF'), ...staffRecordActions(resource, row, user.id, now)].map((item, index) => <Button key={`${item.method}:${item.path}:${item.title}:${index}`} variant={index > 0 ? 'secondary' : 'primary'} variant={index > 0 ? 'secondary' : 'primary'} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
+        {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : [...recordActions(resource, row, 'STAFF'), ...staffRecordActions(resource, row, user.id, now)].map((item, index) => <Button key={`${item.method}:${item.path}:${item.title}:${index}`} variant={index > 0 ? 'secondary' : 'primary'} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
       {user?.role === 'STAFF' && resource === 'support-requests' && isTransferRequest(row) && (rows(row.transfers).find(transfer => transfer.status !== 'REJECTED') ? <Navigation title="Mở lệnh chuyển kho" path={`/staff/transfers/${encodeURIComponent(idOf(rows(row.transfers).find(transfer => transfer.status !== 'REJECTED')!))}`} /> : !action && !activeContracts.loading && !activeContracts.error && transferIntakeAllowed(row, rows(activeContracts.data?.items)) && <Button title="Tạo phiếu chuyển kho" onPress={() => setAction(transferFromSupport(row))} />)}
       {user?.role === 'STAFF' && resource === 'transfers' && row.status === 'COMPLETED' && (row.sourceMaintenanceMissing === true || text(row, 'supportRequest.id') && (text(row, 'supportRequest.status') !== 'RESOLVED' || text(row, 'supportRequest.resolutionType') === 'TRANSFER_RECOMMENDED')) && !action && <Button title="Đồng bộ kết quả cho khách" onPress={() => setAction({ title: 'Đồng bộ kết quả cho khách', path: `/staff/transfers/${encodeURIComponent(id)}/complete`, method: 'POST', idempotent: true, description: 'Cập nhật yêu cầu gốc cho lệnh đã hoàn tất; không chuyển kho lần nữa.', fields: [{ name: '_confirmed', title: 'Tôi xác nhận đồng bộ kết quả', checkbox: true, required: true, clientOnly: true }] })} />}
       </View>} />}

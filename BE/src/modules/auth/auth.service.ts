@@ -1,15 +1,23 @@
-import { BadRequestException, ConflictException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Inject, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { UserRepository } from '../users/user.repository.js';
-import type { StoredUser } from '../users/user.repository.js';
+import type { StoredUser, UserProfileChanges } from '../users/user.repository.js';
 import type { AuthSession, PublicUser } from './auth.types.js';
+import { AccountDisabledException } from './auth.errors.js';
+
+const sessionEndMessage = {
+  SESSION_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.',
+  SESSION_INVALID: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
+};
+const sessionEnded = (code: keyof typeof sessionEndMessage) => new UnauthorizedException({ statusCode: 401, code, message: sessionEndMessage[code] });
 
 @Injectable()
 export class AuthService {
   private readonly sessionTtlMs = 8 * 60 * 60 * 1000;
   private readonly rememberedSessionTtlMs = 30 * 24 * 60 * 60 * 1000;
   private readonly loginAttempts = new Map<string, { count: number; until: number }>();
+  private readonly passwordChangeAttempts = new Map<string, { count: number; until: number }>();
   private activePasswordHashes = 0;
 
   constructor(@Inject(UserRepository) private readonly users: UserRepository) {}
@@ -33,14 +41,10 @@ export class AuthService {
     const password = this.password(input.password, 1);
     this.claimLoginAttempt(remoteAddress);
     const user = await this.users.findByEmail(email);
-    const [algorithm, salt, hash] = (user?.passwordHash ?? '').split('$');
-    const validFormat = algorithm === 'scrypt' && /^[a-f0-9]{32}$/.test(salt ?? '') && /^[a-f0-9]{128}$/.test(hash ?? '');
-    const supplied = await this.hashPassword(password, validFormat ? salt! : '00000000000000000000000000000000');
-    const expected = validFormat ? Buffer.from(hash!, 'hex') : Buffer.alloc(64);
-    if (!timingSafeEqual(supplied, expected) || !user || !validFormat) {
+    if (!await this.matchesPassword(password, user?.passwordHash) || !user) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng.');
     }
-    if (user.accountStatus === 'DISABLED') throw new UnauthorizedException('Tài khoản đã bị vô hiệu hóa.');
+    if (user.accountStatus === 'DISABLED') throw new AccountDisabledException(user);
     return this.createSession(user, input.rememberMe === true);
   }
 
@@ -59,21 +63,35 @@ export class AuthService {
   }
 
   async getUserByToken(token: string | undefined): Promise<PublicUser> {
-    const key = token ? this.tokenKey(token) : '';
-    const session = token ? await this.users.findSession(key) : null;
-    if (!session || session.expiresAt.getTime() <= Date.now()) {
-      if (session) await this.users.deleteSession(key);
-      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');
-    }
-    const user = await this.users.findById(session.userId);
-    if (!user || user.accountStatus === 'DISABLED') {
-      await this.users.deleteSession(key);
-      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ, đã hết hạn hoặc tài khoản đã bị vô hiệu hóa.');
-    }
-    return this.toPublicUser(user);
+    const account = token ? await this.users.findSessionAccount(this.tokenKey(token)) : null;
+    if (!account) throw sessionEnded('SESSION_INVALID');
+    if (account.revokedByDisable) throw new AccountDisabledException();
+    if (account.expiresAt.getTime() <= Date.now()) throw sessionEnded('SESSION_EXPIRED');
+    if (account.accountStatus === 'DISABLED') throw new AccountDisabledException();
+    return this.toPublicUser(account);
   }
 
   logout(token: string) { return this.users.deleteSession(this.tokenKey(token)); }
+
+  async changePassword(actor: PublicUser, token: string, input: Record<string, unknown>) {
+    this.assertBody(input);
+    if (Object.keys(input).some(key => key !== 'currentPassword' && key !== 'newPassword')) throw new BadRequestException('Dữ liệu đổi mật khẩu không hợp lệ.');
+    const currentPassword = this.password(input.currentPassword, 1);
+    const newPassword = this.password(input.newPassword, 8);
+    this.claimAttempt(this.passwordChangeAttempts, actor.id, 5, 15 * 60_000, 'Bạn đã thử đổi mật khẩu quá nhiều lần. Vui lòng thử lại sau 15 phút.');
+    const user = await this.users.findById(actor.id);
+    if (!user) throw sessionEnded('SESSION_INVALID');
+    if (user.accountStatus === 'DISABLED') throw new AccountDisabledException();
+    if (!await this.matchesPassword(currentPassword, user.passwordHash)) throw new BadRequestException('Mật khẩu hiện tại không đúng.');
+    if (newPassword === currentPassword) throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại.');
+    const passwordHash = await this.encodePassword(newPassword);
+    const changed = await this.users.changePassword(actor.id, this.tokenKey(token), user.passwordHash, passwordHash).catch(() => {
+      // Keep database errors with credential arguments out of the HTTP exception logs.
+      throw new ServiceUnavailableException('Chưa đổi được mật khẩu. Vui lòng thử lại.');
+    });
+    if (!changed) throw new ConflictException('Thông tin đăng nhập đã thay đổi. Hãy tải lại trang và thử lại.');
+    this.passwordChangeAttempts.delete(actor.id);
+  }
 
   async encodePassword(value: unknown) {
     const password = this.password(value, 8);
@@ -86,25 +104,42 @@ export class AuthService {
   }
 
   async updateProfile(actor: PublicUser, input: Record<string, unknown>): Promise<PublicUser> {
+    const updated = await this.users.updateProfile(actor.id, this.profileChanges(input));
+    if (!updated) {
+      if ((await this.users.findById(actor.id))?.accountStatus === 'DISABLED') throw new AccountDisabledException();
+      throw sessionEnded('SESSION_INVALID');
+    }
+    if (updated.accountStatus === 'DISABLED') throw new AccountDisabledException();
+    return this.toPublicUser(updated);
+  }
+
+  updateAdminProfile(actor: PublicUser, id: string, input: Record<string, unknown>) {
+    return this.users.updateAdminProfile(id, this.profileChanges(input), actor.id);
+  }
+
+  private profileChanges(input: Record<string, unknown>): UserProfileChanges {
     this.assertBody(input);
-    if (!Object.keys(input).length || Object.keys(input).some(key => !['fullName', 'phone'].includes(key))) throw new BadRequestException('Chỉ được cập nhật họ tên và số điện thoại của bạn.');
-    const data: Partial<Pick<PublicUser, 'fullName' | 'phone'>> = {};
+    if (!Object.keys(input).length || Object.keys(input).some(key => !['fullName', 'phone'].includes(key))) throw new BadRequestException('Chỉ được cập nhật họ tên và số điện thoại.');
+    const data: UserProfileChanges = {};
     if (Object.hasOwn(input, 'fullName')) data.fullName = this.requiredText(input.fullName, 'Họ và tên', 2, 120);
     if (Object.hasOwn(input, 'phone')) data.phone = this.phone(input.phone);
-    const updated = await this.users.updateProfile(actor.id, data);
-    if (!updated || updated.accountStatus !== 'ACTIVE') throw new UnauthorizedException('Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.');
-    return this.toPublicUser(updated);
+    return data;
   }
 
   private async createSession(user: StoredUser, rememberMe = false): Promise<AuthSession> {
     const token = randomBytes(32).toString('hex');
     const ttl = rememberMe ? this.rememberedSessionTtlMs : this.sessionTtlMs;
-    await this.users.saveSession({ tokenHash: this.tokenKey(token), userId: user.id, expiresAt: new Date(Date.now() + ttl) });
+    const saved = await this.users.saveSession({ tokenHash: this.tokenKey(token), userId: user.id, expiresAt: new Date(Date.now() + ttl) }, user.passwordHash);
+    if (!saved) {
+      const current = await this.users.findById(user.id);
+      if (current?.accountStatus === 'DISABLED') throw new AccountDisabledException(current);
+      throw new UnauthorizedException('Email hoặc mật khẩu không đúng.');
+    }
     return { token, user: this.toPublicUser(user) };
   }
 
   private tokenKey(token: string) { return createHash('sha256').update(token).digest('hex'); }
-  private toPublicUser(user: StoredUser): PublicUser {
+  private toPublicUser(user: PublicUser): PublicUser {
     return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role };
   }
   private hashPassword(password: string, salt: string): Promise<Buffer> {
@@ -114,14 +149,26 @@ export class AuthService {
       .finally(() => { this.activePasswordHashes--; });
   }
   private claimLoginAttempt(remoteAddress: string | undefined) {
-    const now = Date.now();
-    for (const [key, attempt] of this.loginAttempts) if (attempt.until <= now) this.loginAttempts.delete(key);
     // Only the server's socket address is supplied by the controller. Never key by email
     // or trust arbitrary forwarded headers, which would allow lockouts/bypasses.
     const key = remoteAddress && isIP(remoteAddress) ? remoteAddress : 'internal';
-    const attempt = this.loginAttempts.get(key);
-    if (attempt && attempt.count >= 30 || !attempt && this.loginAttempts.size >= 10000) throw new HttpException('Quá nhiều lượt đăng nhập. Vui lòng chờ một phút rồi thử lại.', HttpStatus.TOO_MANY_REQUESTS);
-    this.loginAttempts.set(key, { count: (attempt?.count ?? 0) + 1, until: attempt?.until ?? now + 60_000 });
+    this.claimAttempt(this.loginAttempts, key, 30, 60_000, 'Quá nhiều lượt đăng nhập. Vui lòng chờ một phút rồi thử lại.');
+  }
+
+  private claimAttempt(attempts: Map<string, { count: number; until: number }>, key: string, maximum: number, windowMs: number, message: string) {
+    const now = Date.now();
+    for (const [expiredKey, attempt] of attempts) if (attempt.until <= now) attempts.delete(expiredKey);
+    const attempt = attempts.get(key);
+    if (attempt && attempt.count >= maximum || !attempt && attempts.size >= 10000) throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
+    attempts.set(key, { count: (attempt?.count ?? 0) + 1, until: attempt?.until ?? now + windowMs });
+  }
+
+  private async matchesPassword(password: string, encoded = '') {
+    const [algorithm, salt, hash] = encoded.split('$');
+    const validFormat = algorithm === 'scrypt' && /^[a-f0-9]{32}$/.test(salt ?? '') && /^[a-f0-9]{128}$/.test(hash ?? '');
+    const supplied = await this.hashPassword(password, validFormat ? salt! : '00000000000000000000000000000000');
+    const expected = validFormat ? Buffer.from(hash!, 'hex') : Buffer.alloc(64);
+    return timingSafeEqual(supplied, expected) && validFormat;
   }
   private assertBody(input: unknown): asserts input is Record<string, unknown> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu không hợp lệ.');

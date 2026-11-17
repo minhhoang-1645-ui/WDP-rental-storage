@@ -1,3 +1,8 @@
+import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailSkeleton } from '../../components/LoadingSkeleton';
+import { recordIdentity } from '../../utils/record-identity';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -16,6 +21,7 @@ import {
   Facts,
   LoadState,
   PageHeader,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import { staffResources, type StaffResource } from "./staff-resources";
@@ -36,26 +42,28 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
   const data = useApiResource<Row>(
     `/staff/${resource}/${encodeURIComponent(id)}`,
     user?.id ?? "",
+    false,
+    true,
   );
   const [notice, setNotice] = useState("");
   const row = data.data;
+  const returnPath = useInternalListReturn(`/staff/${resource}`);
   return (
     <section>
-      <Link className="booking-back" to={`/staff/${resource}`}>
+      <Link className="booking-back" to={returnPath}>
         <ArrowLeft size={16} />
         {staffResources[resource].title}
       </Link>
-      {!row && (
+      {!row && !data.loading && (
         <PageHeader
           title={staffResources[resource].title}
-          description="Thông tin hồ sơ tác nghiệp"
         />
       )}
       <LoadState
-        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<DetailSkeleton form history={resource === 'returns'} />}
       />
       {notice && (
         <div className="portal-success" role="status">
@@ -65,15 +73,16 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
       {row && (
         <>
           <PageHeader
-            title={code(row)}
-            description={staffResources[resource].description}
+            title={recordIdentity(row, resource).title}
           >
             <Status value={row.status ?? row.rentalState} />
             <button className="button-secondary" onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu hoặc đóng biểu mẫu trước khi làm mới hồ sơ.'); return; } data.refresh(); }}>
               <RefreshCw size={16} />
               Làm mới hồ sơ
             </button>
+            <RefreshStatus active={data.refreshing} />
           </PageHeader>
+          <CopyRecordCode value={code(row)} />
           <div className="manager-detail-grid">
             {workflowGuide(resource, row.status, 'staff') && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status, 'staff')}</WorkflowHint></div>}
             <div className="manager-detail-content">
@@ -105,13 +114,14 @@ function StaffRecord({ resource }: { resource: StaffResource }) {
                     ["Lịch hẹn", date(row.scheduledAt, true)],
                     ["Ngày kết thúc thuê", date(row.effectiveEndDate)],
                     ["Mô tả", first(row, "description", "note")],
-                    ["Ghi chú bàn giao", first(row, "handoverNote")],
+                    ["Ghi chú bàn giao", resource === 'appointments' ? '' : first(row, "handoverNote")],
                     ["Kết quả sửa chữa", first(row, "workNote")],
                     ["Kết quả hỗ trợ", first(row, "resolutionNote")],
                     ["Lý do chuyển bộ phận phụ trách", first(row, "escalationReason")],
                   ]}
                 />
               </section>
+              {resource === 'appointments' && <HandoverReportCard appointment={row} />}
               {(rows(row.allocatedUnits).length > 0 ||
                 rows(row.contracts).length > 0) && (
                 <section className="manager-section">

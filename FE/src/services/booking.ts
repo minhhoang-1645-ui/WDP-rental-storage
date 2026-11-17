@@ -7,8 +7,10 @@ export const authApi = {
   login: (input: { email: string; password: string; rememberMe?: boolean }) =>
     apiRequest<AuthSession>('/auth/login', { method: 'POST', body: JSON.stringify(input), authenticated: false, timeoutMs: 15000 }),
   me: () => apiRequest<PublicUser>('/auth/me'),
-  updateProfile: (input: { fullName: string; phone: string }, expectedToken: string) =>
+  updateProfile: (input: Partial<Pick<PublicUser, 'fullName' | 'phone'>>, expectedToken: string) =>
     apiRequest<PublicUser>('/auth/me', { method: 'PATCH', body: JSON.stringify(input), expectedToken }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    apiRequest<void>('/auth/change-password', { method: 'PATCH', body: JSON.stringify(input) }),
   logout: () => apiRequest<void>('/auth/logout', { method: 'POST' }),
 }
 

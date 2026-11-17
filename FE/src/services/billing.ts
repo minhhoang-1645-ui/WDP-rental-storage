@@ -1,4 +1,3 @@
-import type { CustomerInvoice, CustomerPayment, Paginated } from '../types/customer'
 import type { BankTransferConfig, OnlinePaymentCreated, OnlinePaymentStatusResult, PaymentSubmission, PaymentSubmissionPage, VnpayReturnResult } from '../types/payment'
 import { apiRequest } from './api'
 
@@ -18,16 +17,4 @@ export const customerBillingApi = {
     apiRequest<OnlinePaymentStatusResult>(`/customer/online-payments/${encodeURIComponent(transactionIdentity)}`, { signal }),
   vnpayReturn: (query: string, signal?: AbortSignal) =>
     apiRequest<VnpayReturnResult>(`/payments/vnpay/return${query ? `?${query}` : ''}`, { signal, authenticated: false }),
-}
-
-export const managerBillingApi = {
-  submissions: (path: string, signal?: AbortSignal) => apiRequest<PaymentSubmissionPage>(`/manager/payment-submissions${path}`, { signal }),
-  verify: (id: string, reference: string, note: string) => apiRequest<PaymentSubmission>(`/manager/payment-submissions/${encodeURIComponent(id)}/verify`, {
-    method: 'POST', body: JSON.stringify({ reference, note }),
-  }),
-  reject: (id: string, reason: string) => apiRequest<PaymentSubmission>(`/manager/payment-submissions/${encodeURIComponent(id)}/reject`, {
-    method: 'POST', body: JSON.stringify({ reason }),
-  }),
-  invoices: (signal?: AbortSignal) => apiRequest<Paginated<CustomerInvoice>>('/manager/invoices?limit=100', { signal }),
-  payments: (signal?: AbortSignal) => apiRequest<Paginated<CustomerPayment>>('/manager/payments?limit=100', { signal }),
 }

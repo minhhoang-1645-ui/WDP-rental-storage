@@ -1,1 +1,1 @@
-export { Reports as default } from '@/operations/reports';
+export { ReleaseReports as default } from '@/operations/release-reports';

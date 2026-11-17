@@ -32,10 +32,11 @@ export function PriceBreakdown({ quote }: { quote: Row }) {
     <View style={styles.hero} accessibilityLabel="Khoản thanh toán lần đầu">
       <View style={styles.row}><Text accessibilityRole="header" style={styles.heroTitle}>Trả lần đầu</Text><Text style={styles.heroNote}>Dự kiến</Text></View>
       {summary.first!==0 && <Text selectable accessibilityLabel="Số tiền cần trả lần đầu" style={styles.firstAmount}>{money(summary.first)}</Text>}
-      <Text style={styles.heroCopy}>{summary.plan}{typeof quote.termMonths==='number' ? ` · Thuê ${quote.termMonths} tháng` : ''}</Text>
+      <Text style={styles.heroCopy}>{summary.plan}{typeof quote.termMonths==='number' ? ` · Thuê ${quote.termMonths} tháng` : ''}{typeof quote.quantity==='number' ? ` · ${quote.quantity} kho` : ''}</Text>
       {Boolean(period) && <Text style={styles.heroCopy}>Tiền thuê trong khoản này: {period}.</Text>}
       {firstLines.filter(([,key])=>typeof initial[key]==='number' && Number(initial[key])>0).map(([title,key])=><View key={key} style={styles.row}><Text style={styles.heroLabel}>{title}</Text><Text style={styles.heroValue}>{formatMoney(Number(initial[key]))}</Text></View>)}
       {initial.depositAmount===0 && <Text style={styles.noDeposit}>Kho này không thu tiền cọc.</Text>}
+      {Number(initial.depositAmount)>0 && <Text style={styles.heroCopy}>Tiền cọc không phải tiền thuê. Khi trả kho, cọc được đối chiếu công nợ, chi phí theo hợp đồng và hoàn phần còn lại.</Text>}
       <Text style={styles.heroNote}>Báo giá dự kiến. Thanh toán theo hóa đơn sau khi đơn được xác nhận và hợp đồng đã ký.</Text>
     </View>
     {summary.remaining!==null && summary.remaining>0 && <View style={styles.later}><View style={styles.row}><Text style={styles.label}>{summary.remaining>0 ? 'Còn trả sau' : 'Không còn khoản báo giá này ở kỳ sau'}</Text><Text style={styles.value}>{money(summary.remaining)}</Text></View>{summary.laterCount!==null && <Text style={styles.note}>{summary.laterCount} kỳ còn lại × {money(summary.laterEach)}/kỳ.</Text>}{summary.remaining>0 && <Text style={styles.note}>{summary.laterCount===null ? 'Số tiền từng kỳ được ghi trên hóa đơn tương ứng. ' : ''}Khoản này chưa thu trong lần đầu. Tiền cọc không thu lại.</Text>}</View>}

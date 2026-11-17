@@ -1,7 +1,10 @@
+import { RecordIdentity } from '../../components/workspace/RecordIdentity';
+import { TableSkeleton } from '../../components/LoadingSkeleton';
 import { RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { usePaginatedResource } from "../../services/usePaginatedResource";
+import { useInternalListResource } from '../../components/workspace/useInternalListResource';
+import { internalPageSize } from '../../utils/internal-pagination';
 import {
   code,
   customer,
@@ -17,6 +20,7 @@ import {
   LoadState,
   PageHeader,
   Pagination,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import {
@@ -29,7 +33,7 @@ import { StaffMaintenanceReport } from "./StaffMaintenanceReport";
 export function StaffListPage({ resource }: { resource: StaffResource }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const data = usePaginatedResource<Row>(`/staff/${resource}`, user?.id ?? "");
+
   const config = staffResources[resource];
   const search = params.get("search") ?? "",
     status = params.get("status") ?? "",
@@ -38,7 +42,16 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
     mine = params.get("mine") === "true";
   const canAssign =
     resource === "maintenance" || resource === "support-requests";
-  const items = (data.data?.items ?? []).filter(
+  const limit = internalPageSize(params);
+  const requestedPage = Math.max(1, Math.floor(Number(params.get('page')) || 1));
+  const serverPaged = ['appointments', 'maintenance', 'support-requests'].includes(resource);
+  const query = new URLSearchParams({ page: String(requestedPage), limit: String(limit) });
+  if (search.trim()) query.set('search', search.trim());
+  if (status) query.set('status', status);
+  if (scheduledDay) query.set('date', scheduledDay);
+  if (mine) query.set('assignedToMe', 'true');
+  const data = useInternalListResource<Row>(`/staff/${resource}${serverPaged ? '?' + query : ''}`, user?.id ?? '', serverPaged, true);
+  const filtered = (data.data?.items ?? []).filter(
     (row) =>
       (!status || (row.status ?? row.rentalState) === status) &&
       (!scheduledDay || staffDay(row.scheduledAt) === scheduledDay) &&
@@ -56,10 +69,10 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
         .toLocaleLowerCase("vi")
         .includes(search.trim().toLocaleLowerCase("vi")),
   );
-  const page = Math.min(
-    Math.max(1, Math.floor(Number(params.get("page")) || 1)),
-    Math.max(1, Math.ceil(items.length / 20)),
-  );
+  const items = serverPaged ? data.data?.items ?? [] : filtered;
+  const total = serverPaged ? data.data?.total ?? 0 : items.length;
+  const page = serverPaged ? requestedPage : Math.min(requestedPage, Math.max(1, Math.ceil(total / limit)));
+  const visible = serverPaged ? items : items.slice((page - 1) * limit, page * limit);
   const change = (name: string, value: string) =>
     setParams(
       (previous) => {
@@ -77,11 +90,12 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
         <button
           className="button-secondary"
           onClick={data.refresh}
-          disabled={data.loading}
+          disabled={data.loading || data.refreshing}
         >
           <RefreshCw size={16} />
           Làm mới
         </button>
+        <RefreshStatus active={data.refreshing} />
       </PageHeader>
       <div className="portal-toolbar">
         <label className="field-label portal-search">
@@ -134,11 +148,12 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<TableSkeleton columns={['record', 'customer', ...(canAssign ? ['assignee'] : []), 'status', 'date', 'actions']} rows={Math.min(limit, 6)} pagination />}
       />
       {data.data && (
         <>
           <div className="portal-result-heading">
-            <span>{items.length} hồ sơ</span>
+            <span>{total} hồ sơ</span>
           </div>
           {items.length ? (
             <div className="manager-table-wrap">
@@ -154,17 +169,10 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.slice((page - 1) * 20, page * 20).map((row) => (
+                  {visible.map((row) => (
                     <tr key={recordId(row)}>
                       <td>
-                        <strong>{code(row)}</strong>
-                        <small>
-                          {first(
-                            row,
-                            "reservation.reference",
-                            "storageType.name",
-                          )}
-                        </small>
+                        <RecordIdentity row={row} resource={resource} />
                       </td>
                       <td>
                         {first(customer(row), "fullName") ||
@@ -208,8 +216,9 @@ export function StaffListPage({ resource }: { resource: StaffResource }) {
           )}
           <Pagination
             page={page}
-            total={items.length}
-            limit={20}
+            total={total}
+            limit={limit}
+            onLimitChange={value => change("limit", String(value))}
             onChange={(value) => change("page", String(value))}
           />
         </>

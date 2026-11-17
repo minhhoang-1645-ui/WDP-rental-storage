@@ -237,4 +237,64 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     expect(await db.user.count({ where: { id: { in: [users.ADMIN.id, users.OTHER_CUSTOMER.id] }, accountStatus: 'ACTIVE', role: 'ADMIN' } })).toBe(1);
     console.log('Real local HTTP flow passed: four-role permissions, signed booking/payment/handover, inventory, escalation, renewal appendix/payment, transfer sync/maintenance, early return and deposit settlement. No external provider calls.');
   }, 120000);
+
+  it('keeps signature challenges across service instances and consumes them with the signed write', async () => {
+    const { SigningOtpService } = await import('../dist/modules/signing/signing-otp.service.js');
+    const context = { userId: users.CUSTOMER.id, email: users.CUSTOMER.email, kind: 'transfer', documentId: 'restart-' + tag, documentHash: 'test-document-hash', signatureImage, acceptanceName: users.CUSTOMER.fullName } as const;
+    vi.setSystemTime(new Date(Date.now() + 3_600_001));
+    const receipt = await app.get(SigningOtpService).issue(context);
+    const fresh = new SigningOtpService(app.get(EmailService), db), code = mailbox.get(users.CUSTOMER.email)!;
+    await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: 'invalid' }, async () => null)).rejects.toThrow();
+    expect((await db.signingChallenge.findUnique({ where: { id: receipt.challengeId } })).attempts).toBe(1);
+    await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async () => { throw new Error('document write rollback'); })).rejects.toThrow('rollback');
+    expect((await db.signingChallenge.findUnique({ where: { id: receipt.challengeId } })).consumedAt).toBeNull();
+    await fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async (_proof: unknown, tx: any) => tx.user.update({ where: { id: users.CUSTOMER.id }, data: { phone: '0900000001' } }));
+    await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async () => null)).rejects.toThrow();
+  });
+
+  it('preserves the actual warehouse on completed stock movements after transfer', async () => {
+    const movement = await db.stockMovement.findFirst({ where: { status: 'COMPLETED' }, orderBy: { createdAt: 'asc' } });
+    expect(movement.unitCodeSnapshot).toBeTruthy();
+    const viewed = await api('GET', `/customer/stock-movements/${movement.id}`, 'CUSTOMER');
+    expect(viewed.storageUnit.unitNumber).toBe(movement.unitCodeSnapshot);
+    expect(viewed.locationEvidence).toBe('RECORDED');
+    await db.stockMovement.update({ where: { id: movement.id }, data: { locationRecordedAt: null, unitCodeSnapshot: null, storageUnitId: null } });
+    const legacy = await api('GET', `/customer/stock-movements/${movement.id}`, 'CUSTOMER');
+    expect(legacy.storageUnit).toBeNull(); expect(legacy.locationEvidence).toBe('UNKNOWN_LEGACY');
+  });
+
+  it('provides server reports with safe filters and a separate claim decision workflow', async () => {
+    const report = await api('GET', '/manager/reports?group=week', 'MANAGER');
+    expect(report.rent).toBeGreaterThan(0); expect(report.deposit).toBeGreaterThanOrEqual(0);
+    expect(report.times.length).toBeGreaterThan(0); expect(report).not.toHaveProperty('invoices');
+    await api('GET', '/manager/reports', 'STAFF', undefined, 403);
+    await api('GET', '/manager/reports?from=2026-02-31', 'MANAGER', undefined, 400);
+    await api('GET', '/manager/reports?group=month%27%3BDROP', 'MANAGER', undefined, 400);
+    const contract = await db.rentalContract.findFirst({ where: { reservation: { customerId: users.CUSTOMER.id }, status: { in: ['ACTIVE', 'COMPLETED'] } } });
+    const claim = await api('POST', '/customer/damage-claims', 'CUSTOMER', { rentalContractId: contract.id, discoveredOn: new Date(Date.now() + 25200000).toISOString().slice(0, 10), description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', storedItemIds: [], evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 });
+    expect(claim.status).toBe('REPORTED');
+    tokens.CLAIM_OTHER = (await app.get(AuthService).register({ email: `${tag}-claim-other@example.test`, fullName: 'Khách khác trong kiểm thử', password, phone: '0900000000' })).token;
+    expect((await api('GET', '/customer/damage-claims', 'CLAIM_OTHER')).items).toEqual([]);
+    await api('PATCH', `/manager/damage-claims/${claim.id}`, 'CUSTOMER', { decision: 'APPROVED' }, 403);
+    const facts = await api('PATCH', `/staff/management/damage-claims/${claim.id}`, 'STAFF', { expectedUpdatedAt: claim.updatedAt, staffFacts: 'Đã kiểm tra hiện trường và ghi nhận tài liệu bị ẩm.' });
+    expect(facts.status).toBe('INVESTIGATING');
+    const decision = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: facts.updatedAt, decision: 'APPROVED', decisionReason: 'Chấp thuận kiểm tra xử lý, chưa quyết định trách nhiệm hoặc tiền bồi thường.' });
+    expect(decision.status).toBe('APPROVED');
+    const resolved = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: decision.updatedAt, action: 'resolve', resolutionNote: 'Đã trao đổi hướng xử lý và lưu chứng cứ cùng khách.' });
+    expect(resolved.status).toBe('RESOLVED'); expect(resolved.history).toHaveLength(3);
+  });
+
+  it('allows only bounded non-secret Admin policies and audits the change', async () => {
+    await db.user.update({ where: { id: users.ADMIN.id }, data: { accountStatus: 'ACTIVE' } });
+    tokens.ADMIN = (await app.get(AuthService).login({ email: users.ADMIN.email, password })).token;
+    const policies = await api('GET', '/admin/business-policies', 'ADMIN');
+    expect(policies.items).toHaveLength(2);
+    await api('GET', '/admin/business-policies', 'MANAGER', undefined, 403);
+    await api('PATCH', '/admin/business-policies/SMTP_PASS', 'ADMIN', { value: 10, expectedUpdatedAt: null }, 400);
+    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 99, expectedUpdatedAt: null }, 400);
+    const changed = await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 2, expectedUpdatedAt: null });
+    expect(changed.updatedById).toBe(users.ADMIN.id);
+    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 3, expectedUpdatedAt: null }, 409);
+    expect(await db.auditEvent.count({ where: { resource: 'business-policies', outcome: 'SUCCESS' } })).toBeGreaterThan(0);
+  });
 });

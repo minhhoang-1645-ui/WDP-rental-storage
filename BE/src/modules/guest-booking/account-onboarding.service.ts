@@ -50,9 +50,10 @@ export class AccountOnboardingService {
     return session;
   }
   async requestReset(input: Record<string, unknown>) {
-    const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+    const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
     if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 254) throw new BadRequestException('Email không hợp lệ.');
     await this.limit('reset-email', email, 5);
+    await this.email.assertPasswordResetAvailable();
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (user && user.accountStatus !== 'DISABLED') {
       const token = randomBytes(32).toString('base64url');
@@ -60,22 +61,23 @@ export class AccountOnboardingService {
       try { await this.email.sendPasswordReset(email, token); }
       catch { await this.prisma.accountFlowToken.update({ where: { id: saved.id }, data: { usedAt: new Date() } }); }
     }
-    return { message: 'Nếu email có tài khoản phù hợp, hướng dẫn đặt lại mật khẩu sẽ được gửi. Vui lòng kiểm tra hộp thư.' };
+    return { message: 'Nếu email đã đăng ký, chúng tôi sẽ gửi liên kết đặt lại mật khẩu.' };
   }
   async reset(input: Record<string, unknown>) {
-    if (input.password !== input.confirmPassword) throw new BadRequestException('Mật khẩu xác nhận không khớp.');
+    if (typeof input?.password !== 'string' || input.password !== input.confirmPassword) throw new BadRequestException('Mật khẩu xác nhận không khớp.');
     const proof = await this.proof(input.token, 'RESET');
     const passwordHash = await this.auth.encodePassword(input.password);
-    const userId = await this.prisma.$transaction(async tx => {
+    await this.prisma.$transaction(async tx => {
+      // Lock the account before touching tokens, using the same order for all reset requests.
+      const user = await tx.user.findUnique({ where: { email: proof.email }, select: { id: true } });
+      if (!user) throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
+      const updated = await tx.user.updateMany({ where: { id: user.id, accountStatus: 'ACTIVE' }, data: { passwordHash } });
+      if (!updated.count) throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
       const changed = await tx.accountFlowToken.updateMany({ where: { id: proof.id, usedAt: null, expiresAt: { gt: new Date() } }, data: { usedAt: new Date() } });
       if (!changed.count) throw new UnauthorizedException('Liên kết đã được dùng.');
-      const user = await tx.user.findUnique({ where: { email: proof.email } });
-      if (!user || user.accountStatus === 'DISABLED') throw new UnauthorizedException('Không thể đặt lại mật khẩu.');
-      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
       await tx.accountFlowToken.updateMany({ where: { email: proof.email, kind: 'RESET', usedAt: null }, data: { usedAt: new Date() } });
-      return user.id;
+      await tx.authSession.deleteMany({ where: { userId: user.id } });
     });
-    await this.auth.revokeUserSessions(userId);
     return { message: 'Đã đặt lại mật khẩu. Hãy đăng nhập bằng mật khẩu mới để tiếp tục.' };
   }
   async resend(input: Record<string, unknown>) {

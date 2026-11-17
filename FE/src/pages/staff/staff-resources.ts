@@ -1,7 +1,7 @@
 export const staffResources = {
   appointments: {
     title: "Lịch bàn giao",
-    description: "Xem lịch đã xác nhận và ghi nhận bàn giao kho thực tế.",
+    description: "Xem lịch được quản lý phân công và ghi nhận bàn giao kho thực tế.",
     statuses: ["REQUESTED", "CONFIRMED", "COMPLETED", "CANCELLED"],
   },
   rentals: {
@@ -33,6 +33,11 @@ export const staffResources = {
   },
 } as const;
 export type StaffResource = keyof typeof staffResources;
+
+export type StaffTableWorkflow = 'appointments' | 'support-requests' | 'maintenance';
+export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
+  return resource === 'appointments' || resource === 'support-requests' || resource === 'maintenance';
+}
 
 export function staffDay(value: unknown) {
   if (typeof value !== "string" && typeof value !== "number") return "";

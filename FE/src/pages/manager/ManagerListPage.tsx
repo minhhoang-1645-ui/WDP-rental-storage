@@ -1,3 +1,9 @@
+import { ManagerTaskTable } from '../../components/manager/ManagerTaskTable';
+import { TableSkeleton } from '../../components/LoadingSkeleton';
+import { isManagerTaskResource, managerResourceColumns } from './manager-task-columns';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { newestFirst, recordIdentity } from '../../utils/record-identity';
+import { internalPageSize, staffTaskPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
@@ -26,6 +32,7 @@ import {
   LoadState,
   PageHeader,
   Pagination,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
@@ -33,12 +40,19 @@ import { InventoryEditor } from './InventoryEditor';
 import { TransferRequests } from '../../components/manager/TransferRequests';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 import { normalizeSearch } from '../../utils/notification-tools';
+import { StaffTaskPagination } from '../../components/workspace/StaffTaskTable';
+import { StaffWorkflowTable } from '../staff/StaffWorkflowTable';
+import { isStaffTableWorkflow, staffDay } from '../staff/staff-resources';
+import { managerStorageLabels } from '../../utils/manager-sections';
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const staffTable = user?.role === 'STAFF' && isStaffTableWorkflow(resource) ? resource : null;
+  const managerTable = user?.role === 'MANAGER' && isManagerTaskResource(resource) ? resource : null;
+  const limit = staffTable || managerTable ? staffTaskPageSize(params) : internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
   const status = reviewOnly ? managerReviewStatus(resource) : params.get("status") ?? "";
@@ -53,6 +67,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const [createdMaintenance, setCreatedMaintenance] = useState<{ owner: string; row: Row }>();
   const [state, setState] = useState<{
     key: string;
+    revision: number;
     data?: Page;
     error?: string;
   }>();
@@ -60,9 +75,10 @@ export function ManagerListPage({ resource }: { resource: string }) {
     config?.local ||
     (resource === "returns" && status === "PENDING_SETTLEMENT"),
   );
-  const query = new URLSearchParams({ page: String(page), limit: "20" });
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
+  if (staffTable && staffTable !== 'appointments' && params.get('mine') === 'true') query.set('assignedToMe', 'true');
   for (const field of [
     "priority",
     "type",
@@ -72,23 +88,25 @@ export function ManagerListPage({ resource }: { resource: string }) {
     "zone",
   ])
     if (params.get(field)) query.set(field, params.get(field)!);
+  const oldest = managerTable === 'deposit-settlements' && params.get('sort') === 'oldest';
   const path = `/manager/${resource}${local ? "" : `?${query}`}`;
-  const key = `${user?.id}:${path}:${revision}`;
+  const key = `${user?.id}:${path}:${oldest}`;
   useEffect(() => {
     if (!config) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const request = local
         ? allPages(path, controller.signal)
-        : apiRequest<Page>(path, { signal: controller.signal });
+        : oldest ? oldestSettlementPage(path, page, limit, controller.signal) : apiRequest<Page>(path, { signal: controller.signal });
       request
         .then((data) => {
-          if (!controller.signal.aborted) setState({ key, data });
+          if (!controller.signal.aborted) setState({ key, revision, data });
         })
         .catch((error) => {
           if (!controller.signal.aborted)
             setState({
               key,
+              revision,
               error:
                 error instanceof Error
                   ? error.message
@@ -100,13 +118,14 @@ export function ManagerListPage({ resource }: { resource: string }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [key, path, local, config]);
+  }, [key, path, local, config, oldest, page, limit, revision]);
   useEffect(() => {
     const refresh = () => { if (!hasDraft()) setRevision((v) => v + 1); };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, []);
   const current = state?.key === key ? state : undefined;
+  const refreshing = Boolean(current && current.revision !== revision);
   let items = current?.data?.items ?? [];
   if (reviewOnly) items = items.filter(row => row.status === status);
   if (resource === "inquiries")
@@ -120,9 +139,10 @@ export function ManagerListPage({ resource }: { resource: string }) {
         (!params.get("date") ||
           date(row.createdAt) === date(params.get("date"))),
     );
+  if (local && resource === 'reservations') items = newestFirst(items);
   const total = local ? items.length : (current?.data?.total ?? 0);
-  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / 20))) : page;
-  const visible = local ? items.slice((visiblePage - 1) * 20, visiblePage * 20) : items;
+  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : page;
+  const visible = local ? items.slice((visiblePage - 1) * limit, visiblePage * limit) : items;
   const refresh = () => setRevision((v) => v + 1);
   useLiveRefresh(path, refresh);
   const change = (name: string, value: string) =>
@@ -137,43 +157,24 @@ export function ManagerListPage({ resource }: { resource: string }) {
       { replace: true },
     );
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
-  return (
-    <section>
-      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
-      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.' : config.description}>
-        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
-        {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
-          <button className="button-primary" onClick={() => setCreating(true)}>
-            <Plus size={17} />
-            {resource === "maintenance" ? "Tạo bảo trì" : "Tạo chuyển kho"}
-          </button>
-        )}
-        <button
-          className="button-secondary"
-          onClick={refresh}
-          disabled={!current}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-      </PageHeader>
-      {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
-      {resource === 'maintenance' && user?.role === 'STAFF' && <section className="manager-section"><h2>Bảo trì đúng tình trạng kho</h2><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></section>}
-      {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
-      <div className="portal-toolbar">
+  let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
+  if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
+  if (managerTable === 'units') description = managerStorageLabels.units.description;
+  const toolbar = <>
         <label className="field-label portal-search">
           Tìm kiếm
           <input
             type="search"
             value={search}
             maxLength={100}
-            placeholder="Mã hồ sơ, tên khách, kho…"
+            placeholder={staffTable === 'appointments' ? 'Mã lịch, mã đặt kho, khách hàng…' : staffTable === 'maintenance' ? 'Mã phiếu, kho, nội dung…' : managerTable === 'units' ? 'Mã kho…' : 'Mã hồ sơ, tên khách, kho…'}
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
+        {resource === 'reservations' && user?.role === 'STAFF' && <button type="button" className="button-secondary" onClick={() => change('status', 'PENDING')}>Chờ nhân viên xử lý</button>}
         {config.statuses && !reviewOnly && (
           <label className="field-label">
-            Trạng thái
+            {resource === "payments" ? "Phương thức" : "Trạng thái"}
             <select
               value={status}
               onChange={(event) => change("status", event.target.value)}
@@ -233,6 +234,11 @@ export function ManagerListPage({ resource }: { resource: string }) {
             />
           </label>
         )}
+        {staffTable === 'appointments' && <button type="button" className="button-secondary" onClick={() => change('date', staffDay(Date.now()))}>Hôm nay</button>}
+        {staffTable && staffTable !== 'appointments' && <label className="portal-checkbox">
+          <input type="checkbox" checked={params.get('mine') === 'true'} onChange={event => change('mine', event.target.checked ? 'true' : '')} />
+          Việc được giao cho tôi
+        </label>}
         {resource === "units" && (
           <>
             <label className="field-label">
@@ -253,20 +259,51 @@ export function ManagerListPage({ resource }: { resource: string }) {
             </label>
           </>
         )}
-        {params.size > 0 && (
-          <button className="button-secondary" onClick={() => setParams({})}>
+        {(managerTable ? [...params.keys()].some(name => !['page', 'limit'].includes(name)) : params.size > 0) && (
+          <button className="button-secondary" onClick={() => setParams(managerTable && params.has('limit') ? { limit: String(limit) } : {})}>
             Xóa bộ lọc
           </button>
         )}
-      </div>
+  </>;
+  return (
+    <section>
+      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
+      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={description}>
+        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
+        {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
+          <button className="button-primary" onClick={() => setCreating(true)}>
+            <Plus size={17} />
+            {resource === "maintenance" ? "Tạo bảo trì" : "Tạo chuyển kho"}
+          </button>
+        )}
+        <button
+          className="button-secondary"
+          onClick={refresh}
+          disabled={!current || refreshing}
+        >
+          <RefreshCw size={16} />
+          Làm mới
+        </button>
+      </PageHeader>
+      {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
+      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></details>}
+      {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
+      {managerTable ? <ManagerTaskTable title={config.title} columns={managerResourceColumns(managerTable, {
+        direction: oldest ? 'ascending' : 'descending', toggle: () => change('sort', oldest ? '' : 'oldest'),
+      })} items={visible}
+        rowKey={row => first(row, 'id')} loading={!current} refreshing={refreshing} error={current?.error} retry={refresh}
+        page={visiblePage} limit={limit} total={total} update={change} toolbar={toolbar} /> : <>
+      <div className={`portal-toolbar${staffTable ? ' staff-table-toolbar' : ''}`}>{toolbar}</div>
+      <RefreshStatus active={refreshing} />
       <LoadState
         loading={!current}
         error={current?.error ?? ""}
         retry={refresh}
+        placeholder={staffTable ? <StaffWorkflowTable resource={staffTable} title={config.title} items={[]} userId={user?.id ?? ''} loadingRows={Math.min(limit, 6)} /> : <TableSkeleton columns={['record', 'related', 'detail', 'status', 'actions']} rows={Math.min(limit, 6)} pagination />}
       />
       {current?.data && (
         <>
-          <div className="portal-result-heading">
+          {!staffTable && <div className="portal-result-heading">
             <span>
               {total.toLocaleString("vi-VN")}{" "}
               {resource === "units" ? "kho" : "hồ sơ"}
@@ -276,14 +313,14 @@ export function ManagerListPage({ resource }: { resource: string }) {
                 ? "Tìm kiếm trên toàn bộ danh sách"
                 : "Dữ liệu từ hệ thống"}
             </small>
-          </div>
-          {visible.length ? (
+          </div>}
+          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={config.title} items={visible} userId={user?.id ?? ''} /> : (
             <div className="manager-table-wrap">
               <table className="manager-table">
                 <thead>
                   <tr>
                     <th>
-                      {resource === "customers" ? "Khách hàng" : "Mã hồ sơ"}
+                      {resource === "customers" ? "Khách hàng" : "Hồ sơ"}
                     </th>
                     <th>
                       {["reservations", "inquiries"].includes(resource)
@@ -319,14 +356,17 @@ export function ManagerListPage({ resource }: { resource: string }) {
           ) : (
             <Empty />
           )}
-          <Pagination
+          {staffTable ? <StaffTaskPagination page={visiblePage} limit={limit} total={total}
+            onLimitChange={value => change('limit', String(value))} onChange={value => change('page', String(value))} /> : <Pagination
             page={visiblePage}
-            limit={20}
+            limit={limit}
+            onLimitChange={value => change("limit", String(value))}
             total={total}
             onChange={(v) => change("page", String(v))}
-          />
+          />}
         </>
       )}
+      </>}
       {creating && (
         <ManagerCreateDialog
           resource={resource}
@@ -344,8 +384,31 @@ export function ManagerListPage({ resource }: { resource: string }) {
     </section>
   );
 }
+async function oldestSettlementPage(path: string, page: number, limit: number, signal: AbortSignal): Promise<Page> {
+  const [endpoint, search] = path.split('?');
+  const params = new URLSearchParams(search);
+  const load = (page: number) => {
+    params.set('page', String(page));
+    return apiRequest<Page>(endpoint + '?' + params, { signal });
+  };
+  const firstPage = await load(1);
+  const end = Math.max(0, firstPage.total - (page - 1) * limit);
+  const start = Math.max(0, end - limit);
+  if (end === start) return { ...firstPage, page, items: [] };
+  const firstIndex = Math.floor(start / limit) + 1;
+  const lastIndex = Math.ceil(end / limit);
+  const indices = firstIndex === lastIndex ? [firstIndex] : [firstIndex, lastIndex];
+  const pages = await Promise.all(indices.map(index => index === 1 ? firstPage : load(index)));
+  const offset = (firstIndex - 1) * limit;
+  return { ...firstPage, page, items: pages.flatMap(result => result.items).slice(start - offset, end - offset).reverse() };
+}
+
 function ListRow({ resource, row }: { resource: string; row: Row }) {
   const person = customer(row);
+  const { user } = useAuth();
+  const identity = recordIdentity(row, resource);
+  const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'stock-movements', 'rentals'].includes(resource);
+  const needsStaff = resource === 'reservations' && user?.role === 'STAFF' && row.status === 'PENDING';
   const information =
     resource === "units"
       ? first(row, "storageType.name")
@@ -363,23 +426,25 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
     <tr>
       <td>
         <Link className="portal-record-link" to={detailPath(resource, row)}>
-          {code(row)}
+          {recognizable ? identity.person || identity.title : code(row)}
         </Link>
+        {recognizable && <CopyRecordCode value={code(row)} />}
         <small>
           {resource === "customers"
             ? first(row, "phone")
             : date(
-                row.scheduledAt ??
+                row.createdAt ??
+                  row.scheduledAt ??
                   row.receivedAt ??
                   row.requestedAt ??
                   row.issuedAt ??
                   row.createdAt,
-                resource === "appointments",
+                ['appointments', 'reservations', 'inquiries'].includes(resource),
               )}
         </small>
       </td>
       <td>
-        <strong>{information || "—"}</strong>
+        <strong>{recognizable ? identity.title : information || "—"}</strong>
         <small>
           {resource === "units"
             ? [
@@ -507,6 +572,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
       </td>
       <td>
         <Status value={row.status ?? row.rentalState ?? row.accountStatus} />
+        {needsStaff && <small className="record-attention">Nhân viên kiểm tra ngoại lệ</small>}
       </td>
       <td>
         <Link
@@ -514,7 +580,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
           aria-label={`Mở ${code(row)}`}
           to={detailPath(resource, row)}
         >
-          <ArrowRight size={17} />
+          <span>Xem chi tiết</span><ArrowRight size={17} />
         </Link>
       </td>
     </tr>

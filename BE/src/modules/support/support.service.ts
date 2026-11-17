@@ -80,7 +80,7 @@ export class SupportService {
 
   listCustomer(customerId: string, query: SupportListQuery) { return this.list({ customerUserId: customerId }, query, 'CUSTOMER'); }
   listStaff(query: SupportListQuery, actor: PublicUser) { return this.list(query.assignedToMe ? { assignedStaffUserId: actor.id } : {}, query, 'STAFF'); }
-  listManager(query: SupportListQuery) { return this.list({}, query, 'MANAGER'); }
+  listManager(query: SupportListQuery, assignedStaffUserId?: string) { return this.list(assignedStaffUserId ? { assignedStaffUserId } : {}, query, 'MANAGER'); }
 
   async getCustomer(customerId: string, id: string) {
     const record = await this.prisma.supportRequest.findFirst({ where: { customerUserId: customerId, OR: [{ id }, { supportCode: id }] }, include: this.include() });
@@ -166,22 +166,35 @@ export class SupportService {
       { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
       { customer: { email: { contains: query.search, mode: 'insensitive' } } }, { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } },
     ] } : {}) };
-    const [total, records] = await this.prisma.$transaction([this.prisma.supportRequest.count({ where }), this.prisma.supportRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() })]);
+    const total = await this.prisma.supportRequest.count({ where });
+    const records = await this.prisma.supportRequest.findMany({
+      where,
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      include: this.include(mode),
+    });
     return { page: query.page, limit: query.limit, total, items: records.map((item) => this.toView(item, mode)) };
   }
 
-  private include(): Prisma.SupportRequestInclude { return {
-    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rentalContractId: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
+  private include(mode: ViewMode = 'MANAGER'): Prisma.SupportRequestInclude { return {
+    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, rentalContractId: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
-    reservation: { select: { id: true, reservationCode: true, status: true, quoteSnapshot: true } },
+    reservation: { select: { id: true, reservationCode: true, status: true } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
-    storageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } }, reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } } } },
+    storageUnit: { include: {
+      storageType: { select: { id: true, code: true, name: true } },
+      ...(mode === 'MANAGER' ? {
+        maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } },
+        reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } },
+      } : {}),
+    } },
     invoice: { select: { id: true, invoiceCode: true, status: true } }, assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
     escalatedBy: { select: { id: true, fullName: true, role: true } }, resolvedBy: { select: { id: true, fullName: true, role: true } },
   } }
 
   private toView(record: any, mode: ViewMode) {
-    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnDecision: record.subject === 'Đề nghị trả kho trước hạn' && record.resolvedBy?.role === 'MANAGER' ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null) : null, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, contractId: transfer.rentalContractId, fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
+    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision: record.subject === 'Đề nghị trả kho trước hạn' && record.resolvedBy?.role === 'MANAGER' ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null) : null, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     if (mode === 'CUSTOMER') return base;
     const operational = { ...base, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'STAFF') return operational;

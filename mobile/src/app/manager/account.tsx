@@ -1,1 +1,1 @@
-export { OperationAccount as default } from '@/operations/home';
+export { AccountScreen as default } from '@/components/account-screen';

@@ -12,18 +12,18 @@ import { formatDate } from '@/utils/format';
 import { DocumentFile } from './document-file';
 
 type Receipt = { challengeId: string; recipient: string; expiresAt: string; resendAfterSeconds: number };
-export function DocumentAcceptance({ row, resource, onSaved }: { row: Row; resource: 'contracts' | 'renewals'; onSaved: () => void }) {
-  const document = object(resource === 'contracts' ? row.terms : row.appendix);
+export function DocumentAcceptance({ row, resource, onSaved }: { row: Row; resource: 'contracts' | 'renewals' | 'transfer-orders'; onSaved: () => void }) {
+  const document = object(resource === 'contracts' ? row.terms : resource === 'transfer-orders' ? row.commercial : row.appendix);
   return <Acceptance key={`${resource}:${idOf(row)}:${text(document, 'snapshotHash')}`} row={row} resource={resource} document={document} onSaved={onSaved} />;
 }
-function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 'contracts' | 'renewals'; document: Row; onSaved: () => void }) {
+function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 'contracts' | 'renewals' | 'transfer-orders'; document: Row; onSaved: () => void }) {
   const { user } = useAuth();
   const [signing,setSigning] = useState(false);
   const pad = useRef<SignaturePadHandle>(null), lock = useRef(false);
   const [agreed, setAgreed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null), [signature, setSignature] = useState(''), [otp, setOtp] = useState(''), [remaining, setRemaining] = useState(0);
   const accepted = Boolean(document.acceptedAt), hash = text(document, 'snapshotHash'), configured = object(document.otp).emailConfigured !== false;
-  const base = `/customer/${resource}/${encodeURIComponent(idOf(row))}/${resource === 'contracts' ? '' : 'appendix/'}`;
+  const base = `/customer/${resource}/${encodeURIComponent(idOf(row))}/${resource === 'renewals' ? 'appendix/' : ''}`;
   useDraftGuard(!accepted && (signing || agreed || busy));
   useEffect(() => { if (!remaining) return; const timer = setTimeout(() => setRemaining(value => Math.max(0, value - 1)), 1000); return () => clearTimeout(timer); }, [remaining]);
   async function submit(verify: boolean) {
@@ -38,9 +38,9 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
     finally { lock.current = false; setBusy(false); }
   }
   if (!hash) return <Panel title="Nội dung hợp đồng"><Text style={styles.error}>Chưa tải được tài liệu để ký. Vui lòng làm mới hồ sơ.</Text></Panel>;
-  return <Panel title="Tài liệu & chữ ký">
+  return <Panel title={resource === 'transfer-orders' ? 'Phụ lục đổi loại kho' : 'Tài liệu & chữ ký'}>
     <StatusBadge status={accepted?'Đã ký':'Chờ bạn ký'} tone={accepted?'success':'warning'}/><Facts values={[["Người ký", document.acceptanceName || user?.fullName], ["Ngày ký", accepted ? formatDate(String(document.acceptedAt),true) : '']]} />
-    <DocumentFile path={`/customer/documents/${resource}/${encodeURIComponent(idOf(row))}`} name={text(document, 'code') || text(row, 'contractCode')} title={resource==='contracts'?'Hợp đồng thuê kho':'Phụ lục gia hạn'} subtitle={[text(document,'code')||text(row,'contractCode'),accepted?'PDF · Tài liệu đã ký':'PDF · Xem nội dung trước khi ký'].filter(Boolean).join(' · ')} />
+    <DocumentFile path={`/customer/documents/${resource === 'transfer-orders' ? 'transfer-addenda' : resource}/${encodeURIComponent(idOf(row))}`} name={text(document, 'code') || text(row, 'contractCode')} title={resource==='contracts'?'Hợp đồng thuê kho':resource==='transfer-orders'?'Phụ lục đổi loại kho':'Phụ lục gia hạn'} subtitle={[text(document,'code')||text(row,'contractCode'),accepted?'PDF · Tài liệu đã ký':'PDF · Xem nội dung trước khi ký'].filter(Boolean).join(' · ')} />
     {!accepted&&!signing&&<Button title={resource==='contracts'?'Ký hợp đồng':'Ký phụ lục'} onPress={()=>setSigning(true)}/>}
     {accepted ? <><Text style={styles.success}>Chữ ký đã được lưu trong tài liệu PDF.</Text>{text(document, 'signatureImage') && <Disclosure title="Xem chữ ký đã lưu"><Image accessibilityLabel="Chữ ký đã ghi nhận" source={{ uri: text(document, 'signatureImage') }} resizeMode="contain" style={{ width: '100%', height: 180, backgroundColor: '#fff' }} /></Disclosure>}</> : signing ? <>
       {!configured && <Text accessibilityRole="alert" style={styles.copy}>Hiện chưa thể gửi mã xác thực qua email. Bạn vẫn có thể đọc hợp đồng; vui lòng thử ký lại sau.</Text>}

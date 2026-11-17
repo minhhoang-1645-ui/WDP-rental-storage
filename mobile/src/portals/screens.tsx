@@ -25,14 +25,14 @@ import { RecordView, summary } from '@/operations/record-view';
 import { RenewalReview } from '@/operations/renewal-review';
 import { useResource } from '@/operations/use-resource';
 import { Button, Disclosure, Facts, Field, Navigation, Panel, styles } from '@/operations/ui';
-import { formatDate } from '@/utils/format';
-import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, staffMaintenanceCreate, staffRecordActions } from './actions';
+import { formatDate, formatMoney } from '@/utils/format';
+import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, returnSettlementAmount, staffMaintenanceCreate, staffRecordActions } from './actions';
 import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
 import { OnlinePayment } from './online-payment';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
-import { isScheduledRenewalInvoice, paymentWindowClosed } from '@/utils/payment-state';
+import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { DocumentAcceptance } from '@/components/document-acceptance';
 import { recordMatches } from '@/utils/record-search';
@@ -69,7 +69,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
   const setPage = (value: number) => setPagination({ filter: filterKey, page: value });
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy chức năng" message="Chọn chức năng trong khu vực của bạn." /><Navigation title="Về tổng quan" path={root} /></View>;
   const items = rows(config.shape === 'array' ? data.data : object(data.data).items).filter(item => role !== 'CUSTOMER' || resource !== 'transfers' || item.resolutionType === 'TRANSFER_RECOMMENDED' || text(item, 'subject').toLocaleLowerCase('vi').includes('chuyển kho'));
-  const filtered = items.filter(item => (!customerInvoices || Number(item.amountPaid) > 0 || !isScheduledRenewalInvoice(item)) && (!status || (item.status ?? item.rentalState) === status) && recordMatches(item, search, portalStatus(role, resource, item.status ?? item.rentalState)));
+  const filtered = items.filter(item => (!customerInvoices || Number(item.amountPaid) > 0 || !invoicePaymentBlockedBySchedule(item)) && (!status || (item.status ?? item.rentalState) === status) && recordMatches(item, search, portalStatus(role, resource, item.status ?? item.rentalState)));
   const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
   const currentPage = Math.min(page, totalPages);
   const shown = filtered.slice((currentPage - 1) * 10, currentPage * 10);
@@ -80,6 +80,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
     {role === 'CUSTOMER' && ['appointments', 'contracts'].includes(resource) && <Navigation title={resource === 'appointments' ? 'Đặt lịch từ hợp đồng đủ điều kiện' : 'Xem lịch bàn giao'} path={resource === 'appointments' ? '/customer/contracts' : '/customer/appointments'} />}
     {role==='CUSTOMER'&&resource==='support-requests'&&<Navigation compact title="Hỗ trợ về hóa đơn" path="/customer/invoices"/>}
     {role === 'CUSTOMER' && ['renewals', 'returns', 'transfers'].includes(resource) && <><Navigation title={resource === 'support-requests' ? 'Chọn kho để gửi hỗ trợ' : resource === 'transfers' ? 'Chọn kho muốn chuyển' : resource === 'renewals' ? 'Chọn kho muốn gia hạn' : 'Chọn kho muốn trả'} path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}{resource === 'support-requests' && <Navigation title="Hỗ trợ về hóa đơn" path="/customer/invoices" />}{resource === 'transfers' && <Text style={styles.copy}>Bạn có thể gửi nhu cầu chuyển kho qua mục Hỗ trợ. NestBox sẽ xác nhận kho mới và hướng dẫn bạn chuyển hàng.</Text>}</>}
+    {role === 'CUSTOMER' && resource === 'returns' && <Panel title="Thanh toán đủ trước khi trả kho"><Text style={styles.copy}>Trả trước hạn hoặc đúng hạn đều phải tất toán toàn bộ các khoản chưa thanh toán đã cam kết, kể cả kỳ chưa đến hạn. Sau khi thanh toán đủ, xuất hết hàng và được tiếp nhận, nhân viên mới hoàn tất nhận trả kho. Tiền cọc được quyết toán riêng.</Text><Navigation title="Xem hóa đơn và tất toán" path="/customer/invoices" /></Panel>}
     {role === 'CUSTOMER' && resource === 'invoices' && <><Navigation title="Lịch sử thanh toán" path="/customer/payment-history" /><Navigation title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title={role === 'CUSTOMER' ? 'Tìm trong danh sách' : 'Tìm kiếm hồ sơ'} value={search} onChange={setSearch} maxLength={120} />
@@ -88,7 +89,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
   </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => {
     const id = idOf(item);
     const link = role === 'CUSTOMER' ? <CustomerRecordRow resource={resource} row={item} path={`${root}/${resource}/${encodeURIComponent(id)}`}/> : <Navigation title={codeOf(item)} description={summary(item, transferProgress(item) || portalStatus(role, resource, item.status ?? item.rentalState))} path={`${root}/${resource}/${encodeURIComponent(id)}`} />;
-    const payable = customerInvoices && !isScheduledRenewalInvoice(item) && ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0;
+    const payable = customerInvoices && !invoicePaymentBlockedBySchedule(item) && ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0;
     if (!payable) return link;
 
     const pending = rows(submissions.data?.items).some(row => text(row, 'invoice.id') === id && row.status === 'PENDING_VERIFICATION');
@@ -142,6 +143,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
       {role === 'CUSTOMER' && resource === 'renewals' && Boolean(row.appendix) && <DocumentAcceptance row={row} resource="renewals" onSaved={refresh} />}
       {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
       {role === 'CUSTOMER' ? <Disclosure title="Hướng dẫn bước tiếp theo"><Text style={[styles.copy, {fontSize: 14, lineHeight: 21}]}>{workflowGuide(resource, row.status, 'customer')}</Text></Disclosure> : <WorkflowHint text={workflowGuide(resource, row.status, 'staff')}/>}
+      {(resource === 'returns' || role === 'CUSTOMER' && resource === 'rentals') && <Panel title="Điều kiện công nợ để trả kho"><Text style={styles.copy}>Trả trước hạn hoặc đúng hạn đều phải thanh toán đủ toàn bộ công nợ đã cam kết, kể cả các kỳ chưa đến hạn, trước khi được trả kho. Tiền cọc được quyết toán riêng.</Text>{Number.isFinite(returnSettlementAmount(row)) ? <Text style={returnSettlementAmount(row) > 0 ? styles.error : styles.success}>{returnSettlementAmount(row) > 0 ? `Còn phải tất toán: ${formatMoney(returnSettlementAmount(row))}. Chưa thể gửi yêu cầu trả kho hoặc hoàn tất nhận trả.` : 'Đã tất toán toàn bộ công nợ hiện có. Tiếp tục đối chiếu điều kiện trả kho và giao nhận hàng.'}</Text> : <Text style={styles.copy}>Chưa có đủ dữ liệu công nợ để xác nhận điều kiện trả kho. Hãy làm mới hồ sơ trước khi tiếp tục.</Text>}{role === 'CUSTOMER' && <Navigation title="Xem hóa đơn và tất toán" path="/customer/invoices" />}</Panel>}
       {resource === 'returns' && (Number(text(row, 'inventory.remainingItemTypes')) > 0 || Number(text(row, 'inventory.pendingMovements')) > 0) && <Panel title="Cần hoàn tất giao nhận hàng"><Text style={styles.copy}>Còn {text(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {text(row, 'inventory.pendingMovements') || '0'} phiếu đang xử lý. Khách cần lấy hết hàng, nhân viên kiểm đếm trước khi nhận trả kho.</Text><Navigation title="Xem phiếu nhập – xuất" path={`${root}/stock-movements`} /></Panel>}
       {renewalInvoice && row.status === 'APPROVED_PENDING_PAYMENT' && Boolean(text(row, 'appendix.acceptedAt')) && <>
         <InvoicePayment key={idOf(renewalInvoice)} invoice={renewalInvoice} onlineOnly refresh={refresh} onNotice={setNotice} />
@@ -160,6 +162,7 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
       {role === 'STAFF' && ['support-requests', 'maintenance'].includes(resource) && text(row, 'assignedStaff.id') !== user?.id && !['COMPLETED', 'RESOLVED'].includes(String(row.status)) && <Text style={styles.copy}>Chỉ nhân viên được phân công mới được xử lý công việc này.</Text>}
       {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && Date.parse(text(row, 'scheduledAt')) > clock && <Text style={styles.copy}>Chưa đến giờ hẹn ({formatDate(text(row, 'scheduledAt'), true)}). Xác nhận sau khi đã giao giấy tờ và chìa khóa.</Text>}
       {role === 'STAFF' && resource === 'appointments' && row.status === 'CONFIRMED' && handoverWindowIssue(row, clock) && <Text style={styles.error}>Ngày hiện tại nằm ngoài thời gian được bàn giao.</Text>}
+      {role === 'CUSTOMER' && resource === 'appointments' && <Panel title="Nhân viên phụ trách"><Text style={styles.copy}>{row.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Quản lý đang bố trí lại nhân viên.' : text(row, 'assignedStaff.fullName') || 'Đang chờ quản lý phân công nhân viên bàn giao.'}</Text><Text style={styles.copy}>Xác nhận giờ hẹn không đồng nghĩa đã phân công nhân viên.</Text></Panel>}
       {resource === 'appointments' && row.usageStatus === 'WAITING_FOR_RENTAL_START' && <Panel title="Đã bàn giao chìa khóa"><Text style={styles.copy}>Kho sẽ được kích hoạt khi đến ngày bắt đầu thuê và đủ điều kiện.</Text></Panel>}
       {role==='CUSTOMER'&&resource!=='invoices'?<CustomerRecordActions actions={actions} selected={action} onSelect={item=>{setNotice('');setAction(item);}} onClose={()=>setAction(undefined)} onSaved={()=>{setAction(undefined);setNotice('Đã gửi yêu cầu.');refresh();}}/>:action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : actions.map((item, index) => <Button key={item.title} title={item.title} variant={role === 'CUSTOMER' && index > 0 ? 'secondary' : 'primary'} onPress={() => { setNotice(''); setAction(item); }} />)}
       {role === 'CUSTOMER' && resource === 'invoices' && <InvoicePayment key={id} invoice={row} refresh={refresh} onNotice={setNotice} />}

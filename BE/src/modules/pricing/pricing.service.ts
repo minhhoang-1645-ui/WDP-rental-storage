@@ -14,7 +14,7 @@ type PricedStorageType = {
   allowDailyRental: boolean;
 };
 
-type PricedService = { id: string; code: string; name: string; kind: 'PURCHASE' | 'RENTAL'; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: bigint | null; isActive: boolean };
+type PricedService = { physicalUnit?: string | null; id: string; code: string; name: string; kind: 'PURCHASE' | 'RENTAL'; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: bigint | null; isActive: boolean };
 
 const paymentPlans = ['PAY_MONTHLY', 'PREPAID'] as const;
 const prepaidDiscounts: Record<number, number> = { 3: 5, 6: 10, 12: 15 };
@@ -117,7 +117,7 @@ export class PricingService {
         { code: 'storage-rent', label: 'Tiền thuê kho', basis: `${basis} × ${input.quantity} kho`, amount: baseRentalAmount, status: 'INCLUDED' },
         ...(discountAmount > 0 ? [{ code: 'prepaid-discount', label: `Chiết khấu trả trước ${discountPercent}%`, basis, amount: -discountAmount, status: 'INCLUDED' as const }] : []),
         { code: 'deposit', label: 'Tiền đặt cọc', basis: storageType.sizeId === 'locker' ? 'Không áp dụng cho tủ lưu trữ' : 'Không áp dụng chiết khấu', amount: depositAmount, status: 'INCLUDED' },
-        ...selectedServices.map((service) => ({ code: `service-${service.code}`, label: service.name, basis: service.billingUnit === 'ONE_TIME' ? `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} sản phẩm, mua một lần` : `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} thiết bị × ${service.billingUnit === 'DAY' ? this.daysBetween(this.date(service.serviceStartDate!), this.date(service.serviceEndDate!)) + ' ngày' : this.wholeCalendarMonths(service.serviceStartDate!, service.serviceEndDate!) + ' tháng lịch'} (${service.serviceStartDate!.split('-').reverse().join('/')}–${service.serviceEndDate!.split('-').reverse().join('/')}, không tính ngày kết thúc)`, amount: this.money(service.amountValue), status: 'INCLUDED' as const })),
+        ...selectedServices.map((service) => ({ code: `service-${service.code}`, label: service.name, basis: service.billingUnit === 'ONE_TIME' ? `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} ${service.physicalUnit ?? 'sản phẩm'}, mua một lần` : `${this.money(service.unitPriceValue).toLocaleString('vi-VN')} đ × ${service.quantity} ${service.physicalUnit ?? 'thiết bị'} × ${service.billingUnit === 'DAY' ? this.daysBetween(this.date(service.serviceStartDate!), this.date(service.serviceEndDate!)) + ' ngày' : this.wholeCalendarMonths(service.serviceStartDate!, service.serviceEndDate!) + ' tháng lịch'} (${service.serviceStartDate!.split('-').reverse().join('/')}–${service.serviceEndDate!.split('-').reverse().join('/')}, không tính ngày kết thúc)`, amount: this.money(service.amountValue), status: 'INCLUDED' as const })),
       ],
       rentalSubtotal: baseRentalAmount,
       deposit: depositAmount,
@@ -180,13 +180,13 @@ export class PricingService {
       const base = unitPriceValue * BigInt(selection.quantity);
       if (service.kind === 'PURCHASE') {
         if (service.billingUnit !== 'ONE_TIME') throw new BadRequestException({ code: 'INVALID_ADDITIONAL_SERVICE_BILLING_UNIT', message: `Sản phẩm ${service.name} phải dùng đơn vị ONE_TIME.` });
-        return { serviceId: service.id, code: service.code, name: service.name, kind: service.kind, billingUnit: service.billingUnit, quantity: selection.quantity, serviceStartDate: null, serviceEndDate: null, unitPriceValue, amountValue: base };
+        return { serviceId: service.id, code: service.code, name: service.name, physicalUnit: service.physicalUnit ?? null, kind: service.kind, billingUnit: service.billingUnit, quantity: selection.quantity, serviceStartDate: null, serviceEndDate: null, unitPriceValue, amountValue: base };
       }
       if (!['DAY', 'MONTH'].includes(service.billingUnit)) throw new BadRequestException({ code: 'INVALID_ADDITIONAL_SERVICE_BILLING_UNIT', message: `Thiết bị ${service.name} phải dùng đơn vị DAY hoặc MONTH.` });
       const serviceStartDate = selection.serviceStartDate ?? '', serviceEndDate = selection.serviceEndDate ?? '';
       if (!this.isDate(serviceStartDate) || !this.isDate(serviceEndDate) || serviceStartDate < reservationStart || serviceEndDate > reservationEnd || serviceEndDate <= serviceStartDate) throw new BadRequestException({ code: 'INVALID_ADDON_RENTAL_INTERVAL', message: `Khoảng thuê ${service.name} phải nằm trong thời hạn thuê kho.` });
       const amountValue = this.rentalAmount(service.billingUnit as 'DAY' | 'MONTH', unitPriceValue, selection.quantity, serviceStartDate, serviceEndDate);
-      return { serviceId: service.id, code: service.code, name: service.name, kind: service.kind, billingUnit: service.billingUnit, quantity: selection.quantity, serviceStartDate, serviceEndDate, unitPriceValue, amountValue };
+      return { serviceId: service.id, code: service.code, name: service.name, physicalUnit: service.physicalUnit ?? null, kind: service.kind, billingUnit: service.billingUnit, quantity: selection.quantity, serviceStartDate, serviceEndDate, unitPriceValue, amountValue };
     });
   }
 

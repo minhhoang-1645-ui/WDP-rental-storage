@@ -200,12 +200,10 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     const signatureImage = validateSignature(input);
     const document = signedDocument(current.appendixSnapshot);
     if (input.snapshotHash !== snapshotHash(document)) throw new ConflictException('Nội dung phụ lục đã thay đổi. Vui lòng tải lại trước khi ký.');
-    const proof = this.signing.acquire({ userId: customer.id, email: customer.email, kind: 'appendix', documentId: current.id, documentHash: snapshotHash(document), signatureImage, acceptanceName }, input);
-    try {
-      const changed = await this.prisma.renewalRequest.updateMany({ where: { id: current.id, appendixAcceptedAt: null, updatedAt: current.updatedAt, status: { in: ['APPROVED_PENDING_PAYMENT', 'COMPLETED'] } }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customer.id, appendixAcceptanceName: acceptanceName, appendixSignatureImage: signatureImage, appendixSnapshot: signedEnvelope(document, proof.evidence) as unknown as Prisma.InputJsonValue } });
+    await this.signing.verifyAndSave({ userId: customer.id, email: customer.email, kind: 'appendix', documentId: current.id, documentHash: snapshotHash(document), signatureImage, acceptanceName }, input, async (evidence, transaction) => {
+      const changed = await (transaction ?? this.prisma).renewalRequest.updateMany({ where: { id: current.id, appendixAcceptedAt: null, updatedAt: current.updatedAt, status: { in: ['APPROVED_PENDING_PAYMENT', 'COMPLETED'] } }, data: { appendixAcceptedAt: new Date(), appendixAcceptedByUserId: customer.id, appendixAcceptanceName: acceptanceName, appendixSignatureImage: signatureImage, appendixSnapshot: signedEnvelope(document, evidence) as unknown as Prisma.InputJsonValue } });
       if (changed.count !== 1) throw new ConflictException('Phụ lục vừa được cập nhật. Vui lòng tải lại.');
-      proof.commit();
-    } catch (error) { proof.release(); throw error; }
+    });
     const updated = await this.prisma.renewalRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
     return this.toRenewal(updated, false);
   }

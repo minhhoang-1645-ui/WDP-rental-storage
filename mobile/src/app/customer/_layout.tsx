@@ -7,6 +7,10 @@ import { WdpColors } from '@/constants/wdp-theme';
 import { BottomNav } from '@/components/bottom-nav';
 import { CustomerPresentation } from '@/components/customer-presentation';
 import { CustomerNotifications } from '@/components/customer-notifications';
+import { portalScreenOptions } from '@/portals/resources';
+
+const resourceOptions = portalScreenOptions('CUSTOMER');
+export const unstable_settings = { initialRouteName: 'index' };
 
 export default function CustomerLayout() {
   const pathname = usePathname();
@@ -24,6 +28,8 @@ export default function CustomerLayout() {
       <Stack.Screen name="payments" options={{ title: 'Thanh toán' }} />
       <Stack.Screen name="account" options={{ title: 'Tài khoản' }} />
       <Stack.Screen name="services" options={{ title: 'Dịch vụ của bạn' }} />
+      <Stack.Screen name="[resource]/index" options={resourceOptions} />
+      <Stack.Screen name="[resource]/[id]" options={resourceOptions} />
     </Stack>
     {!['/customer/discover', '/customer/booking'].includes(pathname) && <BottomNav role="CUSTOMER" />}
   </View></CustomerPresentation.Provider>;

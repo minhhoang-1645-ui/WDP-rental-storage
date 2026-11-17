@@ -5,6 +5,7 @@ import { CheckSquare, Square, ChevronDown, X, Minus, Plus } from 'lucide-react-n
 import { useResource } from '@/operations/use-resource';
 import { operationMutate } from '@/operations/mutate';
 import { stockCreateInput, validateStockSchedule } from '@/stock/validation';
+import { itemUnits } from '@/stock/item-units';
 import type { StockDraftLine, StoredItem } from '@/stock/types';
 import { idOf, text, type Row } from '@/operations/model';
 import { Button, Disclosure, Field } from '@/operations/ui';
@@ -61,5 +62,7 @@ export function CustomerStockCreate({contract,onClose,onSaved,onBusyChange}:{con
     {review&&<Button title="Sửa thông tin" variant="secondary" disabled={busy} onPress={()=>{setReview(false);setConfirmed(false);}}/>}</View>
   </View>;
 }
-function UnitField({value,onChange}:{value:string;onChange:(value:string)=>void}){const [open,setOpen]=useState(false),[custom,setCustom]=useState(false);return <View style={{gap:8}}><Pressable accessibilityRole="button" onPress={()=>setOpen(v=>!v)} style={s.row}><Text style={[s.body,{flex:1}]}>{value||'Chọn đơn vị'}</Text><ChevronDown size={18}/></Pressable>{open&&<View>{['thùng','chiếc','cái','hộp','túi','bộ','kg'].map(unit=><Pressable key={unit} onPress={()=>{onChange(unit);setOpen(false);setCustom(false);}} style={{minHeight:44,justifyContent:'center'}}><Text style={s.body}>{unit}</Text></Pressable>)}<Pressable onPress={()=>{setCustom(true);setOpen(false);}} style={{minHeight:44,justifyContent:'center'}}><Text style={s.link}>Đơn vị khác</Text></Pressable></View>}{custom&&<Field title="Đơn vị" value={value} onChange={onChange} maxLength={40}/>}</View>;}
-
+function UnitField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={{ gap: 8 }}><Pressable accessibilityRole="button" accessibilityLabel="Chọn đơn vị hàng" accessibilityState={{ expanded: open }} onPress={() => setOpen(current => !current)} style={s.row}><Text style={[s.body, { flex: 1 }]}>{value || 'Chọn đơn vị'}</Text><ChevronDown size={18} /></Pressable>{open && <View>{itemUnits.map(unit => <Pressable key={unit} accessibilityRole="radio" accessibilityState={{ checked: value === unit }} onPress={() => { onChange(unit); setOpen(false); }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={s.body}>{unit}</Text></Pressable>)}</View>}</View>;
+}

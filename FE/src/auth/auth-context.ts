@@ -6,7 +6,7 @@ export interface AuthContextValue {
   loading: boolean
   login: (input: { email: string; password: string; rememberMe?: boolean }) => Promise<void>
   register: (input: { fullName: string; email: string; phone: string; password: string }) => Promise<void>
-  updateProfile: (input: { fullName: string; phone: string }) => Promise<void>
+  updateProfile: (input: Partial<Pick<PublicUser, 'fullName' | 'phone'>>) => Promise<void>
   logout: () => void
   acceptSession: (session: AuthSession) => void
 }

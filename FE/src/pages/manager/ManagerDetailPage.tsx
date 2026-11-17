@@ -1,10 +1,16 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailSkeleton } from '../../components/LoadingSkeleton';
+import { recordIdentity } from '../../utils/record-identity';
+import { managerReviewReturn } from '../../components/manager/manager-table-params';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
+import { ManagerPricingExplanation } from '../../components/manager/ManagerPricingExplanation';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
 import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
@@ -27,9 +33,11 @@ import {
   Facts,
   LoadState,
   PageHeader,
+  RefreshStatus,
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
+import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
 import { StaffActions } from '../staff/StaffActions';
@@ -51,22 +59,27 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
     user?.id ?? "",
+    false,
+    true,
   );
   const listPath = ["units", "customers", "reservations", "inquiries"].includes(
     resource,
   )
     ? `/manager/${resource}`
     : `/manager/operations/${resource}`;
+  const [params] = useSearchParams();
+  const returnPath = useInternalListReturn(listPath);
+  const reviewReturn = user?.role === 'MANAGER' ? managerReviewReturn(params) : null;
   if (!config) return <Empty title="Không tìm thấy phân hệ" />;
   const row = data.data;
   return (
     <section>
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
-      <Link className="booking-back" to={listPath}>
+      <Link className="booking-back" to={reviewReturn ?? returnPath}>
         <ArrowLeft size={16} />
-        {config.title}
+        {reviewReturn ? 'Về việc cần duyệt' : config.title}
       </Link>
-      {!row && (
+      {!row && !data.loading && (
         <PageHeader title={config.title} description="Thông tin hồ sơ" />
       )}
       {notice && (
@@ -75,14 +88,14 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
         </div>
       )}
       <LoadState
-        layout="detail"
         loading={data.loading}
         error={data.error}
         retry={data.refresh}
+        placeholder={<DetailSkeleton form={['appointments', 'support-requests', 'maintenance', 'deposit-settlements', 'returns', 'renewals', 'transfers'].includes(resource)} history={resource === 'deposit-settlements'} />}
       />
       {row && (
         <>
-          <PageHeader title={code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : config.description}>
+          <PageHeader title={['reservations','inquiries','contracts','invoices','appointments','renewals','returns','transfers'].includes(resource) ? recordIdentity(row, resource).title : code(row)} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả nhân viên gửi nghiệm thu; không thực hiện thay công việc vận hành.' : user?.role === 'STAFF' ? undefined : config.description}>
             {resource === 'units' && user?.role === 'MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <Status
               value={row.status ?? row.rentalState ?? row.accountStatus}
@@ -98,15 +111,17 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             >
               <RefreshCw size={16} />
             </button>
+            <RefreshStatus active={data.refreshing} />
           </PageHeader>
-          <div className="manager-detail-grid">
+          <CopyRecordCode value={code(row)} />
+          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}`}>
             {workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {resource === 'renewals' && <RenewalReview row={row} />}
               {(['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/${user?.role === 'STAFF' ? 'staff/management' : 'manager'}/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}<DetailContent row={row} resource={resource} />
               {resource === 'support-requests' && user?.role === 'STAFF' && isTransferRequest(row) && <TransferSupportAction row={row} onCreate={() => setCreatingTransfer(true)} />}
               {resource === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
-              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
+              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
                   key={`${user?.id}:${id}:${row.updatedAt ?? ""}`}
@@ -343,6 +358,11 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
                   [string, React.ReactNode]
                 >)
               : []),
+            ...(resource === 'appointments' ? [
+              ['Nhân viên được phân công', first(row, 'assignedStaff.fullName') || (row.status === 'COMPLETED' ? 'Lịch cũ chưa lưu phân công' : 'Chưa được quản lý phân công')],
+              ['Người phân công', first(row, 'assignedBy.fullName') || '—'],
+              ['Thời điểm phân công', date(row.assignedAt, true)],
+            ] as Array<[string, React.ReactNode]> : []),
             ...(row.priority
               ? ([
                   ["Ưu tiên", label(row.priority)],
@@ -362,7 +382,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
               .filter(([field]) => first(row, `${field}.fullName`))
               .map(
                 ([field, title]) =>
-                  [title, first(row, `${field}.fullName`)] as [
+                  [field === 'approvedBy' && row.status === 'REJECTED' ? 'Người từ chối' : title, first(row, `${field}.fullName`)] as [
                     string,
                     React.ReactNode,
                   ],
@@ -405,7 +425,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
           "rejectionReason",
           "reviewNote",
         ]
-          .filter((key) => row[key])
+          .filter((key) => row[key] && !(resource === 'appointments' && key === 'handoverNote'))
           .map((key) => (
             <div className="portal-note" key={key}>
               <small>{noteLabels[key]}</small>
@@ -413,6 +433,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
             </div>
           ))}
       </section>
+      {resource === 'appointments' && <HandoverReportCard appointment={row} />}
       {Object.keys(availability).length > 0 && (
         <section className="manager-section">
           <h2>Khả dụng tại lần kiểm tra gần nhất</h2>
@@ -565,9 +586,9 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
               ["Tiền cọc", money(row.depositAmount)],
               ["Dịch vụ bổ sung", money(row.serviceAmount)],
               ["Phí được duyệt", money(row.chargeAmount)],
-              ["Tổng hóa đơn", money(row.totalAmount)],
+              ["Tổng riêng hóa đơn này", money(row.totalAmount)],
               ["Đã thu", money(row.amountPaid)],
-              ["Còn thu", money(row.balanceDue)],
+              ["Còn phải thanh toán hóa đơn này", money(row.balanceDue)],
             ]}
           />
           {row.isPastDue === true && (
@@ -624,54 +645,7 @@ function DetailContent({ row, resource }: { row: Row; resource: string }) {
           )}
         </section>
       )}
-      {Object.keys(quote).length > 0 && (
-        <section className="manager-section">
-          <h2>Báo giá tại thời điểm đăng ký</h2>
-          <Facts
-            items={[
-              ["Phương thức", label(quote.paymentPlan)],
-              ...(typeof quote.monthlyUnitPrice === "number"
-                ? [
-                    ["Đơn giá tháng / kho", money(quote.monthlyUnitPrice)] as [
-                      string,
-                      React.ReactNode,
-                    ],
-                  ]
-                : []),
-              ...(typeof quote.discountAmount === "number"
-                ? [
-                    [
-                      `Giảm giá (${quote.discountPercent ?? 0}%)`,
-                      money(quote.discountAmount),
-                    ] as [string, React.ReactNode],
-                  ]
-                : []),
-              ["Tiền thuê toàn kỳ", money(quote.rentalAmount)],
-              ["Tiền cọc", money(quote.depositAmount)],
-              [
-                "Tổng báo giá",
-                money(
-                  quote.quotedTotalAmount ??
-                    quote.totalAmount ??
-                    quote.grandTotal,
-                ),
-              ],
-            ]}
-          />
-          <p className="manager-action-copy">
-            Số tiền cần thu từng kỳ được thể hiện trên hóa đơn tương ứng.
-          </p>
-          {rows(quote.lineItems).map((item) => (
-            <div className="portal-quote-line" key={first(item, "code")}>
-              <span>
-                {first(item, "label")}
-                <small>{first(item, "basis")}</small>
-              </span>
-              <strong>{money(item.amount)}</strong>
-            </div>
-          ))}
-        </section>
-      )}
+      {Object.keys(quote).length > 0 && <ManagerPricingExplanation quote={quote} />}
       <RelatedTable
         title="Kho được phân bổ"
         items={rows(row.allocatedUnits)}

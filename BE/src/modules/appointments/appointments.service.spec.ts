@@ -174,11 +174,11 @@ describe('Appointment and Staff Handover V1', () => {
     await expect(service.createCustomerAppointment(customer, { reservationId: created.id, scheduledAt: `${dayAfter(185)}T09:30:00+07:00` }, `late-${runId}`)).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('does not complete handover before the confirmed appointment time', async () => {
+  it('still blocks actual collection outside the three-day pickup window', async () => {
     const { created } = await reservation();
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, staff);
-    await expect(service.completeHandover(requested.id, {}, staff)).rejects.toMatchObject({ response: { code: 'HANDOVER_BEFORE_APPOINTMENT_TIME' } });
+    await expect(service.completeHandover(requested.id, {}, staff)).rejects.toMatchObject({ response: { code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW' } });
   });
 
   it('allows Staff confirmation, records audit identity, and blocks Customer or Manager', async () => {
@@ -207,7 +207,7 @@ describe('Appointment and Staff Handover V1', () => {
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, staff);
     await makeAppointmentDue(created.id, requested.id);
-    const completed = await service.completeHandover(requested.id, { note: 'Units handed over successfully' }, staff);
+    const completed = await service.completeHandover(requested.id, { note: 'Units handed over successfully', handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true } }, staff);
     expect(completed.status).toBe('COMPLETED');
     expect(completed.completedAt).not.toBeNull();
     expect(completed.completedBy).toMatchObject({ id: staffId, role: 'STAFF' });
@@ -254,8 +254,8 @@ describe('Appointment and Staff Handover V1', () => {
     await service.confirmAppointment(requested.id, staff);
     await makeAppointmentDue(created.id, requested.id);
     const attempts = await Promise.allSettled([
-      service.completeHandover(requested.id, { note: 'Done' }, staff),
-      service.completeHandover(requested.id, { note: 'Done' }, staff),
+      service.completeHandover(requested.id, { note: 'Done', handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true } }, staff),
+      service.completeHandover(requested.id, { note: 'Done', handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true } }, staff),
     ]);
     expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true);
     const retry = await service.completeHandover(requested.id, { note: 'Ignored retry note' }, staff);

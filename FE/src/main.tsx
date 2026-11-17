@@ -5,6 +5,11 @@ import { App } from "./app/App";
 import "./styles/index.css";
 import "./styles/portal.css";
 import "./styles/refresh.css";
+import "./styles/light-professional.css";
+import "./styles/web-readability.css";
+import "./styles/web-spacing.css";
+import "./styles/operations-review.css";
+import "./components/customer/claim-review.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

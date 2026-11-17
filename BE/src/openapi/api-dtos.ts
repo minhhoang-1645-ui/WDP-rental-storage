@@ -37,6 +37,16 @@ export class UpdateAccountStatusDto {
   @ApiProperty({ enum: ['ACTIVE', 'DISABLED'], example: 'DISABLED' }) accountStatus!: 'ACTIVE' | 'DISABLED';
 }
 
+export class ChangePasswordDto {
+  @ApiProperty({ type: 'string', format: 'password', minLength: 1, maxLength: 128, writeOnly: true }) currentPassword!: string;
+  @ApiProperty({ type: 'string', format: 'password', minLength: 8, maxLength: 128, writeOnly: true }) newPassword!: string;
+}
+
+export class UpdateAccountProfileDto {
+  @ApiPropertyOptional({ minLength: 2, maxLength: 120 }) fullName?: string;
+  @ApiPropertyOptional({ minLength: 8, maxLength: 25, example: '0900000011' }) phone?: string;
+}
+
 export class BookingAvailabilityRequestDto {
   @ApiProperty({ example: 'sm-b12', description: 'ID sản phẩm trả về từ GET /api/booking/catalog hoặc GET /api/storage.' })
   productId!: string;
@@ -121,8 +131,8 @@ export class CreateGuestBookingRequestDto {
   @ApiPropertyOptional({ type: 'array', items: { type: 'object', properties: { serviceId: { type: 'string' }, quantity: { type: 'integer' }, serviceStartDate: { type: 'string', format: 'date' }, serviceEndDate: { type: 'string', format: 'date' } } }, example: [{ serviceId: 'shelf-id', quantity: 1, serviceStartDate: '2026-12-01', serviceEndDate: '2027-02-01' }, { serviceId: 'padlock-id', quantity: 1 }] }) services?: Array<Record<string, unknown>>;
 }
 
-export class CreateAdditionalServiceDto { @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
-export class UpdateAdditionalServiceDto { @ApiPropertyOptional({ example: 'Kệ tiêu chuẩn' }) name?: string; @ApiPropertyOptional({ nullable: true }) description?: string | null; @ApiPropertyOptional({ enum: ['PURCHASE', 'RENTAL'] }) kind?: string; @ApiPropertyOptional({ enum: ['ONE_TIME', 'DAY', 'MONTH'] }) billingUnit?: string; @ApiPropertyOptional({ example: 120000, minimum: 1 }) unitPrice?: number; @ApiPropertyOptional({ nullable: true, example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ nullable: true, example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: false }) isActive?: boolean; }
+export class CreateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
+export class UpdateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái' }) physicalUnit?: string; @ApiPropertyOptional({ example: 'Kệ tiêu chuẩn' }) name?: string; @ApiPropertyOptional({ nullable: true }) description?: string | null; @ApiPropertyOptional({ enum: ['PURCHASE', 'RENTAL'] }) kind?: string; @ApiPropertyOptional({ enum: ['ONE_TIME', 'DAY', 'MONTH'] }) billingUnit?: string; @ApiPropertyOptional({ example: 120000, minimum: 1 }) unitPrice?: number; @ApiPropertyOptional({ nullable: true, example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ nullable: true, example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: false }) isActive?: boolean; }
 export class UpdateAdditionalServiceInventoryDto { @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
 
 export class VerifyGuestBookingDto {

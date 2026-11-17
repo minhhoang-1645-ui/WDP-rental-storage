@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
+import { ReturnInventoryNotice } from '../../components/customer/ReturnInventoryNotice';
 import { mutate } from "../../services/portal";
 import {
   first,
@@ -10,6 +11,7 @@ import {
 import type { StaffResource } from "./staff-resources";
 import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
+import { isTransferRequest } from '../../utils/transfer-request';
 
 export function StaffActions({
   resource,
@@ -28,14 +30,9 @@ export function StaffActions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
-  useEffect(() => {
-    if (resource !== 'appointments' || row.status !== 'CONFIRMED') return;
-    const timer = window.setInterval(() => setCurrentTime(Date.now()), 15000);
-    return () => window.clearInterval(timer);
-  }, [resource, row.status]);
+  const [recipientType, setRecipientType] = useState('CUSTOMER');
+  const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
   const handoverContracts = rows(row.allocatedUnits);
-  const handoverIssue = resource === 'appointments' ? handoverCompletionIssue(row.scheduledAt, currentTime, handoverContracts) : '';
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
   const assigned = first(row, "assignedStaff.id") === user?.id;
   const run = async (
@@ -82,7 +79,9 @@ export function StaffActions({
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-handover') {
       input.handoverReport = {
-        recipientName: String(data.get('recipientName') ?? '').trim(),
+        recipientType,
+        recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
+        authorizationBasis: recipientType === 'AUTHORIZED' ? String(data.get('authorizationBasis') ?? '').trim() : undefined,
         condition: String(data.get('condition') ?? '').trim(),
         accessItemCount: Number(data.get('accessItemCount')),
         identityVerified: data.get('identityVerified') === 'on',
@@ -97,6 +96,8 @@ export function StaffActions({
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
     String(row.status),
   );
+  const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
+  const returnPaid = returnDebt?.canReturn === true && returnDebt.totalOutstanding === 0;
   const allInspected =
     Number(first(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(first(row, 'inventory.pendingMovements') || 0) === 0 &&
     inspections.length > 0 &&
@@ -115,14 +116,15 @@ export function StaffActions({
       )}
       <fieldset className="portal-action-fieldset" disabled={busy}>
         {resource === "appointments" &&
-          (row.status === "CONFIRMED" ? (
+          (row.status === "CONFIRMED" && assigned ? (
             <form
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
               <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
-              <label className="field-label">Người nhận kho<input name="recipientName" required minLength={2} maxLength={120} /></label>
+              <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
+              {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
               <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>
@@ -133,12 +135,11 @@ export function StaffActions({
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
-              {handoverIssue && <p className="booking-alert" id="handover-availability" role="status">{handoverIssue}</p>}
-              <button type="submit" className="button-primary" disabled={Boolean(handoverIssue)} aria-describedby={handoverIssue ? 'handover-availability' : undefined}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
+              <button type="submit" className="button-primary">Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
             </form>
           ) : (
             <p>
-              {row.status === "REQUESTED"
+              {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !assigned ? 'Chỉ nhân viên được quản lý phân công mới được bàn giao lịch này.' : row.status === "REQUESTED"
                 ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
                 : row.usageStatus === 'WAITING_FOR_RENTAL_START'
                   ? 'Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.'
@@ -147,6 +148,7 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải tất toán trước khi nhận trả kho</strong><p>{returnPaid ? 'Khách đã thanh toán đủ công nợ hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được công nợ. Làm mới hồ sơ để đối chiếu trước khi nhận trả kho.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -157,7 +159,7 @@ export function StaffActions({
             )}
             {inspecting && (
               <>
-                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <p role="status" className="portal-error">Còn {first(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {first(row, 'inventory.pendingMovements') || '0'} phiếu giao nhận chưa hoàn tất. Khách cần gửi phiếu lấy hết hàng; nhân viên hoàn tất giao nhận trước khi nhận trả kho.</p>}
+                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <ReturnInventoryNotice staff remainingItemTypes={Number(first(row, 'inventory.remainingItemTypes')) || 0} pendingMovements={Number(first(row, 'inventory.pendingMovements')) || 0} />}
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
                   phí do quản lý duyệt.
@@ -186,12 +188,12 @@ export function StaffActions({
                     <input type="checkbox" required disabled={!allInspected} />
                     Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra
                   </label>
-                  <button className="button-primary" disabled={!allInspected}>
+                  <button className="button-primary" disabled={!allInspected || !returnPaid}>
                     Hoàn tất nhận kho trả
                   </button>
                   {!allInspected && (
                     <small>
-                      Cần ghi kết quả cho tất cả kho trước khi hoàn tất.
+                      Cần xuất hết hàng, hoàn tất các phiếu giao nhận và ghi đủ kết quả kiểm tra trước khi nhận lại kho.
                     </small>
                   )}
                 </form>
@@ -251,7 +253,7 @@ export function StaffActions({
           </>
         )}
         {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
-        {resource === "support-requests" && !isEarlyReturnRequest(row) && (
+        {resource === "support-requests" && !isEarlyReturnRequest(row) && !isTransferRequest(row) && (
           <>
             {!assigned &&
               !["ESCALATED", "RESOLVED"].includes(String(row.status)) && (

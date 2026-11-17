@@ -10,7 +10,7 @@ import { buildVietQrPayload } from '@/utils/vietqr';
 import { useResource } from '@/operations/use-resource';
 import { customerSupportAction } from './actions';
 import { useDraftGuard } from '@/services/live-events';
-import { isScheduledRenewalInvoice, paymentWindowClosed } from '@/utils/payment-state';
+import { isScheduledRenewalInvoice, invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { OnlinePayment } from './online-payment';
 
 export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = false, compactSummary = false }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void; onlineOnly?: boolean; compactSummary?: boolean }) {
@@ -29,7 +29,7 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = false,
   const holdExpired = paymentWindowClosed(invoice, now);
   const signing = invoice.signing as Row | undefined;
   const unsigned = signing?.complete === false;
-  const scheduled = isScheduledRenewalInvoice(invoice, now);
+  const scheduled = invoicePaymentBlockedBySchedule(invoice, now);
   const payable = !scheduled && !unsigned && !holdExpired && balance > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(String(invoice.status));
   useDraftGuard(busy || (payable && qrAmount !== String(balance)));
   const transfer = (): FormAction => ({ title: 'Thông báo đã chuyển khoản', path: `/customer/invoices/${encodeURIComponent(invoiceId)}/payment-submissions`, method: 'POST', idempotent: true, description: 'Chỉ gửi sau khi đã chuyển tiền. NestBox sẽ kiểm tra và xác nhận khoản thanh toán.', fields: [
@@ -43,6 +43,7 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = false,
     {Boolean(text(invoice, 'reservation.expiresAt')) && <Text style={styles.copy}>Hạn giữ kho: {new Date(text(invoice, 'reservation.expiresAt')).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })} (UTC+7).</Text>}
     {holdExpired && <Text accessibilityRole="alert" style={styles.error}>Đã hết hạn giữ kho. Kiểm tra trạng thái yêu cầu; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.</Text>}
     {scheduled && <Text style={styles.copy}>Hóa đơn gia hạn chưa đến kỳ thanh toán.</Text>}
+    {invoice.closeoutPaymentAllowed === true && balance > 0 && isScheduledRenewalInvoice(invoice, now) && <Text style={styles.copy}>Kho đã được duyệt trả trước hạn. Bạn có thể thanh toán sớm kỳ này để tất toán toàn bộ công nợ trước khi trả kho.</Text>}
     <OnlinePayment paid={invoice.status === 'PAID'} invoiceType={String(invoice.type)} invoiceId={invoiceId} eligible={bank.data?.vnpayConfigured === true && payable && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type))} disabled={pending || submissions.loading || Boolean(submissions.error) || Boolean(form)} refresh={refresh} onWaitingChange={setOnlinePending} />
     {payable && !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true && <Text accessibilityRole="alert" style={styles.copy}>VNPay hiện chưa khả dụng. Bạn có thể xem cách thanh toán khác trong hóa đơn.</Text>}
     {payable && !onlineOnly && bank.data?.vnpayConfigured === true && !pending && !onlinePending && <Button title={showTransfer ? 'Ẩn hướng dẫn chuyển khoản' : 'Chuyển khoản ngân hàng'} variant="secondary" disabled={Boolean(form)} onPress={() => setShowTransfer(value => !value)}/>}

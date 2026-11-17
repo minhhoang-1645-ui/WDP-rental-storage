@@ -74,6 +74,19 @@ describe('EmailService SMTP', () => {
     expect(verify).toHaveBeenCalledOnce();
   });
 
+  it('sends a recovery-only link from the configured frontend and reports an unavailable SMTP provider', async () => {
+    const sendMail = vi.fn().mockResolvedValue({}), verify = vi.fn().mockResolvedValue(true);
+    const service = new EmailService(new ConfigService(smtpEnvironment));
+    vi.spyOn(service as never, 'createSmtpTransport' as never).mockReturnValue({ sendMail, verify } as never);
+    await service.assertPasswordResetAvailable();
+    await service.sendPasswordReset('customer@example.test', 'recovery-proof');
+    const message = sendMail.mock.calls[0][0];
+    expect(message.text).toContain('http://localhost:5173/reset-password#token=recovery-proof');
+    expect(message.text).not.toContain('claim-booking');
+    const unavailable = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'development', FRONTEND_URL: 'http://localhost:5173' }));
+    await expect(unavailable.assertPasswordResetAvailable()).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
   it('routes through the official Resend SDK with the configured sender and guest recipient', async () => {
     const service = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_key', EMAIL_TEST_RECIPIENT: 'development-sink@example.test', EMAIL_FROM_NAME: 'WDP Storage', EMAIL_FROM_ADDRESS: 'onboarding@example.com', FRONTEND_URL: 'http://localhost:5173' }));
     const send = vi.fn().mockResolvedValue({ data: { id: 'resend-message-id' }, error: null });

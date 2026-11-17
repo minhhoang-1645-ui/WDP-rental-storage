@@ -1,5 +1,4 @@
 import {
-  Bell,
   History,
   ArrowRightLeft,
   CalendarClock,
@@ -16,6 +15,9 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
+import { safeSessionStorage } from '../../services/browser-storage';
+import { listMemoryKey } from '../workspace/internal-list-memory';
+import { NavigationGroup } from "../workspace/NavigationGroup";
 import { startTransition, useEffect, useRef, useState } from "react";
 import {
   NavLink,
@@ -28,24 +30,28 @@ import {
 import { useAuth } from "../../auth/auth-context";
 import { portalDestination } from "../../auth/portal-routing";
 import type { WorkspaceSection } from '../workspace/WorkspaceSectionPage';
-import { ActivityBell, ActivityRefreshNote } from '../../activity/ActivityCenter';
+import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
+import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown';
+import { ActivityBell } from '../../activity/ActivityCenter';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
+import '../../styles/workspace-theme.css';
 
 const navigation = [
+  { to: '/customer/damage-claims', label: 'Sự cố hàng hóa', icon: CircleHelp },
   { to: "/customer", label: "Tổng quan", icon: LayoutDashboard, end: true },
   {
     to: "/customer/reservations",
-    label: "Yêu cầu đặt kho",
+    label: "Đơn đặt kho",
     icon: ClipboardList,
   },
   { to: "/customer/booking-history", label: "Lịch sử đặt kho", icon: History },
-  { to: "/customer/rentals", label: "Kho đang thuê", icon: Warehouse },
+  { to: "/customer/rentals", label: "Kho của tôi", icon: Warehouse },
   { to: '/customer/stock-movements', label: 'Nhập – xuất hàng', icon: ArrowRightLeft },
   { to: '/customer/stored-items', label: 'Hàng đang lưu', icon: ClipboardList },
   { to: "/customer/contracts", label: "Hợp đồng", icon: FileText },
-  { to: "/customer/payments", label: "Thanh toán", icon: CreditCard },
-  { to: "/customer/appointments", label: "Lịch hẹn", icon: CalendarClock },
+  { to: "/customer/payments", label: "Hóa đơn & thanh toán", icon: CreditCard },
+  { to: "/customer/appointments", label: "Lịch bàn giao", icon: CalendarClock },
   { to: "/customer/renewals", label: "Gia hạn", icon: Repeat2 },
   { to: "/customer/returns", label: "Trả kho & tiền cọc", icon: RotateCcw },
   { to: "/customer/transfers", label: "Chuyển đổi kho", icon: ArrowRightLeft },
@@ -54,7 +60,7 @@ const navigation = [
 const customerGroups = [
   { key: 'booking', icon: ClipboardList, title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
   { key: 'storage', icon: Warehouse, title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
-  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support'] },
+  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support', '/customer/damage-claims'] },
 ];
 
 export const customerSections: WorkspaceSection[] = customerGroups.map(group => ({
@@ -67,6 +73,8 @@ export function CustomerLayout() {
   const activity = useActivity();
   const location = useLocation();
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useWorkspaceTheme(true);
+  useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
   const [menuOpen, setMenuOpen] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -143,7 +151,7 @@ export function CustomerLayout() {
   };
 
   return (
-    <div className="customer-shell">
+    <div className="customer-shell workspace-themed" data-workspace-role="customer" data-workspace-theme={theme}>
       <aside
         id="customer-navigation"
         ref={sidebar}
@@ -169,31 +177,26 @@ export function CustomerLayout() {
           </button>
         </div>
         <nav className="customer-nav">
-          <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Chọn kho & đặt thuê</Link>
+          <Link to="/booking" className="customer-booking-shortcut" onClick={() => setMenuOpen(false)}><Warehouse size={18} />Tìm & đặt kho</Link>
           <NavLink to="/customer" end className="customer-nav-link" onClick={() => setMenuOpen(false)}><LayoutDashboard size={18} />Tổng quan</NavLink>
-          <NavLink to="/customer/notifications" className="customer-nav-link" onClick={() => setMenuOpen(false)}><Bell size={18} />Thông báo & việc cần làm</NavLink>
           {customerGroups.map(group => {
-            const Icon = group.icon;
             const count = actionCountForPath(activity.entries, group.paths);
             const childActive = group.paths.some(path => location.pathname === path || location.pathname.startsWith(path + '/'));
-            return <NavLink key={group.key} to={`/customer/sections/${group.key}`} onClick={() => setMenuOpen(false)}
-              className={({ isActive }) => `customer-nav-link${isActive || childActive ? ' active' : ''}`}>
-              <Icon size={18} />
-              <span>{group.title}</span>
-              {count > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{count}</b>}
-            </NavLink>;
+            return <NavigationGroup key={group.key} title={group.title} active={childActive} count={count} expanded={group.key === 'booking'}>
+              {group.paths.map(path => { const item = navigation.find(entry => entry.to === path)!; const ItemIcon = item.icon; const itemCount = actionCountForPath(activity.entries, path); return <NavLink key={path} to={path} className="customer-nav-link" onClick={() => setMenuOpen(false)}><ItemIcon size={18} /><span>{item.label}</span>{itemCount > 0 && <b className="navigation-work-count" aria-label={`${itemCount} việc cần thực hiện`}>{itemCount}</b>}</NavLink>; })}
+            </NavigationGroup>;
           })}
         </nav>
         <div className="customer-sidebar-bottom">
-          <NavLink to="/customer/profile" className="customer-account">
-            <span className="customer-avatar">
+          <div className="customer-account">
+            <span className="customer-avatar" aria-hidden="true">
               <UserRound size={18} />
             </span>
             <span>
               <strong>{user.fullName}</strong>
               <small>{user.email}</small>
             </span>
-          </NavLink>
+          </div>
           <button type="button" className="customer-logout" onClick={signOut}>
             <LogOut size={17} /> Đăng xuất
           </button>
@@ -221,12 +224,18 @@ export function CustomerLayout() {
             <Menu size={20} />
           </button>
           <span>NestBox Storage</span>
-          <NavLink to="/customer/profile" aria-label="Hồ sơ">
-            <UserRound size={20} />
-          </NavLink>
         </header>
-        <div className="customer-updates-bar"><span>Yêu cầu & tiến độ của bạn</span><ActivityBell /></div>
-        <ActivityRefreshNote />
+        <div className="customer-updates-bar">
+          <span>Khu vực khách hàng</span>
+          <div className="customer-account-actions">
+            <ActivityBell />
+            <WorkspaceProfileDropdown key={location.pathname} user={user} roleLabel="Khách hàng"
+              theme={theme} onToggleTheme={toggleTheme} onProfile={() => navigate('/customer/settings/profile')}
+              onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
+          </div>
+        </div>
+        {location.state?.notificationInbox === '/customer/notifications' && location.pathname !== '/customer/notifications' &&
+          <Link to="/customer/notifications" className="workspace-notification-back">Về thông báo</Link>}
         <Outlet />
       </main>
     </div>

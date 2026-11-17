@@ -4,10 +4,11 @@ import { CustomerStockMovementsController } from './customer-stock-movements.con
 import { ManagerStockMovementsController } from './manager-stock-movements.controller.js';
 import { StaffStockMovementsController } from './staff-stock-movements.controller.js';
 import { StockMovementsService } from './stock-movements.service.js';
+import { OperationalStoredItemsController } from './operational-stored-items.controller.js';
 
 @Module({
   imports: [AuthModule],
-  controllers: [CustomerStockMovementsController, ManagerStockMovementsController, StaffStockMovementsController],
+  controllers: [CustomerStockMovementsController, ManagerStockMovementsController, StaffStockMovementsController, OperationalStoredItemsController],
   providers: [StockMovementsService],
 })
 export class StockMovementsModule {}

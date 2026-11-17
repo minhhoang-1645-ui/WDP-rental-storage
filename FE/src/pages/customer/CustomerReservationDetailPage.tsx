@@ -1,3 +1,7 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { RentalPeriodDetails } from '../../components/customer/RentalAccountDetails';
+import { ReservationLifecycle } from '../../components/customer/ReservationLifecycle';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import {
   ArrowLeft,
   CalendarDays,
@@ -27,6 +31,7 @@ import { CustomerRentalProgress } from '../../components/customer/CustomerRental
 export function CustomerReservationDetailPage() {
   const { id = "" } = useParams();
   const { user } = useAuth();
+  const returnPath = useInternalListReturn("/customer/reservations");
   const {
     data: reservation,
     error,
@@ -47,7 +52,7 @@ export function CustomerReservationDetailPage() {
   if (error || !reservation)
     return (
       <section className="customer-page">
-        <Link to="/customer/reservations" className="customer-back">
+        <Link to={returnPath} className="customer-back">
           <ArrowLeft size={16} /> Quay lại danh sách
         </Link>
         <PortalError
@@ -59,16 +64,18 @@ export function CustomerReservationDetailPage() {
 
   return (
     <section className="customer-page">
-      <Link to="/customer/reservations" className="customer-back">
+      <Link to={returnPath} className="customer-back">
         <ArrowLeft size={16} /> Quay lại danh sách
       </Link>
       <PortalPageHeader
         eyebrow="Chi tiết yêu cầu đặt kho"
-        title={reservation.id}
-        description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}. Theo dõi trạng thái yêu cầu và các bước tiếp theo.`}
+        title={`${reservation.product.name} · ${reservation.quantity} kho`}
+        description={`Tạo lúc ${formatPortalDate(reservation.createdAt, true)}`}
         action={<ReservationStatus status={reservation.status} />}
       />
+      <CopyRecordCode value={reservation.id} label="Mã đơn" />
       <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />
+      <div className="customer-panel"><ReservationLifecycle summary={reservation.rentalSummary} /></div>
       <div className="customer-detail-grid">
         <div className="workspace-full-row"><WorkflowHint>{reservation.status === 'PENDING' ? 'NestBox đang kiểm tra yêu cầu của bạn và sẽ cập nhật kết quả tại đây.' : reservation.status === 'CONFIRMED' ? 'Đơn đã xác nhận. Đọc và ký đủ hợp đồng, thanh toán, rồi đặt lịch nhận kho khi đủ điều kiện.' : 'Xem kết quả trong hồ sơ; gửi hỗ trợ nếu bạn cần NestBox giải thích.'}</WorkflowHint></div>
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
@@ -103,7 +110,8 @@ export function CustomerReservationDetailPage() {
             </div>
           </section>
           <section className="customer-panel">
-            <h2>Thời gian thuê yêu cầu</h2>
+            <h2>Thời gian thuê hiện tại</h2>
+            {reservation.rentalSummary?.rentalPeriod ? <RentalPeriodDetails period={reservation.rentalSummary.rentalPeriod} /> : (
             <div className="customer-facts">
               <div>
                 <dt>Ngày bắt đầu</dt>
@@ -120,7 +128,7 @@ export function CustomerReservationDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt>Hình thức thời hạn</dt>
+                <dt>Kỳ thuê ban đầu</dt>
                 <dd>
                   {reservation.periodMode === "duration"
                     ? `${reservation.durationMonths} tháng`
@@ -128,9 +136,10 @@ export function CustomerReservationDetailPage() {
                 </dd>
               </div>
             </div>
+            )}
           </section>
           <section className="customer-panel">
-            <h2>Báo giá tại thời điểm gửi</h2>
+            <h2>Báo giá toàn bộ kỳ thuê ban đầu</h2>
             <div className="customer-quote-list">
               {reservation.quote.lineItems.map((line) => (
                 <div key={line.code}>
@@ -142,7 +151,7 @@ export function CustomerReservationDetailPage() {
                 </div>
               ))}
               <div>
-                <strong>Tổng báo giá</strong>
+                <strong>Tổng báo giá kỳ ban đầu, gồm cọc</strong>
                 <b>
                   {quoteLabel(
                     reservation.quote.quotedTotalAmount ??
@@ -151,7 +160,8 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
-            <p className="customer-note">{reservation.quote.message}</p>
+            {reservation.quote.estimatedInitialAmountDue !== undefined }
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>
@@ -206,15 +216,15 @@ export function CustomerReservationDetailPage() {
                   ? "Xem hóa đơn và hợp đồng. Bạn có thể yêu cầu lịch bàn giao khi các hợp đồng đã đủ điều kiện."
                   : "Yêu cầu này không còn chờ xử lý. Bạn có thể gửi yêu cầu đặt kho mới khi cần."}
             </p>
-            <Link className="button-secondary" to="/customer/contracts">
+            {reservation.status === 'CONFIRMED' && <><Link className="button-secondary" to={`/customer/contracts?reservation=${encodeURIComponent(reservation.id)}`}>
               <ReceiptText size={16} /> Xem hợp đồng
             </Link>
-            <Link className="button-secondary" to="/customer/appointments">
+            <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(reservation.id)}`}>
               <CalendarDays size={16} /> Lịch bàn giao
             </Link>
-            <Link className="button-secondary" to="/customer/payments">
-              <PackageOpen size={16} /> Hóa đơn và thanh toán
-            </Link>
+            <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(reservation.id)}`}>
+              <PackageOpen size={16} /> Xem hóa đơn
+            </Link></>}
           </section>
         </aside>
       </div>

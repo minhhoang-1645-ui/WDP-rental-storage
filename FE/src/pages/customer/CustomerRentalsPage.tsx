@@ -107,7 +107,7 @@ export function CustomerRentalsPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Số kho</dt>
+                  <dt>Số Lượng Kho</dt>
                   <dd>{rental.unitCount}</dd>
                 </div>
                 <div>
@@ -115,7 +115,7 @@ export function CustomerRentalsPage() {
                   <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
-              <details className="rental-account-disclosure"><summary>Xem thanh toán</summary><RentalPaymentDetailsView details={rental.paymentDetails} /></details>
+              
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
                   <div key={contract.id} className="customer-unit-inventory">
@@ -131,7 +131,7 @@ export function CustomerRentalsPage() {
                     <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
                       <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
                       {contract.storedItems === undefined ? <p><Link to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng đang lưu trong kho này</Link></p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
-                      <div className="customer-header-actions"><Link className="button-secondary" to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng trong kho</Link><Link className="button-secondary" to={`/customer/stock-movements?rentalContractId=${encodeURIComponent(contract.id)}`}>Tạo / xem phiếu nhập – xuất</Link></div>
+                      
                       {contract.transfers?.map(transfer => <p className="rental-transfer-note" key={transfer.code}>Đã chuyển {transfer.from} → <strong>{transfer.to}</strong> ngày {formatPortalDate(transfer.completedAt ?? '', true)}. Hàng hiện được lưu tại kho {contract.unit.unitCode}.</p>)}
                     </section>
                   </div>
@@ -141,13 +141,7 @@ export function CustomerRentalsPage() {
                 <button type="button" className="button-primary" onClick={() => setDetail({ rental, kind: "invoices" })}>Xem hóa đơn</button>
                 <button type="button" className="button-secondary" onClick={() => setDetail({ rental, kind: "contracts" })}>Xem hợp đồng</button>
               </div>
-              <details className="customer-inline-notice"><summary>Giao nhận hàng & yêu cầu với kho này</summary><div className="customer-header-actions">
-                {rental.contracts.map(contract => <Link key={contract.id} className="button-secondary" to={`/customer/stock-movements?rentalContractId=${encodeURIComponent(contract.id)}`}>Hàng hóa · {contract.unit.unitCode}</Link>)}
-                {!rental.pendingRenewal && rental.historicalPricing?.billingMode === 'MONTHLY' && <Link className="button-secondary" to={`/customer/renewals?reservation=${encodeURIComponent(rental.reservationId)}`}>Gia hạn kho</Link>}
-                <Link className="button-secondary" to={`/customer/transfers?reservation=${encodeURIComponent(rental.reservationId)}`}>Yêu cầu chuyển kho</Link>
-                <Link className="button-secondary" to={`/customer/returns?reservation=${encodeURIComponent(rental.reservationId)}`}>Trả kho / đề nghị trả sớm</Link>
-                <Link className="button-secondary" to={`/customer/support?reservation=${encodeURIComponent(rental.reservationId)}`}>Gửi hỗ trợ</Link>
-              </div></details>
+              
               {rental.pendingRenewal && (
                 <p className="customer-inline-notice">
                   Yêu cầu gia hạn {rental.pendingRenewal.renewalCode} đang được

@@ -160,8 +160,8 @@ export function CustomerReservationDetailPage() {
                 </b>
               </div>
             </div>
-            {reservation.quote.estimatedInitialAmountDue !== undefined && <p>Dự kiến lần thanh toán đầu tiên: <strong>{quoteLabel(reservation.quote.estimatedInitialAmountDue)}</strong> (theo báo giá lúc đặt).</p>}
-            <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Đây là tổng giá trị kỳ thuê ban đầu, không phải số tiền đã thanh toán. Xem từng hóa đơn và tiền đã thu trong phần trên.' : reservation.quote.message}</p>
+            {reservation.quote.estimatedInitialAmountDue !== undefined }
+            <p className="customer-note">{reservation.status === 'CONFIRMED' ? "" : reservation.quote.message}</p>
           </section>
           <section className="customer-panel">
             <h2>Thông tin tài khoản</h2>

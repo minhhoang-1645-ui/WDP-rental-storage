@@ -44,10 +44,7 @@ export function CustomerBookingHistoryPage() {
         const detailId = `booking-history-details-${encodeURIComponent(entry.reference)}`;
         return <article key={entry.reference} className="customer-panel customer-record-card booking-history-card">
           <div className="customer-record-heading"><div><small>{entry.reference} · Đặt ngày {formatPortalDate(String(entry.reservation.createdAt))}</small><h2>{String(product?.name ?? 'Kho đã đặt')}</h2></div><strong className="customer-history-status">{entry.phaseLabel}</strong></div>
-          <dl className="customer-record-facts booking-history-summary"><div><dt>Thời gian thuê</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd></div><div><dt>Kho · {Number(entry.reservation.quantity ?? 0)}</dt><dd>{entry.unitCodes.join(', ') || 'Chưa cấp kho'}</dd></div><div><dt>Đã thu</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalPaid ?? summary.totalPaid) : 'Chưa có dữ liệu'}</dd></div><div><dt>Chưa thanh toán</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalOutstanding ?? Math.max(0, summary.totalInvoiced - summary.totalPaid)) : 'Chưa có dữ liệu'}</dd></div></dl>
-          <button type="button" className="button-secondary booking-history-toggle" aria-expanded={isExpanded} aria-controls={detailId} onClick={() => toggleDetails(entry.reference)}>
-            {isExpanded ? 'Ẩn chi tiết' : 'Xem chi tiết'}<ChevronDown size={17} aria-hidden="true" />
-          </button>
+          <dl className="customer-record-facts booking-history-summary"><div><dt>Thời gian thuê</dt><dd>{formatPortalDate(entry.startDate)} – {formatPortalDate(entry.endDate)}</dd></div><div><dt>Kho · {Number(entry.reservation.quantity ?? 0)}</dt><dd>{entry.unitCodes.join(', ') || 'Chưa cấp kho'}</dd></div><div><dt>Đã đóng</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalPaid ?? summary.totalPaid) : 'Chưa có dữ liệu'}</dd></div><div><dt>Chưa thanh toán</dt><dd>{summary ? moneyLabel(summary.paymentDetails?.totalOutstanding ?? Math.max(0, summary.totalInvoiced - summary.totalPaid)) : 'Chưa có dữ liệu'}</dd></div></dl>
           <div id={detailId} className="booking-history-details" hidden={!isExpanded}>
 
           <ReservationLifecycle summary={summary} />

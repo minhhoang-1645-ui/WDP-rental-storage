@@ -99,7 +99,7 @@ try {
   await auditTable.getByText('Đăng xuất', { exact: true }).waitFor();
   await auditTable.getByText('Đăng nhập thất bại', { exact: true }).waitFor();
   const blocked = auditTable.getByRole('row').filter({ hasText: 'disabled@example.test' });
-  await blocked.getByText('Đăng nhập thất bại do tài khoản bị vô hiệu hóa', { exact: true }).waitFor();
+  await blocked.getByText('Đăng nhập thất bại do tài khoản đã khóa', { exact: true }).waitFor();
   await blocked.getByText('Fixture Disabled', { exact: true }).waitFor();
   await blocked.getByText('Khách hàng', { exact: true }).waitFor();
   await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Chưa xác thực', { exact: true }).waitFor();
@@ -131,12 +131,12 @@ try {
   assert.equal(await fromDate.inputValue(), '');
   await page.getByRole('link', { name: 'Hoạt động', exact: true }).click();
   await page.getByRole('heading', { name: 'Nhật ký hoạt động', exact: true }).waitFor();
-  await auditTable.getByText('Vô hiệu hóa tài khoản', { exact: true }).waitFor();
-  await auditTable.getByText('Kích hoạt lại tài khoản', { exact: true }).waitFor();
+  await auditTable.getByText('Khóa tài khoản', { exact: true }).waitFor();
+  await auditTable.getByText('Mở khóa tài khoản', { exact: true }).waitFor();
   await auditTable.getByText('Bắt đầu xử lý hỗ trợ', { exact: true }).waitFor();
   await auditTable.getByText('Hoạt động chưa có nhãn', { exact: true }).waitFor();
   await auditTable.getByText('Thất bại', { exact: true }).waitFor();
-  const disabledAccount = auditTable.getByRole('row').filter({ hasText: 'Vô hiệu hóa tài khoản' });
+  const disabledAccount = auditTable.getByRole('row').filter({ hasText: 'Khóa tài khoản' });
   assert.equal(await disabledAccount.getByRole('link', { name: 'Fixture Affected Account' }).getAttribute('href'), '/admin/users/admin');
   assert.equal(await auditTable.getByText('Thành công', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng nhập', { exact: true }).count(), 0);
@@ -175,6 +175,7 @@ try {
   await auditTable.locator('tbody tr').first().getByText('Newest Customer').waitFor();
   await page.getByLabel('Vai trò', { exact: true }).selectOption('MANAGER');
   await auditTable.getByText('Fixture Manager', { exact: true }).waitFor();
+  await auditTable.getByText('Newest Customer', { exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await auditTable.getByText('Newest Customer', { exact: true }).count(), 0);
   await page.locator('.manager-sidebar').getByRole('link', { name: 'Tổng quan', exact: true }).click();
   await recentActivity.locator('li').first().getByText('Hoàn tất nhập/xuất hàng').waitFor();
@@ -186,7 +187,7 @@ try {
   await page.waitForURL('**/admin/users/admin');
   await page.getByRole('tab', { name: 'Phân quyền', exact: true }).click();
   await page.getByText('Bạn đang dùng tài khoản này.', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Vô hiệu hóa tài khoản' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Khóa tài khoản' }).count(), 0);
   await page.getByRole('link', { name: 'Về danh sách tài khoản' }).click();
   await page.getByText('user-19@example.test', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
@@ -212,18 +213,18 @@ try {
   assert(await accountSelection.isChecked());
   await page.getByRole('button', { name: 'Thao tác tài khoản user-23@example.test' }).click();
   assert.equal(await page.getByRole('link', { name: 'Xem chi tiết', exact: true }).count(), 0);
-  await page.getByRole('link', { name: 'Vô hiệu hóa', exact: true }).click();
+  await page.getByRole('link', { name: 'Khóa tài khoản', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  const disable = dialog.getByRole('button', { name: 'Vô hiệu hóa tài khoản', exact: true });
+  const disable = dialog.getByRole('button', { name: 'Khóa tài khoản', exact: true });
   await disable.waitFor();
   assert(await disable.isDisabled());
   await dialog.getByRole('checkbox').check();
   await disable.click();
   const access = page.getByRole('tabpanel', { name: 'Phân quyền' });
-  await access.getByRole('button', { name: 'Kích hoạt tài khoản', exact: true }).click();
+  await access.getByRole('button', { name: 'Mở khóa tài khoản', exact: true }).click();
   await dialog.getByRole('checkbox').check();
-  await dialog.getByRole('button', { name: 'Kích hoạt tài khoản', exact: true }).click();
-  await access.getByRole('button', { name: 'Vô hiệu hóa tài khoản' }).waitFor();
+  await dialog.getByRole('button', { name: 'Mở khóa tài khoản', exact: true }).click();
+  await access.getByRole('button', { name: 'Khóa tài khoản' }).waitFor();
   await access.getByText('Tiếp nhận yêu cầu đặt kho, tư vấn và bàn giao kho.').waitFor();
   assert.equal(await access.getByRole('combobox').count(), 0);
 

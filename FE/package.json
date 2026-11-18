@@ -35,7 +35,14 @@
     "test:pricing": "node scripts/pricing-ux-smoke.mjs",
     "test:stock-picker": "node scripts/stock-picker-smoke.mjs",
     "test:review-business": "node scripts/review-business-smoke.mjs",
-    "test:review-ui": "node scripts/review-ui-smoke.mjs"
+    "test:review-ui": "node scripts/review-ui-smoke.mjs",
+    "test:rental-lifecycle": "node scripts/rental-lifecycle-review-smoke.mjs",
+    "test:handover-assignment": "node scripts/handover-assignment-smoke.mjs",
+    "test:customer-account": "node scripts/customer-account-smoke.mjs",
+    "test:operational-followups": "node scripts/operational-followups-smoke.mjs",
+    "test:return-settlement": "node scripts/return-settlement-smoke.mjs",
+    "test:closeout-payment": "node scripts/closeout-payment-smoke.mjs",
+    "test:web-ui": "node scripts/portal-smoke.mjs --ui-audit"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

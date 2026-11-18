@@ -1,4 +1,4 @@
-import { isScheduledRenewalInvoice } from '../../utils/payment-state';
+import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
@@ -12,6 +12,7 @@ import {
   type Row,
 } from "../../components/manager/portal-data";
 import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
+import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
@@ -106,7 +107,7 @@ export function ManagerActions({
         </select>
       </label>
       {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
-        {resource === "deposit-settlements" ? "Mã tham chiếu giao dịch" : "Mã giao dịch ngân hàng đã đối soát"}
+        {resource === "deposit-settlements" ? "Mã giao dịch hoàn tiền" : "Mã giao dịch ngân hàng đã kiểm tra"}
         <input
           value={reference}
           maxLength={200}
@@ -139,7 +140,7 @@ export function ManagerActions({
     </>
   );
   if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
-  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Đề nghị trả trước hạn thuộc quản lý xem xét công nợ và điều kiện. Nhân viên xử lý hồ sơ trả kho sau khi đề nghị được chấp thuận.</p>;
+  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Quản lý duyệt thời điểm trả sớm. Sau đó nhân viên xử lý yêu cầu trả kho khi khách đã thanh toán đủ.</p>;
   if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
   return (
     <div className="portal-form">
@@ -149,7 +150,7 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
-        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <form className="portal-form" onSubmit={event => { event.preventDefault(); void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST'); }}><p>Chỉ xác nhận sau khi đã chuyển hàng thực tế sang kho đích.</p><label className="portal-checkbox"><input type="checkbox" required />Tôi đã đối chiếu và hoàn tất chuyển kho thực tế</label><button className="button-primary" disabled={busy || Boolean(row.commercial && typeof row.commercial === 'object' && !('acceptedAt' in row.commercial && row.commercial.acceptedAt))}>Hoàn tất chuyển kho</button></form>}
+        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
         {resource === "reservations" &&
           (row.status === "PENDING" ? (
             <form
@@ -160,7 +161,7 @@ export function ManagerActions({
               }}
             >
               <p>
-                Xác nhận sẽ kiểm tra lại khả dụng và phân bổ đủ{" "}
+                Khi xác nhận, hệ thống kiểm tra và cấp đủ{" "}
                 {first(row, "quantity")} kho cho toàn bộ kỳ thuê.
               </p>
               <label className="field-label">
@@ -260,7 +261,7 @@ export function ManagerActions({
               </button>
             </form>
           ))}
-        {resource === "appointments" &&
+        {resource === "appointments" && first(row, "assignedStaff.id") === user?.id &&
           (row.status === "REQUESTED" ? (
             <>
               <p>
@@ -282,10 +283,10 @@ export function ManagerActions({
           (row.status === "PENDING" ? (
             <>
               <p>
-                Duyệt sẽ kiểm tra xung đột lịch và tạo hóa đơn gia hạn. Thời hạn
+                Khi duyệt, hệ thống kiểm tra kho trống và lập hóa đơn gia hạn. Hạn thuê
                 chỉ được cập nhật khi hoàn tất thanh toán theo quy định.
               </p>
-              <p className="manager-action-copy">Đối chiếu khách hàng, hợp đồng/kho, hạn cũ–mới, báo giá chốt và kế hoạch hóa đơn ở mục “Thông tin đối chiếu gia hạn”.</p>
+              <p className="manager-action-copy">Kiểm tra khách hàng, kho, thời gian và số tiền gia hạn trước khi duyệt.</p>
               {renewalReviewIssue(row) && <p className="booking-alert is-error" role="alert">{renewalReviewIssue(row)}</p>}
               <label className="portal-checkbox"><input type="checkbox" checked={renewalReviewed} onChange={event => setRenewalReviewed(event.target.checked)} />Tôi đã đối chiếu thông tin và báo giá gia hạn</label>
               <button
@@ -325,7 +326,7 @@ export function ManagerActions({
             </p>
           ))}
         {resource === "invoices" &&
-          (Number(row.balanceDue) > 0 && isScheduledRenewalInvoice(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
+          (Number(row.balanceDue) > 0 && invoicePaymentBlockedBySchedule(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
             <form
               className="portal-form"
               onSubmit={(event) => {
@@ -611,7 +612,7 @@ export function ManagerActions({
                   Nghiệm thu hoàn tất sẽ đưa kho trở lại trạng thái sẵn sàng.
                 </p>
                 <label className="field-label">
-                  Ghi chú nghiệm thu
+                  Nhận xét sau kiểm tra
                   <textarea
                     maxLength={4000}
                     value={note}
@@ -731,13 +732,10 @@ export function ManagerActions({
                   Duyệt chuyển kho
                 </button>
               </form>
-              <button
-                className="button-secondary"
-                disabled={busy}
-                onClick={() => run(`${root}/reject`, "POST")}
-              >
-                Từ chối chuyển kho
-              </button>
+              <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
+                <label className="field-label">Lý do từ chối chuyển kho<textarea required minLength={3} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="Ghi rõ nguyên nhân để khách hàng biết kết quả xem xét." /></label>
+                <button className="button-secondary" disabled={busy || reason.trim().length < 3}>Từ chối chuyển kho</button>
+              </form>
             </>
           ) : (
             <p>

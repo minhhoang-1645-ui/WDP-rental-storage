@@ -47,7 +47,10 @@ describe('Support / Incident V1',()=>{
    const list = { page: 1, limit: 20, assignedToMe: false };
    expect((await support.listStaff(list, staff)).items.map(row => row.id)).toEqual([ordinary.id]);
    expect((await support.listStaff(list, otherStaff)).total).toBe(0);
-   expect((await support.listManager(list)).total).toBe(3);
+   for (const row of [ordinary, waiting, early]) {
+     const matching = await support.listManager({ ...list, search: row.supportCode });
+     expect(matching.items.map(item => item.id)).toEqual([row.id]);
+   }
    for (const row of [waiting, early]) {
      await expect(support.getStaff(row.id, staff)).rejects.toBeInstanceOf(NotFoundException);
      await expect(support.start(row.id, key('forbidden'), staff)).rejects.toBeInstanceOf(ForbiddenException);
@@ -82,7 +85,9 @@ describe('Support / Incident V1',()=>{
    await transfers.assign(transfer.id, { staffUserId: otherStaff.id }, manager);
    await expect(transfers.getForStaff(transfer.id, otherStaff)).resolves.toMatchObject({ status: 'APPROVED' });
    await expect(transfers.complete(transfer.id, staff)).rejects.toBeInstanceOf(ForbiddenException);
-   await expect(transfers.complete(transfer.id, otherStaff)).resolves.toMatchObject({ status: 'COMPLETED' });
+   await expect(transfers.complete(transfer.id, otherStaff)).rejects.toBeInstanceOf(BadRequestException);
+   const handover = { oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 1 };
+   await expect(transfers.complete(transfer.id, otherStaff, handover)).resolves.toMatchObject({ status: 'COMPLETED', handoverReport: handover });
  });
  it('enforces assignment/priority/start roles and keeps unit OCCUPIED',async()=>{const r=await rental(),request=await create(r,'UNIT_ISSUE');await expect(support.assign(request.id,{staffUserId:customerId},key('bad'),manager)).rejects.toBeInstanceOf(BadRequestException);await expect(support.assign(request.id,{staffUserId:staffId},key('self'),staff)).rejects.toBeInstanceOf(ForbiddenException);expect(await support.assign(request.id,{staffUserId:staffId},key('assign'),manager)).toMatchObject({status:'ASSIGNED'});await expect(support.priority(request.id,{priority:'HIGH'},key('staff-priority'),staff)).rejects.toBeInstanceOf(ForbiddenException);expect(await support.priority(request.id,{priority:'HIGH'},key('priority'),manager)).toMatchObject({priority:'HIGH'});await expect(support.start(request.id,key('wrong'),otherStaff)).rejects.toBeInstanceOf(ForbiddenException);expect(await support.start(request.id,key('start'),staff)).toMatchObject({status:'IN_PROGRESS'});expect((await prisma.storageUnit.findUniqueOrThrow({where:{id:r.unit.id}})).status).toBe('OCCUPIED')},60000);
  it('lets assigned Staff resolve simple access issue with no financial/maintenance side effects',async()=>{const r=await rental(),request=await create(r,'ACCESS_CODE_ISSUE');const quote=(await prisma.reservation.findUniqueOrThrow({where:{id:r.reservation.id}})).quoteSnapshot;await support.assign(request.id,{staffUserId:staffId},key('assign'),manager);await support.start(request.id,key('start'),staff);const resolved=await support.resolveStaff(request.id,{resolutionType:'ACCESS_RESTORED',resolutionNote:'Credential revalidated without storing the secret.'},key('resolve'),staff);expect(resolved).toMatchObject({status:'RESOLVED',resolutionType:'ACCESS_RESTORED',unit:{status:'OCCUPIED'}});expect(await prisma.maintenanceRequest.count({where:{storageUnitId:r.unit.id}})).toBe(0);expect((await prisma.reservation.findUniqueOrThrow({where:{id:r.reservation.id}})).quoteSnapshot).toEqual(quote);expect(await prisma.payment.count({where:{invoiceId:r.invoice.id}})).toBe(0);await expect(support.priority(request.id,{priority:'LOW'},key('late'),manager)).rejects.toBeInstanceOf(ConflictException)},60000);

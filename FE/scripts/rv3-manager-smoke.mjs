@@ -500,7 +500,7 @@ async function verifyManagerWorkspace() {
   await page.getByRole('button', { name: 'Thao tác ITEM-TEST' }).click();
   assert.match(await page.getByRole('link', { name: 'Xem phiếu nhập – xuất', exact: true }).getAttribute('href'), /rentalContractId=contract/);
   await page.goto(`${base}/manager/units`);
-  await page.getByRole('table', { name: 'Kho vật lý' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Danh sách kho' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
   await page.goto(`${base}/manager/assignments?scope=all&kind=stock-movements`);
   await page.getByRole('button', { name: 'Thao tác MOV-TEST', exact: true }).click();
   await page.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
@@ -544,9 +544,14 @@ async function verifyManagerWorkspace() {
   assert.match(await invoiceRow.innerText(), /3\.000\.000.*1\.000\.000.*2\.000\.000/s);
   await invoiceRow.getByRole('button', { name: 'Thao tác INV-TEST' }).click();
   await page.getByRole('link', { name: 'Xem chi tiết', exact: true }).click();
-  await page.getByRole('heading', { name: 'Báo giá đã lưu · toàn bộ kỳ thuê', exact: true }).waitFor();
-  await page.getByText('Tổng thanh toán cả kỳ gồm cọc', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Báo giá kỳ thuê', exact: true }).waitFor();
+  await page.getByText('Tổng báo giá (gồm cọc)', { exact: true }).waitFor();
+  const quoteDetails = page.locator('.saved-quote-details');
+  assert.equal(await quoteDetails.getAttribute('open'), null);
+  await page.getByText('Xem chi tiết báo giá', { exact: true }).click();
   await page.getByText('Dự kiến các kỳ tiếp theo', { exact: true }).waitFor();
+  await page.getByText('Xem chi tiết báo giá', { exact: true }).click();
+  assert.equal(await quoteDetails.getAttribute('open'), null);
   assert(listQueries.some(query => query.path === 'manager/deposit-settlements' && query.page === 2 && query.limit === 10 && query.status === 'SETTLED'));
   assert.deepEqual(retiredRequests, []);
   assert.deepEqual(errors, []);

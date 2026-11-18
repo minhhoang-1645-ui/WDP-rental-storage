@@ -69,6 +69,7 @@ export function claimDate(value: string | undefined | null, includeTime = false)
 export const claimRoleLabels: Record<string, string> = { CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý' };
 export const claimEventLabels: Record<string, string> = {
   ASSIGNED: 'Phân công nhân viên', INSPECTED: 'Lưu kết quả kiểm tra', DECIDED: 'Lưu quyết định',
+  'amend-decision': 'Sửa lý do quyết định', 'amend-resolution': 'Sửa kết quả đã thông báo',
   NOTIFIED: 'Thông báo kết quả', RESOLVED: 'Hoàn tất hồ sơ', CASH_HANDED_OVER: 'Ghi nhận giao tiền mặt',
   INVESTIGATING: 'Lưu kết quả kiểm tra', APPROVED: 'Chấp thuận hướng xử lý', REJECTED: 'Từ chối đề nghị',
 };

@@ -30,8 +30,9 @@ export class ManagerMaintenanceController {
   @ApiQuery({ name: 'priority', required: false, enum: ['LOW', 'MEDIUM', 'HIGH'] })
   @ApiQuery({ name: 'category', required: false, enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'] })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-MNT' })
+  @ApiQuery({ name: 'assignedToMe', required: false, type: Boolean })
   @ApiOkResponse({ description: 'Danh sách maintenance phân trang.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
-  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = parseMaintenanceQuery(input); return req.user!.role === 'STAFF' ? this.maintenance.listStaff(query, req.user!) : this.maintenance.listManager(query); }
+  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = parseMaintenanceQuery(input); return req.user!.role === 'STAFF' ? this.maintenance.listStaff(query, req.user!) : this.maintenance.listManager(query, query.assignedToMe ? req.user!.id : undefined); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết maintenance và future allocation risk' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })

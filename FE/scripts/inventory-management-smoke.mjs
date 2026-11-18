@@ -1,6 +1,7 @@
 import { selectChoice } from './select-choice.mjs';
 // Fully intercepted API traffic: this test never writes to the development/shared DB.
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { launchTestBrowser } from './browser-test.mjs';
 
 const browser = await launchTestBrowser();
@@ -38,13 +39,13 @@ try {
   const catalogGroup = sidebar.getByRole('button', { name: 'Danh mục & bảng giá' });
   const inventoryGroup = sidebar.getByRole('button', { name: 'Kho & khách hàng' });
   const catalogLink = sidebar.locator('a[href="/manager/catalog"]');
-  const unitLink = sidebar.getByRole('link', { name: 'Kho vật lý', exact: true });
+  const unitLink = sidebar.getByRole('link', { name: 'Danh sách kho', exact: true });
   const groupLinks = group => group.locator('..').locator('a > span').allTextContents();
   await page.getByRole('heading', { name: 'Loại kho & đơn giá', exact: true }).waitFor();
   assert.equal(await breadcrumb.innerText(), 'Loại kho & đơn giá');
   assert.equal(await catalogLink.getAttribute('aria-current'), 'page');
   assert.deepEqual(await groupLinks(catalogGroup), ['Loại kho & đơn giá', 'Dịch vụ bổ sung']);
-  assert.deepEqual(await groupLinks(inventoryGroup), ['Kho vật lý', 'Hàng đang lưu', 'Khách hàng', 'Hợp đồng', 'Kho đang thuê']);
+  assert.deepEqual(await groupLinks(inventoryGroup), ['Danh sách kho', 'Hàng đang lưu', 'Khách hàng', 'Hợp đồng', 'Kho đang thuê']);
   assert.deepEqual(await groupLinks(sidebar.getByRole('button', { name: 'Phân tích' })), ['Báo cáo']);
   await catalogGroup.click();
   assert.equal(await catalogGroup.getAttribute('aria-expanded'), 'false');
@@ -52,7 +53,18 @@ try {
   await catalogGroup.click();
   assert.equal(await catalogGroup.getAttribute('aria-expanded'), 'true');
   await catalogLink.waitFor();
-  await page.getByRole('button', { name: 'Sửa loại kho & đơn giá', exact: true }).click();
+  const catalogTable = page.getByRole('table', { name: 'Loại kho và đơn giá' });
+  await catalogTable.getByRole('cell', { name: '1.500.000 ₫', exact: false }).waitFor();
+  assert.equal(await catalogTable.locator('tbody tr').count(), 1);
+  assert.equal(await page.locator('.portal-catalog-grid').count(), 0);
+  assert.equal(await page.locator('.catalog-availability').getAttribute('open'), null);
+  await mkdir('artifacts/catalog-table', { recursive: true });
+  await page.screenshot({ path: 'artifacts/catalog-table/desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Catalog overflows viewport');
+  await page.screenshot({ path: 'artifacts/catalog-table/mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Chỉnh sửa', exact: true }).click();
   await page.getByLabel('Giá tháng (VND)', { exact: true }).fill('1800000');
   await page.getByRole('button', { name: 'Lưu', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -78,12 +90,12 @@ try {
 
   await unitLink.click();
   await page.waitForURL('**/manager/units');
-  await page.getByRole('heading', { name: 'Kho vật lý', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Danh sách kho', exact: true }).waitFor();
   await page.getByText('Quản lý vị trí và trạng thái từng kho.', { exact: true }).waitFor();
-  assert.equal(await breadcrumb.innerText(), 'Kho vật lý');
+  assert.equal(await breadcrumb.innerText(), 'Danh sách kho');
   assert.equal(await unitLink.getAttribute('aria-current'), 'page');
   assert.equal(await catalogLink.getAttribute('aria-current'), null);
-  await page.getByRole('table', { name: 'Kho vật lý' }).getByText('SM-A-001', { exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Danh sách kho' }).getByText('SM-A-001', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Thêm loại kho', exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Thêm kho', exact: true }).click();
   await selectChoice(page.getByLabel('Loại kho áp dụng', { exact: true }), 'real-type');
@@ -96,7 +108,7 @@ try {
 
   await page.goto(`${base}/manager/units/unit`);
   await page.getByRole('heading', { name: 'SM-A-001', exact: true }).waitFor();
-  assert.equal(await breadcrumb.innerText(), 'Kho vật lý');
+  assert.equal(await breadcrumb.innerText(), 'Danh sách kho');
   assert.equal(await unitLink.getAttribute('aria-current'), 'page');
   await page.getByRole('button', { name: 'Sửa thông tin kho', exact: true }).click();
   await selectChoice(page.getByLabel('Khu', { exact: true }), '__new_location__');
@@ -124,7 +136,7 @@ try {
   await page.locator('main').getByRole('link', { name: 'Loại kho & đơn giá', exact: true }).waitFor();
   await page.goto(`${base}/manager/inventory`);
   await page.waitForURL('**/manager/units');
-  await page.getByRole('heading', { name: 'Kho vật lý', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Danh sách kho', exact: true }).waitFor();
   await sidebar.getByRole('link', { name: 'Kho đang thuê', exact: true }).click();
   await page.waitForURL('**/manager/operations/rentals');
   await page.getByRole('heading', { name: 'Kho đang thuê', exact: true }).waitFor();

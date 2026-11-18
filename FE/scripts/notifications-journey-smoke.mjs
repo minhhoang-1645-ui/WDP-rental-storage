@@ -43,28 +43,18 @@ async function setup(role = 'CUSTOMER', width = 1440) {
 }
 try {
   for (const width of [1440,390]) {
-    const app = await setup('CUSTOMER',width), progress = app.page.locator('[aria-label="Tiến độ thuê kho"]');
+    const app = await setup('CUSTOMER',width);
     await app.goto('/customer');
-    await app.page.getByText('Tiến độ đơn thuê & hướng dẫn', { exact: true }).click();
-    await progress.getByRole('link',{name:'Đọc và ký hợp đồng',exact:true}).waitFor();
-    await app.page.screenshot({path:`${artifacts}/customer-progress-${width}.png`,fullPage:true});
-    assert.equal(await progress.locator('li[aria-current="step"]').innerText(), '2\nKý hợp đồng');
-    app.data.contracts[0].terms.acceptedAt = new Date().toISOString(); app.data.invoices[0].signing.complete = true; await app.pulse();
-    await progress.getByRole('link',{name:'Mở hóa đơn thanh toán',exact:true}).waitFor();
-    app.data['payment-submissions'] = [{id:'notice-transfer',status:'PENDING_VERIFICATION',invoice:{id:'journey-invoice'}}]; await app.pulse();
-    await progress.getByRole('link',{name:'Theo dõi xác nhận thanh toán',exact:true}).waitFor();
-    app.data.invoices[0].status = 'PAID'; app.data.invoices[0].balanceDue = 0; app.data.contracts[0].status = 'READY_FOR_HANDOVER'; app.data['payment-submissions'] = []; await app.pulse();
-    await progress.getByRole('link',{name:'Đặt lịch nhận kho',exact:true}).waitFor();
-    await progress.getByRole('link',{name:'Đặt lịch nhận kho',exact:true}).click();
-    await app.page.waitForFunction(()=>document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value')==='PRIVATE-ID');
-    app.data.contracts[0].status='ACTIVE'; await app.goto('/customer');
-    await app.page.getByText('Tiến độ đơn thuê & hướng dẫn', { exact: true }).click();
-    await progress.getByRole('link',{name:'Mở kho đang thuê',exact:true}).waitFor();
-    app.data.returns=[{...fixture.returns[0],reservation:app.own,status:'REQUESTED'}]; await app.pulse();
-    await progress.getByRole('link',{name:'Theo dõi trả kho & cọc',exact:true}).waitFor();
-    app.data.returns[0].status='COMPLETED'; await app.pulse(); await progress.getByRole('heading',{name:'Đã hoàn tất trả kho',exact:true}).waitFor();
+    await app.page.getByRole('heading',{name:'Đơn gần đây',exact:true}).waitFor();
+    assert.equal(await app.page.getByText('Tiến độ đơn thuê & hướng dẫn',{exact:true}).count(),0);
+    assert.equal(await app.page.locator('[aria-label="Tiến độ thuê kho"]').count(),0);
+    await app.page.screenshot({path:artifacts + '/customer-dashboard-' + width + '.png',fullPage:true});
     assert(await app.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-    await app.context.close(); checks.push(`${width}px: live six-step journey, alias-safe appointment prefill, payment wait, return completion and no horizontal overflow`);
+    app.data.contracts[0].terms.acceptedAt = new Date().toISOString();
+    app.data.contracts[0].status='READY_FOR_HANDOVER';
+    await app.goto('/customer/appointments?reservation='+app.own.reference);
+    await app.page.waitForFunction(()=>document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value')==='PRIVATE-ID');
+    await app.context.close(); checks.push(width + 'px: compact dashboard without removed guide, alias-safe appointment prefill and no horizontal overflow');
   }
   const app = await setup(); await app.goto('/customer/notifications');
   const inbox = app.page.locator('.workspace-notification-inbox');

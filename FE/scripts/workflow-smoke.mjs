@@ -109,10 +109,10 @@ assert.equal(actionCountForPath([{id:'a',action:true,web:'/staff/transfers/x'},{
 assert(!buildActivity('CUSTOMER', 'c', { invoices: [{ id: 'void', type: 'INITIAL', status: 'VOID', balanceDue: 10, signing: { complete: false } }] })[0].action);
 assert(!buildActivity('STAFF', 's', { 'support-requests': [{ id: 'closed-transfer', subject: 'Chuyển kho', status: 'RESOLVED' }] })[0].action);
 checks.push('Six-step customer journey, public/private identity matching, pending transfer confirmation, VOID safety, complete inbox beyond 100 records, accent-insensitive search and stable update/read badges');
-for (const kind of ["support-requests", "maintenance", "stock-movements"]) {
+for (const kind of ["support-requests", "maintenance", "stock-movements", "appointments"]) {
   const row = {
     id: kind,
-    status: kind === "stock-movements" ? "REQUESTED" : "OPEN",
+    status: kind === 'appointments' ? 'CONFIRMED' : kind === "stock-movements" ? "REQUESTED" : "OPEN",
     assignedStaff: null,
   };
   assert(awaitingAssignment(kind, row));
@@ -123,7 +123,7 @@ for (const kind of ["support-requests", "maintenance", "stock-movements"]) {
   assert(!worker.action && worker.title.includes("Chờ quản lý phân công"));
   const assigned = {
     ...row,
-    status: kind === "maintenance" ? "OPEN" : "ASSIGNED",
+    status: kind === 'appointments' ? 'CONFIRMED' : kind === "maintenance" ? "OPEN" : "ASSIGNED",
     assignedStaff: { id: "staff-a", fullName: "Nhân viên A" },
   };
   assert(staffNeedsAction(kind, assigned, "staff-a"));

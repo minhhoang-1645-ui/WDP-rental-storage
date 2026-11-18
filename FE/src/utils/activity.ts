@@ -191,7 +191,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'CUSTOMER') { web = '/customer/transfers'; mobile = web; }
       if (role === 'STAFF' && transfer) { web = `/staff/transfers/${encodeURIComponent(activityText(transfer, 'id'))}`; mobile = web; action = transferStatus === 'APPROVED'; }
       if (!transfer && ['RESOLVED', 'CANCELLED'].includes(status)) { title = 'Chuyển kho · Đã có kết quả xử lý'; message = get('resolutionNote') || 'Yêu cầu đã đóng. Mở hồ sơ để xem kết quả; chưa có lệnh chuyển kho liên kết.'; }
-      if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
+      if (transfer && transferStatus === 'REJECTED') message = activityText(transfer, 'rejectionReason') || get('resolutionNote') || 'Mở yêu cầu chuyển kho để xem lý do từ chối.';
+      else if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
     }
     if (kind === 'support-requests' && isEarlyReturnRequest(row)) {
       const decision = get('earlyReturnDecision');

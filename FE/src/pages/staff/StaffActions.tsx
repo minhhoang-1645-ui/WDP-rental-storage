@@ -11,6 +11,7 @@ import {
 import type { StaffResource } from "./staff-resources";
 import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
+import { isTransferRequest } from '../../utils/transfer-request';
 
 export function StaffActions({
   resource,
@@ -96,6 +97,8 @@ export function StaffActions({
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
     String(row.status),
   );
+  const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
+  const returnPaid = returnDebt?.canReturn === true && returnDebt.totalOutstanding === 0;
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -105,7 +108,7 @@ export function StaffActions({
     );
   const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
   const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
-  const canFinalize = allInspected && remainingItems === 0 && pendingMovements === 0;
+  const canFinalize = returnPaid && allInspected && remainingItems === 0 && pendingMovements === 0;
   const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
   const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
   const stockMovementsPath = contractId
@@ -124,13 +127,13 @@ export function StaffActions({
       )}
       <fieldset className="portal-action-fieldset" disabled={busy}>
         {resource === "appointments" &&
-          (row.status === "CONFIRMED" ? (
+          (row.status === "CONFIRMED" && assigned ? (
             <form
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
-              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
+              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu nhận kho sớm, khách chỉ được sử dụng từ ngày bắt đầu thuê khi đã đủ điều kiện.</p>
               <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
               {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
@@ -147,7 +150,7 @@ export function StaffActions({
             </form>
           ) : (
             <p>
-              {row.status === "REQUESTED"
+              {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !assigned ? 'Chỉ nhân viên được quản lý phân công mới được bàn giao lịch này.' : row.status === "REQUESTED"
                 ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
                 : row.usageStatus === 'WAITING_FOR_RENTAL_START'
                   ? 'Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.'
@@ -156,6 +159,7 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -194,6 +198,7 @@ export function StaffActions({
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
+                        {!returnPaid && <li>Cần xác nhận khách đã thanh toán đủ các hóa đơn của đơn thuê.</li>}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
                         {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
                         {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
@@ -269,8 +274,8 @@ export function StaffActions({
             )}
           </>
         )}
-        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
-        {resource === "support-requests" && !isEarlyReturnRequest(row) && (
+        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đang chờ quản lý duyệt thời điểm trả sớm. Nhân viên tiếp nhận khi khách đã được duyệt và gửi yêu cầu trả kho.</p>}
+        {resource === "support-requests" && !isEarlyReturnRequest(row) && !isTransferRequest(row) && (
           <>
             {!assigned &&
               !["ESCALATED", "RESOLVED"].includes(String(row.status)) && (

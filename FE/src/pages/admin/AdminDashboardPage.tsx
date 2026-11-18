@@ -29,9 +29,9 @@ export function AdminDashboardPage() {
   const current = state?.key === key ? state : undefined;
   const metrics = [
     { title: 'Tổng tài khoản', value: current?.pages?.[0].total, to: '/admin/users', icon: Users, hint: 'Tất cả vai trò' },
-    { title: 'Nhân viên', value: current?.pages?.[1].total, to: '/admin/users?role=STAFF', icon: UserRound, hint: 'Vai trò Staff' },
-    { title: 'Quản lý', value: current?.pages?.[2].total, to: '/admin/users?role=MANAGER', icon: ShieldCheck, hint: 'Vai trò Manager' },
-    { title: 'Đã vô hiệu hóa', value: current?.pages?.[3].total, to: '/admin/users?status=DISABLED', icon: UserRoundX, hint: 'Tài khoản bị chặn đăng nhập' },
+    { title: 'Nhân viên', value: current?.pages?.[1].total, to: '/admin/users?role=STAFF', icon: UserRound, hint: 'Xử lý công việc tại kho' },
+    { title: 'Quản lý', value: current?.pages?.[2].total, to: '/admin/users?role=MANAGER', icon: ShieldCheck, hint: 'Quản lý hoạt động kho' },
+    { title: 'Đã khóa', value: current?.pages?.[3].total, to: '/admin/users?status=DISABLED', icon: UserRoundX, hint: 'Tài khoản bị chặn đăng nhập' },
   ];
   return <section className="admin-dashboard">
     <PageHeader title="Tổng quan quản trị">

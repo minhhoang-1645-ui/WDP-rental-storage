@@ -24,5 +24,6 @@ export function CustomerJourney() {
   return <section className="customer-journey" aria-label="Quy trình thuê kho"><div className="work-hub-heading"><div><h2>Thuê kho qua 4 bước</h2><p>Mỗi hồ sơ có tiến độ riêng. Mở từng bước để xem thông tin của bạn.</p></div></div><ol>{steps.map((step, index) => <li key={step.path}><Link to={step.path}><span className="journey-number">{index + 1}</span><div><strong>{step.title}</strong><p>{step.text}</p></div></Link></li>)}</ol></section>;
 }
 export function WorkflowHint({ title = 'Bước tiếp theo', children }: { title?: string; children: React.ReactNode }) {
-  return <aside className="workflow-hint" aria-label={title}><CircleCheck size={20} /><div><strong>{title}</strong><p>{children}</p></div></aside>;
+  if (!children) return null;
+  return <aside className="workflow-hint workflow-hint-compact" aria-label={title}><CircleCheck size={18} aria-hidden="true" /><p><strong>{title}: </strong>{children}</p></aside>;
 }

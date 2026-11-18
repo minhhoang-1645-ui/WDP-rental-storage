@@ -8,7 +8,7 @@ import { ApiError } from '../../services/api';
 import { mutate } from '../../services/portal';
 import { claimDate, type Claim, type ClaimRole } from './damage-claims-model';
 
-type Action = 'assign' | 'inspect' | 'decide' | 'notify' | 'resolve' | 'handover';
+type Action = 'assign' | 'inspect' | 'decide' | 'notify' | 'resolve' | 'handover' | 'amend-decision' | 'amend-resolution';
 type ActionProps = { claim: Claim; path: string; saved: (message: string) => void; reload: () => void };
 type RoleActionProps = ActionProps & { role: ClaimRole; refreshing: boolean };
 const dialogs: Record<Action, [title: string, button: string, success: string]> = {
@@ -17,6 +17,8 @@ const dialogs: Record<Action, [title: string, button: string, success: string]> 
   decide: ['Quyết định xử lý', 'Lưu quyết định', 'Đã lưu quyết định.'],
   notify: ['Thông báo kết quả', 'Lưu kết quả đã thông báo', 'Đã ghi nhận thông báo kết quả.'],
   resolve: ['Hoàn tất hồ sơ', 'Hoàn tất hồ sơ', 'Đã hoàn tất hồ sơ.'],
+  'amend-decision': ['Sửa lý do quyết định', 'Lưu lý do', 'Đã cập nhật lý do quyết định.'],
+  'amend-resolution': ['Sửa kết quả đã thông báo', 'Lưu kết quả', 'Đã cập nhật kết quả.'],
   handover: ['Ghi nhận đã giao tiền', 'Xác nhận đã giao tiền', 'Đã ghi nhận bàn giao tiền mặt.'],
 };
 
@@ -31,13 +33,17 @@ export function ClaimActions({ claim, role, path, saved, reload, refreshing }: R
   const decide = role === 'MANAGER' && claim.status === 'INVESTIGATING' && Boolean(claim.staffFacts);
   const notify = role === 'MANAGER' && decided && awaitingCash && !claim.resolutionNote;
   const resolve = role === 'MANAGER' && decided && !awaitingCash;
-  if (!(assign || inspect || decide || notify || resolve)) return null;
+  const amendDecision = role === 'MANAGER' && (decided || claim.status === 'RESOLVED') && Boolean(claim.decision);
+  const amendResolution = role === 'MANAGER' && claim.status === 'RESOLVED';
+  if (!(assign || inspect || decide || notify || resolve || amendDecision || amendResolution)) return null;
   return <div className="portal-actions">
     {assign && <button disabled={refreshing} className={decide ? 'button-secondary' : 'button-primary'} onClick={() => setAction('assign')}><UserRoundPlus size={17} aria-hidden="true" />{claim.assignedStaff ? 'Đổi người kiểm tra' : 'Phân công kiểm tra'}</button>}
     {inspect && <button disabled={refreshing} className={claim.staffFacts ? 'button-secondary' : 'button-primary'} onClick={() => setAction('inspect')}><ClipboardCheck size={17} aria-hidden="true" />{claim.staffFacts ? 'Chỉnh kết quả kiểm tra' : 'Ghi kết quả kiểm tra'}</button>}
     {decide && <button disabled={refreshing} className="button-primary" onClick={() => setAction('decide')}>Quyết định xử lý</button>}
     {notify && <button disabled={refreshing} className="button-secondary" onClick={() => setAction('notify')}>Thông báo kết quả</button>}
     {resolve && <button disabled={refreshing} className="button-primary" onClick={() => setAction('resolve')}>Hoàn tất hồ sơ</button>}
+    {amendDecision && <button disabled={refreshing} className="button-secondary" onClick={() => setAction('amend-decision')}>Sửa lý do quyết định</button>}
+    {amendResolution && <button disabled={refreshing} className="button-secondary" onClick={() => setAction('amend-resolution')}>Sửa kết quả đã thông báo</button>}
     {action && <ClaimActionDialog action={action} claim={claim} path={path} close={() => setAction(null)} saved={saved} reload={reload} />}
   </div>;
 }
@@ -67,7 +73,13 @@ export function ClaimCompensation({ claim, role, path, saved, reload, refreshing
 function ClaimActionDialog({ action, claim, path, saved, reload, close }: ActionProps & { action: Action; close: () => void }) {
   const { user } = useAuth();
   const [staff, setStaff] = useState(claim.assignedStaff?.id ?? '');
-  const [note, setNote] = useState(action === 'inspect' ? claim.staffFacts ?? '' : '');
+  const amendmentLabel = action === 'amend-decision' ? 'Lý do quyết định' : 'Kết quả đã thông báo cho khách';
+  const [note, setNote] = useState(() => {
+    if (action === 'inspect') return claim.staffFacts ?? '';
+    if (action === 'amend-decision') return claim.decisionReason ?? '';
+    if (action === 'amend-resolution') return claim.resolutionNote ?? '';
+    return '';
+  });
   const [decision, setDecision] = useState('APPROVED');
   const [compensate, setCompensate] = useState(false);
   const [amount, setAmount] = useState('');
@@ -95,6 +107,8 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
         case 'assign': await mutate(path + '/assign', 'PATCH', { staffUserId: staff }); break;
         case 'inspect': await mutate(path, 'PATCH', { ...version, staffFacts: note }); break;
         case 'decide': await mutate(path, 'PATCH', { ...version, decision, decisionReason: note, approvedCompensationAmount: showAmount ? Number(amount) : null }); break;
+        case 'amend-decision': await mutate(path, 'PATCH', { ...version, action, decisionReason: note }); break;
+        case 'amend-resolution': await mutate(path, 'PATCH', { ...version, action, resolutionNote: note }); break;
         case 'handover': {
           const time = new Date(`${handedOverAt}+07:00`);
           if (!confirmed || !Number.isFinite(time.getTime())) throw new Error('Chọn ngày giờ và xác nhận đã giao tiền mặt.');
@@ -126,6 +140,8 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
           {showAmount && <label className="field-label">Số tiền được duyệt (đ)<input type="number" required min={1} max={Number.MAX_SAFE_INTEGER} step={1} value={amount} onChange={event => setAmount(event.target.value)} /></label>}
           <label className="field-label">Lý do và căn cứ<textarea required minLength={10} maxLength={3000} rows={3} value={note} onChange={event => setNote(event.target.value)} /></label>
         </>}
+        {(action === 'amend-decision' || action === 'amend-resolution') &&
+          <label className="field-label">{amendmentLabel}<textarea required minLength={10} maxLength={3000} rows={3} value={note} onChange={event => setNote(event.target.value)} /></label>}
         {(action === 'notify' || action === 'resolve') && (claim.resolutionNote
           ? <p className="claims-text">{claim.resolutionNote}</p>
           : <label className="field-label">Kết quả đã thông báo cho khách<textarea required minLength={10} maxLength={3000} rows={3} value={note} onChange={event => setNote(event.target.value)} /></label>)}

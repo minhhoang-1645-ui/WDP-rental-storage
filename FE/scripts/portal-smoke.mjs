@@ -2,6 +2,9 @@ import { selectChoice } from './select-choice.mjs';
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
 import { launchTestBrowser } from "./browser-test.mjs";
+import { mkdir } from 'node:fs/promises';
+const uiAudit = process.argv.includes('--ui-audit');
+if (uiAudit) await mkdir('artifacts/web-ui-audit', { recursive: true });
 const base = process.env.WDP_FE_URL || "http://127.0.0.1:5173";
 const browser = await launchTestBrowser();
 const customer = {
@@ -545,8 +548,25 @@ try {
     );
     assert.doesNotMatch(await page.locator("h1").innerText(), /Không tìm thấy/);
     checks.push(`${resource}: list and detail`);
+    if (uiAudit) {
+      for (const width of [1440, 768, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), resource + ': detail overflow at ' + width);
+        await page.screenshot({ path: 'artifacts/web-ui-audit/' + resource + '-detail-' + width + '.png', animations: 'disabled' });
+        await open(page, root);
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), resource + ': list overflow at ' + width);
+        await page.screenshot({ path: 'artifacts/web-ui-audit/' + resource + '-list-' + width + '.png', animations: 'disabled' });
+        await open(page, root + '/' + (fixture[resource][0].id || fixture[resource][0].reservationId));
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    }
     console.log(`PASS ${resource}: list and detail`);
   }
+  if (uiAudit) {
+    assert.deepEqual(errors, []);
+    assert.equal(writes.length, 0);
+    console.log('PASS web UI audit: ' + checks.length + ' resources, lists and details at 1440 / 768 / 390px. No database writes.');
+  } else {
   page = staffApp.page;
   await open(page, "/staff/reservations?search=RES-104");
   await page.getByRole("link", { name: "RES-104", exact: true }).waitFor();
@@ -881,6 +901,7 @@ try {
       2,
     ),
   );
+  }
 } finally {
   await browser.close();
 }

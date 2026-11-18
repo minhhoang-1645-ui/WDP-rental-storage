@@ -23,7 +23,7 @@ export function DamageClaimForm({ close, saved }: { close: () => void; saved: (i
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
   const items = useApiResource<Item[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null, user?.id);
-  const eligible = contracts.data?.items.filter(row => ['ACTIVE', 'COMPLETED'].includes(row.status)) ?? [];
+  const eligible = contracts.data?.items.filter(row => row.status === 'ACTIVE') ?? [];
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,8 +46,8 @@ export function DamageClaimForm({ close, saved }: { close: () => void; saved: (i
       <LoadState loading={contracts.loading} error={contracts.error} retry={contracts.refresh} />
       <div className="claims-fields">
         <label className="field-label">Kho và hợp đồng
-          <EntitySelect required value={contract} disabled={busy} onValueChange={value => { setContract(value); setSelected([]); }}>
-            <option value="">Chọn kho đã nhận</option>
+          <EntitySelect required aria-label="Kho và hợp đồng" value={contract} disabled={busy} onValueChange={value => { setContract(value); setSelected([]); }}>
+            <option value="">Chọn kho đang thuê</option>
             {eligible.map(row => <option key={row.id} value={row.id}>{row.storageUnit?.unitCode} · {row.contractCode}</option>)}
           </EntitySelect>
         </label>

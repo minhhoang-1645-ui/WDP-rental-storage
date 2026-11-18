@@ -7,6 +7,7 @@ import { businessDate } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { assertFullSettlementPolicyInput, assertReturnFullyPaid, returnReadiness } from './early-return-finance.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type ViewMode = 'CUSTOMER' | 'MANAGER' | 'STAFF';
@@ -195,6 +196,7 @@ export class ReturnsService {
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
       assertTaskAssignee(actor, current.assignedStaffUserId);
       if (['PENDING_SETTLEMENT', 'COMPLETED'].includes(current.status)) return this.toReturn(current, 'STAFF');
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Reservation" WHERE id = ${current.reservationId} FOR UPDATE`);
       if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Yêu cầu phải đang kiểm tra trước khi hoàn tất trả kho vật lý.');
       if (current.inspections.length !== current.reservation.quantity || current.inspections.some((inspection) => inspection.result === 'PENDING')) {
         throw new ConflictException({ code: 'RETURN_INSPECTIONS_INCOMPLETE', message: 'Tất cả kho phải được ghi kết quả kiểm tra trước khi hoàn tất.' });
@@ -208,6 +210,7 @@ export class ReturnsService {
       current = await tx.returnRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
       this.assertOperationalIntegrity(current.reservation);
       this.assertInspectionLinks(current);
+      assertReturnFullyPaid(current.reservation.invoices);
 
       const contractIds = current.inspections.map(inspection => inspection.rentalContractId);
       const pendingMovements = await tx.stockMovement.count({ where: { rentalContractId: { in: contractIds }, status: { in: ['REQUESTED', 'ASSIGNED'] } } });
@@ -303,8 +306,14 @@ export class ReturnsService {
     return { page, limit, total, items: items.map(item => this.toEarlyReturn(item)) };
   }
 
+  async reviewEarlyReturnFinance(_id: string, _input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xem xét đề nghị trả trước hạn.');
+    throw new ConflictException({ code: 'RETURN_DEBT_WAIVER_DISABLED', message: 'Quy định hiện tại yêu cầu thanh toán đủ toàn bộ công nợ trước khi trả kho. Chức năng miễn công nợ khi trả trước hạn đã được ngừng.' });
+  }
+
   async decideEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định đề nghị trả trước hạn.');
+    assertFullSettlementPolicyInput(input);
     const decision = input.decision;
     const note = typeof input.note === 'string' ? input.note.trim() : '';
     if (!['APPROVED', 'REJECTED'].includes(String(decision)) || note.length < 3 || note.length > 3000) throw new BadRequestException('Cần quyết định hợp lệ và ghi rõ điều kiện hoặc lý do.');
@@ -316,7 +325,7 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const request = await tx.supportRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.earlyReturnInclude() });
       const action = decision === 'APPROVED' ? 'EARLY_RETURN_APPROVED' : 'EARLY_RETURN_REJECTED';
-      const resolutionNote = (decision === 'APPROVED' ? 'Đã chấp thuận trả trước hạn. Công nợ và cọc được quyết toán theo hồ sơ hiện có. ' : 'Chưa chấp thuận trả trước hạn. ') + note;
+      const resolutionNote = (decision === 'APPROVED' ? 'Đã chấp thuận trả trước hạn. Khách phải thanh toán đủ toàn bộ công nợ, kể cả các kỳ chưa đến hạn, trước khi gửi yêu cầu trả kho và bàn giao lại kho. ' : 'Chưa chấp thuận trả trước hạn. ') + note;
       if (request.status === 'RESOLVED') {
         if (request.lastAction === action && request.resolutionNote === resolutionNote) return this.toEarlyReturn(request);
         throw new ConflictException('Đề nghị đã được quyết định. Hãy gửi đề nghị mới nếu cần thay đổi điều kiện.');
@@ -341,7 +350,7 @@ export class ReturnsService {
     return {
       customer: { select: { id: true, fullName: true, email: true, phone: true } },
       resolvedBy: { select: { id: true, fullName: true, role: true } },
-      reservation: { include: { ...this.eligibilityInclude(), storageType: true, invoices: { where: { status: { not: 'VOID' as const } }, select: { invoiceCode: true, totalAmount: true, amountPaid: true, balanceDue: true, depositAmount: true } } } },
+      reservation: { include: { ...this.eligibilityInclude(), storageType: true, returns: { where: { physicallyReturnedAt: { not: null } }, select: { physicallyReturnedAt: true }, orderBy: { physicallyReturnedAt: 'desc' as const }, take: 1 }, invoices: { where: { status: { not: 'VOID' as const } } } } },
     };
   }
 
@@ -349,6 +358,8 @@ export class ReturnsService {
     const reservation = request.reservation;
     const invoices = reservation.invoices ?? [];
     return { id: request.id, supportCode: request.supportCode, subject: request.subject, description: request.description, status: request.status, decision: request.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : request.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null, resolutionNote: request.resolutionNote, resolvedAt: request.resolvedAt?.toISOString() ?? null, resolvedBy: request.resolvedBy, createdAt: request.createdAt.toISOString(), customer: request.customer,
+      updatedAt: request.updatedAt?.toISOString() ?? null, financialReview: request.earlyReturnFinancialReview ?? null, physicallyReturnedAt: reservation.returns?.[0]?.physicallyReturnedAt?.toISOString() ?? null,
+      returnReadiness: returnReadiness(invoices), eligibleUnusedInvoices: [],
       reservation: { id: reservation.id, reference: reservation.reservationCode, storageType: { id: reservation.storageType.id, name: reservation.storageType.name }, effectiveEndDate: reservation.contracts.length ? this.isoDate(this.effectiveEndDateForRead(reservation.contracts)) : this.isoDate(reservation.endDate) },
       contracts: reservation.contracts.map((contract: any) => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status, unitCode: contract.reservationUnit.storageUnit.unitNumber })),
       invoices: invoices.map((invoice: any) => ({ invoiceCode: invoice.invoiceCode, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue) })),
@@ -364,6 +375,7 @@ export class ReturnsService {
     if (reservation.renewals.some((renewal: any) => ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status))) {
       throw new ConflictException({ code: 'UNRESOLVED_RENEWAL_EXISTS', message: 'Phải xử lý xong yêu cầu gia hạn trước khi tạo yêu cầu trả kho.' });
     }
+    assertReturnFullyPaid(reservation.invoices);
     return { endDate, unitIds: reservation.contracts.map((contract: any) => contract.reservationUnit.storageUnitId as string) };
   }
 
@@ -395,6 +407,7 @@ export class ReturnsService {
 
   private eligibilityInclude(): Prisma.ReservationInclude {
     return {
+      invoices: { where: { status: { not: 'VOID' as const } }, select: { invoiceCode: true, type: true, status: true, totalAmount: true, amountPaid: true, balanceDue: true, billingPeriodStart: true, billingPeriodEnd: true } },
       units: { where: { releasedAt: null }, include: { storageUnit: true } },
       contracts: { include: { reservationUnit: { include: { storageUnit: true } } }, orderBy: { contractCode: 'asc' as const } },
       renewals: { where: { status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } }, select: { id: true, status: true } },
@@ -430,7 +443,7 @@ export class ReturnsService {
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
         units: { where: { releasedAt: null }, select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
         contracts: { include: { storedItems: { where: { balance: { gt: 0 } }, select: { id: true, balance: true } }, stockMovements: { where: { status: { in: ['REQUESTED' as const, 'ASSIGNED' as const] } }, select: { id: true } }, reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
-        invoices: { select: { id: true, invoiceCode: true, type: true, status: true, rentalAmount: true, depositAmount: true, chargeAmount: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
+        invoices: { where: { status: { not: 'VOID' as const } }, select: { id: true, invoiceCode: true, type: true, status: true, rentalAmount: true, depositAmount: true, chargeAmount: true, totalAmount: true, amountPaid: true, balanceDue: true }, orderBy: { issuedAt: 'asc' as const } },
         renewals: { select: { id: true, renewalCode: true, status: true, previousEndDate: true, requestedEndDate: true }, orderBy: { createdAt: 'desc' as const } },
       } },
     };
@@ -495,6 +508,7 @@ export class ReturnsService {
     });
     const base = {
       id: record.id,
+      returnReadiness: returnReadiness(record.reservation.invoices),
       returnCode: record.returnCode, inventory: { remainingItemTypes: record.reservation.contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: record.reservation.contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),

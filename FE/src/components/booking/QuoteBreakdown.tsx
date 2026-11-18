@@ -15,7 +15,7 @@ export function QuoteBreakdown({ quote }: { quote: PricingEstimate }) {
       <div className="quote-first-heading"><h4>Thanh toán lần đầu</h4><span>Dự kiến</span></div>
       <strong className="quote-first-amount" aria-label="Số tiền thanh toán lần đầu dự kiến">{money(summary.first)}</strong>
       <p className="quote-plan-label">{summary.plan}{quote.termMonths ? ` · Thuê ${quote.termMonths} tháng` : ''}{quote.quantity ? ` · ${quote.quantity} kho` : ''}</p>
-      <p>Số tiền trên là tổng của các khoản bên dưới, không cộng thêm lần nữa.</p>
+      <p>Gồm các khoản bên dưới.</p>
       {period && <p className="quote-covered-period">Tiền thuê trong khoản này: {period}.</p>}
       {initial && <div className="quote-initial-lines">
         <div><span>{summary.monthly ? 'Tiền thuê tháng đầu' : 'Tiền thuê cả kỳ'}{Number(quote.discountPercent)>0 ? ` (đã giảm ${quote.discountPercent}%)` : ''}</span><b>{money(initial.rentalAmount)}</b></div>
@@ -24,23 +24,23 @@ export function QuoteBreakdown({ quote }: { quote: PricingEstimate }) {
         {initial.rentalAddOnAmount>0 && <div><span>Dịch vụ/thiết bị thuê trong kỳ đầu</span><b>{money(initial.rentalAddOnAmount)}</b></div>}
       </div>}
       {initial?.depositAmount===0 && <p className="quote-no-deposit">Kho này không thu tiền cọc.</p>}
-      {Number(initial?.depositAmount)>0 && <p>Tiền cọc không phải tiền thuê. Khi trả kho, cọc được đối chiếu công nợ, chi phí theo hợp đồng và hoàn phần còn lại.</p>}
-      <p className="quote-payment-timing">Báo giá dự kiến. Thanh toán theo hóa đơn sau khi đơn được xác nhận và hợp đồng đã ký.</p>
+      {Number(initial?.depositAmount)>0 && <p>Tiền cọc được hoàn sau khi trừ các khoản phải trả khi trả kho.</p>}
+      <p className="quote-payment-timing">Ký hợp đồng rồi thanh toán theo hóa đơn.</p>
     </section>
     {summary.remaining!==null && <section className="quote-later-payment" aria-label="Các kỳ thanh toán sau">
-      <div><span>{summary.remaining>0 ? 'Tổng còn lại, trả ở các kỳ sau' : 'Không còn tiền thuê/dịch vụ của báo giá này ở kỳ sau'}</span><strong>{money(summary.remaining)}</strong></div>
+      <div><span>{summary.remaining>0 ? 'Thanh toán ở các kỳ sau' : 'Không còn khoản thanh toán kỳ sau'}</span><strong>{money(summary.remaining)}</strong></div>
       {summary.laterCount!==null && <p>{summary.laterCount} kỳ còn lại × {money(summary.laterEach)}/kỳ.</p>}
-      {summary.remaining>0 && <p>{summary.laterCount===null ? 'Số tiền từng kỳ được ghi trên hóa đơn tương ứng. ' : ''}Khoản này chưa thu trong lần đầu. Tiền cọc không thu lại.</p>}
+      {summary.remaining>0 && <p>{summary.laterCount===null ? 'Số tiền từng kỳ được ghi trên hóa đơn tương ứng. ' : ''}Khoản này trả ở kỳ sau, không thu thêm cọc.</p>}
     </section>}
     <section className="quote-term-summary" aria-label="Tổng tiền cho toàn bộ kỳ thuê">
-      <h4>Toàn bộ kỳ thuê gồm những khoản nào?</h4>
+      <h4>Tổng tiền cả kỳ thuê</h4>
       <div className="quote-breakdown-lines">
         {typeof quote.rentalAmount==='number' && <div><span>Tiền thuê kho cả kỳ{Number(quote.discountAmount)>0 ? ' (đã trừ ưu đãi)' : ''}<small>{quotePeriod(quote.startDate, quote.endDate)}</small></span><b>{money(quote.rentalAmount)}</b></div>}
         {Number(quote.addOnTotalAmount)>0 && <div><span>Dịch vụ và vật tư cả kỳ<small>Chi tiết từng dịch vụ ở phần cách tính bên dưới.</small></span><b>{money(quote.addOnTotalAmount)}</b></div>}
         {Number(quote.depositAmount)>0 && <div><span>Tiền cọc bảo đảm<small>Đã tính trong lần đầu; không thu thêm ở các kỳ sau.</small></span><b>{money(quote.depositAmount)}</b></div>}
       </div>
       <div className="quote-breakdown-total"><span>{Number(quote.depositAmount)>0 ? 'Tổng dự kiến cả kỳ, gồm cọc' : 'Tổng dự kiến cả kỳ'}</span><strong>{money(summary.total)}</strong></div>
-      <p className="quote-total-explanation">Tổng này đã bao gồm khoản thanh toán lần đầu và các kỳ sau, không phải khoản thu thêm.{summary.monthly && Number(summary.remaining)>0 ? ' Bạn không phải trả toàn bộ số này trong lần đầu.' : ''}</p>
+      <p className="quote-total-explanation">Gồm lần thanh toán đầu và các kỳ sau.{summary.monthly && Number(summary.remaining)>0 ? ' Bạn không phải trả toàn bộ số này trong lần đầu.' : ''}</p>
     </section>
     <details className="quote-cost-details"><summary>Xem cách tính và chi tiết cả kỳ</summary>
       {typeof quote.monthlyUnitPrice==='number' && <p className="quote-unit-price">Đơn giá một kho: <strong>{money(quote.monthlyUnitPrice)}/tháng</strong></p>}

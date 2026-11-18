@@ -158,7 +158,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
       },
       { replace: true },
     );
-  if (!config) return <Empty title="Không tìm thấy phân hệ" />;
+  if (!config) return <Empty title="Không tìm thấy trang" />;
   let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;

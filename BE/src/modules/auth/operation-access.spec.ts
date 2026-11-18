@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { vi } from 'vitest';
 import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from './roles.guard.js';
@@ -14,6 +15,9 @@ import { ManagerReturnsController } from '../returns/manager-returns.controller.
 import { ManagerUnitsController } from '../manager/manager-units.controller.js';
 import { StaffDirectoryController } from './staff-directory.controller.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
+import type { AuthenticatedRequest } from './auth.types.js';
+import { MaintenanceService } from '../maintenance/maintenance.service.js';
+import { SupportService } from '../support/support.service.js';
 
 const workflows = [
   ['reservations', ManagerReservationsController], ['inquiries', ManagerInquiriesController],
@@ -22,6 +26,86 @@ const workflows = [
   ['support-requests', ManagerSupportController], ['maintenance', ManagerMaintenanceController],
   ['returns', ManagerReturnsController],
 ] as const;
+
+describe.each(['maintenance', 'support-requests'] as const)('%s assigned-work filter on shared Staff routes', resource => {
+  function setup() {
+    const user = { id: 'staff-current', role: 'STAFF' as const, fullName: 'Current Staff', email: 'staff@example.test', phone: '' };
+    const request: AuthenticatedRequest = { headers: {}, user };
+    const records = [
+      { id: 'mine-open', assignedStaffUserId: user.id, status: 'OPEN', priority: 'HIGH' },
+      { id: 'mine-finished', assignedStaffUserId: user.id, status: resource === 'maintenance' ? 'COMPLETED' : 'RESOLVED', priority: 'LOW' },
+      { id: 'other-open', assignedStaffUserId: 'staff-other', status: 'OPEN', priority: 'HIGH' },
+      { id: 'unassigned', assignedStaffUserId: null, status: 'OPEN', priority: 'HIGH' },
+    ].map(record => ({
+      ...record, maintenanceCode: record.id, supportCode: record.id,
+      assignedStaff: record.assignedStaffUserId ? { id: record.assignedStaffUserId, fullName: record.assignedStaffUserId } : null,
+      storageUnit: { id: 'unit', unitNumber: 'UNIT-01', storageType: { id: 'type' }, reservationUnits: [], maintenanceRequests: [] },
+      reservation: { id: 'reservation', reservationCode: 'RES-01' },
+      createdAt: new Date('2026-11-17T00:00:00Z'), updatedAt: new Date('2026-11-17T00:00:00Z'),
+    }));
+    type Filter = { assignedStaffUserId?: string; status?: string; priority?: string };
+    const matching = (where: Filter) => records.filter(row =>
+      (!where.assignedStaffUserId || row.assignedStaffUserId === where.assignedStaffUserId) &&
+      (!where.status || row.status === where.status) && (!where.priority || row.priority === where.priority));
+    const model = {
+      count: vi.fn(async ({ where }: { where: Filter }) => matching(where).length),
+      findMany: vi.fn(async ({ where, skip, take }: { where: Filter; skip: number; take: number }) => matching(where).slice(skip, skip + take)),
+    };
+    const db = { maintenanceRequest: model, supportRequest: model, $transaction: (queries: Promise<unknown>[]) => Promise.all(queries) };
+    const controller = resource === 'maintenance'
+      ? new ManagerMaintenanceController(new MaintenanceService(db as never))
+      : new ManagerSupportController(new SupportService(db as never));
+    return { controller, request, model };
+  }
+
+  it('excludes other staff and unassigned work, and filters before pagination and counting', async () => {
+    const { controller, request } = setup();
+    const first = await controller.list({ assignedToMe: 'true', limit: '1' }, request);
+    const second = await controller.list({ assignedToMe: 'true', limit: '1', page: '2' }, request);
+    expect(first).toMatchObject({ total: 2, page: 1, limit: 1, items: [{ id: 'mine-open' }] });
+    expect(second).toMatchObject({ total: 2, page: 2, limit: 1, items: [{ id: 'mine-finished' }] });
+  });
+
+  it('combines assignment with status and priority', async () => {
+    const { controller, request } = setup();
+    const result = await controller.list({ assignedToMe: 'true', status: 'OPEN', priority: 'HIGH' }, request);
+    expect(result).toMatchObject({ total: 1, items: [{ id: 'mine-open' }] });
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('preserves Staff scope regardless of the checkbox', async () => {
+    const { controller, request } = setup();
+    for (const query of [{}, { assignedToMe: 'false' }]) {
+      const result = await controller.list(query, request);
+      expect(result.total).toBe(2);
+      expect(result.items.map(item => item.id)).toEqual(['mine-open', 'mine-finished']);
+    }
+  });
+
+  it('lists all work for Manager when the checkbox is cleared', async () => {
+    const { controller, request } = setup();
+    request.user = { ...request.user!, role: 'MANAGER', id: 'manager' };
+    const filtered = await controller.list({ assignedToMe: 'true' }, request);
+    expect(filtered.total).toBe(0);
+    const all = await controller.list({ assignedToMe: 'false' }, request);
+    expect(all.total).toBe(4);
+  });
+
+  it('uses the signed-in account instead of a supplied assignee ID', async () => {
+    const { controller, request } = setup();
+    request.user = { ...request.user!, id: 'staff-other' };
+    const result = await controller.list({ assignedToMe: 'true', assignedStaffUserId: 'staff-current' }, request);
+    expect(result).toMatchObject({ total: 1, items: [{ id: 'other-open' }] });
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('rejects an invalid checkbox value before querying the database', () => {
+    const { controller, request, model } = setup();
+    expect(() => controller.list({ assignedToMe: 'invalid' }, request)).toThrow();
+    expect(model.count).not.toHaveBeenCalled();
+    expect(model.findMany).not.toHaveBeenCalled();
+  });
+});
 const guard = new RolesGuard(new Reflector());
 function context(controller: object, handler: object, role: string | undefined, path: string, method: string) {
   return {

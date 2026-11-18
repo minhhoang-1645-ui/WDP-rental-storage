@@ -1,4 +1,6 @@
-import { RecordIdentity, CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { StockReconciliation } from '../../components/stock/StockReconciliation';
+import { StockMovementItems } from '../../components/stock/StockMovementItems';
 import { DashboardSkeleton, DetailSkeleton } from '../../components/LoadingSkeleton';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { hasDraft } from '../../services/live-events';
@@ -12,7 +14,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { PageHeader, LoadState, Empty, Pagination, Facts, RefreshStatus, Status } from '../../components/manager/PortalUi';
-import { date, label, type Page, type Row } from '../../components/manager/portal-data';
+import { date, type Page, type Row } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
@@ -29,7 +31,7 @@ import type { CustomerContract } from '../../types/customer';
 const statuses = { REQUESTED: 'Chờ phân công', ASSIGNED: 'Đã phân công', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy' };
 const dateTime = (value: unknown) => date(value, true);
 const roleRoot = (role: StockRole) => role === 'MANAGER' ? '/manager/operations/stock-movements' : `/${role.toLowerCase()}/stock-movements`;
-const transportRule = 'Khách tự vận chuyển và đưa hàng vào/ra kho. Nhân viên hướng dẫn vị trí, kiểm tra và kiểm đếm thực tế. Không tự phát sinh phí vận chuyển hoặc bốc xếp.';
+
 const freshLine = (): StockDraftLine => ({ key: crypto.randomUUID(), storedItemId: '', name: '', unit: '', quantity: '1', note: '' });
 
 export function StockMovementsPage({ role }: { role: StockRole }) {
@@ -37,7 +39,7 @@ export function StockMovementsPage({ role }: { role: StockRole }) {
   return id ? <StockDetail key={`${user?.id}:${id}`} role={role} id={id} /> : <StockList key={`${user?.id}:${role}`} role={role} />;
 }
 function StockList({ role }: { role: StockRole }) {
-  const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(false), [notice, setNotice] = useState('');
+  const { user } = useAuth(), [params, setParams] = useSearchParams(), [creating, setCreating] = useState(() => role === 'CUSTOMER' && params.get('create') === '1'), [notice, setNotice] = useState('');
   const limit = role === 'STAFF' ? staffTaskPageSize(params) : internalPageSize(params);
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1)), query = new URLSearchParams({ page: String(page), limit: String(limit) });
   for (const key of ['status', 'type', 'search', 'rentalContractId']) if (params.get(key)) query.set(key, params.get(key)!);
@@ -50,7 +52,6 @@ function StockList({ role }: { role: StockRole }) {
       {role !== 'CUSTOMER' && <RefreshStatus active={data.refreshing} />}
       {role === 'CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
-    {role !== 'CUSTOMER' && <p className="booking-alert">{transportRule}</p>}
     {role !== 'CUSTOMER' && <Link className="button-secondary" to={`/${role.toLowerCase()}/stored-items`}>Hàng đang lưu theo kho</Link>}
     {role === 'MANAGER' && <Link className="button-secondary" to="/manager/assignments">Phân công nhân viên</Link>}
     {notice && <p className="booking-alert" role="status">{notice}</p>}
@@ -66,10 +67,21 @@ function StockList({ role }: { role: StockRole }) {
     {!data.loading && !data.error && <>{!data.data?.items.length && <Empty title="Chưa có phiếu phù hợp" />}
       {role === 'STAFF'
         ? data.data?.items.length ? <StaffStockTable items={data.data.items} userId={user?.id ?? ''} /> : null
-        : <div className="stock-grid">{data.data?.items.map(row => <article className="stock-card" key={row.id}><RecordIdentity row={row} resource="stock-movements" showCreated showPerson={role !== 'CUSTOMER'} /><Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Kho hiện tại của hợp đồng', storedLocation(row)], ['Hợp đồng', row.rentalContract.contractCode], ['Khách hàng', row.customer.fullName], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công']]} /><Link className="button-secondary" to={`${roleRoot(role)}/${encodeURIComponent(row.id)}`}>Xem phiếu</Link></article>)}</div>}
+        : <div className="stock-grid stock-movement-grid">{data.data?.items.map(row => <StockMovementCard key={row.id} row={row} role={role} />)}</div>}
       <ListPagination page={page} limit={limit} onLimitChange={value => update('limit', String(value))} total={data.data?.total ?? 0} onChange={value => update('page', String(value))} />
     </>}
   </section>;
+}
+function StockMovementCard({ row, role }: { row: StockMovement; role: StockRole }) {
+  return <article className="stock-card stock-movement-card">
+    <StockMovementItems movement={row} compact />
+    <dl className="stock-movement-facts">
+      <div><dt>Loại phiếu</dt><dd>{row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'}</dd></div>
+      <div className="stock-movement-location"><dt>Kho hiện tại</dt><dd>{storedLocation({ storageUnit: row.currentStorageUnit })}</dd></div>
+      {role === 'MANAGER' && <><div><dt>Khách hàng</dt><dd>{row.customer.fullName}</dd></div><div><dt>Phụ trách</dt><dd>{row.assignedStaff?.fullName ?? 'Chưa phân công'}</dd></div></>}
+    </dl>
+    <div className="stock-card-actions"><Status value={row.status} text={statuses[row.status]} /><Link className="button-secondary" to={roleRoot(role) + '/' + encodeURIComponent(row.id)}>Xem phiếu</Link></div>
+  </article>;
 }
 function StaffStockTable({ items, userId, loadingRows }: { items: StockMovement[]; userId: string; loadingRows?: number }) {
   const columns: StaffColumn<StockMovement>[] = [
@@ -77,19 +89,16 @@ function StaffStockTable({ items, userId, loadingRows }: { items: StockMovement[
       <strong>{row.customer.fullName}</strong><small>
           {row.currentStorageUnit ? storedLocation({ storageUnit: row.currentStorageUnit }) : 'Chưa có vị trí hiện tại'}
       </small>
-          {row.storageUnitAtCompletion
-            ? <small>Kho lúc hoàn tất: {row.storageUnitAtCompletion.unitNumber}</small>
-            : row.storageUnit && row.storageUnit.id !== row.currentStorageUnit?.id && <small>Kho ghi nhận: {row.storageUnit.unitNumber}</small>}
+
     </> },
     { key: 'type', label: 'Loại phiếu', cell: row => <><strong>{row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'}</strong><CopyRecordCode value={row.movementCode} /></> },
     { key: 'items', label: 'Hàng hóa', cell: row => {
       const lines = row.lines ?? [];
-      const summary = lines.map(line => line.storedItem.name).join(', ');
+      const summary = lines.map(line => line.storedItem.name + ' · ' + (row.status === 'COMPLETED' && line.actualQty != null ? line.actualQty : line.requestedQty) + ' ' + line.storedItem.unit).join(', ');
       return summary ? <span className="staff-table-description" title={summary}>{summary}</span> : '—';
     } },
-    { key: 'created', label: 'Ngày yêu cầu', cell: row => dateTime(row.createdAt) },
-    { key: 'scheduled', label: 'Lịch dự kiến', optional: true, cell: row => dateTime(row.scheduledAt) },
-    { key: 'status', label: 'Trạng thái', cell: row => <><Status value={row.status} text={statuses[row.status]} /><small>{row.assignedStaff?.fullName ?? 'Chưa phân công'}</small></> },
+    { key: 'scheduled', label: 'Lịch hẹn', cell: row => dateTime(row.scheduledAt ?? row.createdAt) },
+    { key: 'status', label: 'Trạng thái', cell: row => <><Status value={row.status} text={statuses[row.status]} /></> },
     { key: 'actions', label: 'Thao tác', cell: row => <StaffRowActions to={`/staff/stock-movements/${encodeURIComponent(row.id)}`} code={row.movementCode}
       primary={row.status === 'ASSIGNED' && row.assignedStaff?.id === userId ? 'Xem phiếu' : undefined} /> },
   ];
@@ -97,9 +106,10 @@ function StaffStockTable({ items, userId, loadingRows }: { items: StockMovement[
     emphasized={row => row.status === 'ASSIGNED' && row.assignedStaff?.id === userId} />;
 }
 function StockCreate({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
+  const [params] = useSearchParams();
   const { user } = useAuth(), contracts = usePaginatedResource<CustomerContract>('/customer/contracts', user?.id);
   const [contract, setContract] = useScopedSelection('rentalContractId', (contracts.data?.items ?? []).filter(row => row.status === 'ACTIVE').map(row => ({ value: row.id })), true);
-  const [type, setType] = useState<'IN' | 'OUT'>('IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
+  const [type, setType] = useState<'IN' | 'OUT'>(() => params.get('type') === 'OUT' ? 'OUT' : 'IN'), [lines, setLines] = useState([freshLine()]), [note, setNote] = useState(''), [schedule, setSchedule] = useState('');
   const items = useApiResource<StoredItem[]>(contract ? `/customer/stored-items?rentalContractId=${encodeURIComponent(contract)}` : null, user?.id, true);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), lock = useRef(false);
   const [now, setNow] = useState(() => Date.now());
@@ -191,9 +201,17 @@ function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRo
     await mutate<StockMovement>(`/staff/stock-movements/${encodeURIComponent(row.id)}/complete`, 'POST', body);
     setConfirmed(false); onSaved('Đã hoàn tất phiếu và cập nhật số lượng hàng.');
   } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được phiếu.'); } finally { lock.current = false; setBusy(false); } };
-  return <article className="stock-card stock-form">{role !== 'CUSTOMER' && <p className="booking-alert">{transportRule}</p>}<Facts items={[["Loại phiếu", row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]], ['Khách hàng', `${row.customer.fullName} · ${row.customer.email}`], ['Kho hiện tại', row.currentStorageUnit ? [row.currentStorageUnit.unitNumber, row.currentStorageUnit.floor, row.currentStorageUnit.zone].filter(Boolean).join(' · ') : 'Chưa có thông tin'], ['Kho tại lúc hoàn tất', row.storageUnitAtCompletion ? [row.storageUnitAtCompletion.unitNumber, row.storageUnitAtCompletion.floor, row.storageUnitAtCompletion.zone].filter(Boolean).join(' · ') : 'Chưa ghi nhận vị trí lịch sử'], ['Hợp đồng', `${row.rentalContract.contractCode} · ${label(row.rentalContract.status)}`], ['Lịch dự kiến', dateTime(row.scheduledAt)], ['Nhân viên', row.assignedStaff?.fullName ?? 'Chưa phân công'], ['Người phân công', row.assignedBy?.fullName], ['Ngày phân công', dateTime(row.assignedAt)], ['Ngày hoàn tất', dateTime(row.completedAt)], ['Người hoàn tất', row.completedBy?.fullName], ['Ghi chú phiếu', row.note], ['Ghi chú hoàn tất', row.completionNote]]} />
-    <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>
-    <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2>{row.lines.map(line => <div className="stock-line" key={line.id}><h3>{line.storedItem.name}</h3><p>{line.storedItem.itemCode} · Đơn vị: {line.storedItem.unit}</p><p>Yêu cầu: {line.requestedQty} · Thực tế: {line.actualQty ?? 'Chưa kiểm đếm'} · Tồn hiện tại: {line.storedItem.balance}</p>{line.actualQty != null && <p>Chênh lệch: {line.actualQty - line.requestedQty > 0 ? '+' : ''}{line.actualQty - line.requestedQty} {line.storedItem.unit}</p>}{completable && quantities[line.id]?.trim() && Number.isFinite(Number(quantities[line.id])) && <p>Chênh lệch kiểm đếm: {Number(quantities[line.id]) - line.requestedQty} {line.storedItem.unit}</p>}{line.note && <p>{line.note}</p>}{completable && <label className="field-label">Số lượng thực tế · {line.storedItem.name}<input required type="number" min={0} max={row.type === 'OUT' ? Math.min(1000000, line.storedItem.balance) : 1000000} step={1} value={quantities[line.id]} onChange={event => { setQuantities(current => ({ ...current, [line.id]: event.target.value })); setConfirmed(false); }} /></label>}</div>)}
+  return <article className="stock-card stock-form stock-record-compact">
+    <Facts items={[
+      ['Loại phiếu', row.type === 'IN' ? 'Nhập hàng' : 'Xuất hàng'], ['Trạng thái', statuses[row.status]],
+      ...(role === 'CUSTOMER' ? [] : [['Khách hàng', row.customer.fullName]] as [string, string][]),
+      ['Kho hiện tại', storedLocation({ storageUnit: row.currentStorageUnit })],
+      ['Lịch hẹn', dateTime(row.scheduledAt)], ['Phụ trách', row.assignedStaff?.fullName ?? 'Chưa phân công'],
+    ]} />
+    {row.note && <p><strong>Ghi chú: </strong>{row.note}</p>}
+    {row.completionNote && <p><strong>Kết quả giao nhận: </strong>{row.completionNote}</p>}
+    {!['COMPLETED', 'CANCELLED'].includes(row.status) && <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>}
+    <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2><StockReconciliation lines={row.lines} movementType={row.type} quantities={quantities} onQuantityChange={completable ? (lineId, value) => { setQuantities(current => ({ ...current, [lineId]: value })); setConfirmed(false); } : undefined} />
       {completable && <><label className="field-label">Ghi chú kiểm đếm{discrepancy ? ' (bắt buộc khi chênh lệch)' : ''}<textarea required={discrepancy} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></label><p>Hoàn tất sẽ {row.type === 'IN' ? 'tăng' : 'giảm'} tồn theo số lượng thực tế, có thể khác số lượng yêu cầu.</p></>}
       {completable && <><label className="stock-confirmation"><input type="checkbox" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế</span></label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<div className="portal-actions"><button className="button-primary" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Hoàn tất phiếu'}</button></div></>}
     </fieldset></form>
@@ -207,4 +225,3 @@ export function StoredItemsPage() {
   const items = data.data?.filter(item => normalizeRentalSearch(`${item.name} ${item.itemCode} ${item.rentalContract?.contractCode} ${storedLocation(item)}`).includes(normalizeRentalSearch(search))) ?? [];
   return <section className="customer-page"><PageHeader title="Hàng đang lưu" description="Số lượng hàng của bạn đã được kiểm đếm. Yêu cầu đang chờ xử lý chưa làm thay đổi số lượng này."><Link className="button-secondary" to="/customer/stock-movements">Phiếu nhập – xuất</Link><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><label className="field-label">Tìm hàng / mã kho / hợp đồng<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label><LoadState loading={data.loading} error={data.error} retry={data.refresh} />{!data.loading && !data.error && <>{!items.length && <Empty title="Chưa có hàng tồn phù hợp" />}<div className="stock-grid">{items.map(item => <article className="stock-card" key={item.id}><h2>{item.name}</h2><p>{item.itemCode}</p><p><strong>Kho hiện tại: {storedLocation(item)}</strong></p><p>Hợp đồng: {item.rentalContract?.contractCode}</p><strong>Tồn: {item.balance} {item.unit}</strong>{item.note && <p>{item.note}</p>}</article>)}</div></>}</section>;
 }
-

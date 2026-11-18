@@ -1,3 +1,4 @@
+
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { useState } from "react";
@@ -95,27 +96,29 @@ export function CustomerRentalsPage() {
                 </div>
                 <CustomerStatus status={rental.rentalState} />
               </div>
-              <dl className="customer-record-facts">
+              <dl className="customer-record-facts rental-summary-facts">
                 <div>
                   <dt>Thời hạn</dt>
                   <dd>
                     <CalendarClock size={15} />{" "}
-                    {formatPortalDate(rental.startDate)} –{" "}
-                    {formatPortalDate(rental.effectiveEndDate)}
+                    {formatPortalDate(rental.rentalPeriod?.currentStartDate ?? rental.startDate)} –{" "}
+                    {formatPortalDate(rental.rentalPeriod?.currentEndDate ?? rental.effectiveEndDate)}
+
                   </dd>
                 </div>
                 <div>
                   <dt>Số kho</dt>
                   <dd>{rental.unitCount}</dd>
                 </div>
+                <div><dt>Đã thanh toán</dt><dd>{moneyLabel(rental.paymentDetails?.totalPaid ?? rental.billingSummary.totalPaid)}</dd></div>
                 <div>
-                  <dt>Còn phải trả</dt>
-                  <dd>{moneyLabel(rental.billingSummary.payableBalance ?? rental.billingSummary.totalOutstanding)}</dd>
+                  <dt>Còn lại</dt>
+                  <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
-                  <div key={contract.id}>
+                  <div key={contract.id} className="customer-unit-inventory">
                     <span>
                       <button type="button" className="portal-text-button" onClick={() => setDetail({ rental, kind: "contracts", contractId: contract.id })}><strong>{contract.unit.unitCode}</strong></button>
                       <small>
@@ -125,6 +128,11 @@ export function CustomerRentalsPage() {
                       </small>
                     </span>
                     <CustomerStatus status={contract.status} />
+                    <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
+                      <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
+                      {contract.storedItems === undefined ? <p>Chưa tải được danh sách hàng.</p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
+                      {contract.transfers?.map(transfer => <p className="rental-transfer-note" key={transfer.code}>Đã chuyển {transfer.from} → <strong>{transfer.to}</strong> ngày {formatPortalDate(transfer.completedAt ?? '', true)}. Hàng hiện được lưu tại kho {contract.unit.unitCode}.</p>)}
+                    </section>
                   </div>
                 ))}
               </div>
@@ -132,13 +140,6 @@ export function CustomerRentalsPage() {
                 <button type="button" className="button-primary" onClick={() => setDetail({ rental, kind: "invoices" })}>Xem hóa đơn</button>
                 <button type="button" className="button-secondary" onClick={() => setDetail({ rental, kind: "contracts" })}>Xem hợp đồng</button>
               </div>
-              <details className="customer-inline-notice"><summary>Giao nhận hàng & yêu cầu với kho này</summary><div className="customer-header-actions">
-                {rental.contracts.map(contract => <Link key={contract.id} className="button-secondary" to={`/customer/stock-movements?rentalContractId=${encodeURIComponent(contract.id)}`}>Hàng hóa · {contract.unit.unitCode}</Link>)}
-                {!rental.pendingRenewal && rental.historicalPricing?.billingMode === 'MONTHLY' && <Link className="button-secondary" to={`/customer/renewals?reservation=${encodeURIComponent(rental.reservationId)}`}>Gia hạn kho</Link>}
-                <Link className="button-secondary" to={`/customer/transfers?reservation=${encodeURIComponent(rental.reservationId)}`}>Yêu cầu chuyển kho</Link>
-                <Link className="button-secondary" to={`/customer/returns?reservation=${encodeURIComponent(rental.reservationId)}`}>Trả kho / đề nghị trả sớm</Link>
-                <Link className="button-secondary" to={`/customer/support?reservation=${encodeURIComponent(rental.reservationId)}`}>Gửi hỗ trợ</Link>
-              </div></details>
               {rental.pendingRenewal && (
                 <p className="customer-inline-notice">
                   Yêu cầu gia hạn {rental.pendingRenewal.renewalCode} đang được

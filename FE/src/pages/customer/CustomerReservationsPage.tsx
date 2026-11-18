@@ -1,3 +1,5 @@
+
+import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
 import { safeSessionStorage } from '../../services/browser-storage';
@@ -16,7 +18,6 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import {
   formatPortalDate,
-  quoteLabel,
 } from "../../components/customer/CustomerPortalHelpers";
 import { useApiResource } from "../../services/useApiResource";
 import type { PendingReservation } from "../../types/booking";
@@ -123,7 +124,7 @@ export function CustomerReservationsPage() {
                       <th>Số lượng / kích thước</th>
                       <th>Thời gian thuê</th>
                       <th>Ưu tiên</th>
-                      <th>Báo giá</th>
+                      <th>Giá lúc đặt</th>
                       <th>Trạng thái</th>
                       <th>Tạo lúc</th>
                     </tr>
@@ -139,7 +140,7 @@ export function CustomerReservationsPage() {
                             {item.product.name}
                           </Link>
                           {isJustCreated(item, savedId) && <span className="record-new">Vừa gửi</span>}
-                          <CopyRecordCode value={item.id} label="Mã đơn" />
+                          <CopyRecordCode value={item.id} label="Mã đơn" />{item.rentalSummary?.currentUnits.length ? <small>Kho hiện tại: {item.rentalSummary.currentUnits.map(unit => unit.unitCode).join(", ")}</small> : null}
                           <Link className="portal-text-button" to={`/customer/reservations/${encodeURIComponent(item.id)}`}>Xem chi tiết</Link>
                         </td>
                         <td>
@@ -150,9 +151,10 @@ export function CustomerReservationsPage() {
                         <td>
                           <span className="customer-date">
                             <CalendarDays size={15} />{" "}
-                            {formatPortalDate(item.startDate)} –{" "}
-                            {formatPortalDate(item.endDateExclusive)}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentStartDate ?? item.startDate)} –{" "}
+                            {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
                           </span>
+
                         </td>
                         <td>
                           {item.adjacencyPreference
@@ -160,10 +162,7 @@ export function CustomerReservationsPage() {
                             : "Không yêu cầu"}
                         </td>
                         <td>
-                          {quoteLabel(
-                            item.quote.quotedTotalAmount ??
-                              item.quote.grandTotal,
-                          )}
+                          <ReservationPaymentSummary amount={item.quote.quotedTotalAmount ?? item.quote.grandTotal} />
                         </td>
                         <td>
                           <ReservationStatus status={item.status} />
@@ -194,12 +193,13 @@ export function CustomerReservationsPage() {
                         <dt>Thời gian thuê</dt>
                         <dd>
                           {formatPortalDate(item.startDate)} –{" "}
-                          {formatPortalDate(item.endDateExclusive)}
+                          {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
+
                         </dd>
                       </div>
                       <div>
-                        <dt>Báo giá</dt>
-                        <dd>{quoteLabel(item.quote.grandTotal)}</dd>
+                        <dt>Giá lúc đặt</dt>
+                        <dd><ReservationPaymentSummary amount={item.quote.quotedTotalAmount ?? item.quote.grandTotal} /></dd>
                       </div>
                     </dl>
                     <Link

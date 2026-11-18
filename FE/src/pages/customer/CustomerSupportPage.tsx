@@ -1,3 +1,4 @@
+import { EarlyReturnFinancialNotice } from '../../components/customer/EarlyReturnFinancialNotice';
 import { moneyLabel } from '../../components/customer/CustomerPortalHelpers';
 import type { PendingReservation } from '../../types/booking';
 import { EntitySelect } from '../../components/EntitySelect';
@@ -340,11 +341,10 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
               )}
           </fieldset>
         </form>
-        <section className="customer-panel">
+        <section className="customer-request-section" aria-label="Yêu cầu của tôi">
           <div className="customer-panel-heading">
             <div>
               <h2>Yêu cầu của tôi</h2>
-              <p>Trạng thái được cập nhật bởi đội vận hành.</p>
             </div>
             <CircleHelp size={20} />
           </div>
@@ -365,7 +365,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             <div className="customer-card-list">
               {visibleRequests.map((item) => { const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined; const transferLabel = transfer ? ({ REQUESTED: 'Chờ xác nhận kho mới', APPROVED: 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transfer.status] : undefined; return (
                 <article
-                  className="customer-record-card customer-record-card--compact"
+                  className="customer-record-card customer-record-card--compact customer-request-card"
                   key={item.id}
                 >
                   <div className="customer-record-heading">
@@ -389,13 +389,17 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     · {item.reservation.reference}
                     {item.unit ? ` · ${item.unit.unitCode}` : ""}
                   </p>
+                  <p className="customer-request-excerpt">{item.description}</p>
+                  <details className="customer-request-disclosure"><summary>Chi tiết và phản hồi</summary>
                   <p>{item.description}</p>
-                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
                       <strong>Kết quả:</strong> {item.resolutionNote}
                     </p>
                   )}
+                  </details>
                 </article>
               )})}
             </div>

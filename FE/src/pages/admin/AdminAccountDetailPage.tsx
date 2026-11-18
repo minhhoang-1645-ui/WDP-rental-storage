@@ -112,7 +112,7 @@ export function AdminAccountDetailPage() {
                 ? 'Tài khoản sẽ bị chặn đăng nhập và các yêu cầu từ phiên đang mở.'
                 : 'Người dùng có thể đăng nhập lại để tiếp tục.'}</p>
               <button type="button" disabled={detail.refreshing} className={next === 'DISABLED' ? 'button-secondary portal-danger' : 'button-primary'}
-                onClick={showStatusConfirmation}>{next === 'DISABLED' ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'}</button>
+                onClick={showStatusConfirmation}>{next === 'DISABLED' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</button>
             </>}
           </div>
         </section>
@@ -120,7 +120,7 @@ export function AdminAccountDetailPage() {
       {canChange && status === next && <StatusConfirmation key={id + ':' + next}
         path={path} name={first(row, 'fullName')} next={next} onClose={() => changeTab('permissions')} onSaved={updated => {
           changeTab('permissions');
-          onSaved(updated, next === 'DISABLED' ? 'Đã vô hiệu hóa tài khoản.' : 'Đã kích hoạt tài khoản.');
+          onSaved(updated, next === 'DISABLED' ? 'Đã khóa tài khoản.' : 'Đã mở khóa tài khoản.');
         }} />}
     </>}
   </section>;
@@ -183,7 +183,7 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const disable = next === 'DISABLED';
-  return <Modal title={disable ? 'Xác nhận vô hiệu hóa' : 'Xác nhận kích hoạt lại'} busy={busy} onClose={onClose}>
+  return <Modal title={disable ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'} busy={busy} onClose={onClose}>
     <form className="portal-form" onSubmit={async event => {
       event.preventDefault();
       if (!confirmed || lock.current) return;
@@ -201,7 +201,7 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
       <div className="portal-actions">
         <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
         <button type="submit" className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
-          {busy ? 'Đang lưu…' : disable ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'}
+          {busy ? 'Đang lưu…' : disable ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
         </button>
       </div>
     </form>

@@ -30,13 +30,20 @@ export class DamageClaimsService {
     if (!key || !/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Cần khóa gửi yêu cầu hợp lệ.');
     const idempotencyKey = createHash('sha256').update(`${actor.id}:${key}`).digest('hex');
     const inputHash = createHash('sha256').update(JSON.stringify([contractId, description, date, estimated, links, [...ids].sort((a: string, b: string) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
-    const contract = await this.prisma.rentalContract.findFirst({ where: { id: contractId, reservation: { customerId: actor.id }, status: { in: ['ACTIVE', 'COMPLETED'] } }, include: { reservationUnit: { include: { storageUnit: true } } } });
-    if (!contract) throw new NotFoundException('Không tìm thấy kho đã nhận thuộc tài khoản của bạn.');
-    const affected = await this.prisma.storedItem.findMany({ where: { id: { in: ids as string[] }, rentalContractId: contract.id, customerUserId: actor.id }, select: { id: true, name: true, unit: true, itemCode: true } });
-    if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
     const duplicate = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('CUSTOMER') });
     if (duplicate) { if (duplicate.inputHash !== inputHash) throw new ConflictException('Khóa gửi đã dùng cho nội dung khác.'); return this.view(duplicate, 'CUSTOMER'); }
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "RentalContract" WHERE id = ${contractId} FOR UPDATE`);
+      const contract = await tx.rentalContract.findFirst({
+        where: { id: contractId, reservation: { customerId: actor.id }, status: 'ACTIVE', reservationUnit: { releasedAt: null } },
+        include: { reservationUnit: { include: { storageUnit: true } } },
+      });
+      if (!contract) throw new NotFoundException('Chỉ được báo sự cố cho kho đang thuê thuộc tài khoản của bạn. Kho đã trả hoặc hợp đồng đã kết thúc không thể gửi yêu cầu mới.');
+      const affected = await tx.storedItem.findMany({
+        where: { id: { in: ids as string[] }, rentalContractId: contract.id, customerUserId: actor.id },
+        select: { id: true, name: true, unit: true, itemCode: true },
+      });
+      if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
       const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash } });
       return this.view(row, 'CUSTOMER');
     }).catch(async error => {
@@ -143,7 +150,17 @@ export class DamageClaimsService {
         } }), actor.role);
       }
       let data: Prisma.DamageClaimUpdateInput;
-      if (row.status === 'INVESTIGATING' && (input.decision === 'APPROVED' || input.decision === 'REJECTED')) {
+      if (input.action === 'amend-decision' && ['APPROVED', 'REJECTED', 'RESOLVED'].includes(row.status)) {
+        data = {
+          decisionReason: this.text(input.decisionReason, 'Lý do quyết định', 10),
+          history: this.history(row, actor, 'amend-decision', now, row.status, { decisionReason: row.decisionReason }),
+        };
+      } else if (input.action === 'amend-resolution' && row.status === 'RESOLVED') {
+        data = {
+          resolutionNote: this.text(input.resolutionNote, 'Kết quả đã thông báo', 10),
+          history: this.history(row, actor, 'amend-resolution', now, row.status, { resolutionNote: row.resolutionNote }),
+        };
+      } else if (row.status === 'INVESTIGATING' && (input.decision === 'APPROVED' || input.decision === 'REJECTED')) {
         if (!row.staffFacts) throw new ConflictException('Cần ghi nhận thực tế của nhân viên trước khi quyết định.');
         const decision = input.decision;
         const decisionReason = this.text(input.decisionReason, 'Lý do quyết định', 10);
@@ -219,9 +236,9 @@ export class DamageClaimsService {
     return BigInt(value);
   }
 
-  private history(row: { history: Prisma.JsonValue; status: string }, actor: PublicUser, action: string, at: Date, to: string): Prisma.InputJsonArray {
+  private history(row: { history: Prisma.JsonValue; status: string }, actor: PublicUser, action: string, at: Date, to: string, previous: Record<string, string | null> = {}): Prisma.InputJsonArray {
     return [...(Array.isArray(row.history) ? row.history as Prisma.InputJsonArray : []),
-      { actorId: actor.id, role: actor.role, at: at.toISOString(), action, from: row.status, to }];
+      { actorId: actor.id, role: actor.role, at: at.toISOString(), action, from: row.status, to, ...previous }];
   }
 
   private async views(actor: PublicUser, rows: ClaimRow[], detail = false) {

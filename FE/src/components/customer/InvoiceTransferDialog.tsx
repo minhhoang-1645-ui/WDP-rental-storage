@@ -7,7 +7,7 @@ import { useApiResource } from '../../services/useApiResource';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { customerBillingApi } from '../../services/billing';
 import { buildVietQrPayload } from '../../utils/vietqr';
-import { isScheduledRenewalInvoice, paymentWindowClosed } from '../../utils/payment-state';
+import { isScheduledRenewalInvoice, invoicePaymentBlockedBySchedule, paymentWindowClosed } from '../../utils/payment-state';
 import { formatPortalDate, moneyLabel } from './CustomerPortalHelpers';
 import { CustomerStatus, PortalError, PortalLoading } from './CustomerPortalUi';
 import { InvoiceBreakdown } from './InvoiceBreakdown';
@@ -25,7 +25,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
   const row = invoice.data;
   const selectedAmount = amount || (row ? String(row.balanceDue) : '');
   const pending = submissions.data?.items.some(item => item.invoice.id === id && item.status === 'PENDING_VERIFICATION');
-  const scheduled = !!row && row.balanceDue > 0 && isScheduledRenewalInvoice(row);
+  const scheduled = !!row && row.balanceDue > 0 && invoicePaymentBlockedBySchedule(row);
   const payable = row && !scheduled && ['OPEN', 'PARTIALLY_PAID'].includes(row.status) && row.balanceDue > 0 && row.signing?.complete !== false && !paymentWindowClosed(row) && !pending && !onlinePending && !saved;
   let qr = '';
   try { if (row && bank.data && Number(selectedAmount) <= row.balanceDue) qr = buildVietQrPayload(bank.data, Number(selectedAmount), row.invoiceCode); } catch { /* Display validation; never render an unusable QR. */ }
@@ -44,6 +44,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
   return <Modal title={row && ['PAID', 'VOID'].includes(row.status) ? 'Chi tiết hóa đơn' : 'Chi tiết hóa đơn và chuyển khoản'} onClose={onClose} busy={busy}>
     {invoice.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoice.error ? <PortalError message={invoice.error} onRetry={invoice.refresh} /> : row && <>
       <DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(row.id)}`} name={row.invoiceCode} signed={row.signing?.complete} /><h3>{row.invoiceCode}</h3><p>Đơn {row.reservation.reference}</p>
+      {row.status === 'VOID' && row.voidReason && <p className="customer-inline-notice">{row.voidReason}. Hóa đơn này đã được hủy thu.</p>}
       <p>{formatPortalDate(row.issuedAt)} · Kỳ {formatPortalDate(row.billingPeriodStart)} – {formatPortalDate(row.billingPeriodEnd)} <CustomerStatus status={row.status} /></p>
       {row.type === 'INITIAL' && row.reservation.quantity > 1 && <p>Đơn này có {row.reservation.quantity} kho dùng chung một hóa đơn ban đầu. Cần thanh toán đủ và hoàn tất điều kiện hợp đồng trước khi bàn giao.</p>}
       <InvoiceBreakdown details={row.breakdown} currency={row.currency} />
@@ -54,6 +55,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onClose, onSaved }: {
       {(saved || pending) && <p role="status">Thông báo đã được gửi và đang chờ NestBox đối chiếu tiền thực nhận. Bạn chưa cần chuyển thêm cho cùng khoản tiền.</p>}
       {onlinePending && <p role="status">Đang theo dõi VNPay. Không chuyển khoản thêm cho cùng hóa đơn.</p>}
       {scheduled && <p role="status">Hóa đơn gia hạn chưa đến kỳ thanh toán.</p>}
+      {row.closeoutPaymentAllowed && row.balanceDue > 0 && isScheduledRenewalInvoice(row) && <p role="status">Kho đã được duyệt trả trước hạn. Bạn có thể thanh toán sớm hóa đơn kỳ này để trả đủ các khoản còn thiếu trước khi trả kho.</p>}
       {paymentWindowClosed(row) && <p role="alert">Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p>}
       {submissions.error && <PortalError message={submissions.error} onRetry={submissions.refresh} />}
       {payable && (bank.loading ? <PortalLoading label="Đang tải thông tin ngân hàng…" /> : bank.error ? <PortalError message={bank.error} onRetry={bank.refresh} /> : !bank.data?.configured ? <p>Chuyển khoản chưa khả dụng. {bank.data?.vnpayConfigured === true ? 'Bạn có thể thanh toán qua VNPay trên danh sách hóa đơn.' : 'Bạn có thể thanh toán tại cơ sở; hóa đơn chỉ cập nhật sau khi NestBox xác nhận thu tiền.'} <Link to={`/customer/support?reservation=${encodeURIComponent(row.reservation.id)}`}>Gửi hỗ trợ về hóa đơn</Link></p> : <form className="portal-form" onSubmit={event => void submit(event)}>

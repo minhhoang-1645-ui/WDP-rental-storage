@@ -22,7 +22,7 @@ export function HandoverDetail({ row, loading, error, refresh, userId, now }: {
   const units = rows(row?.allocatedUnits);
   const totalPages = Math.max(1, Math.ceil(units.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const actions = row ? [...recordActions('appointments', row, 'STAFF'), ...staffRecordActions('appointments', row, userId, now)] : [];
+  const actions = row ? [...(text(row, 'assignedStaff.id') === userId ? recordActions('appointments', row, 'STAFF') : []), ...staffRecordActions('appointments', row, userId, now)] : [];
   const waitingForTime = row?.status === 'CONFIRMED' && Date.parse(text(row, 'scheduledAt')) > now;
   const windowIssue = row ? handoverWindowIssue(row, now) : false;
 
@@ -43,6 +43,8 @@ export function HandoverDetail({ row, loading, error, refresh, userId, now }: {
             <Text selectable style={local.code}>{codeOf(row)}</Text>
             <Text style={local.status}>{label(row.status)}</Text>
             <View style={local.line}><Clock size={18} color={WdpColors.navy} /><Text style={local.body}>{formatDate(text(row, 'scheduledAt'), true)} · UTC+7</Text></View>
+            <Text style={local.caption}>Nhân viên phụ trách</Text>
+            <Text style={local.body}>{text(row, 'assignedStaff.fullName') || 'Chưa được quản lý phân công'}</Text>
             <Text style={local.caption}>Khách hàng</Text>
             <Text selectable style={local.body}>{text(row, 'reservation.customer.fullName', 'customer.fullName') || 'Chưa có thông tin'}</Text>
             {text(row, 'reservation.customer.phone', 'customer.phone') ? <Text selectable style={local.body}>{text(row, 'reservation.customer.phone', 'customer.phone')}</Text> : null}

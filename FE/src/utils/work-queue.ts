@@ -94,7 +94,7 @@ export function staffNeedsAction(
         ["PENDING_CONTACT", "CONTACTED", "IN_REVIEW"].includes(status)
       );
     case "appointments":
-      return ["REQUESTED", "CONFIRMED"].includes(status);
+      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId;
     case "transfers":
       return status === "APPROVED";
     case "returns":

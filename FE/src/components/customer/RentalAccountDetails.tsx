@@ -1,20 +1,12 @@
 import type { RentalPaymentDetails, RentalPeriodSummary, RentalInvoiceLine } from '../../types/rental-account';
 import { formatPortalDate, moneyLabel } from './CustomerPortalHelpers';
 
-export function RentalPeriodCaption({ period }: { period?: RentalPeriodSummary }) {
-  if (!period) return null;
-  return <small className="rental-period-caption">{period.originalMonths === null ? 'Kỳ thuê ban đầu theo ngày' : `${period.originalMonths} tháng ban đầu`}{period.extendedMonths > 0 ? ` + ${period.extendedMonths} tháng gia hạn${period.totalMonths === null ? '' : ` = ${period.totalMonths} tháng`}` : ' · Chưa gia hạn'}</small>;
-}
-
 export function RentalPeriodDetails({ period }: { period: RentalPeriodSummary }) {
   return <div className="rental-period-details">
-    <RentalPeriodCaption period={period} />
     <dl className="customer-facts">
-      <div><dt>Kỳ thuê ban đầu{period.originalMonths !== null ? ` · ${period.originalMonths} tháng` : ''}</dt><dd>{formatPortalDate(period.originalStartDate)} – {formatPortalDate(period.originalEndDate)}</dd></div>
-      <div><dt>Gia hạn đã hoàn tất</dt><dd>{period.extendedMonths ? `${period.extendedMonths} tháng` : 'Chưa gia hạn'}</dd></div>
-      <div><dt>Toàn bộ thời gian thuê hiện tại{period.totalMonths !== null ? ` · ${period.totalMonths} tháng` : ''}</dt><dd>{formatPortalDate(period.currentStartDate)} – {formatPortalDate(period.currentEndDate)}</dd></div>
+      <div><dt>Ngày bắt đầu</dt><dd>{formatPortalDate(period.currentStartDate)}</dd></div>
+      <div><dt>Ngày kết thúc</dt><dd>{formatPortalDate(period.currentEndDate)}</dd></div>
     </dl>
-    <p className="customer-note">Thời gian thuê hiện tại đã bao gồm các lần gia hạn hoàn tất.</p>
   </div>;
 }
 

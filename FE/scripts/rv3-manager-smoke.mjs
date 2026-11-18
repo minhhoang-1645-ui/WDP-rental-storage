@@ -21,7 +21,10 @@ const reportCategories = [
 const report = {
   asOf: '2026-11-10T09:00:00Z', period: { from: null, to: null, timeZone: 'Asia/Ho_Chi_Minh' }, units: { total: 120, occupied: 30, available: 75, reserved: 5, maintenance: 10, utilizationPercent: 25 }, activeContracts: 31,
   finance: { unpaidInvoices: 2, outstandingAmount: 600000, collectedAmount: 3000000, paymentCount: 1, depositOnFullyPaidInvoices: 1500000, approvedRefundOutstanding: 1000000 },
-  queue: { unassignedStock: 1, unassignedSupport: 0, unassignedMaintenance: 0, escalatedSupport: 0, maintenanceReview: 0, paymentVerification: 1, depositReview: 0, onlineReconciliation: 1 },
+  queue: { unassignedStock: 1, unassignedSupport: 0, unassignedMaintenance: 0,
+    unassignedAppointments: 0, unassignedReturns: 0, unassignedTransfers: 0, unassignedClaims: 0,
+    escalatedSupport: 0, maintenanceReview: 0, earlyReturnReview: 1, transferReview: 0, renewalReview: 0, damageReview: 0,
+    paymentVerification: 1, depositReview: 0, onlineReconciliation: 1 },
   workload: [{ id: 'staff', fullName: 'Nhân viên kiểm thử', accountStatus: 'ACTIVE', stock: 3, support: 0, maintenance: 0 }],
 };
 const addon = { id: 'addon', code: 'SHELF', name: 'Kệ kiểm thử', physicalUnit: 'bộ', billingUnit: 'MONTH', kind: 'RENTAL', unitPrice: 150000, isActive: true };
@@ -123,7 +126,9 @@ await context.route('**/*', async route => {
   if (path === 'manager/additional-services/inventory') return route.fulfill({ json: [{ serviceId: 'addon', rentalCapacity: 5 }] });
   if (path === 'manager/invoices/invoice') return route.fulfill({ json: { id: 'invoice', invoiceCode: 'INV-TEST', type: 'INITIAL', status: 'OPEN', totalAmount: 3000000, balanceDue: 3000000, amountPaid: 0, rentalAmount: 1500000, depositAmount: 1500000, serviceAmount: 0, chargeAmount: 0, historicalPricing: quote, reservation: { id: 'r', reference: 'R-TEST' } } });
   if (path === 'manager/stored-items') return route.fulfill({ json: { page: 1, limit: 20, total: 1, items: [{ id: 'item', itemCode: 'ITEM-TEST', name: 'Thùng hồ sơ', unit: 'thùng', balance: 2, customer: { fullName: 'Khách kiểm thử' }, rentalContract: { id: 'contract', contractCode: 'C-TEST' }, currentStorageUnit: { id: 'unit', unitNumber: 'MD-D04-002', floor: 'Tầng 1', zone: 'D04' } }] } });
-  if (path === 'manager/stock-movements') return route.fulfill({ json: { page: 1, limit: 20, total: 2, items: [pendingMovement, { id: 'movement', movementCode: 'MOV-TEST', type: 'IN', status: 'COMPLETED', assignedStaff: { id: 'staff', fullName: 'Nhân viên kiểm thử' }, completedBy: { fullName: 'Nhân viên kiểm thử' }, completedAt: report.asOf, completionNote: 'Khách mang thiếu một thùng', currentStorageUnit: { unitNumber: 'MD-D04-002' }, lines: [{ id: 'line', requestedQty: 3, actualQty: 2, storedItem: { name: 'Thùng hồ sơ', unit: 'thùng' } }] }] } });
+  const completedMovement = { id: 'movement', movementCode: 'MOV-TEST', type: 'IN', status: 'COMPLETED', assignedStaff: { id: 'staff', fullName: 'Nhân viên kiểm thử' }, completedBy: { fullName: 'Nhân viên kiểm thử' }, completedAt: report.asOf, completionNote: 'Khách mang thiếu một thùng', currentStorageUnit: { unitNumber: 'MD-D04-002' }, lines: [{ id: 'line', requestedQty: 3, actualQty: 2, storedItem: { name: 'Thùng hồ sơ', unit: 'thùng', balance: 2 } }] };
+  if (path === 'manager/stock-movements') return sendPage([pendingMovement, completedMovement]);
+  if (path === 'manager/stock-movements/movement') return route.fulfill({ json: completedMovement });
   return route.fulfill({ json: { page: 1, limit: 20, total: 0, items: [] } });
 });
 const page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
@@ -208,7 +213,14 @@ try {
   await rentByType.getByRole('rowheader', { name: /SM-B12/ }).waitFor();
   assert.match(await rentByType.getByRole('rowheader').first().innerText(), /SM-B12/);
   await verifyReportTable(rentByType);
-  await page.getByLabel('Gom biểu đồ theo').selectOption('week');
+  await Promise.all([
+    page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/manager/reports') && url.searchParams.get('group') === 'week'
+        && url.searchParams.get('from') === reportDate && !url.searchParams.get('typeId') && response.ok();
+    }),
+    page.getByLabel('Gom biểu đồ theo').selectOption('week'),
+  ]);
   await page.waitForURL(url => url.searchParams.get('group') === 'week');
   const [file] = await Promise.all([
     page.waitForEvent('download'),
@@ -339,7 +351,7 @@ async function verifyReportTable(table) {
 async function verifyManagerWorkspace() {
   await page.goto(`${base}/manager`);
   await page.locator('.manager-dashboard-kpi').filter({ hasText: 'Kho đang sử dụng' }).getByText('30 / 120', { exact: true }).waitFor();
-  assert.deepEqual(await page.locator('.manager-dashboard-kpi strong').allTextContents().then(values => values.map(value => value.replace(/\s/g, ' '))), ['0', '1', '30 / 120', '600.000 ₫']);
+  assert.deepEqual(await page.locator('.manager-dashboard-kpi strong').allTextContents().then(values => values.map(value => value.replace(/\s/g, ' '))), ['1', '1', '30 / 120', '600.000 ₫']);
   const chart = page.getByRole('region', { name: 'Tình trạng kho' });
   await chart.getByText('Hiện có 75/120 kho ở trạng thái sẵn sàng.', { exact: true }).waitFor();
   const legend = chart.locator('.manager-storage-legend li');
@@ -383,7 +395,7 @@ async function verifyManagerWorkspace() {
   await page.goto(`${base}/manager`);
   await work.getByRole('link', { name: /Phân công nhân viên/ }).click();
   await page.waitForURL('**/manager/assignments?kind=stock-movements&record=needs-assignment');
-  await page.getByRole('dialog', { name: /MOV-ASSIGN/ }).waitFor();
+  await page.getByRole('dialog', { name: 'Phân công nhân viên', exact: true }).waitFor();
   await page.goto(`${base}/manager`);
   await work.getByRole('link', { name: /Duyệt trả trước hạn/ }).click();
   await page.waitForURL('**/manager/early-returns?record=early');
@@ -451,7 +463,7 @@ async function verifyManagerWorkspace() {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${base}/manager`);
   await page.locator('.manager-dashboard-kpi').filter({ hasText: 'Chờ phân công' }).click();
-  await page.waitForURL('**/manager/assignments?assignment=unassigned');
+  await page.waitForURL('**/manager/assignments?assignment=attention');
   await page.goto(`${base}/manager`);
   for (const width of [1920, 1366, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -497,18 +509,19 @@ async function verifyManagerWorkspace() {
   await page.getByRole('button', { name: 'Thao tác ITEM-TEST' }).click();
   assert.match(await page.getByRole('link', { name: 'Xem phiếu nhập – xuất', exact: true }).getAttribute('href'), /rentalContractId=contract/);
   await page.goto(`${base}/manager/units`);
-  await page.getByRole('table', { name: 'Kho vật lý' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Danh sách kho' }).getByText('Khách kiểm thử', { exact: true }).waitFor();
   await page.goto(`${base}/manager/assignments?scope=all&kind=stock-movements`);
   await page.getByRole('button', { name: 'Thao tác MOV-TEST', exact: true }).click();
   await page.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
-  await page.getByText('Khách mang thiếu một thùng', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Xem hồ sơ công việc', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Xem hồ sơ công việc', exact: true }).click();
+  await page.getByText('Khách mang thiếu một thùng', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Hoàn tất phiếu', exact: true }).count(), 0);
   await page.goto(`${base}/manager/assignments?kind=stock-movements&assignment=unassigned`);
   await page.getByRole('button', { name: 'Thao tác MOV-ASSIGN' }).click();
   await page.getByRole('button', { name: 'Xem / Phân công', exact: true }).click();
-  await page.getByRole('button', { name: 'Dùng gợi ý', exact: true }).click();
-  await page.getByRole('button', { name: 'Phân công', exact: true }).click();
+  await page.getByRole('radio', { name: /Nhân viên kiểm thử/ }).check();
+  await page.getByRole('button', { name: 'Xác nhận phân công', exact: true }).click();
   await page.getByText('Đã cập nhật nhân viên phụ trách.').waitFor();
   assert(writes.some(write => write.path === 'manager/stock-movements/needs-assignment/assign' && write.body.staffUserId === 'staff'));
   await page.getByRole('combobox', { name: 'Phân công', exact: true }).selectOption('assigned');
@@ -517,8 +530,8 @@ async function verifyManagerWorkspace() {
   await page.waitForURL(url => url.searchParams.get('assignee') === 'staff');
   await page.getByRole('button', { name: 'Thao tác MOV-ASSIGN' }).click();
   await page.getByRole('button', { name: 'Xem / Đổi nhân viên', exact: true }).click();
-  await page.getByRole('button', { name: 'Dùng gợi ý', exact: true }).click();
-  await page.getByRole('button', { name: 'Đổi nhân viên', exact: true }).click();
+  await page.getByRole('radio', { name: /Nhân viên thay ca/ }).check();
+  await page.getByRole('button', { name: 'Xác nhận đổi nhân viên', exact: true }).click();
   await page.getByText('Đã cập nhật nhân viên phụ trách.').waitFor();
   assert(writes.some(write => write.path === 'manager/stock-movements/needs-assignment/assign' && write.body.staffUserId === 'staff2'));
 

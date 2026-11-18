@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/auth-context'
 import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
 import { bookingApi } from '../../services/booking'
+import { quotePeriod } from '../../utils/quote-payment-summary'
 import type { GuestInquiry, PendingReservation } from '../../types/booking'
 import type { GuestBooking } from '../../services/guest-booking'
 
@@ -24,7 +25,28 @@ function GuestConfirmation({ id }: { id: string }) {
     if (initial?.bookingCode === id) return initial
     try { const saved = JSON.parse(safeSessionStorage.getItem('wdp-guest-response:' + id) ?? 'null') as GuestBooking | null; return saved?.bookingCode === id ? saved : null } catch { return null }
   })
-  return <section className="public-page-content"><Container className="max-w-3xl"><div className="confirmation-panel"><CheckCircle2 className="text-success" size={48} /><h1>{record ? 'Đã ghi nhận yêu cầu xác minh email' : 'Tra cứu qua email của NestBox'}</h1><p>Mã yêu cầu: <strong>{id}</strong>. Yêu cầu này chưa giữ kho, chưa tạo hợp đồng hoặc thanh toán.</p>{record && <p>{record.storage.name} · {record.quantity} kho · {record.startDate} đến {record.endDate}</p>}<div className="booking-alert mt-7">{record?.message?.includes('Development') ? 'Dịch vụ gửi email thật chưa được cấu hình. Email xác minh chưa được gửi; hãy liên hệ NestBox hoặc dùng luồng gửi yêu cầu liên hệ.' : 'Mở liên kết xác minh NestBox gửi trong email, sau đó đăng nhập bằng cùng email để nhận yêu cầu. Trang này hiển thị kết quả gửi ban đầu.'}</div><div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to="/storage">Xem kho</Link><Link className="button-secondary" to="/booking">Gửi yêu cầu liên hệ</Link></div></div></Container></section>
+  const emailUnavailable = record?.status === 'PENDING_VERIFICATION' && record.message?.includes('Development');
+  const closed = record?.status === 'EXPIRED' || record?.status === 'CANCELLED';
+  const title = emailUnavailable ? 'Chưa gửi được email xác minh'
+    : record?.status === 'CLAIMED' ? 'Yêu cầu đã được nhận'
+    : record?.status === 'VERIFIED' ? 'Email đã được xác minh'
+    : closed ? (record?.status === 'EXPIRED' ? 'Yêu cầu đã hết hạn' : 'Yêu cầu đã hủy')
+    : 'Kiểm tra email để tiếp tục';
+  return <section className="public-page-content"><Container className="max-w-3xl">
+    <div className="confirmation-panel">
+      <h1>{title}</h1>
+      {record && <p><strong>{record.quantity} kho · {record.storage.name}</strong> · {quotePeriod(record.startDate, record.endDate)}</p>}
+      <p>Mã yêu cầu <strong>{id}</strong></p>
+      {emailUnavailable
+        ? <p className="booking-alert" role="status">Hãy dùng lựa chọn gửi yêu cầu liên hệ để NestBox hỗ trợ.</p>
+        : (!record || record.status === 'PENDING_VERIFICATION') && <p>Mở liên kết xác minh trong email của NestBox. {record && 'Yêu cầu chưa giữ kho.'}</p>}
+      <div className="mt-6 flex flex-wrap gap-3">
+        {emailUnavailable
+          ? <Link className="button-primary" to="/booking?mode=quick&step=3&contact=1">Gửi yêu cầu liên hệ</Link>
+          : <Link className="button-secondary" to="/storage">Xem kho</Link>}
+      </div>
+    </div>
+  </Container></section>
 }
 
 function ConfirmationRecord() {
@@ -80,7 +102,7 @@ function ConfirmationRecord() {
       <h1>{record.status === 'PENDING_CONTACT' ? 'NestBox sẽ liên hệ để xác nhận.' : record.status === 'CONFIRMED' ? 'Yêu cầu đặt kho đã được xác nhận.' : record.status === 'REJECTED' ? 'Yêu cầu đặt kho đã bị từ chối.' : record.status === 'CANCELLED' ? 'Yêu cầu đặt kho đã hủy.' : record.status === 'EXPIRED' ? 'Yêu cầu đặt kho đã hết hạn.' : 'Yêu cầu đặt kho đang chờ xác nhận.'}</h1>
       <p>Mã tham chiếu <strong>{record.id}</strong> đã được lưu. {record.status === 'CONFIRMED' ? 'Xem yêu cầu trong tài khoản để theo dõi kho, hợp đồng và hóa đơn thực tế.' : 'Yêu cầu chưa phải là thanh toán hoặc hợp đồng thuê đang hoạt động.'}</p>
       {'expiresAt' in record && record.status === 'CONFIRMED' && record.expiresAt && <div className="booking-alert mt-7"><span><strong>Kho đang được giữ trong 24 giờ để chờ thanh toán.</strong> Hạn giữ: {new Date(record.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok' })}. Thanh toán hóa đơn ban đầu trước thời điểm này để tiếp tục nhận kho.</span></div>}
-      <div className="confirmation-product"><StorageImage className="booking-product-thumb" src={record.product.image} alt={`Ảnh tham khảo cho ${record.product.name}`} /><div><strong>{record.product.name}</strong><span>{record.product.code} · {record.product.dimensions}</span><span>{record.quantity} kho · {record.periodMode === 'duration' ? record.durationMonths + ' tháng' : 'Từ ' + record.startDate + ' đến ' + record.endDate}</span></div></div>
+      <div className="confirmation-product"><StorageImage className="booking-product-thumb" src={record.product.image} alt="" /><div><strong>{record.product.name}</strong><span>{record.product.code} · {record.product.dimensions}</span><span>{record.quantity} kho · {record.periodMode === 'duration' ? record.durationMonths + ' tháng' : 'Từ ' + record.startDate + ' đến ' + record.endDate}</span></div></div>
       <div className="confirmation-facts"><div><Clock3 /><span><strong>Bước tiếp theo</strong>{record.status === 'CONFIRMED' ? 'Theo dõi hợp đồng, thanh toán và lịch bàn giao trong tài khoản.' : ['REJECTED', 'CANCELLED', 'EXPIRED'].includes(record.status) ? 'Chọn kho và gửi yêu cầu mới nếu bạn vẫn có nhu cầu.' : 'Nhân viên kiểm tra tình trạng, thông tin vận hành và liên hệ.'}</span></div><div><ReceiptText /><span><strong>Báo giá</strong>{record.status === 'CONFIRMED' ? 'Kiểm tra số tiền và trạng thái thanh toán trên hóa đơn trong tài khoản.' : 'Yêu cầu này chưa xác nhận việc thanh toán.'}</span></div></div>
       <div className="booking-alert mt-7"><span><strong>{record.status === 'CONFIRMED' ? 'Đã xác nhận đặt kho' : 'Chưa xác nhận giữ kho'}</strong>{record.status === 'PENDING_CONTACT' ? ' Yêu cầu liên hệ chỉ ghi nhận nhu cầu, không khóa kho.' : record.status === 'CONFIRMED' ? ' Xem phân bổ kho và hợp đồng thực tế trong tài khoản.' : ['REJECTED', 'CANCELLED', 'EXPIRED'].includes(record.status) ? ' Yêu cầu này đã kết thúc và không giữ kho.' : ' Yêu cầu đặt kho đang chờ xử lý theo quy trình vận hành.'}</span></div>
       <div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to={record.status === 'PENDING_CONTACT' ? '/storage' : '/customer/reservations/' + record.id}>{record.status === 'PENDING_CONTACT' ? 'Xem thêm kho' : 'Xem yêu cầu đặt kho của tôi'}</Link><Link className="button-secondary" to="/">Về trang chủ</Link></div>

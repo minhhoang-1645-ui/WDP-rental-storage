@@ -5,7 +5,7 @@ import { QuickFinder } from '../../components/public/QuickFinder'
 import { StorageSizeCard } from '../../components/public/StorageSizeCard'
 import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
-import { faqs, imageCredits } from '../../data/storage'
+import { faqs, landingWarehousePhoto } from '../../data/storage'
 
 const steps = [
   { icon: Search, title: 'Chọn kho', description: 'Chọn kích thước và thời gian thuê.' },
@@ -16,7 +16,6 @@ const steps = [
 export function LandingPage() {
   const { storageSizes, storageListings, approvedDurations } = useCatalog()
   const duration = String(approvedDurations.includes(3) ? 3 : approvedDurations[0])
-  const photo = imageCredits.warehouse
   const conditions = [
     { id: 'standard', label: 'Kho tiêu chuẩn' },
     { id: 'climate', label: 'Kho điều hòa' },
@@ -32,7 +31,7 @@ export function LandingPage() {
             <Link className="landing-text-link" to="/size-guide">So sánh kích thước <ArrowRight size={17} aria-hidden="true" /></Link>
           </div>
           <figure>
-            <StorageImage src={photo.src} alt="Thùng hàng được xếp trên kệ trong kho" fetchPriority="high" />
+            <StorageImage src={landingWarehousePhoto} alt="Thùng hàng được xếp trên kệ trong kho" fetchPriority="high" />
           </figure>
         </div>
         <div className="landing-finder"><QuickFinder /></div>

@@ -5,7 +5,6 @@ import { ComparisonChoice } from '../../components/public/StorageComparison'
 import { StorageImage } from '../../components/public/StorageImage'
 import { ButtonLink } from '../../components/ui/ButtonLink'
 import { Container } from '../../components/ui/Container'
-import { imageCredits } from '../../data/storage'
 import { storageBookingHref, storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
 
 const rentalCosts = [
@@ -23,7 +22,6 @@ export function StorageDetailPage() {
 
   const size = storageSpecifications(unit, getStorageSize(unit.sizeId)!)
   const hasPrice = typeof unit.monthlyPrice === 'number' && Number.isFinite(unit.monthlyPrice)
-  const credit = Object.values(imageCredits).find(item => item.src === unit.image)
   const facts = [
     ['Kích thước', size.dimensions],
     ['Thể tích', size.volume],
@@ -44,9 +42,7 @@ export function StorageDetailPage() {
     <section className="public-page-content"><Container>
       <div className="storage-detail-layout">
         <figure className="storage-detail-figure">
-          <StorageImage src={unit.image} alt={'Ảnh minh họa cho ' + unit.name} />
-          <span className="illustration-label">Ảnh minh họa</span>
-          {credit && <a href={credit.href} target="_blank" rel="noreferrer" className="image-credit">{credit.label}</a>}
+          <StorageImage src={unit.image} alt={unit.name} />
         </figure>
         <div className="storage-detail-panel">
           <header className="storage-detail-summary">

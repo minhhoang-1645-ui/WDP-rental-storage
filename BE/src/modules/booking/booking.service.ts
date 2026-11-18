@@ -699,12 +699,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       const selected = new Set(draft.selectedUnitIds);
       const allSelectedAvailable = selected.size === draft.quantity && [...selected].every((id) => unitIds.includes(id) && !blocked.has(id));
       if (!allSelectedAvailable) {
-        return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'CONFLICT', message: 'Một hoặc nhiều kho bạn chọn không còn phù hợp cho toàn bộ thời hạn thuê. Vui lòng chọn lại trên sơ đồ.', quote };
+        return { available: false, availableQuantity: availableUnits, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode: 'CONFLICT', message: 'Một hoặc nhiều kho bạn chọn không còn phù hợp cho toàn bộ thời hạn thuê. Vui lòng chọn lại trên sơ đồ.', quote };
       }
     }
     if (availableUnits >= draft.quantity) {
       return {
         available: true,
+        availableQuantity: availableUnits,
         startDate: draft.startDate,
         endDateExclusive,
         periodStatus: quote.periodStatus,
@@ -720,7 +721,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       : reasonCode === 'CONFLICT'
         ? 'Không đủ kho cho toàn bộ khoảng thuê vì có reservation đã xác nhận bị trùng thời gian.'
         : `Chỉ còn ${availableUnits} kho phù hợp, ít hơn số lượng ${draft.quantity} đang yêu cầu.`;
-    return { available: false, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode, message, quote };
+    return { available: false, availableQuantity: availableUnits, startDate: draft.startDate, endDateExclusive, periodStatus: quote.periodStatus, reasonCode, message, quote };
   }
 
   private async approvedRenewalBlockedUnitIds(db: DbClient, candidateUnitIds: string[], start: Date, end: Date) {

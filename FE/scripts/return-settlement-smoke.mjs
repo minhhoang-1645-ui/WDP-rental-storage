@@ -71,7 +71,7 @@ try {
   readinessDebt = null;
   await page.reload();
   await selectChoice(page.getByRole('combobox', { name: 'Yêu cầu thuê đủ điều kiện trả', exact: true }), rental().reservationId);
-  await page.getByText('Chưa xác định được công nợ.', { exact: false }).waitFor();
+  await page.getByText('Chưa xác định được số tiền còn thiếu.', { exact: false }).waitFor();
   assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
 
   debt = readinessDebt = 3000000;
@@ -81,12 +81,12 @@ try {
   assert.equal(await manager.page.getByRole('combobox', { name: 'Cách xử lý công nợ', exact: true }).count(), 0);
   assert.equal(await manager.page.getByRole('button', { name: 'Lưu quyết định công nợ', exact: true }).count(), 0);
   await manager.page.locator('textarea').fill('Chấp thuận thời điểm trả sớm, phải tất toán trước khi trả kho.');
-  await manager.page.getByRole('checkbox', { name: 'Tôi đã đối chiếu công nợ, cọc và điều kiện với hồ sơ hiện tại', exact: true }).check();
+  await manager.page.getByRole('checkbox', { name: 'Tôi đã kiểm tra hóa đơn, tiền cọc và điều kiện trả kho', exact: true }).check();
   assert(await manager.page.getByRole('button', { name: 'Lưu quyết định trả sớm', exact: true }).isEnabled());
   await shot(manager.page, 'manager-settlement-policy');
   decided = true;
   await manager.page.reload();
-  await manager.page.getByRole('heading', { name: 'Công nợ khi trả sớm', exact: true }).waitFor();
+  await manager.page.getByRole('heading', { name: 'Thanh toán đủ trước khi trả kho', exact: true }).waitFor();
   assert.equal(await manager.page.locator('select').count(), 0);
   assert.equal(await manager.page.locator('textarea').count(), 0);
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);

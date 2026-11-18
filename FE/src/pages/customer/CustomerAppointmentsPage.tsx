@@ -6,6 +6,7 @@ import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { CalendarClock, CalendarPlus, History, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from "../../auth/auth-context";
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import { formatPortalDate } from "../../components/customer/CustomerPortalHelpers";
@@ -28,6 +29,8 @@ import type {
 
 export function CustomerAppointmentsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const focused = params.get('appointment');
   const appointments = usePaginatedResource<CustomerAppointment>(
     "/customer/appointments?limit=100",
     user?.id ?? "",
@@ -97,7 +100,7 @@ export function CustomerAppointmentsPage() {
   const maximumAppointment = selectedReservation ? vietnamLocalMinute(Date.parse(`${selectedReservation.endDate}T00:00:00+07:00`) - 60000) : undefined;
   const filteredAppointments = (appointments.data?.items ?? []).filter(
     (item) =>
-      view === "upcoming"
+      focused ? item.id === focused : view === "upcoming"
         ? ['REQUESTED', 'CONFIRMED'].includes(item.status)
         : ["COMPLETED", "CANCELLED"].includes(item.status),
   );
@@ -155,7 +158,7 @@ export function CustomerAppointmentsPage() {
   };
 
   return (
-    <section className="customer-page">
+    <section className={focused ? "customer-page record-detail-page" : "customer-page"}>
       <PortalPageHeader
         eyebrow="Lịch hẹn"
         title="Lịch bàn giao của tôi"
@@ -171,8 +174,9 @@ export function CustomerAppointmentsPage() {
           </button>
         }
       />
-      <div className="customer-module-layout">
+      <div className={focused ? "record-focused-layout" : "customer-module-layout"}>
         <section className="customer-appointments-list" aria-label="Các yêu cầu bàn giao">
+          {focused ? <p className="customer-filter-notice"><Link to="/customer/appointments">Xem tất cả lịch</Link></p> :
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -192,7 +196,7 @@ export function CustomerAppointmentsPage() {
             >
               <History size={17} /> Đã hoàn tất / hủy
             </button>
-          </div>
+          </div>}
           {appointments.status === 401 ? (
             <CustomerSessionExpired />
           ) : appointments.loading ? (
@@ -206,7 +210,7 @@ export function CustomerAppointmentsPage() {
             <PortalEmpty
               icon={<CalendarClock size={30} />}
               title={
-                view === "upcoming"
+                focused ? "Lịch bàn giao không còn khả dụng" : view === "upcoming"
                   ? "Chưa có lịch chờ nhận kho"
                   : "Chưa có lịch sử hẹn"
               }
@@ -228,9 +232,9 @@ export function CustomerAppointmentsPage() {
                     <CustomerStatus status={item.status} />
                   </div>
                   <div className={`appointment-assignment${item.assignmentStatus === 'ASSIGNED' ? ' is-assigned' : ''}`}>
-                    <strong>{item.status === 'CANCELLED' ? 'Lịch đã hủy' : item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang phân công lại nhân viên' : item.assignedStaff ? `Phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Đã bàn giao kho' : 'Yêu cầu của bạn đã được gửi'}</strong>
+                    <strong>{item.status === 'CANCELLED' ? 'Lịch đã hủy' : item.assignmentStatus === 'NEEDS_REASSIGNMENT' ? 'Đang phân công lại nhân viên' : item.assignedStaff ? `Phụ trách: ${item.assignedStaff.fullName}` : item.status === 'COMPLETED' ? 'Đã bàn giao kho' : 'Đang chờ quản lý phân công'}</strong>
                   </div>
-                  <details className="appointment-request-detail"><summary>Chi tiết yêu cầu</summary>
+                  <details className="appointment-request-detail" open={focused ? true : undefined}><summary>Chi tiết yêu cầu</summary>
                   <p>Đơn đặt kho: <strong>{item.reservation.reference}</strong></p>
                   <CopyRecordCode value={item.appointmentCode} />
                   {item.note && <p>Ghi chú: {item.note}</p>}
@@ -242,7 +246,7 @@ export function CustomerAppointmentsPage() {
             </div>
           )}
         </section>
-        <form className="customer-panel customer-module-form" onSubmit={submit}>
+        {!focused && <form className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources
             resources={[contracts, appointments]}
             retry={() => {
@@ -338,7 +342,7 @@ export function CustomerAppointmentsPage() {
               <small>Hiện chưa có yêu cầu đặt kho đủ điều kiện đặt lịch.</small>
             )}
           </fieldset>
-        </form>
+        </form>}
       </div>
       {pagination}
     </section>

@@ -1,4 +1,4 @@
-import { RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
+
 import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
@@ -124,7 +124,7 @@ export function CustomerReservationsPage() {
                       <th>Số lượng / kích thước</th>
                       <th>Thời gian thuê</th>
                       <th>Ưu tiên</th>
-                      <th>Thanh toán</th>
+                      <th>Giá lúc đặt</th>
                       <th>Trạng thái</th>
                       <th>Tạo lúc</th>
                     </tr>
@@ -154,7 +154,7 @@ export function CustomerReservationsPage() {
                             {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentStartDate ?? item.startDate)} –{" "}
                             {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
                           </span>
-                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
+
                         </td>
                         <td>
                           {item.adjacencyPreference
@@ -162,7 +162,7 @@ export function CustomerReservationsPage() {
                             : "Không yêu cầu"}
                         </td>
                         <td>
-                          <ReservationPaymentSummary summary={item.rentalSummary} />
+                          <ReservationPaymentSummary amount={item.quote.quotedTotalAmount ?? item.quote.grandTotal} />
                         </td>
                         <td>
                           <ReservationStatus status={item.status} />
@@ -194,12 +194,12 @@ export function CustomerReservationsPage() {
                         <dd>
                           {formatPortalDate(item.startDate)} –{" "}
                           {formatPortalDate(item.rentalSummary?.rentalPeriod?.currentEndDate ?? item.endDateExclusive)}
-                          <RentalPeriodCaption period={item.rentalSummary?.rentalPeriod} />
+
                         </dd>
                       </div>
                       <div>
-                        <dt>Thanh toán</dt>
-                        <dd><ReservationPaymentSummary summary={item.rentalSummary} /></dd>
+                        <dt>Giá lúc đặt</dt>
+                        <dd><ReservationPaymentSummary amount={item.quote.quotedTotalAmount ?? item.quote.grandTotal} /></dd>
                       </div>
                     </dl>
                     <Link

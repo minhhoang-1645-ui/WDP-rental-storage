@@ -65,7 +65,7 @@ export function SizeGuidePage() {
               <th scope="col">Thông tin</th>
               {compared.map(product => <th scope="col" key={product.id} data-product-id={product.id}>
                 <button className="comparison-remove" type="button" aria-label={`Bỏ so sánh ${product.name}`} onClick={() => remove(product.id)}><X size={17} /></button>
-                <StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} />
+                <StorageImage src={product.image} alt="" />
                 <small>{product.code}</small>
                 <h3>{product.name}</h3>
                 <Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link>
@@ -98,7 +98,7 @@ export function SizeGuidePage() {
         </div>
         <div className="comparison-candidates">
           {products.map(product => <article className="comparison-candidate" key={product.id} data-candidate-id={product.id}>
-            <StorageImage src={product.image} alt={`Ảnh tham khảo cho ${product.name}`} loading="lazy" />
+            <StorageImage src={product.image} alt="" loading="lazy" />
             <div>
               <small>{product.code}</small>
               <h2>{product.name}</h2>
@@ -112,7 +112,7 @@ export function SizeGuidePage() {
           </article>)}
         </div>
       </>}
-      <p className="comparison-note">Ảnh tham khảo. Số kho trống phụ thuộc vào thời gian thuê.</p>
+      <p className="comparison-note">Số kho trống phụ thuộc vào thời gian thuê.</p>
     </Container></section>
   </div>
 }

@@ -116,6 +116,7 @@ export interface PricingQuote extends PricingEstimate {
 
 export interface AvailabilityResult {
   available: boolean
+  availableQuantity?: number
   startDate: string
   endDateExclusive: string
   periodStatus: PricingEstimate['periodStatus']

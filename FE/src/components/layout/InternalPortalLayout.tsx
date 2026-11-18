@@ -19,12 +19,13 @@ import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
 import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell } from '../../activity/ActivityCenter';
-import { WorkspaceNotificationDropdown } from '../../activity/WorkspaceNotificationDropdown';
 import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
+import { staffPriorityActivities } from '../../utils/activity';
 import { actionCountForPath } from '../../utils/notification-tools';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
-const normalizeNavigation = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
+const matchesAlias = (item: InternalNavItem, pathname: string) =>
+  Boolean(item.match?.some(path => item.end ? pathname === path : matchesPath(pathname, path)));
 export interface InternalNavItem {
   to: string;
   label: string;
@@ -48,8 +49,7 @@ export function InternalPortalLayout({
   const { user, logout } = useAuth();
   const activity = useActivity();
   const location = useLocation();
-  const notificationRole = user?.role === 'STAFF' || user?.role === 'MANAGER' ? user.role : undefined;
-  const notificationInbox = notificationRole ? workspaceInboxPath(notificationRole) : undefined;
+  const notificationInbox = user ? workspaceInboxPath(user.role) : undefined;
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
   const profileMenu = themed && user && ['STAFF', 'MANAGER', 'ADMIN'].includes(user.role) ? user : null;
@@ -60,8 +60,6 @@ export function InternalPortalLayout({
     setCollapsed(!collapsed);
   }
   useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
-  const [navigationFilter, setNavigationFilter] = useState({ path: location.pathname, value: '' });
-  const navigationSearch = navigationFilter.path === location.pathname ? navigationFilter.value : '';
   const signOut = () => {
     startTransition(() => {
       logout();
@@ -70,7 +68,7 @@ export function InternalPortalLayout({
   };
   const mobile = useRef<HTMLDialogElement>(null);
   const settingsPath = `/${user?.role.toLowerCase()}/settings`;
-  const openSettings = (section: 'profile' | 'appearance') => {
+  const openSettings = (section: 'profile' | 'security' | 'appearance') => {
     mobile.current?.close();
     navigate(`${settingsPath}/${section}`);
   };
@@ -92,8 +90,19 @@ export function InternalPortalLayout({
         : matchesPath(location.pathname, item.to),
     )
     .sort((a, b) => b.to.length - a.to.length)[0];
-  const parent = navigation.find(item => item.to !== active?.to
-    && item.match?.some(path => matchesPath(location.pathname, path)));
+  const parent = navigation.find(item => item.to !== active?.to && matchesAlias(item, location.pathname));
+  const staff = user?.role === 'STAFF';
+  const staffSection = staff ? active ?? parent : undefined;
+  const isStaffDetail = staffSection && staffSection.to !== '/staff' && (
+    [staffSection.to, ...(parent?.match ?? [])].some(path => location.pathname.startsWith(path + '/'))
+    || staffSection.to === '/staff/damage-claims' && new URLSearchParams(location.search).has('claim')
+  );
+  const crumb = location.pathname.endsWith('/notifications') ? 'Thông báo'
+    : matchesPath(location.pathname, settingsPath) ? 'Cài đặt tài khoản'
+    : staff && location.pathname === '/staff/overstays' ? 'Kho quá hạn chưa trả'
+    : isStaffDetail ? 'Chi tiết'
+    : staffSection?.label ?? active?.label ?? 'Hồ sơ chi tiết';
+  const crumbParent = staff ? isStaffDetail ? staffSection : undefined : parent;
   const brand: ReactNode = (
     <Link
       className="portal-brand"
@@ -117,24 +126,30 @@ export function InternalPortalLayout({
       </div>
     </Link>
   );
+  const navigationActivity = staff ? staffPriorityActivities(activity.entries) : activity.entries;
+  const countFor = (item: InternalNavItem) => item.end ? 0 : staff && item.to === '/staff/tasks'
+    ? navigationActivity.length : actionCountForPath(navigationActivity, [item.to, ...(item.match ?? [])]);
   const nav = (iconOnly = false) => (
     <nav aria-label={`Điều hướng ${label}`}>
-      {!iconOnly && navigation.length > 8 && <label className="workspace-nav-search"><span>{themed ? 'Tìm trong menu' : 'Tìm chức năng'}</span><input type="search" value={navigationSearch} onChange={event => setNavigationFilter({ path: location.pathname, value: event.target.value })} placeholder={themed ? user?.role === 'MANAGER' ? 'Phân công, hóa đơn…' : 'Đặt kho, bàn giao…' : 'Đặt kho, bàn giao, hóa đơn…'} /></label>}
       {groups.map(({ group, items }, index) => {
-        const matching = iconOnly ? items : items.filter(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim())));
-        if (!matching.length) return null;
-        const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
-        return <NavigationGroup key={`${group}:${Boolean(navigationSearch)}:`} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={Boolean(navigationSearch) || (themed ? index <= 2 : index === 1)} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
-          {matching.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
-            <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined} aria-label={iconOnly ? itemLabel : undefined} className={({ isActive }) => isActive || match?.some(path => matchesPath(location.pathname, path)) ? 'active' : undefined}>
-              <Icon size={17} />
+        const active = items.some(item => (item.end ? location.pathname === item.to : matchesPath(location.pathname, item.to))
+          || matchesAlias(item, location.pathname));
+        const count = staff ? 0 : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
+        return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
+          {items.map(item => {
+            const { to, label: itemLabel, icon: Icon, end, match } = item;
+            const aliasActive = matchesAlias(item, location.pathname);
+            const count = staff ? countFor(item) : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
+            return <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined}
+              aria-label={iconOnly ? itemLabel : undefined}
+              className={({ isActive }) => isActive || aliasActive ? 'active' : undefined}>
+              <Icon size={17} aria-hidden="true" />
               <span>{itemLabel}</span>
-              {actionCountForPath(activity.entries, [to,...match ?? []]) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, [to,...match ?? []])}</b>}
-            </NavLink>
-          ))}
+              {count > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{staff && count > 99 ? '99+' : count}</b>}
+            </NavLink>;
+          })}
         </NavigationGroup>;
       })}
-      {!iconOnly && navigationSearch && !navigation.some(item => normalizeNavigation(item.label).includes(normalizeNavigation(navigationSearch.trim()))) && <p className="workspace-nav-empty">Không có mục phù hợp. Đổi từ khóa để tìm lại.</p>}
     </nav>
   );
   const account = (
@@ -174,20 +189,21 @@ export function InternalPortalLayout({
             >
               <Menu size={19} />
             </button>
-            <span>{label}</span>
-            <span className="portal-topbar-divider">/</span>
-            {parent && <>
-              <Link className="portal-topbar-parent" to={parent.to}>{parent.label}</Link>
-              <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
-            </>}
-            <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo & việc cần làm' : matchesPath(location.pathname, settingsPath) ? "Cài đặt tài khoản" : active?.label ?? "Hồ sơ chi tiết"}</strong>
+            <nav className="portal-breadcrumb" aria-label="Đường dẫn">
+              <span className="portal-breadcrumb-root">{label}</span>
+              <span className="portal-topbar-divider" aria-hidden="true">/</span>
+              {crumbParent && <>
+                <Link className="portal-topbar-parent" to={crumbParent.to}>{crumbParent.label}</Link>
+                <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
+              </>}
+              <strong aria-current="page">{crumb}</strong>
+            </nav>
           </div>
           <div className="portal-topbar-actions">
-            {user && notificationRole
-              ? <WorkspaceNotificationDropdown role={notificationRole} userId={user.id} /> : <ActivityBell />}
+            <ActivityBell />
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}
               roleLabel={roleLabel(profileMenu.role)} theme={theme} onToggleTheme={toggleTheme}
-              onProfile={() => openSettings('profile')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />
+              onProfile={() => openSettings('profile')} onSecurity={() => openSettings('security')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />
               : <span className="portal-role">{roleLabel(user?.role)}</span>}
           </div>
         </header>

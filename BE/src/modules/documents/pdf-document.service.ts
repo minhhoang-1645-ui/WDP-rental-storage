@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
 import { DocumentPolicy } from './document-policy.js';
 import { signaturePngBytes } from '../contracts/signature.js';
+import type { InvoiceBreakdown } from '../billing/invoice-breakdown.js';
 
 const money = (value: unknown) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${new Intl.NumberFormat('vi-VN').format(Number(value))} đ` : 'Chưa xác định';
 const date = (value: unknown) => { const text = typeof value === 'string' ? value : value instanceof Date ? value.toISOString() : ''; const parsed = new Date(text); return text && !Number.isNaN(parsed.getTime()) ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', ...(text.includes('T') ? { hour: '2-digit', minute: '2-digit' } : {}) }).format(parsed) : 'Chưa ghi nhận'; };
@@ -84,15 +85,38 @@ export class PdfDocumentService {
       this.section(pdf, 'Khách thuê'); this.paragraph(pdf, `${customer?.fullName || 'Khách thuê'} | ${customer?.email || ''} | ${customer?.phone || 'Chưa cung cấp điện thoại'}`);
       this.rows(pdf, [['Mã đặt kho', invoice.reservation.reference], ['Ngày phát hành', date(invoice.issuedAt)], ['Kỳ tính phí', `${date(invoice.billingPeriodStart)} đến ${date(invoice.billingPeriodEnd)} (không gồm ngày cuối)`], ['Tình trạng', ({ OPEN: 'Chưa thanh toán', PARTIALLY_PAID: 'Đã thanh toán một phần', PAID: 'Đã thanh toán đủ', VOID: 'Đã hủy' } as any)[invoice.status] ?? invoice.status]]);
       this.section(pdf, 'Chi tiết khoản thu của hóa đơn này');
+      const breakdown = invoice.breakdown as InvoiceBreakdown | null | undefined;
+      if (breakdown) {
+        for (const unit of breakdown.units) {
+          this.paragraph(pdf, `${unit.unitCode} - ${unit.storageTypeName} - ${unit.contractCode}`);
+          this.rows(pdf, [['Đơn giá tháng', money(unit.monthlyRate)], ['Tiền thuê', money(unit.rentalAmount)], ['Tiền cọc', money(unit.depositAmount)], ['Cộng tiền kho', money(unit.rentalAmount + unit.depositAmount)]]);
+        }
+        if (breakdown.sharedServices.length) {
+          this.section(pdf, 'Dịch vụ chung');
+          for (const service of breakdown.sharedServices) {
+            const billingUnit = { ONE_TIME: 'một lần', DAY: 'theo ngày', MONTH: 'theo tháng' }[service.billingUnit];
+            const periods = service.billablePeriods ? ` × ${service.billablePeriods} ${service.billingUnit === 'DAY' ? 'ngày' : 'tháng'}` : '';
+            this.rows(pdf, [[`${service.name} - ${service.quantity} ${service.physicalUnit ?? ''}${periods} - ${money(service.unitPrice)} ${billingUnit}`, money(service.amount)]]);
+          }
+        }
+      } else this.paragraph(pdf, 'Chứng từ này lưu số tiền tổng hợp.');
+      if (invoice.replacesInvoice) this.paragraph(pdf, `Thay hóa đơn ${invoice.replacesInvoice.invoiceCode}`);
+      if (invoice.replacementInvoice) this.paragraph(pdf, `Được thay bằng ${invoice.replacementInvoice.invoiceCode}`);
+      this.section(pdf, 'Tổng thanh toán');
       this.ensure(pdf, 230);
       this.rows(pdf, [['Tiền thuê kho (sau chiết khấu nếu có)', money(invoice.rentalAmount)], ['Tiền cọc', money(invoice.depositAmount)], ['Dịch vụ theo kỳ hóa đơn', money(invoice.serviceAmount)], ['Phí phát sinh được duyệt', money(invoice.chargeAmount)], ['Tổng hóa đơn', money(invoice.totalAmount)], ['Đã ghi nhận thanh toán', money(invoice.amountPaid)], ['CÒN PHẢI THANH TOÁN', money(invoice.balanceDue)]]);
       this.paragraph(pdf, 'Chỉ các khoản đã được xác nhận mới được tính vào số đã thanh toán. Thông báo chuyển khoản chờ kiểm tra chưa phải chứng từ thu tiền. Chi tiết báo giá toàn kỳ không phải khoản thu lặp lại của hóa đơn này.');
       if (invoice.payments?.length) { this.section(pdf, 'Lịch sử thu tiền đã xác nhận'); for (const payment of invoice.payments) this.paragraph(pdf, `${date(payment.receivedAt)} - ${money(payment.amount)} - ${payment.method === 'CASH' ? 'Tiền mặt' : payment.method === 'VNPAY' ? 'VNPay' : 'Chuyển khoản'} - ${payment.paymentCode}`); }
       this.section(pdf, 'Chữ ký từ hợp đồng liên quan');
       this.paragraph(pdf, 'Các chữ ký dưới đây được sao chiếu từ hợp đồng khách đã ký, không phải chữ ký xác nhận mới cho hóa đơn và không phải chữ ký số chứng thực.');
-      for (const contract of contracts) { this.paragraph(pdf, `${contract.contractCode} - ${contract.storageUnit.unitCode}`); this.signature(pdf, contract.terms); }
+      const billedContracts = breakdown?.units.length ? contracts.filter(contract => breakdown.units.some(unit => unit.contractId === contract.id)) : contracts;
+      for (const contract of billedContracts) {
+        const unit = breakdown?.units.find(item => item.contractId === contract.id);
+        this.paragraph(pdf, `${contract.contractCode} - ${unit?.unitCode ?? contract.storageUnit.unitCode}`);
+        this.signature(pdf, contract.terms);
+      }
       if (renewal?.appendix) { this.section(pdf, `Phụ lục liên quan: ${renewal.appendix.code}`); this.signature(pdf, renewal.appendix); }
-      if (!contracts.length) this.paragraph(pdf, 'Chưa có hợp đồng liên quan đã được xác nhận.');
+      if (!billedContracts.length) this.paragraph(pdf, 'Chưa có hợp đồng liên quan đã được xác nhận.');
       this.paragraph(pdf, 'Đây là chứng từ nội bộ phục vụ đối chiếu, không thay thế hóa đơn điện tử thuế do hệ thống có thẩm quyền phát hành.', 9);
     });
   }

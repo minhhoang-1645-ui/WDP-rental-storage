@@ -7,5 +7,5 @@ export function ManagerSectionPage({ section }: { section: ManagerSection }) {
   if (section === 'reviews') return <ManagerReviewInbox />;
   const config = managerSections[section];
   const actions: WorkAction[] = config.items.map(item => ({ title: item.title, description: item.description, to: item.web, icon: ClipboardCheck }));
-  return <section><PageHeader title={config.title} /><WorkHub title="Danh sách nghiệp vụ" description="" actions={actions} /></section>;
+  return <section><PageHeader title={config.title} /><WorkHub title="Chọn công việc" description="" actions={actions} /></section>;
 }

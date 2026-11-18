@@ -84,8 +84,6 @@ input[type=checkbox], input[type=radio] { min-height:0; }
 .customer-status--paid,.customer-status--active,.customer-status--completed { background:#ecfdf5; color:#166534; }
 .customer-status--pending,.customer-status--open,.customer-status--requested { background:#fff7db; color:#854d0e; }
 .customer-status--cancelled,.customer-status--rejected,.customer-status--expired { background:#fef2f2; color:#991b1b; }
-.portal-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; font-size:14px; margin-top:20px; }
-.portal-pagination>div { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .internal-page-size { display:flex; align-items:center; gap:8px; font-size:14px; }
 .internal-page-size select { width:74px; min-height:40px; }
 .portal-pagination :is(.button-primary,.button-secondary) { margin:0; display:inline-flex; }
@@ -100,7 +98,7 @@ input[type=checkbox], input[type=radio] { min-height:0; }
 .wdp-public h2 { font-size:clamp(22px,2.4vw,30px); line-height:1.3; }
 .wdp-public .section-space { padding-block:52px; }
 :is(.finder-grid input,.finder-grid select,.storage-card-content p,.storage-card-specs,.storage-card-capacity) { font-size:14px; }
-.storage-card-condition,.storage-card-image-note,.illustration-label,.image-credit { font-size:13px; }
+.storage-card-condition { font-size:13px; }
 .public-footer { background:#f1f5f9; color:var(--color-ink); border-top:1px solid var(--color-border); }
 .public-footer :is(p,a,#contact p) { color:var(--color-slate); font-size:14px; }
 .public-footer h2 { color:var(--color-ink); }

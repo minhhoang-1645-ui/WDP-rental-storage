@@ -13,7 +13,7 @@ function setup(balance = 0n, endDate = '2030-05-17') {
     supportRequests: [{ id: 'proposal', status: 'RESOLVED', lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: `early-return:proposal:${endDate}`, resolvedBy: { role: 'MANAGER' }, earlyReturnFinancialReview: { disposition: 'WAIVE_UNUSED' } }],
     invoices: [{ id: 'initial', type: 'INITIAL', status: 'PAID', invoiceCode: 'I01', totalAmount: 3000000n, amountPaid: 3000000n, balanceDue: 0n, depositAmount: 1500000n }, { id: 'future', type: 'RENEWAL', status: balance ? 'OPEN' : 'PAID', invoiceCode: 'FUTURE', totalAmount: 1500000n, amountPaid: 1500000n - balance, balanceDue: balance, depositAmount: 0n }],
   };
-  const row = { id: 'return', status: 'INSPECTION_IN_PROGRESS', reservationId: reservation.id, returnCode: 'RETURN', reservation, inspections: [{ id: 'inspection', result: 'PASS', issueType: null, storageUnitId: 'unit', rentalContractId: 'contract' }] };
+  const row = { id: 'return', status: 'INSPECTION_IN_PROGRESS', assignedStaffUserId: staff.id, reservationId: reservation.id, returnCode: 'RETURN', reservation, inspections: [{ id: 'inspection', result: 'PASS', issueType: null, storageUnitId: 'unit', rentalContractId: 'contract' }] };
   const tx = { $queryRaw: vi.fn(), reservation: { findUnique: vi.fn().mockResolvedValue(reservation) },
     returnRequest: { findUnique: vi.fn(async ({ where }) => where.id ? row : null), findUniqueOrThrow: vi.fn(async () => row), create: vi.fn(), count: vi.fn().mockResolvedValue(0), update: vi.fn(async ({ data }) => Object.assign(row, data)) },
     rentalContract: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, reservationUnit: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },

@@ -29,7 +29,7 @@ try {
   approved = true;
   await page.reload();
   await page.getByText('RENEWAL-FUTURE-TEST', { exact: false }).first().waitFor();
-  await page.getByRole('button', { name: 'Chi tiết & chuyển khoản', exact: true }).click();
+  await page.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
   await page.getByText('Kho đã được duyệt trả trước hạn.', { exact: false }).waitFor();
   assert.equal(await page.getByText('Hóa đơn gia hạn chưa đến kỳ thanh toán.', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Ngân hàng kiểm thử', { exact: false }).count() > 0, true);

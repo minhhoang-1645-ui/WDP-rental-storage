@@ -1,8 +1,21 @@
 import type { StockLine } from '../../types/stock';
 
-export function StockReconciliation({ lines, quantities, onQuantityChange, movementType = 'IN' }: {
+export function StockReconciliation({ lines, quantities, onQuantityChange, movementType = 'IN', compact = false }: {
   lines: StockLine[]; quantities?: Record<string, string>; onQuantityChange?: (id: string, value: string) => void; movementType?: 'IN' | 'OUT';
+  compact?: boolean;
 }) {
+  if (compact && !onQuantityChange) {
+    if (!lines.length) return <p>Chưa có mặt hàng trong phiếu.</p>;
+    return <div className="stock-result-table">
+      <table className="manager-table" aria-label="Số lượng hàng giao nhận">
+        <thead><tr><th scope="col">Mặt hàng</th><th scope="col">Yêu cầu</th><th scope="col">Thực tế</th><th scope="col">Đang lưu</th></tr></thead>
+        <tbody>{lines.map(({ id, storedItem, requestedQty, actualQty, note }) => <tr key={id}>
+          <th scope="row">{storedItem.name}<small>Đơn vị: {storedItem.unit}</small>{note && <small>{note}</small>}</th>
+          <td data-label="Yêu cầu">{requestedQty}</td><td data-label="Thực tế">{actualQty ?? 'Chưa kiểm đếm'}</td><td data-label="Đang lưu">{storedItem.balance}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>;
+  }
   return <div className="stock-reconciliation" aria-label="Đối chiếu hàng hóa">{lines.map(line => {
     const draft = quantities?.[line.id];
     const actual = onQuantityChange ? draft?.trim() ? Number(draft) : null : line.actualQty;

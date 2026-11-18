@@ -21,17 +21,17 @@ export class StaffTransfersController {
   @ApiQuery({ name: 'search', required: false, example: 'WDP-TRF' })
   @ApiOkResponse({ description: 'Danh sách lệnh chuyển kho có phân trang.' })
   @ApiBadRequestResponse({ description: 'Filter không hợp lệ.' })
-  list(@Query() query: Record<string, unknown>) {
+  list(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const status = typeof query.status === 'string' && query.status ? query.status : undefined;
     if (status && !['APPROVED', 'COMPLETED'].includes(status)) throw new BadRequestException('Staff chỉ được xem Transfer APPROVED hoặc COMPLETED.');
-    return this.transfers.listForStaff(query);
+    return this.transfers.listForStaff(query, req.user!);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết lệnh chuyển kho cho Staff' })
   @ApiOkResponse({ description: 'Thông tin kho nguồn, kho đích và hợp đồng cần chuyển.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lệnh APPROVED/COMPLETED.' })
-  get(@Param('id') id: string) { return this.transfers.getForStaff(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.transfers.getForStaff(id, req.user!); }
 
   @Post(':id/complete')
   @ApiOperation({ summary: 'Hoàn tất chuyển unit vật lý', description: 'Atomically: allocation cũ được giữ và release, unit cũ → MAINTENANCE, unit mới → OCCUPIED, Contract giữ nguyên record.' })

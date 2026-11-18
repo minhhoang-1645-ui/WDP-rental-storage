@@ -84,16 +84,15 @@ export class ManagerDocumentsController {
 @Roles('STAFF')
 export class StaffDocumentsController {
   @Get('transfer-addenda/:id')
-  async transferAddendum(@Param('id') id: string, @Res() response: Response) { const record = await this.transfers.get(id); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
-  constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
+  async transferAddendum(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.transfers.getForStaff(id, request.user!); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
+  constructor(private readonly contracts: ContractsService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
-  async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
-    const record = await this.contracts.getManagerContract(id);
+  async transfer(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
+    await this.transfers.getForStaff(transferId, request.user!);
+    const record = await this.contracts.getManagerContract(id, request.user!.id);
     const transfer = completedTransfer(record, transferId);
     send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
   }
   @Get('contracts/:id')
-  async contract(@Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id); send(response, await this.pdf.contract(record), record.contractCode); }
-  @Get('renewals/:id')
-  async appendix(@Param('id') id: string, @Res() response: Response) { const record = await this.renewals.getManagerRenewal(id); if (!record.appendix?.snapshot) throw new NotFoundException('Phụ lục chưa được lập hoặc thiếu bản nội dung gốc.'); send(response, await this.pdf.appendix(record, record.customer), record.appendix.code); }
+  async contract(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id, request.user!.id); send(response, await this.pdf.contract(record), record.contractCode); }
 }

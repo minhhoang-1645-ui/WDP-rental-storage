@@ -80,7 +80,7 @@ describe('Maintenance V1', () => {
     expect(retry.id).toBe(created.id);
     expect(created).toMatchObject({ source: 'MANUAL', status: 'OPEN', priority: 'HIGH', category: 'FACILITY_EQUIPMENT' });
     expect((await unit(0)).status).toBe('MAINTENANCE');
-    await expect(maintenance.createManual({ storageUnitId: (await unit(0)).id, category: 'OTHER', description: 'Another issue exists.' }, key('duplicate'), manager)).rejects.toBeInstanceOf(ConflictException);
+    await expect(maintenance.createManual({ storageUnitId: (await unit(0)).id, category: 'OTHER', description: 'Another issue exists.' }, key('duplicate'), staff)).rejects.toBeInstanceOf(ConflictException);
     expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit(0)).id } })).toBe(1);
   });
 
@@ -91,13 +91,17 @@ describe('Maintenance V1', () => {
     await expect(manual(0, customer)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('supports Staff/Manager reads, filters, Manager manual creation and never exposes passwordHash', async () => {
-    await manual(0, manager);
-    const staffList = await maintenance.listStaff({ page: 1, limit: 20, status: 'OPEN', priority: 'HIGH', category: 'FACILITY_EQUIPMENT', assignedToMe: false, search: unitCodes[0] }, staff);
+  it('scopes Staff reads by assignment and keeps the Manager view', async () => {
+    const request = await manual(0, staff);
+    const filter = { page: 1, limit: 20, assignedToMe: false, search: unitCodes[0] };
+    expect((await maintenance.listStaff(filter, staff)).total).toBe(0);
+    await maintenance.assign(request.id, { staffUserId: staff.id }, key('assign-read'), manager);
+    const staffList = await maintenance.listStaff(filter, staff);
+    expect((await maintenance.listStaff(filter, otherStaff)).total).toBe(0);
     const managerList = await maintenance.listManager({ page: 1, limit: 20, status: 'OPEN', search: unitCodes[0] });
     expect(staffList.total).toBe(1); expect(managerList.total).toBe(1);
     expect(JSON.stringify(await maintenance.getManager(managerList.items[0].id))).not.toContain('secret-hash');
-    expect(JSON.stringify(await maintenance.getStaff(staffList.items[0].id))).not.toContain('returnContext');
+    expect(JSON.stringify(await maintenance.getStaff(staffList.items[0].id, staff))).not.toContain('returnContext');
   });
 
   it('enforces STAFF assignment, Manager-only assignment/priority, and assigned-worker start rules', async () => {
@@ -144,7 +148,7 @@ describe('Maintenance V1', () => {
     ]);
     expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit()).id, status: 'COMPLETED' } })).toBe(1);
-    const next = await manual(0, manager, key('new-case'));
+    const next = await manual(0, staff, key('new-case'));
     expect(next.status).toBe('OPEN');
     expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit()).id } })).toBe(2);
   });

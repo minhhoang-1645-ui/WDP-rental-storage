@@ -1,4 +1,3 @@
-import { StaffWorkflow } from '../auth/operation-access.js';
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { RejectRenewalRequestDto } from '../../openapi/api-dtos.js';
@@ -7,27 +6,26 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { RenewalsService, type RenewalListQuery } from './renewals.service.js';
 
-@Controller(['manager/renewals', 'staff/management/renewals'])
-@StaffWorkflow()
+@Controller('manager/renewals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('MANAGER')
 @ApiTags('Manager Renewal')
 @ApiBearerAuth('bearerAuth')
 export class ManagerRenewalsController {
   constructor(private readonly renewals: RenewalsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách Renewal cho nhân viên' })
+  @ApiOperation({ summary: 'Danh sách yêu cầu gia hạn' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDPR-2027' })
   @ApiQuery({ name: 'status', required: false, enum: ['PENDING', 'APPROVED_PENDING_PAYMENT', 'COMPLETED', 'REJECTED'] })
   @ApiOkResponse({ description: 'Stable pagination, customer/contracts/units và renewal billing status.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
+  @ApiForbiddenResponse({ description: 'Chỉ quản lý được xử lý yêu cầu gia hạn chờ quyết định.' })
   list(@Query() input: Record<string, unknown>) { return this.renewals.listManagerRenewals(this.query(input)); }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết Renewal cho nhân viên' })
+  @ApiOperation({ summary: 'Chi tiết yêu cầu gia hạn' })
   @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
   @ApiOkResponse({ description: 'Renewal snapshot, contracts/units, invoices và payments.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Renewal.' })

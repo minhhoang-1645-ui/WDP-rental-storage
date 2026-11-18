@@ -2,6 +2,9 @@ import { selectChoice } from './select-choice.mjs';
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
 import { launchTestBrowser } from "./browser-test.mjs";
+import { mkdir } from 'node:fs/promises';
+const uiAudit = process.argv.includes('--ui-audit');
+if (uiAudit) await mkdir('artifacts/web-ui-audit', { recursive: true });
 const base = process.env.WDP_FE_URL || "http://127.0.0.1:5173";
 const browser = await launchTestBrowser();
 const customer = {
@@ -44,7 +47,7 @@ const quote = {
   paymentPlan: "PAY_MONTHLY",
   lineItems: [],
 };
-const moved = new Set(['reservations', 'inquiries', 'appointments', 'renewals', 'returns', 'transfers', 'maintenance', 'support-requests', 'stock-movements']);
+const moved = new Set(['reservations', 'appointments', 'returns', 'transfers', 'maintenance', 'support-requests', 'stock-movements']);
 const when = "2026-10-11T03:00:00.000Z";
 const fixture = {
   units: [
@@ -519,7 +522,7 @@ try {
   const managerApp = await setup("MANAGER"), staffApp = await setup("STAFF");
   const context = managerApp.context;
   let page = managerApp.page;
-  for (const resource of Object.keys(fixture).filter(kind => kind !== "deposit-settlements")) {
+  for (const resource of Object.keys(fixture).filter(kind => kind !== "inquiries")) {
     page = moved.has(resource) ? staffApp.page : managerApp.page;
     const root = moved.has(resource) ? `/staff/${resource}` : ["units", "customers", "reservations", "inquiries"].includes(
       resource,
@@ -545,19 +548,33 @@ try {
     );
     assert.doesNotMatch(await page.locator("h1").innerText(), /Không tìm thấy/);
     checks.push(`${resource}: list and detail`);
+    if (uiAudit) {
+      for (const width of [1440, 768, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), resource + ': detail overflow at ' + width);
+        await page.screenshot({ path: 'artifacts/web-ui-audit/' + resource + '-detail-' + width + '.png', animations: 'disabled' });
+        await open(page, root);
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), resource + ': list overflow at ' + width);
+        await page.screenshot({ path: 'artifacts/web-ui-audit/' + resource + '-list-' + width + '.png', animations: 'disabled' });
+        await open(page, root + '/' + (fixture[resource][0].id || fixture[resource][0].reservationId));
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    }
     console.log(`PASS ${resource}: list and detail`);
   }
+  if (uiAudit) {
+    assert.deepEqual(errors, []);
+    assert.equal(writes.length, 0);
+    console.log('PASS web UI audit: ' + checks.length + ' resources, lists and details at 1440 / 768 / 390px. No database writes.');
+  } else {
   page = staffApp.page;
   await open(page, "/staff/reservations?search=RES-104");
   await page.getByRole("link", { name: "RES-104", exact: true }).waitFor();
   assert.equal(await page.locator(".manager-table tbody tr").count(), 1);
   checks.push("Search includes records beyond page 100");
   await open(page, "/staff/inquiries");
-  await page.getByRole("link", { name: "INQ-TEST", exact: true }).waitFor();
-  assert.equal(
-    await page.getByRole("link", { name: "RES-TEST", exact: true }).count(),
-    0,
-  );
+  await page.waitForURL("**/staff/reservations");
+  assert.equal(await page.getByRole("link", { name: "Tư vấn khách hàng", exact: true }).count(), 0);
   page = managerApp.page;
   await open(page, "/manager/operations/rentals?status=true");
   assert(
@@ -568,7 +585,7 @@ try {
   page = staffApp.page;
   await open(page, "/staff/returns?status=PENDING_SETTLEMENT");
   await page.getByRole("link", { name: "RET-TEST", exact: true }).waitFor();
-  checks.push("Correct inquiry separation and backend filter contracts");
+  checks.push("Retired Staff inquiry route and backend filter contracts");
   await open(page, "/staff/reservations/reservation-0");
   await selectChoice(page.getByLabel("Quyết định"), "CONFIRMED");
   await page
@@ -577,11 +594,7 @@ try {
   await success(page);
   assert.equal(writes.at(-1).body.status, "CONFIRMED");
   await open(page, "/staff/inquiries/inquiry-id");
-  await selectChoice(page.getByLabel("Trạng thái liên hệ"), "CONTACTED");
-  await page.getByLabel("Ghi chú nội bộ").fill("Đã gọi khách kiểm thử");
-  await page.getByRole("button", { name: "Lưu cập nhật", exact: true }).click();
-  await success(page);
-  assert.equal(writes.at(-1).body.internalNotes, "Đã gọi khách kiểm thử");
+  await page.waitForURL("**/staff/reservations");
   await open(page, "/staff/appointments/appointment-id");
   await page
     .getByRole("button", { name: "Xác nhận lịch bàn giao", exact: true })
@@ -881,6 +894,7 @@ try {
       2,
     ),
   );
+  }
 } finally {
   await browser.close();
 }

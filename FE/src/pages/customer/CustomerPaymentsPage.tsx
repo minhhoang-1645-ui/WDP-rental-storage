@@ -1,4 +1,3 @@
-import { RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { useCustomerOnlinePayment } from './useCustomerOnlinePayment'
 import { useCustomerPagination } from '../../components/customer/useCustomerPagination'
 import { CreditCard, ExternalLink, FileText, History, RefreshCw, Wallet } from 'lucide-react'
@@ -25,13 +24,23 @@ const submissionStatus: Record<PaymentSubmission['status'], string> = {
 
 export function CustomerPaymentsPage() {
   const { user } = useAuth()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const invoiceFilter = params.get('invoice')?.trim() ?? ''
   const reservationFilter = params.get('reservation')?.trim() ?? ''
   const scoped = Boolean(invoiceFilter || reservationFilter)
   const matchesInvoice = (invoice: CustomerInvoice) => (!invoiceFilter || invoice.id === invoiceFilter || invoice.invoiceCode === invoiceFilter)
     && (!reservationFilter || invoice.reservation.id === reservationFilter || invoice.reservation.reference === reservationFilter)
-  const [view, setView] = useState<View>(() => ['payments', 'submissions'].includes(params.get('view') ?? '') ? params.get('view') as View : 'invoices')
+  const requestedView = params.get('view')
+  const view: View = requestedView === 'payments' || requestedView === 'submissions' ? requestedView : 'invoices'
+  const submissionFilter = params.get('submission')
+  const setView = (value: View) => setParams(previous => {
+    const next = new URLSearchParams(previous)
+    if (value === 'invoices') next.delete('view')
+    else next.set('view', value)
+    if (value !== 'submissions') next.delete('submission')
+    next.delete('page')
+    return next
+  }, { replace: true })
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const invoices = usePaginatedResource<CustomerInvoice>('/customer/invoices', user?.id ?? '', true)
   const payments = usePaginatedResource<CustomerPayment>('/customer/payments', user?.id ?? '', true)
@@ -46,7 +55,7 @@ export function CustomerPaymentsPage() {
   const shownInvoices = (invoices.data?.items ?? []).filter(invoice => matchesInvoice(invoice) && (invoice.amountPaid > 0 || !invoicePaymentBlockedBySchedule(invoice)))
   const invoiceIds = new Set(shownInvoices.map(invoice => invoice.id))
   const shownPayments = (payments.data?.items ?? []).filter(payment => !scoped || invoiceIds.has(payment.invoice.id))
-  const shownSubmissions = (submissions.data?.items ?? []).filter(submission => !scoped || invoiceIds.has(submission.invoice.id))
+  const shownSubmissions = (submissions.data?.items ?? []).filter(submission => submissionFilter ? submission.id === submissionFilter : !scoped || invoiceIds.has(submission.invoice.id))
   const refresh = () => { refreshInvoices(); refreshPayments(); refreshSubmissions(); refreshBank() }
 
   useEffect(() => {
@@ -71,33 +80,59 @@ export function CustomerPaymentsPage() {
     {feedback}
     {scoped && <p className="customer-filter-notice">Đang xem giao dịch của {reservationFilter ? 'đơn thuê được chọn' : 'hóa đơn được chọn'} · <Link to="/customer/payments">Xem tất cả</Link></p>}
     {current.status === 401 || scoped && invoices.status === 401 ? <CustomerSessionExpired /> : current.loading || scoped && invoices.loading ? <PortalLoading label="Đang tải dữ liệu thanh toán…" /> : current.error || scoped && invoices.error ? <PortalError message={current.error || invoices.error || 'Không tải được dữ liệu thanh toán.'} onRetry={refresh} /> : view === 'invoices'
-      ? <InvoiceList items={shownInvoices} submissions={shownSubmissions} onBankTransfer={setSelectedInvoice} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} hasPendingOnline={hasPendingOnline} vnpayConfigured={bank.data?.vnpayConfigured === true} />
+      ? <InvoiceList items={shownInvoices} submissions={shownSubmissions} onView={setSelectedInvoice} paymentStateReady={Boolean(submissions.data) && !submissions.error} onOnlinePay={createOnlinePayment} onlineInvoiceId={onlineInvoiceId} hasPendingOnline={hasPendingOnline} vnpayConfigured={bank.data?.vnpayConfigured === true} />
       : view === 'payments'
         ? <PaymentList items={shownPayments} />
         : <SubmissionList items={shownSubmissions} />}
-    {selectedInvoice && <InvoiceTransferDialog id={selectedInvoice.id} onlinePending={hasPendingOnline} onClose={() => setSelectedInvoice(null)} onSaved={afterSubmission} />}
+    {selectedInvoice && <InvoiceTransferDialog id={selectedInvoice.id} onlinePending={hasPendingOnline} onlineBusy={Boolean(onlineInvoiceId)} onOnlinePay={(invoice) => {
+      void createOnlinePayment(invoice, 'VNPAY')
+      setSelectedInvoice(null)
+    }} onClose={() => setSelectedInvoice(null)} onSaved={afterSubmission} />}
   </section>
 }
 
-function InvoiceList({ items, submissions, onBankTransfer, onOnlinePay, onlineInvoiceId, hasPendingOnline, vnpayConfigured }: { items: CustomerInvoice[]; submissions: PaymentSubmission[]; onBankTransfer: (invoice: CustomerInvoice) => void; onOnlinePay: (invoice: CustomerInvoice, mode: 'VNPAY' | 'VNPAYQR') => void; onlineInvoiceId: string; hasPendingOnline: boolean; vnpayConfigured: boolean }) {
+function InvoiceList({ items, submissions, onView, onOnlinePay, onlineInvoiceId, hasPendingOnline, vnpayConfigured, paymentStateReady }: {
+  items: CustomerInvoice[];
+  submissions: PaymentSubmission[];
+  onView: (invoice: CustomerInvoice) => void;
+  onOnlinePay: (invoice: CustomerInvoice, mode: 'VNPAY' | 'VNPAYQR') => void;
+  onlineInvoiceId: string;
+  hasPendingOnline: boolean;
+  vnpayConfigured: boolean;
+  paymentStateReady: boolean;
+}) {
   const { items: visibleItems, pagination } = useCustomerPagination(items)
-  if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện sau khi NestBox xác nhận yêu cầu đặt kho hoặc kỳ thanh toán.</span></PortalEmpty>
+  if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện khi yêu cầu đặt kho được xác nhận hoặc đến kỳ thanh toán.</span></PortalEmpty>
   const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
-  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Hóa đơn</th><th>Kỳ thanh toán</th><th>Tổng tiền</th><th>Đã trả</th><th>Còn lại</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>{visibleItems.map(invoice => {
-    const payable = !invoicePaymentBlockedBySchedule(invoice) && invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status);
-    const unsigned = invoice.signing?.complete === false;
-    const expired = paymentWindowClosed(invoice);
-    return <tr key={invoice.id}>
-      <td data-label="Mã hóa đơn"><RecordIdentity row={invoice} resource="invoices" /><small>Lập ngày {formatPortalDate(invoice.issuedAt, true)}</small>{invoice.voidReason && <small className="invoice-void-reason">{invoice.voidReason}</small>}</td><td data-label="Kỳ thanh toán">{customerStatusLabel(invoice.type)}</td><td data-label="Tổng tiền">{moneyLabel(invoice.totalAmount, invoice.currency)}</td><td data-label="Đã trả">{moneyLabel(invoice.amountPaid, invoice.currency)}</td><td data-label="Còn lại"><strong>{moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td><td data-label="Hạn trả">{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</td><td data-label="Trạng thái"><CustomerStatus status={invoice.status} /></td>
-      <td data-label="Thao tác"><div className="payment-actions">
-        <button type="button" className="button-secondary payment-table-action" onClick={() => onBankTransfer(invoice)}>{payable ? 'Chi tiết & chuyển khoản' : 'Xem hóa đơn'}</button>
-        {payable && (expired ? <p>Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi hỗ trợ để đối chiếu.</p> : unsigned ? <><p>Bạn cần ký tài liệu trước khi thanh toán.</p><Link className="portal-text-button" to={invoice.signing?.renewalId ? `/customer/renewals?renewal=${encodeURIComponent(invoice.signing.renewalId)}` : `/customer/contracts?reservation=${encodeURIComponent(invoice.reservation.reference)}`}>Xem và ký tài liệu</Link></> : pendingInvoiceIds.has(invoice.id) ? <span className="payment-pending-label">Đang chờ NestBox xác nhận</span> : ['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type) ? <>
-          {!vnpayConfigured ? <><small>Thanh toán trực tuyến hiện chưa khả dụng. Bạn có thể xem chi tiết hóa đơn để chuyển khoản hoặc liên hệ cơ sở thanh toán trực tiếp.</small><Link className="portal-text-button" to={`/customer/support?reservation=${encodeURIComponent(invoice.reservation.id)}`}>Hỗ trợ về hóa đơn</Link></> : <><button type="button" className="button-secondary payment-table-action" disabled={!vnpayConfigured || Boolean(onlineInvoiceId) || hasPendingOnline} onClick={() => onOnlinePay(invoice, 'VNPAY')}><ExternalLink size={15} />{onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button>
-          </>}
-        </> : null)}
-      </div></td>
-    </tr>;
-  })}</tbody></table></div>{pagination}</>
+  return <>
+    <div className="customer-table-wrap customer-responsive-table"><table className="customer-table customer-invoices-table">
+      <thead><tr><th>Hóa đơn</th><th>Kho</th><th>Ngày lập</th><th>Tổng tiền</th><th>Còn phải trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+      <tbody>{visibleItems.map(invoice => {
+        const payable = !invoicePaymentBlockedBySchedule(invoice) && !paymentWindowClosed(invoice)
+          && invoice.signing?.complete !== false && invoice.balanceDue > 0 && ['OPEN', 'PARTIALLY_PAID'].includes(invoice.status)
+        const pending = pendingInvoiceIds.has(invoice.id)
+        const unitCount = invoice.breakdown?.units.length || invoice.reservation.quantity
+        const unitCodes = invoice.breakdown?.units.map(unit => unit.unitCode).filter(Boolean)
+        return <tr key={invoice.id}>
+          <td data-label="Hóa đơn"><strong>{customerStatusLabel(invoice.type)}</strong><small className="customer-invoice-code">{invoice.invoiceCode}</small></td>
+          <td data-label="Kho"><strong>{unitCount} kho</strong><small>{unitCodes?.length ? unitCodes.join(', ') : invoice.reservation.storageType?.name}</small></td>
+          <td data-label="Ngày lập">{formatPortalDate(invoice.issuedAt)}</td>
+          <td data-label="Tổng tiền" className="table-number">{moneyLabel(invoice.totalAmount, invoice.currency)}</td>
+          <td data-label="Còn phải trả" className="table-number"><strong>{invoice.status === 'VOID' ? '—' : moneyLabel(invoice.balanceDue, invoice.currency)}</strong></td>
+          <td data-label="Trạng thái"><CustomerStatus status={invoice.status} />{pending && <small>Chờ đối chiếu</small>}</td>
+          <td data-label="Thao tác"><div className="payment-actions">
+            <button type="button" className="button-secondary payment-table-action" onClick={() => onView(invoice)}>Xem chi tiết</button>
+            {payable && vnpayConfigured && paymentStateReady && !pending && invoice.type !== 'SETTLEMENT' && <button
+              type="button" className="button-secondary payment-table-action"
+              disabled={Boolean(onlineInvoiceId) || hasPendingOnline}
+              onClick={() => onOnlinePay(invoice, 'VNPAY')}
+            ><ExternalLink size={15} aria-hidden="true" />{onlineInvoiceId === invoice.id ? 'Đang mở VNPay…' : 'Thanh toán VNPay'}</button>}
+          </div></td>
+        </tr>
+      })}</tbody>
+    </table></div>
+    {pagination}
+  </>
 }
 
 function SubmissionList({ items }: { items: PaymentSubmission[] }) {

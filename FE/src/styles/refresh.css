@@ -9,7 +9,7 @@ button, input, select, textarea { font: inherit; }
 input, select, textarea { border-radius: 12px; }
 input:hover, select:hover, textarea:hover { border-color: #b1c1ca; }
 input:focus, select:focus, textarea:focus { border-color: var(--color-navy); }
-.skip-link { position: fixed; top: 8px; left: 16px; z-index: 100; transform: translateY(-150%); padding: 12px 20px; border-radius: 10px; background: var(--color-navy); color: white; }
+.skip-link { position: fixed; top: 8px; left: 16px; z-index: 100; transform: translateY(-150%); padding: var(--space-12) var(--space-20); border-radius: var(--control-radius); background: var(--workspace-primary); color: var(--workspace-on-primary); }
 .skip-link:focus { transform: translateY(0); }
 .wdp-public { background: var(--color-surface); }
 .public-header { box-shadow: 0 2px 12px #203e5104; }
@@ -39,14 +39,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-navy); }
 .storage-card-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s; }
 .storage-listing-card:hover .storage-card-image img { transform: scale(1.035); }
 .storage-card-condition { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #ffffff7a; background: #fffffff2; border-radius: 999px; padding: 6px 10px; font-size: 10px; font-weight: 700; color: var(--color-navy); }
-.storage-card-image-note { position: absolute; bottom: 9px; right: 10px; padding: 3px 7px; border-radius: 5px; font-size: 9px; background: #152c3cbb; color: white; }
 .storage-card-content { display: flex; flex: 1; flex-direction: column; padding: 18px; }
 .storage-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .storage-card-heading > p { font-size: 10px; letter-spacing: .06em; font-weight: 700; color: var(--color-slate); }
 .storage-card-heading .status-success, .storage-card-heading .status-warning { font-size: 9px; text-transform: none; border-radius: 999px; padding: 4px 8px; }
 .storage-card-content h2, .storage-card-content h3 { margin-top: 9px; font-size: 18px; font-weight: 700; line-height: 1.4; letter-spacing: -.3px; color: var(--color-ink); }
 .storage-size-description { margin-block: 12px 18px; font-size: 12px; line-height: 1.7; color: var(--color-slate); }
-figure:has(img[data-fallback="true"]) .image-credit { display: none; }
 .storage-card-content h2 a:hover { color: var(--color-navy); text-decoration: underline; text-underline-offset: 4px; }
 .storage-card-facts { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--color-slate); font-size: 12px; }
 .storage-card-facts span { display: inline-flex; align-items: center; gap: 5px; }
@@ -58,7 +56,7 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
 .storage-card-price-note { margin-top: 9px; color: var(--color-slate); font-size: 10px; line-height: 1.5; }
 .storage-search-empty { border-radius: 20px; }
 .auth-icon { border-radius: 15px; }
-.wdp-public .data-block, .wdp-public figure:has(.illustration-label) { border-radius: 16px; }
+.wdp-public .data-block, .wdp-public .storage-detail-figure { border-radius: 16px; }
 .wdp-public .booking-panel, .wdp-public .booking-summary { border-radius: 18px; }
 .portal-enhanced, .customer-shell { background: #f6f8f8; }
 .portal-enhanced .manager-sidebar { border-right: 1px solid var(--color-border); background: var(--color-surface); }
@@ -245,16 +243,12 @@ figure:has(img[data-fallback="true"]) .image-credit { display: none; }
 .workspace-full-row { grid-column: 1 / -1; }
 .workspace-nav-group { margin-bottom: 5px; }
 .portal-enhanced .manager-sidebar nav { align-content: start; grid-auto-rows: max-content; }
-.portal-enhanced .manager-sidebar .workspace-nav-search { align-content: start; }
 .workspace-nav-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 12px 9px; border: 0; background: transparent; text-align: left; color: #75838e; font: inherit; font-size: 10px; letter-spacing: .65px; text-transform: uppercase; font-weight: 750; }
 button.workspace-nav-heading { cursor: pointer; min-height: 42px; }
 button.workspace-nav-heading:hover { color: var(--color-navy); }
 .workspace-nav-heading svg { transition: transform 150ms; }
 .workspace-nav-heading svg.is-expanded { transform: rotate(180deg); }
 .workspace-nav-group > [hidden] { display: none; }
-.workspace-nav-search { display: grid; gap: 6px; padding: 6px 8px 12px; font-size: 11px; color: var(--color-slate); }
-.workspace-nav-search input { border: 1px solid var(--color-border); border-radius: 10px; background: #f9fbfc; width: 100%; min-height: 40px; padding: 9px; font-size: 12px; color: var(--color-navy); }
-.workspace-nav-empty { font-size: 12px; color: var(--color-slate); padding: 12px; }
 .customer-nav .customer-booking-shortcut { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; border-radius: 11px; background: var(--color-navy); color: white; padding: 10px; margin: 5px 0 12px; font-size: 13px; font-weight: 700; }
 .storage-card-actions { display: flex; gap: 8px; padding: 0 20px 20px; margin-top: auto; }
 .storage-card-actions > a { flex: 1; min-width: 0; padding-inline: 10px; font-size: 12px; }
@@ -322,7 +316,6 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 .booking-product-options .booking-choice-price { color: var(--color-navy); font-weight: 700; }
 .booking-preview-visual { height: 250px; padding: 0; display: block; position: relative; overflow: hidden; }
 .booking-preview-visual > img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.booking-preview-visual::after { content: 'Ảnh tham khảo'; position: absolute; right: 12px; bottom: 12px; padding: 4px 8px; border-radius: 5px; color: white; background: #152c3cbb; font-size: 10px; }
 .booking-product-thumb { display: block; width: 100%; height: 78px; object-fit: cover; border-radius: 8px; }
 .confirmation-product > .booking-product-thumb { height: 110px; }
 .catalog-size-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }

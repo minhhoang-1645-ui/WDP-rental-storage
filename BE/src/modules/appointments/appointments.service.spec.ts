@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { ConfigService } from '@nestjs/config';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
@@ -39,7 +41,7 @@ describe('Appointment and Staff Handover V1', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    service = new AppointmentsService(prisma);
+    service = new AppointmentsService(prisma, undefined, undefined, undefined, new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' })));
     await prisma.facility.create({ data: { id: facilityId, code: `APPT-${runId}`, name: 'Appointment test', address: 'Test only' } });
     await prisma.storageType.create({ data: {
       id: storageTypeId, facilityId, code: `AP-${runId}`, name: 'Appointment product', sizeId: 'small', sizeName: 'Kho nhỏ', kicker: 'Test', condition: 'STANDARD',
@@ -73,6 +75,7 @@ describe('Appointment and Staff Handover V1', () => {
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
+    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
     await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
@@ -92,10 +95,16 @@ describe('Appointment and Staff Handover V1', () => {
     } });
     const units = await prisma.storageUnit.findMany({ where: { storageTypeId }, orderBy: { unitNumber: 'asc' }, take: quantity });
     for (const [index, unit] of units.entries()) {
+      await prisma.unitStaffAssignment.upsert({
+        where: { id: `appointment-owner-${unit.id}` },
+        create: { id: `appointment-owner-${unit.id}`, storageUnitId: unit.id, staffUserId: staff.id, assignedByUserId: manager.id },
+        update: {},
+      });
       const allocation = await prisma.reservationUnit.create({ data: { reservationId: created.id, storageUnitId: unit.id, plannedStartDate: created.startDate, plannedEndDate: created.endDate } });
       await prisma.rentalContract.create({ data: {
         contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: created.id, reservationUnitId: allocation.id,
         status: options.contractStatus ?? 'READY_FOR_HANDOVER', startDate: created.startDate, endDate: created.endDate,
+        termsAcceptedAt: new Date(), termsAcceptedByUserId: created.customerId,
       } });
     }
     const invoiceStatus = options.invoiceStatus ?? 'PAID';
@@ -126,6 +135,10 @@ describe('Appointment and Staff Handover V1', () => {
     expect(retry.id).toBe(first.id);
     expect(first).toMatchObject({ status: 'CONFIRMED', confirmedBy: null, reservation: { reference: created.reservationCode, contractCount: 2 } });
     expect(first.confirmedAt).not.toBeNull();
+    await expect(service.getOperationalAppointment(first.id, staff)).resolves.toMatchObject({ assignedStaff: { id: staff.id } });
+    const unrelatedStaff = user('another-staff', 'STAFF');
+    expect((await service.listOperationalAppointments({ page: 1, limit: 20 }, unrelatedStaff)).total).toBe(0);
+    await expect(service.getOperationalAppointment(first.id, unrelatedStaff)).rejects.toBeInstanceOf(NotFoundException);
     expect(await prisma.handoverAppointment.count({ where: { reservationId: created.id } })).toBe(1);
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'READY_FOR_HANDOVER' } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: created.id } }, status: 'AVAILABLE' } })).toBe(2);
@@ -164,7 +177,7 @@ describe('Appointment and Staff Handover V1', () => {
       data: { scheduledAt: new Date(Date.now() - 60000) },
     });
     await expect(service.completeHandover(pickup.id, {}, staff)).rejects.toMatchObject({
-      response: { code: 'HANDOVER_OUTSIDE_CONTRACT_WINDOW' },
+      response: { code: 'HANDOVER_BEFORE_PICKUP_WINDOW' },
     });
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE' } })).toBe(0);
   });
@@ -230,7 +243,9 @@ describe('Appointment and Staff Handover V1', () => {
     await makeAppointmentDue(created.id, requested.id);
     const allocation = await prisma.reservationUnit.findFirstOrThrow({ where: { reservationId: created.id } });
     await prisma.storageUnit.update({ where: { id: allocation.storageUnitId }, data: { status: 'MAINTENANCE' } });
-    await expect(service.completeHandover(requested.id, {}, staff)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.completeHandover(requested.id, {
+      handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true },
+    }, staff)).rejects.toBeInstanceOf(ConflictException);
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE' } })).toBe(0);
     expect((await prisma.handoverAppointment.findUniqueOrThrow({ where: { id: requested.id } })).status).toBe('CONFIRMED');
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: created.id } }, status: 'OCCUPIED' } })).toBe(0);
@@ -271,7 +286,7 @@ describe('Appointment and Staff Handover V1', () => {
     expect((await service.listCustomerAppointments(customerId, { page: 1, limit: 20 })).total).toBe(1);
     expect((await service.listCustomerAppointments(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(service.getCustomerAppointment(otherCustomerId, requested.id)).rejects.toBeInstanceOf(NotFoundException);
-    const operational = await service.listOperationalAppointments({ page: 1, limit: 20, search: created.reservationCode, status: 'CONFIRMED', date: dayAfter(6) });
+    const operational = await service.listOperationalAppointments({ page: 1, limit: 20, search: created.reservationCode, status: 'CONFIRMED', date: dayAfter(6) }, manager);
     expect(operational.total).toBe(1);
     expect(JSON.stringify(operational.items[0])).not.toContain('secret-hash');
   });
@@ -284,15 +299,15 @@ describe('Appointment and Staff Handover V1', () => {
     const rolesGuard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerAppointmentsController | typeof ManagerAppointmentsController | typeof StaffAppointmentsController, PublicUser['role'][]]> = [
       [CustomerAppointmentsController, ['CUSTOMER']],
-      [ManagerAppointmentsController, ['MANAGER', 'ADMIN']],
-      [StaffAppointmentsController, ['STAFF', 'MANAGER', 'ADMIN']],
+      [ManagerAppointmentsController, ['MANAGER']],
+      [StaffAppointmentsController, ['STAFF']],
     ];
     for (const [controller, roles] of allowed) {
       for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
         const context = {
           getHandler: () => function appointmentOperation() {},
           getClass: () => controller,
-          switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }),
+          switchToHttp: () => ({ getRequest: () => ({ user: { role }, method: 'GET' }) }),
         } as unknown as ExecutionContext;
         if (roles.includes(role)) expect(rolesGuard.canActivate(context)).toBe(true);
         else expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);

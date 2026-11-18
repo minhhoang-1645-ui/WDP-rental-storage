@@ -1,6 +1,6 @@
 import { paymentWindowClosed } from './payment-state';
 import { workflowGuide } from './workflow-guide';
-import { assignmentNeedsAttention, awaitingAssignment, managerNeedsAction, staffNeedsAction } from './work-queue';
+import { assignmentNeedsAttention, awaitingAssignment, isAssignedStaffWork, managerNeedsAction, needsStaffAssignment, staffNeedsAction } from './work-queue';
 import { isTransferRequest } from './transfer-request';
 import { isEarlyReturnRequest } from './early-return';
 
@@ -58,8 +58,8 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === 'ADMIN') return [{ kind: 'account-notices', path: '/admin/audit-events?category=ACCOUNT_NOTICES', title: 'Thông báo quản trị' }];
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['damage-claims', 'appointments', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements'];
+    : role === 'STAFF' ? ['damage-claims', 'reservations', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
+      : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'appointments', 'returns', 'transfers', 'renewals', 'invoices', 'deposit-settlements'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';
   names['damage-claims'] = 'Sự cố hàng hóa';
@@ -102,6 +102,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
   for (const source of activitySources(role)) for (const row of data[source.kind] ?? []) {
     const get = (path: string) => activityText(row, path), kind = source.kind, status = get('status') || get('accountStatus'), id = get('id');
     if (!id) continue;
+    if (role === 'STAFF' && needsStaffAssignment(kind) && !isAssignedStaffWork(kind, row, userId)) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
     const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
     let title = source.title, message = '', action = false, priority = 2;
@@ -158,8 +159,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'MANAGER') {
         const simple = ['reservations', 'inquiries'].includes(kind);
         web = simple ? `/manager/${kind}/${encodeURIComponent(id)}` : `/manager/operations/${kind}/${encodeURIComponent(id)}`;
-        const assignment = ['appointments', 'support-requests', 'maintenance', 'stock-movements'].includes(kind);
-        if (assignment && (kind === 'appointments' || kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
+        const assignment = needsStaffAssignment(kind);
+        if (assignment && (kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
         if (kind === 'invoices' && (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0)) continue;
       } else action = staffNeedsAction(kind, row, userId);
@@ -170,8 +171,6 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       if (role === 'MANAGER' && kind === 'maintenance' && status === 'AWAITING_VERIFICATION') { title = 'Bảo trì · Chờ quản lý nghiệm thu'; message = 'Kiểm tra hiện trạng và kết quả nhân viên đã gửi, rồi nghiệm thu hoặc yêu cầu làm tiếp.'; }
       if (role === 'MANAGER' && kind === 'support-requests' && status === 'ESCALATED') { title = 'Hỗ trợ · Cần quản lý quyết định'; message = 'Nhân viên đã chuyển hồ sơ lên. Đọc nội dung, lý do chuyển và ghi kết quả xử lý cho khách.'; }
       if (role === 'MANAGER' && kind === 'invoices') { title = action ? 'Hóa đơn · Quá hạn thanh toán' : 'Hóa đơn · Đang chờ thanh toán'; message = action ? 'Kiểm tra số dư, hạn thanh toán và lịch sử thu tiền trước khi liên hệ khách hàng.' : 'Theo dõi hóa đơn khách chưa thanh toán. Nếu thu tại cơ sở, chỉ ghi nhận sau khi thực tế đã nhận tiền.'; }
-      if (role === 'STAFF' && awaitingAssignment(kind, row)) { title = `${source.title} · Chờ quản lý phân công`; message = 'Hồ sơ đã được tiếp nhận và đang chờ quản lý giao người phụ trách. Bạn có thể theo dõi; chưa thực hiện thay nhân viên được giao.'; }
-      if (role === 'STAFF' && !action && get('assignedStaff.id') && !['RESOLVED', 'COMPLETED', 'CANCELLED'].includes(status)) message = `Nhân viên phụ trách: ${get('assignedStaff.fullName') || 'đã được phân công'}. Bạn có thể theo dõi trạng thái; thao tác thực hiện dành cho người được giao.`;
     }
     if (role === 'CUSTOMER' && kind === 'contracts' && status === 'PENDING_PAYMENT' && !activityText(row, 'terms.acceptedAt') && !paymentWindowClosed({ type: 'INITIAL', reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } })) {
       title = 'Hợp đồng · Cần bạn đọc và ký'; message = 'Ký hợp đồng này cùng các hợp đồng còn lại của đơn trước khi thanh toán.'; action = true;
@@ -190,7 +189,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       const state = ({ REQUESTED: 'Chờ chọn kho mới', APPROVED: 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transferStatus] || 'Đang chờ tiếp nhận';
       title = `Chuyển kho · ${state}`;
       if (role === 'CUSTOMER') { web = '/customer/transfers'; mobile = web; }
-      if (role === 'STAFF') { web = transfer ? `/staff/transfers/${encodeURIComponent(activityText(transfer, 'id'))}` : '/staff/transfers'; mobile = web; action = transfer ? ['REQUESTED', 'APPROVED'].includes(transferStatus) : !['RESOLVED', 'CANCELLED'].includes(status); }
+      if (role === 'STAFF' && transfer) { web = `/staff/transfers/${encodeURIComponent(activityText(transfer, 'id'))}`; mobile = web; action = transferStatus === 'APPROVED'; }
       if (!transfer && ['RESOLVED', 'CANCELLED'].includes(status)) { title = 'Chuyển kho · Đã có kết quả xử lý'; message = get('resolutionNote') || 'Yêu cầu đã đóng. Mở hồ sơ để xem kết quả; chưa có lệnh chuyển kho liên kết.'; }
       if (transfer && transferStatus === 'REJECTED') message = activityText(transfer, 'rejectionReason') || get('resolutionNote') || 'Mở yêu cầu chuyển kho để xem lý do từ chối.';
       else if (transfer) message = `${activityText(transfer, 'transferCode')} · Kho ${activityText(transfer, 'fromUnit.unitCode')} → ${activityText(transfer, 'toUnit.unitCode') || 'đang lựa chọn'}. ${transferStatus === 'COMPLETED' ? 'Đã bàn giao kho đích; hợp đồng và kho đang dùng đã cập nhật.' : 'Theo dõi xác nhận và bàn giao thực tế trước khi chuyển hàng.'}`;
@@ -202,7 +201,6 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       action = role === 'MANAGER' && !decision && !['RESOLVED', 'CANCELLED'].includes(status) || role === 'CUSTOMER' && decision === 'APPROVED';
       if (role === 'MANAGER') { web = '/manager/early-returns'; mobile = web; }
       if (role === 'CUSTOMER') { web = '/customer/returns'; mobile = web; }
-      if (role === 'STAFF') action = false;
       const returnRecord = (data.returns ?? []).find(item => activityText(item, 'reservation.id') === get('reservation.id') && item.status !== 'CANCELLED');
       if (role === 'CUSTOMER' && returnRecord) { action = false; message = returnRecord.status === 'COMPLETED' ? 'Bạn đã hoàn tất trả kho. Mở hồ sơ để xem kết quả kiểm tra và tiền cọc.' : 'Hồ sơ trả kho đã được gửi. Theo dõi kiểm tra và quyết toán trong Trả kho & tiền cọc.'; }
     }
@@ -214,10 +212,12 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     }
     if (role === 'STAFF' && kind === 'transfers' && row.commercial && !get('commercial.acceptedAt')) { action = false; message = 'Kho đích đã giữ, đang chờ khách ký phụ lục đổi loại; chưa được chuyển thực tế.'; }
     if (kind === 'damage-claims') {
-      const label = ({ REPORTED: 'Đã gửi, chờ kiểm tra', INVESTIGATING: 'Đang xác minh', APPROVED: 'Có hướng xử lý', REJECTED: 'Cần xem lý do', RESOLVED: 'Đã có kết quả' } as Record<string,string>)[status] ?? 'Đang cập nhật';
+      const cash = get('compensation.status');
+      const label = cash === 'AWAITING_HANDOVER' ? 'Chờ giao tiền bồi thường' : cash === 'HANDED_OVER' ? 'Đã bàn giao tiền bồi thường'
+        : ({ REPORTED: 'Đã tiếp nhận', INVESTIGATING: 'Đang xác minh', APPROVED: 'Có hướng xử lý', REJECTED: 'Cần xem lý do', RESOLVED: 'Đã có kết quả' } as Record<string,string>)[status] ?? 'Đang cập nhật';
       title = 'Sự cố hàng hóa · ' + label;
       message = [get('unitCodeSnapshot'), get('resolutionNote') || get('decisionReason') || (role === 'STAFF' ? 'Ghi nhận thực tế và chuyển quản lý xem xét.' : role === 'MANAGER' ? 'Đối chiếu ghi nhận của nhân viên và quyết định hướng xử lý.' : 'Theo dõi ghi nhận và phản hồi của cơ sở.')].filter(Boolean).join(' · ');
-      action = role === 'STAFF' && ['REPORTED', 'INVESTIGATING'].includes(status) || role === 'MANAGER' && ['INVESTIGATING', 'APPROVED', 'REJECTED'].includes(status);
+      action = role === 'STAFF' && ['REPORTED', 'INVESTIGATING'].includes(status) && !row.staffFacts || role === 'MANAGER' && (assignmentNeedsAttention(kind, row) || status === 'INVESTIGATING' && Boolean(row.staffFacts) || ['APPROVED', 'REJECTED'].includes(status));
       web = '/' + role.toLowerCase() + '/damage-claims?claim=' + encodeURIComponent(id); mobile = web;
     }
     if (role === 'CUSTOMER' && get('rejectionReason')) message += ` Lý do: ${get('rejectionReason')}`;

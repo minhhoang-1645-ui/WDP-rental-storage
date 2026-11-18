@@ -99,6 +99,12 @@ export class AuthService {
     return 'scrypt$' + salt + '$' + (await this.hashPassword(password, salt)).toString('hex');
   }
 
+  async encodeReplacementPassword(value: unknown, currentHash: string) {
+    const password = this.password(value, 8);
+    if (await this.matchesPassword(password, currentHash)) return null;
+    return this.encodePassword(password);
+  }
+
   revokeUserSessions(userId: string) {
     return this.users.deleteUserSessions(userId);
   }

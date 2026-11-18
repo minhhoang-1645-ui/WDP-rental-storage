@@ -23,7 +23,7 @@ async function setup(role) {
         claim = { ...claim, ...(body.action === 'amend-decision' ? { decisionReason: body.decisionReason } : body.action === 'amend-resolution' ? { resolutionNote: body.resolutionNote } : { staffFacts: body.staffFacts, status: 'INVESTIGATING' }), updatedAt: `2026-11-17T12:00:${String(++revision).padStart(2, '0')}Z` };
         return route.fulfill({ json: claim });
       }
-      if (path.endsWith('/transfers/transfer/reject')) { transfer = { ...transfer, status: 'REJECTED', rejectionReason: body.reason }; return route.fulfill({ json: transfer }); }
+      if (path.endsWith('/transfers/transfer/reject')) { assert.equal(role, 'MANAGER'); transfer = { ...transfer, status: 'REJECTED', rejectionReason: body.reason }; return route.fulfill({ json: transfer }); }
       if (path.endsWith('/early-return-requests/proposal/financial-review')) { proposal = { ...proposal, financialReview: { disposition: body.financialDisposition, reason: body.financialReason, waivedAmount: 3000000, appliedAt: when }, eligibleUnusedInvoices: [], financialSummary: { ...proposal.financialSummary, outstandingAmount: 0 } }; return route.fulfill({ json: proposal }); }
       throw new Error(`Unexpected write ${path}`);
     }
@@ -46,19 +46,20 @@ async function shot(page, name) {
 }
 try {
   const manager = await setup('MANAGER'), page = manager.page;
-  await page.goto(base + '/manager/damage-claims');
-  await page.getByRole('button', { name: 'Chỉnh sửa lý do quyết định', exact: true }).click();
-  assert.equal(await page.locator('.claim-record-editor textarea').inputValue(), 'Lý do quyết định ban đầu');
-  await page.locator('.claim-record-editor textarea').fill('Lý do đã cập nhật sau khi đối chiếu');
-  await page.getByRole('button', { name: 'Lưu chỉnh sửa', exact: true }).click();
-  await page.getByRole('button', { name: 'Chỉnh sửa lý do quyết định', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Chỉnh sửa kết quả', exact: true }).click();
-  assert.equal(await page.locator('.claim-record-editor textarea').inputValue(), 'Kết quả xử lý ban đầu');
-  await page.locator('.claim-record-editor textarea').fill('Kết quả đã cập nhật và thông báo cho khách');
-  await page.getByRole('button', { name: 'Lưu chỉnh sửa', exact: true }).click();
-  await page.getByRole('button', { name: 'Chỉnh sửa kết quả', exact: true }).waitFor();
+  await page.goto(base + '/manager/damage-claims?claim=claim');
+  await page.getByRole('button', { name: 'Sửa lý do quyết định', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').locator('textarea').inputValue(), 'Lý do quyết định ban đầu');
+  await page.getByRole('dialog').locator('textarea').fill('Lý do đã cập nhật sau khi đối chiếu');
+  await page.getByRole('button', { name: 'Lưu lý do', exact: true }).click();
+  await page.getByText('Lý do đã cập nhật sau khi đối chiếu', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sửa lý do quyết định', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sửa kết quả đã thông báo', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').locator('textarea').inputValue(), 'Kết quả xử lý ban đầu');
+  await page.getByRole('dialog').locator('textarea').fill('Kết quả đã cập nhật và thông báo cho khách');
+  await page.getByRole('button', { name: 'Lưu kết quả', exact: true }).click();
+  await page.getByText('Kết quả đã cập nhật và thông báo cho khách', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sửa kết quả đã thông báo', exact: true }).waitFor();
   assert.equal(claim.status, 'RESOLVED');
-  assert(await page.locator('.claim-review-card').evaluate(element => element.getBoundingClientRect().height) < 1000);
   await shot(page, 'manager-claim-review');
   await page.setViewportSize({ width: 390, height: 844 }); await shot(page, 'manager-claim-review-mobile');
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -71,20 +72,24 @@ try {
 
   claim = { ...claim, status: 'REPORTED', staffFacts: null, decisionReason: null, resolutionNote: null };
   const worker = await setup('STAFF');
-  await worker.page.goto(base + '/staff/damage-claims');
-  await worker.page.locator('.claim-record-editor textarea').fill('Đã kiểm tra thực tế hàng hóa tại kho');
-  await worker.page.getByRole('button', { name: 'Lưu ghi nhận để quản lý xem xét', exact: true }).click();
-  await worker.page.getByRole('button', { name: 'Chỉnh sửa ghi nhận', exact: true }).waitFor();
-  assert.equal(await worker.page.locator('.claim-record-editor').count(), 0);
+  await worker.page.goto(base + '/staff/damage-claims?claim=claim');
+  await worker.page.getByRole('button', { name: 'Ghi kết quả kiểm tra', exact: true }).click();
+  await worker.page.getByRole('dialog').locator('textarea').fill('Đã kiểm tra thực tế hàng hóa tại kho');
+  await worker.page.getByRole('button', { name: 'Lưu kết quả kiểm tra', exact: true }).click();
+  await worker.page.getByRole('button', { name: 'Chỉnh kết quả kiểm tra', exact: true }).waitFor();
+  assert.equal(await worker.page.getByRole('dialog').count(), 0);
   await shot(worker.page, 'staff-claim-review');
   await worker.page.goto(base + '/staff/support-requests/support');
   await worker.page.getByRole('button', { name: 'Tạo lệnh chuyển từ yêu cầu này', exact: true }).waitFor();
   assert.equal(await worker.page.getByRole('button', { name: /Hoàn tất hỗ trợ|Bắt đầu hỗ trợ/ }).count(), 0);
   await shot(worker.page, 'staff-transfer-request-only');
   await worker.page.goto(base + '/staff/transfers/transfer');
-  await worker.page.locator('.transfer-rejection-form textarea').fill('Hiện không có kho đích cùng loại phù hợp');
-  await worker.page.getByRole('button', { name: 'Từ chối chuyển kho', exact: true }).click();
-  await worker.page.getByText('Hiện không có kho đích cùng loại phù hợp', { exact: true }).waitFor();
+  await worker.page.getByRole('heading', { name: 'Thông tin chính', exact: true }).waitFor();
+  assert.equal(await worker.page.getByRole('button', { name: 'Từ chối chuyển kho', exact: true }).count(), 0);
+  await page.goto(base + '/manager/operations/transfers/transfer');
+  await page.getByLabel('Lý do từ chối chuyển kho').fill('Hiện không có kho đích cùng loại phù hợp');
+  await page.getByRole('button', { name: 'Từ chối chuyển kho', exact: true }).click();
+  await page.getByText('Hiện không có kho đích cùng loại phù hợp', { exact: true }).waitFor();
   assert.equal(writes.find(item => item.path.endsWith('/reject')).body.reason, 'Hiện không có kho đích cùng loại phù hợp');
 
   const client = await setup('CUSTOMER');

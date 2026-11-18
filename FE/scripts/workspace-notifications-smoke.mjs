@@ -1,293 +1,274 @@
+// Browser-only notification fixtures. The Backend suite separately verifies ownership and persistence.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { launchTestBrowser } from './browser-test.mjs';
-import { fixture, staff } from './fixtures/workspace.mjs';
+import { fixture, staff, customer } from './fixtures/workspace.mjs';
 
+const base = process.env.WDP_FE_URL ?? 'http://localhost:5173';
+const output = process.env.WDP_NOTIFICATION_ARTIFACTS ?? 'artifacts/workspace-notifications';
 const browser = await launchTestBrowser();
-const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
-const date = minute => new Date(Date.UTC(2026, 10, 12, 3, minute)).toISOString();
-const output = 'artifacts/workspace-notifications';
-await mkdir(output, { recursive: true });
+const errors = [];
+const otherWrites = [];
+const receipts = new Map();
+const datasets = new Map();
+const flags = new Map();
+const reads = new Map();
 
-function support(id, assignee, minute, status = 'ASSIGNED', subject = 'Cần hỗ trợ') {
-  return { ...fixture['support-requests'][0], id, supportCode: id.toUpperCase(), assignedStaff: assignee, status, subject, createdAt: date(minute), updatedAt: date(minute) };
+const normalize = value => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim();
+function notice(id, kind, title, target, index = 0, actionLabel = '', summary = 'Kho B12') {
+  return { token: createHash('sha256').update(id).digest('hex'), kind, title, summary, target, actionLabel,
+    at: new Date(Date.UTC(2026, 10, 18, 10, -index)).toISOString(), canOpen: Boolean(target), important: false };
 }
-async function setup(role, data, dark = false) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
-  const user = { ...staff, id: role === 'STAFF' ? staff.id : `${role.toLowerCase()}-id`, role };
-  const writes = [], calls = [], errors = [];
-  let failSupport = false;
-  await context.addInitScript(({ role, dark }) => {
-    localStorage.setItem('wdp-auth-token-v1', `notice-fixture-${role}`);
-    localStorage.setItem('nestbox-workspace-theme', dark ? 'dark' : 'light');
-  }, { role, dark });
-  await context.route('**/*', async route => {
+
+async function setup(role, id, { width = 1440, theme = 'light' } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 900 } });
+  const user = { ...staff, id, role, fullName: 'Tài khoản kiểm thử ' + role };
+  const root = '/' + role.toLowerCase();
+  const immutable = { ...fixture };
+  const appointment = { ...fixture.appointments[0], id: 'own-appointment', status: 'COMPLETED', assignedStaff: staff };
+  const data = { ...immutable, appointments: [appointment], rentals: [], 'transfer-orders': [], 'damage-claims': [], 'account-notices': [] };
+  const record = datasets.get(id) ?? [];
+  const flag = flags.get(id) ?? {};
+  if (!flags.has(id)) flags.set(id, flag);
+  await context.addInitScript(({ id, theme }) => {
+    localStorage.setItem('wdp-auth-token-v1', 'test-' + id);
+    localStorage.setItem('nestbox-workspace-theme', theme);
+  }, { id, theme });
+
+  await context.route('**/api/**', async route => {
     const request = route.request();
-    if (!['fetch', 'xhr', 'eventsource'].includes(request.resourceType())) return route.continue();
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204 });
     const url = new URL(request.url());
-    const path = url.pathname.replace(/^\/(?:api\/)?/, '');
-    calls.push({ path, token: request.headers().authorization });
-    if (request.method() !== 'GET') { writes.push(path); return route.fulfill({ status: 403, json: {} }); }
-    if (path === 'auth/me') return route.fulfill({ json: user });
-    if (path === 'reservations' || path === 'customer/stored-items') return route.fulfill({ json: [] });
-    if (path === 'manager/dashboard/analytics') return route.fulfill({ json: { units: { total: 0, occupied: 0, available: 0, reserved: 0, maintenance: 0 }, finance: {}, queue: {} } });
-    const [, kind, id] = path.replace('/management/', '/').split('/');
-    const category = url.searchParams.get('category');
-    const eventId = url.searchParams.get('event');
-    const items = path === 'admin/audit-events'
-      ? category === 'ACCOUNT_NOTICES' ? data['account-notices'] ?? [] : (data['audit-events'] ?? []).filter(item => item.category === category && (!eventId || item.id === eventId))
-      : data[kind] ?? [];
-    if (failSupport && !id && kind === 'support-requests') return route.fulfill({ status: 503, json: { message: 'Fixture outage' } });
-    if (id) {
-      const row = items.find(item => item.id === id);
-      return route.fulfill({ status: row ? 200 : 404, json: row ?? { message: 'Fixture not found' } });
+    const path = url.pathname.replace(/^\/api\//, '');
+    const method = request.method();
+    if (method === 'OPTIONS') return route.fulfill({ status: 204 });
+    const send = (json, status = 200) => route.fulfill({ status, json });
+    const query = url.searchParams;
+    if (path === 'auth/me') return send(user);
+    if (path === 'notifications' || path.startsWith('notifications/')) {
+      const state = flags.get(id);
+      const log = reads.get(id) ?? [];
+      reads.set(id, log);
+      log.push(method + ' ' + path + url.search);
+      const read = receipts.get(id) ?? new Set();
+      receipts.set(id, read);
+      const active = (datasets.get(id) ?? record).filter(item => item !== state.removed);
+      if (method === 'GET') {
+        if (state.delay) await state.delay;
+        if (state.error) return send({ message: 'Fixture unavailable' }, 503);
+        const kind = query.get('kind');
+        const search = normalize(query.get('search') ?? '');
+        const view = query.get('view');
+        const toPublic = ({ target: _target, ...item }) => ({ ...item, unread: !read.has(item.token) });
+        const filtered = active.filter(item => (view !== 'unread' || !read.has(item.token))
+          && (view !== 'action' || item.actionLabel) && (!kind || item.kind === kind)
+          && normalize(item.title + ' ' + item.summary).includes(search));
+        const limit = Number(query.get('limit')) || 10;
+        const page = Math.min(Number(query.get('page')) || 1, Math.max(1, Math.ceil(filtered.length / limit)));
+        return send({ page, limit, total: filtered.length, unreadTotal: active.filter(item => !read.has(item.token)).length,
+          kinds: [...new Set(active.map(item => item.kind))].map(value => ({ value, label: value === 'invoices' ? 'Hóa đơn' : value === 'appointments' ? 'Bàn giao' : 'Hỗ trợ' })),
+          recent: active.slice(0, 5).map(toPublic), items: filtered.slice((page - 1) * limit, page * limit).map(toPublic) });
+      }
+      if (state.writeError) return send({ message: 'Cannot write' }, 503);
+      if (path === 'notifications/read-all') { active.forEach(item => read.add(item.token)); return send({ updated: active.length }); }
+      const [, token, operation] = path.split('/');
+      const current = active.find(item => item.token === token);
+      if (current && operation === 'open' && state.denyOpen === current.token) {
+        state.removed = current;
+        return send({ message: 'Hồ sơ không còn khả dụng.' }, 404);
+      }
+      if (!current || operation === 'open' && !current.target) return send({ message: 'Hồ sơ không còn khả dụng.' }, 404);
+      read.add(token);
+      return send(operation === 'open' ? { target: current.target } : { read: true });
     }
-    const page = Number(url.searchParams.get('page')) || 1;
-    const limit = Number(url.searchParams.get('limit')) || 100;
-    return route.fulfill({ json: { page, limit, total: items.length, items: items.slice((page - 1) * limit, page * limit) } });
+    if (method !== 'GET') { otherWrites.push(path); return send({}, 403); }
+    if (path === 'reservations') return send(data.reservations);
+    if (path === 'manager/dashboard/summary') return send({});
+    if (path === 'customer/payment-config') return send({ vnpayConfigured: false });
+    if (path === 'staff/assigned-units' || path === 'manager/unit-staff-assignments') return send({ enabled: false, items: [] });
+    if (path === 'customer/stored-items') return send([]);
+    const [, kind, recordId] = path.replace('/management/', '/').split('/');
+    if (kind === 'users' && recordId) return send({ ...customer, accountStatus: 'ACTIVE', role: 'CUSTOMER' });
+    const items = data[kind] ?? [];
+    if (recordId) return send(items.find(item => item.id === recordId) ?? {});
+    const limit = Number(query.get('limit')) || 20;
+    const page = Number(query.get('page')) || 1;
+    return send({ items: items.slice((page - 1) * limit, page * limit), total: items.length, page, limit });
   });
+
   const page = await context.newPage();
-  page.setDefaultTimeout(10000);
+  page.setDefaultTimeout(15000);
   page.on('pageerror', error => errors.push(error.message));
-  return { context, page, calls, writes, errors, setSupportFailure: value => { failSupport = value; } };
+  const open = path => page.goto(base + root + path);
+  const inbox = page.locator('.workspace-notification-inbox');
+  const rows = inbox.locator('.workspace-notification-row');
+  const bell = page.getByRole('button', { name: /^Thông báo,/ });
+  const showInbox = () => open('/notifications');
+  const tab = name => inbox.getByRole('button', { name, exact: true }).click();
+  const current = number => inbox.locator(`button[aria-label="Trang ${number}"][aria-current="page"]`).waitFor();
+  return { context, page, open, showInbox, rows, bell, tab, current, inbox, flag };
 }
 
-const bell = page => page.locator('.workspace-notification-trigger');
-const popup = page => page.getByRole('region', { name: 'Thông báo', exact: true });
-const count = (page, value) => page.getByRole('button', { name: `Thông báo, ${value} chưa đọc trên trình duyệt`, exact: true }).waitFor();
-const pulse = page => page.evaluate(() => window.dispatchEvent(new CustomEvent('wdp-data-changed')));
+async function bounded(page, selector) {
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  if (selector) assert(await page.locator(selector).evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight;
+  }));
+}
 
 try {
-  const staffData = { 'support-requests': [
-    ...Array.from({ length: 102 }, (_, i) => support(`staff-${i}`, staff, i)),
-    support('other-staff', { id: 'other-user', fullName: 'Nhân viên khác' }, 300),
-    support('needs-manager', null, 310, 'ESCALATED'),
-  ] };
-  const employee = await setup('STAFF', staffData);
-  const page = employee.page;
-  await page.goto(`${base}/staff`);
-  await count(page, 102);
-  assert.equal(await bell(page).locator('.workspace-notification-badge').innerText(), '99+');
-  await bell(page).focus();
-  await bell(page).press('Enter');
-  await popup(page).waitFor();
-  await page.waitForFunction(() => document.activeElement?.matches('.workspace-notification-panel'));
-  await page.keyboard.press('Tab');
-  const latest = popup(page).locator('li').first().getByRole('link');
-  assert(await latest.evaluate(element => element === document.activeElement));
-  assert.equal(await popup(page).locator('li').count(), 5);
-  assert.deepEqual(await popup(page).locator('li a').evaluateAll(links => links.map(link => link.getAttribute('href'))),
-    [101, 100, 99, 98, 97].map(i => `/staff/support-requests/staff-${i}`));
-  assert.equal(await popup(page).getByRole('button', { name: /Đánh dấu/ }).count(), 0);
-  await page.screenshot({ path: `${output}/staff-light.png` });
-  await page.keyboard.press('Escape');
-  await popup(page).waitFor({ state: 'hidden' });
-  assert(await bell(page).evaluate(element => element === document.activeElement));
-  await count(page, 102);
-  await bell(page).click();
-  await page.getByRole('heading', { name: 'Bàn làm việc' }).click();
-  await popup(page).waitFor({ state: 'hidden' });
-  await bell(page).click();
-  await latest.click();
-  await page.waitForURL('**/staff/support-requests/staff-101');
-  await page.getByRole('link', { name: 'Về thông báo' }).waitFor();
-  await count(page, 101);
-  await bell(page).click();
-  assert.equal(await latest.getAttribute('data-unread'), 'false');
-  await popup(page).getByRole('link', { name: 'Xem tất cả thông báo' }).click();
-  await page.waitForURL('**/staff/notifications');
-  await page.getByRole('button', { name: 'Chưa đọc (101)' }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).count(), 0);
-  await page.reload();
-  await count(page, 101);
-  await page.getByRole('button', { name: 'Cần thực hiện (102)' }).waitFor();
+  await mkdir(output, { recursive: true });
+  const customerNotices = [
+    notice('own-appointment', 'appointments', 'Bàn giao đã hoàn tất', '/customer/appointments?appointment=own-appointment'),
+    ...Array.from({ length: 130 }, (_, index) => notice('support-' + index, 'support-requests', 'Yêu cầu hỗ trợ ' + index,
+      '/customer/support?request=support-' + index, index + 1, index === 0 ? 'Xem yêu cầu' : '',
+      index === 129 ? 'Kho đặc biệt tại Bình Dương' : 'Kho nhỏ ' + index)),
+  ];
+  datasets.set('customer-owned', customerNotices);
+  const app = await setup('CUSTOMER', 'customer-owned');
+  await app.showInbox();
+  await app.current(1);
+  assert.equal(await app.rows.count(), 10);
+  await app.page.getByText('1–10 / 131 thông báo', { exact: true }).waitFor();
+  assert.equal(await app.inbox.getByRole('button', { name: 'Trang đầu' }).isEnabled(), false);
+  assert.equal(await app.inbox.getByRole('button', { name: 'Trang trước' }).isEnabled(), false);
+  await app.inbox.getByRole('button', { name: 'Trang cuối' }).click();
+  await app.current(14);
+  assert.equal(await app.rows.count(), 1);
+  assert.equal(await app.inbox.getByRole('button', { name: 'Trang sau' }).isEnabled(), false);
+  await app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' }).selectOption('50');
+  await app.page.getByText('1–50 / 131 thông báo', { exact: true }).waitFor();
+  assert.equal(await app.rows.count(), 50);
+  await app.inbox.getByRole('button', { name: 'Trang 2', exact: true }).click();
+  await app.current(2);
+  const secondPage = await app.rows.locator('strong').allTextContents();
+  assert.equal(secondPage.length, 50);
+  assert.equal(new Set(secondPage).size, 50);
+  await app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' }).selectOption('20');
+  await app.page.getByText('1–20 / 131 thông báo', { exact: true }).waitFor();
+  await app.inbox.getByRole('combobox', { name: 'Loại thông báo' }).selectOption('support-requests');
+  await app.page.getByText('1–20 / 130 thông báo', { exact: true }).waitFor();
+  const search = app.inbox.getByRole('searchbox', { name: 'Tìm thông báo' });
+  await search.fill('dac biet');
+  await app.rows.getByText('Yêu cầu hỗ trợ 129', { exact: true }).waitFor();
+  assert.equal(await app.rows.count(), 1);
+  await search.fill('không có kết quả');
+  await app.inbox.getByText('Không tìm thấy thông báo phù hợp.', { exact: true }).waitFor();
+  await app.showInbox();
+  await app.rows.first().waitFor();
 
-  employee.setSupportFailure(true);
-  await pulse(page);
-  await page.getByText(/Chưa tải được: Hỗ trợ/).waitFor();
-  await bell(page).click();
-  await popup(page).getByText('Chưa tải đủ thông báo.').waitFor();
-  await count(page, 101);
-  employee.setSupportFailure(false);
-  staffData['support-requests'] = [support('staff-101', staff, 101), support('other-staff', { id: 'other-user' }, 305)];
-  await popup(page).getByRole('button', { name: 'Thử lại' }).click();
-  await count(page, 0);
-  assert.equal(await bell(page).locator('.workspace-notification-badge').count(), 0);
-  await page.getByRole('button', { name: 'Chưa đọc (0)' }).waitFor();
-  await page.keyboard.press('Escape');
-  staffData['support-requests'][0] = support('staff-101', staff, 350, 'RESOLVED', 'Hỗ trợ đã có kết quả');
-  await pulse(page);
-  await count(page, 1);
-  staffData['support-requests'].push(support('removed-record', staff, 380));
-  await pulse(page);
-  await count(page, 2);
-  await bell(page).click();
-  await popup(page).locator('li a').first().waitFor();
-  staffData['support-requests'] = [];
-  const missing = page.waitForResponse(response => response.url().endsWith('/support-requests/removed-record'));
-  await popup(page).locator('li a').first().click();
-  await page.waitForURL('**/staff/support-requests/removed-record');
-  assert.equal((await missing).status(), 404);
-  await page.getByRole('link', { name: 'Về thông báo' }).click();
-  await page.waitForURL('**/staff/notifications');
-  assert(employee.calls.every(call => call.token === 'Bearer notice-fixture-STAFF'));
-  assert(employee.calls.every(call => !call.path.startsWith('manager/')));
-  assert.deepEqual(employee.writes, []);
-  assert.deepEqual(employee.errors, []);
+  await app.bell.focus();
+  await app.page.keyboard.press('Enter');
+  const popover = app.page.getByRole('dialog', { name: 'Thông báo', exact: true });
+  await popover.waitFor();
+  assert.equal(await popover.locator('.workspace-notification-row').count(), 5);
+  assert.equal(await app.bell.locator('.workspace-notification-badge').innerText(), '99+');
+  await app.page.waitForFunction(() => document.activeElement?.matches('.workspace-notification-panel'));
+  await app.page.keyboard.press('Escape');
+  await popover.waitFor({ state: 'hidden' });
+  assert(await app.bell.evaluate(el => document.activeElement === el));
+  await app.page.screenshot({ path: output + '/customer-desktop.png', fullPage: true });
+
+  await app.tab('Cần xử lý');
+  await app.inbox.getByText('1–1 / 1 thông báo', { exact: true }).waitFor();
+  await app.rows.getByText('Yêu cầu hỗ trợ 0', { exact: true }).waitFor();
+  assert.equal(await app.rows.count(), 1);
+  app.flag.writeError = true;
+  await app.rows.getByRole('button', { name: /Đánh dấu đã đọc/ }).click();
+  await app.inbox.getByRole('alert').getByText('Chưa thể đánh dấu đã đọc. Hãy thử lại.').waitFor();
+  assert.equal(await app.rows.locator('[aria-label^="Đánh dấu đã đọc"]').count(), 1);
+  app.flag.writeError = false;
+  await app.rows.getByRole('button', { name: /Đánh dấu đã đọc/ }).click();
+  await app.rows.getByText('Đã đọc', { exact: true }).waitFor();
+  await app.bell.getAttribute('aria-label').then(value => assert.match(value, /130 chưa đọc/));
+  assert.equal(await app.rows.count(), 1, 'Reading does not finish the task');
+  await app.tab('Tất cả');
+  await app.rows.getByText('Bàn giao đã hoàn tất', { exact: true }).waitFor();
+  await app.rows.first().getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
+  await app.page.waitForURL('**/customer/appointments?appointment=own-appointment');
+  await app.page.getByText('Xem tất cả lịch').waitFor();
+  await app.page.locator('.appointment-request-card').first().waitFor();
+  assert.equal(await app.page.locator('.appointment-request-card').count(), 1);
+  await app.page.getByRole('link', { name: 'Về thông báo' }).click();
+  await app.rows.first().waitFor();
+  await app.inbox.getByRole('button', { name: 'Đánh dấu tất cả đã đọc' }).click();
+  await app.page.getByRole('button', { name: 'Thông báo, 0 chưa đọc', exact: true }).waitFor();
+  await app.tab('Chưa đọc');
+  await app.inbox.getByText('Bạn đã xem hết thông báo.', { exact: true }).waitFor();
+  await app.page.reload();
+  await app.inbox.getByText('Bạn đã xem hết thông báo.', { exact: true }).waitFor();
+  const customerElse = await setup('CUSTOMER', 'customer-other');
+  await customerElse.showInbox();
+  await customerElse.inbox.getByText('Bạn chưa có thông báo.', { exact: true }).waitFor();
+  await customerElse.context.close();
+  await app.context.close();
+
+  const staffNotice = notice('staff-work', 'appointments', 'Bàn giao đã phân công', '/staff/appointments/own-appointment', 0, 'Bàn giao kho');
+  const completed = notice('staff-completed', 'appointments', 'Bàn giao đã hoàn tất', '/staff/appointments/own-appointment', 1);
+  datasets.set('staff-owned', [staffNotice, completed]);
+  const employee = await setup('STAFF', 'staff-owned', { width: 390, theme: 'dark' });
+  await employee.showInbox();
+  await employee.rows.first().waitFor();
+  await bounded(employee.page);
+  await employee.page.locator('[data-workspace-role="staff"][data-workspace-theme="dark"]').waitFor();
+  await employee.tab('Cần xử lý');
+  await employee.inbox.getByText('1–1 / 1 thông báo', { exact: true }).waitFor();
+  await employee.rows.getByText('Bàn giao đã phân công', { exact: true }).waitFor();
+  assert.equal(await employee.rows.count(), 1);
+  await employee.page.screenshot({ path: output + '/staff-mobile-dark.png', fullPage: true });
+  await employee.bell.click();
+  await employee.page.getByRole('dialog', { name: 'Thông báo', exact: true }).waitFor();
+  assert.equal(await employee.page.getByRole('dialog').locator('.workspace-notification-row').count(), 2);
+  await bounded(employee.page, '.workspace-notification-panel');
+  await employee.page.screenshot({ path: output + '/staff-mobile-bell-dark.png', fullPage: true });
+  await employee.page.getByRole('dialog').getByRole('link', { name: 'Xem tất cả thông báo' }).click();
+  await employee.page.waitForURL('**/staff/notifications');
+  await employee.rows.getByText('Bàn giao đã phân công', { exact: true }).waitFor();
+  await employee.rows.getByText('Bàn giao đã hoàn tất', { exact: true }).waitFor();
+  employee.flag.denyOpen = staffNotice.token;
+  await employee.rows.filter({ hasText: 'Bàn giao đã phân công' }).getByRole('button', { name: 'Bàn giao kho', exact: true }).click();
+  await employee.inbox.getByRole('alert').getByText('Hồ sơ không còn khả dụng hoặc bạn không có quyền xem.').waitFor();
+  assert.equal(new URL(employee.page.url()).pathname, '/staff/notifications');
   await employee.context.close();
 
-  const bank = { id: 'bank', submissionCode: 'BANK-TEST', status: 'PENDING_VERIFICATION', amount: 600000, customer: fixture.reservations[0].customer,
-    submittedAt: date(30), invoice: { invoiceCode: 'INV-TEST', balanceDue: 600000, status: 'OPEN', currency: 'VND' } };
-  const manager = await setup('MANAGER', {
-    'payment-submissions': [bank],
-    'online-payment-reconciliations': [{ id: 'recon', reconciliationCode: 'RECON', status: 'PENDING_REVIEW', createdAt: date(20) }],
-    'support-requests': [support('escalated', staff, 10, 'ESCALATED'), support('routine', staff, 500), support('early', null, 5, 'OPEN', 'Đề nghị trả kho trước hạn')],
-  }, true);
-  const managerPage = manager.page;
-  await managerPage.goto(`${base}/manager`);
-  await count(managerPage, 2);
-  await bell(managerPage).click();
-  const managerPopup = popup(managerPage);
-  await managerPopup.waitFor();
-  assert.equal(await managerPopup.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(30, 39, 51)');
-  for (const width of [1440, 768, 390, 320]) {
-    await managerPage.setViewportSize({ width, height: 740 });
-    await managerPage.waitForFunction(() => {
-      const rect = document.querySelector('.workspace-notification-panel').getBoundingClientRect();
-      return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
-    });
-  }
-  await managerPage.screenshot({ path: `${output}/manager-dark-320.png` });
-  assert.deepEqual(await managerPopup.locator('li a').evaluateAll(links => links.map(link => link.getAttribute('href'))),
-    ['/manager/operations/support-requests/escalated', '/manager/early-returns?record=early']);
-  await managerPopup.locator('li a').first().click();
-  await managerPage.waitForURL('**/manager/operations/support-requests/escalated');
-  await count(managerPage, 1);
-  await managerPage.getByRole('link', { name: 'Về thông báo' }).click();
-  await managerPage.getByRole('button', { name: 'Chưa đọc (1)' }).waitFor();
-  await managerPage.locator('.activity-item[href*="/manager/early-returns"]').click();
-  await managerPage.waitForURL('**/manager/early-returns?record=early');
-  await count(managerPage, 0);
-  assert(manager.calls.every(call => call.token === 'Bearer notice-fixture-MANAGER'));
-  assert(manager.calls.every(call => !call.path.startsWith('staff/')));
-  assert(manager.calls.every(call => !/manager\/(payment-submissions|online-payment-reconciliations)/.test(call.path)));
-  assert.deepEqual(manager.writes, []);
-  assert.deepEqual(manager.errors, []);
-  await manager.context.close();
-  for (const role of ['ADMIN', 'CUSTOMER']) {
-    const users = Array.from({ length: 7 }, (_, index) => ({ id: `own-account-${index}`, fullName: `Tài khoản thử ${index}`,
-      email: `hidden-${index}@example.test`, phone: '', role: 'CUSTOMER', accountStatus: index === 6 ? 'DISABLED' : 'ACTIVE', updatedAt: date(index) }));
-    const owns = { id: 'customer-id' }, other = { id: 'other-customer' };
-    const invoices = Array.from({ length: 7 }, (_, index) => ({ ...fixture.invoices[0], id: `own-invoice-${index}`,
-      invoiceCode: `PRIVATE-INVOICE-CODE-${index}`, customer: owns, reservation: { customer: owns }, updatedAt: date(index) }));
-    const notices = users.map((user, index) => ({
-      id: `account-event-${index}`, category: 'ACTIVITY', resource: 'users', resourceId: user.id, outcome: 'SUCCESS',
-      action: index === 6 ? 'DISABLE_ACCOUNT' : index === 5 ? 'REACTIVATE_ACCOUNT' : 'CREATE',
-      createdAt: date(index), actorName: 'Fixture Admin', actorRole: 'ADMIN',
-      targetAccount: index === 0 ? null : { fullName: user.fullName, role: user.role },
-    })).reverse();
-    const app = await setup(role, { users, 'account-notices': notices, 'audit-events': notices,
-      invoices: [...invoices, { ...invoices[0], id: 'other-invoice', customer: other }] });
-    const { page } = app;
-    const root = `/${role.toLowerCase()}`;
-    await page.goto(`${base}${root}/settings/profile`);
-    const profileName = page.getByRole('form', { name: 'Cập nhật hồ sơ' }).getByLabel('Họ và tên');
-    await profileName.fill('Nội dung hồ sơ đang nhập');
-    const compactCount = number => page.getByRole('button', { name: `Thông báo, ${number} chưa đọc`, exact: true }).waitFor();
-    const dialog = page.getByRole('dialog', { name: 'Thông báo', exact: true });
-    await compactCount(7);
-    await bell(page).click(); await dialog.waitFor();
-    assert.equal(await dialog.locator('li').count(), 6);
-    assert.equal(await dialog.getByRole('searchbox').count(), 0);
-    assert.equal(await dialog.getByRole('button', { name: 'Cần xử lý', exact: true }).count(), 0);
-    assert.doesNotMatch(await dialog.innerText(), /PRIVATE-INVOICE-CODE|hidden-\d@example|Tự kiểm tra|được lưu/);
-    if (role === 'ADMIN') {
-      const contents = await dialog.innerText();
-      assert.match(contents, /Đã vô hiệu hóa tài khoản/);
-      assert.match(contents, /Đã kích hoạt lại tài khoản/);
-      assert.match(contents, /Tài khoản đã được tạo/);
-      assert.doesNotMatch(contents, /Tài khoản đang hoạt động/);
-    }
-    for (const theme of ['light', 'dark']) {
-      await page.evaluate(theme => { localStorage.setItem('nestbox-workspace-theme', theme); window.dispatchEvent(new Event('nestbox-workspace-theme-change')); }, theme);
-      await page.waitForFunction(theme => {
-        const element = document.querySelector('.workspace-notification-panel');
-        return getComputedStyle(element).backgroundColor === (theme === 'dark' ? 'rgb(30, 39, 51)' : 'rgb(255, 255, 255)');
-      }, theme);
-      for (const width of [1920, 1366, 768, 390]) {
-        await page.setViewportSize({ width, height: 800 });
-        await page.waitForFunction(() => {
-          const box = document.querySelector('.workspace-notification-panel').getBoundingClientRect();
-          return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth + 1;
-        });
-        assert(await dialog.getByRole('button', { name: 'Đóng thông báo' }).isVisible());
-      }
-    }
-    await dialog.getByRole('button', { name: 'Sau', exact: true }).click();
-    await dialog.getByText(/Trang 2\/2/).waitFor();
-    if (role === 'ADMIN') await dialog.getByText(/7 thông báo/).waitFor();
-    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
-    await bell(page).click(); await dialog.waitFor();
-    await page.mouse.click(4, 200);
-    await dialog.waitFor({ state: 'hidden' });
-    await bell(page).click();
-    await dialog.getByRole('button', { name: 'Đóng thông báo' }).click(); await dialog.waitFor({ state: 'hidden' });
-    const refreshed = page.waitForResponse(response => {
-      const url = new URL(response.url());
-      return role === 'ADMIN'
-        ? url.pathname.endsWith('/admin/audit-events') && url.searchParams.get('category') === 'ACCOUNT_NOTICES'
-        : url.pathname.endsWith('/customer/invoices');
-    });
-    await pulse(page); await refreshed; await compactCount(7);
-    assert.equal(await profileName.inputValue(), 'Nội dung hồ sơ đang nhập');
-    await bell(page).click();
-    const link = dialog.locator('li a').first();
-    const expectedPath = role === 'ADMIN' ? '/admin/users/own-account-6' : '/customer/payments?invoice=own-invoice-6';
-    assert.equal(await link.getAttribute('href'), expectedPath);
-    await link.click(); await page.waitForURL(`${base}${expectedPath}`);
-    await compactCount(6);
-    await bell(page).click();
-    await dialog.getByRole('button', { name: 'Tất cả', exact: true }).click();
-    assert.equal(await dialog.locator('li a').first().getAttribute('data-unread'), 'false');
-    await dialog.getByRole('button', { name: 'Đánh dấu tất cả đã đọc' }).click(); await compactCount(0);
-    await dialog.getByRole('button', { name: 'Chưa đọc', exact: true }).click();
-    await dialog.getByText('Không có thông báo chưa đọc.').waitFor();
-    if (role === 'CUSTOMER') {
-      await dialog.getByRole('link', { name: 'Xem tất cả thông báo' }).click();
-      await page.waitForURL('**/customer/notifications');
-      await page.locator('.workspace-notification-inbox').getByRole('heading', { name: 'Thông báo', exact: true }).waitFor();
-    } else {
-      await dialog.getByRole('link', { name: 'Lịch sử đăng nhập' }).click();
-      await page.waitForURL('**/admin/login-history');
-      await bell(page).click();
-      await dialog.getByRole('link', { name: 'Nhật ký hoạt động' }).click();
-      await page.waitForURL('**/admin/activity');
-      await bell(page).click();
-      await dialog.getByRole('button', { name: 'Tất cả', exact: true }).click();
-      await dialog.getByRole('button', { name: 'Sau', exact: true }).click();
-      await dialog.getByRole('link', { name: /Xem sự kiện/ }).click();
-      await page.waitForURL('**/admin/activity?event=account-event-0');
-      await page.getByRole('table').getByText('Tạo tài khoản', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('table').getByRole('row').count(), 2);
-      notices.unshift({ ...notices[0], id: 'new-account-event', action: 'UPDATE', createdAt: date(12) });
-      await pulse(page);
-      await compactCount(1);
-      const polled = page.waitForResponse(response => new URL(response.url()).searchParams.get('category') === 'ACCOUNT_NOTICES');
-      await pulse(page);
-      await polled;
-      await bell(page).click();
-      await dialog.getByRole('button', { name: 'Chưa đọc', exact: true }).click();
-      assert.equal(await dialog.locator('li').count(), 1);
-      const updatedAccount = dialog.getByRole('link', { name: /Đã cập nhật thông tin tài khoản/ });
-      await updatedAccount.waitFor();
-      assert.equal(await updatedAccount.getAttribute('href'), '/admin/users/own-account-6');
-    }
-    assert(app.calls.every(call => call.token === `Bearer notice-fixture-${role}`));
-    assert(app.calls.every(call => !/^(staff|manager)\//.test(call.path) && (role === 'ADMIN' || !call.path.startsWith('admin/'))));
-    assert.deepEqual(app.errors, []);
-    assert.deepEqual(app.writes, []);
-    await app.context.close();
-  }
-  console.log('PASS all four notification roles, account scope, read state, navigation, refresh, and responsive themes. APIs mocked.');
-} finally { await browser.close(); }
+  datasets.set('manager-notices', [notice('decision', 'support-requests', 'Hỗ trợ chờ xem xét', '/manager/operations/support-requests/support-1', 0, 'Xem xét hỗ trợ', 'Tên khách hàng dài '.repeat(35))]);
+  const supervisor = await setup('MANAGER', 'manager-notices', { width: 900 });
+  let release;
+  supervisor.flag.delay = new Promise(resolve => { release = resolve; });
+  await supervisor.showInbox();
+  await supervisor.inbox.getByText('Đang tải thông báo…', { exact: true }).waitFor();
+  release();
+  await supervisor.rows.getByText('Hỗ trợ chờ xem xét', { exact: true }).waitFor();
+  await bounded(supervisor.page);
+  supervisor.flag.error = true;
+  await supervisor.inbox.getByRole('button', { name: 'Làm mới', exact: true }).click();
+  await supervisor.inbox.getByRole('alert').getByText('Không thể tải thông báo.', { exact: true }).waitFor();
+  assert.equal(await supervisor.rows.count(), 0);
+  supervisor.flag.error = false;
+  await supervisor.inbox.getByRole('button', { name: 'Thử lại', exact: true }).click();
+  await supervisor.rows.getByText('Hỗ trợ chờ xem xét', { exact: true }).waitFor();
+  await supervisor.context.close();
+
+  datasets.set('admin-notices', [notice('admin-user', 'users', 'Đã vô hiệu hóa tài khoản', '/admin/users/account-id', 0, '', 'Tên tài khoản · Khách hàng')]);
+  const admin = await setup('ADMIN', 'admin-notices');
+  await admin.showInbox();
+  await admin.rows.getByText('Đã vô hiệu hóa tài khoản', { exact: true }).waitFor();
+  await admin.tab('Cần xử lý');
+  await admin.inbox.getByText('Hiện không có việc cần xử lý.', { exact: true }).waitFor();
+  await admin.bell.click();
+  const adminBell = admin.page.getByRole('dialog', { name: 'Thông báo', exact: true });
+  await adminBell.getByRole('link', { name: 'Xem tất cả thông báo' }).waitFor();
+  await adminBell.getByRole('button', { name: 'Đã vô hiệu hóa tài khoản', exact: true }).click();
+  await admin.page.waitForURL('**/admin/users/account-id');
+  await admin.page.getByRole('link', { name: 'Về thông báo' }).waitFor();
+  await admin.context.close();
+
+  assert.deepEqual(errors, []);
+  assert.deepEqual(otherWrites, []);
+  assert(reads.get('customer-owned').some(path => path.includes('view=action')));
+  assert(reads.get('customer-owned').some(path => path.includes('limit=50')));
+  console.log('PASS all four Web notification roles, 131 items, search, filters, read and action states, five-item bell, navigation, reload, stale links, errors, keyboard focus and responsive themes');
+} finally {
+  await browser.close();
+}

@@ -12,6 +12,11 @@ function setup() {
     stockMovement: { count: vi.fn().mockResolvedValue(1), groupBy: vi.fn().mockResolvedValue([{ assignedStaffUserId: 'staff', _count: { _all: 3 } }]) },
     supportRequest: { count: vi.fn().mockResolvedValue(2), groupBy: vi.fn().mockResolvedValue([]) },
     maintenanceRequest: { count: vi.fn().mockResolvedValue(3), groupBy: vi.fn().mockResolvedValue([]) },
+    handoverAppointment: { count: vi.fn().mockResolvedValue(0) },
+    returnRequest: { count: vi.fn().mockResolvedValue(0) },
+    renewalRequest: { count: vi.fn().mockResolvedValue(0) },
+    transferRequest: { count: vi.fn().mockResolvedValue(0) },
+    damageClaim: { count: vi.fn().mockResolvedValue(0) },
     paymentSubmission: { count: vi.fn().mockResolvedValue(4) }, onlinePaymentReconciliation: { count: vi.fn().mockResolvedValue(1) },
   };
   const prisma = { $transaction: vi.fn(operation => operation(tx)) };

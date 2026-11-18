@@ -107,6 +107,7 @@ function fixtures() {
           appointmentCode: "APP-STAFF",
           status: "CONFIRMED",
           scheduledAt: "2030-11-01T03:00:00Z",
+          assignedStaff: staff,
           customer: user("CUSTOMER"),
           reservation,
           allocatedUnits: [
@@ -125,6 +126,8 @@ function fixtures() {
           id: "return-id",
           returnCode: "RET-STAFF",
           status: "REQUESTED",
+          assignedStaff: staff,
+          returnReadiness: { canReturn: true, totalOutstanding: 0 },
           reservation,
           customer: user("CUSTOMER"),
           inspections: [
@@ -173,6 +176,7 @@ function fixtures() {
           id: "transfer-id",
           transferCode: "TRF-APPROVED",
           status: "APPROVED",
+          assignedStaff: staff,
           reason: "UNIT_ISSUE",
           reservation,
           contract: rentalContract,
@@ -308,6 +312,8 @@ async function setup(initialRole, authenticated = true) {
         sizes: [],
       });
     if (role === expireRole) return send({ message: "Phiên hết hạn" }, 401);
+    if (path === "notifications" && method === "GET" && roles.includes(role))
+      return send({ page: 1, limit: 5, total: 0, unreadTotal: 0, items: [], recent: [], kinds: [] });
     const prefix = path.split("/")[0];
     const allowed =
       prefix === "admin"
@@ -379,7 +385,6 @@ async function setup(initialRole, authenticated = true) {
       if (path.startsWith("staff/")) {
         assert.equal(role, "STAFF");
         const [, resource, id, action] = path.split("/");
-        if (resource === "transfers") return send({ status: "COMPLETED" });
         if (resource === "maintenance" && !id) {
           data.staff.maintenance.push({
             id: "reported-id",
@@ -393,6 +398,11 @@ async function setup(initialRole, authenticated = true) {
         }
         const row = data.staff[resource].find((item) => item.id === id);
         assert(row, path);
+        if (resource === "transfers" && action === "complete") {
+          assert.equal(row.assignedStaff?.id, user(role).id);
+          assert(body.goodsMoved && body.oldKeysReturned && body.newKeysDelivered);
+          row.status = "COMPLETED";
+        }
         if (["start", "complete-work", "resolve", "escalate"].includes(action))
           assert.equal(row.assignedStaff.id, user(role).id);
         if (action === "start") row.status = "IN_PROGRESS";
@@ -588,7 +598,7 @@ try {
       duplicates: rejects(() => create([line, { ...line, key: '2' }])),
       ownership: rejects(() => create([line], 'OUT', [{ ...item, rentalContract: { id: 'other' } }])),
       overBalance: rejects(() => create([{ ...line, quantity: '5' }])),
-      actualQuantity: rejects(() => stockCompleteInput(row, { line: '0' }, '')) && stockCompleteInput(row, { line: '3' }, '').lines[0].actualQty === 3,
+      actualQuantity: rejects(() => stockCompleteInput(row, { line: '0' }, '')) && stockCompleteInput(row, { line: '3' }, 'Kiểm đếm thực tế').lines[0].actualQty === 3,
       invalidDate: rejects(() => create([line], 'OUT', [item], '2026-02-31T10:00')),
       utc7: create([line], 'OUT', [item], '2026-10-24T10:00').scheduledAt === '2026-10-24T03:00:00.000Z',
       multipleLines: create([line, { ...line, key: '2', storedItemId: '', name: 'Ghế', unit: 'cái' }], 'IN').lines.length === 2,
@@ -672,16 +682,20 @@ try {
     assert.equal(await staff.page.getByRole("button", { name: /Ghi nhận thanh toán|Duyệt quyết toán|Ghi nhận hoàn tiền|Lưu phân công/ }).count(), 0);
   }
   await open(staff.page, "/staff/maintenance?search=MNT-104");
-  await staff.page
-    .getByRole("link", { name: "MNT-104", exact: true })
-    .waitFor();
+  await staff.page.getByText("MNT-104", { exact: true }).waitFor();
+  await staff.page.getByRole("button", { name: "Thao tác MNT-104", exact: true }).click();
+  await staff.page.getByRole("link", { name: "Xem chi tiết", exact: true }).click();
+  await staff.page.waitForURL("**/staff/maintenance/maintenance-104");
+  await open(staff.page, "/staff/maintenance?limit=50");
+  await staff.page.getByRole("button", { name: "Trang sau", exact: true }).click();
+  await staff.page.getByText("MNT-50", { exact: true }).waitFor();
   await open(staff.page, "/staff/appointments?date=2030-11-01");
   await staff.page.getByText("APP-STAFF", { exact: true }).waitFor();
   await staff.page
     .getByLabel("Ngày", { exact: true })
     .fill("2030-11-02");
   await staff.page
-    .getByText("Không tìm thấy dữ liệu", { exact: true })
+    .getByRole("heading", { name: "Không tìm thấy dữ liệu", exact: true })
     .waitFor();
   assert(
     reads.some(
@@ -722,10 +736,10 @@ try {
     .getByRole("button", { name: "Bắt đầu sửa chữa", exact: true })
     .click();
   await staff.page
-    .getByLabel("Kết quả sửa chữa", { exact: true })
+    .getByLabel("Nội dung kiểm tra hoặc sửa chữa", { exact: true })
     .fill("Đã sửa và kiểm tra khóa.");
   await staff.page
-    .getByRole("button", { name: "Gửi kết quả để nghiệm thu", exact: true })
+    .getByRole("button", { name: "Gửi kết quả nghiệm thu", exact: true })
     .click();
   await staff.page
     .getByText("Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.", {
@@ -742,11 +756,12 @@ try {
       .count(),
     0,
   );
+  await staff.page.getByLabel("Hướng xử lý").selectOption("escalate");
   await staff.page
-    .getByLabel("Lý do chuyển bộ phận phụ trách", { exact: true })
+    .getByLabel("Lý do chuyển quản lý", { exact: true })
     .fill("Cần quản lý đánh giá trách nhiệm.");
   await staff.page
-    .getByRole("button", { name: "Chuyển bộ phận phụ trách xem xét", exact: true })
+    .getByRole("button", { name: "Chuyển quản lý xem xét", exact: true })
     .click();
   await staff.page
     .getByText("Đã chuyển đến bộ phận phụ trách xem xét.", { exact: true })
@@ -758,7 +773,7 @@ try {
   staff.data.staff.appointments[0].scheduledAt = when;
 
   await open(staff.page, "/staff/appointments/handover-id");
-  await staff.page.getByLabel('Người nhận bàn giao', { exact: true }).selectOption('AUTHORIZED');
+  await staff.page.getByRole('combobox', { name: /Người nhận bàn giao/ }).selectOption('AUTHORIZED');
   await staff.page.getByLabel('Tên người được ủy quyền', { exact: true }).fill('Khách nhận kho');
   await staff.page.getByLabel('Căn cứ ủy quyền', { exact: true }).fill('Văn bản ủy quyền đã đối chiếu');
   await staff.page.getByLabel('Hiện trạng cửa, khóa, tường, sàn và thiết bị').fill('Kho sạch, khóa hoạt động.');
@@ -805,12 +820,12 @@ try {
     )
     .waitFor();
   await open(staff.page, "/staff/transfers/transfer-id");
-  await staff.page
-    .getByLabel(
-      "Tôi đã đối chiếu và hoàn tất chuyển kho thực tế",
-      { exact: true },
-    )
-    .check();
+  await staff.page.getByLabel("Người nhận kho mới").fill("Khách nhận kho");
+  await staff.page.getByLabel("Số chìa khóa/thẻ kho cũ đã thu").fill("1");
+  await staff.page.getByLabel("Số chìa khóa/thẻ kho mới đã giao").fill("1");
+  await staff.page.getByRole("checkbox", { name: /Đã chuyển toàn bộ hàng/ }).check();
+  await staff.page.getByRole("checkbox", { name: /Đã thu lại chìa khóa/ }).check();
+  await staff.page.getByRole("checkbox", { name: /Đã giao chìa khóa/ }).check();
   await staff.page
     .getByRole("button", { name: "Hoàn tất chuyển kho", exact: true })
     .click();
@@ -829,7 +844,7 @@ try {
     .getByRole("button", { name: "Bắt đầu hỗ trợ", exact: true })
     .click();
   await staff.page
-    .getByLabel("Nội dung xử lý", { exact: true })
+    .getByLabel("Mô tả kết quả xử lý", { exact: true })
     .fill("Đã hướng dẫn và khắc phục tại chỗ.");
   await staff.page
     .getByRole("button", { name: "Hoàn tất hỗ trợ", exact: true })
@@ -903,7 +918,7 @@ try {
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));
   assert.match(onlinePaymentWrite.key, /^cust-vnpay-/);
   assert.equal(onlinePaymentWrite.body.locale, "vn");
-  await open(customer.page, "/customer/contracts?page=6");
+  await open(customer.page, "/customer/contracts?limit=20&page=6");
   await customer.page.getByText("CON-104", { exact: true }).waitFor();
   assert(
     reads.some(
@@ -969,7 +984,7 @@ try {
     .click();
   await customer.page
     .getByRole("status")
-    .filter({ hasText: "Lịch nhận kho hợp lệ đã được xác nhận tự động" })
+    .filter({ hasText: "Giờ hẹn nhận kho đã được xác nhận" })
     .waitFor();
   assert.equal(
     writes.at(-1).body.scheduledAt,
@@ -1032,11 +1047,10 @@ try {
       await app.page
         .getByRole("button", { name: "Mở điều hướng", exact: true })
         .click();
-      await app.page
-        .getByRole("dialog")
-        .getByRole("link", { name: "Tiếp nhận yêu cầu", exact: true })
-        .click();
-      await app.page.locator('.work-hub-card[href="/staff/support-requests"]').click();
+      const drawer = app.page.getByRole("dialog", { name: "Điều hướng nội bộ" });
+      const operations = drawer.getByRole("button", { name: /Vận hành kho/ });
+      if ((await operations.getAttribute("aria-expanded")) === "false") await operations.click();
+      await drawer.getByRole("link", { name: /Hỗ trợ khách hàng/ }).click();
     } else {
       await app.page
         .getByRole("button", { name: "Mở menu", exact: true })
@@ -1054,11 +1068,10 @@ try {
       await app.page
         .getByRole("button", { name: "Mở menu", exact: true })
         .click();
-      await app.page
-        .locator(".customer-sidebar")
-        .getByRole("link", { name: /Thay đổi & hỗ trợ/ })
-        .click();
-      await app.page.locator('.work-hub-card[href="/customer/support"]').click();
+      const sidebar = app.page.locator(".customer-sidebar");
+      const support = sidebar.getByRole("button", { name: /Thay đổi & hỗ trợ/ });
+      if ((await support.getAttribute("aria-expanded")) === "false") await support.click();
+      await sidebar.getByRole("link", { name: /^Hỗ trợ$/ }).click();
     }
     await ownLinks(app.page, role);
     if (process.env.WDP_SCREENSHOTS_DIR) {
@@ -1071,7 +1084,7 @@ try {
   }
   await open(customer.page, '/customer/contracts');
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Contracts must remain visible at 390px');
-  await open(customer.page, '/customer/payments');
+  await open(customer.page, '/customer/payments?limit=20');
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Invoices must remain visible at 390px');
   assert.equal(await customer.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 20, 'Invoice actions remain visible with pagination');
   assert(await customer.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

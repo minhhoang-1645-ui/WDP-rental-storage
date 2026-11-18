@@ -1,0 +1,70 @@
+.workspace-themed[data-workspace-role] .record-detail-page { min-width: 0; }
+.workspace-themed[data-workspace-role] .record-detail-page .manager-page-header h1 {
+  margin: 0;
+  font-size: clamp(26px, 2.4vw, 30px);
+  line-height: 1.2;
+}
+.record-detail-page :is(.manager-detail-content, .customer-detail-content, .customer-detail-aside, .claims-detail-stack) { gap: 20px; min-width: 0; }
+.record-detail-page :is(.manager-section, .customer-panel, .manager-processing) { min-width: 0; }
+.record-detail-page :is(.manager-section, .customer-panel, .manager-processing) h2 { font-size: 18px; line-height: 1.35; }
+.record-detail-page :is(.manager-facts, .customer-facts) { gap: 12px 16px; }
+.record-detail-page :is(.manager-facts, .customer-facts) dt { font-size: 14px; }
+.record-detail-page :is(.manager-facts, .customer-facts) dd { font-size: 15px; overflow-wrap: anywhere; }
+.record-detail-page .record-action-panel .portal-form > .button-primary { justify-self: start; width: auto; }
+.record-detail-page .record-action-panel .portal-form { gap: 12px; }
+.record-detail-page .record-action-panel textarea { min-height: 84px; }
+.record-note { margin-block-start: 16px; padding-block-start: 12px; border-top: 1px solid var(--workspace-border); }
+.record-note p, .record-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-attribution { color: var(--workspace-secondary); font-size: 14px; }
+.record-links { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.record-disclosure { border: 1px solid var(--workspace-border); border-radius: var(--panel-radius); background: var(--workspace-surface); min-width: 0; }
+.record-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; padding: 12px 16px; font-size: 15px; font-weight: 650; cursor: pointer; }
+.record-disclosure > summary::-webkit-details-marker { display: none; }
+.record-disclosure > summary svg { flex: none; color: var(--workspace-secondary); }
+.record-disclosure[open] > summary svg { transform: rotate(180deg); }
+.record-disclosure-content { border-top: 1px solid var(--workspace-border); padding: 12px 16px; min-width: 0; }
+.record-detail-page .manager-section > .record-disclosure { margin-top: 16px; }
+.record-related-list { padding: 0; margin: 0; list-style: none; }
+.record-related-list > li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, .65fr); gap: 8px 16px; align-items: center; padding-block: 10px; overflow-wrap: anywhere; }
+.record-related-list > li + li { border-top: 1px solid var(--workspace-border); }
+.record-related-list small { display: block; margin-top: 2px; font-size: 14px; color: var(--workspace-secondary); }
+.record-focused-layout { max-width: 960px; }
+.customer-request-card:has(.customer-request-disclosure[open]) .customer-request-excerpt { display: none; }
+.stock-result-table { border: 1px solid var(--workspace-border); border-radius: var(--control-radius); overflow: auto; }
+.stock-result-table .manager-table { width: 100%; min-width: 0; }
+.stock-result-table .manager-table tbody th { color: var(--workspace-text); background: transparent; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.stock-result-table small { display: block; margin-top: 2px; color: var(--workspace-secondary); font-size: 14px; font-weight: normal; }
+
+.workspace-themed .portal-dialog.portal-dialog-framed[open] { display: flex; flex-direction: column; padding: 0; overflow: hidden; scrollbar-gutter: auto; }
+.workspace-themed .portal-dialog.portal-dialog-framed > header { position: static; padding: 14px 20px; border-bottom: 1px solid var(--workspace-border); }
+.portal-dialog-body { min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; }
+.portal-dialog-body > * + * { margin-top: 16px; }
+.portal-dialog-footer { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--workspace-border); padding: 12px 20px; }
+.workspace-themed .portal-dialog.assignment-dialog { width: min(580px, calc(100vw - 32px)); }
+.assignment-overview { display: grid; gap: 10px; min-width: 0; }
+.assignment-title { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; overflow-wrap: anywhere; }
+.assignment-dialog .manager-facts { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
+.assignment-dialog .manager-facts dd { overflow-wrap: anywhere; }
+.assignment-staff-list { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.assignment-staff-list legend { margin-bottom: 6px; font-weight: 600; }
+.assignment-staff-option { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--workspace-border); border-radius: var(--control-radius); cursor: pointer; }
+.assignment-staff-option:has(input:checked) { border-color: var(--workspace-primary); background: var(--workspace-canvas); }
+.assignment-staff-option input { width: 16px; height: 16px; accent-color: var(--workspace-primary); }
+.assignment-staff-option :is(strong, small) { display: block; overflow-wrap: anywhere; }
+.assignment-staff-option small { color: var(--workspace-secondary); font-size: 14px; }
+
+@media (min-width: 1120px) {
+  .workspace-themed .record-detail-page .manager-detail-grid:not(.record-detail-readonly, .transfer-detail-grid) { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+}
+@media (max-width: 650px) {
+  .record-related-list > li { grid-template-columns: minmax(0,1fr) auto; }
+  .record-related-list > li > :first-child { grid-column: 1 / -1; }
+  .workspace-themed .portal-dialog.assignment-dialog { margin: auto auto 0; width: 100%; max-width: 100%; max-height: calc(100dvh - 16px); border-radius: var(--panel-radius) var(--panel-radius) 0 0; }
+  .portal-dialog-footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .assignment-staff-option { grid-template-columns: auto minmax(0,1fr); }
+  .assignment-staff-option > small { grid-column: 2; }
+  .stock-result-table .manager-table :is(th,td) { padding: 8px 6px; white-space: normal; }
+}
+@media print {
+  .record-disclosure:not([open]) > .record-disclosure-content { display: block; }
+}

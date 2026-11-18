@@ -1,4 +1,6 @@
-import { RecordIdentity } from '../../components/workspace/RecordIdentity';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
+import { Modal } from '../../components/manager/PortalUi';
+import { CopyRecordCode, RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { ContractRenewalHistory } from '../../components/customer/ContractRenewalHistory';
 import { ContractTransferHistory } from '../../components/customer/ContractTransferHistory';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -88,7 +90,7 @@ export function CustomerContractsPage() {
         <>
         {message && <p className="customer-form-message" role="status">{message}</p>}
         <div className="customer-table-wrap customer-responsive-table">
-          <table className="customer-table">
+          <table className="customer-table customer-contracts-table">
             <thead>
               <tr>
                 <th>Hợp đồng</th>
@@ -131,7 +133,27 @@ export function CustomerContractsPage() {
             </tbody>
           </table>
         </div>
-        {selected && <div className="customer-panel"><h2>Hợp đồng {selected.contractCode}</h2><p>Kiểm tra thông tin hợp đồng trước khi xác nhận.</p><DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />{selected.terms.acceptedAt ? <div><p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>{selected.terms.signatureImage ? <img src={selected.terms.signatureImage} alt="Chữ ký đã xác nhận" style={{ maxWidth: '100%', width: 300 }} /> : <p>Hồ sơ xác nhận trước đây không có ảnh chữ ký.</p>}</div> : <SignatureAgreement key={`${selected.id}:${selected.terms.snapshotHash}`} label="Xác thực và ký hợp đồng" busy={Boolean(acceptingId)} otpConfigured={selected.terms.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/contracts/${encodeURIComponent(selected.id)}/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: selected.terms.snapshotHash }) })} onSubmit={(signature, proof) => accept(selected, signature, proof)} />}<ContractTransferHistory contract={selected} scope="customer" /><ContractRenewalHistory contract={selected} scope="customer" /><button type="button" className="button-secondary" onClick={() => setSelected(null)}>Đóng</button></div>}
+        {selected && <Modal title="Chi tiết hợp đồng" className="customer-contract-dialog" busy={Boolean(acceptingId)}
+          onClose={() => setSelected(null)} footer={<button type="button" className="button-secondary" disabled={Boolean(acceptingId)} onClick={() => setSelected(null)}>Đóng</button>}>
+          <div className="record-page-title"><h3>Kho {selected.storageUnit.unitCode}</h3><CustomerStatus status={selected.status} /></div>
+          <CopyRecordCode value={selected.contractCode} label="Mã hợp đồng" />
+          <p>{formatPortalDate(selected.startDate)} – {formatPortalDate(selected.endDate)}</p>
+          <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />
+          {selected.terms.acceptedAt ? <DetailDisclosure title="Thông tin ký hợp đồng">
+            <p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>
+            {selected.terms.signatureImage && <img src={selected.terms.signatureImage} alt="Chữ ký đã xác nhận" style={{ maxWidth: '100%', width: 300 }} />}
+          </DetailDisclosure> : <SignatureAgreement key={`${selected.id}:${selected.terms.snapshotHash}`}
+            label="Xác thực và ký hợp đồng" busy={Boolean(acceptingId)} otpConfigured={selected.terms.otp?.emailConfigured}
+            onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/contracts/${encodeURIComponent(selected.id)}/signature-otp`, {
+              method: 'POST',
+              body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: selected.terms.snapshotHash }),
+            })}
+            onSubmit={(signature, proof) => accept(selected, signature, proof)} />}
+          {(Boolean(selected.transfers?.length) || Boolean(selected.renewals?.length)) && <DetailDisclosure title="Lịch sử hợp đồng">
+            <ContractTransferHistory contract={selected} scope="customer" />
+            <ContractRenewalHistory contract={selected} scope="customer" />
+          </DetailDisclosure>}
+        </Modal>}
         </>
       )}
       {pagination}

@@ -10,5 +10,6 @@ import { OperationalStoredItemsController } from './operational-stored-items.con
   imports: [AuthModule],
   controllers: [CustomerStockMovementsController, ManagerStockMovementsController, StaffStockMovementsController, OperationalStoredItemsController],
   providers: [StockMovementsService],
+  exports: [StockMovementsService],
 })
 export class StockMovementsModule {}

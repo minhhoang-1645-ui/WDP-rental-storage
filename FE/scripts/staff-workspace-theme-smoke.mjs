@@ -120,6 +120,8 @@ async function checkProfile(page, roleLabel, dark) {
   assert.equal(await panel.getByText('Đổi mật khẩu', { exact: true }).count(), 0);
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Thông tin cá nhân');
   await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Bảo mật');
+  await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Cài đặt giao diện');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), dark ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối');
@@ -310,8 +312,9 @@ try {
   await page.waitForURL(url => url.searchParams.get('mine') === 'true');
   await page.getByRole('link', { name: 'Mở xử lý' }).click();
   await page.waitForURL('**/staff/support-requests/support-id');
-  await page.getByLabel('Lý do chuyển bộ phận phụ trách').fill('Kiểm tra tình trạng khóa tại cơ sở.');
-  await page.getByRole('button', { name: 'Chuyển bộ phận phụ trách xem xét' }).click();
+  await page.getByLabel('Hướng xử lý').selectOption('escalate');
+  await page.getByLabel('Lý do chuyển quản lý').fill('Kiểm tra tình trạng khóa tại cơ sở.');
+  await page.getByRole('button', { name: 'Chuyển quản lý xem xét' }).click();
   await page.getByText('Đã chuyển đến bộ phận phụ trách xem xét.').waitFor();
   assert.equal(escalations[0]?.reason, 'Kiểm tra tình trạng khóa tại cơ sở.');
 
@@ -335,7 +338,7 @@ try {
   await page.getByText('Nhân viên khác', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Hoàn tất phiếu' }).count(), 0);
   showTaskFixtures = false;
-  for (const resource of ['inquiries', 'appointments', 'stored-items', 'assigned-units', 'renewals', 'transfers', 'returns', 'support-requests', 'maintenance', 'rentals', 'damage-claims', 'notifications']) {
+  for (const resource of ['appointments', 'stored-items', 'assigned-units', 'renewals', 'transfers', 'returns', 'support-requests', 'maintenance', 'rentals', 'damage-claims', 'notifications']) {
     await page.goto(`${base}/staff/${resource}`);
     await page.locator('main h1').waitFor();
     for (const width of [1366, 390]) {
@@ -354,7 +357,9 @@ try {
     const app = await setup(role);
     await app.page.goto(`${base}/${role.toLowerCase()}`);
     await app.page.locator('main h1').waitFor();
-    assert.equal(await app.page.locator('[data-workspace-theme]').count(), 1);
+    const workspace = app.page.locator('[data-workspace-role][data-workspace-theme]');
+    assert.equal(await workspace.count(), 1);
+    assert.equal(await workspace.getAttribute('data-workspace-theme'), await app.page.locator('html').getAttribute('data-workspace-theme'));
     assert.equal(await app.page.locator('.workspace-profile').count(), 1);
     if (role === 'MANAGER') {
       assert.equal(await app.page.locator('[data-workspace-role="manager"]').getAttribute('data-workspace-theme'), 'dark');

@@ -35,9 +35,9 @@ try {
     if (!records[resource]) return route.fulfill({ json: { items: [], total: 0, page: 1, limit: 20 } });
     assert.equal(url.pathname, `/api/staff/management/${resource}`);
     const query = url.searchParams;
-    requests.push({ resource, mine: query.get('assignedToMe'), page: query.get('page') });
+    requests.push({ resource, page: query.get('page'), priority: query.get('priority') });
     const items = records[resource].filter(row =>
-      (query.get('assignedToMe') !== 'true' || row.assignedStaff?.id === staff.id) &&
+      row.assignedStaff?.id === staff.id &&
       (!query.get('priority') || row.priority === query.get('priority')));
     const page = Number(query.get('page')) || 1;
     const limit = Number(query.get('limit')) || 20;
@@ -48,34 +48,26 @@ try {
   for (const resource of Object.keys(records)) {
     await page.goto(`${base}/staff/${resource}?limit=10&page=2`);
     const table = page.getByRole('table', { name: resource === 'maintenance' ? 'Bảo trì kho' : 'Hỗ trợ khách hàng', exact: true });
-    await table.getByText('Nhân viên khác', { exact: true }).waitFor();
-    const mine = page.getByRole('checkbox', { name: 'Việc được giao cho tôi', exact: true });
-    await mine.click();
-    await page.waitForURL(url => url.searchParams.get('mine') === 'true' && !url.searchParams.has('page'));
-    await page.getByText('Trang 1 / 2', { exact: true }).waitFor();
-    await table.locator('tbody tr').first().waitFor();
-    assert.equal(await table.locator('tbody tr').count(), 10);
-    assert.doesNotMatch(await table.innerText(), /Nhân viên khác|Chưa phân công/);
-    await page.getByRole('button', { name: 'Trang sau' }).click();
     await page.getByText('Trang 2 / 2', { exact: true }).waitFor();
     assert.equal(await table.locator('tbody tr').count(), 2);
     assert.doesNotMatch(await table.innerText(), /Nhân viên khác|Chưa phân công/);
+    await page.getByRole('button', { name: 'Trang trước' }).click();
+    await page.getByText('Trang 1 / 2', { exact: true }).waitFor();
+    assert.equal(await table.locator('tbody tr').count(), 10);
+    assert.doesNotMatch(await table.innerText(), /Nhân viên khác|Chưa phân công/);
     await page.reload();
-    await table.locator('tbody tr').first().waitFor();
-    assert(await mine.isChecked());
-    assert.equal(await table.locator('tbody tr').count(), 2);
+    await page.getByText('Trang 1 / 2', { exact: true }).waitFor();
+    assert.equal(await table.locator('tbody tr').count(), 10);
     await page.screenshot({ path: `${output}/${resource}-mine.png`, fullPage: true });
-    await mine.click();
-    await page.waitForURL(url => !url.searchParams.has('mine') && !url.searchParams.has('page'));
-    await page.getByRole('button', { name: 'Trang sau' }).click();
-    await table.getByText('Nhân viên khác', { exact: true }).waitFor();
-    assert.equal(await table.locator('tbody tr').count(), 4);
-    await mine.click();
-    await page.waitForURL(url => url.searchParams.get('mine') === 'true');
+    const filterResponse = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/staff/management/' + resource && url.searchParams.get('priority') === 'LOW';
+    });
     await page.getByRole('combobox', { name: 'Ưu tiên', exact: true }).selectOption('LOW');
+    await filterResponse;
     await page.getByRole('table').waitFor({ state: 'hidden' });
-    assert(requests.some(request => request.resource === resource && request.mine === 'true'));
-    console.log(`PASS ${resource}: assignment toggle, page reset, pagination, reload and combined empty filter`);
+    assert(requests.some(request => request.resource === resource && request.priority === 'LOW'));
+    console.log(`PASS ${resource}: assigned-only scope, pagination, reload and combined empty filter`);
   }
   assert.deepEqual(errors, []);
   await context.close();

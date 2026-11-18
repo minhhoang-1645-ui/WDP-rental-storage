@@ -262,7 +262,7 @@ export function ManagerReportsPage() {
           <Metric name="Kho đang dùng" value={occupancy} scope="Hiện tại" icon={Warehouse} loading={snapshot.loading}
             description="Đếm kho có trạng thái Đang dùng trên tổng kho vật lý, gồm kho trống, đang giữ và bảo trì." />
           <Metric name="Kho trống" value={displayCount(units?.available)} scope="Hiện tại" icon={Warehouse} loading={snapshot.loading}
-            description="Kho vật lý ở trạng thái sẵn sàng tại thời điểm tải." />
+            description="Số kho sẵn sàng tại thời điểm tải." />
           <Metric name="Đơn đặt trong kỳ" value={displayCount(report?.bookingCount)} scope="Theo ngày tạo đơn" icon={ClipboardList} loading={range.loading}
             description="Một đơn thuê nhiều kho vẫn được tính là một đơn." />
         </div>

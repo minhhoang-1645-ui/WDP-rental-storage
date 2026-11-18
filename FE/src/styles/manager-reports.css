@@ -16,7 +16,7 @@
 
 .manager-report-header { justify-content: space-between; gap: 12px; }
 .manager-report-detail-content .manager-report-actions { align-items: flex-end; }
-.manager-report-header h1 { margin: 0; font-size: clamp(26px, 2.3vw, 32px); font-weight: 700; }
+.manager-report-header h1 { margin: 0; font-size: var(--type-title); font-weight: 700; }
 .manager-report-summary .button-secondary { min-height: var(--control-height); }
 .manager-report-period { display: inline-flex; align-items: center; gap: 7px; color: var(--workspace-primary); }
 .manager-report-period select, .manager-report-detail-content select {
@@ -76,7 +76,7 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.manager-report-metric small { color: var(--workspace-muted); font-size: 13px; }
+.manager-report-metric small { color: var(--workspace-secondary); font-size: var(--type-meta); }
 
 .manager-report-help { position: relative; flex: 0 0 auto; }
 .manager-report-help button { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; }
@@ -98,7 +98,7 @@
 }
 .manager-report-help:is(:hover, :focus-within) [role="tooltip"] { display: block; }
 
-.manager-report-chart h2 { margin: 0 0 18px; font-size: 18px; font-weight: 650; }
+.manager-report-chart h2 { margin: 0 0 var(--space-16); font-size: var(--type-section); font-weight: 650; }
 .manager-report-chart-empty { margin: 0; padding: 12px 0; color: var(--workspace-secondary); }
 .manager-report-trend { --report-axis-width: 69px; }
 .manager-report-plot {

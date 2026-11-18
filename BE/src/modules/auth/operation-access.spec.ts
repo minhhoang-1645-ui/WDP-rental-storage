@@ -21,7 +21,7 @@ import { SupportService } from '../support/support.service.js';
 
 const workflows = [
   ['reservations', ManagerReservationsController], ['inquiries', ManagerInquiriesController],
-  ['appointments', ManagerAppointmentsController], ['renewals', ManagerRenewalsController],
+  ['appointments', ManagerAppointmentsController],
   ['transfers', ManagerTransfersController], ['stock-movements', ManagerStockMovementsController],
   ['support-requests', ManagerSupportController], ['maintenance', ManagerMaintenanceController],
   ['returns', ManagerReturnsController],
@@ -73,13 +73,22 @@ describe.each(['maintenance', 'support-requests'] as const)('%s assigned-work fi
     expect(result.items).toHaveLength(1);
   });
 
-  it('restores all records when the checkbox is cleared', async () => {
+  it('preserves Staff scope regardless of the checkbox', async () => {
     const { controller, request } = setup();
     for (const query of [{}, { assignedToMe: 'false' }]) {
       const result = await controller.list(query, request);
-      expect(result.total).toBe(4);
-      expect(result.items).toHaveLength(4);
+      expect(result.total).toBe(2);
+      expect(result.items.map(item => item.id)).toEqual(['mine-open', 'mine-finished']);
     }
+  });
+
+  it('lists all work for Manager when the checkbox is cleared', async () => {
+    const { controller, request } = setup();
+    request.user = { ...request.user!, role: 'MANAGER', id: 'manager' };
+    const filtered = await controller.list({ assignedToMe: 'true' }, request);
+    expect(filtered.total).toBe(0);
+    const all = await controller.list({ assignedToMe: 'false' }, request);
+    expect(all.total).toBe(4);
   });
 
   it('uses the signed-in account instead of a supplied assignee ID', async () => {
@@ -127,6 +136,15 @@ describe('Staff workflow ownership after role transfer', () => {
       }
     });
   }
+
+  it('reserves pending renewal reviews for Manager', () => {
+    expect(Reflect.getMetadata('path', ManagerRenewalsController)).toBe('manager/renewals');
+    for (const [name, method] of [['get', 'GET'], ['approve', 'POST']] as const) {
+      const handler = Object.getOwnPropertyDescriptor(ManagerRenewalsController.prototype, name)!.value as object;
+      expect(guard.canActivate(context(ManagerRenewalsController, handler, 'MANAGER', '/api/manager/renewals/record', method))).toBe(true);
+      expect(() => guard.canActivate(context(ManagerRenewalsController, handler, 'STAFF', '/api/staff/management/renewals/record', method))).toThrow(ForbiddenException);
+    }
+  });
 
   it('permits Staff context reads without granting Manager configuration mutations', () => {
     const handler = Object.getOwnPropertyDescriptor(ManagerUnitsController.prototype, 'list')!.value as object;

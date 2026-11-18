@@ -53,14 +53,14 @@ export function ClaimRecord({ claim, root, role, saved }: { claim: Claim; root: 
     <p className="customer-request-excerpt">{claim.description}</p>
     {claim.affectedItems.length > 0 && <ul className="claim-item-tags">{claim.affectedItems.map(item => <li key={item.id}>{item.name}</li>)}</ul>}
     {claim.resolutionNote && <p className="customer-request-excerpt"><strong>Kết quả: </strong>{claim.resolutionNote}</p>}
-    <details className="customer-request-disclosure"><summary>Chi tiết sự cố</summary>
-      <p>{claim.description}</p>
-      {claim.estimatedValue !== null && <p>Ước tính của bạn: <strong>{money(claim.estimatedValue)}</strong> (chưa phải bồi thường được duyệt).</p>}
-      <div className="claim-review-results">
-        {claim.staffFacts && <section><h3>Ghi nhận tại kho</h3><p>{claim.staffFacts}</p></section>}
-        {claim.decisionReason && <section><h3>Lý do quyết định</h3><p>{claim.decisionReason}</p></section>}
-        {claim.resolutionNote && <section><h3>Kết quả</h3><p>{claim.resolutionNote}</p></section>}
-      </div>
+    <details className="customer-request-disclosure customer-claim-details"><summary>Chi tiết sự cố</summary>
+      <dl className="claim-detail-facts">
+        <div><dt>Nội dung sự cố</dt><dd>{claim.description}</dd></div>
+        {claim.estimatedValue !== null && <div><dt>Giá trị bạn ước tính</dt><dd><strong>{money(claim.estimatedValue)}</strong><small>Chưa phải khoản bồi thường được duyệt.</small></dd></div>}
+        {claim.staffFacts && <div><dt>Ghi nhận tại kho</dt><dd>{claim.staffFacts}</dd></div>}
+        {claim.decisionReason && <div><dt>Lý do quyết định</dt><dd>{claim.decisionReason}</dd></div>}
+        {claim.resolutionNote && <div className="claim-detail-outcome"><dt>Kết quả</dt><dd>{claim.resolutionNote}</dd></div>}
+      </dl>
       {claim.evidenceLinks.length > 0 && <div className="portal-actions">{claim.evidenceLinks.map((link, index) => <a key={link} href={link} target="_blank" rel="noopener noreferrer">Chứng cứ {index + 1}</a>)}</div>}
     </details>
   </article>;

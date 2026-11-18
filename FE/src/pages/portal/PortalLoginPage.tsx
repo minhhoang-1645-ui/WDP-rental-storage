@@ -62,7 +62,7 @@ export function PortalLoginPage() {
         <span className="auth-icon" aria-hidden="true">
           <LockKeyhole size={22} />
         </span>
-        <h1>Đăng nhập nội bộ</h1>
+        <h1>Đăng nhập tài khoản</h1>
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}

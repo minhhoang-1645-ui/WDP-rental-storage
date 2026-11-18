@@ -149,9 +149,15 @@ export function CustomerLayout() {
       navigate("/account/login", { replace: true });
     });
   };
+  const customerSection = navigation.find(item => location.pathname === item.to || (item.to !== '/customer' && location.pathname.startsWith(item.to + '/')));
+  const currentPage = customerSection?.label
+    ?? (location.pathname.startsWith('/customer/settings') || location.pathname === '/customer/profile' ? 'Cài đặt tài khoản'
+      : location.pathname === '/customer/notifications' ? 'Thông báo'
+        : customerGroups.find(group => location.pathname === `/customer/sections/${group.key}`)?.title ?? 'Hồ sơ chi tiết');
 
   return (
     <div className="customer-shell workspace-themed" data-workspace-role="customer" data-workspace-theme={theme}>
+      <a className="skip-link" href="#customer-main">Đến nội dung chính</a>
       <aside
         id="customer-navigation"
         ref={sidebar}
@@ -210,7 +216,7 @@ export function CustomerLayout() {
           onClick={() => setMenuOpen(false)}
         />
       )}
-      <main className="customer-main">
+      <main className="customer-main" id="customer-main" tabIndex={-1}>
         <header className="customer-mobile-header">
           <button
             ref={menuButton}
@@ -226,12 +232,16 @@ export function CustomerLayout() {
           <span>NestBox Storage</span>
         </header>
         <div className="customer-updates-bar">
-          <span>Khu vực khách hàng</span>
+          <nav className="portal-breadcrumb" aria-label="Đường dẫn">
+            <span className="portal-breadcrumb-root">Khách hàng</span>
+            <span className="portal-topbar-divider" aria-hidden="true">/</span>
+            <strong aria-current="page">{currentPage}</strong>
+          </nav>
           <div className="customer-account-actions">
             <ActivityBell />
             <WorkspaceProfileDropdown key={location.pathname} user={user} roleLabel="Khách hàng"
               theme={theme} onToggleTheme={toggleTheme} onProfile={() => navigate('/customer/settings/profile')}
-              onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
+              onSecurity={() => navigate('/customer/settings/security')} onAppearance={() => navigate('/customer/settings/appearance')} onLogout={signOut} />
           </div>
         </div>
         {location.state?.notificationInbox === '/customer/notifications' && location.pathname !== '/customer/notifications' &&

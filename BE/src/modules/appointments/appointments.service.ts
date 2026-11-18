@@ -1,3 +1,4 @@
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { Optional } from '@nestjs/common';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { handoverReport, handoverReportData } from './handover-report.js';
@@ -38,7 +39,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         try {
           await this.serializable(async tx => {
             await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${item.id} FOR UPDATE`);
-            const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, include: this.appointmentInclude() });
+            const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, select: { status: true, reservation: { include: this.reservationReadinessInclude() } } });
             if (!current || current.status !== 'COMPLETED' || current.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE')) return;
             this.assertHandoverReady(current.reservation);
             if (current.reservation.contracts.some((contract: any) => this.vietnamDate(new Date()) < this.isoDate(contract.startDate) || this.vietnamDate(new Date()) >= this.isoDate(contract.endDate))) return;
@@ -54,6 +55,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     private readonly billing: BillingService = new BillingService(prisma),
     private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
     @Optional() private readonly policies?: BusinessPolicyService,
+    @Optional() private readonly unitStaff?: UnitStaffService,
   ) {}
 
   async createCustomerAppointment(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -78,12 +80,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
         const sequence = await tx.handoverAppointment.count({ where: { reservationId: reservation.id } }) + 1;
+        const responsibility = await this.unitStaff?.resolveStaff(tx, reservation.contracts.map(contract => contract.reservationUnit.storageUnit.id));
         const created = await tx.handoverAppointment.create({
           data: {
             appointmentCode: `${reservation.reservationCode}-A${String(sequence).padStart(2, '0')}`,
             reservationId: reservation.id,
             scheduledAt: parsed.scheduledAt,
             requestedByUserId: customer.id,
+            assignedStaffUserId: responsibility?.staffUserId,
             status: 'CONFIRMED',
             confirmedAt: new Date(),
             note: parsed.note,
@@ -113,17 +117,17 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getCustomerAppointment(customerId: string, id: string) {
-    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { OR: [{ id }, { appointmentCode: id }], reservation: { customerId } }, include: this.appointmentInclude() });
+    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { OR: [{ id }, { appointmentCode: id }], reservation: { customerId } }, omit: { assignedStaffUserId: true }, include: this.appointmentInclude(false) });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
     return this.toAppointment(appointment, false);
   }
 
-  async listOperationalAppointments(query: AppointmentListQuery, actor?: PublicUser) {
-    return this.appointmentPage(actor?.role === 'STAFF' ? this.staffScope(actor.id) : {}, query, true);
+  async listOperationalAppointments(query: AppointmentListQuery, actor: PublicUser) {
+    return this.appointmentPage(actor.role === 'STAFF' ? this.staffScope(actor.id) : {}, query, true);
   }
 
-  async getOperationalAppointment(id: string, actor?: PublicUser) {
-    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{ OR: [{ id }, { appointmentCode: id }] }, actor?.role === 'STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
+  async getOperationalAppointment(id: string, actor: PublicUser) {
+    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{ OR: [{ id }, { appointmentCode: id }] }, actor.role === 'STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
     return this.toAppointment(appointment, true);
   }
@@ -311,16 +315,18 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     };
     const [total, records] = await Promise.all([
       this.prisma.handoverAppointment.count({ where }),
-      this.prisma.handoverAppointment.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ scheduledAt: includeCustomer ? 'desc' : 'asc' }, { id: 'asc' }], include: this.appointmentInclude() }),
+      this.prisma.handoverAppointment.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ scheduledAt: includeCustomer ? 'desc' : 'asc' }, { id: 'asc' }], omit: { assignedStaffUserId: !includeCustomer }, include: this.appointmentInclude(includeCustomer) }),
     ]);
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toAppointment(record, includeCustomer)) };
   }
 
-  private appointmentInclude() {
+  private appointmentInclude(includeAssignee = true) {
     return {
-      assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
-      assignedBy: { select: { id: true, fullName: true, role: true } },
       requestedBy: { select: { id: true, fullName: true, role: true } },
+      ...(includeAssignee ? {
+        assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
+        assignedBy: { select: { id: true, fullName: true, role: true } },
+      } : {}),
       confirmedBy: { select: { id: true, fullName: true, role: true } },
       completedBy: { select: { id: true, fullName: true, role: true } },
       reservation: { include: this.reservationReadinessInclude() },
@@ -338,10 +344,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
   private toAppointment(record: any, includeCustomer: boolean) {
     return {
-      assignedStaff: record.assignedStaff ?? null,
-      assignedBy: includeCustomer ? record.assignedBy ?? null : undefined,
-      assignedAt: record.assignedAt?.toISOString() ?? null,
-      assignmentStatus: !record.assignedStaffUserId ? 'UNASSIGNED' : record.assignedStaff?.accountStatus === 'DISABLED' ? 'NEEDS_REASSIGNMENT' : 'ASSIGNED',
+      ...(includeCustomer ? {
+        assignedStaff: record.assignedStaff ?? null,
+        assignedBy: record.assignedBy ?? null,
+        assignedAt: record.assignedAt?.toISOString() ?? null,
+        assignmentStatus: !record.assignedStaffUserId ? 'UNASSIGNED' : record.assignedStaff?.accountStatus === 'DISABLED' ? 'NEEDS_REASSIGNMENT' : 'ASSIGNED',
+      } : {}),
       handoverReport: record.handoverReport ?? null,
       id: record.id,
       appointmentCode: record.appointmentCode,

@@ -43,7 +43,7 @@ export class StaffMaintenanceController {
   @Roles('STAFF')
   @ApiOperation({ summary: 'Chi tiết maintenance vận hành cho Staff' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiOkResponse({ description: 'Unit, assignment và work fields; không chứa financial history.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
-  get(@Param('id') id: string) { return this.maintenance.getStaff(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.maintenance.getStaff(id, req.user!); }
 
   @Post(':id/start')
   @Roles('STAFF')

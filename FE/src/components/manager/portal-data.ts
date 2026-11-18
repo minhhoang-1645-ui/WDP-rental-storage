@@ -27,6 +27,7 @@ export function first(row: Row, ...paths: string[]): string {
   return paths.map((path) => textValue(at(row, path))).find(Boolean) ?? "";
 }
 export function code(row: Row): string {
+  if (typeof row.claimCode === 'string') return row.claimCode;
   return first(
     row,
     "movementCode",
@@ -97,7 +98,7 @@ export const labels: Record<string, string> = {
   OCCUPIED: "Đang sử dụng",
   MAINTENANCE: "Bảo trì",
   ACTIVE: "Đang hoạt động",
-  DISABLED: "Đã vô hiệu hóa",
+  DISABLED: "Đã khóa",
   OVERDUE: "Quá hạn",
   COMPLETED: "Hoàn tất",
   REQUESTED: "Chờ xác nhận",
@@ -116,7 +117,7 @@ export const labels: Record<string, string> = {
   AWAITING_OUTSTANDING_PAYMENT: "Chờ thu bổ sung",
   SETTLED: "Đã quyết toán",
   IN_PROGRESS: "Đang xử lý",
-  AWAITING_VERIFICATION: "Chờ nghiệm thu",
+  AWAITING_VERIFICATION: "Chờ kiểm tra kết quả",
   ASSIGNED: "Đã phân công",
   ESCALATED: "Chuyển bộ phận phụ trách",
   RESOLVED: "Đã giải quyết",
@@ -201,7 +202,7 @@ export const resources: Record<
     local: true,
   },
   units: {
-    title: "Kho vật lý",
+    title: "Danh sách kho",
     description: "Vị trí, tình trạng sử dụng và lịch phân bổ của từng kho.",
     statuses: ["AVAILABLE", "RESERVED", "OCCUPIED", "MAINTENANCE"],
   },
@@ -216,7 +217,7 @@ export const resources: Record<
   },
   renewals: {
     title: "Gia hạn kho",
-    description: "Duyệt gia hạn sau khi kiểm tra lịch phân bổ tương lai.",
+    description: "Kiểm tra lịch kho và duyệt hạn thuê mới.",
     statuses: ["PENDING", "APPROVED_PENDING_PAYMENT", "COMPLETED", "REJECTED"],
   },
   invoices: {
@@ -237,13 +238,13 @@ export const resources: Record<
   },
   rentals: {
     title: "Kho đang thuê",
-    description: "Theo dõi kỳ thuê, công nợ và nguy cơ trùng lịch.",
+    description: "Theo dõi hạn thuê, khoản chưa thu và lịch sử dụng kho.",
     statuses: ["false", "true"],
     filterKey: "overdue",
   },
   returns: {
     title: "Trả kho & kiểm tra",
-    description: "Kết quả kiểm tra vật lý và tiến độ quyết toán cọc.",
+    description: "Kiểm tra kho trả và xử lý tiền cọc.",
     statuses: [
       "REQUESTED",
       "INSPECTION_IN_PROGRESS",
@@ -254,13 +255,13 @@ export const resources: Record<
   },
   transfers: {
     title: "Chuyển kho",
-    description: "Điều chuyển sang kho cùng loại và theo dõi bàn giao.",
+    description: "Chọn kho mới và theo dõi việc chuyển hàng, đổi chìa khóa.",
     statuses: ["REQUESTED", "APPROVED", "COMPLETED", "REJECTED"],
     local: true,
   },
   maintenance: {
     title: "Bảo trì kho",
-    description: "Theo dõi người phụ trách, kết quả sửa chữa và nghiệm thu.",
+    description: "Theo dõi người phụ trách và kết quả sửa chữa.",
     statuses: ["OPEN", "IN_PROGRESS", "AWAITING_VERIFICATION", "COMPLETED"],
   },
   "support-requests": {

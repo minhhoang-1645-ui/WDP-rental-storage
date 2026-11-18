@@ -16,7 +16,7 @@ const summary = { currentUnits: [{ contractId: 'contract-id', contractCode: 'CON
   renewals: [{ id: 'renewal', code: 'REN-TEST', status: 'COMPLETED', months: 3, previousEndDate: '2026-12-17', endDate: '2027-03-17', amount: 5415000, discount: 285000, paid: 5415000 }],
   transfers: [{ id: 'transfer-id', code: 'TRF-TEST', from: oldUnit.unitCode, to: newUnit.unitCode, completedAt: when, handoverReport: null }] };
 const reservation = { ...fixture.reservations[0], id: 'RES-TEST', status: 'CONFIRMED', startDate: '2026-11-17', endDateExclusive: '2027-03-17', periodMode: 'duration', durationMonths: 1, rentalSummary: summary,
-  product: { ...fixture.reservations[0].product, dimensions: '1,5 × 2,0 × 2,4 m' }, quote: { ...fixture.reservations[0].quote, quotedTotalAmount: 3800000, grandTotal: 3800000, message: 'Báo giá ban đầu' } };
+  product: { ...fixture.reservations[0].product, dimensions: '1,5 × 2,0 × 2,4 m' }, quote: { ...fixture.reservations[0].quote, monthlyUnitPrice: 1900000, quotedTotalAmount: 3800000, grandTotal: 3800000, message: 'Báo giá ban đầu' } };
 const contract = { ...fixture.contracts[0], storageUnit: newUnit, reservation: { ...fixture.contracts[0].reservation, reference: 'RES-TEST' }, startDate: '2026-11-17', endDate: '2027-03-17' };
 const rental = { ...fixture.rentals[0], reservationReference: 'RES-TEST', rentalState: 'ACTIVE', startDate: '2026-11-17', effectiveEndDate: '2027-03-17', quantity: 1, unitCount: 1, historicalPricing: { billingMode: 'MONTHLY' }, pendingRenewal: null,
   contracts: [{ ...contract, unit: newUnit, storedItems: goods, transfers: [{ code: 'TRF-TEST', from: oldUnit.unitCode, to: newUnit.unitCode, completedAt: when }] }], billingSummary: { payableBalance: 0, totalOutstanding: 0 } };
@@ -48,9 +48,13 @@ async function setup(role) {
     if (path.startsWith('reservations/')) return route.fulfill({ json: reservation });
     if (path.endsWith('/stored-items')) return route.fulfill({ json: path.startsWith('customer/') ? goods : { items: goods, total: 1 } });
     if (path.endsWith('/destinations')) return route.fulfill({ json: { items: [{ ...newUnit, eligible: true, checkedFrom: '2026-11-17', checkedUntil: '2027-03-17', conflicts: [] }], total: 1, page: 1, limit: 100 } });
-    if (path.includes('/transfers/transfer-id')) return route.fulfill({ json: transfer });
+    if (path.includes('/transfers/transfer-id')) {
+      if (role === 'STAFF' && transfer.status === 'REQUESTED') return route.fulfill({ status: 404, json: { message: 'Chưa có lệnh chuyển kho được phân công.' } });
+      return route.fulfill({ json: transfer });
+    }
+    if (path.endsWith('damage-claims/claim-id')) return route.fulfill({ json: claim });
     if (path.endsWith('/stock-movements/movement-id')) return route.fulfill({ json: movement });
-    if (path.endsWith('/returns/return-id')) return route.fulfill({ json: { ...fixture.returns[0], status: 'INSPECTION_IN_PROGRESS', inventory: { remainingItemTypes: 1, pendingMovements: 0 } } });
+    if (path.endsWith('/returns/return-id')) return route.fulfill({ json: { ...fixture.returns[0], status: 'INSPECTION_IN_PROGRESS', assignedStaff: staff, inventory: { remainingItemTypes: 1, pendingMovements: 0 } } });
     const kind = path.split('/').at(-1);
     const sources = { contracts: [contract], rentals: [rental], 'stock-movements': [movement], 'support-requests': [], maintenance: [], 'damage-claims': [claim], transfers: [transfer], returns: [], 'deposit-settlements': [], invoices: [] };
     return route.fulfill({ json: { items: sources[kind] ?? [], total: (sources[kind] ?? []).length, page: 1, limit: 100 } });
@@ -69,13 +73,12 @@ async function shot(page, name) {
 try {
   const app = await setup('CUSTOMER'), page = app.page;
   await page.goto(base + '/customer/reservations');
-  await page.getByText('Đã thu:', { exact: false }).first().waitFor();
-  assert.match(await page.locator('main').innerText(), /9\.215\.000/);
+  await page.locator('.reservation-original-price').first().waitFor();
+  assert.match(await page.locator('main').innerText(), /3\.800\.000/);
   await shot(page, 'customer-reservations');
   await page.goto(base + '/customer/reservations/RES-TEST');
   await page.getByRole('heading', { name: 'Kho và thanh toán' }).waitFor();
-  await page.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
-  assert.match(await page.locator('main').innerText(), /5\.415\.000/);
+  assert.match(await page.getByRole('region', { name: 'Cập nhật kỳ thuê' }).innerText(), /9\.215\.000/);
   await shot(page, 'customer-reservation-detail');
   await page.goto(base + '/customer/booking-history');
   const historyCard = page.locator('.booking-history-card').first();
@@ -83,8 +86,7 @@ try {
   assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);
   await shot(page, 'customer-booking-history-collapsed');
   await historyCard.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
-  await historyCard.getByText('Xem chi tiết thanh toán và thay đổi', { exact: true }).click();
-  await page.getByRole('heading', { name: 'Lịch sử gia hạn' }).waitFor();
+  await historyCard.getByRole('heading', { name: 'Kho và thanh toán' }).waitFor();
   await shot(page, 'customer-booking-history');
   await historyCard.getByRole('button', { name: 'Ẩn chi tiết', exact: true }).click();
   assert.equal(await historyCard.locator('.booking-history-details').isVisible(), false);
@@ -101,8 +103,8 @@ try {
   await shot(page, 'customer-return-guidance');
   await page.goto(base + '/customer/damage-claims');
   await page.getByRole('button', { name: 'Báo sự cố', exact: true }).click();
-  await selectChoice(page.getByRole('combobox', { name: 'Kho/hợp đồng', exact: true }), 'contract-id');
-  const affected = page.locator('.claim-affected-items').getByRole('checkbox');
+  await selectChoice(page.getByRole('combobox', { name: 'Kho và hợp đồng', exact: true }), 'contract-id');
+  const affected = page.locator('.claims-items').getByRole('checkbox');
   await affected.waitFor();
   const box = await affected.boundingBox(); assert(box.width <= 24 && box.height <= 24);
   await shot(page, 'customer-damage-form');
@@ -114,22 +116,23 @@ try {
   await sp.getByLabel('Số lượng thực tế · Máy lạnh', { exact: true }).fill('1');
   await sp.getByText('Khớp với số lượng yêu cầu.', { exact: true }).waitFor();
   await shot(sp, 'staff-stock-reconciliation');
-  await sp.goto(base + '/staff/damage-claims');
-  await sp.getByLabel('Những gì đã kiểm tra tại kho').fill('Đã kiểm tra máy lạnh và đối chiếu tình trạng tại kho.');
-  await sp.getByRole('button', { name: 'Lưu ghi nhận để quản lý xem xét' }).click();
-  await sp.getByRole('button', { name: 'Chỉnh sửa ghi nhận' }).waitFor();
-  assert.equal(await sp.getByRole('button', { name: 'Lưu ghi nhận để quản lý xem xét' }).count(), 0);
-  await sp.getByRole('button', { name: 'Chỉnh sửa ghi nhận' }).click();
-  assert.match(await sp.getByLabel('Những gì đã kiểm tra tại kho').inputValue(), /Đã kiểm tra máy lạnh/);
-  await sp.getByRole('button', { name: 'Hủy chỉnh sửa' }).click();
+  await sp.goto(base + '/staff/damage-claims?claim=claim-id');
+  await sp.getByRole('button', { name: 'Ghi kết quả kiểm tra' }).click();
+  const facts = sp.getByRole('dialog').getByLabel('Tình trạng thực tế và nhận xét');
+  await facts.fill('Đã kiểm tra máy lạnh và đối chiếu tình trạng tại kho.');
+  await sp.getByRole('button', { name: 'Lưu kết quả kiểm tra' }).click();
+  await sp.getByRole('button', { name: 'Chỉnh kết quả kiểm tra' }).waitFor();
+  await sp.getByRole('button', { name: 'Chỉnh kết quả kiểm tra' }).click();
+  assert.match(await facts.inputValue(), /Đã kiểm tra máy lạnh/);
+  await sp.getByRole('dialog').getByRole('button', { name: 'Hủy', exact: true }).click();
   await shot(sp, 'staff-damage-saved');
   await sp.goto(base + '/staff/returns/return-id');
-  await sp.getByRole('heading', { name: 'Chưa thể hoàn tất nhận trả kho' }).waitFor();
+  await sp.getByText('Chưa thể xác nhận nhận kho trả', { exact: true }).waitFor();
   assert(await sp.getByRole('button', { name: 'Hoàn tất nhận kho trả' }).isDisabled());
   await shot(sp, 'staff-return-blocked');
   await sp.goto(base + '/staff/transfers/transfer-id');
-  await sp.getByLabel('Chọn kho đích').getByText(newUnit.unitCode, { exact: true }).waitFor();
-  await shot(sp, 'staff-transfer-destination');
+  await sp.getByRole('alert').filter({ hasText: 'Chưa có lệnh chuyển kho được phân công.' }).waitFor();
+  assert.equal(await sp.getByRole('button', { name: 'Duyệt chuyển kho' }).count(), 0);
   staffApp.approve(); await sp.reload();
   await sp.getByLabel('Người nhận kho mới', { exact: true }).fill('Khách kiểm thử');
   await sp.getByLabel('Số chìa khóa/thẻ kho cũ đã thu').fill('1');
@@ -137,11 +140,14 @@ try {
   for (const name of ['Đã chuyển toàn bộ hàng và kiểm tra kho cũ', 'Đã thu lại chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ', 'Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới cho khách']) await sp.getByRole('checkbox', { name, exact: true }).check();
   await shot(sp, 'staff-transfer-key-handover');
   await sp.getByRole('button', { name: 'Hoàn tất chuyển kho', exact: true }).click();
-  await sp.getByText('Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.').waitFor();
+  await sp.getByText('Lệnh chuyển kho đã hoàn tất.', { exact: true }).waitFor();
   assert.deepEqual(handovers.map(input => [input.returnedKeyCount, input.deliveredKeyCount, input.oldKeysReturned, input.newKeysDelivered]), [[1, 1, true, true]]);
   await staffApp.context.close();
 
   const managerApp = await setup('MANAGER'), mp = managerApp.page;
+  await mp.goto(base + '/manager/operations/transfers/transfer-id');
+  await mp.getByRole('button', { name: 'Duyệt chuyển kho', exact: true }).waitFor();
+  await shot(mp, 'manager-transfer-destination');
   await mp.goto(base + '/manager/assignments?kind=stock-movements&record=movement-id');
   const dialog = mp.getByRole('dialog');
   await dialog.getByRole('heading', { name: 'Hàng hóa cần giao nhận' }).waitFor();

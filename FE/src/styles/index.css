@@ -51,8 +51,6 @@
   .comparison-list > div { display: grid; grid-template-columns: 110px 1fr; gap: 16px; border-top: 1px solid var(--color-border); padding: 15px 0; }
   .comparison-list dt { font-size: 13px; font-weight: 800; color: var(--color-navy); text-transform: uppercase; }
   .comparison-list dd { color: var(--color-slate); }
-  .image-credit { position: absolute; right: 12px; bottom: 12px; z-index: 2; border-radius: 4px; background: rgba(17, 24, 39, .82); padding: 6px 8px; color: white; font-size: 10px; font-weight: 600; backdrop-filter: blur(4px); }
-  .illustration-label { position: absolute; top: 12px; left: 12px; z-index: 2; border-radius: 4px; background: rgba(255, 255, 255, .92); padding: 6px 8px; color: var(--color-slate); font-size: 10px; font-weight: 800; text-transform: uppercase; }
   .status-success, .status-warning { display: inline-flex; border-radius: 4px; padding: 6px 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
   .status-success { background: rgba(21, 128, 61, .1); color: var(--color-success); }
   .status-warning { background: rgba(180, 83, 9, .1); color: var(--color-warning); }

@@ -1,4 +1,6 @@
-import { RentalPaymentDetailsView, RentalPeriodCaption } from '../../components/customer/RentalAccountDetails';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
+
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
 import { useState } from "react";
@@ -96,26 +98,26 @@ export function CustomerRentalsPage() {
                 </div>
                 <CustomerStatus status={rental.rentalState} />
               </div>
-              <dl className="customer-record-facts">
+              <dl className="customer-record-facts rental-summary-facts">
                 <div>
                   <dt>Thời hạn</dt>
                   <dd>
                     <CalendarClock size={15} />{" "}
                     {formatPortalDate(rental.rentalPeriod?.currentStartDate ?? rental.startDate)} –{" "}
                     {formatPortalDate(rental.rentalPeriod?.currentEndDate ?? rental.effectiveEndDate)}
-                    <RentalPeriodCaption period={rental.rentalPeriod} />
+
                   </dd>
                 </div>
                 <div>
-                  <dt>Số Lượng Kho</dt>
+                  <dt>Số kho</dt>
                   <dd>{rental.unitCount}</dd>
                 </div>
+                <div><dt>Đã thanh toán</dt><dd>{moneyLabel(rental.paymentDetails?.totalPaid ?? rental.billingSummary.totalPaid)}</dd></div>
                 <div>
-                  <dt>Chưa thanh toán</dt>
+                  <dt>Còn lại</dt>
                   <dd>{moneyLabel(rental.paymentDetails?.totalOutstanding ?? rental.billingSummary.totalOutstanding)}</dd>
                 </div>
               </dl>
-
               <div className="customer-unit-list">
                 {rental.contracts.map((contract) => (
                   <div key={contract.id} className="customer-unit-inventory">
@@ -130,8 +132,7 @@ export function CustomerRentalsPage() {
                     <CustomerStatus status={contract.status} />
                     <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
                       <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
-                      {contract.storedItems === undefined ? <p><Link to={`/customer/stored-items?rentalContractId=${encodeURIComponent(contract.id)}`}>Xem hàng đang lưu trong kho này</Link></p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
-
+                      {contract.storedItems === undefined ? <p>Chưa tải được danh sách hàng.</p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
                       {contract.transfers?.map(transfer => <p className="rental-transfer-note" key={transfer.code}>Đã chuyển {transfer.from} → <strong>{transfer.to}</strong> ngày {formatPortalDate(transfer.completedAt ?? '', true)}. Hàng hiện được lưu tại kho {contract.unit.unitCode}.</p>)}
                     </section>
                   </div>
@@ -141,7 +142,6 @@ export function CustomerRentalsPage() {
                 <button type="button" className="button-primary" onClick={() => setDetail({ rental, kind: "invoices" })}>Xem hóa đơn</button>
                 <button type="button" className="button-secondary" onClick={() => setDetail({ rental, kind: "contracts" })}>Xem hợp đồng</button>
               </div>
-
               {rental.pendingRenewal && (
                 <p className="customer-inline-notice">
                   Yêu cầu gia hạn {rental.pendingRenewal.renewalCode} đang được
@@ -169,11 +169,11 @@ function RentalInvoices({ rental, onClose, onSaved }: { rental: CustomerRental; 
     return <InvoiceTransferDialog key={invoiceId} id={invoiceId} onlinePending={onlinePending} onClose={onClose} onSaved={onSaved} />;
   }
 
-  return <Modal title={`Hóa đơn · ${rental.reservationReference}`} onClose={onClose}>
+  return <Modal title="Hóa đơn của đơn thuê" onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     {invoices.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoices.error ? <PortalError message={invoices.error} onRetry={invoices.refresh} /> : related.length ? (
       <div className="portal-actions">
         {related.map(invoice => <button key={invoice.id} type="button" className="button-secondary" onClick={() => setSelectedId(invoice.id)}>
-          {invoice.invoiceCode} · {moneyLabel(invoice.totalAmount)} {invoice.balanceDue > 0 && isScheduledRenewalInvoice(invoice) ? <span>Chưa đến kỳ · {formatPortalDate(invoice.dueAt)}</span> : <CustomerStatus status={invoice.status} />}
+          {invoice.invoiceCode} · {invoice.breakdown?.units.length ?? invoice.reservation.quantity} kho · {moneyLabel(invoice.totalAmount)} {invoice.balanceDue > 0 && isScheduledRenewalInvoice(invoice) ? <span>Chưa đến kỳ · {formatPortalDate(invoice.dueAt)}</span> : <CustomerStatus status={invoice.status} />}
         </button>)}
       </div>
     ) : <p>Đơn thuê này chưa có hóa đơn.</p>}
@@ -186,7 +186,7 @@ function RentalContracts({ rental, initialId, onClose }: { rental: CustomerRenta
   const resource = useApiResource<CustomerContract>(id ? `/customer/contracts/${encodeURIComponent(id)}` : null, user?.id ?? "");
   const contract = resource.data;
 
-  return <Modal title="Chi tiết hợp đồng" onClose={onClose}>
+  return <Modal title="Chi tiết hợp đồng" onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     {rental.contracts.length > 1 && <label className="field-label">
       Chọn hợp đồng
       <select value={id} onChange={event => setId(event.target.value)}>
@@ -194,17 +194,16 @@ function RentalContracts({ rental, initialId, onClose }: { rental: CustomerRenta
       </select>
     </label>}
     {!id ? <p>Đơn thuê này chưa có hợp đồng.</p> : resource.loading ? <PortalLoading label="Đang tải hợp đồng…" /> : resource.error ? <PortalError message={resource.error} onRetry={resource.refresh} /> : contract && <>
-      <h3>{contract.contractCode}</h3>
+      <div className="record-page-title"><h3>Kho {contract.storageUnit.unitCode}</h3><CustomerStatus status={contract.status} /></div>
+      <CopyRecordCode value={contract.contractCode} label="Mã hợp đồng" />
       <dl className="manager-facts">
         <div><dt>Đơn đặt kho</dt><dd>{contract.reservation.reference}</dd></div>
         <div><dt>Kho</dt><dd>{contract.storageUnit.unitCode}</dd></div>
         <div><dt>Thời hạn</dt><dd>{formatPortalDate(contract.startDate)} – {formatPortalDate(contract.endDate)}</dd></div>
-        <div><dt>Trạng thái</dt><dd><CustomerStatus status={contract.status} /></dd></div>
       </dl>
       {contract.terms.acceptedAt && <p>Đã ký bởi {contract.terms.acceptanceName} lúc {formatPortalDate(contract.terms.acceptedAt, true)}.</p>}
       <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(contract.id)}`} name={contract.contractCode} signed={Boolean(contract.terms.acceptedAt)} />
-      <ContractTransferHistory contract={contract} scope="customer" />
-      <ContractRenewalHistory contract={contract} scope="customer" />
+      <DetailDisclosure title="Lịch sử hợp đồng"><ContractTransferHistory contract={contract} scope="customer" /><ContractRenewalHistory contract={contract} scope="customer" /></DetailDisclosure>
     </>}
   </Modal>;
 }

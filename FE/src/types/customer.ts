@@ -15,6 +15,7 @@ export interface CustomerStorageType {
 }
 
 export interface CustomerContract {
+  renewals?: Array<{ id: string; status: string }>
   transfers?: Array<{ id: string; transferCode: string; status: string; reason: string; fromUnit: { unitCode: string }; toUnit: { unitCode: string } | null; createdAt: string; completedAt: string | null; completedBy: { fullName: string } | null }>
   id: string
   contractCode: string
@@ -67,6 +68,13 @@ export interface CustomerInvoice {
   closeoutPaymentAllowed?: boolean
   voidReason?: string | null
   voidedAt?: string | null
+  breakdown?: {
+    periodStart: string; periodEnd: string; adjustmentAmount: number;
+    units: Array<{ contractId: string; contractCode: string; unitCode: string; storageTypeName: string; monthlyRate: number; rentalAmount: number; depositAmount: number }>;
+    sharedServices: Array<{ id: string; name: string; quantity: number; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; physicalUnit?: string; billablePeriods?: number; amount: number }>;
+  } | null
+  replacesInvoice?: { id: string; invoiceCode: string } | null
+  replacementInvoice?: { id: string; invoiceCode: string } | null
   signing?: { required: boolean; complete: boolean; contracts: { id: string; code: string }[]; renewalId: string | null }
   id: string
   invoiceCode: string

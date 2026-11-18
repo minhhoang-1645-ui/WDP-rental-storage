@@ -34,15 +34,17 @@ export class MaintenanceService {
   }
 
   listStaff(query: MaintenanceListQuery, actor: PublicUser) {
-    return this.list(query, 'STAFF', query.assignedToMe ? actor.id : undefined);
+    return this.list(query, 'STAFF', actor.id);
   }
 
   listManager(query: MaintenanceListQuery, assignedStaffUserId?: string) {
     return this.list(query, 'MANAGER', assignedStaffUserId);
   }
 
-  async getStaff(id: string) {
-    return this.toMaintenance(await this.find(id, this.prisma), 'STAFF');
+  async getStaff(id: string, actor: PublicUser) {
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }], assignedStaffUserId: actor.id }, include: this.include() });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
+    return this.toMaintenance(record, 'STAFF');
   }
 
   async getManager(id: string) {
@@ -190,6 +192,7 @@ export class MaintenanceService {
       const current = await tx.maintenanceRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy maintenance case.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${current.storageUnitId} FOR UPDATE`);
+      if (role === 'STAFF' && current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý bảo trì.');
       if (current.lastAction === action && current.lastActionIdempotencyKey === safeKey) return this.toMaintenance(current, role);
       const reused = await tx.maintenanceRequest.findUnique({ where: { lastActionIdempotencyKey: safeKey }, select: { id: true } });
       if (reused) throw new ConflictException('Idempotency-Key đã được dùng cho thao tác maintenance khác.');

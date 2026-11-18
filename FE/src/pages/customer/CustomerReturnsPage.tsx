@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
   formatPortalDate,
@@ -49,6 +49,9 @@ function isFullySettled(rental: CustomerRental) {
 
 export function CustomerReturnsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const returnFilter = params.get('return');
+  const settlementFilter = params.get('settlement');
   const rentals = usePaginatedResource<CustomerRental>(
     "/customer/rentals?limit=100",
     user?.id ?? "",
@@ -64,7 +67,8 @@ export function CustomerReturnsPage() {
     user?.id ?? "",
     true,
   );
-  const [view, setView] = useState<"returns" | "settlements">("returns");
+  const [section, setView] = useState<"returns" | "settlements">("returns");
+  const view = settlementFilter ? 'settlements' : returnFilter ? 'returns' : section;
   const approvals = usePaginatedResource<CustomerSupportRequest>('/customer/support-requests?limit=100', user?.id ?? '', true);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setCheckedAt(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
@@ -107,7 +111,7 @@ export function CustomerReturnsPage() {
     setSubmitting(true);
     try {
       const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
-      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Chỉ được gửi yêu cầu trả kho sau khi thanh toán đủ toàn bộ công nợ, gồm các kỳ đã cam kết nhưng chưa đến hạn.');
+      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Hãy thanh toán đủ các hóa đơn còn hiệu lực, kể cả các kỳ đã cam kết chưa đến hạn, trước khi gửi yêu cầu trả kho.');
       await mutate<CustomerReturnRequest>(
         "/customer/returns",
         "POST",
@@ -134,7 +138,7 @@ export function CustomerReturnsPage() {
   };
 
   return (
-    <section className="customer-page">
+    <section className={returnFilter || settlementFilter ? "customer-page record-detail-page" : "customer-page"}>
       <PortalPageHeader
         eyebrow="Kết thúc thuê"
         title="Trả kho và quyết toán tiền cọc"
@@ -150,9 +154,10 @@ export function CustomerReturnsPage() {
           </button>
         }
       />
-      <ReturnInventoryNotice />
-      <div className="customer-module-layout">
+      {!returnFilter && !settlementFilter && <ReturnInventoryNotice />}
+      <div className={returnFilter || settlementFilter ? "record-focused-layout" : "customer-module-layout"}>
         <section className="customer-panel">
+          {returnFilter || settlementFilter ? <p className="customer-filter-notice"><Link to="/customer/returns">Xem tất cả hồ sơ trả kho</Link></p> :
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -173,7 +178,7 @@ export function CustomerReturnsPage() {
               <WalletCards size={17} /> Tiền cọc ({settlements.data?.total ?? 0}
               )
             </button>
-          </div>
+          </div>}
           {[returns.status, settlements.status, rentals.status].includes(
             401,
           ) ? (
@@ -183,12 +188,12 @@ export function CustomerReturnsPage() {
           ) : current.error ? (
             <PortalError message={current.error} onRetry={refresh} />
           ) : view === "returns" ? (
-            <ReturnList items={returns.data?.items ?? []} />
+            <ReturnList items={(returns.data?.items ?? []).filter(item => !returnFilter || item.id === returnFilter)} />
           ) : (
-            <SettlementList items={settlements.data?.items ?? []} />
+            <SettlementList items={(settlements.data?.items ?? []).filter(item => !settlementFilter || item.id === settlementFilter)} />
           )}
         </section>
-        <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
+        {!returnFilter && !settlementFilter && <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources resources={[rentals, returns, approvals]} retry={refresh} />
           <fieldset
             disabled={
@@ -200,7 +205,7 @@ export function CustomerReturnsPage() {
           >
             <h2>Gửi yêu cầu trả kho</h2>
             <p>
-              Chọn kho đã đến hạn hoặc được quản lý chấp thuận trả sớm. Cần thanh toán đủ mọi hóa đơn, kể cả các kỳ cam kết chưa đến hạn, trước khi gửi yêu cầu.
+              Chọn đơn đã đến hạn hoặc được duyệt trả sớm. Yêu cầu áp dụng cho toàn bộ kho trong đơn. Vui lòng thanh toán đủ các hóa đơn, kể cả kỳ cam kết chưa đến hạn.
             </p>
             <label className="field-label">
               Yêu cầu thuê đủ điều kiện trả
@@ -213,14 +218,14 @@ export function CustomerReturnsPage() {
                 <option value="">Chọn kho muốn trả</option>
                 {eligibleRentals.map((item) => (
                   <option key={item.reservationId} value={item.reservationId}>
-                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần đối chiếu công nợ' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
+                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần kiểm tra khoản còn thiếu' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
                   </option>
                 ))}
               </EntitySelect>
             </label>
             {selectedRental && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
-              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối chiếu công nợ' : 'Cần thanh toán trước khi trả kho'}</strong>
-              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và quyết toán tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
+              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần kiểm tra khoản còn thiếu' : 'Cần thanh toán trước khi trả kho'}</strong>
+              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và xử lý tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
               {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selectedRental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
             </div>}
             <label className="field-label">
@@ -255,7 +260,7 @@ export function CustomerReturnsPage() {
               </small>
             )}
           </fieldset>
-        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>
+        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>}
       </div>
     </section>
   );
@@ -294,9 +299,9 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
               {formatPortalDate(item.requestedAt, true)}
             </p>
             {item.returnReadiness && !item.physicallyReturnedAt && !item.returnReadiness.canReturn && <div className="customer-inline-notice">
-              <strong>Cần tất toán trước khi nhân viên nhận trả kho</strong>
-              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được đầy đủ công nợ. Hãy làm mới hoặc liên hệ nhân viên để đối chiếu.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
-              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và tất toán</Link>
+              <strong>Cần thanh toán đủ trước khi trả kho</strong>
+              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
+              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và thanh toán</Link>
             </div>}
             <dl className="customer-record-facts">
               <div>

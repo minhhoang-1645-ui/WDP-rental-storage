@@ -18,6 +18,8 @@ const queuePaths = {
   support: '/manager/support-requests',
   early: '/manager/early-return-requests',
   damage: '/manager/damage-claims',
+  transfers: '/manager/transfers',
+  renewals: '/manager/renewals',
 } as const;
 
 type Queue = keyof typeof queuePaths;
@@ -26,20 +28,27 @@ type Task = { queue: Queue; row: Row; status: string; statusText: string; create
 const titles: Record<Queue, string> = {
   deposits: 'Quyết toán cọc',
   maintenance: 'Nghiệm thu bảo trì', support: 'Hỗ trợ chuyển cấp', early: 'Trả kho trước hạn', damage: 'Sự cố hàng hóa',
+  transfers: 'Chuyển kho',
+  renewals: 'Gia hạn kho',
 };
 const statusNames: Record<string, string> = {
+  REQUESTED: 'Chờ quyết định', PENDING: 'Chờ quyết định',
   PENDING_REVIEW: 'Chờ duyệt',
-  AWAITING_VERIFICATION: 'Chờ nghiệm thu', ESCALATED: 'Đã chuyển cấp', EARLY_REVIEW: 'Chờ quyết định',
+  AWAITING_VERIFICATION: 'Chờ kiểm tra kết quả', ESCALATED: 'Cần quản lý quyết định', EARLY_REVIEW: 'Chờ quyết định',
   INVESTIGATING: 'Chờ quyết định sự cố', APPROVED: 'Đã chấp thuận · chờ kết thúc', REJECTED: 'Đã từ chối · chờ kết thúc',
 };
 const queueStates: Record<Queue, string[]> = {
   deposits: ['PENDING_REVIEW'],
   maintenance: ['AWAITING_VERIFICATION'], support: ['ESCALATED'], early: ['EARLY_REVIEW'],
   damage: ['INVESTIGATING', 'APPROVED', 'REJECTED'],
+  transfers: ['REQUESTED'],
+  renewals: ['PENDING'],
 };
 const fullLists: Record<Queue, string> = {
   deposits: '/manager/operations/deposit-settlements', maintenance: '/manager/operations/maintenance',
   support: '/manager/operations/support-requests', early: '/manager/early-returns', damage: queuePaths.damage,
+  transfers: '/manager/operations/transfers',
+  renewals: '/manager/operations/renewals',
 };
 
 function toTask(queue: Queue, row: Row, from: string): Task | null {
@@ -67,17 +76,25 @@ function toTask(queue: Queue, row: Row, from: string): Task | null {
       state = 'EARLY_REVIEW';
       search.set('record', id);
       break;
+    case 'renewals':
+      if (status !== 'PENDING') return null;
+      to = detailPath('renewals', { id });
+      break;
+    case 'transfers':
+      if (status !== 'REQUESTED') return null;
+      to = detailPath('transfers', { id });
+      break;
     case 'damage':
       if (!(status === 'INVESTIGATING' && row.staffFacts) && !['APPROVED', 'REJECTED'].includes(status)) return null;
       search.set('claim', id);
       break;
   }
   return {
-    queue, row, status: state, statusText: statusNames[state],
+    queue, row, status: state, statusText: queue === 'damage' && first(row, 'compensation.status') === 'AWAITING_HANDOVER' ? 'Chờ giao tiền' : statusNames[state],
     created: first(row, 'createdAt'),
     reference: first(row, 'claimCode') || code(row),
     person: first(customer(row), 'fullName'),
-    unit: first(row, 'unit.unitCode', 'unitCodeSnapshot') ||
+    unit: first(row, 'unit.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode') ||
       rows(row.physicalInspections).map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ') ||
       rows(row.contracts).map(item => first(item, 'unitCode')).filter(Boolean).join(', ') ||
       first(row, 'reservation.storageType.name', 'invoice.invoiceCode'),
@@ -104,7 +121,9 @@ export function ManagerReviewInbox() {
   const support = useApiResource<Page>(queuePath('support', 'ESCALATED'), user?.id, true);
   const early = useApiResource<Page>(queuePath('early'), user?.id, true);
   const damage = useApiResource<Page>(queuePath('damage'), user?.id, true);
-  const sources = { deposits, maintenance, support, early, damage };
+  const transfers = useApiResource<Page>(queuePath('transfers', 'REQUESTED'), user?.id, true);
+  const renewals = useApiResource<Page>(queuePath('renewals', 'PENDING'), user?.id, true);
+  const sources = { deposits, maintenance, support, early, damage, transfers, renewals };
   const resources = Object.values(sources);
   const loading = resources.some(resource => resource.loading);
   const refreshing = resources.some(resource => resource.refreshing);
@@ -132,16 +151,16 @@ export function ManagerReviewInbox() {
   return <section>
     <PageHeader title="Việc cần duyệt"><button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button></PageHeader>
     {errors.length > 0 && <div className="booking-alert is-error" role="alert">Chưa tải được {errors.join(', ')}. <button className="button-secondary" type="button" onClick={refresh}>Thử lại</button></div>}
-    {bounded && <p className="manager-task-note" role="status">Bảng đang hiển thị các hồ sơ gần nhất từ từng nghiệp vụ. Mở danh sách nghiệp vụ để tra cứu hồ sơ cũ hơn.</p>}
+    {bounded && <p className="manager-task-note" role="status">Đang hiển thị các yêu cầu gần nhất. Mở danh sách đầy đủ để tìm yêu cầu cũ.</p>}
     <ManagerTaskTable title="Việc cần duyệt" loading={loading} refreshing={refreshing} retry={refresh} items={matching.slice((page - 1) * limit, page * limit)}
       columns={columns} rowKey={task => task.queue + ':' + first(task.row, 'id')} total={matching.length} page={page} limit={limit} update={update}
-      emptyTitle="Chưa có hồ sơ cần duyệt" emptyDescription={errors.length ? 'Kết quả chỉ gồm các nghiệp vụ tải thành công.' : undefined}
+      emptyTitle="Chưa có hồ sơ cần duyệt" emptyDescription={errors.length ? 'Một số nhóm yêu cầu chưa tải được. Hãy thử lại.' : undefined}
       toolbar={<>
         <ManagerTableSearch value={term} onChange={value => update('search', value)} placeholder="Tên khách, mã hồ sơ hoặc kho…" />
         <ManagerTableFilter label="Loại yêu cầu" value={queue} onChange={value => update('kind', value)}
           options={[[ '', 'Tất cả' ], ...Object.entries(titles)]} />
         <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)} options={[[ '', 'Tất cả' ], ...states.map(value => [value, statusNames[value]] as [string, string])]} />
-        {queue && <Link className="button-secondary" to={fullLists[queue]}>Mở danh sách nghiệp vụ</Link>}
+        {queue && <Link className="button-secondary" to={fullLists[queue]}>Xem danh sách đầy đủ</Link>}
       </>} />
   </section>;
 }

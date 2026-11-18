@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { Text, View } from 'react-native';
 import { useResource } from '@/operations/use-resource';
@@ -19,16 +19,16 @@ export function CustomerContracts({contractId}:{contractId?:string}){
   const params=useLocalSearchParams<{reservationId?:string}>();
   const detail=useResource<Row>(contractId?'/customer/contracts/'+encodeURIComponent(contractId):null);
   const [choice,setChoice]=useState('');
-  const reservation=contractId?text(detail.data??{},'reservation.id'):params.reservationId||choice;
-  const flow=useCustomerRentalJourney(reservation);
-  useEffect(()=>{if(!contractId&&!params.reservationId&&!choice&&flow.all.length)setChoice(text(flow.all[0],'reservation.id'));},[contractId,params.reservationId,choice,flow.contracts.data]);
+  const preferredReservation=contractId?text(detail.data??{},'reservation.id'):params.reservationId||choice;
+  const flow=useCustomerRentalJourney(preferredReservation, !contractId && !params.reservationId);
+  const reservation = flow.reservationId;
   const groups=[...new Map(flow.all.map(item=>[text(item,'reservation.id'),item])).values()];
   const selected=contractId?detail.data:flow.group[0];
   const signed=contractId?Boolean(text(selected??{},'terms.acceptedAt')):flow.allSigned;
   const action=contractId&&!signed&&selected&&!flow.closed&&['PENDING_PAYMENT','READY_FOR_HANDOVER'].includes(String(selected.status))?{title:'Xem và ký hợp đồng',path:'/customer/contract-document?id='+encodeURIComponent(contractId)}:flow.next;
   return <JourneyScreen title={contractId?'Hợp đồng thuê':'Tài liệu thuê kho'} action={flow.loading||flow.error||detail.loading||detail.error?undefined:action}>
     {detail.error?<ErrorState message={detail.error} onRetry={detail.refresh}/>:detail.loading?<LoadingState layout="detail"/>:null}
-    {!contractId&&!params.reservationId&&groups.length>0&&<View><Text style={s.secondary}>Chọn đơn thuê</Text><CustomerStatusFilters values={groups.map(item=>text(item,'reservation.id'))} selected={choice} onChange={setChoice} label={value=>text(groups.find(item=>text(item,'reservation.id')===value)??{},'storageType.name')||'Đơn thuê'}/></View>}
+    {!contractId&&!params.reservationId&&groups.length>0&&<View><Text style={s.secondary}>Chọn đơn thuê</Text><CustomerStatusFilters values={groups.map(item=>text(item,'reservation.id'))} selected={reservation} onChange={setChoice} label={value=>text(groups.find(item=>text(item,'reservation.id')===value)??{},'storageType.name')||'Đơn thuê'}/></View>}
     {flow.error?<ErrorState message={flow.error} onRetry={flow.refresh}/>:flow.loading?<LoadingState layout="list"/>:reservation&&!flow.group.length?<Text style={s.secondary}>Chưa tìm thấy hợp đồng của đơn này. Hãy cập nhật lại tài liệu.</Text>:!reservation?<View>{flow.all.length?<Text style={s.secondary}>Chọn đơn thuê để xem hợp đồng và bước tiếp theo.</Text>:<Text style={s.secondary}>Hợp đồng sẽ xuất hiện khi đơn đặt được xác nhận.</Text>}</View>:<>
       <Text style={s.title}>{contractId?text(selected??{},'storageType.name')||'Hợp đồng thuê kho':'Hợp đồng của bạn'}</Text>
       {contractId&&selected?<View style={{gap:8}}><Text style={s.secondary}>Tình trạng hợp đồng</Text><StatusBadge status={String(selected.status)}/><Text style={s.secondary}>Chữ ký</Text><StatusBadge status={signed?'Đã ký':'Chưa ký'} tone={signed?'success':'warning'}/></View>:<Text style={s.secondary}>{flow.group.length} hợp đồng cho đơn thuê {flow.expected||flow.group.length} ô kho.</Text>}

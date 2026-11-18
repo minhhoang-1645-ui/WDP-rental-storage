@@ -1,6 +1,6 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
+import { Link } from 'react-router-dom';
 import { useAuth } from "../../auth/auth-context";
-import { ReturnInventoryNotice } from '../../components/customer/ReturnInventoryNotice';
 import { mutate } from "../../services/portal";
 import {
   first,
@@ -30,6 +30,10 @@ export function StaffActions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lock = useRef(false);
+  const returnRequirementsId = useId();
+  const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
+  const [resolutionDraft, setResolutionDraft] = useState('');
+  const [escalationDraft, setEscalationDraft] = useState('');
   const [recipientType, setRecipientType] = useState('CUSTOMER');
   const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
   const handoverContracts = rows(row.allocatedUnits);
@@ -99,16 +103,26 @@ export function StaffActions({
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
   const returnPaid = returnDebt?.canReturn === true && returnDebt.totalOutstanding === 0;
   const allInspected =
-    Number(first(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(first(row, 'inventory.pendingMovements') || 0) === 0 &&
     inspections.length > 0 &&
     inspections.every(
       (item) =>
         ["PASS", "ISSUE_FOUND"].includes(String(item.result)) &&
         (item.result !== "ISSUE_FOUND" || first(item, "issueType")),
     );
+  const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
+  const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
+  const canFinalize = returnPaid && allInspected && remainingItems === 0 && pendingMovements === 0;
+  const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
+  const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
+  const stockMovementsPath = contractId
+    ? `/staff/stock-movements?${new URLSearchParams({ rentalContractId: contractId })}`
+    : '/staff/stock-movements';
+  const storedItemsPath = storageUnitId
+    ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
+    : '/staff/stored-items';
   return (
-    <section className="manager-section">
-      <h2>Thao tác nhân viên</h2>
+    <section className="manager-section record-action-panel" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
+      <h2>{resource === 'support-requests' ? 'Kết quả hỗ trợ' : resource === 'maintenance' ? 'Kết quả sửa chữa' : resource === 'returns' ? 'Kiểm tra kho trả' : resource === 'appointments' ? 'Bàn giao kho' : 'Xử lý hồ sơ'}</h2>
       {error && (
         <div className="booking-alert is-error" role="alert">
           {error}
@@ -122,7 +136,7 @@ export function StaffActions({
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
               <h3>Bàn giao giấy tờ và chìa khóa</h3>
-              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu bàn giao sớm, hệ thống sẽ tự kích hoạt quyền sử dụng kho từ ngày bắt đầu thuê khi đủ điều kiện.</p>
+              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu nhận kho sớm, khách chỉ được sử dụng từ ngày bắt đầu thuê khi đã đủ điều kiện.</p>
               <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
               {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
               <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
@@ -148,7 +162,7 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải tất toán trước khi nhận trả kho</strong><p>{returnPaid ? 'Khách đã thanh toán đủ công nợ hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được công nợ. Làm mới hồ sơ để đối chiếu trước khi nhận trả kho.'}</p></div>}
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -159,7 +173,6 @@ export function StaffActions({
             )}
             {inspecting && (
               <>
-                {(Number(first(row, 'inventory.remainingItemTypes')) > 0 || Number(first(row, 'inventory.pendingMovements')) > 0) && <ReturnInventoryNotice staff remainingItemTypes={Number(first(row, 'inventory.remainingItemTypes')) || 0} pendingMovements={Number(first(row, 'inventory.pendingMovements')) || 0} />}
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
                   phí do quản lý duyệt.
@@ -181,21 +194,33 @@ export function StaffActions({
                   className="portal-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (allInspected) void run("/finalize");
+                    if (canFinalize) void run("/finalize");
                   }}
                 >
+                  {!canFinalize && (
+                    <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
+                      <strong>Chưa thể xác nhận nhận kho trả</strong>
+                      <ul>
+                        {!returnPaid && <li>Cần xác nhận khách đã thanh toán đủ các hóa đơn của đơn thuê.</li>}
+                        {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
+                        {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
+                        {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
+                      </ul>
+                      {(remainingItems > 0 || pendingMovements > 0) && <div className="portal-actions">
+                        {remainingItems > 0 && <Link className="button-secondary" to={storedItemsPath}>Xem hàng đang lưu</Link>}
+                        {pendingMovements > 0 && <Link className="button-secondary" to={stockMovementsPath}>Mở phiếu nhập – xuất</Link>}
+                      </div>}
+                    </div>
+                  )}
                   <label className="portal-checkbox">
-                    <input type="checkbox" required disabled={!allInspected} />
+                    <input type="checkbox" required disabled={!canFinalize}
+                      aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
                     Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra
                   </label>
-                  <button className="button-primary" disabled={!allInspected || !returnPaid}>
+                  <button type="submit" className="button-primary" disabled={!canFinalize}
+                    aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
                     Hoàn tất nhận kho trả
                   </button>
-                  {!allInspected && (
-                    <small>
-                      Cần xuất hết hàng, hoàn tất các phiếu giao nhận và ghi đủ kết quả kiểm tra trước khi nhận lại kho.
-                    </small>
-                  )}
                 </form>
               </>
             )}
@@ -230,7 +255,7 @@ export function StaffActions({
                 }
               >
                 <label className="field-label">
-                  Kết quả sửa chữa
+                  Nội dung kiểm tra hoặc sửa chữa
                   <textarea
                     name="workNote"
                     required
@@ -240,7 +265,7 @@ export function StaffActions({
                   />
                 </label>
                 <button className="button-primary">
-                  Gửi kết quả để nghiệm thu
+                  Gửi kết quả nghiệm thu
                 </button>
               </form>
             )}
@@ -252,7 +277,7 @@ export function StaffActions({
             )}
           </>
         )}
-        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đề nghị trả trước hạn đang chờ quản lý đối chiếu điều kiện và công nợ. Nhân viên tiếp nhận khi khách đã được chấp thuận và tạo hồ sơ trả kho.</p>}
+        {resource === 'support-requests' && isEarlyReturnRequest(row) && <p>Đang chờ quản lý duyệt thời điểm trả sớm. Nhân viên tiếp nhận khi khách đã được duyệt và gửi yêu cầu trả kho.</p>}
         {resource === "support-requests" && !isEarlyReturnRequest(row) && !isTransferRequest(row) && (
           <>
             {!assigned &&
@@ -267,76 +292,33 @@ export function StaffActions({
                 Bắt đầu hỗ trợ
               </button>
             )}
-            {assigned && row.status === "IN_PROGRESS" && (
-              <>
-                <form
-                  className="portal-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const data = new FormData(event.currentTarget);
-                    void run(
-                      "/resolve",
-                      "POST",
-                      {
-                        resolutionType: data.get("resolutionType"),
-                        resolutionNote: String(
-                          data.get("resolutionNote"),
-                        ).trim(),
-                      },
-                      true,
-                    );
-                  }}
-                >
-                  <label className="field-label">
-                    Kết quả hỗ trợ
-                    <select name="resolutionType" aria-label="Kết quả hỗ trợ">
-                      {[
-                        "ON_SITE_RESOLVED",
-                        "CUSTOMER_GUIDANCE",
-                        "ACCESS_RESTORED",
-                        "PAYMENT_GUIDANCE",
-                        "NO_ACTION_REQUIRED",
-                        "OTHER",
-                      ].map((value) => (
-                        <option key={value} value={value}>
-                          {label(value)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-label">
-                    Nội dung xử lý
-                    <textarea
-                      name="resolutionNote"
-                      required
-                      minLength={3}
-                      maxLength={4000}
-                      rows={3}
-                    />
-                  </label>
-                  <button className="button-primary">Hoàn tất hỗ trợ</button>
-                </form>
-                <form
-                  className="portal-form"
-                  onSubmit={(event) =>
-                    submit(event, "/escalate", "reason", true)
-                  }
-                >
-                  <label className="field-label">
-                    Lý do chuyển bộ phận phụ trách
-                    <textarea
-                      name="reason"
-                      required
-                      minLength={3}
-                      maxLength={4000}
-                      rows={3}
-                    />
-                  </label>
-                  <button className="button-secondary">
-                    Chuyển bộ phận phụ trách xem xét
-                  </button>
-                </form>
-              </>
+            {assigned && row.status === 'IN_PROGRESS' && (
+              <form className="portal-form" onSubmit={event => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const note = String(data.get('supportNote') ?? '').trim();
+                if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
+                if (supportDisposition === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportDisposition, resolutionNote: note }, true);
+              }}>
+                <label className="field-label">Hướng xử lý
+                  <select value={supportDisposition} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
+                    <option value="">Chọn hướng xử lý</option>
+                    {['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
+                      <option key={value} value={value}>{label(value)}</option>)}
+                    <option value="escalate">Cần quản lý xem xét</option>
+                  </select>
+                </label>
+                <label className="field-label">
+                  {supportDisposition === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
+                  <textarea name="supportNote" required minLength={3} maxLength={4000} rows={3}
+                    value={supportDisposition === 'escalate' ? escalationDraft : resolutionDraft}
+                    onChange={event => (supportDisposition === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
+                </label>
+                <button className="button-primary" disabled={busy || !supportDisposition}>
+                  {busy ? 'Đang lưu…' : supportDisposition === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
+                </button>
+              </form>
             )}
             {row.status === "ESCALATED" && (
               <p>Đã chuyển đến bộ phận phụ trách xem xét.</p>
@@ -384,6 +366,7 @@ function InspectionEditor({
   return (
     <form className="portal-form portal-inspection-form" onSubmit={submit}>
       <h3>Kiểm tra kho {first(inspection, "unit.unitCode")}</h3>
+      {inspection.result === "PENDING" && <small>Chưa lưu kết quả kiểm tra</small>}
       <label className="field-label">
         Kết quả kiểm tra
         <select

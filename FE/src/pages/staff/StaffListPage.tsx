@@ -1,231 +1,66 @@
-import { RecordIdentity } from '../../components/workspace/RecordIdentity';
-import { TableSkeleton } from '../../components/LoadingSkeleton';
-import { RefreshCw } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
+import { RefreshCw } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
 import { useInternalListResource } from '../../components/workspace/useInternalListResource';
-import { internalPageSize } from '../../utils/internal-pagination';
-import {
-  code,
-  customer,
-  date,
-  first,
-  label,
-  rows,
-  recordId,
-  type Row,
-} from "../../components/manager/portal-data";
-import {
-  Empty,
-  LoadState,
-  PageHeader,
-  Pagination,
-  RefreshStatus,
-  Status,
-} from "../../components/manager/PortalUi";
-import {
-  staffResources,
-  staffDay,
-  type StaffResource,
-} from "./staff-resources";
-import { StaffMaintenanceReport } from "./StaffMaintenanceReport";
+import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { StaffTaskPagination, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import { code, date, first, recordId, type Row } from '../../components/manager/portal-data';
+import { staffTaskPageSize } from '../../utils/internal-pagination';
+import { recordIdentity } from '../../utils/record-identity';
 
-export function StaffListPage({ resource }: { resource: StaffResource }) {
+const title = 'Kho đang thuê';
+const columns: StaffColumn<Row>[] = [
+  { key: 'person', label: 'Khách hàng', cell: row => <><strong>{first(row, 'customer.fullName') || '—'}</strong><CopyRecordCode value={code(row)} /></> },
+  { key: 'unit', label: 'Kho', cell: row => recordIdentity(row, 'rentals').location || '—' },
+  { key: 'date', label: 'Ngày hết hạn', cell: row => date(first(row, 'effectiveEndDate', 'endDate')) },
+  { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.rentalState} /> },
+  { key: 'action', label: 'Thao tác', cell: row => <Link className="button-secondary" to={`/staff/rentals/${encodeURIComponent(recordId(row))}`}>Xem chi tiết</Link> },
+];
+
+export function StaffListPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-
-  const config = staffResources[resource];
-  const search = params.get("search") ?? "",
-    status = params.get("status") ?? "",
-    scheduledDay =
-      resource === "appointments" ? (params.get("date") ?? "") : "",
-    mine = params.get("mine") === "true";
-  const canAssign =
-    resource === "maintenance" || resource === "support-requests";
-  const limit = internalPageSize(params);
-  const requestedPage = Math.max(1, Math.floor(Number(params.get('page')) || 1));
-  const serverPaged = ['appointments', 'maintenance', 'support-requests'].includes(resource);
-  const query = new URLSearchParams({ page: String(requestedPage), limit: String(limit) });
+  const search = params.get('search') ?? '';
+  const suppliedStatus = params.get('status');
+  const status = suppliedStatus === 'OVERDUE' || suppliedStatus === 'ACTIVE' ? suppliedStatus : '';
+  const limit = staffTaskPageSize(params);
+  const page = Math.min(100000, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set('search', search.trim());
-  if (status) query.set('status', status);
-  if (scheduledDay) query.set('date', scheduledDay);
-  if (mine) query.set('assignedToMe', 'true');
-  const data = useInternalListResource<Row>(`/staff/${resource}${serverPaged ? '?' + query : ''}`, user?.id ?? '', serverPaged, true);
-  const filtered = (data.data?.items ?? []).filter(
-    (row) =>
-      (!status || (row.status ?? row.rentalState) === status) &&
-      (!scheduledDay || staffDay(row.scheduledAt) === scheduledDay) &&
-      (!mine || first(row, "assignedStaff.id") === user?.id) &&
-      [
-        code(row),
-        first(customer(row), "fullName", "email"),
-        first(row, "assignedStaff.fullName", "unit.unitCode"),
-        first(row, "reservation.reference"),
-        ...rows(row.contracts).map((contract) =>
-          first(contract, "unit.unitCode"),
-        ),
-      ]
-        .join(" ")
-        .toLocaleLowerCase("vi")
-        .includes(search.trim().toLocaleLowerCase("vi")),
-  );
-  const items = serverPaged ? data.data?.items ?? [] : filtered;
-  const total = serverPaged ? data.data?.total ?? 0 : items.length;
-  const page = serverPaged ? requestedPage : Math.min(requestedPage, Math.max(1, Math.ceil(total / limit)));
-  const visible = serverPaged ? items : items.slice((page - 1) * limit, page * limit);
-  const change = (name: string, value: string) =>
-    setParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        if (value) next.set(name, value);
-        else next.delete(name);
-        if (name !== "page") next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
-  return (
-    <section>
-      <PageHeader title={config.title} description={config.description}>
-        <button
-          className="button-secondary"
-          onClick={data.refresh}
-          disabled={data.loading || data.refreshing}
-        >
-          <RefreshCw size={16} />
-          Làm mới
-        </button>
-        <RefreshStatus active={data.refreshing} />
-      </PageHeader>
-      <div className="portal-toolbar">
-        <label className="field-label portal-search">
-          Tìm hồ sơ
-          <input
-            type="search"
-            placeholder="Mã hồ sơ, khách hàng, kho…"
-            value={search}
-            onChange={(event) => change("search", event.target.value)}
-          />
-        </label>
-        <label className="field-label">
-          Trạng thái
-          <select
-            value={status}
-            onChange={(event) => change("status", event.target.value)}
-          >
-            <option value="">Tất cả</option>
-            {config.statuses.map((value) => (
-              <option key={value} value={value}>
-                {label(value)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {resource === "appointments" && (
-          <label className="field-label">
-            Ngày bàn giao
-            <input
-              type="date"
-              value={scheduledDay}
-              onChange={(event) => change("date", event.target.value)}
-            />
-          </label>
-        )}
-        {canAssign && (
-          <label className="portal-checkbox">
-            <input
-              type="checkbox"
-              checked={mine}
-              onChange={(event) =>
-                change("mine", event.target.checked ? "true" : "")
-              }
-            />
-            Chỉ việc được giao cho tôi
-          </label>
-        )}
-      </div>
-      <LoadState
-        loading={data.loading}
-        error={data.error}
-        retry={data.refresh}
-        placeholder={<TableSkeleton columns={['record', 'customer', ...(canAssign ? ['assignee'] : []), 'status', 'date', 'actions']} rows={Math.min(limit, 6)} pagination />}
-      />
-      {data.data && (
-        <>
-          <div className="portal-result-heading">
-            <span>{total} hồ sơ</span>
-          </div>
-          {items.length ? (
-            <div className="manager-table-wrap">
-              <table className="manager-table">
-                <thead>
-                  <tr>
-                    <th>Hồ sơ</th>
-                    <th>Khách hàng / Kho</th>
-                    {canAssign && <th>Phụ trách</th>}
-                    <th>Trạng thái</th>
-                    <th>Thời gian</th>
-                    <th>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((row) => (
-                    <tr key={recordId(row)}>
-                      <td>
-                        <RecordIdentity row={row} resource={resource} />
-                      </td>
-                      <td>
-                        {first(customer(row), "fullName") ||
-                          first(row, "unit.unitCode", "storageUnit.unitCode") ||
-                          "—"}
-                        <small>{first(customer(row), "phone")}</small>
-                      </td>
-                      {canAssign && (
-                        <td>
-                          {first(row, "assignedStaff.fullName") ||
-                            "Chưa phân công"}
-                        </td>
-                      )}
-                      <td>
-                        <Status value={row.status ?? row.rentalState} />
-                      </td>
-                      <td>
-                        {date(
-                          row.scheduledAt ??
-                            row.requestedAt ??
-                            row.createdAt ??
-                            row.effectiveEndDate,
-                          true,
-                        )}
-                      </td>
-                      <td>
-                        <Link
-                          className="button-secondary"
-                          to={`/staff/${resource}/${encodeURIComponent(recordId(row))}`}
-                        >
-                          Xem hồ sơ
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty />
-          )}
-          <Pagination
-            page={page}
-            total={total}
-            limit={limit}
-            onLimitChange={value => change("limit", String(value))}
-            onChange={(value) => change("page", String(value))}
-          />
-        </>
-      )}
-      {resource === "maintenance" && (
-        <StaffMaintenanceReport onSuccess={data.refresh} />
-      )}
-    </section>
-  );
+  if (status) query.set('overdue', String(status === 'OVERDUE'));
+  const resource = useInternalListResource<Row>(`/staff/rentals?${query}`, user?.id ?? '', true, true);
+  const items = resource.data?.items ?? [];
+  const change = (key: string, value: string) =>
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      if (key !== 'page') next.delete('page');
+      return next;
+    }, { replace: true });
+  return <section>
+    <PageHeader title={title}>
+      <Link to="/staff/overstays" className="button-secondary">Kho quá hạn tôi phụ trách</Link>
+      <button type="button" className="button-secondary" onClick={resource.refresh} disabled={resource.loading || resource.refreshing}>
+        <RefreshCw size={16} aria-hidden="true" />Làm mới
+      </button>
+      <RefreshStatus active={resource.refreshing} />
+    </PageHeader>
+    <div className="portal-toolbar staff-table-toolbar">
+      <label className="field-label portal-search">Tìm hồ sơ<input type="search" maxLength={100} placeholder="Mã hồ sơ, khách hàng, kho…" value={search}
+        onChange={event => change('search', event.target.value)} /></label>
+      <label className="field-label">Trạng thái<select value={status} onChange={event => change('status', event.target.value)}>
+        <option value="">Tất cả</option><option value="ACTIVE">Trong hạn</option><option value="OVERDUE">Quá hạn</option>
+      </select></label>
+      {(search || status) && <button type="button" className="button-secondary" onClick={() => setParams(params.has('limit') ? { limit: String(limit) } : {}, { replace: true })}>Xóa bộ lọc</button>}
+    </div>
+    <LoadState loading={resource.loading} error={resource.error} retry={resource.refresh}
+      placeholder={<StaffTaskTable title={title} columns={columns} items={[]} rowKey={recordId} loadingRows={5} />} />
+    {resource.data && <>
+      {items.length ? <StaffTaskTable title={title} columns={columns} items={items} rowKey={recordId} /> : <Empty title="Chưa có kho đang thuê phù hợp" />}
+      <StaffTaskPagination page={page} limit={limit} total={resource.data.total} onChange={value => change('page', String(value))}
+        onLimitChange={value => change('limit', String(value))} />
+    </>}
+  </section>;
 }

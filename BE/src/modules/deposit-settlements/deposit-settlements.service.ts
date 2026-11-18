@@ -171,7 +171,7 @@ export class DepositSettlementsService {
         orderBy: { createdAt: 'asc' as const },
       },
       outstandingInvoice: { include: { payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } } },
-      returnRequest: { include: {
+      returnRequest: { omit: { assignedStaffUserId: true }, include: {
         requestedBy: { select: { id: true, fullName: true } },
         reservation: { include: {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },

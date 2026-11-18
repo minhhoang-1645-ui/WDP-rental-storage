@@ -13,24 +13,29 @@ export function Status({ value, text }: { value: unknown; text?: string }) {
   const status = typeof value === "string" ? value : "";
   return (
     <span className={`manager-status is-${status.toLowerCase()}`}>
-      {text ?? label(status)}
+      {text ?? (status && label(status) === status && /^[A-Z][A-Z0-9_]*$/.test(status) ? 'Trạng thái chưa xác định' : label(status))}
     </span>
   );
 }
 export function PageHeader({
   title,
   description,
+  meta,
+  status,
   children,
 }: {
   title: string;
   description?: string;
+  meta?: ReactNode;
+  status?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <header className="manager-page-header">
+    <header className={`manager-page-header${meta || status ? ' record-page-header' : ''}`}>
       <div>
-        <h1>{title}</h1>
+        <div className="record-page-title"><h1>{title}</h1>{status}</div>
         {description && <p>{description}</p>}
+        {meta && <div className="record-page-meta">{meta}</div>}
       </div>
       {children && <div className="portal-actions">{children}</div>}
     </header>
@@ -73,7 +78,7 @@ export function Empty({
 }) {
   return (
     <div className="manager-empty">
-      <Search size={28} />
+      <Search size={28} aria-hidden="true" />
       <h2>{title}</h2>
       <p>{description}</p>
     </div>
@@ -102,41 +107,58 @@ export function Modal({
   children,
   busy = false,
   className = '',
+  footer,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   busy?: boolean;
   className?: string;
+  footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
+    const previous = document.activeElement;
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, []);
   return (
     <dialog
       ref={ref}
-      className={`portal-dialog ${className}`}
+      className={`portal-dialog ${className}${footer ? ' portal-dialog-framed' : ''}`}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();
       }}
+      onKeyDown={footer ? event => {
+        if (event.key !== 'Tab' || event.defaultPrevented) return;
+        const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'))
+          .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length > 0);
+        const edge = event.shiftKey ? items[0] : items.at(-1);
+        const target = event.shiftKey ? items.at(-1) : items[0];
+        if (!target || edge !== document.activeElement) return;
+        event.preventDefault();
+        target.focus();
+      } : undefined}
     >
       <header>
         <h2>{title}</h2>
         <button
+          type="button"
           className="icon-button"
-          aria-label="Đóng"
+          aria-label={footer ? 'Đóng hộp thoại' : 'Đóng'}
           onClick={onClose}
           disabled={busy}
         >
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </button>
       </header>
-      {children}
+      {footer ? <><div className="portal-dialog-body">{children}</div><footer className="portal-dialog-footer">{footer}</footer></> : children}
     </dialog>
   );
 }

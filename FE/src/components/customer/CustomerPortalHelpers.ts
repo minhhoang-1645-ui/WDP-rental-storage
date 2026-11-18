@@ -74,5 +74,5 @@ export function customerStatusLabel(status: string) {
     AWAITING_OUTSTANDING_PAYMENT: "Chờ thanh toán bổ sung",
     SETTLED: "Đã quyết toán",
   };
-  return labels[status] ?? status;
+  return labels[status] ?? (status ? 'Trạng thái chưa xác định' : '—');
 }

@@ -29,8 +29,7 @@
   background: var(--workspace-hover);
   color: var(--workspace-primary);
 }
-.public-themed .button-primary,
-.public-themed .skip-link { color: var(--workspace-on-primary); }
+.public-themed .button-primary { color: var(--workspace-on-primary); }
 .public-themed .activity-panel,
 .public-themed .activity-panel .activity-item {
   background: var(--workspace-surface);
@@ -141,16 +140,6 @@
   top: 50%;
   width: 100%;
   transform: translateY(-50%);
-}
-.landing-size-image span {
-  position: absolute;
-  bottom: 7px;
-  left: 7px;
-  border-radius: 4px;
-  padding: 2px 6px;
-  background: #10151de6;
-  color: white;
-  font-size: 10px;
 }
 .landing-size-copy {
   display: grid;
@@ -263,7 +252,7 @@
 .public-themed :is(.auth-panel, .confirmation-panel) h1 {
   margin: 0;
   color: var(--workspace-text);
-  font-size: clamp(26px, 3vw, 30px);
+  font-size: var(--type-title);
   font-weight: 750;
 }
 .public-themed .auth-panel .auth-icon {
@@ -271,9 +260,9 @@
   color: var(--workspace-primary);
   background: var(--workspace-selected);
 }
-.public-themed .auth-fields { display: grid; gap: 14px; margin-top: 18px; }
-.public-themed .auth-panel :is(p, small), .public-themed .confirmation-panel small { font-size: 14px; }
-.public-themed .auth-fields :is(label, input), .public-themed .confirmation-panel .field-label { font-size: 15px; }
+.public-themed .auth-fields { display: grid; gap: var(--space-16); margin-top: var(--space-20); }
+.public-themed .auth-panel :is(p, small), .public-themed .confirmation-panel small { font-size: var(--type-meta); }
+.public-themed .auth-fields :is(label, input), .public-themed .confirmation-panel .field-label { font-size: var(--type-control); }
 .public-themed .auth-help-link {
   display: block;
   width: fit-content;
@@ -284,7 +273,7 @@
 }
 .public-themed .auth-help-link:hover { text-decoration: underline; }
 .public-themed :is(.auth-panel, .confirmation-panel) .booking-alert { margin-block: 14px; }
-.public-themed .confirmation-panel :is(h2, summary) { font-size: 18px; font-weight: 700; }
+.public-themed .confirmation-panel :is(h2, summary) { font-size: var(--type-section); font-weight: 700; }
 .public-themed .confirmation-panel details { border-top: 1px solid var(--workspace-border); margin-top: 20px; padding-top: 16px; }
 .public-themed .confirmation-panel summary { cursor: pointer; }
 .public-themed .confirmation-panel .portal-form { margin-top: 14px; }
@@ -330,12 +319,6 @@
   background: var(--workspace-selected);
 }
 .storage-detail-figure img { width: 100%; height: 100%; object-fit: cover; }
-.public-themed .storage-detail-figure .illustration-label {
-  background: var(--workspace-popover);
-  color: var(--workspace-text);
-  font-size: 13px;
-  text-transform: none;
-}
 .storage-detail-panel {
   min-width: 0;
   padding: clamp(14px, 3vw, 24px);

@@ -15,7 +15,7 @@ import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/ma
 
 const sizes = [10, 20, 50] as const;
 const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
-const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã vô hiệu hóa' };
+const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã khóa' };
 type AccountStatus = keyof typeof statuses;
 type BulkResult = { changed: number; skipped: number; failures: { id: string; name: string; reason: string }[] };
 
@@ -122,7 +122,7 @@ export function AdminAccountsPage() {
       return <div className="staff-table-actions">
         <TablePopover name={`Thao tác tài khoản ${first(row, 'email', 'fullName')}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
           <Link className={active ? 'admin-destructive-link' : undefined}
-            to={`${path}?tab=permissions&status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Vô hiệu hóa' : 'Kích hoạt lại'}</Link>
+            to={`${path}?tab=permissions&status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</Link>
         </TablePopover>
       </div>;
     } },
@@ -175,9 +175,9 @@ export function AdminAccountsPage() {
       <button type="button" className="icon-button" aria-label="Bỏ chọn tất cả" onClick={() => rememberSelection()}><X size={16} /></button>
       <span aria-live="polite">Đã chọn {selected.length}</span>
       <button type="button" className="button-secondary" disabled={!selected.some(row => row.accountStatus === 'DISABLED')}
-        onClick={() => startBulk('ACTIVE')}><UserRoundCheck size={16} />Kích hoạt tài khoản</button>
+        onClick={() => startBulk('ACTIVE')}><UserRoundCheck size={16} />Mở khóa tài khoản</button>
       <button type="button" className="button-secondary portal-danger" disabled={!selected.some(row => row.accountStatus === 'ACTIVE')}
-        onClick={() => startBulk('DISABLED')}><UserRoundX size={16} />Vô hiệu hóa tài khoản</button>
+        onClick={() => startBulk('DISABLED')}><UserRoundX size={16} />Khóa tài khoản</button>
     </div>}
     {bulk && <BulkStatusDialog {...bulk} onClose={() => setBulk(undefined)} onComplete={outcome => {
       setBulk(undefined);
@@ -338,7 +338,7 @@ function BulkStatusDialog({ status, rows, skipped, onClose, onComplete }: {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const disabling = status === 'DISABLED';
-  const action = disabling ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản';
+  const action = disabling ? 'Khóa tài khoản' : 'Mở khóa tài khoản';
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (lock.current) return;
@@ -364,8 +364,8 @@ function BulkStatusDialog({ status, rows, skipped, onClose, onComplete }: {
   }
   return <Modal title={action} busy={busy} onClose={onClose}>
     <form className="portal-form" onSubmit={submit}>
-      <p>{disabling ? 'Vô hiệu hóa' : 'Kích hoạt'} <strong>{rows.length} tài khoản</strong>.{skipped > 0 && ` Bỏ qua ${skipped} tài khoản đã ở trạng thái này.`}</p>
-      {disabling && <p>Người dùng bị vô hiệu hóa sẽ mất quyền truy cập theo chính sách phiên đăng nhập hiện tại.</p>}
+      <p>{disabling ? 'Khóa' : 'Mở khóa'} <strong>{rows.length} tài khoản</strong>.{skipped > 0 && ` Bỏ qua ${skipped} tài khoản đã ở trạng thái này.`}</p>
+      {disabling && <p>Người dùng sẽ không thể đăng nhập hoặc tiếp tục dùng tài khoản đang mở.</p>}
       <div className="portal-actions">
         <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
         <button type="submit" className={disabling ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy}>

@@ -9,13 +9,13 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
   const actor = { id: 'staff-id', role: 'STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
   const stamp = new Date('2026-10-27T13:00:00Z');
   const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ' };
-  const support = { id: 'support', reservationId: 'reservation', rentalContractId: 'contract', status: supportStatus, subject: 'Yêu cầu chuyển kho', resolutionType: null as string | null, resolutionNote: null as string | null };
-  const transfer = { id: 'transfer', transferCode: 'TRF-1', status, supportRequestId: 'support' as string | null, reservationId: 'reservation', rentalContractId: 'contract', fromStorageUnitId: 'source', toStorageUnitId: 'destination', fromReservationUnitId: 'allocation-old', toReservationUnitId: 'allocation-new',
+  const support = { id: 'support', reservationId: 'reservation', rentalContractId: 'contract', status: supportStatus, assignedStaffUserId: actor.id, subject: 'Yêu cầu chuyển kho', resolutionType: null as string | null, resolutionNote: null as string | null };
+  const transfer = { id: 'transfer', transferCode: 'TRF-1', status, assignedStaffUserId: actor.id, supportRequestId: 'support' as string | null, reservationId: 'reservation', rentalContractId: 'contract', fromStorageUnitId: 'source', toStorageUnitId: 'destination', fromReservationUnitId: 'allocation-old', toReservationUnitId: 'allocation-new',
     fromStorageUnit: { id: 'source', unitNumber: 'A101', status: status === 'COMPLETED' ? 'MAINTENANCE' : 'OCCUPIED', storageType }, toStorageUnit: { id: 'destination', unitNumber: 'A102', status: 'RESERVED', storageType },
     rentalContract: { id: 'contract', contractCode: 'CON-1', status: 'ACTIVE', startDate: stamp, endDate: stamp }, reservation: { id: 'reservation', reservationCode: 'RES-1', startDate: stamp, endDate: stamp },
     requestedBy: actor, approvedBy: actor, completedBy: actor, createdAt: stamp, updatedAt: stamp, approvedAt: stamp, completedAt: status === 'COMPLETED' ? stamp : null as Date | null };
   const maintenance: Record<string, unknown>[] = [];
-  const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, resolutionType: support.resolutionType } });
+  const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, assignedStaffUserId: support.assignedStaffUserId, resolutionType: support.resolutionType } });
   const tx = { stockMovement: { count: vi.fn().mockResolvedValue(0) }, $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
     rentalContract: { update: vi.fn(async () => ({})) }, reservationUnit: { update: vi.fn(async () => ({})) }, storageUnit: { findUnique: vi.fn(async () => transfer.fromStorageUnit), update: vi.fn(async ({ where, data }: any) => { Object.assign(where.id === 'source' ? transfer.fromStorageUnit : transfer.toStorageUnit, data); return {}; }) },
     maintenanceRequest: { findUnique: vi.fn(async ({ where }: any) => maintenance.find(item => Object.entries(where).every(([key, value]) => item[key] === value)) ?? null), create: vi.fn(async ({ data }: any) => { const item = { id: 'maintenance-created', ...data }; maintenance.push(item); return item; }) },
@@ -38,7 +38,7 @@ describe('Transfer completion and linked customer request, with memory-only depe
     expect(app.support.resolutionNote).toContain('A101 sang A102'); expect(app.support.resolutionNote).toContain('CON-1');
     expect(app.tx.supportRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ reservationId: 'reservation' }), data: expect.objectContaining({ resolvedByUserId: app.actor.id, resolutionType: 'ON_SITE_RESOLVED' }) }));
     expect(app.prisma.$transaction).toHaveBeenCalledTimes(1); expect(app.tx.storageUnit.update).toHaveBeenCalledTimes(2);
-    expect(app.maintenance).toHaveLength(1); expect(app.maintenance[0].storageUnitId).toBe('source'); expect(result.sourceMaintenance?.id).toBe('maintenance-created');
+    expect(app.maintenance).toHaveLength(1); expect(app.maintenance[0].storageUnitId).toBe('source'); expect(result.sourceMaintenance).toBeNull();
   });
   it('repairs a previously completed transfer without moving stock or replacing allocations again', async () => {
     const app = setup('COMPLETED'); await app.service.complete('transfer', app.actor, handover); await app.service.complete('transfer', app.actor, handover);

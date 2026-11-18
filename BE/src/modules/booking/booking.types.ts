@@ -34,6 +34,7 @@ export type QuoteSnapshot = PricingQuote;
 
 export interface AvailabilityResult {
   available: boolean;
+  availableQuantity: number;
   startDate: string;
   endDateExclusive: string;
   periodStatus: QuoteSnapshot['periodStatus'];

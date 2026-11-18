@@ -1,5 +1,20 @@
 :is(:root[data-workspace-theme], .workspace-themed) {
   color-scheme: light;
+  --type-title: clamp(1.625rem, 2.2vw, 1.875rem);
+  --type-section: 1.25rem;
+  --type-body: 1rem;
+  --type-control: .9375rem;
+  --type-meta: .875rem;
+  --type-badge: .8125rem;
+  --space-4: .25rem;
+  --space-8: .5rem;
+  --space-12: .75rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+  --control-radius: .5rem;
+  --panel-radius: .75rem;
   --workspace-background: #f8fafc;
   --workspace-sidebar: #fff;
   --workspace-surface: #fff;
@@ -98,7 +113,7 @@
   color: var(--workspace-text);
   box-shadow: none;
 }
-.manager-shell.internal-web.workspace-themed :is(.portal-mobile-nav,.portal-dialog,.activity-panel,.entity-select-popup) {
+.manager-shell.internal-web.workspace-themed :is(.portal-mobile-nav,.activity-panel,.entity-select-popup) {
   background: var(--workspace-popover);
   border-color: var(--workspace-border);
   color: var(--workspace-text);
@@ -114,7 +129,7 @@
   border-color: var(--workspace-border);
   color: var(--workspace-text);
 }
-.manager-shell.internal-web.workspace-themed :is(.button-primary,.manager-table .button-primary) {
+.manager-shell.internal-web.workspace-themed .button-primary:not(:disabled) {
   background: var(--workspace-primary);
   border-color: var(--workspace-primary);
   color: var(--workspace-on-primary);
@@ -128,10 +143,6 @@
 .manager-shell.internal-web.workspace-themed :is(.entity-select-options>button[aria-selected="true"],.entity-select-options>button.is-keyboard-active,.activity-tabs button[aria-pressed="true"],.activity-item.is-unread,.navigation-work-count,.work-hub-icon,.portal-account-avatar) {
   background: var(--workspace-selected);
   color: var(--workspace-primary);
-}
-.manager-shell.internal-web.workspace-themed .manager-table th {
-  background: var(--workspace-table);
-  color: var(--workspace-secondary);
 }
 .manager-shell.internal-web.workspace-themed :is(.manager-table td,.manager-account,.portal-dialog header,.portal-form fieldset,.portal-form-divider,.manager-detail-block,.stock-line) {
   border-color: var(--workspace-border);

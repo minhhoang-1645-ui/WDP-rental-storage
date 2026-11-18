@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, router, type Href } from 'expo-router';
 import { ArrowDownUp, Boxes, MapPin, FileText, CreditCard, Headphones, ChevronRight } from 'lucide-react-native';
@@ -20,6 +20,11 @@ export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
   const catalog=usePublicCatalog();
   const rentals=useResource<{items:Row[]}>('/customer/rentals',true);
   const [selected,setSelected]=useState(''),[action,setAction]=useState<FormAction>(),[notice,setNotice]=useState('');
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
   const choices=(rentals.data?.items??[]).flatMap(rental=>rows(rental.contracts).filter(contract=>contract.status==='ACTIVE').map(contract=>({rental,contract})));
   const current=choices.find(item=>idOf(item.contract)===selected)??(initialRentalId?choices.find(item=>idOf(item.rental)===initialRentalId||text(item.rental,'reservationReference')===initialRentalId):choices[0]);
   const rental=current?.rental,contract=current?.contract,contractId=contract?idOf(contract):'';
@@ -27,7 +32,7 @@ export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
   const returns=useResource<Row>(rental?'/customer/returns':null,true);
   const requests=useResource<Row>(rental?'/customer/support-requests':null,true);
   const related=rows(invoices.data?.items).filter(item=>text(item,'reservation.id')===text(rental??{},'reservationId')||Boolean(text(rental??{},'reservationReference'))&&text(item,'reservation.reference')===text(rental??{},'reservationReference'));
-  const authorized=rental&&!returns.loading&&!returns.error&&!requests.loading&&!requests.error?customerRentalActions(rental,rows(returns.data?.items),Date.now(),rows(requests.data?.items)):[];
+  const authorized=rental&&!returns.loading&&!returns.error&&!requests.loading&&!requests.error?customerRentalActions(rental,rows(returns.data?.items),now,rows(requests.data?.items)):[];
   const contextual=authorized.filter(item=>!item.title.startsWith('Yêu cầu chuyển kho')&&item.title!=='Gửi yêu cầu hỗ trợ');
   const transfer=authorized.find(item=>item.title.startsWith('Yêu cầu chuyển kho')&&item.description?.includes(text(contract??{},'contractCode')));
   if(transfer)contextual.push(transfer);

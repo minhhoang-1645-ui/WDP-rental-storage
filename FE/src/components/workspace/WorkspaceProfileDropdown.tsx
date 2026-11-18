@@ -1,15 +1,16 @@
-import { ChevronDown, LogOut, Moon, Palette, Sun, UserRound } from 'lucide-react';
+import { ChevronDown, LockKeyhole, LogOut, Moon, Palette, Sun, UserRound } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { WorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import type { PublicUser } from '../../types/booking';
 import '../../styles/workspace-profile.css';
 
-export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme, onProfile, onAppearance, onLogout }: {
+export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme, onProfile, onSecurity, onAppearance, onLogout }: {
   user: PublicUser;
   roleLabel: string;
   theme: WorkspaceTheme;
   onToggleTheme: () => void;
   onProfile: () => void;
+  onSecurity: () => void;
   onAppearance: () => void;
   onLogout: () => void;
 }) {
@@ -66,6 +67,9 @@ export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme
       <div className="workspace-profile-actions">
         <button ref={profile} type="button" onClick={() => { closeAndRestoreFocus(); onProfile(); }}>
           <UserRound size={17} aria-hidden="true" />Thông tin cá nhân
+        </button>
+        <button type="button" onClick={() => { closeAndRestoreFocus(); onSecurity(); }}>
+          <LockKeyhole size={17} aria-hidden="true" />Bảo mật
         </button>
         <button type="button" onClick={() => { closeAndRestoreFocus(); onAppearance(); }}>
           <Palette size={17} aria-hidden="true" />Cài đặt giao diện

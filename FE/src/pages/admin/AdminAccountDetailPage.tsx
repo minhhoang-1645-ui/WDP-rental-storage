@@ -1,10 +1,11 @@
 import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
 import { date, first, type Row } from '../../components/manager/portal-data';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { Facts, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { AccountRole, AccountRoleAccess } from './AccountRole';
@@ -62,9 +63,11 @@ export function AdminAccountDetailPage() {
     detail.refresh();
   }
 
-  return <section className="admin-account-detail">
+  return <section className="admin-account-detail record-detail-page">
     <Link className="booking-back" to={back}><ArrowLeft size={17} aria-hidden="true" />Về danh sách tài khoản</Link>
-    <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}>
+    <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}
+      status={row && <Status value={row.accountStatus} />}
+      meta={row && <><span>{first(row, 'email')}</span><AccountRole value={row.role} /></>}>
       <button type="button" className="button-secondary" disabled={detail.loading || detail.refreshing || editingId === id} onClick={detail.refresh}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới
       </button>
@@ -72,9 +75,6 @@ export function AdminAccountDetailPage() {
     {saved?.id === id && <p className="portal-success" role="status">{saved.text}</p>}
     <LoadState loading={detail.loading} error={detail.error} retry={detail.refresh} />
     {row && <>
-      <div className="admin-account-summary">
-        <span>{first(row, 'email')}</span><AccountRole value={row.role} /><Status value={row.accountStatus} />
-      </div>
       <div className="admin-account-tabs" role="tablist" aria-label="Chi tiết tài khoản">
         {tabs.map(({ id: value, label }) => <button key={value} type="button" role="tab" id={'admin-tab-' + value}
           aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} aria-controls={'admin-panel-' + value}
@@ -95,15 +95,11 @@ export function AdminAccountDetailPage() {
           }} />}
           <Facts items={[
             ...(editingId === id ? [] : [
-              ['Họ và tên', first(row, 'fullName')],
               ['Số điện thoại', first(row, 'phone') || 'Chưa cập nhật'],
             ] as [string, string][]),
-            ['Email', first(row, 'email')],
-            ['Vai trò', <AccountRole key="role" value={row.role} />],
-            ['Trạng thái', <Status key="status" value={row.accountStatus} />],
             ['Ngày tạo', date(row.createdAt, true)],
-            ['Cập nhật gần nhất', date(row.updatedAt, true)],
           ]} />
+          {first(row, 'updatedAt') && <DetailDisclosure title="Lịch sử cập nhật"><Facts items={[[ 'Cập nhật gần nhất', date(row.updatedAt, true) ]]} /></DetailDisclosure>}
         </section>
       </div>
 
@@ -117,7 +113,7 @@ export function AdminAccountDetailPage() {
                 ? 'Tài khoản sẽ bị chặn đăng nhập và các yêu cầu từ phiên đang mở.'
                 : 'Người dùng có thể đăng nhập lại để tiếp tục.'}</p>
               <button type="button" disabled={detail.refreshing} className={next === 'DISABLED' ? 'button-secondary portal-danger' : 'button-primary'}
-                onClick={showStatusConfirmation}>{next === 'DISABLED' ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'}</button>
+                onClick={showStatusConfirmation}>{next === 'DISABLED' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</button>
             </>}
           </div>
         </section>
@@ -125,7 +121,7 @@ export function AdminAccountDetailPage() {
       {canChange && status === next && <StatusConfirmation key={id + ':' + next}
         path={path} name={first(row, 'fullName')} next={next} onClose={() => changeTab('permissions')} onSaved={updated => {
           changeTab('permissions');
-          onSaved(updated, next === 'DISABLED' ? 'Đã vô hiệu hóa tài khoản.' : 'Đã kích hoạt tài khoản.');
+          onSaved(updated, next === 'DISABLED' ? 'Đã khóa tài khoản.' : 'Đã mở khóa tài khoản.');
         }} />}
     </>}
   </section>;
@@ -183,13 +179,19 @@ function ProfileEditor({ path, row, onCancel, onSave }: {
 function StatusConfirmation({ path, name, next, onClose, onSaved }: {
   path: string; name: string; next: 'ACTIVE' | 'DISABLED'; onClose: () => void; onSaved: (updated: Row) => void;
 }) {
+  const formId = useId();
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const disable = next === 'DISABLED';
-  return <Modal title={disable ? 'Xác nhận vô hiệu hóa' : 'Xác nhận kích hoạt lại'} busy={busy} onClose={onClose}>
-    <form className="portal-form" onSubmit={async event => {
+  return <Modal title={disable ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'} busy={busy} onClose={onClose} footer={<>
+        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
+        <button type="submit" form={formId} className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
+          {busy ? 'Đang lưu…' : disable ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+        </button>
+    </>}>
+    <form id={formId} className="portal-form" onSubmit={async event => {
       event.preventDefault();
       if (!confirmed || lock.current) return;
       lock.current = true;
@@ -203,12 +205,6 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
       <label className="portal-checkbox"><input type="checkbox" required checked={confirmed} disabled={busy}
         onChange={event => setConfirmed(event.target.checked)} />Tôi xác nhận thay đổi quyền truy cập</label>
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
-      <div className="portal-actions">
-        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-        <button type="submit" className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
-          {busy ? 'Đang lưu…' : disable ? 'Vô hiệu hóa tài khoản' : 'Kích hoạt tài khoản'}
-        </button>
-      </div>
     </form>
   </Modal>;
 }

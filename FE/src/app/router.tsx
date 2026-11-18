@@ -18,8 +18,6 @@ import { ReservationPage } from "../pages/public/ReservationPage";
 import { SizeGuidePage } from "../pages/public/SizeGuideExperiencePage";
 import { StorageDetailPage } from "../pages/public/StorageDetailPage";
 import { StoragePage } from "../pages/public/StoragePage";
-import { ManagerInquiryDetailPage } from "../pages/manager/ManagerInquiryDetailPage";
-import { ManagerInquiriesPage } from "../pages/manager/ManagerInquiriesPage";
 import { ManagerLayout } from "../pages/manager/ManagerLayout";
 import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
@@ -39,6 +37,7 @@ import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffOverstayPage } from "../pages/staff/StaffOverstayPage";
 import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
@@ -186,20 +185,20 @@ export function AppRouter() {
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
-          <Route path="overstays" element={<OverstayPage />} />
+          <Route path="overstays" element={<StaffOverstayPage />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
-          <Route path="inquiries" element={<ManagerInquiriesPage />} />
-          <Route path="inquiries/:id" element={<ManagerInquiryDetailPage />} />
+          <Route path="inquiries/*" element={<Navigate to="/staff/reservations" replace />} />
+          <Route path="operations/inquiries/*" element={<Navigate to="/staff/reservations" replace />} />
           <Route path="reservations" element={<ManagerReservationsPage />} />
           <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
-          {staffWorkflows.filter(resource => !['inquiries', 'reservations', 'stock-movements'].includes(resource)).map(resource => <Route key={resource} path={resource}>
+          {staffWorkflows.filter(resource => !['reservations', 'stock-movements'].includes(resource)).map(resource => <Route key={resource} path={resource}>
             <Route index element={<ManagerListPage key={resource} resource={resource} />} />
             <Route path=":id" element={<ManagerDetailPage key={resource} resource={resource} />} />
           </Route>)}
-          <Route path="rentals" element={<StaffListPage resource="rentals" />} />
-          <Route path="rentals/:id" element={<StaffRecordPage resource="rentals" />} />
+          <Route path="rentals" element={<StaffListPage />} />
+          <Route path="rentals/:id" element={<StaffRecordPage />} />
           <Route path="operations/stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations/:resource" element={<ManagerResourcePage />} />
@@ -226,7 +225,7 @@ export function AppRouter() {
           <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
           <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
           <Route index element={<AdminDashboardPage />} />
-          <Route path="notifications" element={<Navigate to="/admin" replace />} />
+          <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="users" element={<AdminAccountsPage />} />
           <Route path="users/:id" element={<AdminAccountDetailPage />} />
           <Route path="roles" element={<Navigate to="/admin/users" replace />} />

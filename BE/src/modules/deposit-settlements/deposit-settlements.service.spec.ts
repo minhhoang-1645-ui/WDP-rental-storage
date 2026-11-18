@@ -104,6 +104,7 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   async function physicalReturn(options: { quantity?: number; deposit?: number; issues?: Array<{ index: number; issueType?: string }> } = {}) {
     const rental = await activeRental(options.quantity ?? 1, options.deposit ?? 1500000);
     const request = await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id, note: 'Ready' }, `return-${randomUUID()}`);
+    await returns.assign(request.id, { staffUserId: staffId }, manager);
     const started = await returns.startInspection(request.id, staff);
     const issueMap = new Map((options.issues ?? []).map((issue) => [issue.index, issue.issueType ?? 'CUSTOMER_DAMAGE']));
     for (const [index, inspection] of started.inspections.entries()) {
@@ -187,6 +188,7 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
 
   it('rejects any Staff attempt to submit a financial decision in inspection payload', async () => {
     const rental = await activeRental(); const request = await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id }, `return-${randomUUID()}`);
+    await returns.assign(request.id, { staffUserId: staffId }, manager);
     const started = await returns.startInspection(request.id, staff);
     await expect(returns.updateInspection(request.id, started.inspections[0].id, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', issueNote: 'Damage', approvedChargeAmount: 100000 }, staff)).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -239,7 +241,7 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   it('enforces controller roles for Customer and Manager settlement APIs', () => {
     const guard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerDepositSettlementsController | typeof ManagerDepositSettlementsController, PublicUser['role'][]]> = [
-      [CustomerDepositSettlementsController, ['CUSTOMER']], [ManagerDepositSettlementsController, ['MANAGER', 'ADMIN']],
+      [CustomerDepositSettlementsController, ['CUSTOMER']], [ManagerDepositSettlementsController, ['MANAGER']],
     ];
     for (const [controller, roles] of allowed) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
       const context = { getHandler: () => function settlementOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
@@ -249,6 +251,7 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
 
   it('keeps physical finalization and settlement creation atomic when deposit history is inconsistent', async () => {
     const rental = await activeRental(2, 1500000); const request = await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id }, `return-${randomUUID()}`);
+    await returns.assign(request.id, { staffUserId: staffId }, manager);
     const started = await returns.startInspection(request.id, staff);
     for (const inspection of started.inspections) await returns.updateInspection(request.id, inspection.id, { result: 'PASS' }, staff);
     await prisma.invoice.update({ where: { id: rental.initial.id }, data: { depositAmount: 1400000n, totalAmount: rental.initial.totalAmount - 100000n } });

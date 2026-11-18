@@ -10,6 +10,8 @@ import "./styles/web-readability.css";
 import "./styles/web-spacing.css";
 import "./styles/operations-review.css";
 import "./components/customer/claim-review.css";
+import "./styles/web-finish.css";
+import "./styles/record-detail.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

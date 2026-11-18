@@ -1,17 +1,9 @@
 /* Workspace spacing in 4px steps, also used by the web booking form. */
 :is(.workspace-themed[data-workspace-role], .booking-page) {
-  --space-4: .25rem;
-  --space-8: .5rem;
-  --space-12: .75rem;
-  --space-16: 1rem;
-  --space-20: 1.25rem;
-  --space-24: 1.5rem;
-  --space-32: 2rem;
   --page-gutter: var(--space-32);
   --panel-padding: var(--space-20);
   --control-height: 40px;
   --compact-control-height: 36px;
-  --control-radius: 8px;
 }
 
 .internal-web.workspace-themed .manager-main,
@@ -35,6 +27,18 @@
 .workspace-themed[data-workspace-role] :is(.portal-actions, .customer-header-actions, .workspace-profile-actions button) { gap: var(--space-8); }
 .workspace-themed[data-workspace-role] :is(.portal-actions, .customer-header-actions) { flex-wrap: wrap; }
 .workspace-themed[data-workspace-role] .portal-actions:empty { display: none; }
+.record-page-title, .record-page-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.record-page-header > div:first-child { min-width: 0; }
+.record-page-meta { margin-top: var(--space-8); color: var(--workspace-secondary); font-size: var(--type-meta); }
+.record-page-meta:empty { display: none; }
+.record-page-meta .record-code { margin: 0; }
 
 .workspace-themed[data-workspace-role] :is(.button-primary, .button-secondary, .button-light) {
   min-height: var(--control-height);
@@ -100,8 +104,6 @@
 .workspace-themed[data-workspace-role] .staff-table .staff-table-actions { gap: var(--space-8); }
 .workspace-themed[data-workspace-role] .staff-table-actions .button-secondary { white-space: nowrap; }
 .workspace-themed[data-workspace-role] .staff-table-popover { padding: var(--space-4); }
-.workspace-themed[data-workspace-role] .portal-pagination { gap: var(--space-12); padding-block: var(--space-8); }
-.workspace-themed[data-workspace-role] .portal-pagination > div { gap: var(--space-8); }
 .workspace-themed[data-workspace-role] :is(.manager-table, .customer-table) .table-number {
   font-variant-numeric: tabular-nums;
   text-align: end;

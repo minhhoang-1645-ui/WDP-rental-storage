@@ -17,12 +17,14 @@ import { useDraftGuard } from '@/services/live-events';
 import { recordMatches } from '@/utils/record-search';
 import { formatDate } from '@/utils/format';
 
+const emptyLine = (key: string): StockDraftLine => ({ key, storedItemId: '', name: '', unit: '', quantity: '1', note: '' });
+
 export function CustomerStockCreate({contract,onClose,onSaved,onBusyChange}:{contract:Row;onClose:()=>void;onSaved:()=>void;onBusyChange:(busy:boolean)=>void}) {
   useDraftGuard();
   const inventory=useResource<StoredItem[]>('/customer/stored-items?rentalContractId='+encodeURIComponent(idOf(contract)));
-  const serial=useRef(1),lock=useRef(false);
-  const fresh=():StockDraftLine=>({key:String(serial.current++),storedItemId:'',name:'',unit:'',quantity:'1',note:''});
-  const [lines,setLines]=useState<StockDraftLine[]>(()=>[fresh()]),[type,setType]=useState<'IN'|'OUT'>('IN'),[note,setNote]=useState(''),[date,setDate]=useState(''),[time,setTime]=useState('');
+  const serial=useRef(2),lock=useRef(false);
+  const fresh = () => emptyLine(String(serial.current++));
+  const [lines,setLines]=useState<StockDraftLine[]>(()=>[emptyLine('1')]),[type,setType]=useState<'IN'|'OUT'>('IN'),[note,setNote]=useState(''),[date,setDate]=useState(''),[time,setTime]=useState('');
   const [review,setReview]=useState(false),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[picker,setPicker]=useState(''),[search,setSearch]=useState('');
   const [photos,setPhotos]=useState<Record<string,string[]>>({}),[photoBusy,setPhotoBusy]=useState(false),[expanded,setExpanded]=useState('1'),[existing,setExisting]=useState<Record<string,boolean>>({});
   const patch=(key:string,change:Partial<StockDraftLine>)=>{setError('');setConfirmed(false);setLines(previous=>previous.map(line=>line.key===key?{...line,...change}:line));};

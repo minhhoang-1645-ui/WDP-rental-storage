@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { deriveOverdueState } from './overdue-state.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
+import { businessToday } from '../../business-date.js';
 import { returnReadiness } from '../returns/early-return-finance.js';
 
 export interface ActiveRentalListQuery {
@@ -71,9 +72,12 @@ export class ActiveRentalsService {
       { customer: { fullName: { contains: query.customer, mode: 'insensitive' } } },
       { customer: { email: { contains: query.customer, mode: 'insensitive' } } },
     ] });
-    if (query.overdue !== undefined) filters.push(query.overdue
-      ? { contracts: { every: { endDate: { lte: now } } } }
-      : { contracts: { some: { endDate: { gt: now } } } });
+    if (query.overdue !== undefined) {
+      const comparisonDate = mode === 'STAFF' ? businessToday(now) : now;
+      filters.push(query.overdue
+        ? { contracts: { every: { endDate: { lte: comparisonDate } } } }
+        : { contracts: { some: { endDate: { gt: comparisonDate } } } });
+    }
     const where: Prisma.ReservationWhereInput = { ...this.activeWhere(), ...baseWhere, ...(filters.length ? { AND: filters } : {}) };
     const [total, records] = await Promise.all([
       this.prisma.reservation.count({ where }),
@@ -174,7 +178,7 @@ export class ActiveRentalsService {
       termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan,
     }));
     const pendingRenewalSummary = pendingRenewal ? { renewalCode: pendingRenewal.renewalCode, status: pendingRenewal.status, requestedEndDate: this.isoDate(pendingRenewal.requestedEndDate) } : null;
-    if (mode === 'STAFF') return { ...base, pendingRenewal: pendingRenewalSummary, futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict }, renewalHistory: renewalHistory.map(({ paymentPlan: _paymentPlan, ...renewal }: any) => renewal), billingReadiness: { hasUnpaidInvoices: outstanding > 0n } };
+    if (mode === 'STAFF') return { ...base, pendingRenewal: null, futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict }, renewalHistory: renewalHistory.filter((renewal: any) => renewal.status === 'COMPLETED').map(({ paymentPlan: _paymentPlan, ...renewal }: any) => renewal), billingReadiness: { hasUnpaidInvoices: outstanding > 0n } };
     return {
       ...base,
       paymentPlan: snapshot.paymentPlan ?? null,

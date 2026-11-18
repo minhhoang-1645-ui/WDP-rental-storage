@@ -17,9 +17,9 @@ export const customerStyles = StyleSheet.create({
 
 export function CustomerHero({children,topInset=0}: {children: ReactNode;topInset?:number}) {
   const [size,setSize]=useState({width:0,height:0});
-  return <View onLayout={({nativeEvent:{layout}})=>setSize(previous=>previous.width===layout.width&&previous.height===layout.height?previous:{width:layout.width,height:layout.height})} style={{backgroundColor:C.deepNavy, overflow:'hidden', paddingHorizontal:20,paddingTop:topInset+8,paddingBottom:24, gap:20}}>
+  return <View onLayout={({nativeEvent:{layout}})=>setSize(previous=>previous.width===layout.width&&previous.height===layout.height?previous:{width:layout.width,height:layout.height})} style={{backgroundColor:C.cobalt, overflow:'hidden', paddingHorizontal:20,paddingTop:topInset+8,paddingBottom:24, gap:20}}>
     <Svg pointerEvents="none" width={size.width} height={size.height} style={StyleSheet.absoluteFill} preserveAspectRatio="none">
-      <Defs><LinearGradient id="customerHero" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor={C.cobalt}/><Stop offset="1" stopColor={C.deepNavy}/></LinearGradient></Defs>
+      <Defs><LinearGradient id="customerHero" x1="0%" y1="0%" x2="100%" y2="100%"><Stop offset="0" stopColor={C.cobalt}/><Stop offset="1" stopColor={C.deepNavy}/></LinearGradient></Defs>
       <Rect width="100%" height="100%" fill="url(#customerHero)"/>
     </Svg>{children}
   </View>;

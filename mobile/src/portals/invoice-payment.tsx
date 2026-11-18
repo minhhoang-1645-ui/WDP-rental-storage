@@ -13,7 +13,7 @@ import { useDraftGuard } from '@/services/live-events';
 import { isScheduledRenewalInvoice, invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { OnlinePayment } from './online-payment';
 
-export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = false, compactSummary = false }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void; onlineOnly?: boolean; compactSummary?: boolean }) {
+export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, compactSummary = false }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void; onlineOnly?: boolean; compactSummary?: boolean }) {
   const submissions = useResource<Row>('/customer/payment-submissions', true), bank = useResource<Row>('/customer/payment-config');
   const [form, setForm] = useState<FormAction>(), [onlinePending, setOnlinePending] = useState(false), [now, setNow] = useState(Date.now);
   const [showTransfer, setShowTransfer] = useState(false);

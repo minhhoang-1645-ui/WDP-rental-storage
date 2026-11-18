@@ -7,5 +7,5 @@ export function ManagerParentLink({ resource }: { resource: string }) {
     section.items.some(item => item.mobile.split('?')[0] === childPath));
   if (!parent) return null;
   const [key, section] = parent;
-  return <Navigation compact title={`‹ ${section.title}`} path={`/manager/${key}`} />;
+  return <Navigation compact title={`${section.title}`} path={`/manager/${key}`} />;
 }

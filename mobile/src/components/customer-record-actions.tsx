@@ -7,7 +7,7 @@ import { customerStyles as s } from './customer-premium';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { useState } from 'react';
 import { RentalCalendar } from './rental-calendar';
-import { Field } from '@/operations/ui';
+
 import { formatDate } from '@/utils/format';
 
 function CustomerActionForm({action,onClose,onSaved,onBusyChange}:{action:FormAction;onClose:()=>void;onSaved:(result:Row)=>void;onBusyChange:(busy:boolean)=>void}) {
@@ -16,7 +16,7 @@ function CustomerActionForm({action,onClose,onSaved,onBusyChange}:{action:FormAc
   const scheduledAt=date&&time?date+' '+time:'';
   const prepared:FormAction=appointment?{...action,description:'Chọn giờ Việt Nam. Có thể nhận chìa khóa sớm tối đa 3 ngày trước kỳ thuê, trước ngày kết thúc. Bạn chỉ được sử dụng kho từ ngày bắt đầu thuê.',fields:action.fields.filter(field=>field.name!=='scheduledAt'),validateValues:input=>!date?'Chọn ngày nhận kho.':!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)?'Nhập giờ nhận kho theo dạng 10:30.':action.validateValues?.({...input,scheduledAt}),transform:input=>action.transform?action.transform({...input,scheduledAt}):({...input,scheduledAt})}:action;
   const customerAction={...prepared,fields:prepared.fields.map(field=>field.name==='paymentPlan'?{...field,choices:field.choices?.map(choice=>({...choice,label:choice.value==='PREPAID'?'Trả thẳng':choice.value==='PAY_MONTHLY'?'Trả hàng tháng':choice.label}))}:field)};
-  return <View style={{gap:12}}>{appointment&&<><Text style={s.title}>Ngày giờ nhận kho</Text><RentalCalendar start={date} end="" daily={false} onChange={from=>setDate(from)}/><Text style={s.body}>{date?formatDate(date):'Chọn ngày nhận kho'}</Text><Field title="Giờ nhận kho (ví dụ 10:30)" value={time} maxLength={5} onChange={setTime}/></>}<OperationForm onBusyChange={onBusyChange} action={customerAction} onClose={onClose} onSaved={onSaved}/></View>;
+  return <View style={{gap:12}}>{appointment&&<><Text style={s.title}>Ngày giờ nhận kho</Text><RentalCalendar start={date} end="" daily={false} onChange={from=>setDate(from)}/><Text style={s.body}>{date?formatDate(date):'Chọn ngày nhận kho'}</Text><Text style={s.section}>Chọn giờ nhận kho</Text><View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{Array.from({length:48},(_,i)=>String(Math.floor(i/2)).padStart(2,"0")+":"+(i%2?"30":"00")).map(slot=><Pressable key={slot} onPress={()=>setTime(slot)} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:time===slot?C.cobalt:C.divider,backgroundColor:time===slot?C.soft:"white"}}><Text style={{color:time===slot?C.cobalt:C.text}}>{slot}</Text></Pressable>)}</View></>}<OperationForm onBusyChange={onBusyChange} action={customerAction} onClose={onClose} onSaved={onSaved}/></View>;
 }
 
 export function CustomerRecordActions({actions,selected,onSelect,onClose,onSaved}:{actions:FormAction[];selected?:FormAction;onSelect:(action:FormAction)=>void;onClose:()=>void;onSaved:(result:Row)=>void}) {

@@ -29,9 +29,9 @@ export function ManagerEarlyReturns() {
   const [history, setHistory] = useState(false), [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const items = rows(data.data?.items).filter(item => history || !item.decision);
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Quản lý" title="Đề nghị trả trước hạn" description="Trả sớm hoặc đúng hạn đều phải tất toán toàn bộ công nợ, kể cả các kỳ đã cam kết chưa đến hạn, trước khi được trả kho." />
+    <PageHeader onRefresh={data.refresh} eyebrow="Quản lý" title="Đề nghị trả trước hạn" description="Trả sớm hoặc đúng hạn đều phải tất toán toàn bộ công nợ, kể cả các kỳ đã cam kết chưa đến hạn, trước khi được trả kho." />
     <ManagerParentLink resource="early-returns" />
-    <Button title="Làm mới đề nghị" onPress={data.refresh} disabled={data.loading || Boolean(action)} />
+    
     <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chờ duyệt' : 'Xem cả đề nghị đã quyết định'} variant="secondary" onPress={() => setHistory(value => !value)} />
     {notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}
     {action && <OperationForm key={action.path + action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã phản hồi đề nghị trả trước hạn cho khách.'); data.refresh(); }} />}

@@ -4,7 +4,7 @@ import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 
 export function MetricCard({ label, value, tone = 'navy' }: { label: string; value: string | number; tone?: 'navy' | 'orange' | 'danger' }) {
   const color = tone === 'orange' ? WdpColors.orange : tone === 'danger' ? WdpColors.danger : WdpColors.navy;
-  return <View style={styles.card}><Text style={styles.label}>{label}</Text><Text selectable style={[styles.value, { color }]}>{value}</Text></View>;
+  return <View style={styles.card}><Text style={styles.label}>{label}</Text><Text selectable numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={[styles.value, { color }]}>{value}</Text></View>;
 }
 
 const styles = StyleSheet.create({

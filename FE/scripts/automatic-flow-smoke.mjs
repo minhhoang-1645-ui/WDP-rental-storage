@@ -4,6 +4,8 @@ import { launchTestBrowser } from './browser-test.mjs';
 import { fixture, customer } from './fixtures/workspace.mjs';
 
 const browser = await launchTestBrowser();
+const webBase = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
+const platforms = process.env.WDP_WEB_ONLY === '1' ? [false] : [false, true];
 const errors = [], unexpected = [], checks = [], writes = [];
 async function setup(mobile, options = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
@@ -43,17 +45,22 @@ async function setup(mobile, options = {}) {
   await context.route('https://sandbox.vnpayment.vn/**', route => route.fulfill({ status: 200, body: '<title>Intercepted VNPay</title>' }));
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(mobile ? 'http://127.0.0.1:8081/customer/invoices/invoice-auto' : 'http://127.0.0.1:5173/customer/payments', { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.goto(mobile ? 'http://127.0.0.1:8081/customer/invoices/invoice-auto' : webBase + '/customer/payments', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.getByText('INV-AUTO', { exact: true }).first().waitFor({ timeout: 90000 });
   return { context, page, state };
 }
 try {
-  for (const mobile of [false, true]) {
+  for (const mobile of platforms) {
     const unavailable = await setup(mobile, { unconfigured: true });
-    await unavailable.page.getByText(/Thanh toán trực tuyến hiện chưa khả dụng/).waitFor();
+    if (mobile) {
+      await unavailable.page.getByText(/Thanh toán trực tuyến hiện chưa khả dụng/).waitFor();
+      await unavailable.page.getByRole('button', { name: 'Hỗ trợ về hóa đơn', exact: true }).first().waitFor();
+    } else {
+      await unavailable.page.getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
+      await unavailable.page.getByRole('link', { name: 'Hỗ trợ thanh toán tại cơ sở', exact: true }).waitFor();
+    }
     assert.equal(await unavailable.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 0);
     assert.equal(await unavailable.page.getByRole('button', { name: 'Thanh toán VNPay QR', exact: true }).count(), 0);
-    await unavailable.page.getByRole(mobile ? 'button' : 'link', { name: 'Hỗ trợ về hóa đơn', exact: true }).first().waitFor();
     await unavailable.context.close();
     checks.push(`${mobile ? 'Mobile' : 'Web'}: unconfigured online channels offer help and in-person payment without a fake gateway`);
     for (const options of [{ expired: true }, { void: true }]) {
@@ -115,7 +122,7 @@ try {
   assert.equal(writes.length, writesBeforeResolution, 'Acknowledging reconciliation must not create or retry a payment');
   await disputed.context.close();
   const returned = await setup(false, { legacy: true, void: true, status: 'FAILED', providerStatus: 'SUCCESS', reconciliation: { reconciliationCode: 'REC-RETURN', status: 'PENDING_REVIEW' } });
-  await returned.page.goto('http://127.0.0.1:5173/customer/payments/vnpay-return?transactionId=transaction-auto');
+  await returned.page.goto(webBase + '/customer/payments/vnpay-return?transactionId=transaction-auto');
   await returned.page.getByRole('heading', { name: 'Giao dịch đang được đối soát', exact: true }).waitFor();
   const returnWrites = writes.length;
   returned.state.reconciliation = { reconciliationCode: 'REC-RETURN', status: 'REFUND_REQUIRED', resolutionNote: 'Cơ sở đang xử lý hoàn tiền.' };
@@ -135,7 +142,7 @@ try {
   assert(!/NaN|undefined/.test(await legacy.page.locator('body').innerText()));
   assert.equal(writes.filter(write => !write.mobile && write.path.endsWith('online-payment')).length, 4);
   await legacy.context.close();
-  for (const mobile of [false, true]) {
+  for (const mobile of platforms) {
     const test = await setup(mobile);
     await test.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).click();
     await test.page.waitForTimeout(300);

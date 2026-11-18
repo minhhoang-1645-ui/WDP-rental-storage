@@ -50,5 +50,5 @@ export class UnitStaffService {
     if (rows.length !== ids.length || new Set(rows.map(row => row.staffUserId)).size !== 1) return null;
     return rows[0];
   }
-  private include() { return { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, status: true } }, staff: { select: { id: true, fullName: true, email: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } } }; }
+  private include() { return { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, status: true, storageType: { select: { name: true } } } }, staff: { select: { id: true, fullName: true, email: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } } }; }
 }

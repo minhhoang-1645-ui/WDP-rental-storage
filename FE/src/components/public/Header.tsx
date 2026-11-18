@@ -41,7 +41,7 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
         ADMIN: "Khu quản trị",
         CUSTOMER: "Khu vực của tôi",
       }[user.role];
-  const actionPath = isInternalUser ? accountPath : "/booking";
+  const actionPath = isInternalUser ? accountPath : "/booking?mode=quick";
   const actionLabel = isInternalUser ? "Mở khu vực làm việc" : "Đặt kho nhanh";
   return (
     <header className="public-header sticky top-0 z-50 border-b border-border">

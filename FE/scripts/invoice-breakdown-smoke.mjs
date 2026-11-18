@@ -16,6 +16,8 @@ const invoice = {
 };
 let failDetail = false;
 let emptyInvoices = false;
+let paidInvoice = false;
+const current = () => paidInvoice ? { ...invoice, status: 'PAID', balanceDue: 0, amountPaid: invoice.totalAmount } : invoice;
 let listDelay;
 const errors = [];
 try {
@@ -31,12 +33,12 @@ try {
       if (request.method() !== 'GET') return route.fulfill({ status: 405 });
       if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: role, role, fullName: 'Tài khoản thử', accountStatus: 'ACTIVE', email: 'invoice@example.test', phone: '0900000000' } });
       if (path.endsWith('/invoices/' + invoice.id)) return failDetail
-        ? route.fulfill({ status: 503, json: { message: 'Chưa tải được hóa đơn thử.' } }) : route.fulfill({ json: invoice });
+        ? route.fulfill({ status: 503, json: { message: 'Chưa tải được hóa đơn thử.' } }) : route.fulfill({ json: current() });
       if (path.endsWith('/invoices')) {
         if (listDelay) await listDelay;
-        return route.fulfill({ json: listPage(emptyInvoices ? [] : [invoice]) });
+        return route.fulfill({ json: listPage(emptyInvoices ? [] : [current()]) });
       }
-      if (path.endsWith('/payment-config')) return route.fulfill({ json: { configured: false, vnpayConfigured: false } });
+      if (path.endsWith('/payment-config')) return route.fulfill({ json: { configured: false, vnpayConfigured: true } });
       if (path === '/api/reservations') return route.fulfill({ json: [] });
       return route.fulfill({ json: listPage() });
     });
@@ -52,10 +54,10 @@ try {
   await customer.getByText('Đang tải dữ liệu thanh toán…', { exact: true }).waitFor();
   releaseList();
   listDelay = undefined;
-  await customer.getByText('Đơn DON-01 · 2 kho', { exact: true }).waitFor();
+  await customer.getByText('2 kho', { exact: true }).waitFor();
   await customer.getByText('B12, B13', { exact: true }).waitFor();
   failDetail = true;
-  await customer.getByRole('button', { name: 'Chi tiết & chuyển khoản' }).click();
+  await customer.getByRole('button', { name: 'Xem chi tiết' }).click();
   const dialog = customer.getByRole('dialog');
   await dialog.getByText('Chưa tải được hóa đơn thử.').waitFor();
   failDetail = false;
@@ -67,6 +69,15 @@ try {
   assert(await customer.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   assert(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1));
   assert.equal(await customer.locator('html').getAttribute('data-workspace-theme'), 'dark');
+
+  assert.equal((await dialog.locator('.customer-invoice-amount strong').innerText()).replace(/\D/g,''),'3200000');
+  paidInvoice = true;
+  await customer.reload();
+  await customer.getByRole('button', { name: 'Xem chi tiết' }).click();
+  await dialog.locator('.customer-invoice-amount').getByText('Đã thanh toán', { exact: true }).waitFor();
+  assert.equal((await dialog.locator('.customer-invoice-amount strong').innerText()).replace(/\D/g,''),'6200000');
+  assert.equal(await dialog.getByRole('heading', { name: 'Thanh toán', exact: true }).count(),0);
+  assert.equal(await customer.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(),0);
 
   const manager = await setup('MANAGER', 'light', 1440);
   await manager.goto(base + '/manager/operations/invoices/' + invoice.id);

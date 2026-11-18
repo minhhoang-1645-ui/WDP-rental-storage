@@ -34,9 +34,10 @@ export const staffResources = {
 } as const;
 export type StaffResource = keyof typeof staffResources;
 
-export type StaffTableWorkflow = 'appointments' | 'support-requests' | 'maintenance';
+const staffTableWorkflows = ['reservations', 'inquiries', 'appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
+export type StaffTableWorkflow = (typeof staffTableWorkflows)[number];
 export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
-  return resource === 'appointments' || resource === 'support-requests' || resource === 'maintenance';
+  return (staffTableWorkflows as readonly string[]).includes(resource);
 }
 
 export function staffDay(value: unknown) {

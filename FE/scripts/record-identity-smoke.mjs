@@ -48,7 +48,7 @@ try {
     await page.goto(base+'/booking?product='+product.id);
     await page.getByRole('button',{name:'Chọn thời gian',exact:true}).click();
     await page.getByRole('button',{name:'Tiếp tục',exact:true}).click();
-    await page.getByRole('button',{name:'Gửi yêu cầu đặt kho',exact:true}).click();
+    await page.getByRole('button',{name:'Xác nhận đặt kho',exact:true}).click();
     await page.waitForURL(base+'/customer/reservations/NEW-API-ID');
     await page.getByRole('heading',{name:product.name+' · 1 kho',exact:true}).waitFor();
     await page.locator('main .record-code-value').filter({hasText:'NEW-API-ID'}).first().waitFor();

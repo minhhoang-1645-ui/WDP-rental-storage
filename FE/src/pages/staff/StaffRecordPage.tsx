@@ -1,237 +1,54 @@
-import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
+import { useApiResource } from '../../services/useApiResource';
+import { code, date, first, rows, type Row } from '../../components/manager/portal-data';
+import { Facts, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { DetailSkeleton } from '../../components/LoadingSkeleton';
-import { recordIdentity } from '../../utils/record-identity';
+import { StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
-import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useAuth } from "../../auth/auth-context";
-import { useApiResource } from "../../services/useApiResource";
-import {
-  code,
-  customer,
-  date,
-  first,
-  label,
-  rows,
-  type Row,
-} from "../../components/manager/portal-data";
-import {
-  Facts,
-  LoadState,
-  PageHeader,
-  RefreshStatus,
-  Status,
-} from "../../components/manager/PortalUi";
-import { staffResources, type StaffResource } from "./staff-resources";
-import { StaffActions } from "./StaffActions";
-import { WorkflowHint } from '../../components/workspace/WorkHub';
-import { workflowGuide } from '../../utils/workflow-guide';
-import { hasDraft } from '../../services/live-events';
 
-export function StaffRecordPage({ resource }: { resource: StaffResource }) {
+const unitColumns: StaffColumn<Row>[] = [
+  { key: 'unit', label: 'Kho', cell: item => <strong>{first(item, 'unit.unitCode')}</strong> },
+  { key: 'location', label: 'Vị trí', cell: item => [first(item, 'unit.floor'), first(item, 'unit.zone')].filter(Boolean).join(' · ') || '—' },
+  { key: 'status', label: 'Trạng thái kho', cell: item => <Status value={first(item, 'unit.status')} /> },
+  { key: 'contract', label: 'Hợp đồng', cell: item => <CopyRecordCode value={first(item, 'contractCode')} /> },
+];
+
+export function StaffRecordPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
-  return <StaffRecord key={`${user?.id}:${resource}:${id}`} resource={resource} />;
-}
-
-function StaffRecord({ resource }: { resource: StaffResource }) {
-  const { user } = useAuth(),
-    { id = "" } = useParams();
-  const data = useApiResource<Row>(
-    `/staff/${resource}/${encodeURIComponent(id)}`,
-    user?.id ?? "",
-    false,
-    true,
-  );
-  const [notice, setNotice] = useState("");
+  const data = useApiResource<Row>(`/staff/rentals/${encodeURIComponent(id)}`, user?.id ?? '', false, true);
   const row = data.data;
-  const returnPath = useInternalListReturn(`/staff/${resource}`);
-  return (
-    <section>
-      <Link className="booking-back" to={returnPath}>
-        <ArrowLeft size={16} />
-        {staffResources[resource].title}
-      </Link>
-      {!row && !data.loading && (
-        <PageHeader
-          title={staffResources[resource].title}
-        />
-      )}
-      <LoadState
-        loading={data.loading}
-        error={data.error}
-        retry={data.refresh}
-        placeholder={<DetailSkeleton form history={resource === 'returns'} />}
-      />
-      {notice && (
-        <div className="portal-success" role="status">
-          {notice}
-        </div>
-      )}
-      {row && (
-        <>
-          <PageHeader
-            title={recordIdentity(row, resource).title}
-            status={<Status value={row.status ?? row.rentalState} />}
-            meta={<CopyRecordCode value={code(row)} />}
-          >
-            <button className="button-secondary" onClick={() => { if (hasDraft()) { setNotice('Bạn đang nhập nội dung. Hãy lưu hoặc đóng biểu mẫu trước khi làm mới hồ sơ.'); return; } data.refresh(); }}>
-              <RefreshCw size={16} />
-              Làm mới hồ sơ
-            </button>
-            <RefreshStatus active={data.refreshing} />
-          </PageHeader>
-          <div className="manager-detail-grid">
-            {workflowGuide(resource, row.status, 'staff') && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status, 'staff')}</WorkflowHint></div>}
-            <div className="manager-detail-content">
-              <section className="manager-section">
-                <h2>Thông tin tác nghiệp</h2>
-                <Facts
-                  items={[
-                    ["Khách hàng", first(customer(row), "fullName")],
-                    ["Số điện thoại", first(customer(row), "phone")],
-                    ["Email", first(customer(row), "email")],
-                    [
-                      "Yêu cầu đặt kho",
-                      first(
-                        row,
-                        "reservation.reference",
-                        "reservationReference",
-                      ),
-                    ],
-                    [
-                      "Kho liên quan",
-                      first(row, "unit.unitCode", "storageUnit.unitCode"),
-                    ],
-                    [
-                      "Nhân viên phụ trách",
-                      first(row, "assignedStaff.fullName"),
-                    ],
-                    ["Loại vấn đề", label(row.category)],
-                    ["Ưu tiên", label(row.priority)],
-                    ["Lịch hẹn", date(row.scheduledAt, true)],
-                    ["Ngày kết thúc thuê", date(row.effectiveEndDate)],
-                    ["Mô tả", first(row, "description", "note")],
-                    ["Ghi chú bàn giao", resource === 'appointments' ? '' : first(row, "handoverNote")],
-                    ["Kết quả sửa chữa", first(row, "workNote")],
-                    ["Kết quả hỗ trợ", first(row, "resolutionNote")],
-                    ["Lý do chuyển bộ phận phụ trách", first(row, "escalationReason")],
-                  ]}
-                />
-              </section>
-              {resource === 'appointments' && <HandoverReportCard appointment={row} />}
-              {(rows(row.allocatedUnits).length > 0 ||
-                rows(row.contracts).length > 0) && (
-                <section className="manager-section">
-                  <h2>Các kho trong hồ sơ</h2>
-                  <div className="manager-table-wrap">
-                    <table className="manager-table">
-                      <thead>
-                        <tr>
-                          <th>Hợp đồng</th>
-                          <th>Kho</th>
-                          <th>Vị trí</th>
-                          <th>Trạng thái vật lý</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          ...rows(row.allocatedUnits),
-                          ...rows(row.contracts),
-                        ].map((item) => (
-                          <tr key={first(item, "id", "contractCode")}>
-                            <td>{first(item, "contractCode")}</td>
-                            <td>{first(item, "unitCode", "unit.unitCode")}</td>
-                            <td>
-                              {[
-                                first(item, "floor", "unit.floor"),
-                                first(item, "zone", "unit.zone"),
-                              ]
-                                .filter(Boolean)
-                                .join(" · ") || "—"}
-                            </td>
-                            <td>
-                              <Status
-                                value={
-                                  item.unitStatus ??
-                                  (item.unit as Row | undefined)?.status
-                                }
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
-              {rows(row.inspections).length > 0 && (
-                <section className="manager-section">
-                  <h2>Kết quả kiểm tra từng kho</h2>
-                  {rows(row.inspections).map((item) => (
-                    <div
-                      key={first(item, "id")}
-                      className="portal-inspection-summary"
-                    >
-                      <h3>{first(item, "unit.unitCode")}</h3>
-                      <Status value={item.result} />
-                      <Facts
-                        items={[
-                          ["Hiện trạng", first(item, "conditionNote")],
-                          ["Vấn đề", label(item.issueType)],
-                          ["Mô tả", first(item, "issueNote")],
-                          [
-                            "Người kiểm tra",
-                            first(item, "inspectedBy.fullName"),
-                          ],
-                          ["Thời điểm", date(item.inspectedAt, true)],
-                        ]}
-                      />
-                    </div>
-                  ))}
-                </section>
-              )}
-              <section className="manager-section">
-                <h2>Tiến trình</h2>
-                <Facts
-                  items={[
-                    ["Tạo hồ sơ", date(row.createdAt, true)],
-                    [
-                      "Bắt đầu xử lý",
-                      date(row.startedAt ?? row.inspectionStartedAt, true),
-                    ],
-                    [
-                      "Hoàn tất",
-                      date(
-                        row.completedAt ??
-                          row.resolvedAt ??
-                          row.workCompletedAt,
-                        true,
-                      ),
-                    ],
-                    [
-                      "Người hoàn tất",
-                      first(row, "completedBy.fullName", "resolvedBy.fullName"),
-                    ],
-                  ]}
-                />
-              </section>
-            </div>
-            <aside>
-              <StaffActions
-                key={`${row.status}:${row.updatedAt}`}
-                resource={resource}
-                row={row}
-                id={id}
-                refresh={data.refresh}
-                onSuccess={setNotice}
-              />
-            </aside>
-          </div>
-        </>
-      )}
-    </section>
-  );
+  const returnPath = useInternalListReturn('/staff/rentals');
+  const contracts = rows(row?.contracts);
+  const phone = row && first(row, 'customer.phone');
+  const email = row && first(row, 'customer.email');
+  return <section>
+    <Link className="booking-back" to={returnPath}><ArrowLeft size={16} aria-hidden="true" />Về danh sách</Link>
+    {(row || !data.loading) && <PageHeader title={row ? first(row, 'customer.fullName') || 'Kho đang thuê' : 'Kho đang thuê'}
+      status={row && <Status value={row.rentalState} />} meta={row && <CopyRecordCode value={code(row)} />}>
+      <button type="button" className="button-secondary" aria-label="Làm mới hồ sơ" onClick={data.refresh}>
+        <RefreshCw size={16} aria-hidden="true" />Làm mới
+      </button>
+      <RefreshStatus active={data.refreshing} />
+    </PageHeader>}
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} layout="detail" />
+    {row && <div className="staff-record-stack">
+      <section className="manager-section">
+        <h2>Kỳ thuê</h2>
+        <Facts items={[
+          ['Loại kho', first(row, 'storageType.name') || '—'],
+          ['Ngày bắt đầu', date(first(row, 'startDate'))],
+          ['Ngày hết hạn', date(first(row, 'effectiveEndDate', 'endDate'))],
+          ...(phone ? [['Điện thoại', <a key="phone" href={`tel:${phone}`}>{phone}</a>]] as const : []),
+          ...(email ? [['Email', <a key="email" href={`mailto:${email}`}>{email}</a>]] as const : []),
+        ].map(([label, value]) => [label, value])} />
+      </section>
+      {!!contracts.length && <section className="manager-section">
+        <h2>Kho đang sử dụng</h2>
+        <StaffTaskTable title="Kho đang sử dụng" columns={unitColumns} items={contracts} rowKey={item => first(item, 'id')} />
+      </section>}
+    </div>}
+  </section>;
 }

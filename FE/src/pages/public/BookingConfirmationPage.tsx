@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/auth-context'
 import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
 import { bookingApi } from '../../services/booking'
+import { quotePeriod } from '../../utils/quote-payment-summary'
 import type { GuestInquiry, PendingReservation } from '../../types/booking'
 import type { GuestBooking } from '../../services/guest-booking'
 
@@ -24,7 +25,28 @@ function GuestConfirmation({ id }: { id: string }) {
     if (initial?.bookingCode === id) return initial
     try { const saved = JSON.parse(safeSessionStorage.getItem('wdp-guest-response:' + id) ?? 'null') as GuestBooking | null; return saved?.bookingCode === id ? saved : null } catch { return null }
   })
-  return <section className="public-page-content"><Container className="max-w-3xl"><div className="confirmation-panel"><CheckCircle2 className="text-success" size={48} /><h1>{record ? 'Đã ghi nhận yêu cầu xác minh email' : 'Tra cứu qua email của NestBox'}</h1><p>Mã yêu cầu: <strong>{id}</strong>. Yêu cầu này chưa giữ kho, chưa tạo hợp đồng hoặc thanh toán.</p>{record && <p>{record.storage.name} · {record.quantity} kho · {record.startDate} đến {record.endDate}</p>}<div className="booking-alert mt-7">{record?.message?.includes('Development') ? 'Dịch vụ gửi email thật chưa được cấu hình. Email xác minh chưa được gửi; hãy liên hệ NestBox hoặc dùng luồng gửi yêu cầu liên hệ.' : 'Mở liên kết xác minh NestBox gửi trong email, sau đó đăng nhập bằng cùng email để nhận yêu cầu. Trang này hiển thị kết quả gửi ban đầu.'}</div><div className="mt-8 flex flex-wrap gap-3"><Link className="button-primary" to="/storage">Xem kho</Link><Link className="button-secondary" to="/booking">Gửi yêu cầu liên hệ</Link></div></div></Container></section>
+  const emailUnavailable = record?.status === 'PENDING_VERIFICATION' && record.message?.includes('Development');
+  const closed = record?.status === 'EXPIRED' || record?.status === 'CANCELLED';
+  const title = emailUnavailable ? 'Chưa gửi được email xác minh'
+    : record?.status === 'CLAIMED' ? 'Yêu cầu đã được nhận'
+    : record?.status === 'VERIFIED' ? 'Email đã được xác minh'
+    : closed ? (record?.status === 'EXPIRED' ? 'Yêu cầu đã hết hạn' : 'Yêu cầu đã hủy')
+    : 'Kiểm tra email để tiếp tục';
+  return <section className="public-page-content"><Container className="max-w-3xl">
+    <div className="confirmation-panel">
+      <h1>{title}</h1>
+      {record && <p><strong>{record.quantity} kho · {record.storage.name}</strong> · {quotePeriod(record.startDate, record.endDate)}</p>}
+      <p>Mã yêu cầu <strong>{id}</strong></p>
+      {emailUnavailable
+        ? <p className="booking-alert" role="status">Hãy dùng lựa chọn gửi yêu cầu liên hệ để NestBox hỗ trợ.</p>
+        : (!record || record.status === 'PENDING_VERIFICATION') && <p>Mở liên kết xác minh trong email của NestBox. {record && 'Yêu cầu chưa giữ kho.'}</p>}
+      <div className="mt-6 flex flex-wrap gap-3">
+        {emailUnavailable
+          ? <Link className="button-primary" to="/booking?mode=quick&step=3&contact=1">Gửi yêu cầu liên hệ</Link>
+          : <Link className="button-secondary" to="/storage">Xem kho</Link>}
+      </div>
+    </div>
+  </Container></section>
 }
 
 function ConfirmationRecord() {

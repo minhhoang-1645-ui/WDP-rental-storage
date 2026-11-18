@@ -35,7 +35,12 @@ export function ActivityInboxPage() {
   const path = useInboxPath(), home = path.replace('/notifications', '');
   const { user } = useAuth();
   if (user?.role === 'CUSTOMER') return <CustomerNotificationInbox userId={user.id} />;
-  const workspace = user?.role === 'STAFF' || user?.role === 'MANAGER';
+  if (user?.role === 'STAFF') return <section className="activity-inbox-page">
+    <Link to="/staff" className="booking-back"><ArrowLeft size={16} aria-hidden="true" />Về bàn làm việc</Link>
+    <header className="work-hub-heading"><h1>Thông báo</h1></header>
+    <NotificationList workspace />
+  </section>;
+  const workspace = user?.role === 'MANAGER';
   return <section className="activity-inbox-page"><Link to={home} className="customer-back"><ArrowLeft size={16} />Về tổng quan</Link><header className="work-hub-heading"><div><h1>Thông báo & việc cần làm</h1><p>Tra cứu trạng thái mới nhất của từng hồ sơ và mở đúng nơi cần xử lý.</p></div></header><NotificationList workspace={workspace} /><p className="activity-inbox-footnote">{workspace ? 'Mỗi mục hiển thị trạng thái mới nhất của một hồ sơ. Dấu đã đọc được lưu theo tài khoản trên trình duyệt này.' : 'Mỗi mục phản ánh trạng thái hiện tại của một hồ sơ, không phải toàn bộ lịch sử sự kiện. Xem chi tiết hồ sơ để đối chiếu quá trình xử lý. Dấu đọc lưu trên trình duyệt này; chưa có thông báo đẩy khi ứng dụng đóng.'}</p></section>;
 }
 
@@ -65,7 +70,7 @@ function NotificationList({ compact = false, onOpen, workspace = false }: { comp
   const kinds = [...new Set(entries.map(notificationGroup))];
   const change = (setter: (value: string) => void, value: string) => { setter(value); setPage(1); };
   return <>
-    <div className="activity-controls"><button type="button" className="button-secondary" onClick={activity.refresh} disabled={activity.checking}><RefreshCw size={15} />{activity.checking ? 'Đang kiểm tra…' : 'Kiểm tra mới'}</button>{!workspace && <button type="button" className="portal-text-button" disabled={!selected.some(item => unread.has(item.token))} title="Đánh dấu các kết quả đang lọc là đã đọc" onClick={() => activity.markRead(selected.map(item => item.token))}><CheckCheck size={15} />Đánh dấu đã đọc</button>}</div>
+    <div className="activity-controls"><button type="button" className="button-secondary" onClick={activity.refresh} disabled={activity.checking}><RefreshCw size={15} />{activity.checking ? 'Đang kiểm tra…' : role === 'STAFF' ? 'Làm mới' : 'Kiểm tra mới'}</button>{!workspace && <button type="button" className="portal-text-button" disabled={!selected.some(item => unread.has(item.token))} title="Đánh dấu các kết quả đang lọc là đã đọc" onClick={() => activity.markRead(selected.map(item => item.token))}><CheckCheck size={15} />Đánh dấu đã đọc</button>}</div>
     <div className="activity-tabs" aria-label="Lọc thông báo">{([['unread', 'Chưa đọc'], ['action', 'Cần thực hiện'], ['all', 'Tất cả']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => change(setView, key)}>{label} ({key === 'unread' ? unread.size : key === 'all' ? entries.length : entries.filter(item => item.action).length})</button>)}</div>
     <div className="notification-filters"><label><span><Search size={14} />Tìm thông báo</span><input aria-label="Tìm thông báo" type="search" value={search} onChange={event => change(setSearch, event.target.value)} placeholder="Mã hồ sơ, nội dung, kết quả…" /></label><label><span>Loại thông báo</span><select aria-label="Loại thông báo" value={kind} onChange={event => change(setKind, event.target.value)}><option value="all">Tất cả loại thông báo</option>{kinds.map(value => <option key={value} value={value}>{notificationKinds[value] ?? value}</option>)}</select></label></div>
     <ActivityStatus />
@@ -81,7 +86,7 @@ function ActivityLink({ item, onOpen, role }: { item: ActivityEntry; onOpen?: ()
     activity.markRead([item.token]); onOpen?.();
     window.dispatchEvent(new CustomEvent(LIVE_REFRESH));
   } };
-  return <Link {...link} className={`activity-item${unread ? ' is-unread' : ''}`}><div><small>{notificationKinds[item.kind]} · {item.code}{item.action ? ' · Cần thực hiện' : ''}{unread ? ' · Chưa đọc' : ''}</small><strong>{item.title}</strong><p>{item.message}</p>{item.at && <time dateTime={item.at}>{new Date(item.at).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })}</time>}<span className="activity-item-cta">{item.action ? 'Xem bước tiếp theo' : 'Xem chi tiết'} <ArrowRight size={13} /></span></div></Link>;
+  return <Link {...link} className={`activity-item${unread ? ' is-unread' : ''}`}><div><small>{notificationKinds[item.kind]}{role !== 'STAFF' && item.code && ` · ${item.code}`}{item.action ? ' · Cần thực hiện' : ''}{unread ? ' · Chưa đọc' : ''}</small><strong>{item.title}</strong><p>{item.message}</p>{item.at && <time dateTime={item.at}>{new Date(item.at).toLocaleString('vi-VN', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })}</time>}<span className="activity-item-cta">{item.action ? 'Xem bước tiếp theo' : 'Xem chi tiết'} <ArrowRight size={13} /></span></div></Link>;
 }
 export function ActivityStatus() {
   const activity = useActivity();

@@ -38,6 +38,7 @@
     "test:review-ui": "node scripts/review-ui-smoke.mjs",
     "test:rental-lifecycle": "node scripts/rental-lifecycle-review-smoke.mjs",
     "test:handover-assignment": "node scripts/handover-assignment-smoke.mjs",
+    "test:staff-workspace": "node scripts/staff-workspace-smoke.mjs",
     "test:customer-account": "node scripts/customer-account-smoke.mjs",
     "test:operational-followups": "node scripts/operational-followups-smoke.mjs",
     "test:return-settlement": "node scripts/return-settlement-smoke.mjs",

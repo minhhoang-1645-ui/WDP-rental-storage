@@ -118,7 +118,7 @@ export function StaffActions({
     ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
     : '/staff/stored-items';
   return (
-    <section className="manager-section">
+    <section className="manager-section" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
       <h2>Thao tác nhân viên</h2>
       {error && (
         <div className="booking-alert is-error" role="alert">

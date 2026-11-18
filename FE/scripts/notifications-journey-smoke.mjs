@@ -96,7 +96,7 @@ try {
   await assignment.context.close(); checks.push('Manager receives active low-workload suggestion; selecting it preserves an unsaved draft and never assigns without saving');
   for (const role of ['STAFF','MANAGER']) {
     const app = await setup(role,390); await app.goto(`/${role.toLowerCase()}/notifications`);
-    await app.page.getByRole('heading',{name:'Thông báo & việc cần làm',exact:true}).waitFor();
+    await app.page.getByRole('heading',{name:role === 'STAFF' ? 'Thông báo' : 'Thông báo & việc cần làm',exact:true}).waitFor();
     await app.page.getByRole('button',{name:/^Tất cả \(/}).click();
     await app.page.locator('.activity-item').first().waitFor();
     for (const href of await app.page.locator('.activity-item').evaluateAll(items=>items.map(item=>item.getAttribute('href')))) assert(href.startsWith(`/${role.toLowerCase()}/`),href);

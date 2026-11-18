@@ -110,7 +110,7 @@ describe('BookingService with PostgreSQL persistence', () => {
   });
 
   it('accepts one or multiple units when enough physical inventory exists', async () => {
-    expect((await service.checkAvailability(baseDraft())).available).toBe(true);
+    expect(await service.checkAvailability(baseDraft())).toMatchObject({ available: true, availableQuantity: 3 });
     const multiple = await service.checkAvailability({ ...baseDraft(), quantity: 3, adjacencyPreference: true });
     expect(multiple.available).toBe(true);
     expect(multiple.quote.periodStatus).toBe('APPROVED_DURATION');
@@ -154,6 +154,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     const result = await service.checkAvailability(baseDraft());
     expect(result.available).toBe(false);
     expect(result.reasonCode).toBe('OCCUPIED');
+    expect(result.availableQuantity).toBe(0);
   });
 
   it('excludes MAINTENANCE units and rejects quantity above remaining inventory', async () => {
@@ -161,6 +162,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     const result = await service.checkAvailability({ ...baseDraft(), quantity: 2 });
     expect(result.available).toBe(false);
     expect(result.reasonCode).toBe('INSUFFICIENT_INVENTORY');
+    expect(result.availableQuantity).toBe(1);
   });
 
   it('creates an idempotent guest inquiry with a protected lookup token', async () => {

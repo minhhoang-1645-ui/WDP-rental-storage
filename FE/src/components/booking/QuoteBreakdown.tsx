@@ -1,52 +1,62 @@
+import { ChevronDown } from 'lucide-react';
 import type { PricingEstimate } from '../../types/booking';
 import { serviceDisplayName } from '../../utils/service-labels';
 import { quotePaymentSummary, quotePeriod } from '../../utils/quote-payment-summary';
 
-const money = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('vi-VN', {style:'currency',currency:'VND',maximumFractionDigits:0}).format(value) : 'Chờ xác nhận';
+const formatMoney = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 });
+const bookingMoney = (amount: number | null | undefined) => typeof amount === 'number' && Number.isFinite(amount) ? formatMoney.format(amount) : 'Chờ báo giá';
+
 export function QuoteBreakdown({ quote }: { quote: PricingEstimate }) {
   const initial = quote.initialPaymentBreakdown;
-  const summary = quotePaymentSummary(quote);
-  const period = initial ? quotePeriod(initial.periodStart,initial.periodEnd) : '';
-  const rentalBasis = quote.monthlyUnitPrice !== undefined && quote.quantity
-    ? quote.billingMode === 'DAILY' ? `(${money(quote.monthlyUnitPrice)}/tháng ÷ 30) × ${quote.billableDays} ngày × ${quote.quantity} kho`
-    : `${money(quote.monthlyUnitPrice)}/tháng × ${quote.termMonths} tháng × ${quote.quantity} kho` : '';
-  return <div className="quote-breakdown">
-    <section className="quote-initial-payment" aria-label="Khoản thanh toán lần đầu">
-      <div className="quote-first-heading"><h4>Thanh toán lần đầu</h4><span>Dự kiến</span></div>
-      <strong className="quote-first-amount" aria-label="Số tiền thanh toán lần đầu dự kiến">{money(summary.first)}</strong>
-      <p className="quote-plan-label">{summary.plan}{quote.termMonths ? ` · Thuê ${quote.termMonths} tháng` : ''}{quote.quantity ? ` · ${quote.quantity} kho` : ''}</p>
-      <p>Gồm các khoản bên dưới.</p>
-      {period && <p className="quote-covered-period">Tiền thuê trong khoản này: {period}.</p>}
-      {initial && <div className="quote-initial-lines">
-        <div><span>{summary.monthly ? 'Tiền thuê tháng đầu' : 'Tiền thuê cả kỳ'}{Number(quote.discountPercent)>0 ? ` (đã giảm ${quote.discountPercent}%)` : ''}</span><b>{money(initial.rentalAmount)}</b></div>
-        {initial.depositAmount>0 && <div><span>Tiền cọc bảo đảm · thu một lần</span><b>{money(initial.depositAmount)}</b></div>}
-        {initial.purchaseAddOnAmount>0 && <div><span>Vật tư/dịch vụ mua một lần</span><b>{money(initial.purchaseAddOnAmount)}</b></div>}
-        {initial.rentalAddOnAmount>0 && <div><span>Dịch vụ/thiết bị thuê trong kỳ đầu</span><b>{money(initial.rentalAddOnAmount)}</b></div>}
+  const { first, total, remaining, laterCount, laterEach } = quotePaymentSummary(quote);
+  const hasLaterPayments = remaining !== null && remaining > 0;
+  const deposit = initial?.depositAmount ?? quote.depositAmount ?? quote.deposit;
+  const term = quote.billingMode === 'DAILY' ? `${quote.billableDays} ngày` : `${quote.termMonths} tháng`;
+
+  return <div className="quote-breakdown booking-price">
+    <section className="booking-first-payment" aria-label="Khoản thanh toán lần đầu">
+      <h4>{(quote.paymentPlan === 'PREPAID' || quote.billingMode === 'DAILY') ? 'Thanh toán một lần' : 'Thanh toán lần đầu'}</h4>
+      <strong className="quote-first-amount" aria-label="Số tiền thanh toán lần đầu dự kiến">{bookingMoney(first)}</strong>
+      <p className="booking-quote-muted">Dự kiến · sau khi ký hợp đồng</p>
+    </section>
+    <dl className="booking-price-facts">
+      <div><dt>Tiền cọc trong lần đầu</dt><dd>{bookingMoney(deposit)}</dd></div>
+      {hasLaterPayments && <div>
+        <dt>Các kỳ tiếp theo{laterCount !== null && <small>{laterCount} kỳ × {bookingMoney(laterEach)}/kỳ</small>}</dt>
+        <dd>{bookingMoney(remaining)}</dd>
       </div>}
-      {initial?.depositAmount===0 && <p className="quote-no-deposit">Kho này không thu tiền cọc.</p>}
-      {Number(initial?.depositAmount)>0 && <p>Tiền cọc được hoàn sau khi trừ các khoản phải trả khi trả kho.</p>}
-      <p className="quote-payment-timing">Ký hợp đồng rồi thanh toán theo hóa đơn.</p>
-    </section>
-    {summary.remaining!==null && <section className="quote-later-payment" aria-label="Các kỳ thanh toán sau">
-      <div><span>{summary.remaining>0 ? 'Thanh toán ở các kỳ sau' : 'Không còn khoản thanh toán kỳ sau'}</span><strong>{money(summary.remaining)}</strong></div>
-      {summary.laterCount!==null && <p>{summary.laterCount} kỳ còn lại × {money(summary.laterEach)}/kỳ.</p>}
-      {summary.remaining>0 && <p>{summary.laterCount===null ? 'Số tiền từng kỳ được ghi trên hóa đơn tương ứng. ' : ''}Khoản này trả ở kỳ sau, không thu thêm cọc.</p>}
-    </section>}
-    <section className="quote-term-summary" aria-label="Tổng tiền cho toàn bộ kỳ thuê">
-      <h4>Tổng tiền cả kỳ thuê</h4>
-      <div className="quote-breakdown-lines">
-        {typeof quote.rentalAmount==='number' && <div><span>Tiền thuê kho cả kỳ{Number(quote.discountAmount)>0 ? ' (đã trừ ưu đãi)' : ''}<small>{quotePeriod(quote.startDate, quote.endDate)}</small></span><b>{money(quote.rentalAmount)}</b></div>}
-        {Number(quote.addOnTotalAmount)>0 && <div><span>Dịch vụ và vật tư cả kỳ<small>Chi tiết từng dịch vụ ở phần cách tính bên dưới.</small></span><b>{money(quote.addOnTotalAmount)}</b></div>}
-        {Number(quote.depositAmount)>0 && <div><span>Tiền cọc bảo đảm<small>Đã tính trong lần đầu; không thu thêm ở các kỳ sau.</small></span><b>{money(quote.depositAmount)}</b></div>}
+      <div><dt>Tổng dự kiến cả kỳ</dt><dd>{bookingMoney(total)}</dd></div>
+    </dl>
+    <details className="booking-disclosure quote-cost-details">
+      <summary>Xem chi tiết giá <ChevronDown size={16} aria-hidden="true" /></summary>
+      <div className="booking-detail-sections">
+        <section aria-label="Chi phí cả kỳ">
+          <h5>Chi phí cả kỳ</h5>
+          <dl className="booking-price-facts">
+            {quote.lineItems.map((item, index) => {
+              const rental = item.code === 'storage-rent';
+              const basis = rental && quote.billingMode === 'MONTHLY' && quote.monthlyUnitPrice != null
+                ? `${quote.quantity ?? 1} kho · ${bookingMoney(quote.monthlyUnitPrice)}/tháng · ${term}`
+                : item.code === 'deposit' ? 'Theo chính sách loại kho' : item.basis;
+              return <div key={`${item.code}:${index}`}>
+                <dt>{serviceDisplayName(item.code, item.label)}{basis && <small>{basis}</small>}</dt>
+                <dd>{bookingMoney(item.amount)}</dd>
+              </div>;
+            })}
+          </dl>
+        </section>
+        {initial && <section aria-label="Các khoản trong lần đầu">
+          <h5>Các khoản trong lần đầu</h5>
+          <p className="booking-quote-muted">{quotePeriod(initial.periodStart, initial.periodEnd)}</p>
+          <dl className="booking-price-facts">
+            <div><dt>Tiền thuê</dt><dd>{bookingMoney(initial.rentalAmount)}</dd></div>
+            <div><dt>Tiền cọc</dt><dd>{bookingMoney(initial.depositAmount)}</dd></div>
+            {initial.purchaseAddOnAmount > 0 && <div><dt>Vật tư mua một lần</dt><dd>{bookingMoney(initial.purchaseAddOnAmount)}</dd></div>}
+            {initial.rentalAddOnAmount > 0 && <div><dt>Dịch vụ thuê</dt><dd>{bookingMoney(initial.rentalAddOnAmount)}</dd></div>}
+            <div><dt>Thanh toán lần đầu</dt><dd>{bookingMoney(first)}</dd></div>
+          </dl>
+        </section>}
       </div>
-      <div className="quote-breakdown-total"><span>{Number(quote.depositAmount)>0 ? 'Tổng dự kiến cả kỳ, gồm cọc' : 'Tổng dự kiến cả kỳ'}</span><strong>{money(summary.total)}</strong></div>
-      <p className="quote-total-explanation">Gồm lần thanh toán đầu và các kỳ sau.{summary.monthly && Number(summary.remaining)>0 ? ' Bạn không phải trả toàn bộ số này trong lần đầu.' : ''}</p>
-    </section>
-    <details className="quote-cost-details"><summary>Xem cách tính và chi tiết cả kỳ</summary>
-      {typeof quote.monthlyUnitPrice==='number' && <p className="quote-unit-price">Đơn giá một kho: <strong>{money(quote.monthlyUnitPrice)}/tháng</strong></p>}
-      <div className="quote-breakdown-lines">{quote.lineItems.map((item,index)=><div key={`${item.code}:${index}`} className={Number(item.amount)<0?'is-discount':''}><span><strong>{serviceDisplayName(item.code,item.label)}</strong><small>{item.code==='storage-rent' && rentalBasis ? rentalBasis : item.basis}</small></span><b>{money(item.amount)}</b></div>)}</div>
-      {Number(quote.discountAmount)>0 && <p className="quote-breakdown-note">Ưu đãi chỉ giảm tiền thuê kho; không giảm tiền cọc hoặc dịch vụ.</p>}
-      {Number(quote.depositAmount)>0 && <p className="quote-breakdown-note">Tiền cọc được đối chiếu và quyết toán khi trả kho theo hợp đồng; không phải tiền thuê.</p>}
     </details>
   </div>;
 }

@@ -159,6 +159,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
       { replace: true },
     );
   if (!config) return <Empty title="Không tìm thấy trang" />;
+  const listTitle = staffTable === 'inquiries' ? 'Tư vấn khách hàng' : staffTable === 'returns' ? 'Trả kho' : config.title;
   let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;
@@ -257,8 +258,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
             </label>
           </>
         )}
-        {(managerTable ? [...params.keys()].some(name => !['page', 'limit'].includes(name)) : params.size > 0) && (
-          <button className="button-secondary" onClick={() => setParams(managerTable && params.has('limit') ? { limit: String(limit) } : {})}>
+        {((managerTable || staffTable) ? [...params.keys()].some(name => !['page', 'limit'].includes(name)) : params.size > 0) && (
+          <button className="button-secondary" onClick={() => setParams((managerTable || staffTable) && params.has('limit') ? { limit: String(limit) } : {})}>
             Xóa bộ lọc
           </button>
         )}
@@ -266,7 +267,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   return (
     <section>
       {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
-      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : config.title} description={description}>
+      <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
         {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
         {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
           <button className="button-primary" onClick={() => setCreating(true)}>
@@ -297,7 +298,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
         loading={!current}
         error={current?.error ?? ""}
         retry={refresh}
-        placeholder={staffTable ? <StaffWorkflowTable resource={staffTable} title={config.title} items={[]} userId={user?.id ?? ''} loadingRows={Math.min(limit, 6)} /> : <TableSkeleton columns={['record', 'related', 'detail', 'status', 'actions']} rows={Math.min(limit, 6)} pagination />}
+        placeholder={staffTable ? <StaffWorkflowTable resource={staffTable} title={listTitle} items={[]} userId={user?.id ?? ''} loadingRows={Math.min(limit, 6)} /> : <TableSkeleton columns={['record', 'related', 'detail', 'status', 'actions']} rows={Math.min(limit, 6)} pagination />}
       />
       {current?.data && (
         <>
@@ -312,7 +313,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
                 : "Dữ liệu từ hệ thống"}
             </small>
           </div>}
-          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={config.title} items={visible} userId={user?.id ?? ''} /> : (
+          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={listTitle} items={visible} userId={user?.id ?? ''} /> : (
             <div className="manager-table-wrap">
               <table className="manager-table">
                 <thead>

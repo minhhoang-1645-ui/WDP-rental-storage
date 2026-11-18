@@ -22,8 +22,11 @@ import { ActivityBell } from '../../activity/ActivityCenter';
 import { WorkspaceNotificationDropdown } from '../../activity/WorkspaceNotificationDropdown';
 import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
+import { staffPriorityActivities } from '../../utils/activity';
 import { actionCountForPath } from '../../utils/notification-tools';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
+const matchesAlias = (item: InternalNavItem, pathname: string) =>
+  Boolean(item.match?.some(path => item.end ? pathname === path : matchesPath(pathname, path)));
 export interface InternalNavItem {
   to: string;
   label: string;
@@ -89,8 +92,19 @@ export function InternalPortalLayout({
         : matchesPath(location.pathname, item.to),
     )
     .sort((a, b) => b.to.length - a.to.length)[0];
-  const parent = navigation.find(item => item.to !== active?.to
-    && item.match?.some(path => matchesPath(location.pathname, path)));
+  const parent = navigation.find(item => item.to !== active?.to && matchesAlias(item, location.pathname));
+  const staff = user?.role === 'STAFF';
+  const staffSection = staff ? active ?? parent : undefined;
+  const isStaffDetail = staffSection && staffSection.to !== '/staff' && (
+    [staffSection.to, ...(parent?.match ?? [])].some(path => location.pathname.startsWith(path + '/'))
+    || staffSection.to === '/staff/damage-claims' && new URLSearchParams(location.search).has('claim')
+  );
+  const crumb = location.pathname.endsWith('/notifications') ? 'Thông báo'
+    : matchesPath(location.pathname, settingsPath) ? 'Cài đặt tài khoản'
+    : staff && location.pathname === '/staff/overstays' ? 'Kho quá hạn chưa trả'
+    : isStaffDetail ? 'Chi tiết'
+    : staffSection?.label ?? active?.label ?? 'Hồ sơ chi tiết';
+  const crumbParent = staff ? isStaffDetail ? staffSection : undefined : parent;
   const brand: ReactNode = (
     <Link
       className="portal-brand"
@@ -114,18 +128,28 @@ export function InternalPortalLayout({
       </div>
     </Link>
   );
+  const navigationActivity = staff ? staffPriorityActivities(activity.entries) : activity.entries;
+  const countFor = (item: InternalNavItem) => item.end ? 0 : staff && item.to === '/staff/tasks'
+    ? navigationActivity.length : actionCountForPath(navigationActivity, [item.to, ...(item.match ?? [])]);
   const nav = (iconOnly = false) => (
     <nav aria-label={`Điều hướng ${label}`}>
       {groups.map(({ group, items }, index) => {
-        const active = items.some(item => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)) || item.match?.some(path => location.pathname === path || location.pathname.startsWith(path + '/')));
-        return <NavigationGroup key={group} title={group} active={active} count={actionCountForPath(activity.entries, items.flatMap(item => [item.to,...item.match ?? []]))} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
-          {items.map(({ to, label: itemLabel, icon: Icon, end, match }) => (
-            <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined} aria-label={iconOnly ? itemLabel : undefined} className={({ isActive }) => isActive || match?.some(path => matchesPath(location.pathname, path)) ? 'active' : undefined}>
-              <Icon size={17} />
+        const active = items.some(item => (item.end ? location.pathname === item.to : matchesPath(location.pathname, item.to))
+          || matchesAlias(item, location.pathname));
+        const count = staff ? 0 : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
+        return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
+          {items.map(item => {
+            const { to, label: itemLabel, icon: Icon, end, match } = item;
+            const aliasActive = matchesAlias(item, location.pathname);
+            const count = staff ? countFor(item) : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
+            return <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined}
+              aria-label={iconOnly ? itemLabel : undefined}
+              className={({ isActive }) => isActive || aliasActive ? 'active' : undefined}>
+              <Icon size={17} aria-hidden="true" />
               <span>{itemLabel}</span>
-              {actionCountForPath(activity.entries, [to,...match ?? []]) > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{actionCountForPath(activity.entries, [to,...match ?? []])}</b>}
-            </NavLink>
-          ))}
+              {count > 0 && <b className="navigation-work-count" aria-hidden="true" title="Hồ sơ cần thực hiện">{staff && count > 99 ? '99+' : count}</b>}
+            </NavLink>;
+          })}
         </NavigationGroup>;
       })}
     </nav>
@@ -170,11 +194,11 @@ export function InternalPortalLayout({
             <nav className="portal-breadcrumb" aria-label="Đường dẫn">
               <span className="portal-breadcrumb-root">{label}</span>
               <span className="portal-topbar-divider" aria-hidden="true">/</span>
-              {parent && <>
-                <Link className="portal-topbar-parent" to={parent.to}>{parent.label}</Link>
+              {crumbParent && <>
+                <Link className="portal-topbar-parent" to={crumbParent.to}>{crumbParent.label}</Link>
                 <span className="portal-topbar-parent-divider" aria-hidden="true">/</span>
               </>}
-              <strong aria-current="page">{location.pathname.endsWith('/notifications') ? 'Thông báo' : matchesPath(location.pathname, settingsPath) ? "Cài đặt tài khoản" : active?.label ?? "Hồ sơ chi tiết"}</strong>
+              <strong aria-current="page">{crumb}</strong>
             </nav>
           </div>
           <div className="portal-topbar-actions">

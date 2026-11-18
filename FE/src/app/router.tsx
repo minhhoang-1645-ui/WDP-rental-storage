@@ -39,6 +39,7 @@ import { StaffListPage } from "../pages/staff/StaffListPage";
 import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffOverstayPage } from "../pages/staff/StaffOverstayPage";
 import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
@@ -186,7 +187,7 @@ export function AppRouter() {
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
-          <Route path="overstays" element={<OverstayPage />} />
+          <Route path="overstays" element={<StaffOverstayPage />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
@@ -198,8 +199,8 @@ export function AppRouter() {
             <Route index element={<ManagerListPage key={resource} resource={resource} />} />
             <Route path=":id" element={<ManagerDetailPage key={resource} resource={resource} />} />
           </Route>)}
-          <Route path="rentals" element={<StaffListPage resource="rentals" />} />
-          <Route path="rentals/:id" element={<StaffRecordPage resource="rentals" />} />
+          <Route path="rentals" element={<StaffListPage />} />
+          <Route path="rentals/:id" element={<StaffRecordPage />} />
           <Route path="operations/stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations/:resource" element={<ManagerResourcePage />} />

@@ -1,3 +1,4 @@
+import { useStaffProcessingTarget } from '../staff/useStaffProcessingTarget';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StockReconciliation } from '../../components/stock/StockReconciliation';
 import { StockMovementItems } from '../../components/stock/StockMovementItems';
@@ -168,6 +169,7 @@ function StockDetail({ role, id }: { role: StockRole; id: string }) {
   const { user } = useAuth(), data = useApiResource<StockMovement>(`/${role.toLowerCase()}/stock-movements/${encodeURIComponent(id)}`, user?.id, true, role !== 'CUSTOMER');
   const [notice, setNotice] = useState('');
   const returnPath = useInternalListReturn(roleRoot(role));
+  useStaffProcessingTarget(role === 'STAFF' && Boolean(data.data));
   function refresh() {
     if (role === 'STAFF' && hasDraft()) {
       setNotice('Hãy lưu hoặc đóng biểu mẫu kiểm đếm trước khi làm mới.');
@@ -177,7 +179,7 @@ function StockDetail({ role, id }: { role: StockRole; id: string }) {
   }
   return <section className={role === 'CUSTOMER' ? 'customer-page' : ''}>
     <Link className="booking-back" to={role === 'STAFF' ? returnPath : roleRoot(role)}>Về danh sách</Link>
-    <PageHeader title={data.data ? recordIdentity(data.data as unknown as Row, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}
+    <PageHeader title={data.data ? (role === 'STAFF' && data.data.customer.fullName) || recordIdentity(data.data as unknown as Row, 'stock-movements').title : 'Chi tiết nhập – xuất hàng'}
       status={data.data && <Status value={data.data.status} text={statuses[data.data.status]} />}
       meta={data.data && <CopyRecordCode value={data.data.movementCode} />}>
       <button className="button-secondary" onClick={refresh}>Làm mới</button>
@@ -211,7 +213,7 @@ function StockRecord({ row, role, onSaved }: { row: StockMovement; role: StockRo
     {row.note && <p><strong>Ghi chú: </strong>{row.note}</p>}
     {row.completionNote && <p><strong>Kết quả giao nhận: </strong>{row.completionNote}</p>}
     {!['COMPLETED', 'CANCELLED'].includes(row.status) && <WorkflowHint>{workflowGuide('stock-movements', row.status, role === 'CUSTOMER' ? 'customer' : role === 'STAFF' ? 'staff' : 'internal')}</WorkflowHint>}
-    <form onSubmit={submit}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2><StockReconciliation lines={row.lines} movementType={row.type} quantities={quantities} onQuantityChange={completable ? (lineId, value) => { setQuantities(current => ({ ...current, [lineId]: value })); setConfirmed(false); } : undefined} />
+    <form onSubmit={submit} id={completable ? 'staff-processing' : undefined} tabIndex={completable ? -1 : undefined}><fieldset disabled={busy} className="stock-fields"><h2>Đối chiếu hàng hóa</h2><StockReconciliation lines={row.lines} movementType={row.type} quantities={quantities} onQuantityChange={completable ? (lineId, value) => { setQuantities(current => ({ ...current, [lineId]: value })); setConfirmed(false); } : undefined} />
       {completable && <><label className="field-label">Ghi chú kiểm đếm{discrepancy ? ' (bắt buộc khi chênh lệch)' : ''}<textarea required={discrepancy} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></label><p>Hoàn tất sẽ {row.type === 'IN' ? 'tăng' : 'giảm'} tồn theo số lượng thực tế, có thể khác số lượng yêu cầu.</p></>}
       {completable && <><label className="stock-confirmation"><input type="checkbox" required checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>Tôi đã kiểm đếm và thực hiện giao nhận hàng thực tế</span></label>{error && <p role="alert" className="booking-alert is-error">{error}</p>}<div className="portal-actions"><button className="button-primary" disabled={busy || !confirmed}>{busy ? 'Đang lưu…' : 'Hoàn tất phiếu'}</button></div></>}
     </fieldset></form>

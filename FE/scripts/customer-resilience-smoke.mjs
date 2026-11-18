@@ -65,12 +65,12 @@ try {
     assert.equal(state.quoteReads, 0, 'Malformed calendar dates never reach pricing/availability');
     await date.fill('2027-01-31');
     await page.getByRole('button', { name: 'Thử lại báo giá', exact: true }).click();
-    await page.locator('.availability-badge.is-available').first().waitFor();
+    await page.locator('.booking-availability.is-success').first().waitFor();
     await page.locator('.quote-first-amount').first().waitFor();
     assert.equal(await date.inputValue(), '2027-01-31');
     await page.getByRole('button', { name: 'Tiếp tục', exact: true }).click();
     await page.getByText('Bổ sung họ tên và số điện thoại trước khi gửi yêu cầu.', { exact: false }).waitFor();
-    assert(await page.getByRole('button', { name: 'Bổ sung thông tin liên hệ để tiếp tục', exact: false }).isDisabled());
+    assert(await page.getByRole('button', { name: 'Xác nhận đặt kho', exact: true }).isDisabled());
     await page.getByRole('link', { name: 'Cập nhật thông tin liên hệ', exact: true }).click();
     await page.getByRole('heading', { name: 'Hồ sơ cá nhân', exact: true }).waitFor();
     assert(new URL(page.url()).searchParams.get('returnTo')?.startsWith('/booking?'));
@@ -86,8 +86,8 @@ try {
     assert.equal(await page.locator('form[data-wdp-dirty],form[data-wdp-submitting]').count(), 0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px profile overflow`);
     await page.getByRole('link', { name: 'Tiếp tục đặt kho', exact: true }).click();
-    await page.getByRole('heading', { name: 'Xác nhận yêu cầu', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).waitFor({ state: 'visible' });
+    await page.getByRole('heading', { name: 'Xác nhận đặt kho', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Xác nhận đặt kho', exact: true }).waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.querySelector('.checkout-form button[type=submit]')?.disabled);
     assert.equal(await page.getByLabel('Số điện thoại', { exact: true }).inputValue(), '0901234567');
     const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
@@ -104,13 +104,13 @@ try {
   await guest.page.goto(base + '/booking?step=2', { waitUntil: 'domcontentloaded' });
   await guest.page.getByRole('button', { name: 'Thử lại báo giá', exact: true }).click();
   await guest.page.getByRole('button', { name: 'Tiếp tục', exact: true }).click();
-  await guest.page.getByRole('checkbox', { name: /^Xác minh email để đặt kho/ }).check();
+  await guest.page.getByRole('checkbox', { name: /^Xác minh qua email/ }).check();
   await guest.page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).click();
   await guest.page.getByRole('alert').filter({ hasText: 'Chưa gửi được yêu cầu.' }).waitFor();
   await guest.page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: false }).click();
-  await guest.page.getByRole('heading', { name: 'Đã ghi nhận yêu cầu xác minh email', exact: true }).waitFor();
+  await guest.page.getByRole('heading', { name: 'Chưa gửi được email xác minh', exact: true }).waitFor();
   const attempts = writes.filter(row => row.path === '/guest/booking-requests'); assert.equal(attempts.length, 2); assert.equal(attempts[0].key, attempts[1].key); assert(attempts[0].key);
-  await guest.page.getByText(/Email xác minh chưa được gửi/).waitFor();
+  await guest.page.getByText(/Hãy dùng lựa chọn gửi yêu cầu liên hệ/).waitFor();
   const draft = await guest.page.evaluate(async () => { const { safeLocalStorage } = await import('/src/services/browser-storage.ts'); return safeLocalStorage.getItem('wdp-booking-draft-v1'); });
   const pendingDraft = JSON.parse(draft);
   assert.equal(pendingDraft.productId, product.id, 'Email verification is pending, so preserve choices for claim/repricing recovery even when native storage throws');
@@ -121,7 +121,7 @@ try {
 
   // Mount the actual shared component in an isolated browser-only fixture; no test route is added to production.
   const context = await browser.newContext({ viewport: { width: 320, height: 850 } });
-  await context.route(base + '/__review/entity-select', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<html><head><meta charset="utf-8"><link rel="stylesheet" href="/src/styles/index.css"></head><body><div id="root"></div><script type="module">window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;const ReactModule=await import('/node_modules/.vite/deps/react.js');const React=ReactModule.default??ReactModule;const DomModule=await import('/node_modules/.vite/deps/react-dom_client.js');const{createRoot}=DomModule.default??DomModule;const{EntitySelect}=await import('/src/components/EntitySelect.tsx');function App(){const[value,setValue]=React.useState('');return React.createElement('div',null,React.createElement(EntitySelect,{value,onValueChange:setValue,'aria-label':'Chọn nhân viên'},React.createElement('option',{value:'',disabled:true},'Chọn nhân viên'),React.createElement('option',{value:'disabled',disabled:true},'Nguyễn bận'),React.createElement('option',{value:'one'},'Nguyễn An · 0 việc đang xử lý'),React.createElement('option',{value:'two'},'Trần Bình · 2 việc đang xử lý')),React.createElement('button',{type:'button'},'Tiếp theo'));}createRoot(document.getElementById('root')).render(React.createElement(App));</script></body></html>` }));
+  await context.route(base + '/__review/entity-select', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<html><head><meta charset="utf-8"><link rel="stylesheet" href="/src/styles/index.css"></head><body><div id="root"></div><script type="module">window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;const entityPath='/src/components/EntitySelect.tsx';const entitySource=await fetch(entityPath).then(response=>response.text());const reactPath=entitySource.split('"').find(path=>path.startsWith('/node_modules/.vite/deps/react.js'));const ReactModule=await import(reactPath);const React=ReactModule.default??ReactModule;const DomModule=await import('/node_modules/.vite/deps/react-dom_client.js');const{createRoot}=DomModule.default??DomModule;const{EntitySelect}=await import(entityPath);function App(){const[value,setValue]=React.useState('');return React.createElement('div',null,React.createElement(EntitySelect,{value,onValueChange:setValue,'aria-label':'Chọn nhân viên'},React.createElement('option',{value:'',disabled:true},'Chọn nhân viên'),React.createElement('option',{value:'disabled',disabled:true},'Nguyễn bận'),React.createElement('option',{value:'one'},'Nguyễn An · 0 việc đang xử lý'),React.createElement('option',{value:'two'},'Trần Bình · 2 việc đang xử lý')),React.createElement('button',{type:'button'},'Tiếp theo'));}createRoot(document.getElementById('root')).render(React.createElement(App));</script></body></html>` }));
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(base + '/__review/entity-select', { waitUntil: 'domcontentloaded' });
   const choice = page.getByRole('combobox', { name: 'Chọn nhân viên', exact: true });

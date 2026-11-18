@@ -32,13 +32,14 @@ export function TablePopover({ name, trigger, children }: { name: string; trigge
   </>;
 }
 
-export function StaffRowActions({ to, code, primary, onOpen, detailLabel = 'Xem chi tiết' }: {
-  to: string; code: string; primary?: string; onOpen?: () => void; detailLabel?: string;
+export function StaffRowActions({ to, code, primary, onOpen, startLabel, detailLabel = 'Xem chi tiết' }: {
+  to: string; code: string; primary?: string; onOpen?: () => void; startLabel?: string; detailLabel?: string;
 }) {
   return <div className="staff-table-actions">
     {primary && <Link className="button-secondary" to={to} onClick={onOpen}>{primary}</Link>}
     <TablePopover name={`Thao tác ${code}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
       <Link to={to} onClick={onOpen}>{detailLabel}</Link>
+      {startLabel && <Link to={to + '#staff-processing'} onClick={onOpen}>{startLabel}</Link>}
     </TablePopover>
   </div>;
 }

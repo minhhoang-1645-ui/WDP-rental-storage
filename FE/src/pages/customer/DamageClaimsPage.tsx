@@ -102,8 +102,8 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
   const payment = claim?.compensation;
   return <>
     <ManagerTableBack fallback={back} />
-    {claim ? <PageHeader title={claimTitle(claim.description)} status={<ClaimBadge claim={claim} role={role} />}
-      meta={<><span><Warehouse size={17} aria-hidden="true" />{[claim.unitCodeSnapshot, claim.rentalContract?.contractCode, claim.customer?.fullName].filter(Boolean).join(' · ')}</span><CopyRecordCode value={claim.claimCode} /></>}>
+    {claim ? <PageHeader title={role === 'STAFF' ? claim.customer?.fullName || claim.unitCodeSnapshot || 'Chi tiết sự cố' : claimTitle(claim.description)} status={<ClaimBadge claim={claim} role={role} />}
+      meta={<><span><Warehouse size={17} aria-hidden="true" />{[claim.unitCodeSnapshot, role !== 'STAFF' && claim.rentalContract?.contractCode, role !== 'STAFF' && claim.customer?.fullName].filter(Boolean).join(' · ')}</span><CopyRecordCode value={claim.claimCode} /></>}>
       <ClaimActions key={claim.updatedAt} claim={claim} role={role} path={path} saved={saved} reload={result.refresh} refreshing={result.refreshing || !!result.error} />
       <RefreshStatus active={result.refreshing} />
     </PageHeader> : <PageHeader title="Chi tiết sự cố" />}

@@ -14,26 +14,35 @@ const startDate = future.toISOString().slice(0, 10);
 const browser = await launchTestBrowser();
 const errors = [], unexpected = [], writes = [], checks = [];
 try {
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 900, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 960 } });
     await context.addInitScript(({ productId, startDate }) => {
-      localStorage.setItem('wdp-booking-draft-v1', JSON.stringify({ productId, startDate, durationMonths: 3, periodMode: 'duration', quantity: 1, services: [], addonIds: [], paymentPlan: 'PAY_MONTHLY' }));
+      localStorage.setItem('wdp-booking-draft-v1', JSON.stringify({ productId, startDate, durationMonths: 3, periodMode: 'duration', quantity: 2, services: [], addonIds: [], paymentPlan: 'PAY_MONTHLY' }));
     }, { productId: product.id, startDate });
-    let unavailable = false, quote;
+    let availabilityMode = 'available', stockRace = true, quote;
     await context.route(/\/api\//, async route => {
       const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\//, '');
       if (request.method() === 'GET' && ['booking/catalog', 'additional-services'].includes(path)) return route.fulfill({ response: await route.fetch({ url: api + '/' + path }) });
       if (request.method() === 'POST' && ['pricing/quote', 'booking/availability'].includes(path)) {
+        if (path === 'booking/availability' && availabilityMode === 'error') return route.fulfill({ status: 503, json: { message: 'availability service unavailable' } });
         const response = await route.fetch({ url: api + '/' + path });
         const body = await response.json();
         assert(response.ok(), JSON.stringify(body));
         if (path === 'pricing/quote') quote = body;
-        return route.fulfill({ response, json: path === 'booking/availability' ? { ...body, available: !unavailable, message: unavailable ? 'Không đủ kho cho thời gian này.' : 'Còn kho phù hợp trong toàn kỳ.' } : body });
+        return route.fulfill({ response, json: path === 'booking/availability' ? {
+          ...body, available: availabilityMode === 'available', availableQuantity: availabilityMode === 'available' ? 3 : availabilityMode === 'partial' ? 1 : 0,
+          reasonCode: availabilityMode === 'available' ? 'AVAILABLE' : availabilityMode === 'partial' ? 'INSUFFICIENT_INVENTORY' : 'CONFLICT',
+        } : body });
       }
       if (request.method() === 'POST' && path === 'guest/booking-requests') {
         const body = request.postDataJSON();
         writes.push({ path, body });
-        assert.equal(body.storageTypeId, product.id); assert.equal(body.quantity, 1);
+        assert.equal(body.storageTypeId, product.id);
+        assert.equal(body.quantity, 1);
+        if (stockRace) {
+          stockRace = false;
+          return route.fulfill({ status: 409, json: { message: 'Kho vừa thay đổi', availability: { available: false, availableQuantity: 0, reasonCode: 'CONFLICT' } } });
+        }
         return route.fulfill({ status: 201, json: { bookingCode: 'WDPG-UI-CHECK', status: 'PENDING_VERIFICATION', storage: { id: product.id, name: product.name }, quantity: 1, startDate: body.startDate, endDate: body.endDate, quote, message: 'Yêu cầu kiểm thử giao diện; không gửi email thật.' } });
       }
       unexpected.push(`${request.method()}:${path}`); return route.abort();
@@ -48,37 +57,63 @@ try {
     assert.equal(await page.locator('canvas').count(), 0);
     await page.getByRole('link', { name: `Chọn kho ${product.name}`, exact: true }).click();
     await page.locator('.booking-preview-heading h2').waitFor();
-    assert.equal(await page.locator('.booking-preview-heading h2').innerText(), product.name);
+    assert.equal(await page.locator('.booking-preview-heading h2').innerText(), '2 kho · ' + product.name);
     assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), product.image);
+    if (width === 1440) {
+      await page.getByRole('link', { name: 'Đặt kho nhanh', exact: true }).click();
+      await page.getByRole('heading', { name: 'Đặt kho nhanh', exact: true }).waitFor();
+    }
     if (width === 390) await page.getByRole('button', { name: 'Chuyển sang giao diện tối' }).click();
     await page.getByRole('button', { name: 'Chọn thời gian', exact: true }).click();
     const next = page.getByRole('button', { name: 'Tiếp tục', exact: true });
     await next.waitFor();
     assert.equal(await page.locator('.booking-summary-product img').getAttribute('data-catalog-image'), product.image); await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Tiếp tục' && !button.disabled));
-    const quoteColors = await page.locator('.quote-initial-payment').evaluate(panel => ({
+    if (width === 390) {
+      await page.locator('#booking-start-date').evaluate(input => input.scrollIntoView({ block: 'center' }));
+      await page.waitForFunction(() => {
+        const rect = document.querySelector('.booking-mobile-bar')?.getBoundingClientRect();
+        return rect && rect.top >= 0 && rect.bottom <= innerHeight + 1;
+      });
+    }
+    const quoteColors = await page.locator('.booking-first-payment').evaluate(panel => ({
       background: getComputedStyle(panel).backgroundColor,
       amount: getComputedStyle(panel.querySelector('.quote-first-amount')).color,
+      themeAccent: getComputedStyle(panel).getPropertyValue('--workspace-primary').trim(),
     }));
-    assert.deepEqual(quoteColors, width === 390
-      ? { background: 'rgb(122, 219, 201)', amount: 'rgb(16, 44, 39)' }
-      : { background: 'rgb(15, 118, 110)', amount: 'rgb(255, 255, 255)' });
-    // Changing the rental period must invalidate previously available inventory.
-    unavailable = true;
+    assert.equal(quoteColors.background,'rgba(0, 0, 0, 0)');
+    assert(quoteColors.themeAccent && quoteColors.amount !== quoteColors.background);
+    availabilityMode = 'partial';
     const another = new Date(future); another.setUTCDate(another.getUTCDate() + 1);
     await page.getByLabel('Ngày bắt đầu', { exact: true }).fill(another.toISOString().slice(0, 10));
-    await page.locator('.availability-badge.is-unavailable').first().waitFor();
+    await page.getByText('Chỉ còn 1 kho phù hợp với thời gian đã chọn.', { exact: true }).waitFor();
     assert(await next.isDisabled());
-    unavailable = false;
+    assert.equal(await page.locator('.quote-first-amount').count(),0);
+    await page.getByText('2 kho · ' + product.name,{exact:true}).waitFor();
+    availabilityMode = 'error';
+    await page.getByRole('button',{name:'Giảm còn 1 kho',exact:true}).click();
+    await page.getByText('Không thể kiểm tra kho lúc này.',{exact:true}).waitFor();
+    assert(await next.isDisabled());
+    availabilityMode = 'conflict';
+    await page.getByRole('button',{name:'Thử kiểm tra lại',exact:true}).click();
+    await page.getByText('Không đủ kho cho toàn bộ thời gian đã chọn.',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Đổi thời gian',exact:true}).click();
+    await page.waitForFunction(()=>document.activeElement?.id==='booking-start-date');
+    availabilityMode = 'available';
     await page.getByLabel('Ngày bắt đầu', { exact: true }).fill(startDate);
-    await page.locator('.availability-badge.is-available').first().waitFor();
+    await page.locator('.booking-availability.is-success').waitFor();
     await next.click();
-    assert.equal(await page.locator('.quote-product img').getAttribute('data-catalog-image'), product.image);
+    await page.locator('.booking-summary-product img').waitFor();
+    assert.equal(await page.locator('.booking-summary-product img').getAttribute('data-catalog-image'), product.image);
     await page.getByLabel('Họ và tên', { exact: true }).fill('Người đặt kiểm thử');
     await page.getByLabel('Số điện thoại', { exact: true }).fill('0900000000');
     await page.getByLabel('Email', { exact: true }).fill('booking-ui@example.test');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${width}px booking overflow`);
     await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).click();
-    await page.getByRole('heading', { name: 'Đã ghi nhận yêu cầu xác minh email', exact: true }).waitFor();
+    await page.getByText('Kho trống vừa thay đổi.', { exact: true }).waitFor();
+    assert(await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).isDisabled());
+    await page.getByRole('button', { name: 'Kiểm tra lại', exact: true }).click();
+    await page.getByRole('button', { name: 'Gửi yêu cầu đặt kho', exact: true }).click();
+    await page.getByRole('heading', { name: 'Kiểm tra email để tiếp tục', exact: true }).waitFor();
     checks.push(`${width}px: comparison → same product/image in all three booking steps, server quotes, configured availability source and invalidation and isolated guest confirmation`);
     await context.unrouteAll({ behavior: 'wait' });
     await context.close();

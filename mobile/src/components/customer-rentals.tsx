@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, router, type Href } from 'expo-router';
-import { ArrowDownUp, Boxes, MapPin, FileText, CreditCard, Headphones, ChevronRight } from 'lucide-react-native';
+import { Boxes, MapPin, FileText, CreditCard, Headphones, ChevronRight } from 'lucide-react-native';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { useResource } from '@/operations/use-resource';
 import { idOf, rows, text, type Row } from '@/operations/model';
@@ -41,7 +41,10 @@ export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
   const product=rows(catalog.data?.products).find(item=>text(item,'id')===text(rental??{},'storageType.id'));
   const name=rental?text(rental,'storageType.name'):'';
   const go=(path:string)=>router.push(path as Href);
-  const shortcuts=[{title:'Nhập / xuất',icon:ArrowDownUp,path:'/customer/stock-movements?rentalContractId='+encodeURIComponent(contractId)},{title:'Hàng đang lưu',icon:Boxes,path:'/customer/stored-items?rentalContractId='+encodeURIComponent(contractId)},{title:'Vị trí kho',icon:MapPin,path:'/customer/floor-plan?rentalId='+encodeURIComponent(rental?idOf(rental):'')+'&rentalContractId='+encodeURIComponent(contractId)}];
+  const shortcuts = [
+    { title: 'Hàng hóa', icon: Boxes, path: `/customer/stored-items?rentalContractId=${encodeURIComponent(contractId)}&tab=inventory` },
+    { title: 'Vị trí kho', icon: MapPin, path: `/customer/floor-plan?rentalId=${encodeURIComponent(rental ? idOf(rental) : '')}&rentalContractId=${encodeURIComponent(contractId)}` },
+  ];
   const rawFloor=text(contract??{},'unit.floor');
   const floor=/^ground(?: floor)?$/i.test(rawFloor)?'Tầng trệt':/^floor\s+\d+$/i.test(rawFloor)?rawFloor.replace(/^floor\s+/i,'Tầng '):/^\d+$/.test(rawFloor)?'Tầng '+rawFloor:rawFloor;
   const location=[floor,text(contract??{},'unit.zone')?'Khu '+text(contract??{},'unit.zone'):''].filter(Boolean).join(' · ');

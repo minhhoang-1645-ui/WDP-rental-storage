@@ -51,7 +51,6 @@ function List({ resource }: { resource: string }) {
   if (create && user?.role === 'STAFF' && ['maintenance', 'transfers'].includes(resource)) create.path = `/staff/management/${resource}`;
   const header = <View style={{ gap: 12 }}><PageHeader onRefresh={data.refresh} eyebrow={user?.role === 'STAFF' ? 'Nhân viên vận hành' : 'Quản lý'} title={reviewOnly ? managerReviewTitle(resource) : config.title} description={reviewOnly ? "Chỉ hồ sơ cần quản lý quyết định; nhân viên tiếp nhận và thực hiện." : "Dữ liệu thực tế và thao tác theo quyền hiện có."} />
     {user?.role === 'MANAGER' && <ManagerParentLink resource={resource} />}
-    {user?.role !== 'STAFF' && }
     {resource === 'maintenance' && user?.role === 'STAFF' && <Disclosure title="Hướng dẫn bảo trì"><Text style={styles.copy}>Tạo bảo trì trực tiếp cho kho trống. Với kho đang thuê, tiếp nhận sự cố và sắp xếp chuyển kho trước khi sửa. Phiếu được giao tự động khi kho đã có nhân viên phụ trách; nếu chưa có, quản lý phân công. Nhân viên thực hiện, gửi kết quả để quản lý nghiệm thu.</Text><Navigation title="Tra cứu kho đang thuê" path={`${root}/rentals`} /><Navigation title="Yêu cầu sự cố" path={`${root}/support-requests`} /></Disclosure>}
     {create && !action && <Button title={create.title} onPress={() => { setNotice(''); setAction(create); }} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); data.refresh(); }} />}

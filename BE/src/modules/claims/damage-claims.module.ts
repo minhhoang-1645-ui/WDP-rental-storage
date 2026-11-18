@@ -22,5 +22,5 @@ class OperationalDamageClaimsController {
   recordHandover(@Req() r: AuthenticatedRequest, @Param('id') id: string, @Body() b: Record<string, unknown>) { return this.service.recordHandover(r.user!, id, b); }
   @Patch(':id') action(@Req() r: AuthenticatedRequest, @Param('id') id: string, @Body() b: Record<string, unknown>) { return this.service.action(r.user!, id, b); }
 }
-@Module({ imports: [AuthModule], controllers: [CustomerDamageClaimsController, OperationalDamageClaimsController], providers: [DamageClaimsService] })
+@Module({ imports: [AuthModule], controllers: [CustomerDamageClaimsController, OperationalDamageClaimsController], providers: [DamageClaimsService], exports: [DamageClaimsService] })
 export class DamageClaimsModule {}

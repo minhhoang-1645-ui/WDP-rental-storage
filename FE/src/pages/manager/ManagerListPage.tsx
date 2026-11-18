@@ -159,7 +159,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
       { replace: true },
     );
   if (!config) return <Empty title="Không tìm thấy trang" />;
-  const listTitle = staffTable === 'inquiries' ? 'Tư vấn khách hàng' : staffTable === 'returns' ? 'Trả kho' : config.title;
+  const listTitle = staffTable === 'returns' ? 'Trả kho' : config.title;
   let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;

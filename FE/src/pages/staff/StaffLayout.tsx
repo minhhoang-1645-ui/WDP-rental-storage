@@ -27,7 +27,7 @@ function section(group: string, destinations: Record<string, string>): InternalN
 const menu: InternalNavItem[] = [
   ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Bàn làm việc', group: 'Tổng quan', match: ['/staff/operations'] })),
   { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Tổng quan' },
-  ...section('Đặt kho & bàn giao', { reservations: 'Yêu cầu đặt kho', inquiries: 'Tư vấn khách hàng', appointments: 'Lịch bàn giao' }),
+  ...section('Đặt kho & bàn giao', { reservations: 'Yêu cầu đặt kho', appointments: 'Lịch bàn giao' }),
   ...section('Hàng hóa', { 'stock-movements': 'Phiếu nhập – xuất' }),
   { to: '/staff/stored-items', label: 'Hàng đang lưu', icon: Boxes, group: 'Hàng hóa' },
   { to: '/staff/assigned-units', label: 'Kho tôi phụ trách', icon: Warehouse, group: 'Hàng hóa' },

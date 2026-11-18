@@ -94,7 +94,7 @@ try {
 
   await page.goto(base + '/customer/contracts');
   await page.getByRole('button', { name: 'Xem bản đã xác nhận', exact: true }).first().click();
-  const contractDialog = page.getByRole('dialog', { name: 'Hợp đồng CON-ACCOUNT', exact: true });
+  const contractDialog = page.getByRole('dialog', { name: 'Chi tiết hợp đồng', exact: true });
   await contractDialog.waitFor();
   await contractDialog.getByRole('button', { name: 'Xem / in PDF', exact: true }).waitFor();
   assert(await contractDialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1));

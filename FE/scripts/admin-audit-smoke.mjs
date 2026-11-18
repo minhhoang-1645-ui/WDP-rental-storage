@@ -91,6 +91,14 @@ await context.route('**/*', async route => {
 });
 const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', error => errors.push(error.message));
 try {
+  await page.goto(`${base}/admin/activity?event=status`);
+  await page.getByRole('heading', {name:'Khóa tài khoản', exact:true}).waitFor();
+  await page.getByRole('link', {name:'Fixture Affected Account', exact:true}).waitFor();
+  assert.equal(await page.getByRole('search', {name:'Bộ lọc nhật ký'}).count(), 0);
+  await page.getByRole('link', {name:'Về nhật ký hoạt động'}).click();
+  await page.waitForURL('**/admin/activity');
+  await page.goto(`${base}/admin/activity?event=missing`);
+  await page.getByRole('heading', {name:'Không tìm thấy hoạt động'}).waitFor();
   await page.goto(`${base}/admin/login-history`);
   await page.getByRole('heading', { name: 'Lịch sử đăng nhập', exact: true }).waitFor();
   await page.getByText('attempt@example.test', { exact: true }).waitFor();
@@ -283,13 +291,13 @@ try {
   assert.deepEqual(mutations, ['admin/users/user-23/status', 'admin/users/user-23/status', 'admin/users/user-23', 'admin/users/user-23', 'admin/users', 'admin/users', 'admin/users']);
 
   await page.goto(`${base}/admin/notifications`);
-  await page.waitForURL(url => url.pathname === '/admin');
+  await page.getByRole('heading', { name: 'Thông báo', exact: true }).waitFor();
   assert.equal(await page.locator('.manager-sidebar a[href="/admin/notifications"]').count(), 0);
   await page.getByRole('button', { name: 'Menu tài khoản' }).waitFor();
   await page.getByRole('button', { name: /^Thông báo,/ }).click();
   const notifications = page.getByRole('dialog', { name: 'Thông báo', exact: true });
   await notifications.waitFor();
-  assert.equal(await notifications.getByRole('link', { name: /Xem tất cả thông báo/ }).count(), 0);
+  assert.equal(await notifications.getByRole('link', { name: /Xem tất cả thông báo/ }).count(), 1);
   await notifications.getByRole('button', { name: 'Đóng thông báo' }).click();
   await page.goto(`${base}/admin/settings`);
   await page.getByRole('heading', { name: 'Cài đặt tài khoản', exact: true }).waitFor();

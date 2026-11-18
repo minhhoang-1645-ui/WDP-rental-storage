@@ -1,10 +1,11 @@
 import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
 import { date, first, type Row } from '../../components/manager/portal-data';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { Facts, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { AccountRole, AccountRoleAccess } from './AccountRole';
@@ -62,7 +63,7 @@ export function AdminAccountDetailPage() {
     detail.refresh();
   }
 
-  return <section className="admin-account-detail">
+  return <section className="admin-account-detail record-detail-page">
     <Link className="booking-back" to={back}><ArrowLeft size={17} aria-hidden="true" />Về danh sách tài khoản</Link>
     <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}
       status={row && <Status value={row.accountStatus} />}
@@ -97,8 +98,8 @@ export function AdminAccountDetailPage() {
               ['Số điện thoại', first(row, 'phone') || 'Chưa cập nhật'],
             ] as [string, string][]),
             ['Ngày tạo', date(row.createdAt, true)],
-            ['Cập nhật gần nhất', date(row.updatedAt, true)],
           ]} />
+          {first(row, 'updatedAt') && <DetailDisclosure title="Lịch sử cập nhật"><Facts items={[[ 'Cập nhật gần nhất', date(row.updatedAt, true) ]]} /></DetailDisclosure>}
         </section>
       </div>
 
@@ -178,13 +179,19 @@ function ProfileEditor({ path, row, onCancel, onSave }: {
 function StatusConfirmation({ path, name, next, onClose, onSaved }: {
   path: string; name: string; next: 'ACTIVE' | 'DISABLED'; onClose: () => void; onSaved: (updated: Row) => void;
 }) {
+  const formId = useId();
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const disable = next === 'DISABLED';
-  return <Modal title={disable ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'} busy={busy} onClose={onClose}>
-    <form className="portal-form" onSubmit={async event => {
+  return <Modal title={disable ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'} busy={busy} onClose={onClose} footer={<>
+        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
+        <button type="submit" form={formId} className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
+          {busy ? 'Đang lưu…' : disable ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+        </button>
+    </>}>
+    <form id={formId} className="portal-form" onSubmit={async event => {
       event.preventDefault();
       if (!confirmed || lock.current) return;
       lock.current = true;
@@ -198,12 +205,6 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
       <label className="portal-checkbox"><input type="checkbox" required checked={confirmed} disabled={busy}
         onChange={event => setConfirmed(event.target.checked)} />Tôi xác nhận thay đổi quyền truy cập</label>
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
-      <div className="portal-actions">
-        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-        <button type="submit" className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
-          {busy ? 'Đang lưu…' : disable ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
-        </button>
-      </div>
     </form>
   </Modal>;
 }

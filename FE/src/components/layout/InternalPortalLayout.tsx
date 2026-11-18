@@ -19,7 +19,6 @@ import { useAuth } from "../../auth/auth-context";
 import { label as roleLabel } from "../manager/portal-data";
 import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell } from '../../activity/ActivityCenter';
-import { WorkspaceNotificationDropdown } from '../../activity/WorkspaceNotificationDropdown';
 import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
 import { staffPriorityActivities } from '../../utils/activity';
@@ -50,8 +49,7 @@ export function InternalPortalLayout({
   const { user, logout } = useAuth();
   const activity = useActivity();
   const location = useLocation();
-  const notificationRole = user?.role === 'STAFF' || user?.role === 'MANAGER' ? user.role : undefined;
-  const notificationInbox = notificationRole ? workspaceInboxPath(notificationRole) : undefined;
+  const notificationInbox = user ? workspaceInboxPath(user.role) : undefined;
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
   const profileMenu = themed && user && ['STAFF', 'MANAGER', 'ADMIN'].includes(user.role) ? user : null;
@@ -202,8 +200,7 @@ export function InternalPortalLayout({
             </nav>
           </div>
           <div className="portal-topbar-actions">
-            {user && notificationRole
-              ? <WorkspaceNotificationDropdown role={notificationRole} userId={user.id} /> : <ActivityBell />}
+            <ActivityBell />
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}
               roleLabel={roleLabel(profileMenu.role)} theme={theme} onToggleTheme={toggleTheme}
               onProfile={() => openSettings('profile')} onSecurity={() => openSettings('security')} onAppearance={() => openSettings('appearance')} onLogout={signOut} />

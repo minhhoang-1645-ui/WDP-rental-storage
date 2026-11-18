@@ -24,13 +24,23 @@ const submissionStatus: Record<PaymentSubmission['status'], string> = {
 
 export function CustomerPaymentsPage() {
   const { user } = useAuth()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const invoiceFilter = params.get('invoice')?.trim() ?? ''
   const reservationFilter = params.get('reservation')?.trim() ?? ''
   const scoped = Boolean(invoiceFilter || reservationFilter)
   const matchesInvoice = (invoice: CustomerInvoice) => (!invoiceFilter || invoice.id === invoiceFilter || invoice.invoiceCode === invoiceFilter)
     && (!reservationFilter || invoice.reservation.id === reservationFilter || invoice.reservation.reference === reservationFilter)
-  const [view, setView] = useState<View>(() => ['payments', 'submissions'].includes(params.get('view') ?? '') ? params.get('view') as View : 'invoices')
+  const requestedView = params.get('view')
+  const view: View = requestedView === 'payments' || requestedView === 'submissions' ? requestedView : 'invoices'
+  const submissionFilter = params.get('submission')
+  const setView = (value: View) => setParams(previous => {
+    const next = new URLSearchParams(previous)
+    if (value === 'invoices') next.delete('view')
+    else next.set('view', value)
+    if (value !== 'submissions') next.delete('submission')
+    next.delete('page')
+    return next
+  }, { replace: true })
   const [selectedInvoice, setSelectedInvoice] = useState<CustomerInvoice | null>(null)
   const invoices = usePaginatedResource<CustomerInvoice>('/customer/invoices', user?.id ?? '', true)
   const payments = usePaginatedResource<CustomerPayment>('/customer/payments', user?.id ?? '', true)
@@ -45,7 +55,7 @@ export function CustomerPaymentsPage() {
   const shownInvoices = (invoices.data?.items ?? []).filter(invoice => matchesInvoice(invoice) && (invoice.amountPaid > 0 || !invoicePaymentBlockedBySchedule(invoice)))
   const invoiceIds = new Set(shownInvoices.map(invoice => invoice.id))
   const shownPayments = (payments.data?.items ?? []).filter(payment => !scoped || invoiceIds.has(payment.invoice.id))
-  const shownSubmissions = (submissions.data?.items ?? []).filter(submission => !scoped || invoiceIds.has(submission.invoice.id))
+  const shownSubmissions = (submissions.data?.items ?? []).filter(submission => submissionFilter ? submission.id === submissionFilter : !scoped || invoiceIds.has(submission.invoice.id))
   const refresh = () => { refreshInvoices(); refreshPayments(); refreshSubmissions(); refreshBank() }
 
   useEffect(() => {

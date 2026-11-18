@@ -24,9 +24,9 @@ export function StaffRecordPage() {
   const contracts = rows(row?.contracts);
   const phone = row && first(row, 'customer.phone');
   const email = row && first(row, 'customer.email');
-  return <section>
+  return <section className="record-detail-page">
     <Link className="booking-back" to={returnPath}><ArrowLeft size={16} aria-hidden="true" />Về danh sách</Link>
-    {(row || !data.loading) && <PageHeader title={row ? first(row, 'customer.fullName') || 'Kho đang thuê' : 'Kho đang thuê'}
+    {(row || !data.loading) && <PageHeader title={row ? [first(row, 'storageType.name') || 'Kho đang thuê', first(row, 'customer.fullName')].filter(Boolean).join(' · ') : 'Kho đang thuê'}
       status={row && <Status value={row.rentalState} />} meta={row && <CopyRecordCode value={code(row)} />}>
       <button type="button" className="button-secondary" aria-label="Làm mới hồ sơ" onClick={data.refresh}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới

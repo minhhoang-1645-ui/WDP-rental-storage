@@ -1,3 +1,5 @@
+import { CopyRecordCode } from '../workspace/RecordIdentity';
+import { DetailDisclosure } from '../workspace/DetailDisclosure';
 import type { CustomerInvoice } from '../../types/customer';
 import { CustomerStatus } from './CustomerPortalUi';
 import { customerStatusLabel, formatPortalDate, moneyLabel } from './CustomerPortalHelpers';
@@ -17,7 +19,7 @@ export function CustomerInvoiceDetails({ invoice }: { invoice: CustomerInvoice }
         <CustomerStatus status={invoice.status} />
       </div>
       <dl className="customer-invoice-meta">
-        <div><dt>Mã hóa đơn</dt><dd>{invoice.invoiceCode}</dd></div>
+        <div><dt>Mã hóa đơn</dt><dd><CopyRecordCode value={invoice.invoiceCode} label="Hóa đơn" /></dd></div>
         <div><dt>Kho</dt><dd>{unitCount} kho{invoice.reservation.storageType?.name && ` · ${invoice.reservation.storageType.name}`}</dd></div>
         <div><dt>Ngày lập</dt><dd>{formatPortalDate(invoice.issuedAt)}</dd></div>
         <div><dt>Hạn thanh toán</dt><dd>{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</dd></div>
@@ -48,9 +50,8 @@ export function CustomerInvoiceDetails({ invoice }: { invoice: CustomerInvoice }
       </dl>
     </section>
 
-    <details className="customer-invoice-file">
-      <summary>Tệp hóa đơn</summary>
+    <DetailDisclosure title="Tệp hóa đơn">
       <DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(invoice.id)}`} name={invoice.invoiceCode} signed={invoice.signing?.complete} />
-    </details>
+    </DetailDisclosure>
   </div>;
 }

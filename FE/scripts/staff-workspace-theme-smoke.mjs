@@ -312,8 +312,9 @@ try {
   await page.waitForURL(url => url.searchParams.get('mine') === 'true');
   await page.getByRole('link', { name: 'Mở xử lý' }).click();
   await page.waitForURL('**/staff/support-requests/support-id');
-  await page.getByLabel('Lý do chuyển bộ phận phụ trách').fill('Kiểm tra tình trạng khóa tại cơ sở.');
-  await page.getByRole('button', { name: 'Chuyển bộ phận phụ trách xem xét' }).click();
+  await page.getByLabel('Hướng xử lý').selectOption('escalate');
+  await page.getByLabel('Lý do chuyển quản lý').fill('Kiểm tra tình trạng khóa tại cơ sở.');
+  await page.getByRole('button', { name: 'Chuyển quản lý xem xét' }).click();
   await page.getByText('Đã chuyển đến bộ phận phụ trách xem xét.').waitFor();
   assert.equal(escalations[0]?.reason, 'Kiểm tra tình trạng khóa tại cơ sở.');
 
@@ -337,7 +338,7 @@ try {
   await page.getByText('Nhân viên khác', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Hoàn tất phiếu' }).count(), 0);
   showTaskFixtures = false;
-  for (const resource of ['inquiries', 'appointments', 'stored-items', 'assigned-units', 'renewals', 'transfers', 'returns', 'support-requests', 'maintenance', 'rentals', 'damage-claims', 'notifications']) {
+  for (const resource of ['appointments', 'stored-items', 'assigned-units', 'renewals', 'transfers', 'returns', 'support-requests', 'maintenance', 'rentals', 'damage-claims', 'notifications']) {
     await page.goto(`${base}/staff/${resource}`);
     await page.locator('main h1').waitFor();
     for (const width of [1366, 390]) {

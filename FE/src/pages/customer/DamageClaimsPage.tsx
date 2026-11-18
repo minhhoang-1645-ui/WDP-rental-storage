@@ -1,3 +1,4 @@
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowRight, Plus, RefreshCw, Warehouse } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -100,9 +101,9 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
   const detailError = result.error || (result.data && !claim ? 'Không tìm thấy hồ sơ sự cố.' : '');
   const saved = (message: string) => { setNotice(message); result.refresh(); };
   const payment = claim?.compensation;
-  return <>
+  return <div className="record-detail-page">
     <ManagerTableBack fallback={back} />
-    {claim ? <PageHeader title={role === 'STAFF' ? claim.customer?.fullName || claim.unitCodeSnapshot || 'Chi tiết sự cố' : claimTitle(claim.description)} status={<ClaimBadge claim={claim} role={role} />}
+    {claim ? <PageHeader title={['Sự cố hàng hóa', claim.unitCodeSnapshot].filter(Boolean).join(' · ')} status={<ClaimBadge claim={claim} role={role} />}
       meta={<><span><Warehouse size={17} aria-hidden="true" />{[claim.unitCodeSnapshot, role !== 'STAFF' && claim.rentalContract?.contractCode, role !== 'STAFF' && claim.customer?.fullName].filter(Boolean).join(' · ')}</span><CopyRecordCode value={claim.claimCode} /></>}>
       <ClaimActions key={claim.updatedAt} claim={claim} role={role} path={path} saved={saved} reload={result.refresh} refreshing={result.refreshing || !!result.error} />
       <RefreshStatus active={result.refreshing} />
@@ -136,7 +137,7 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
           {claim.resolutionNote && <div><strong>Kết quả đã thông báo cho khách</strong><p className="claims-text">{claim.resolutionNote}</p></div>}
         </ClaimSection>
         <ClaimCompensation key={claim.updatedAt} claim={claim} role={role} path={path} saved={saved} reload={result.refresh} refreshing={result.refreshing || !!result.error} />
-        <ClaimSection title="Lịch sử xử lý">
+        <DetailDisclosure title="Lịch sử xử lý">
           <ol className="claims-history">
             {claim.history?.slice().reverse().map((event, index) => <li key={`${event.at}:${index}`}>
               <strong>{claimEventLabels[event.action ?? event.to ?? ''] ?? 'Cập nhật hồ sơ'}</strong>
@@ -145,10 +146,10 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
             </li>)}
             <li><strong>Báo sự cố</strong><span>{claim.customer?.fullName ?? 'Khách hàng'} · {claimDate(claim.createdAt, true)}</span></li>
           </ol>
-        </ClaimSection>
+        </DetailDisclosure>
       </div>
     </div>}
-  </>;
+  </div>;
 }
 
 function ClaimSection({ title, children }: { title: string; children: ReactNode }) {

@@ -43,6 +43,7 @@ const categories: Array<{ value: SupportCategory; label: string }> = [
 export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: boolean }) {
   const { user } = useAuth();
   const [params] = useSearchParams();
+  const focused = params.get('request');
   const requests = usePaginatedResource<CustomerSupportRequest>(
     "/customer/support-requests?limit=100",
     user?.id ?? "",
@@ -104,7 +105,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
   );
 
   const { items: visibleRequests, pagination } = useCustomerPagination(
-    (requests.data?.items ?? []).filter(item => !transferOnly || isTransferRequest(item)),
+    (requests.data?.items ?? []).filter(item => (!transferOnly || isTransferRequest(item)) && (!focused || item.id === focused)),
   );
 
   const submit = async (event: FormEvent) => {
@@ -151,7 +152,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
   };
 
   return (
-    <section className="customer-page">
+    <section className={focused ? "customer-page record-detail-page" : "customer-page"}>
       <PortalPageHeader
         eyebrow={transferOnly ? 'Chuyển đổi kho' : 'Hỗ trợ'}
         title={transferOnly ? 'Yêu cầu chuyển kho' : 'Yêu cầu hỗ trợ'}
@@ -167,8 +168,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
           </button>
         }
       />
-      <div className="customer-module-form-layout">
-        <form className="customer-panel customer-module-form" onSubmit={submit}>
+      <div className={focused ? "record-focused-layout" : "customer-module-form-layout"}>
+        {!focused && <form className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources
             resources={[reservations, rentals, invoices]}
             retry={() => {
@@ -340,7 +341,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                 </small>
               )}
           </fieldset>
-        </form>
+        </form>}
         <section className="customer-request-section" aria-label="Yêu cầu của tôi">
           <div className="customer-panel-heading">
             <div>
@@ -348,6 +349,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             </div>
             <CircleHelp size={20} />
           </div>
+          {focused && <p className="customer-filter-notice"><Link to={transferOnly ? '/customer/transfers' : '/customer/support'}>Xem tất cả yêu cầu</Link></p>}
           {requests.status === 401 ? (
             <CustomerSessionExpired />
           ) : requests.loading ? (
@@ -357,7 +359,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
           ) : visibleRequests.length === 0 ? (
             <PortalEmpty
               icon={<Wrench size={30} />}
-              title={transferOnly ? 'Chưa có yêu cầu chuyển kho' : 'Chưa có yêu cầu hỗ trợ'}
+              title={focused ? 'Yêu cầu không còn khả dụng' : transferOnly ? 'Chưa có yêu cầu chuyển kho' : 'Chưa có yêu cầu hỗ trợ'}
             >
               <span>Yêu cầu mới của bạn sẽ xuất hiện tại đây.</span>
             </PortalEmpty>
@@ -389,8 +391,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     · {item.reservation.reference}
                     {item.unit ? ` · ${item.unit.unitCode}` : ""}
                   </p>
-                  <p className="customer-request-excerpt">{item.description}</p>
-                  <details className="customer-request-disclosure"><summary>Chi tiết và phản hồi</summary>
+                  {!focused && <p className="customer-request-excerpt">{item.description}</p>}
+                  <details className="customer-request-disclosure" open={focused ? true : undefined}><summary>Chi tiết và phản hồi</summary>
                   <p>{item.description}</p>
                   {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
                   {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}

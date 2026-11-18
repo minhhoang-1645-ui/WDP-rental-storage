@@ -50,7 +50,7 @@ export function InvoiceTransferDialog({ id, onlinePending, onlineBusy = false, o
   const isOpen = !!row && ['OPEN', 'PARTIALLY_PAID'].includes(row.status) && row.balanceDue > 0;
   const paymentActionsReady = payable && !!bank.data && !bank.loading && !bank.error && !submissions.loading && !submissions.error;
   const vnpay = Boolean(onOnlinePay) && paymentActionsReady && bank.data?.vnpayConfigured === true && row.type !== 'SETTLEMENT';
-  return <Modal title="Chi tiết hóa đơn" onClose={onClose} busy={busy}>
+  return <Modal title="Chi tiết hóa đơn" onClose={onClose} busy={busy} footer={<button type="button" className="button-secondary" onClick={onClose} disabled={busy}>Đóng</button>}>
     {invoice.loading ? <PortalLoading label="Đang tải hóa đơn…" />
       : invoice.error ? <PortalError message={invoice.error} onRetry={invoice.refresh} />
       : row && <>

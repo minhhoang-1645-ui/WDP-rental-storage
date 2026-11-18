@@ -17,7 +17,7 @@
     "test:session-resilience": "node scripts/session-resilience-smoke.mjs",
     "test:mobile-resilience": "node scripts/mobile-resilience-smoke.mjs",
     "test:runtime-boundaries": "node scripts/runtime-boundaries.mjs",
-    "test:notifications": "node scripts/notifications-journey-smoke.mjs",
+    "test:notifications": "node scripts/workspace-notifications-smoke.mjs && node scripts/notifications-journey-smoke.mjs",
     "test:history-maintenance": "node scripts/history-maintenance-smoke.mjs",
     "test:early-return": "node scripts/early-return-smoke.mjs",
     "test:usability": "node scripts/transfer-usability-smoke.mjs",

@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
@@ -12,6 +12,7 @@ type Item = { id: string; name: string; unit: string; balance: number };
 
 export function DamageClaimForm({ close, saved }: { close: () => void; saved: (id: string) => void }) {
   const { user } = useAuth();
+  const formId = useId();
   const contracts = usePaginatedResource<Contract>('/customer/contracts', user?.id);
   const [contract, setContract] = useState('');
   const [description, setDescription] = useState('');
@@ -41,8 +42,11 @@ export function DamageClaimForm({ close, saved }: { close: () => void; saved: (i
     finally { locked.current = false; setBusy(false); }
   }
 
-  return <Modal title="Báo sự cố" onClose={close} busy={busy}>
-    <form className="portal-form claims-dialog-form" onSubmit={submit}>
+  return <Modal title="Báo sự cố" onClose={close} busy={busy} footer={<>
+    <button type="button" className="button-secondary" disabled={busy} onClick={close}>Hủy</button>
+    <button type="submit" form={formId} className="button-primary" disabled={busy || !contract}>{busy ? 'Đang gửi…' : 'Gửi báo sự cố'}</button>
+  </>}>
+    <form id={formId} className="portal-form claims-dialog-form" onSubmit={submit}>
       <LoadState loading={contracts.loading} error={contracts.error} retry={contracts.refresh} />
       <div className="claims-fields">
         <label className="field-label">Kho và hợp đồng
@@ -67,7 +71,6 @@ export function DamageClaimForm({ close, saved }: { close: () => void; saved: (i
       <label className="field-label">Giá trị bạn ước tính (đ, tùy chọn)<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} step="1" value={amount} disabled={busy} onChange={event => setAmount(event.target.value)} /></label>
       <label className="field-label">Liên kết chứng cứ (tùy chọn)<textarea value={links} rows={2} maxLength={16000} placeholder="Mỗi dòng một liên kết HTTPS" disabled={busy} onChange={event => setLinks(event.target.value)} /></label>
       {error && <p role="alert" className="booking-alert is-error">{error}</p>}
-      <div className="portal-actions"><button type="button" className="button-secondary" disabled={busy} onClick={close}>Hủy</button><button className="button-primary" disabled={busy || !contract}>{busy ? 'Đang gửi…' : 'Gửi báo sự cố'}</button></div>
     </form>
   </Modal>;
 }

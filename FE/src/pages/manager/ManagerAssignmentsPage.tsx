@@ -1,11 +1,8 @@
 import { ManagerTaskTable, ManagerTableSearch, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
-import { StockReconciliation } from '../../components/stock/StockReconciliation';
-import type { StockLine } from '../../types/stock';
 import { TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
 import { Ellipsis, RefreshCw } from "lucide-react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
@@ -204,7 +201,6 @@ export function ManagerAssignmentsPage() {
         <AssignmentDetail
           key={`${selected.kind}:${first(selected.row, "id")}`}
           task={selected}
-          knownStaff={knownStaff}
           workloads={workloads}
           onClose={closeDetails}
           onAssigned={() => {
@@ -220,25 +216,30 @@ export function ManagerAssignmentsPage() {
 
 function AssignmentDetail({
   task,
-  knownStaff,
   workloads,
   onClose,
   onAssigned,
 }: {
   task: Task;
-  knownStaff: Map<string, string>;
   workloads: Map<string, number>;
   onClose: () => void;
   onAssigned: () => void;
 }) {
   const id = first(task.row, "id");
-  const [staffId, setStaffId] = useState(first(task.row, "assignedStaff.id"));
+  const currentStaffId = first(task.row, 'assignedStaff.id');
+  const currentStaffName = first(task.row, 'assignedStaff.fullName');
+  const formId = useId();
+  const [staffId, setStaffId] = useState('');
+  const assignable = canAssign(task);
+  const destination = task.kind === 'damage-claims'
+    ? `/manager/damage-claims?claim=${encodeURIComponent(id)}`
+    : `/manager/operations/${task.kind}/${encodeURIComponent(id)}`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || !staffId.trim()) return;
+    if (lock.current || !assignable || !staffId || staffId === currentStaffId) return;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -262,71 +263,27 @@ function AssignmentDetail({
     }
   };
   return (
-    <Modal
-      title={`${workName(task.kind)} · ${code(task.row)}`}
-      onClose={onClose}
-      busy={busy}
-      className="assignment-dialog"
-    >
-      <div className="portal-form">
-        <Facts
-          items={[
-            ['Khách hàng', first(customer(task.row), 'fullName') || '—'],
-            ['Liên hệ', first(customer(task.row), 'phone', 'email') || '—'],
-            ...(task.kind === 'appointments' ? [['Giờ hẹn bàn giao', date(task.row.scheduledAt, true)] as [string, string]] : []),
-            ['Hợp đồng', rows(task.row.allocatedUnits).map(unit => first(unit, 'contractCode')).filter(Boolean).join(', ') || first(task.row, 'contract.contractCode', 'rentalContract.contractCode') || '—'],
-            [
-              "Trạng thái",
-              <Status key="work-status" value={task.row.status} />,
-            ],
-            ...(task.kind !== 'appointments' ? [["Ưu tiên", label(task.row.priority)] as [string, string]] : []),
-            ["Kho / Đặt thuê", relatedUnit(task.row)],
-            [
-              "Nhân viên hiện tại",
-              first(task.row, "assignedStaff.fullName") || "Chưa phân công",
-            ],
-            ...(task.kind !== 'appointments' || task.row.note ? [["Nội dung", first(task.row, "subject", "description", "note") || "—"] as [string, string]] : []),
-          ]}
-        />
-        {first(task.row, "subject") && first(task.row, "description") && (
-          <p>{first(task.row, "description")}</p>
-        )}
-        {task.kind === 'appointments' && <HandoverReportCard appointment={task.row} />}
-        {task.kind === 'stock-movements' && <section><h3>Hàng hóa cần giao nhận</h3><p>{task.row.completedAt ? `Hoàn tất ${date(task.row.completedAt, true)}` : 'Nhân viên được giao sẽ kiểm đếm và ghi nhận số lượng thực tế.'}</p><StockReconciliation lines={rows(task.row.lines) as unknown as StockLine[]} /><p>Ghi chú kiểm đếm: {first(task.row, 'completionNote') || 'Chưa ghi nhận'}</p></section>}
-        {error && (
-          <div className="booking-alert is-error" role="alert">
-            {error}
-          </div>
-        )}
-        {canAssign(task) && (
-          <form className="portal-form" onSubmit={assign}>
-            <StaffPicker value={staffId} onChange={value => { setStaffId(value); setError(''); }} knownStaff={knownStaff} workloads={workloads} disabled={busy} />
-            <div className="portal-actions">
-              <button
-                className="button-primary"
-                disabled={
-                  busy ||
-                  !staffId.trim() ||
-                  staffId === first(task.row, "assignedStaff.id")
-                }
-              >
-                {busy
-                  ? "Đang lưu…"
-                  : first(task.row, "assignedStaff.id")
-                    ? "Đổi nhân viên"
-                    : "Phân công"}
-              </button>
-            </div>
-          </form>
-        )}
-        {task.kind !== 'appointments' && <Link
-          className="button-secondary"
-          to={task.kind === 'damage-claims' ? `/manager/damage-claims?claim=${encodeURIComponent(id)}` : `/manager/operations/${task.kind}/${encodeURIComponent(id)}`}
-          onClick={onClose}
-        >
-          Xem hồ sơ công việc
-        </Link>}
+    <Modal title={assignable ? 'Phân công nhân viên' : 'Chi tiết phân công'} onClose={onClose} busy={busy}
+      className="assignment-dialog" footer={<>
+        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>{assignable ? 'Hủy' : 'Đóng'}</button>
+        {assignable && <button type="submit" form={formId} className="button-primary" disabled={busy || !staffId || staffId === currentStaffId}>
+          {busy ? 'Đang lưu…' : currentStaffId ? 'Xác nhận đổi nhân viên' : 'Xác nhận phân công'}
+        </button>}
+      </>}>
+      <div className="assignment-overview">
+        <div className="assignment-title"><strong>{first(task.row, 'subject') || workName(task.kind)}</strong><Status value={task.row.status} /></div>
+        <Facts items={[
+          ...(first(customer(task.row), 'fullName') ? [['Khách hàng', first(customer(task.row), 'fullName')]] as [string, string][] : []),
+          ['Kho / Đặt thuê', relatedUnit(task.row)],
+          ...(task.kind === 'appointments' && task.row.scheduledAt ? [['Giờ bàn giao', date(task.row.scheduledAt, true)]] as [string, string][] : []),
+          ['Nhân viên hiện tại', currentStaffName || 'Chưa phân công'],
+        ]} />
+        <Link to={destination} className="portal-text-button" onClick={onClose}>Xem hồ sơ công việc</Link>
       </div>
+      {error && <div className="booking-alert is-error" role="alert">{error}</div>}
+      {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
+        <StaffPicker list value={staffId} onChange={value => { setStaffId(value); setError(''); }} workloads={workloads} disabled={busy} />
+      </form>}
     </Modal>
   );
 }

@@ -1,3 +1,4 @@
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { RefreshCw } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useActivity } from '../../activity/context';
@@ -28,7 +29,7 @@ function AssignedUnitDetail({ item, onClose }: { item: Row; onClose: () => void 
   const history = records.filter(task => ['COMPLETED', 'RESOLVED'].includes(task.status) && !task.entry.action)
     .sort((left, right) => (Date.parse(right.entry.at) || 0) - (Date.parse(left.entry.at) || 0)).slice(0, 5);
 
-  return <Modal title={number || 'Chi tiết kho'} onClose={onClose} className="staff-unit-dialog">
+  return <Modal title={number || 'Chi tiết kho'} onClose={onClose} className="staff-unit-dialog" footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     <div className="staff-unit-detail">
       <Facts items={[
         ['Trạng thái', <Status key="status" value={first(item, 'storageUnit.status')} />],
@@ -52,8 +53,7 @@ function AssignedUnitDetail({ item, onClose }: { item: Row; onClose: () => void 
           {related.map(task => <li key={task.entry.id}><Link to={task.entry.web}>{task.title}</Link><Status value={task.status} /></li>)}
         </ul> : <p>{activity.checking ? 'Đang tải công việc…' : activity.failed.length ? 'Chưa tải đủ công việc.' : 'Không có công việc đang chờ cho kho này.'}</p>}
       </section>
-      {history.length > 0 && <section>
-        <h3>Xử lý gần đây</h3>
+      {history.length > 0 && <DetailDisclosure title="Xử lý gần đây">
         <ul className="staff-unit-work">
           {history.map(task => <li key={task.entry.id}>
             <Link to={task.entry.web}>{staffSourceNames.get(task.entry.kind) ?? task.title}</Link>
@@ -61,7 +61,7 @@ function AssignedUnitDetail({ item, onClose }: { item: Row; onClose: () => void 
             <Status value={task.status} />
           </li>)}
         </ul>
-      </section>}
+      </DetailDisclosure>}
     </div>
   </Modal>;
 }

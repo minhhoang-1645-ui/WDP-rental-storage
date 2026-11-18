@@ -107,42 +107,58 @@ export function Modal({
   children,
   busy = false,
   className = '',
+  footer,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   busy?: boolean;
   className?: string;
+  footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
+    const previous = document.activeElement;
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, []);
   return (
     <dialog
       ref={ref}
-      className={`portal-dialog ${className}`}
+      className={`portal-dialog ${className}${footer ? ' portal-dialog-framed' : ''}`}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();
       }}
+      onKeyDown={footer ? event => {
+        if (event.key !== 'Tab' || event.defaultPrevented) return;
+        const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]'))
+          .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && element.getClientRects().length > 0);
+        const edge = event.shiftKey ? items[0] : items.at(-1);
+        const target = event.shiftKey ? items.at(-1) : items[0];
+        if (!target || edge !== document.activeElement) return;
+        event.preventDefault();
+        target.focus();
+      } : undefined}
     >
       <header>
         <h2>{title}</h2>
         <button
           type="button"
           className="icon-button"
-          aria-label="Đóng"
+          aria-label={footer ? 'Đóng hộp thoại' : 'Đóng'}
           onClick={onClose}
           disabled={busy}
         >
           <X size={18} aria-hidden="true" />
         </button>
       </header>
-      {children}
+      {footer ? <><div className="portal-dialog-body">{children}</div><footer className="portal-dialog-footer">{footer}</footer></> : children}
     </dialog>
   );
 }

@@ -1,6 +1,7 @@
 import { useLayoutEffect } from 'react'
 import { AuthProvider } from '../auth/AuthContext'
 import { AppRouter } from './router'
+import { NotificationProvider } from '../activity/NotificationProvider'
 import { ActivityProvider } from '../activity/ActivityProvider'
 import { ApplicationErrorBoundary } from '../components/layout/ApplicationErrorBoundary'
 import { useWorkspaceTheme } from '../hooks/useWorkspaceTheme'
@@ -11,5 +12,5 @@ export function App() {
     document.documentElement.dataset.workspaceTheme = theme
   }, [theme])
 
-  return <ApplicationErrorBoundary><AuthProvider><ActivityProvider><AppRouter /></ActivityProvider></AuthProvider></ApplicationErrorBoundary>
+  return <ApplicationErrorBoundary><AuthProvider><ActivityProvider><NotificationProvider><AppRouter /></NotificationProvider></ActivityProvider></AuthProvider></ApplicationErrorBoundary>
 }

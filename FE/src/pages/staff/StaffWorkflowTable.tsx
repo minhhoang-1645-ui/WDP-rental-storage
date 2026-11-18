@@ -15,7 +15,7 @@ function handoverRecipient(row: Row) {
 export function StaffWorkflowTable({ resource, title, items, userId, loadingRows }: {
   resource: StaffTableWorkflow; title: string; items: Row[]; userId: string; loadingRows?: number;
 }) {
-  const booking = resource === 'reservations' || resource === 'inquiries';
+  const booking = resource === 'reservations';
   const appointments = resource === 'appointments';
   const maintenance = resource === 'maintenance';
   const overdue = (row: Row) => appointments && row.status === 'CONFIRMED' && Date.parse(first(row, 'scheduledAt')) < Date.now();

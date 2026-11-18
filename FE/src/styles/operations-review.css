@@ -12,14 +12,6 @@
 .stock-count-editor { display: grid; grid-template-columns: minmax(160px,220px) minmax(0,1fr); align-items: end; gap: 20px; padding: 16px 20px; border-top: 1px solid var(--color-border); }
 .stock-count-editor p { margin: 0 0 10px; color: var(--color-slate); font-size: 14px; }
 .stock-item-note, .stock-item-difference { margin: 0; padding: 0 20px 16px; font-size: 14px; }
-.manager-shell.internal-web .portal-dialog.assignment-dialog { width: min(880px,calc(100vw - 32px)); max-width: min(880px,calc(100vw - 32px)); overflow-x: hidden; }
-.assignment-dialog > header h2 { min-width: 0; overflow-wrap: anywhere; }
-.assignment-dialog > header .icon-button { flex: 0 0 42px; }
-.assignment-dialog > header { position: sticky; top: -24px; z-index: 3; background: var(--color-surface); padding-top: 12px; }
-.assignment-dialog :is(.portal-form, form, .manager-facts, .manager-facts > div, section) { min-width: 0; max-width: 100%; }
-.assignment-dialog .manager-facts { gap: 16px 24px; }
-.assignment-dialog .manager-facts dd { display: block; overflow-wrap: anywhere; margin-left: 0; }
-.assignment-dialog .staff-assignee-picker { width: 100%; min-width: 0; }
 .reservation-payment-summary { display: grid; gap: 6px; min-width: 170px; font-size: 13px; }
 .reservation-payment-summary > span { display: block; }
 .reservation-payment-summary strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -331,5 +323,4 @@
   .stock-count-editor { padding: 14px; gap: 10px; }
   .return-inventory-notice { padding: 16px; }
   .return-inventory-notice .portal-actions > a { width: 100%; justify-content: center; }
-  .assignment-dialog .manager-facts { grid-template-columns: 1fr; }
 }

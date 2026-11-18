@@ -29,7 +29,6 @@ export function staffWorkItems(activity: ActivityState, userId?: string, entries
     const dueAt = first(row, 'dueAt') || (entry.kind === 'appointments' && status === 'CONFIRMED' ? scheduledAt : '');
     const titles: Record<string, string> = {
       reservations: 'Kiểm tra yêu cầu đặt kho',
-      inquiries: status === 'PENDING_CONTACT' ? 'Liên hệ khách' : 'Cập nhật tư vấn',
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       'stock-movements': row.type === 'OUT' ? 'Kiểm đếm hàng xuất' : 'Kiểm đếm hàng nhập',
       returns: status === 'REQUESTED' ? 'Tiếp nhận trả kho' : 'Kiểm tra kho trả',

@@ -10,6 +10,12 @@ const errors = [];
 const data = structuredClone(fixture);
 data['support-requests'][0].status = 'ESCALATED';
 data.maintenance[0].status = 'AWAITING_VERIFICATION';
+const billed = { ...data.invoices[0], type: 'RECURRING', billingCycle: 2, totalAmount: 5400000, balanceDue: 2700000 };
+data.rentals[0] = { ...data.rentals[0], id: 'rental-test', invoices: [billed], contracts: data.contracts,
+  historicalPricing: { rentalAmount: 8600000, depositAmount: 1800000, quotedTotalAmount: 10400000 },
+  billingSummary: { totalInvoiced: 5400000, totalPaid: 2700000, totalOutstanding: 2700000, payableBalance: 900000 } };
+data['stock-movements'][0] = { ...data['stock-movements'][0], id: 'movement-detail', status: 'COMPLETED',
+  completedBy: staff, completedAt: data.maintenance[0].createdAt, completionNote: 'Đã đối chiếu kiện hàng tại kho.' };
 await context.addInitScript(() => localStorage.setItem('wdp-auth-token-v1', 'fixture-MANAGER'));
 await context.route(/\/api\//, async (route) => {
   const request = route.request();
@@ -50,13 +56,29 @@ try {
 
   data.maintenance[0].status = 'AWAITING_VERIFICATION';
   await page.goto('http://localhost:5173/manager/operations/maintenance/maintenance-id');
+  await page.getByLabel('Kết quả nghiệm thu').selectOption('rework');
   await page.getByLabel('Yêu cầu sửa lại').fill('Cần sửa lại khóa.');
   await page.getByRole('button', { name: 'Trả về sửa tiếp', exact: true }).click();
   await page.getByText('Đã lưu thao tác thành công.').waitFor();
   assert.equal(writes.at(-1).path, 'manager/maintenance/maintenance-id/reject-verification');
   assert.ok(writes.at(-1).key);
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({width, height: 850});
+    await page.goto('http://localhost:5173/manager/operations/rentals/rental-test');
+    await page.getByRole('heading', {name:'Kỳ thuê', exact:true}).waitFor();
+    await page.getByText('Công nợ còn lại', {exact:true}).waitFor();
+    await page.getByText('Tổng báo giá (gồm cọc)', {exact:true}).waitFor();
+    await page.getByRole('link', {name:/Kỳ 2/}).waitFor();
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.goto('http://localhost:5173/manager/operations/stock-movements/movement-detail');
+    const movement = page.getByRole('table', {name:'Số lượng hàng giao nhận'});
+    await movement.getByRole('rowheader', {name:/Thùng hồ sơ/}).waitFor();
+    assert.equal(await page.getByRole('button', {name:'Hoàn tất phiếu'}).count(), 0);
+    await page.getByText('Đã đối chiếu kiện hàng tại kho.', {exact:false}).waitFor();
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  }
   assert.deepEqual(errors, []);
-  console.log('Manager support resolve, maintenance verify and rejection passed.');
+  console.log('Manager support, maintenance, rental billing and completed stock detail passed.');
 } finally {
   await context.close();
   await browser.close();

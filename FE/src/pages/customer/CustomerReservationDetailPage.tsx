@@ -1,3 +1,4 @@
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { PageHeader } from '../../components/manager/PortalUi';
 import { RentalPeriodDetails } from '../../components/customer/RentalAccountDetails';
@@ -7,14 +8,11 @@ import { useInternalListReturn } from '../../components/workspace/internal-list-
 import {
   ArrowLeft,
   CalendarDays,
-  CheckCircle2,
-  Clock3,
   PackageOpen,
   ReceiptText,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
-import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
   PortalError,
@@ -46,13 +44,13 @@ export function CustomerReservationDetailPage() {
   if (status === 401) return <CustomerSessionExpired />;
   if (loading)
     return (
-      <section className="customer-page">
+      <section className="customer-page record-detail-page">
         <PortalLoading layout="detail" label="Đang tải chi tiết yêu cầu đặt kho…" />
       </section>
     );
   if (error || !reservation)
     return (
-      <section className="customer-page">
+      <section className="customer-page record-detail-page">
         <Link to={returnPath} className="customer-back">
           <ArrowLeft size={16} /> Quay lại danh sách
         </Link>
@@ -64,7 +62,7 @@ export function CustomerReservationDetailPage() {
     );
 
   return (
-    <section className="customer-page">
+    <section className="customer-page record-detail-page">
       <Link to={returnPath} className="customer-back">
         <ArrowLeft size={16} /> Quay lại danh sách
       </Link>
@@ -77,7 +75,6 @@ export function CustomerReservationDetailPage() {
         ? <div className="customer-panel"><ReservationLifecycle summary={reservation.rentalSummary} monthlyAmount={typeof reservation.quote.monthlyUnitPrice === 'number' ? reservation.quote.monthlyUnitPrice * reservation.quantity : undefined} /></div>
         : <CustomerRentalProgress reservation={reservation as unknown as Record<string, unknown>} />}
       <div className="customer-detail-grid">
-        {reservation.status === 'CONFIRMED' && <div className="workspace-full-row"><WorkflowHint>Ký hợp đồng và thanh toán trước khi đặt lịch nhận kho.</WorkflowHint></div>}
         {reservation.status === 'CONFIRMED' && reservation.expiresAt && <div className="workspace-full-row booking-alert" role="status">Hạn giữ kho và thanh toán: <strong>{formatPortalDate(reservation.expiresAt, true)} (UTC+7)</strong>. Kiểm tra hóa đơn trước khi thanh toán.</div>}
         <div className="customer-detail-content">
           <section className="customer-panel">
@@ -155,9 +152,8 @@ export function CustomerReservationDetailPage() {
             {reservation.quote.estimatedInitialAmountDue !== undefined && <p>Dự kiến lần thanh toán đầu tiên: <strong>{quoteLabel(reservation.quote.estimatedInitialAmountDue)}</strong> (theo báo giá lúc đặt).</p>}
             <p className="customer-note">{reservation.status === 'CONFIRMED' ? 'Giá được ghi nhận khi đặt kho.' : reservation.quote.message}</p>
           </section>
-          <section className="customer-panel">
-            <h2>Thông tin tài khoản</h2>
-            <div className="customer-facts">
+          <DetailDisclosure title="Thông tin tài khoản và ngày đặt">
+            <dl className="customer-facts">
               <div>
                 <dt>Họ và tên</dt>
                 <dd>{reservation.customer.fullName}</dd>
@@ -170,35 +166,11 @@ export function CustomerReservationDetailPage() {
                 <dt>Số điện thoại</dt>
                 <dd>{reservation.customer.phone || "Chưa cập nhật"}</dd>
               </div>
-            </div>
-          </section>
+              <div><dt>Ngày đặt</dt><dd>{formatPortalDate(reservation.createdAt, true)}</dd></div>
+            </dl>
+          </DetailDisclosure>
         </div>
         <aside className="customer-detail-aside">
-          <section className="customer-panel">
-            <h2>Trạng thái hiện tại</h2>
-            <div className="customer-timeline">
-              <div>
-                <span>
-                  <Clock3 size={17} />
-                </span>
-                <p>
-                  <strong>
-                    <ReservationStatus status={reservation.status} />
-                  </strong>
-                  <small>Trạng thái hiện tại lấy từ hệ thống.</small>
-                </p>
-              </div>
-              <div>
-                <span>
-                  <CheckCircle2 size={17} />
-                </span>
-                <p>
-                  <strong>Đã ghi nhận</strong>
-                  <small>{formatPortalDate(reservation.createdAt, true)}</small>
-                </p>
-              </div>
-            </div>
-          </section>
           <section className="customer-panel customer-next-actions">
             <h2>Bước tiếp theo</h2>
             <p>
@@ -208,7 +180,7 @@ export function CustomerReservationDetailPage() {
                   ? "Xem hóa đơn và hợp đồng. Bạn có thể yêu cầu lịch bàn giao khi các hợp đồng đã đủ điều kiện."
                   : "Yêu cầu này không còn chờ xử lý. Bạn có thể gửi yêu cầu đặt kho mới khi cần."}
             </p>
-            {reservation.status === 'CONFIRMED' && <><Link className="button-secondary" to={`/customer/contracts?reservation=${encodeURIComponent(reservation.id)}`}>
+            {reservation.status === 'CONFIRMED' && <><Link className="button-primary" to={`/customer/contracts?reservation=${encodeURIComponent(reservation.id)}`}>
               <ReceiptText size={16} /> Xem hợp đồng
             </Link>
             <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(reservation.id)}`}>

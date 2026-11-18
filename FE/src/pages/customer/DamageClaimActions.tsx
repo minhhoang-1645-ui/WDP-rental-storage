@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Banknote, ClipboardCheck, UserRoundPlus } from 'lucide-react';
 import { useAuth } from '../../auth/auth-context';
 import { Facts, Modal, Status } from '../../components/manager/PortalUi';
@@ -72,7 +72,8 @@ export function ClaimCompensation({ claim, role, path, saved, reload, refreshing
 
 function ClaimActionDialog({ action, claim, path, saved, reload, close }: ActionProps & { action: Action; close: () => void }) {
   const { user } = useAuth();
-  const [staff, setStaff] = useState(claim.assignedStaff?.id ?? '');
+  const formId = useId();
+  const [staff, setStaff] = useState('');
   const amendmentLabel = action === 'amend-decision' ? 'Lý do quyết định' : 'Kết quả đã thông báo cho khách';
   const [note, setNote] = useState(() => {
     if (action === 'inspect') return claim.staffFacts ?? '';
@@ -97,7 +98,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (locked.current) return;
+    if (locked.current || action === 'assign' && (!staff || staff === claim.assignedStaff?.id)) return;
     locked.current = true;
     setBusy(true);
     setError(undefined);
@@ -127,10 +128,16 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
     } finally { locked.current = false; setBusy(false); }
   }
 
-  return <Modal title={title} onClose={close} busy={busy}>
-    <form className="portal-form claims-dialog-form" onSubmit={submit}>
+  return <Modal title={title} onClose={close} busy={busy} className={action === 'assign' ? 'assignment-dialog' : undefined} footer={<>
+    <button type="button" className="button-secondary" onClick={close} disabled={busy}>Hủy</button>
+    <button type="submit" form={formId} className="button-primary" disabled={busy || (action === 'assign' && (!staff || staff === claim.assignedStaff?.id)) || (action === 'handover' && !confirmed)}>{busy ? 'Đang lưu…' : button}</button>
+  </>}>
+    <form id={formId} className="portal-form claims-dialog-form" onSubmit={submit}>
       <fieldset disabled={busy}>
-        {action === 'assign' && <StaffPicker value={staff} onChange={setStaff} currentStaff={claim.assignedStaff} disabled={busy} />}
+        {action === 'assign' && <>
+          {claim.assignedStaff && <p>Nhân viên hiện tại <strong>{claim.assignedStaff.fullName}</strong></p>}
+          <StaffPicker list value={staff} onChange={setStaff} disabled={busy} />
+        </>}
         {action === 'inspect' && <label className="field-label">Tình trạng thực tế và nhận xét<textarea required minLength={10} maxLength={3000} rows={4} value={note} onChange={event => setNote(event.target.value)} /></label>}
         {action === 'decide' && <>
           <label className="field-label">Hướng xử lý<select value={decision} onChange={event => setDecision(event.target.value)}><option value="APPROVED">Chấp thuận hướng xử lý</option><option value="REJECTED">Từ chối đề nghị</option></select></label>
@@ -159,7 +166,6 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
       {error && <div role="alert" className="booking-alert is-error">{error.text}
         {error.conflict && <button type="button" className="button-secondary" onClick={() => { close(); reload(); }}>Tải lại hồ sơ</button>}
       </div>}
-      <div className="portal-actions"><button type="button" className="button-secondary" onClick={close} disabled={busy}>Hủy</button><button className="button-primary" disabled={busy || (action === 'assign' && (!staff.trim() || staff === claim.assignedStaff?.id)) || (action === 'handover' && !confirmed)}>{busy ? 'Đang lưu…' : button}</button></div>
     </form>
   </Modal>;
 }

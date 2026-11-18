@@ -58,7 +58,7 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === 'ADMIN') return [{ kind: 'account-notices', path: '/admin/audit-events?category=ACCOUNT_NOTICES', title: 'Thông báo quản trị' }];
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'STAFF' ? ['damage-claims', 'reservations', 'inquiries', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
+    : role === 'STAFF' ? ['damage-claims', 'reservations', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
       : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'appointments', 'returns', 'transfers', 'renewals', 'invoices', 'deposit-settlements'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';

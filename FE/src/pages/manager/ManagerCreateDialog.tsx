@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { Modal, RecordPicker } from "../../components/manager/PortalUi";
 import { code, first, label, date, customer, type Row } from "../../components/manager/portal-data";
 import { mutate } from "../../services/portal";
@@ -17,6 +17,7 @@ export function ManagerCreateDialog({
 }) {
   const maintenance = resource === "maintenance";
   const { user } = useAuth();
+  const formId = useId();
   const [target, setTarget] = useState(first(source ?? {}, 'contract.id'));
   const [reservationId, setReservationId] = useState(first(source ?? {}, 'reservation.id'));
   const [support, setSupport] = useState(first(source ?? {}, 'id'));
@@ -68,8 +69,14 @@ export function ManagerCreateDialog({
       title={maintenance ? "Tạo yêu cầu bảo trì" : "Gửi đề nghị chuyển kho"}
       onClose={onClose}
       busy={busy}
+      footer={<>
+        <button type="button" className="button-secondary" onClick={onClose} disabled={busy}>Hủy</button>
+        <button type="submit" form={formId} className="button-primary" disabled={busy || !target || (maintenance && !description.trim())}>
+          {busy ? 'Đang tạo…' : 'Tạo yêu cầu'}
+        </button>
+      </>}
     >
-      <form className="portal-form" onSubmit={submit}>
+      <form id={formId} className="portal-form" onSubmit={submit}>
         <p>
           {maintenance
             ? "Tạo bảo trì cho kho trống. Kho đang cho khách thuê cần tiếp nhận sự cố và sắp xếp chuyển kho trước; kho đó không nằm trong danh sách kho trống bên dưới."
@@ -168,22 +175,6 @@ export function ManagerCreateDialog({
             </>
           )}
         </fieldset>
-        <div className="portal-actions">
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={onClose}
-            disabled={busy}
-          >
-            Hủy
-          </button>
-          <button
-            className="button-primary"
-            disabled={busy || !target || (maintenance && !description.trim())}
-          >
-            {busy ? "Đang tạo…" : "Tạo yêu cầu"}
-          </button>
-        </div>
       </form>
     </Modal>
   );

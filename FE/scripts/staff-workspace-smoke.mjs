@@ -8,6 +8,8 @@ const output = process.env.WDP_STAFF_TEST_ARTIFACTS || 'artifacts/staff-workspac
 const browser = await launchTestBrowser();
 const errors = [];
 const writes = [];
+const serviceWrites = [];
+let rejectEscalation = true;
 const scopedRequests = [];
 const today = '2026-11-18';
 const now = Date.parse(today + 'T10:00:00+07:00');
@@ -53,6 +55,16 @@ try {
     const query = url.searchParams;
     const send = json => route.fulfill({ json });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204 });
+    if (request.method() === 'POST' && path === 'staff/support-requests/support-id/escalate') {
+      const body = request.postDataJSON();
+      serviceWrites.push(body);
+      if (rejectEscalation) {
+        rejectEscalation = false;
+        return route.fulfill({status: 503, json: {message: 'Chưa lưu được hỗ trợ kiểm thử'}});
+      }
+      Object.assign(datasets['support-requests'][0], {status: 'ESCALATED', escalationReason: body.reason, escalatedAt: new Date(now).toISOString(), escalatedBy: staff});
+      return send(datasets['support-requests'][0]);
+    }
     if (request.method() !== 'GET') { writes.push(path); return route.fulfill({ status: 403 }); }
     if (path === 'auth/me') return send(staff);
     if (path === 'staff/assigned-units') {
@@ -89,7 +101,7 @@ try {
   await open('');
   const kpis = page.getByLabel('Chỉ số công việc').getByRole('link');
   await kpis.last().waitFor();
-  assert.deepEqual(await kpis.locator('strong').allTextContents(), ['110', '1', '1', '1']);
+  assert.deepEqual(await kpis.locator('strong').allTextContents(), ['109', '1', '1', '1']);
   assert.deepEqual(await kpis.evaluateAll(links => links.map(link => link.getAttribute('href'))), [
     '/staff/tasks', `/staff/appointments?status=CONFIRMED&date=${today}`,
     '/staff/stock-movements?status=ASSIGNED', '/staff/tasks?type=appointments&status=CONFIRMED&timing=overdue',
@@ -124,9 +136,9 @@ try {
   await search.fill('Khach kiem thu');
   await page.waitForFunction(() => document.querySelectorAll('table[aria-label="Danh sách công việc"] tbody tr').length === 10);
   await page.waitForURL(url => url.searchParams.get('search') === 'Khach kiem thu');
-  await page.getByText(/109 bản ghi/).waitFor();
+  await page.getByText(/108 bản ghi/).waitFor();
   await search.fill('');
-  await page.getByText(/110 bản ghi/).waitFor();
+  await page.getByText(/109 bản ghi/).waitFor();
   await page.getByRole('combobox', { name: 'Ưu tiên' }).selectOption('HIGH');
   await page.waitForURL(url => url.searchParams.get('priority') === 'HIGH');
   await page.getByText('Trang 1 / 1', { exact: true }).waitFor();
@@ -149,7 +161,7 @@ try {
   await booking.getByText(reservations[0].reference, { exact: true }).waitFor();
   assert.match(await booking.locator('tbody tr').first().innerText(), /Khách kiểm thử[\s\S]*Loại kho kiểm thử[\s\S]*2 kho/);
   await booking.locator('tbody tr').first().getByRole('link', { name: 'Xem chi tiết', exact: true }).click();
-  await heading(customer.fullName).waitFor();
+  await page.getByRole('heading', { level: 1, name: new RegExp(customer.fullName) }).waitFor();
   await heading('Kho và thời gian thuê').waitFor();
   await heading('Xử lý hồ sơ').waitFor();
   assert.equal(await page.getByRole('link', { name: 'Về danh sách', exact: true }).count(), 1);
@@ -159,7 +171,7 @@ try {
   await page.getByRole('button', { name: `Xem chi tiết kho ${unit.unitCode}` }).click();
   const unitDialog = page.getByRole('dialog', { name: unit.unitCode });
   await unitDialog.getByText(customer.fullName, { exact: true }).waitFor();
-  await unitDialog.getByRole('heading', { name: 'Xử lý gần đây' }).waitFor();
+  await unitDialog.getByText('Xử lý gần đây', { exact: true }).waitFor();
   assert.match(await unitDialog.innerText(), /Đang sử dụng|Đang dùng|Có khách thuê/);
   assert.match(await unitDialog.innerText(), /Quản lý kiểm thử/);
   assert(!/Chỉnh sửa|Cấu hình|Sửa kho/.test(await unitDialog.innerText()));
@@ -219,7 +231,7 @@ try {
   await page.getByText('Mật khẩu hiện tại', { exact: true }).waitFor();
 
   const routes = [
-    ['/inquiries', 'Tư vấn khách hàng'], ['/appointments', 'Lịch bàn giao'], ['/stock-movements', 'Phiếu nhập – xuất'],
+    ['/appointments', 'Lịch bàn giao'], ['/stock-movements', 'Phiếu nhập – xuất'],
     ['/stored-items', 'Hàng đang lưu'], ['/rentals', 'Kho đang thuê'], ['/overstays', 'Kho quá hạn chưa trả'],
     ['/transfers', 'Chuyển kho'], ['/returns', 'Trả kho'], ['/support-requests', 'Hỗ trợ khách hàng'],
     ['/maintenance', 'Bảo trì kho'], ['/damage-claims', 'Sự cố hàng hóa'],
@@ -230,6 +242,40 @@ try {
     await page.locator('main').getByRole('heading', { name: title, exact: true }).waitFor();
     assert(!await overflow(), `${path} overflows mobile`);
   }
+  for (const retired of ['/inquiries', '/inquiries/inquiry-id', '/operations/inquiries/inquiry-id']) {
+    await open(retired);
+    await page.waitForURL('**/staff/reservations');
+    assert.equal(await page.getByRole('link', { name: 'Tư vấn khách hàng', exact: true }).count(), 0);
+  }
+  const support = { ...fixture['support-requests'][0], status: 'IN_PROGRESS', assignedStaff: staff, description: 'Khách mô tả thiết bị gặp sự cố.\nNội dung cần giữ nguyên.' };
+  datasets['support-requests'] = [support];
+  await open('/support-requests/support-id');
+  await page.getByRole('heading', { level: 1, name: /Hỗ trợ khách/ }).waitFor();
+  await page.getByText('Nội dung cần giữ nguyên.', {exact: false}).waitFor();
+  await page.getByRole('heading', { name: 'Kết quả hỗ trợ', exact: true }).waitFor();
+  const how = page.getByRole('combobox', { name: 'Hướng xử lý' });
+  const result = page.getByLabel('Mô tả kết quả xử lý');
+  await result.fill('Dự thảo kết quả tại kho');
+  await how.selectOption('escalate');
+  const reason = page.getByLabel('Lý do chuyển quản lý');
+  const sendEscalation = page.getByRole('button', { name: 'Chuyển quản lý xem xét' });
+  assert.equal(await reason.evaluate(field => field.form.checkValidity()), false);
+  await reason.fill('Cần xác nhận tình trạng thiết bị.');
+  await how.selectOption('ON_SITE_RESOLVED');
+  assert.equal(await result.inputValue(), 'Dự thảo kết quả tại kho');
+  await how.selectOption('escalate');
+  assert.equal(await reason.inputValue(), 'Cần xác nhận tình trạng thiết bị.');
+  await shot('support-processing-mobile-dark');
+  await sendEscalation.click();
+  await page.getByRole('alert').getByText('Chưa lưu được hỗ trợ kiểm thử').waitFor();
+  assert.equal(await reason.inputValue(), 'Cần xác nhận tình trạng thiết bị.');
+  await sendEscalation.click();
+  await page.getByRole('heading', { name: 'Kết quả xử lý', exact: true }).waitFor();
+  assert.equal(await how.count(), 0);
+  assert.equal(await page.getByText('Lịch sử xử lý', {exact: true}).evaluate(node => node.parentElement.open), false);
+  assert.deepEqual(serviceWrites, [{reason:'Cần xác nhận tình trạng thiết bị.'}, {reason:'Cần xác nhận tình trạng thiết bị.'}]);
+  assert(!await overflow());
+  datasets['support-requests'] = [];
   await open('/appointments/handover-other');
   await page.getByRole('alert').getByText('Không tìm thấy hồ sơ', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Xác nhận đã bàn giao giấy tờ và chìa khóa' }).count(), 0);

@@ -357,6 +357,7 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  notificationReceipts NotificationReceipt[]
   assignedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssignee")
   delegatedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssigner")
   damageClaims DamageClaim[]
@@ -1339,4 +1340,13 @@ model HandoverAppointment {
   @@index([scheduledAt, id])
   @@index([assignedStaffUserId, status])
   @@index([assignedStaffUserId, status, scheduledAt])
+}
+
+model NotificationReceipt {
+  userId String
+  token  String
+  readAt DateTime @default(now())
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([userId, token])
 }

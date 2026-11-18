@@ -115,7 +115,7 @@ export function CustomerRenewalsPage() {
   };
 
   return (
-    <section className="customer-page">
+    <section className={renewalFilter ? "customer-page record-detail-page" : "customer-page"}>
       <PortalPageHeader
         eyebrow="Gia hạn"
         title="Yêu cầu gia hạn"
@@ -131,9 +131,8 @@ export function CustomerRenewalsPage() {
           </button>
         }
       />
-      {renewalFilter && <p>Yêu cầu gia hạn được chọn · <Link to="/customer/renewals">Xem tất cả yêu cầu</Link></p>}
-      <div className="customer-module-form-layout">
-        <form className="customer-panel customer-module-form" onSubmit={submit}>
+      <div className={renewalFilter ? "record-focused-layout" : "customer-module-form-layout"}>
+        {!renewalFilter && <form className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources
             resources={[rentals, renewals]}
             retry={() => {
@@ -214,7 +213,7 @@ export function CustomerRenewalsPage() {
               <small>Chưa có kho đang thuê đủ điều kiện gia hạn.</small>
             )}
           </fieldset>
-        </form>
+        </form>}
         <section className="customer-request-section" aria-label="Lịch sử gia hạn">
           <div className="customer-panel-heading">
             <div>
@@ -222,16 +221,17 @@ export function CustomerRenewalsPage() {
             </div>
             <CalendarRange size={20} />
           </div>
+          {renewalFilter && <p className="customer-filter-notice"><Link to="/customer/renewals">Xem tất cả yêu cầu gia hạn</Link></p>}
           {renewals.status === 401 ? (
             <CustomerSessionExpired />
           ) : renewals.loading ? (
             <PortalLoading label="Đang tải yêu cầu gia hạn…" />
           ) : renewals.error ? (
             <PortalError message={renewals.error} onRetry={renewals.refresh} />
-          ) : (renewals.data?.items.length ?? 0) === 0 ? (
+          ) : visibleRenewals.length === 0 ? (
             <PortalEmpty
               icon={<Repeat2 size={30} />}
-              title="Chưa có yêu cầu gia hạn"
+              title={renewalFilter ? "Yêu cầu gia hạn không còn khả dụng" : "Chưa có yêu cầu gia hạn"}
             >
               <span>Các yêu cầu bạn gửi sẽ xuất hiện ở đây.</span>
             </PortalEmpty>
@@ -285,7 +285,7 @@ export function CustomerRenewalsPage() {
                   {item.status === 'COMPLETED' && <Link className="button-secondary" to="/customer/rentals">Xem thời hạn thuê mới</Link>}
                   {['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(item.status) && item.appendix && (item.appendix.acceptedAt
                     ? null
-                    : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và xác nhận phụ lục {item.appendix.code}</button>)}
+                    : <button type="button" className="button-primary" onClick={() => setSelectedAppendix(item)}>Xem và ký phụ lục</button>)}
                   {selectedAppendix?.id === item.id && item.appendix && <div><DocumentFile path={`/customer/documents/renewals/${encodeURIComponent(item.id)}`} name={item.appendix.code} /><SignatureAgreement key={`${item.id}:${item.appendix.snapshotHash}`} label="Xác thực và ký phụ lục" busy={Boolean(acceptingAppendixId)} otpConfigured={item.appendix.otp?.emailConfigured} onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/renewals/${encodeURIComponent(item.id)}/appendix/signature-otp`, { method: 'POST', body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: item.appendix?.snapshotHash }) })} onSubmit={(signature, proof) => acceptAppendix(item, signature, proof)} /><button type="button" className="button-secondary" onClick={() => setSelectedAppendix(null)}>Đóng</button></div>}
                 </article>
               ); })}

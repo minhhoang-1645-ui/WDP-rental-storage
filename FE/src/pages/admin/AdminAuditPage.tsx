@@ -1,10 +1,10 @@
 import { internalPageSize } from '../../utils/internal-pagination';
-import { RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useInternalListResource } from '../../components/workspace/useInternalListResource';
 import { date, label } from '../../components/manager/portal-data';
-import { Empty, LoadState, PageHeader, Pagination, RefreshStatus } from '../../components/manager/PortalUi';
+import { Empty, Facts, LoadState, PageHeader, Pagination, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { auditActor, auditTitle, type AuditEvent } from './audit-labels';
 
 const auditFilterKeys = ['search', 'role', 'from', 'to'] as const;
@@ -47,6 +47,27 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
     }, { replace: true });
   }
 
+  if (eventId) {
+    const event = data.data?.items.find(item => item.id === eventId);
+    return <section className="admin-audit record-detail-page">
+      <Link className="booking-back" to="/admin/activity"><ArrowLeft size={16} aria-hidden="true" />Về nhật ký hoạt động</Link>
+      <PageHeader title={event ? auditTitle(event) : 'Chi tiết hoạt động'}
+        status={event?.outcome === 'FAILURE' ? <Status value="REJECTED" text="Thất bại" /> : undefined}>
+        <button type="button" className="button-secondary" disabled={data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
+      </PageHeader>
+      <LoadState loading={data.loading} error={data.error} retry={data.refresh} layout="detail" />
+      {event ? <section className="manager-section record-focused-layout">
+        <h2>Thông tin hoạt động</h2>
+        <Facts items={[
+          ['Thời gian (UTC+7)', <time key="time" dateTime={event.createdAt}>{date(event.createdAt, true)}</time>],
+          ['Người thực hiện', auditActor(event)],
+          ['Vai trò', event.actorRole ? label(event.actorRole) : 'Chưa xác thực'],
+          ...(event.targetAccount && event.resourceId ? [['Tài khoản liên quan', <Link key="account" to={`/admin/users/${encodeURIComponent(event.resourceId)}`}>{event.targetAccount.fullName}</Link>]] as [string, React.ReactNode][] : []),
+        ]} />
+      </section> : data.data && <Empty title="Không tìm thấy hoạt động" description="Mở nhật ký để xem các sự kiện hiện có." />}
+    </section>;
+  }
+
   return <section className="admin-audit" data-category={category}>
     <PageHeader title={login ? 'Lịch sử đăng nhập' : 'Nhật ký hoạt động'} description="Thời gian Việt Nam (UTC+7).">
       <button className="button-secondary" disabled={invalidRange || data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
@@ -58,7 +79,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
       <label className="field-label">Vai trò<select aria-label="Vai trò" name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].map(role => <option key={role} value={role}>{label(role)}</option>)}</select></label>
       <label className="field-label">Từ ngày<input type="date" name="from" value={from} onChange={event => changeFilter('from', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
       <label className="field-label">Đến ngày<input type="date" name="to" value={to} onChange={event => changeFilter('to', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
-      <button type="button" className="button-secondary" onClick={clearFilters}>{eventId ? 'Xem toàn bộ nhật ký' : 'Xóa bộ lọc'}</button>
+      <button type="button" className="button-secondary" onClick={clearFilters}>Xóa bộ lọc</button>
     </div>
     {invalidRange && <p id="audit-date-error" className="booking-alert is-error" role="alert">Ngày kết thúc phải từ ngày bắt đầu trở đi.</p>}
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />

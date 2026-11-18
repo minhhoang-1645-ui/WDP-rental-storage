@@ -15,6 +15,7 @@ export interface CustomerStorageType {
 }
 
 export interface CustomerContract {
+  renewals?: Array<{ id: string; status: string }>
   transfers?: Array<{ id: string; transferCode: string; status: string; reason: string; fromUnit: { unitCode: string }; toUnit: { unitCode: string } | null; createdAt: string; completedAt: string | null; completedBy: { fullName: string } | null }>
   id: string
   contractCode: string

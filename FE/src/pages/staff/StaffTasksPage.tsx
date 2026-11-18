@@ -19,7 +19,8 @@ export function StaffTasksPage() {
   const pendingParams = useRef(params);
   useLayoutEffect(() => { pendingParams.current = params; }, [params]);
   const search = params.get('search') ?? '';
-  const type = params.get('type') ?? '';
+  const requestedType = params.get('type') ?? '';
+  const type = staffSourceNames.has(requestedType) ? requestedType : '';
   const status = params.get('status') ?? '';
   const sort = params.get('sort') ?? '';
   const priority = params.get('priority') ?? '';

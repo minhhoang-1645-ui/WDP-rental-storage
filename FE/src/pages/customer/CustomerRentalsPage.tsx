@@ -1,3 +1,5 @@
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
@@ -167,7 +169,7 @@ function RentalInvoices({ rental, onClose, onSaved }: { rental: CustomerRental; 
     return <InvoiceTransferDialog key={invoiceId} id={invoiceId} onlinePending={onlinePending} onClose={onClose} onSaved={onSaved} />;
   }
 
-  return <Modal title={`Hóa đơn · ${rental.reservationReference}`} onClose={onClose}>
+  return <Modal title="Hóa đơn của đơn thuê" onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     {invoices.loading ? <PortalLoading label="Đang tải hóa đơn…" /> : invoices.error ? <PortalError message={invoices.error} onRetry={invoices.refresh} /> : related.length ? (
       <div className="portal-actions">
         {related.map(invoice => <button key={invoice.id} type="button" className="button-secondary" onClick={() => setSelectedId(invoice.id)}>
@@ -184,7 +186,7 @@ function RentalContracts({ rental, initialId, onClose }: { rental: CustomerRenta
   const resource = useApiResource<CustomerContract>(id ? `/customer/contracts/${encodeURIComponent(id)}` : null, user?.id ?? "");
   const contract = resource.data;
 
-  return <Modal title="Chi tiết hợp đồng" onClose={onClose}>
+  return <Modal title="Chi tiết hợp đồng" onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     {rental.contracts.length > 1 && <label className="field-label">
       Chọn hợp đồng
       <select value={id} onChange={event => setId(event.target.value)}>
@@ -192,17 +194,16 @@ function RentalContracts({ rental, initialId, onClose }: { rental: CustomerRenta
       </select>
     </label>}
     {!id ? <p>Đơn thuê này chưa có hợp đồng.</p> : resource.loading ? <PortalLoading label="Đang tải hợp đồng…" /> : resource.error ? <PortalError message={resource.error} onRetry={resource.refresh} /> : contract && <>
-      <h3>{contract.contractCode}</h3>
+      <div className="record-page-title"><h3>Kho {contract.storageUnit.unitCode}</h3><CustomerStatus status={contract.status} /></div>
+      <CopyRecordCode value={contract.contractCode} label="Mã hợp đồng" />
       <dl className="manager-facts">
         <div><dt>Đơn đặt kho</dt><dd>{contract.reservation.reference}</dd></div>
         <div><dt>Kho</dt><dd>{contract.storageUnit.unitCode}</dd></div>
         <div><dt>Thời hạn</dt><dd>{formatPortalDate(contract.startDate)} – {formatPortalDate(contract.endDate)}</dd></div>
-        <div><dt>Trạng thái</dt><dd><CustomerStatus status={contract.status} /></dd></div>
       </dl>
       {contract.terms.acceptedAt && <p>Đã ký bởi {contract.terms.acceptanceName} lúc {formatPortalDate(contract.terms.acceptedAt, true)}.</p>}
       <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(contract.id)}`} name={contract.contractCode} signed={Boolean(contract.terms.acceptedAt)} />
-      <ContractTransferHistory contract={contract} scope="customer" />
-      <ContractRenewalHistory contract={contract} scope="customer" />
+      <DetailDisclosure title="Lịch sử hợp đồng"><ContractTransferHistory contract={contract} scope="customer" /><ContractRenewalHistory contract={contract} scope="customer" /></DetailDisclosure>
     </>}
   </Modal>;
 }

@@ -34,7 +34,7 @@ export const staffResources = {
 } as const;
 export type StaffResource = keyof typeof staffResources;
 
-const staffTableWorkflows = ['reservations', 'inquiries', 'appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
+const staffTableWorkflows = ['reservations', 'appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
 export type StaffTableWorkflow = (typeof staffTableWorkflows)[number];
 export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
   return (staffTableWorkflows as readonly string[]).includes(resource);

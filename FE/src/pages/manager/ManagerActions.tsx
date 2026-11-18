@@ -1,3 +1,4 @@
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
@@ -42,6 +43,7 @@ export function ManagerActions({
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
+  const [maintenancePassed, setMaintenancePassed] = useState(true);
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
   const [target, setTarget] = useState("");
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
@@ -210,56 +212,6 @@ export function ManagerActions({
                 Lịch bàn giao
               </Link>
             </>
-          ))}
-        {resource === "inquiries" &&
-          (row.requestType === "RESERVATION" ? (
-            <Link
-              className="button-primary"
-              to={`/manager/reservations/${encodeURIComponent(id)}`}
-            >
-              Xử lý đặt kho
-            </Link>
-          ) : (
-            <form
-              className="portal-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(root, "PATCH", { status, internalNotes: note.trim() });
-              }}
-            >
-              <p>Yêu cầu tư vấn chưa giữ kho và chưa tạo hợp đồng.</p>
-              <label className="field-label">
-                Trạng thái liên hệ
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  {[
-                    "PENDING_CONTACT",
-                    "CONTACTED",
-                    "IN_REVIEW",
-                    "CLOSED",
-                    "CANCELLED",
-                  ].map((v) => (
-                    <option key={v} value={v}>
-                      {label(v)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Ghi chú nội bộ
-                <textarea
-                  rows={5}
-                  maxLength={2000}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-              <button className="button-primary" disabled={busy}>
-                Lưu cập nhật
-              </button>
-            </form>
           ))}
         {resource === "appointments" && first(row, "assignedStaff.id") === user?.id &&
           (row.status === "REQUESTED" ? (
@@ -560,99 +512,29 @@ export function ManagerActions({
                 : ""}
             </p>
           ))}
-        {["maintenance", "support-requests"].includes(resource) &&
-          !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
-            <>
-
-              <form
-                className="portal-form portal-form-divider"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run(`${root}/priority`, "PATCH", { priority }, true);
-                }}
-              >
-                <label className="field-label">
-                  Ưu tiên
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                  >
-                    {["LOW", "MEDIUM", "HIGH"].map((v) => (
-                      <option key={v} value={v}>
-                        {label(v)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="button-secondary"
-                  disabled={busy || priority === row.priority}
-                >
-                  Cập nhật ưu tiên
-                </button>
-              </form>
-            </>
-          )}
-        {resource === "maintenance" &&
-          row.status === "AWAITING_VERIFICATION" && (
-            <>
-              <form
-                className="portal-form portal-form-divider"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run(
-                    `${root}/verify`,
-                    "POST",
-                    { note: note.trim() || undefined },
-                    true,
-                  );
-                }}
-              >
-                <p>
-                  Nghiệm thu hoàn tất sẽ đưa kho trở lại trạng thái sẵn sàng.
-                </p>
-                <label className="field-label">
-                  Nhận xét sau kiểm tra
-                  <textarea
-                    maxLength={4000}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                </label>
-                <button className="button-primary" disabled={busy}>
-                  Nghiệm thu hoàn tất
-                </button>
-              </form>
-              <form
-                className="portal-form portal-form-divider"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void run(
-                    `${root}/reject-verification`,
-                    "POST",
-                    { note: reason.trim() },
-                    true,
-                  );
-                }}
-              >
-                <label className="field-label">
-                  Yêu cầu sửa lại
-                  <textarea
-                    required
-                    maxLength={4000}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                </label>
-                <button
-                  className="button-secondary"
-                  disabled={busy || !reason.trim()}
-                >
-                  Trả về sửa tiếp
-                </button>
-              </form>
-            </>
-          )}
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
+          <form className="portal-form" onSubmit={event => {
+            event.preventDefault();
+            if (maintenancePassed) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined }, true);
+            else if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+          }}>
+            <label className="field-label">Kết quả nghiệm thu
+              <select value={maintenancePassed ? 'pass' : 'rework'} onChange={event => setMaintenancePassed(event.target.value === 'pass')}>
+                <option value="pass">Đạt</option>
+                <option value="rework">Cần sửa lại</option>
+              </select>
+            </label>
+            <label className="field-label">
+              {maintenancePassed ? 'Ghi chú nghiệm thu' : 'Yêu cầu sửa lại'}
+              <textarea required={!maintenancePassed} rows={3} maxLength={4000}
+                value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
+            </label>
+            {maintenancePassed && <p className="record-attribution">Nghiệm thu sẽ đưa kho về trạng thái sẵn sàng.</p>}
+            <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
+              {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
+            </button>
+          </form>
+        )}
         {resource === "support-requests" && row.status === "ESCALATED" && (
           <form
             className="portal-form portal-form-divider"
@@ -708,6 +590,39 @@ export function ManagerActions({
         {resource === "support-requests" &&
           row.resolutionType === "TRANSFER_RECOMMENDED" && (
             <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
+          )}
+        {["maintenance", "support-requests"].includes(resource) &&
+          !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
+            <DetailDisclosure title="Đổi mức ưu tiên">
+
+              <form
+                className="portal-form portal-form-divider"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run(`${root}/priority`, "PATCH", { priority }, true);
+                }}
+              >
+                <label className="field-label">
+                  Ưu tiên
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                  >
+                    {["LOW", "MEDIUM", "HIGH"].map((v) => (
+                      <option key={v} value={v}>
+                        {label(v)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="button-secondary"
+                  disabled={busy || priority === row.priority}
+                >
+                  Cập nhật ưu tiên
+                </button>
+              </form>
+            </DetailDisclosure>
           )}
         {resource === "transfers" && user?.role === 'MANAGER' &&
           (row.status === "REQUESTED" ? (

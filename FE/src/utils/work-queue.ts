@@ -9,11 +9,6 @@ export const staffWorkGroups = [
     description: "Theo dõi đặt kho tự xác nhận; kiểm tra hồ sơ chưa đủ điều kiện.",
   },
   {
-    resource: "inquiries",
-    title: "Yêu cầu tư vấn",
-    description: "Liên hệ khách và cập nhật kết quả tư vấn.",
-  },
-  {
     resource: "appointments",
     title: "Lịch bàn giao",
     description: "Xác nhận lịch khách đề xuất và bàn giao đúng giờ.",

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../auth/auth-context";
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
 import {
   formatPortalDate,
@@ -49,6 +49,9 @@ function isFullySettled(rental: CustomerRental) {
 
 export function CustomerReturnsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const returnFilter = params.get('return');
+  const settlementFilter = params.get('settlement');
   const rentals = usePaginatedResource<CustomerRental>(
     "/customer/rentals?limit=100",
     user?.id ?? "",
@@ -64,7 +67,8 @@ export function CustomerReturnsPage() {
     user?.id ?? "",
     true,
   );
-  const [view, setView] = useState<"returns" | "settlements">("returns");
+  const [section, setView] = useState<"returns" | "settlements">("returns");
+  const view = settlementFilter ? 'settlements' : returnFilter ? 'returns' : section;
   const approvals = usePaginatedResource<CustomerSupportRequest>('/customer/support-requests?limit=100', user?.id ?? '', true);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setCheckedAt(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
@@ -134,7 +138,7 @@ export function CustomerReturnsPage() {
   };
 
   return (
-    <section className="customer-page">
+    <section className={returnFilter || settlementFilter ? "customer-page record-detail-page" : "customer-page"}>
       <PortalPageHeader
         eyebrow="Kết thúc thuê"
         title="Trả kho và quyết toán tiền cọc"
@@ -150,9 +154,10 @@ export function CustomerReturnsPage() {
           </button>
         }
       />
-      <ReturnInventoryNotice />
-      <div className="customer-module-layout">
+      {!returnFilter && !settlementFilter && <ReturnInventoryNotice />}
+      <div className={returnFilter || settlementFilter ? "record-focused-layout" : "customer-module-layout"}>
         <section className="customer-panel">
+          {returnFilter || settlementFilter ? <p className="customer-filter-notice"><Link to="/customer/returns">Xem tất cả hồ sơ trả kho</Link></p> :
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -173,7 +178,7 @@ export function CustomerReturnsPage() {
               <WalletCards size={17} /> Tiền cọc ({settlements.data?.total ?? 0}
               )
             </button>
-          </div>
+          </div>}
           {[returns.status, settlements.status, rentals.status].includes(
             401,
           ) ? (
@@ -183,12 +188,12 @@ export function CustomerReturnsPage() {
           ) : current.error ? (
             <PortalError message={current.error} onRetry={refresh} />
           ) : view === "returns" ? (
-            <ReturnList items={returns.data?.items ?? []} />
+            <ReturnList items={(returns.data?.items ?? []).filter(item => !returnFilter || item.id === returnFilter)} />
           ) : (
-            <SettlementList items={settlements.data?.items ?? []} />
+            <SettlementList items={(settlements.data?.items ?? []).filter(item => !settlementFilter || item.id === settlementFilter)} />
           )}
         </section>
-        <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
+        {!returnFilter && !settlementFilter && <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
           <CustomerFormSources resources={[rentals, returns, approvals]} retry={refresh} />
           <fieldset
             disabled={
@@ -255,7 +260,7 @@ export function CustomerReturnsPage() {
               </small>
             )}
           </fieldset>
-        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>
+        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>}
       </div>
     </section>
   );

@@ -47,7 +47,7 @@ const quote = {
   paymentPlan: "PAY_MONTHLY",
   lineItems: [],
 };
-const moved = new Set(['reservations', 'inquiries', 'appointments', 'renewals', 'returns', 'transfers', 'maintenance', 'support-requests', 'stock-movements']);
+const moved = new Set(['reservations', 'appointments', 'returns', 'transfers', 'maintenance', 'support-requests', 'stock-movements']);
 const when = "2026-10-11T03:00:00.000Z";
 const fixture = {
   units: [
@@ -522,7 +522,7 @@ try {
   const managerApp = await setup("MANAGER"), staffApp = await setup("STAFF");
   const context = managerApp.context;
   let page = managerApp.page;
-  for (const resource of Object.keys(fixture).filter(kind => kind !== "deposit-settlements")) {
+  for (const resource of Object.keys(fixture).filter(kind => kind !== "inquiries")) {
     page = moved.has(resource) ? staffApp.page : managerApp.page;
     const root = moved.has(resource) ? `/staff/${resource}` : ["units", "customers", "reservations", "inquiries"].includes(
       resource,
@@ -573,11 +573,8 @@ try {
   assert.equal(await page.locator(".manager-table tbody tr").count(), 1);
   checks.push("Search includes records beyond page 100");
   await open(page, "/staff/inquiries");
-  await page.getByRole("link", { name: "INQ-TEST", exact: true }).waitFor();
-  assert.equal(
-    await page.getByRole("link", { name: "RES-TEST", exact: true }).count(),
-    0,
-  );
+  await page.waitForURL("**/staff/reservations");
+  assert.equal(await page.getByRole("link", { name: "Tư vấn khách hàng", exact: true }).count(), 0);
   page = managerApp.page;
   await open(page, "/manager/operations/rentals?status=true");
   assert(
@@ -588,7 +585,7 @@ try {
   page = staffApp.page;
   await open(page, "/staff/returns?status=PENDING_SETTLEMENT");
   await page.getByRole("link", { name: "RET-TEST", exact: true }).waitFor();
-  checks.push("Correct inquiry separation and backend filter contracts");
+  checks.push("Retired Staff inquiry route and backend filter contracts");
   await open(page, "/staff/reservations/reservation-0");
   await selectChoice(page.getByLabel("Quyết định"), "CONFIRMED");
   await page
@@ -597,11 +594,7 @@ try {
   await success(page);
   assert.equal(writes.at(-1).body.status, "CONFIRMED");
   await open(page, "/staff/inquiries/inquiry-id");
-  await selectChoice(page.getByLabel("Trạng thái liên hệ"), "CONTACTED");
-  await page.getByLabel("Ghi chú nội bộ").fill("Đã gọi khách kiểm thử");
-  await page.getByRole("button", { name: "Lưu cập nhật", exact: true }).click();
-  await success(page);
-  assert.equal(writes.at(-1).body.internalNotes, "Đã gọi khách kiểm thử");
+  await page.waitForURL("**/staff/reservations");
   await open(page, "/staff/appointments/appointment-id");
   await page
     .getByRole("button", { name: "Xác nhận lịch bàn giao", exact: true })

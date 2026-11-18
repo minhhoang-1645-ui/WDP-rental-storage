@@ -47,7 +47,7 @@ export async function apiRequest<T>(
   const token = authenticated ? safeLocalStorage.getItem(AUTH_TOKEN_KEY) : null;
   // Effects already queued when a session expires must not send protected reads
   // or writes without credentials while the router removes the old workspace.
-  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|auth\/(me|logout))(\/|\?|$)/.test(path)) throw new DOMException('Phiên đăng nhập đã kết thúc.', 'AbortError');
+  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|notifications|auth\/(me|logout))(\/|\?|$)/.test(path)) throw new DOMException('Phiên đăng nhập đã kết thúc.', 'AbortError');
   if (expectedToken !== undefined && token !== expectedToken) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
   const mutation = /^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && (/^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path) || path === '/auth/me' && request.method === 'PATCH');
   const submittedForm = mutation ? document.activeElement?.closest('form') ?? document.querySelector('form[data-wdp-submitting="true"]') : null;

@@ -31,6 +31,9 @@ export function StaffActions({
     [error, setError] = useState("");
   const lock = useRef(false);
   const returnRequirementsId = useId();
+  const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
+  const [resolutionDraft, setResolutionDraft] = useState('');
+  const [escalationDraft, setEscalationDraft] = useState('');
   const [recipientType, setRecipientType] = useState('CUSTOMER');
   const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
   const handoverContracts = rows(row.allocatedUnits);
@@ -118,8 +121,8 @@ export function StaffActions({
     ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
     : '/staff/stored-items';
   return (
-    <section className="manager-section" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
-      <h2>Thao tác nhân viên</h2>
+    <section className="manager-section record-action-panel" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
+      <h2>{resource === 'support-requests' ? 'Kết quả hỗ trợ' : resource === 'maintenance' ? 'Kết quả sửa chữa' : resource === 'returns' ? 'Kiểm tra kho trả' : resource === 'appointments' ? 'Bàn giao kho' : 'Xử lý hồ sơ'}</h2>
       {error && (
         <div className="booking-alert is-error" role="alert">
           {error}
@@ -252,7 +255,7 @@ export function StaffActions({
                 }
               >
                 <label className="field-label">
-                  Kết quả sửa chữa
+                  Nội dung kiểm tra hoặc sửa chữa
                   <textarea
                     name="workNote"
                     required
@@ -262,7 +265,7 @@ export function StaffActions({
                   />
                 </label>
                 <button className="button-primary">
-                  Gửi kết quả để nghiệm thu
+                  Gửi kết quả nghiệm thu
                 </button>
               </form>
             )}
@@ -289,76 +292,33 @@ export function StaffActions({
                 Bắt đầu hỗ trợ
               </button>
             )}
-            {assigned && row.status === "IN_PROGRESS" && (
-              <>
-                <form
-                  className="portal-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const data = new FormData(event.currentTarget);
-                    void run(
-                      "/resolve",
-                      "POST",
-                      {
-                        resolutionType: data.get("resolutionType"),
-                        resolutionNote: String(
-                          data.get("resolutionNote"),
-                        ).trim(),
-                      },
-                      true,
-                    );
-                  }}
-                >
-                  <label className="field-label">
-                    Kết quả hỗ trợ
-                    <select name="resolutionType" aria-label="Kết quả hỗ trợ">
-                      {[
-                        "ON_SITE_RESOLVED",
-                        "CUSTOMER_GUIDANCE",
-                        "ACCESS_RESTORED",
-                        "PAYMENT_GUIDANCE",
-                        "NO_ACTION_REQUIRED",
-                        "OTHER",
-                      ].map((value) => (
-                        <option key={value} value={value}>
-                          {label(value)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field-label">
-                    Nội dung xử lý
-                    <textarea
-                      name="resolutionNote"
-                      required
-                      minLength={3}
-                      maxLength={4000}
-                      rows={3}
-                    />
-                  </label>
-                  <button className="button-primary">Hoàn tất hỗ trợ</button>
-                </form>
-                <form
-                  className="portal-form"
-                  onSubmit={(event) =>
-                    submit(event, "/escalate", "reason", true)
-                  }
-                >
-                  <label className="field-label">
-                    Lý do chuyển bộ phận phụ trách
-                    <textarea
-                      name="reason"
-                      required
-                      minLength={3}
-                      maxLength={4000}
-                      rows={3}
-                    />
-                  </label>
-                  <button className="button-secondary">
-                    Chuyển bộ phận phụ trách xem xét
-                  </button>
-                </form>
-              </>
+            {assigned && row.status === 'IN_PROGRESS' && (
+              <form className="portal-form" onSubmit={event => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const note = String(data.get('supportNote') ?? '').trim();
+                if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
+                if (supportDisposition === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportDisposition, resolutionNote: note }, true);
+              }}>
+                <label className="field-label">Hướng xử lý
+                  <select value={supportDisposition} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
+                    <option value="">Chọn hướng xử lý</option>
+                    {['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
+                      <option key={value} value={value}>{label(value)}</option>)}
+                    <option value="escalate">Cần quản lý xem xét</option>
+                  </select>
+                </label>
+                <label className="field-label">
+                  {supportDisposition === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
+                  <textarea name="supportNote" required minLength={3} maxLength={4000} rows={3}
+                    value={supportDisposition === 'escalate' ? escalationDraft : resolutionDraft}
+                    onChange={event => (supportDisposition === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
+                </label>
+                <button className="button-primary" disabled={busy || !supportDisposition}>
+                  {busy ? 'Đang lưu…' : supportDisposition === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
+                </button>
+              </form>
             )}
             {row.status === "ESCALATED" && (
               <p>Đã chuyển đến bộ phận phụ trách xem xét.</p>

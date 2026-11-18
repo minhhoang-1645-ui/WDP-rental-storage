@@ -3,10 +3,13 @@ import { DocumentFile } from './document-file';
 import { object, rows, text, label } from '@/operations/model';
 import { Panel, styles, money } from '@/operations/ui';
 import { formatDate } from '@/utils/format';
+import { CustomerActionRow } from './customer-premium';
+import { StatusBadge } from './customer-ui';
 
 export function ContractRenewalHistory({ contract: value, scope }: { contract: unknown; scope: 'customer' | 'manager' | 'staff/management' }) {
   const contract = object(value), renewals = rows(contract.renewals);
   if (!renewals.length) return null;
+  if(scope==='customer') return <View>{renewals.map(renewal=><CustomerActionRow key={text(renewal,'id')} title={'Gia hạn '+text(renewal,'termMonths')+' tháng'} subtitle={'Đến '+formatDate(text(renewal,'requestedEndDate'))} trailing={<StatusBadge status={String(renewal.status)}/>} path={'/customer/renewals/'+encodeURIComponent(text(renewal,'id'))}/>)}</View>;
   return <Panel title="Lịch sử gia hạn của hợp đồng">
     <Text style={styles.copy}>Hạn thuê hiện tại: {formatDate(text(contract, 'endDate'))}. Chỉ áp dụng hạn mới sau chấp thuận, ký phụ lục và thanh toán kích hoạt.</Text>
     {renewals.map(renewal => <View key={text(renewal, 'id')} style={{ gap: 8, marginVertical: 10 }}>

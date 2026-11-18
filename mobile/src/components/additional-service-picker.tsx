@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { Button, Disclosure, Field, styles, money } from '@/operations/ui';
 import { DateField } from './date-field';
 import { ErrorState, LoadingState } from './screen-state';
@@ -7,11 +7,11 @@ import type { AdditionalService, ServiceSelection } from '@/types/additional-ser
 import { defaultServiceSelection, serviceBillingBasis, serviceEstimatedTotal, serviceSelectionIssue } from '@/utils/service-period';
 import { localizeService, serviceRateUnit } from '@/utils/service-labels';
 
-export function AdditionalServicePicker({ services, selections, start, end, loading, error, retry, onChange }: { services: AdditionalService[]; selections: ServiceSelection[]; start: string; end: string; loading: boolean; error?: string; retry: () => void; onChange: (value: ServiceSelection[]) => void }) {
+export function AdditionalServicePicker({ standalone = false, services, selections, start, end, loading, error, retry, onChange }: { standalone?: boolean; services: AdditionalService[]; selections: ServiceSelection[]; start: string; end: string; loading: boolean; error?: string; retry: () => void; onChange: (value: ServiceSelection[]) => void }) {
   const [kind, setKind] = useState<'RENTAL' | 'PURCHASE'>('RENTAL');
   const change = (id: string, patch: Partial<ServiceSelection>) => onChange(selections.map(item => item.serviceId === id ? { ...item, ...patch } : item));
   const visible = services.filter(service => service.kind === kind);
-  return <Disclosure title="Dịch vụ thêm (tùy chọn)">
+  const content = <View style={{gap:12}}>
     {selections.length > 0 && <Text style={styles.copy}>Đã chọn {selections.length} dịch vụ</Text>}
     <View style={styles.row}><Button title="Thuê thiết bị" variant={kind === 'RENTAL' ? 'primary' : 'secondary'} onPress={() => setKind('RENTAL')} /><Button title="Mua một lần" variant={kind === 'PURCHASE' ? 'primary' : 'secondary'} onPress={() => setKind('PURCHASE')} /></View>
     {loading ? <LoadingState layout="compact" /> : error ? <ErrorState message={error} onRetry={retry} /> : !visible.length ? <Text style={styles.copy}>Chưa có dịch vụ trong nhóm này.</Text> : visible.map(rawService => {
@@ -20,13 +20,14 @@ export function AdditionalServicePicker({ services, selections, start, end, load
       const issue = selection ? serviceSelectionIssue(service, selection, start, end) : '';
       const defaults = defaultServiceSelection(service, start, end);
       const subtotal = selection ? serviceEstimatedTotal(service, selection, start, end) : null;
-      return <View key={service.id} style={styles.card}>
-        <Text style={styles.title}>{service.name}</Text><Text style={styles.copy}>{money(service.unitPrice)} / {serviceRateUnit(service)}</Text>
+      return <View key={service.id} style={{gap:10,paddingVertical:12,borderBottomWidth:1,borderColor:'#D0D5DD'}}>
+        <View style={{flexDirection:'row',alignItems:'center',gap:12}}>{service.imageUrl ? <Image source={{uri:service.imageUrl}} accessibilityLabel={service.imageAlt || service.name} resizeMode="contain" style={{width:72,height:72,borderRadius:10,backgroundColor:'#F2F4F7'}}/> : <View style={{width:72,height:72,borderRadius:10,backgroundColor:'#F2F4F7',alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:14,color:'#475467'}}>Thiết bị</Text></View>}<View style={{flex:1,gap:4}}><Text style={styles.title}>{service.name}</Text><Text style={styles.copy}>{money(service.unitPrice)} / {serviceRateUnit(service)}</Text></View></View>
         <Button title={selection ? 'Bỏ chọn' : 'Thêm dịch vụ'} variant="secondary" disabled={!selection && (!defaults || service.isActive === false || !Number.isSafeInteger(service.unitPrice) || Number(service.unitPrice) <= 0)} onPress={() => onChange(selection ? selections.filter(item => item.serviceId !== service.id) : defaults ? [...selections, defaults] : selections)} />
         {!defaults && service.kind === 'RENTAL' && <Text style={styles.copy}>Kỳ thuê kho chưa đủ thời gian sử dụng thiết bị này. Thiết bị theo tháng cần đủ tháng lịch.</Text>}
         {subtotal !== null && <Text style={styles.title}>Tạm tính: {money(subtotal)}</Text>}
         {selection && <><Field title="Số lượng" numeric value={String(selection.quantity)} onChange={value => change(service.id, { quantity: Number(value) })} maxLength={3} />{service.kind === 'RENTAL' && <><DateField title="Dùng từ ngày" min={start} value={selection.serviceStartDate ?? ''} onChange={value => change(service.id, { serviceStartDate: value })} /><DateField title="Đến ngày" min={selection.serviceStartDate || start} value={selection.serviceEndDate ?? ''} onChange={value => change(service.id, { serviceEndDate: value })} /></>}{issue ? <Text style={styles.error}>{issue}</Text> : <Disclosure title="Cách tính phí"><Text style={styles.copy}>{serviceBillingBasis(service, selection)}</Text></Disclosure>}</>}
       </View>;
     })}
-  </Disclosure>;
+  </View>;
+  return standalone ? content : <Disclosure title="Dịch vụ thêm (tùy chọn)">{content}</Disclosure>;
 }

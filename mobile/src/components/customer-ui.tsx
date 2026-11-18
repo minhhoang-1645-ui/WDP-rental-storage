@@ -4,6 +4,7 @@ import { router, type Href } from 'expo-router';
 import { WdpColors, WdpRadius, WdpSpacing, WdpType } from '@/constants/wdp-theme';
 import { codeOf, label, rows, text, type Row } from '@/operations/model';
 import { formatDate, formatMoney } from '@/utils/format';
+import { useCustomerPresentation } from './customer-presentation';
 
 type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info';
 
@@ -22,26 +23,33 @@ const tones: Record<BadgeTone, { backgroundColor: string; color: string }> = {
   info: { backgroundColor: WdpColors.tealSubtle, color: WdpColors.teal },
 };
 
-export function StatusBadge({ status, tone }: { status: string; tone?: BadgeTone }) {
-  const resolvedTone = tone ?? statusTone(status);
-  return <View accessibilityRole="text" style={[styles.badge, tones[resolvedTone]]}><Text style={[styles.badgeText, { color: tones[resolvedTone].color }]}>{label(status)}</Text></View>;
+export function StatusBadge({ status, tone, displayLabel }: { status: string; tone?: BadgeTone; displayLabel?: string }) {
+  const customer = useCustomerPresentation();
+  const resolvedTone = tone ?? (customer && ['PASS','SETTLED'].includes(status)?'success':customer && ['INSPECTION_IN_PROGRESS','ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'PROCESSING'].includes(status) ? 'info' : statusTone(status));
+  return <View accessibilityRole="text" style={[styles.badge, tones[resolvedTone]]}><Text style={[styles.badgeText, customer && {fontSize: 14, lineHeight: 20}, { color: tones[resolvedTone].color }]}>{displayLabel||label(status)}</Text></View>;
 }
 
 export function SectionHeader({ title, action }: { title: string; action?: { label: string; path: string } }) {
-  return <View style={styles.sectionHeader}><Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>{action && <Pressable accessibilityRole="button" accessibilityLabel={action.label} onPress={() => router.push(action.path as Href)} hitSlop={8}><Text style={styles.sectionAction}>{action.label}</Text></Pressable>}</View>;
+  const customer = useCustomerPresentation();
+  return <View style={styles.sectionHeader}><Text accessibilityRole="header" style={[styles.sectionTitle, customer && {fontSize: 17, lineHeight: 24}]}>{title}</Text>{action && <Pressable accessibilityRole="button" accessibilityLabel={action.label} onPress={() => router.push(action.path as Href)} hitSlop={8} style={customer ? {minHeight: 48, justifyContent: 'center'} : undefined}><Text style={styles.sectionAction}>{action.label}</Text></Pressable>}</View>;
 }
 
 export function StorageUnitCard({ rental, onPress }: { rental: Row; onPress?: () => void }) {
+  const customer = useCustomerPresentation();
   const contracts = rows(rental.contracts);
   const unitLabels = contracts.map(contract => text(contract, 'unit.unitCode', 'storageUnit.unitCode', 'unitCode')).filter(Boolean);
   const status = String(rental.rentalState ?? (rental.isOverdue ? 'OVERDUE' : 'ACTIVE'));
+  if(customer) {
+    const content=<><View style={{flexDirection:'row',alignItems:'flex-start',gap:12}}><View style={{flex:1,gap:4}}><Text style={{fontSize:18,lineHeight:26,fontWeight:'700',color:WdpColors.text}}>{text(rental,'storageType.name','product.name')||'Kho của bạn'}</Text><Text style={{fontSize:16,lineHeight:24,color:WdpColors.text}}>{unitLabels.join(' · ')||'Xem thông tin kho'}</Text></View><StatusBadge status={status}/></View><Text style={{fontSize:14,lineHeight:22,color:WdpColors.muted}}>{formatDate(text(rental,'startDate'))} → {formatDate(text(rental,'effectiveEndDate','endDate'))}</Text>{rental.pendingRenewal?<Text style={{fontSize:14,color:WdpColors.navy}}>Đang xử lý gia hạn</Text>:null}</>;
+    return onPress?<Pressable accessibilityRole="button" onPress={onPress} style={({pressed})=>({gap:8,paddingVertical:16,borderBottomWidth:0.5,borderBottomColor:WdpColors.border,opacity:pressed?0.65:1})}>{content}</Pressable>:<View style={{gap:8,paddingVertical:16}}>{content}</View>;
+  }
   const content = <>
     <View style={styles.cardHeading}><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text selectable style={styles.eyebrow}>{text(rental, 'reservationReference', 'reference') || 'Kho của bạn'}</Text><Text style={styles.cardTitle}>{text(rental, 'storageType.name', 'product.name') || 'Kho đang thuê'}</Text></View><StatusBadge status={status} /></View>
     <View style={styles.divider} />
     <View style={styles.facts}><Fact label="Mã kho" value={unitLabels.join(' · ') || 'Đang chờ cấp kho'} /><Fact label="Kết thúc thuê" value={formatDate(text(rental, 'effectiveEndDate', 'endDate'))} /><Fact label="Còn phải trả" value={formatMoney(Number(rental.billingSummary && typeof rental.billingSummary === 'object' ? ((rental.billingSummary as Row).payableBalance ?? (rental.billingSummary as Row).totalOutstanding) : rental.totalOutstanding) || 0)} /></View>
     {rental.pendingRenewal ? <Text style={styles.notice}>Có yêu cầu gia hạn đang được NestBox xử lý.</Text> : null}
   </>;
-  return onPress ? <Pressable accessibilityRole="button" accessibilityLabel={`Mở ${text(rental, 'storageType.name') || 'kho đang thuê'}`} onPress={onPress} style={({ pressed }) => [styles.storageCard, pressed && styles.pressed]}>{content}</Pressable> : <View style={styles.storageCard}>{content}</View>;
+  return onPress ? <Pressable accessibilityRole="button" accessibilityLabel={`Mở ${text(rental, 'storageType.name') || 'kho đang thuê'}`} onPress={onPress} style={({ pressed }) => [styles.storageCard, customer && {padding: 14, gap: 10, borderWidth: 0}, pressed && styles.pressed]}>{content}</Pressable> : <View style={[styles.storageCard, customer && {padding: 14, gap: 10, borderWidth: 0}]}>{content}</View>;
 }
 
 function Fact({ label: factLabel, value }: { label: string; value: string }) {

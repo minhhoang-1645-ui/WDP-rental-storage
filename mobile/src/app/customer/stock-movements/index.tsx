@@ -1,3 +1,3 @@
-import { StockList } from '@/stock/screens';
-export default function Screen() { return <StockList role="CUSTOMER" />; }
+import { CustomerInventory } from '@/components/customer-inventory';
+export default function Screen(){return <CustomerInventory initialTab="movements"/>;}
 

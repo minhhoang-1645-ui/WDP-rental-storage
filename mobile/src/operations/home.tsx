@@ -6,7 +6,7 @@ import { ErrorState, LoadingState } from '@/components/screen-state';
 import { CapacityBar } from '@/components/capacity-bar';
 import { adminSections, type Row } from './model';
 import { useResource } from './use-resource';
-import { Button, Disclosure, Navigation, Panel, styles } from './ui';
+import { Button, Disclosure, Facts, Navigation, Panel, styles } from './ui';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
 import { MetricCard } from '@/components/metric-card';
 import { ActivitySummary } from '@/activity/ActivityCenter';
@@ -40,8 +40,7 @@ export function ManagerHome() {
   const refresh = () => { data.refresh(); units.refresh(); activity.refresh(); };
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
     <PageHeader eyebrow="Quản lý cơ sở" title="Bàn làm việc" description={`Chào ${user?.fullName ?? ''}. Theo dõi cơ sở, hợp đồng và xử lý các khoản thanh toán.`} />
-    <Button title="Làm mới tổng quan" onPress={refresh} disabled={data.loading || activity.checking} />
-    <ActivitySummary />
+    <Button title="Cập nhật" variant="secondary" onPress={refresh} disabled={data.loading || activity.checking} />
     {unitTotal > 0 && <Panel title="Tình trạng kho"><CapacityBar total={unitTotal} segments={[
       { value: unitCount('OCCUPIED'), color: WdpColors.navy, label: 'Đang dùng' },
       { value: unitCount('AVAILABLE'), color: WdpColors.teal, label: 'Sẵn sàng' },
@@ -72,4 +71,9 @@ export function AdminHome() {
     <WorkHub title="Khu vực quản trị" description="Quản lý tài khoản, quyền truy cập và nhật ký hệ thống." actions={adminSections.map(([key, title]) => ({ title, path: `/admin/${key}`, description: key === 'users' ? 'Tạo tài khoản nội bộ và bật/tắt truy cập.' : key === 'login-history' ? 'Tra cứu lần đăng nhập thành công hoặc thất bại.' : key === 'activity' ? 'Xem người thực hiện và kết quả thao tác.' : 'Xem số lượng tài khoản và trạng thái hoạt động.' }))} />
     <Navigation title="Tài khoản và đăng xuất" path="/admin/account" />
   </ScrollView>;
+}
+
+export function OperationAccount() {
+  const { user, logout } = useAuth();
+  return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}><PageHeader eyebrow="Tài khoản" title={user?.fullName ?? ''} description="Thông tin phiên đăng nhập hiện tại." /><Panel><Facts values={[["Họ và tên", user?.fullName], ["Email đăng nhập", user?.email], ["Vai trò", user?.role === 'ADMIN' ? 'Quản trị viên' : user?.role === 'MANAGER' ? 'Quản lý' : 'Nhân viên']]}/></Panel><Button title="Đăng xuất" onPress={() => void logout()} /><Text style={styles.copy}>Sau khi đăng xuất, ứng dụng trở về màn hình đăng nhập.</Text></ScrollView>;
 }

@@ -2,11 +2,14 @@ import { Text, View } from 'react-native';
 import { DocumentFile } from './document-file';
 import { object, rows, text } from '@/operations/model';
 import { Panel, styles } from '@/operations/ui';
+import { customerStyles } from './customer-premium';
+import { StatusBadge } from './customer-ui';
 
 const date = (value: string) => value ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Chưa ghi nhận';
 export function ContractTransferHistory({ contract: value, scope }: { contract: unknown; scope: 'customer' | 'manager' | 'staff/management' }) {
   const contract = object(value), transfers = rows(contract.transfers);
   if (!transfers.length) return null;
+  if(scope==='customer') return <View>{transfers.map(transfer=><View key={text(transfer,'id')} style={{gap:8,paddingVertical:12,borderBottomWidth:0.5,borderBottomColor:'#EAECF0'}}><Text style={[customerStyles.body,{fontWeight:'600'}]}>{text(transfer,'fromUnit.unitCode')} → {text(transfer,'toUnit.unitCode')||'Đang chọn kho mới'}</Text><StatusBadge status={String(transfer.status)}/>{text(transfer,'completedAt')&&<Text style={customerStyles.secondary}>{date(text(transfer,'completedAt'))}</Text>}{transfer.status==='COMPLETED'&&<DocumentFile title="Biên bản chuyển kho" path={'/customer/documents/contracts/'+encodeURIComponent(text(contract,'id'))+'/transfers/'+encodeURIComponent(text(transfer,'id'))} name={text(transfer,'transferCode')+'-BB'}/>}</View>)}</View>;
   return <Panel title="Lịch sử chuyển kho của hợp đồng">
     <Text style={styles.copy}>Kho hiện tại: {text(contract, 'storageUnit.unitCode')}. Hợp đồng đã ký giữ nguyên; biên bản chuyển kho được đính kèm hồ sơ.</Text>
     {transfers.map(transfer => <View key={text(transfer, 'id')} style={{ gap: 8, marginVertical: 10 }}>

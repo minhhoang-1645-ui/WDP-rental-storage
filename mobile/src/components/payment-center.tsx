@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { router, type Href } from 'expo-router';
 import { useAuth } from '@/auth/use-auth';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
-import { idOf, rows, text, type Row } from '@/operations/model';
-import { Button, Disclosure, Navigation, Panel } from '@/operations/ui';
+import { idOf, rows, type Row } from '@/operations/model';
+import { Button, Navigation, Panel } from '@/operations/ui';
+import { CustomerRecordRow } from '@/components/customer-record';
 import { useResource } from '@/operations/use-resource';
-import { formatMoney } from '@/utils/format';
 import { readPendingOnlinePayment, type PendingOnlinePayment } from '@/services/online-payment-session';
 
 /** All payment mutations and polling live in InvoicePayment/OnlinePayment. */
@@ -26,13 +25,12 @@ export function PaymentCenter() {
       {invoices.loading && !invoices.data ? <LoadingState layout="list" /> : invoices.error ? <ErrorState message={invoices.error} onRetry={invoices.refresh} /> : outstanding.length ? outstanding.map(invoice => {
         const path = `/customer/invoices/${encodeURIComponent(idOf(invoice))}`;
         return <View key={idOf(invoice)} style={{ gap: 8 }}>
-          <Navigation title={`${text(invoice, 'invoiceCode')} · ${formatMoney(Number(invoice.balanceDue))}`} description={`Đơn ${text(invoice, 'reservation.reference')} · Kiểm tra hợp đồng và cách thanh toán.`} path={path} />
-          <Button title="Mở hóa đơn để thanh toán" onPress={() => router.push(path as Href)} />
+          <CustomerRecordRow resource="invoices" row={invoice} path={path}/>
         </View>;
       }) : <EmptyState title="Không có hóa đơn cần thanh toán" message="Khoản tiền được xác nhận sẽ xuất hiện trong lịch sử thanh toán." />}
     </Panel>
-    <Disclosure title="Lịch sử & chuyển khoản"><Navigation compact title="Lịch sử thanh toán" path="/customer/payment-history" />
-    <Navigation compact title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></Disclosure>
+    <View><Navigation compact title="Lịch sử thanh toán" path="/customer/payment-history" />
+    <Navigation compact title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></View>
     <Button title="Làm mới thông tin thanh toán" variant="secondary" onPress={invoices.refresh} disabled={invoices.loading} />
   </View>;
 }

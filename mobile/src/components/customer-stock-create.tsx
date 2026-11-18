@@ -1,0 +1,70 @@
+import { ItemPhotos } from './item-photos';
+import { useRef, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { CheckSquare, Square, ChevronDown, X, Minus, Plus } from 'lucide-react-native';
+import { useResource } from '@/operations/use-resource';
+import { operationMutate } from '@/operations/mutate';
+import { stockCreateInput, validateStockSchedule } from '@/stock/validation';
+import { itemUnits } from '@/stock/item-units';
+import type { StockDraftLine, StoredItem } from '@/stock/types';
+import { idOf, text, type Row } from '@/operations/model';
+import { Button, Disclosure, Field } from '@/operations/ui';
+import { DateField } from './date-field';
+import { CustomerChoices } from './customer-flow';
+import { customerStyles as s } from './customer-premium';
+import { LoadingState, ErrorState } from './screen-state';
+import { useDraftGuard } from '@/services/live-events';
+import { recordMatches } from '@/utils/record-search';
+import { formatDate } from '@/utils/format';
+
+const emptyLine = (key: string): StockDraftLine => ({ key, storedItemId: '', name: '', unit: '', quantity: '1', note: '' });
+
+export function CustomerStockCreate({contract,onClose,onSaved,onBusyChange}:{contract:Row;onClose:()=>void;onSaved:()=>void;onBusyChange:(busy:boolean)=>void}) {
+  useDraftGuard();
+  const inventory=useResource<StoredItem[]>('/customer/stored-items?rentalContractId='+encodeURIComponent(idOf(contract)));
+  const serial=useRef(2),lock=useRef(false);
+  const fresh = () => emptyLine(String(serial.current++));
+  const [lines,setLines]=useState<StockDraftLine[]>(()=>[emptyLine('1')]),[type,setType]=useState<'IN'|'OUT'>('IN'),[note,setNote]=useState(''),[date,setDate]=useState(''),[time,setTime]=useState('');
+  const [review,setReview]=useState(false),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[picker,setPicker]=useState(''),[search,setSearch]=useState('');
+  const [photos,setPhotos]=useState<Record<string,string[]>>({}),[photoBusy,setPhotoBusy]=useState(false),[expanded,setExpanded]=useState('1'),[existing,setExisting]=useState<Record<string,boolean>>({});
+  const patch=(key:string,change:Partial<StockDraftLine>)=>{setError('');setConfirmed(false);setLines(previous=>previous.map(line=>line.key===key?{...line,...change}:line));};
+  const validate=()=>{
+    if(contract.status!=='ACTIVE')throw new Error('Chọn kho có hợp đồng đang hoạt động.');
+    if(inventory.loading||inventory.error)throw new Error('Cần tải được hàng đang lưu trước khi gửi phiếu.');
+    if(Boolean(date)!==Boolean(time.trim()))throw new Error('Chọn cả ngày và giờ, hoặc bỏ trống lịch dự kiến.');
+    const missingExisting=lines.findIndex(line=>existing[line.key]&&!line.storedItemId);
+    if(type==='IN'&&missingExisting>=0)throw new Error('Mặt hàng '+(missingExisting+1)+': chọn hàng đã lưu hoặc chuyển sang Hàng mới.');
+    const input=stockCreateInput(idOf(contract),type,lines,inventory.data??[],date?date+' '+time.trim():'',note);
+    validateStockSchedule(input.scheduledAt,contract);
+    const result={...input,lines:input.lines.map((line,index)=>({...line,photos:type==='IN'?photos[lines[index].key]??[]:[]}))};
+    if(JSON.stringify(result).length>6*1024*1024)throw new Error('Tổng ảnh quá lớn. Vui lòng giảm số ảnh trong phiếu.');return result;
+  };
+  const next=()=>{try{validate();setError('');setReview(true);}catch(caught){setError(caught instanceof Error?caught.message:'Kiểm tra lại thông tin.');}};
+  const submit=async()=>{if(lock.current)return;try{if(!confirmed)throw new Error('Xác nhận đã đối chiếu hàng và số lượng.');const input=validate();lock.current=true;setBusy(true);onBusyChange(true);setError('');await operationMutate('/customer/stock-movements','POST',input,true);onSaved();}catch(caught){setError(caught instanceof Error?caught.message:'Chưa gửi được phiếu. Thông tin đã nhập vẫn được giữ.');}finally{lock.current=false;setBusy(false);onBusyChange(false);}};
+  return <View style={{flex:1}}><ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{padding:20,gap:16,paddingBottom:24}}><View style={{flexDirection:'row',alignItems:'center',gap:12}}><Pressable accessibilityRole="button" accessibilityLabel="Đóng phiếu" disabled={busy||photoBusy} onPress={onClose} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><X color="#17191D"/></Pressable><Text style={[s.section,{flex:1}]}>{review?'Kiểm tra yêu cầu':'Tạo phiếu nhập/xuất'}</Text></View><Text style={s.secondary}>{text(contract,'storageType.name')||'Kho đã chọn'}</Text>
+    {!review?<>
+      <CustomerChoices title="Bạn muốn làm gì?" value={type} options={[{value:'IN',label:'Gửi hàng vào'},{value:'OUT',label:'Lấy hàng ra'}]} onChange={value=>{setType(value as 'IN'|'OUT');setLines([fresh()]);setConfirmed(false);setError('');setPicker('');setPhotos({});setExisting({});setExpanded('');}}/>
+      {inventory.loading?<LoadingState layout="compact"/>:inventory.error?<ErrorState message={inventory.error} onRetry={inventory.refresh}/>:null}
+      {lines.map((line,index)=>{const item=inventory.data?.find(item=>item.id===line.storedItemId);if(expanded!==line.key)return <Pressable key={line.key} accessibilityRole="button" onPress={()=>setExpanded(line.key)} style={s.row}><View style={{flex:1,gap:4}}><Text style={[s.body,{fontWeight:'600'}]}>{item?.name||line.name||'Mặt hàng '+(index+1)}</Text><Text style={s.secondary}>{line.quantity} {item?.unit||line.unit} · Chỉnh sửa</Text></View><ChevronDown size={18}/></Pressable>;return <View key={line.key} style={{gap:10,paddingVertical:12,borderBottomWidth:0.5,borderBottomColor:'#EAECF0'}}><View style={{flexDirection:'row',alignItems:'center'}}><Text style={[s.body,{fontWeight:'600',flex:1}]}>Mặt hàng {index+1}</Text>{lines.length>1&&<Pressable accessibilityRole="button" accessibilityLabel={'Bỏ mặt hàng '+(index+1)} onPress={()=>setLines(previous=>previous.filter(value=>value.key!==line.key))} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><X size={18} color="#475467"/></Pressable>}</View>
+        {type==='IN'&&<CustomerChoices title="Mặt hàng" value={existing[line.key]?'existing':'new'} options={[{value:'new',label:'Hàng mới'},{value:'existing',label:'Hàng đã lưu'}]} onChange={value=>{setExisting(previous=>({...previous,[line.key]:value==='existing'}));patch(line.key,{storedItemId:''});setPicker('');}}/>}
+        {(type==='OUT'||existing[line.key])&&<Pressable accessibilityRole="button" onPress={()=>{setPicker(picker===line.key?'':line.key);setSearch('');}} style={{minHeight:48,flexDirection:'row',alignItems:'center',gap:8,padding:12,backgroundColor:'#F2F4F7',borderRadius:10}}><Text style={[s.body,{flex:1}]}>{item?item.name:type==='IN'?'Hàng mới hoặc chọn hàng đã lưu':'Chọn hàng đang lưu'}</Text><ChevronDown size={18} color="#475467"/></Pressable>}
+        {picker===line.key&&<View style={{gap:8}}><Field title="Tìm tên hàng" value={search} onChange={setSearch} maxLength={120}/><ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{maxHeight:220}}>{type==='IN'&&<Pressable onPress={()=>{patch(line.key,{storedItemId:''});setExisting(previous=>({...previous,[line.key]:false}));setPicker('');}} style={s.row}><Text style={s.link}>+ Nhập mặt hàng mới</Text></Pressable>}{(inventory.data??[]).filter(value=>recordMatches(value,search)).map(value=><Pressable key={value.id} accessibilityRole="button" onPress={()=>{patch(line.key,{storedItemId:value.id});setPicker('');}} style={s.row}><Text style={[s.body,{flex:1}]}>{value.name}</Text><Text style={s.secondary}>{value.balance} {value.unit}</Text></Pressable>)}{!inventory.loading&&!inventory.error&&!(inventory.data??[]).some(value=>recordMatches(value,search))&&<Text style={s.secondary}>Không có hàng phù hợp.</Text>}</ScrollView></View>}
+        {type==='IN'&&!existing[line.key]&&<><Field title="Tên hàng" value={line.name} onChange={value=>patch(line.key,{name:value})} maxLength={160}/><UnitField value={line.unit} onChange={value=>patch(line.key,{unit:value})}/></>}
+        {item&&<Text style={s.secondary}>Đang lưu: {item.balance} {item.unit}</Text>}
+        <Text style={s.secondary}>Số lượng</Text><View style={{flexDirection:'row',alignItems:'center',gap:12}}><Pressable accessibilityRole="button" accessibilityLabel="Giảm số lượng" disabled={Number(line.quantity)<=1} onPress={()=>patch(line.key,{quantity:String(Math.max(1,Number(line.quantity||1)-1))})} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><Minus color="#175CD3"/></Pressable><View style={{flex:1}}><Field title="Số lượng yêu cầu" value={line.quantity} numeric maxLength={7} onChange={value=>patch(line.key,{quantity:value})}/></View><Pressable accessibilityRole="button" accessibilityLabel="Tăng số lượng" disabled={Number(line.quantity)>=1000000} onPress={()=>patch(line.key,{quantity:String(Math.min(1000000,Number(line.quantity||0)+1))})} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><Plus color="#175CD3"/></Pressable></View>
+        {type==='OUT'&&item&&Number(line.quantity)>item.balance&&<Text accessibilityRole="alert" style={{...s.secondary,color:'#B42318'}}>Số lượng vượt tồn hiện tại ({item.balance} {item.unit}).</Text>}
+        {type==='IN'?<ItemPhotos photos={photos[line.key]??[]} editable onBusyChange={setPhotoBusy} onChange={value=>setPhotos(previous=>({...previous,[line.key]:value}))}/>:item?.photos?.length?<ItemPhotos photos={item.photos}/>:null}<Disclosure title="Thêm ghi chú mặt hàng"><Field title="Ghi chú" value={line.note} onChange={value=>patch(line.key,{note:value})} maxLength={500}/></Disclosure><Pressable accessibilityRole="button" disabled={photoBusy} onPress={()=>setExpanded('')} style={{minHeight:44,justifyContent:'center'}}><Text style={s.link}>Xong mặt hàng</Text></Pressable>
+      </View>;})}
+      <Pressable accessibilityRole="button" disabled={lines.length>=100} onPress={()=>{const added=fresh();setLines(previous=>[...previous,added]);setExpanded(added.key);}} style={{minHeight:44,justifyContent:'center'}}><Text style={s.link}>+ Thêm mặt hàng</Text></Pressable>
+      <Disclosure title="Thêm ghi chú phiếu"><Field title="Ghi chú phiếu" value={note} onChange={setNote} maxLength={2000} multiline/></Disclosure>
+      <Disclosure title="Thêm lịch giao nhận dự kiến"><DateField title="Ngày giao nhận" value={date} onChange={setDate}/><Field title="Giờ Việt Nam (ví dụ 14:30)" value={time} onChange={setTime} maxLength={5}/>{(date||time)?<Pressable onPress={()=>{setDate('');setTime('');}} style={{minHeight:44,justifyContent:'center'}}><Text style={s.link}>Bỏ lịch dự kiến</Text></Pressable>:null}</Disclosure>
+    </>:<><Text style={[s.body,{fontWeight:'600'}]}>{type==='IN'?'Gửi hàng vào kho':'Lấy hàng ra khỏi kho'}</Text>{lines.map(line=>{const item=inventory.data?.find(value=>value.id===line.storedItemId);return <View key={line.key} style={s.row}><View style={{flex:1,gap:4}}><Text style={s.body}>{item?.name||line.name}</Text><ItemPhotos photos={type==='IN'?photos[line.key]??[]:item?.photos??[]}/>{line.note?<Text style={s.secondary}>{line.note}</Text>:null}</View><Text style={[s.body,{fontWeight:'600'}]}>{line.quantity} {item?.unit||line.unit}</Text></View>;})}{note?<Text style={s.body}>{note}</Text>:null}{date?<Text style={s.secondary}>{formatDate(date)} · {time}</Text>:null}<Text style={s.secondary}>Số lượng đang lưu chỉ thay đổi sau khi nhân viên giao nhận và kiểm đếm.</Text><Pressable accessibilityRole="checkbox" accessibilityState={{checked:confirmed,disabled:busy}} disabled={busy} onPress={()=>setConfirmed(value=>!value)} style={s.row}>{confirmed?<CheckSquare color="#175CD3"/>:<Square color="#475467"/>}<Text style={[s.body,{flex:1}]}>Tôi đã đối chiếu hàng hóa và số lượng yêu cầu</Text></Pressable></>}
+    {error?<Text accessibilityRole="alert" style={{...s.body,color:'#B42318'}}>{error}</Text>:null}
+    </ScrollView><View style={{padding:16,borderTopWidth:0.5,borderTopColor:'#EAECF0',gap:8}}><Button title={busy?'Đang gửi ảnh & phiếu…':review?'Gửi yêu cầu':'Kiểm tra yêu cầu'} disabled={busy||photoBusy||inventory.loading||Boolean(inventory.error)} onPress={()=>review?void submit():next()}/>
+    {review&&<Button title="Sửa thông tin" variant="secondary" disabled={busy} onPress={()=>{setReview(false);setConfirmed(false);}}/>}</View>
+  </View>;
+}
+function UnitField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={{ gap: 8 }}><Pressable accessibilityRole="button" accessibilityLabel="Chọn đơn vị hàng" accessibilityState={{ expanded: open }} onPress={() => setOpen(current => !current)} style={s.row}><Text style={[s.body, { flex: 1 }]}>{value || 'Chọn đơn vị'}</Text><ChevronDown size={18} /></Pressable>{open && <View>{itemUnits.map(unit => <Pressable key={unit} accessibilityRole="radio" accessibilityState={{ checked: value === unit }} onPress={() => { onChange(unit); setOpen(false); }} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={s.body}>{unit}</Text></Pressable>)}</View>}</View>;
+}

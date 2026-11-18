@@ -19,10 +19,10 @@ export function StorageYard({ product = {}, units, selectedId, onSelect }: {
     return <Pressable key={unit.id} accessibilityRole="button" accessibilityLabel={`${unit.code}, ${label}`}
       accessibilityState={{ selected: chosen, disabled: !unit.available }} disabled={!unit.available} onPress={() => onSelect(unit)}
       style={({ pressed }) => [s.tile, locker && s.lockerDoor, { minHeight: locker ? 72 : 104,
-        backgroundColor: chosen ? c.navy : unit.available ? c.brand : c.background,
+        backgroundColor: chosen ? c.text : unit.available ? c.navy : c.surfaceSecondary,
         borderColor: unit.available ? c.navy : c.disabled, opacity: pressed ? 0.75 : 1 }]}>
-      <Text style={[s.code, { color: chosen ? c.surface : c.navyStrong }]}>{unit.code}</Text>
-      {locker && <View style={[s.handle, { backgroundColor: chosen ? c.surface : c.navy }]} />}
+      <Text style={[s.code, { color: chosen || unit.available ? c.surface : c.muted }]}>{unit.code}</Text>
+      {locker && <View style={[s.handle, { backgroundColor: chosen || unit.available ? c.surface : c.muted }]} />}
     </Pressable>;
   };
   const lockerRack = (bank: FloorPlanUnit[], name: string) => <View style={s.rack}>
@@ -40,7 +40,7 @@ export function StorageYard({ product = {}, units, selectedId, onSelect }: {
   </View>;
   return <View style={s.wrapper}>
     <View style={s.legend}>{[
-      { color: c.brand, label: 'Còn trống' }, { color: c.navy, label: 'Đang chọn' }, { color: c.background, label: 'Không khả dụng' },
+      { color: c.brand, label: 'Còn trống' }, { color: c.text, label: 'Đang chọn' }, { color: c.background, label: 'Không khả dụng' },
     ].map(item => <View key={item.label} style={s.legendItem}><View style={[s.swatch, { backgroundColor: item.color }]} /><Text style={s.caption}>{item.label}</Text></View>)}</View>
     <View style={s.building}>
       <Text style={s.heading}>{locker ? 'NHÀ TỦ LƯU TRỮ' : 'KHU KHO'} · {text(product, 'name')}</Text>

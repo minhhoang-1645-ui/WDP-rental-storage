@@ -1,9 +1,11 @@
 export type StockRole = 'CUSTOMER' | 'MANAGER' | 'STAFF';
 export interface StoredItem {
+  photos?: string[];
+  photoSource?: 'CUSTOMER_PROVIDED';
   id: string; itemCode: string; name: string; unit: string; balance: number;
   note?: string | null; rentalContract?: { id: string; contractCode: string }; storageUnit?: { id: string; unitNumber: string; floor: string | null; zone: string | null };
 }
-export interface StockLine { id: string; storedItem: StoredItem; requestedQty: number; actualQty: number | null; note: string | null }
+export interface StockLine { id: string; storedItem: StoredItem; requestedQty: number; actualQty: number | null; note: string | null; photos?:string[]; photoSource?:'CUSTOMER_PROVIDED' }
 export interface StockMovement {
   id: string; movementCode: string; type: 'IN' | 'OUT'; status: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
   customer: { id: string; fullName: string; email: string; phone?: string };

@@ -1,0 +1,26 @@
+import { useState } from 'react';
+import { ActivityIndicator, Image, Modal, Platform, Pressable, Text, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { Camera, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { customerStyles as s } from './customer-premium';
+
+export function ItemPhotos({photos,editable=false,onChange,onBusyChange}:{photos:string[];editable?:boolean;onChange?:(photos:string[])=>void;onBusyChange?:(busy:boolean)=>void}) {
+  const [sheet,setSheet]=useState(false),[preview,setPreview]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[replaceIndex,setReplaceIndex]=useState<number>();
+  const pick=async(camera:boolean)=>{setSheet(false);setError('');setBusy(true);onBusyChange?.(true);try{
+    if(Platform.OS!=='web'){const permission=camera?await ImagePicker.requestCameraPermissionsAsync():await ImagePicker.requestMediaLibraryPermissionsAsync();if(!permission.granted){setError('Chưa được cấp quyền. Bạn có thể bật quyền trong Cài đặt hoặc tiếp tục không có ảnh.');return;}}
+    const options:ImagePicker.ImagePickerOptions={mediaTypes:['images'],quality:0.8,allowsMultipleSelection:false};
+    const result=camera?await ImagePicker.launchCameraAsync(options):await ImagePicker.launchImageLibraryAsync(options);
+    if(result.canceled)return;
+    const asset=result.assets[0];const context=ImageManipulator.manipulate(asset.uri);if(Math.max(asset.width,asset.height)>1280)context.resize(asset.width>=asset.height?{width:1280}:{height:1280});
+    const rendered=await context.renderAsync();let saved=await rendered.saveAsync({format:SaveFormat.JPEG,compress:0.65,base64:true});
+    if((saved.base64?.length??0)>540000)saved=await rendered.saveAsync({format:SaveFormat.JPEG,compress:0.35,base64:true});
+    if(!saved.base64||saved.base64.length>540000)throw new Error('Ảnh vẫn quá lớn. Hãy chọn ảnh nhỏ hơn.');
+    const photo='data:image/jpeg;base64,'+saved.base64;
+    onChange?.(replaceIndex===undefined?[...photos,photo].slice(0,3):photos.map((value,index)=>index===replaceIndex?photo:value));setReplaceIndex(undefined);
+  }catch(caught){setError(caught instanceof Error?caught.message:'Không mở được ảnh. Bạn có thể thử lại.');}finally{setBusy(false);onBusyChange?.(false);}};
+  return <View style={{gap:8}}><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{photos.map((uri,index)=><View key={index} style={{width:72,height:72}}><Pressable accessibilityRole="button" accessibilityLabel={'Xem ảnh '+(index+1)} onPress={()=>setPreview(uri)}><Image source={{uri}} style={{width:72,height:72,borderRadius:10}}/></Pressable>{editable&&!busy&&<Pressable accessibilityRole="button" accessibilityLabel={'Xóa ảnh '+(index+1)} onPress={()=>onChange?.(photos.filter((_,i)=>i!==index))} style={{position:'absolute',right:-4,top:-4,width:44,height:44,alignItems:'flex-end'}}><View style={{padding:4,borderRadius:12,backgroundColor:'white'}}><X size={16} color="#B42318"/></View></Pressable>}</View>)}{editable&&photos.length<3&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setReplaceIndex(undefined);setSheet(true);}} style={{width:72,minHeight:72,borderRadius:10,backgroundColor:'#EAF1FF',alignItems:'center',justifyContent:'center',gap:4}}>{busy?<ActivityIndicator/>:<Camera size={22} color="#175CD3"/>}<Text style={{fontSize:13,color:'#175CD3'}}>Thêm ảnh</Text></Pressable>}</View>{photos.length>0&&<Text style={s.secondary}>Ảnh khách cung cấp · không phải ảnh xác minh của nhân viên</Text>}{busy&&<Text style={s.secondary}>Đang nén ảnh…</Text>}{error?<Text accessibilityRole="alert" style={{...s.secondary,color:'#B42318'}}>{error}</Text>:null}
+  <Modal visible={sheet} transparent animationType="slide" onRequestClose={()=>setSheet(false)}><View style={{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(0,0,0,0.35)'}}><SafeAreaView edges={['bottom']} style={{backgroundColor:'white',padding:20,borderTopLeftRadius:24,borderTopRightRadius:24}}>{[['Chụp ảnh',true],['Chọn từ thư viện',false]] .map(([title,camera])=><Pressable key={String(title)} accessibilityRole="button" onPress={()=>void pick(camera===true)} style={s.row}><Text style={s.body}>{title}</Text></Pressable>)}<Pressable onPress={()=>setSheet(false)} style={s.row}><Text style={s.link}>Đóng</Text></Pressable></SafeAreaView></View></Modal>
+  <Modal visible={Boolean(preview)} animationType="fade" onRequestClose={()=>setPreview('')}><SafeAreaView style={{flex:1,backgroundColor:'white'}}><Pressable accessibilityRole="button" onPress={()=>setPreview('')} style={{minHeight:44,padding:12}}><Text style={s.link}>Đóng ảnh</Text></Pressable>{editable&&<Pressable accessibilityRole="button" onPress={()=>{setReplaceIndex(photos.indexOf(preview));setPreview('');setSheet(true);}} style={{minHeight:44,padding:12}}><Text style={s.link}>Thay ảnh</Text></Pressable>}{preview?<Image source={{uri:preview}} resizeMode="contain" style={{flex:1}}/>:null}</SafeAreaView></Modal></View>;
+}

@@ -111,7 +111,7 @@ try {
   await crossTab.page.goto(base + '/staff', { waitUntil: 'domcontentloaded' });
   await crossTab.page.getByRole('heading', { name: 'Chưa kết nối được tài khoản', exact: true }).waitFor();
   await crossTab.page.evaluate(() => { localStorage.removeItem('wdp-auth-token-v1'); window.dispatchEvent(new StorageEvent('storage', { key: 'wdp-auth-token-v1', oldValue: 'resilient-session', newValue: null })); });
-  await crossTab.page.getByRole('heading', { name: 'Đăng nhập nội bộ', exact: true }).waitFor();
+  await crossTab.page.getByRole('heading', { name: 'Đăng nhập tài khoản', exact: true }).waitFor();
   checks.push('Logout in another tab clears a failed-session retry screen instead of trapping the user');
   await crossTab.context.close();
   const forms = await setup('MANAGER');

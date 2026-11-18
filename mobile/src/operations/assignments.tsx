@@ -53,5 +53,5 @@ export function ManagerAssignments() {
     </View>}
     renderItem={({ item }) => <View style={styles.card}><Text style={styles.title}>{codeOf(item)}</Text><Text style={styles.copy}>{label(item.status)} · {text(item, 'assignedStaff.fullName') || 'Chưa phân công'}</Text><Text style={styles.copy}>{text(item, 'subject', 'description', 'unit.unitCode', 'rentalContract.contractCode')}</Text>{text(item, 'assignedStaff.accountStatus') === 'DISABLED' && <Text style={styles.error}>Tài khoản phụ trách đã vô hiệu hóa; cần đổi người.</Text>}{!['COMPLETED','RESOLVED','CANCELLED'].includes(text(item, 'status')) && <Button title={text(item, 'assignedStaff.id') ? 'Đổi nhân viên phụ trách' : 'Phân công nhân viên'} onPress={() => setAction(assignmentAction(text(item, 'resource'), item))} />}</View>}
 
-    ListEmptyComponent={!loading && !error ? <EmptyState title="Không có công việc phù hợp" message="Thử đổi bộ lọc hoặc xem cả lịch sử." /> : null} />;
+    ListEmptyComponent={!loading && !error ? <EmptyState title="Không có công việc phù hợp" message="Thử đổi bộ lọc hoặc xem cả lịch sử." /> : undefined} />;
 }

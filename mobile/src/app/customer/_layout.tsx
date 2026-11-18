@@ -18,7 +18,7 @@ export default function CustomerLayout() {
   if (!user) return <Redirect href="/login" />;
   if (user.role !== 'CUSTOMER') return <Redirect href="/" />;
   return <CustomerPresentation.Provider value><View style={layout.root}>
-    <Stack screenOptions={{ headerRight: () => <CustomerNotifications />, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
+    <Stack screenOptions={{ headerTransparent: false, headerRight: () => <CustomerNotifications />, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
       <Stack.Screen name="index" options={{ title: 'NestBox', headerShown: false }} />
       <Stack.Screen name="discover" options={{ title: 'Tìm kho' }} />
       <Stack.Screen name="booking" options={{ title: 'Đặt kho' }} />

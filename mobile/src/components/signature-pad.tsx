@@ -1,3 +1,4 @@
+import type { ComponentRef } from 'react';
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { PanResponder, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -5,7 +6,7 @@ import { captureRef } from 'react-native-view-shot';
 import type { SignaturePadHandle } from './signature-pad.types';
 
 export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad(_, ref) {
-  const view = useRef<View>(null);
+  const view = useRef<ComponentRef<typeof View>>(null);
   const drawing = useRef<string>('');
   const points = useRef(0);
   const [paths, setPaths] = useState<string[]>([]);

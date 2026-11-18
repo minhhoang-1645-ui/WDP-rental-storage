@@ -17,7 +17,7 @@ export default function StaffLayout() {
   if (!user) return <Redirect href="/login" />;
   if (user.role !== 'STAFF') return <Redirect href="/" />;
   return <StaffPresentation.Provider value={true}><View style={{ flex: 1 }}>
-    <Stack screenOptions={{ headerTitleStyle: { fontSize: 17 }, headerShadowVisible: false, headerStyle: { backgroundColor: WdpColors.surface }, headerRight: () => <ActivityBell />, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
+    <Stack screenOptions={{ headerTransparent: false, headerTitleStyle: { fontSize: 17 }, headerShadowVisible: false, headerStyle: { backgroundColor: WdpColors.surface }, headerRight: () => <ActivityBell />, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
       <Stack.Screen name="index" options={{ title: 'NestBox' }} />
       <Stack.Screen name="[resource]/index" options={resourceOptions} />
       <Stack.Screen name="[resource]/[id]" options={resourceOptions} />

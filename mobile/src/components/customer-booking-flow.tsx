@@ -93,7 +93,7 @@ export function CustomerBookingFlow() {
       const map=await apiRequest<UnitMap>('/booking/unit-map',{method:'POST',authenticated:false,body,signal:controller.signal});
       if(!Array.isArray(map.units) || selected.some(id=>!map.units.some(unit=>unit.id===id && unit.available))) {setUnits(map.units??[]);setSelected([]);setQuote(undefined);setError('Ô kho này vừa được đặt. Vui lòng chọn ô khác.');setStep(3);return;}
       const created=await apiRequest<Row>('/reservations',{method:'POST',body,signal:controller.signal});
-      router.replace('/customer/reservations/'+encodeURIComponent(text(created,'id','reference')));
+      router.replace({pathname:'/customer/[resource]/[id]',params:{resource:'reservations',id:text(created,'id','reference')}});
     } catch(caught) {setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu. Bạn thử lại nhé.');if(caught instanceof ApiError && caught.status===409) {setSelected([]);setQuote(undefined);setStep(2);setError('Kho vừa có thay đổi. Hãy kiểm tra lại ô trống.');}}
     finally {locked.current=false;request.current=null;setBusy(false);}
   }

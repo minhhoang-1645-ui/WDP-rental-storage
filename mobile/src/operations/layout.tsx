@@ -14,7 +14,7 @@ export function WorkspaceLayout({ role }: { role: 'MANAGER' | 'ADMIN' }) {
   if (user.role !== role) return <Redirect href={destination(user.role)} />;
   return (
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerRight: () => <ActivityBell />, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background }, title: role === 'ADMIN' ? 'Quản trị NestBox' : 'Quản lý NestBox' }}>
+      <Stack screenOptions={{ headerTransparent: false, headerRight: () => <ActivityBell />, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background }, title: role === 'ADMIN' ? 'Quản trị NestBox' : 'Quản lý NestBox' }}>
         <Stack.Screen name="index" options={{
           headerRight: () => <AccountHeaderActions href={role === 'ADMIN' ? '/admin/account' : '/manager/account'} />,
         }} />

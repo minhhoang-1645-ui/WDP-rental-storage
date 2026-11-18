@@ -10,6 +10,7 @@ import { Button, Disclosure, Facts, Navigation, Panel, styles } from './ui';
 import { FunctionMenu, WorkHub } from '@/components/workspace-hub';
 import { MetricCard } from '@/components/metric-card';
 import { useActivity } from '@/activity/context';
+import { ActivitySummary } from '@/activity/ActivityCenter';
 import { assignmentNeedsAttention, isOverdueInvoice, managerNeedsAction } from '@/utils/work-queue';
 import { formatMoney } from '@/utils/format';
 import { activitySources } from '@/utils/activity';

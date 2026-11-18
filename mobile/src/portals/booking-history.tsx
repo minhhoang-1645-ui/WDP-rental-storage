@@ -26,7 +26,7 @@ export function CustomerBookingHistory() {
       <CustomerStatusFilters values={[...new Set(entries.map(entry=>entry.phase))]} selected={phase} onChange={setPhase} label={value=>entries.find(entry=>entry.phase===value)?.phaseLabel||value}/>
       {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <Text style={styles.copy}>{shown.length} / {entries.length} đơn đặt kho</Text>}
     </View>}
-    ListEmptyComponent={!loading && !error ? <EmptyState title={entries.length ? 'Không có lịch sử phù hợp' : 'Bạn chưa có lịch sử đặt kho'} message="Thử đổi từ khóa hoặc xem tất cả trạng thái." /> : null}
+    ListEmptyComponent={!loading && !error ? <EmptyState title={entries.length ? 'Không có lịch sử phù hợp' : 'Bạn chưa có lịch sử đặt kho'} message="Thử đổi từ khóa hoặc xem tất cả trạng thái." /> : undefined}
     renderItem={({ item }) => <View style={{gap:10,paddingVertical:14,borderBottomWidth:1,borderColor:'#D0D5DD'}}>
       <Text style={styles.title}>{text(item.reservation, 'product.name')}</Text>
       <StatusBadge status={item.phaseLabel} tone={['EXPIRED','CANCELLED','REJECTED'].includes(item.phase)?'danger':['ACTIVE','RETURNED'].includes(item.phase)?'success':['PAYMENT','PENDING'].includes(item.phase)?'warning':'info'}/><Text style={styles.copy}>{formatDate(item.startDate)} → {formatDate(item.endDate)}</Text><Text style={styles.copy}>{item.unitCodes.join(' · ')||item.reference}</Text><Navigation compact title="Xem đơn đặt kho" path={'/customer/reservations/'+encodeURIComponent(item.reference)}/><Disclosure title="Thông tin thời gian thuê">

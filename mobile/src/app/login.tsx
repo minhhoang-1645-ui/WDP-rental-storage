@@ -1,3 +1,4 @@
+import type { ComponentRef } from 'react';
 import { Redirect, router, type Href } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -15,7 +16,7 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
-  const passwordInput = useRef<TextInput>(null);
+  const passwordInput = useRef<ComponentRef<typeof TextInput>>(null);
   if (user) return <Redirect href={destination(user.role)} />;
 
   const submit = async (submittedPassword = password) => {

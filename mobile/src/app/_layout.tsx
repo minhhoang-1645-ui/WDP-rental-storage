@@ -1,6 +1,6 @@
 import { DefaultTheme, ThemeProvider } from 'expo-router';
 import { Stack } from 'expo-router/stack';
-import * as SplashScreen from 'expo-splash-screen';
+import { preventAutoHideAsync, hideAsync } from 'expo-splash-screen';
 import { useEffect } from 'react';
 
 import { AuthProvider } from '@/auth/auth-context';
@@ -12,12 +12,12 @@ import { ErrorState } from '@/components/screen-state';
 import { Button, styles } from '@/operations/ui';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-SplashScreen.preventAutoHideAsync();
+preventAutoHideAsync();
 
 function RootNavigation() {
   const { loading, sessionError, retrySession, logout } = useAuth();
   useEffect(() => {
-    if (!loading) void SplashScreen.hideAsync();
+    if (!loading) void hideAsync();
   }, [loading]);
   if (loading) return null;
   if (sessionError) return <ScrollView contentContainerStyle={[styles.page, { flexGrow: 1, justifyContent: 'center' }]}><Text accessibilityRole="header" style={styles.title}>Kết nối lại NestBox</Text><Text style={styles.copy}>Chưa thể kiểm tra tài khoản đã lưu. Bạn không cần nhập lại mật khẩu chỉ vì mất kết nối.</Text><ErrorState message={sessionError} onRetry={retrySession} /><Button title="Đăng nhập bằng tài khoản khác" variant="secondary" onPress={() => void logout()} /></ScrollView>;
@@ -25,7 +25,7 @@ function RootNavigation() {
   return (
     <ThemeProvider value={DefaultTheme}>
       <View style={{ flex: 1 }}><ActivityRefreshNote />
-      <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
+      <Stack screenOptions={{ headerTransparent: false, headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ title: 'Đăng nhập', headerShown: false }} />
         <Stack.Screen name="customer" options={{ headerShown: false }} />

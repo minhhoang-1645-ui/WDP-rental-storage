@@ -45,7 +45,7 @@ export function ApprovalInbox() {
     refreshControl={<RefreshControl refreshing={!loading && data.some(item => item.loading)} onRefresh={refresh} tintColor="#187D78" />}
     ListHeaderComponent={<View style={{ gap: 12 }}><PageHeader eyebrow="Quản lý" title="Hộp thư quyết định" description="Chỉ hiển thị các hồ sơ có thao tác thuộc quyền Manager. Gia hạn, chuyển kho, đặt kho và trả kho vật lý do Staff xử lý." /><Button title="Làm mới hộp thư" onPress={refresh} disabled={data.some(item => item.loading)} /><Field title="Tìm mã hồ sơ hoặc khách hàng" value={search} onChange={setSearch} maxLength={120} />{loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={refresh} /> : <Text style={styles.copy}>{items.length} hồ sơ cần xem xét</Text>}<Navigation title="Đề nghị trả trước hạn" description="Quyết định trả trước hạn được xử lý theo luồng riêng." path="/manager/early-returns" /><Navigation title="Phân công nhân viên" description="Theo dõi tải công việc và giao nhân viên phụ trách." path="/manager/assignments" /></View>}
     ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-    ListEmptyComponent={!loading && !error ? <EmptyState title="Hộp thư đang trống" message="Không có yêu cầu đang chờ duyệt trong các luồng được backend hỗ trợ." /> : null}
+    ListEmptyComponent={!loading && !error ? <EmptyState title="Hộp thư đang trống" message="Không có yêu cầu đang chờ duyệt trong các luồng được backend hỗ trợ." /> : undefined}
     renderItem={({ item }) => <TaskCard item={item} kind={item.source.title} onPress={() => router.push(`/manager/${item.source.resource}/${encodeURIComponent(idOf(item))}`)} />}
   />;
 }

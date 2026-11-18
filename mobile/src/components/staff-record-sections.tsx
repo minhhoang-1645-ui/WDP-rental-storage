@@ -106,7 +106,7 @@ function RentalRecordSummaries({ data, resource, id }: { data: Row; resource: st
     <StaffInfoGrid values={[["Kho", text(contract, 'unitCode', 'unit.unitCode', 'storageUnit.unitCode')], ['Bắt đầu', text(contract, 'startDate') ? formatDate(text(contract, 'startDate')) : undefined], ['Kết thúc', text(contract, 'endDate') ? formatDate(text(contract, 'endDate')) : undefined]]} />
     {idOf(contract) && <Navigation compact title="Xem đầy đủ hợp đồng" path={'/staff/contract-details?id=' + encodeURIComponent(idOf(contract))} />}
   </View>)}
-    {data.reservation && <View style={{ gap: 8 }}><Text style={s.body}>{text(object(data.reservation), 'reference') || 'Hồ sơ thuê liên quan'}</Text><StaffInfoGrid values={[["Trạng thái đơn", at(data, 'reservation.status') ? label(at(data, 'reservation.status')) : undefined], ['Số kho', at(data, 'reservation.quantity')], ['Loại kho', text(data, 'reservation.storageType.name')]]} /></View>}
+    {Boolean(data.reservation) && <View style={{ gap: 8 }}><Text style={s.body}>{text(object(data.reservation), 'reference') || 'Hồ sơ thuê liên quan'}</Text><StaffInfoGrid values={[["Trạng thái đơn", at(data, 'reservation.status') ? label(at(data, 'reservation.status')) : undefined], ['Số kho', at(data, 'reservation.quantity')], ['Loại kho', text(data, 'reservation.storageType.name')]]} /></View>}
     <Navigation compact title="Xem đầy đủ hồ sơ thuê" path={`/staff/record-section?resource=${encodeURIComponent(resource)}&id=${encodeURIComponent(id)}&section=${encodeURIComponent('Hợp đồng và hồ sơ thuê')}`} />
   </View>;
 }

@@ -1,4 +1,7 @@
 const zoneOffset = 7 * 60 * 60 * 1000
+export const customerAppointmentBookingPath = (reservationId: string) =>
+  '/customer/appointments?book=1&reservationId=' + encodeURIComponent(reservationId)
+
 export function vietnamLocalMinute(time = Date.now()) { return new Date(time + zoneOffset).toISOString().slice(0, 16) }
 export function keyCollectionStartDate(value: string, daysBefore = 3) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''

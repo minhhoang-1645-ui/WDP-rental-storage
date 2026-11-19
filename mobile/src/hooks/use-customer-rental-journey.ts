@@ -3,6 +3,7 @@ import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { customerAppointmentAction } from '@/portals/actions';
 import { paymentWindowClosed } from '@/utils/payment-state';
+import { customerAppointmentBookingPath } from '@/utils/handover';
 
 export function useCustomerRentalJourney(preferredReservationId?: string, defaultToFirst = false){
   const contracts=useResource<Row>('/customer/contracts',true),invoices=useResource<Row>('/customer/invoices',true),appointments=useResource<Row>('/customer/appointments',true),submissions=useResource<Row>('/customer/payment-submissions',true);
@@ -23,6 +24,6 @@ export function useCustomerRentalJourney(preferredReservationId?: string, defaul
   const payable=allSigned&&initial&&object(initial.signing).complete===true&&!pending&&!paymentWindowClosed(initial,now)&&['OPEN','PARTIALLY_PAID'].includes(String(initial.status))&&Number(initial.balanceDue)>0;
   const closed=group.some(item=>['EXPIRED','CANCELLED'].includes(text(item,'reservation.status')))||Boolean(initial&&Number(initial.balanceDue)>0&&paymentWindowClosed(initial,now));
   const unsigned=!closed?group.find(item=>!text(item,'terms.acceptedAt')&&['PENDING_PAYMENT','READY_FOR_HANDOVER'].includes(String(item.status))):undefined;
-  const next=!loading&&!error?(active?{title:'Xem kho thuê',path:'/customer/rentals/'+encodeURIComponent(text(group[0],'reservation.id'))}:unsigned?{title:'Xem hợp đồng',path:'/customer/contract-document?id='+encodeURIComponent(idOf(unsigned))}:payable&&!closed?{title:'Thanh toán hóa đơn',path:'/customer/invoices/'+encodeURIComponent(idOf(initial!))}:visit?{title:'Xem lịch nhận kho',path:'/customer/appointments/'+encodeURIComponent(idOf(visit))}:scheduling&&!closed?{title:'Đặt lịch nhận kho',path:'/customer/appointments?reservationId='+encodeURIComponent(reservationId!)}:undefined):undefined;
+  const next=!loading&&!error?(active?{title:'Xem kho thuê',path:'/customer/rentals/'+encodeURIComponent(text(group[0],'reservation.id'))}:unsigned?{title:'Xem hợp đồng',path:'/customer/contract-document?id='+encodeURIComponent(idOf(unsigned))}:payable&&!closed?{title:'Thanh toán hóa đơn',path:'/customer/invoices/'+encodeURIComponent(idOf(initial!))}:visit?{title:'Xem lịch nhận kho',path:'/customer/appointments/'+encodeURIComponent(idOf(visit))}:scheduling&&!closed?{title:'Đặt lịch nhận kho',path:customerAppointmentBookingPath(reservationId)}:undefined):undefined;
   return {reservationId,contracts,invoices,appointments,submissions,all,group,expected,signed,complete,allSigned,initial,paid,pending,visit,visits,active,early,scheduling,unsigned,next,loading,error,closed,refresh:()=>sources.forEach(item=>item.refresh())};
 }

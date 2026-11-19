@@ -15,6 +15,7 @@ import { formatDate, formatMoney } from '@/utils/format';
 import { vietnamCalendarDate } from '@/utils/calendar-date';
 import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { customerAppointmentAction } from '@/portals/actions';
+import { customerAppointmentBookingPath } from '@/utils/handover';
 
 type Task = { key: string; title: string; context: string; date: string; rank: number; path: string; icon: LucideIcon };
 const shortcuts = [
@@ -51,7 +52,7 @@ function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submis
       !appointments.some(item => reservationId(item) === id && item.status === 'COMPLETED') &&
       customerAppointmentAction(contract, contracts, appointments, now)) {
       tasks.push({ key: 'visit:' + id, title: 'Đặt lịch nhận kho', context: storageName(contract), date: text(contract, 'startDate'), rank: 2,
-        path: '/customer/appointments?reservationId=' + encodeURIComponent(id), icon: CalendarDays });
+        path: customerAppointmentBookingPath(id), icon: CalendarDays });
     }
   }
   for (const invoice of invoices) {

@@ -7,7 +7,7 @@ import { useResource } from '@/operations/use-resource';
 import { operationMutate } from '@/operations/mutate';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { formatDate } from '@/utils/format';
-import { handoverWindow, keyCollectionStartDate, vietnamLocalMinute } from '@/utils/handover';
+import { customerAppointmentBookingPath, handoverWindow, keyCollectionStartDate, vietnamLocalMinute } from '@/utils/handover';
 import { ErrorState, LoadingState } from './screen-state';
 import { StatusBadge } from './customer-ui';
 
@@ -208,17 +208,19 @@ function Overview() {
   const today = clock.slice(0, 10);
   const firstFutureDay = clock.endsWith('23:59') ? nextDay(today) : today;
   const leadDays = appointments.data?.handoverLeadDays;
+  // Older API responses omit this field. The submission is still validated by the API.
+  const invalidPolicy = leadDays !== undefined && (typeof leadDays !== 'number' || !Number.isInteger(leadDays) || leadDays < 0 || leadDays > 7);
   const initialInvoices = rows(invoices.data?.items).filter(invoice => invoice.type === 'INITIAL');
   const eligible = [...groups].flatMap(([key, group]) => {
     const initial = initialInvoices.filter(invoice => reservationOf(invoice) === key);
     const { start, end } = handoverWindow(group.map(item => ({ startDate: text(item, 'startDate'), endDate: text(item, 'endDate') })));
-    if (!start || !end || typeof leadDays !== 'number' || !Number.isInteger(leadDays) || leadDays < 0 ||
+    if (!start || !end || invalidPolicy ||
         text(group[0], 'reservation.status') !== 'CONFIRMED' || group.length !== Number(text(group[0], 'reservation.quantity')) ||
         initial.length !== 1 || initial[0].status !== 'PAID' || Number(initial[0].balanceDue) !== 0 ||
         group.some(item => item.status !== 'READY_FOR_HANDOVER' || !text(item, 'terms.acceptedAt') || !text(item, 'storageUnit.id')) ||
         new Set(group.map(item => text(item, 'storageUnit.id'))).size !== group.length ||
         visits.some(item => reservationOf(item) === key && ['REQUESTED', 'CONFIRMED', 'COMPLETED'].includes(String(item.status)))) return [];
-    const first = [keyCollectionStartDate(start, leadDays), firstFutureDay].sort()[1];
+    const first = [keyCollectionStartDate(start, typeof leadDays === 'number' ? leadDays : undefined), firstFutureDay].sort()[1];
     return first < end ? [{ key, group, first, end, start }] : [];
   });
   const selectedKey = reservationId && [...groups].find(([key, group]) => key === reservationId || text(group[0], 'reservation.reference') === reservationId)?.[0];
@@ -230,7 +232,8 @@ function Overview() {
   if (!loading && !error && book === '1' && selected) return <Booking key={selected.key} group={selected.group} first={selected.first} end={selected.end} start={selected.start} />;
   return <Page title={book === '1' ? 'Đặt lịch nhận' : 'Lịch nhận kho'} refresh={refresh} loading={loading}>
     {error ? <ErrorState message={error} onRetry={refresh} /> : loading ? <LoadingState layout="detail" /> : book === '1' ?
-      <Notice>Đơn này hiện chưa thể đặt lịch. Kiểm tra lại đơn đặt hoặc lịch đã xác nhận.</Notice> : <>
+      invalidPolicy ? <ErrorState message="Chưa tải được quy định ngày nhận kho." onRetry={refresh} /> :
+        <Notice>Đơn này hiện chưa thể đặt lịch. Kiểm tra lại đơn đặt hoặc lịch đã xác nhận.</Notice> : <>
       <View style={s.tabs}>{(['Sắp tới (' + pending.length + ')', 'Đã bàn giao']).map((label, index) =>
         <Pressable key={index} accessibilityRole="tab" accessibilityState={{ selected: history === Boolean(index) }} onPress={() => setHistory(Boolean(index))}
           style={[s.tab, history === Boolean(index) && s.selected]}><Text style={[s.label, history === Boolean(index) && s.white]}>{label}</Text></Pressable>)}</View>
@@ -252,11 +255,11 @@ function Overview() {
         <Day date={item.first} /><View style={s.grow}><Text style={s.title}>{nameOf(item.group)}{item.group.length > 1 ? ' · ' + item.group.length + ' ô kho' : ''}</Text>
           <StatusBadge status="REQUESTED" displayLabel="Có thể đặt lịch" />
           <Text style={s.copy}>Bắt đầu thuê · {formatDate(item.start)}</Text>
-          <Button label="Chọn lịch nhận" onPress={() => open(root + '?book=1&reservationId=' + encodeURIComponent(item.key))} />
+          <Button label="Chọn lịch nhận" onPress={() => open(customerAppointmentBookingPath(item.key))} />
         </View>
       </View>) : null}
-      {!history && typeof leadDays !== 'number' && groups.size > 0 ? <Notice>Chưa tải được quy định ngày nhận kho. Kéo xuống để thử lại.</Notice> : null}
-      {!history && typeof leadDays === 'number' && reservationId && !selected && !pending.some(item => reservationOf(item) === selectedKey) && !visits.some(item => reservationOf(item) === selectedKey && item.status === 'COMPLETED') ?
+      {!history && invalidPolicy && groups.size > 0 ? <Notice>Chưa tải được quy định ngày nhận kho. Kéo xuống để thử lại.</Notice> : null}
+      {!history && !invalidPolicy && reservationId && !selected && !pending.some(item => reservationOf(item) === selectedKey) && !visits.some(item => reservationOf(item) === selectedKey && item.status === 'COMPLETED') ?
         <Notice>Đơn được đặt lịch sau khi ký đủ hợp đồng và thanh toán hóa đơn ban đầu.</Notice> : null}
     </>}
   </Page>;

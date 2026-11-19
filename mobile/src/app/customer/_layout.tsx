@@ -6,7 +6,7 @@ import { useAuth } from '@/auth/use-auth';
 import { WdpColors } from '@/constants/wdp-theme';
 import { BottomNav } from '@/components/bottom-nav';
 import { CustomerPresentation } from '@/components/customer-presentation';
-import { CustomerNotifications } from '@/components/customer-notifications';
+import { CustomerNotificationProvider, CustomerNotifications } from '@/components/customer-notifications';
 import { portalScreenOptions } from '@/portals/resources';
 
 const resourceOptions = portalScreenOptions('CUSTOMER');
@@ -20,7 +20,7 @@ export default function CustomerLayout() {
     /^[\w-]{1,100}$/.test(transaction) && /^[\w-]{1,100}$/.test(invoiceId)
     ? { pathname: '/login', params: { paymentTransaction: transaction, paymentInvoice: invoiceId } } : '/login'} />;
   if (user.role !== 'CUSTOMER') return <Redirect href="/" />;
-  return <CustomerPresentation.Provider value><View style={layout.root}>
+  return <CustomerPresentation.Provider value><CustomerNotificationProvider key={user.id}><View style={layout.root}>
     <Stack screenOptions={{ headerTransparent: false, headerRight: () => <CustomerNotifications />, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
       <Stack.Screen name="index" options={{ title: 'NestBox', headerShown: false }} />
       <Stack.Screen name="discover" options={{ title: 'Tìm kho' }} />
@@ -36,7 +36,7 @@ export default function CustomerLayout() {
       <Stack.Screen name="[resource]/[id]" options={resourceOptions} />
     </Stack>
     {!['/customer/discover', '/customer/booking'].includes(pathname) && <BottomNav role="CUSTOMER" />}
-  </View></CustomerPresentation.Provider>;
+  </View></CustomerNotificationProvider></CustomerPresentation.Provider>;
 }
 
 const layout = StyleSheet.create({ root: { flex: 1 } });

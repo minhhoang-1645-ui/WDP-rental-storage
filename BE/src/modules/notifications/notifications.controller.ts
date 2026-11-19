@@ -28,7 +28,7 @@ export class NotificationsController {
 
   @Post(':token/open')
   @HttpCode(200)
-  open(@Req() request: AuthenticatedRequest, @Param('token') token: string) {
-    return this.notifications.mark(request.user!, token, true);
+  open(@Req() request: AuthenticatedRequest, @Param('token') token: string, @Query('client') client?: string) {
+    return this.notifications.mark(request.user!, token, true, client === 'mobile');
   }
 }

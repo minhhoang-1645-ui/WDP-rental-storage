@@ -1030,6 +1030,8 @@ model Invoice {
 
 model SupportRequest {
   earlyReturnFinancialReview Json?
+  transferRequestedStartAt DateTime?
+  transferRequestedEndAt   DateTime?
   id                       String                 @id @default(cuid())
   supportCode              String                 @unique
   customerUserId           String

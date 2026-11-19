@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PublicUser } from '../auth/auth.types.js';
 import { SupportService } from '../support/support.service.js';
 import { TransfersService } from './transfers.service.js';
+import { parseTransferProposal } from './transfer-schedule.js';
 
 const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
 const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
@@ -12,7 +13,7 @@ const contract = { id: 'contract', status: 'ACTIVE', startDate: now, endDate, re
 const reservation = { id: 'rental', reservationCode: 'R-01', customerId: customer.id, status: 'CONFIRMED', startDate: now, endDate, contracts: [contract], invoices: [] };
 
 describe('Direct customer transfer intake', () => {
-  it('links one transfer to the original request and never assigns Staff before approval', async () => {
+  it.each([false, true])('links one transfer and round-trips the optional proposal (%s)', async withSchedule => {
     let saved: any = null;
     let transfer: any = null;
     const tx = {
@@ -34,15 +35,35 @@ describe('Direct customer transfer intake', () => {
       },
     };
     const service = new SupportService({ ...tx, $transaction: (run: (client: unknown) => unknown) => run(tx) } as never);
-    const body = { reservationId: reservation.id, rentalContractId: contract.id, storageUnitId: source.id, subject: 'Yêu cầu chuyển kho', description: 'Cần chuyển đến vị trí dễ lấy hàng.', category: 'UNIT_ISSUE' };
+    const body = { reservationId: reservation.id, rentalContractId: contract.id, storageUnitId: source.id, subject: 'Yêu cầu chuyển kho', description: 'Cần chuyển đến vị trí dễ lấy hàng.', category: 'UNIT_ISSUE',
+      ...(withSchedule ? { transferRequestedDate: '2099-09-30', transferRequestedSlot: '08:00' } : {}),
+    };
+    if (withSchedule) {
+      await expect(service.createCustomer(customer, { ...body, transferRequestedDate: '2099-10-01' }, 'out-of-rental')).rejects.toThrow('trong thời hạn');
+      await expect(service.createCustomer(customer, { ...body, transferRequestedDate: '2099-02-29' }, 'invalid-date')).rejects.toThrow('không hợp lệ');
+      await expect(service.createCustomer(customer, { ...body, transferRequestedDate: '2026-10-02' }, 'past-date')).rejects.toThrow('đã qua');
+    }
     const first = await service.createCustomer(customer, body, 'request-key-1');
+    expect(first.transferRequestedSchedule).toEqual(withSchedule ? { startAt: '2099-09-30T01:00:00.000Z', endAt: '2099-09-30T03:00:00.000Z' } : null);
     expect(first.transfers).toMatchObject([{ id: 'transfer', status: 'REQUESTED' }]);
     expect(await service.createCustomer(customer, body, 'request-key-1')).toEqual(first);
+    if (withSchedule) {
+      await expect(service.createCustomer(customer, { ...body, transferRequestedSlot: '13:00' }, 'request-key-1')).rejects.toThrow('Idempotency-Key');
+      expect(tx.supportRequest.create.mock.calls[0][0].data).toMatchObject({ transferRequestedStartAt: new Date('2099-09-30T01:00:00Z'), transferRequestedEndAt: new Date('2099-09-30T03:00:00Z') });
+    }
     await expect(service.createCustomer(customer, body, 'request-key-2')).rejects.toThrow('đã có yêu cầu');
     expect(tx.transferRequest.create).toHaveBeenCalledTimes(1);
     expect(tx.transferRequest.create.mock.calls[0][0].data).toMatchObject({ requestedByUserId: customer.id, supportRequestId: 'support', rentalContractId: contract.id });
     expect(tx.transferRequest.create.mock.calls[0][0].data).not.toHaveProperty('assignedStaffUserId');
     expect(tx.supportRequest.create.mock.calls[0][0].data).not.toHaveProperty('assignedStaffUserId');
+    tx.supportRequest.findFirst.mockResolvedValueOnce(saved);
+    expect(await service.getCustomer(customer.id, 'support')).toEqual(first);
+  });
+
+  it('rejects unknown or incomplete slots and schedules on unrelated requests', () => {
+    expect(() => parseTransferProposal({ transferRequestedDate: '2099-09-29' }, true)).toThrow('không hợp lệ');
+    expect(() => parseTransferProposal({ transferRequestedDate: '2099-09-29', transferRequestedSlot: '12:30' }, true)).toThrow('không hợp lệ');
+    expect(() => parseTransferProposal({ transferRequestedDate: '2099-09-29', transferRequestedSlot: '08:00' }, false)).toThrow('không hợp lệ');
   });
 
   it('preserves the original customer and timestamp when Manager opens an old unlinked request', async () => {
@@ -66,7 +87,9 @@ describe('Direct customer transfer intake', () => {
 
 describe('Manager approval with assignment', () => {
   function fixture() {
-    const row = { id: 'transfer', status: 'REQUESTED', fromStorageUnitId: source.id, fromStorageUnit: source, fromReservationUnitId: 'old', rentalContract: contract, reservationId: reservation.id, reservation, createdAt: now, updatedAt: now };
+    const row = { id: 'transfer', status: 'REQUESTED', fromStorageUnitId: source.id, fromStorageUnit: source, fromReservationUnitId: 'old', rentalContract: contract, reservationId: reservation.id, reservation, createdAt: now, updatedAt: now,
+      supportRequest: { transferRequestedStartAt: new Date('2099-09-30T01:00:00Z'), transferRequestedEndAt: new Date('2099-09-30T03:00:00Z') },
+    };
     const destination = { id: 'target', status: 'AVAILABLE', storageTypeId: 'type' };
     const tx = {
       $queryRaw: vi.fn(), user: { findFirst: vi.fn().mockResolvedValue(staff) },
@@ -77,7 +100,7 @@ describe('Manager approval with assignment', () => {
       storageUnit: { findUnique: vi.fn().mockResolvedValue(destination), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       reservationUnit: { count: vi.fn().mockResolvedValue(0), create: vi.fn().mockResolvedValue({ id: 'target-allocation' }) },
     };
-    return { tx, service: new TransfersService({ $transaction: (run: (client: unknown) => unknown) => run(tx) } as never) };
+    return { tx, service: new TransfersService({ ...tx, $transaction: (run: (client: unknown) => unknown) => run(tx) } as never) };
   }
   const input = { toStorageUnitId: 'target', staffUserId: staff.id };
   it('records the approver and assignee with the destination reservation in one operation and reuses its result on retry', async () => {
@@ -85,6 +108,8 @@ describe('Manager approval with assignment', () => {
     const result = await service.approve('transfer', input, manager);
     expect(await service.approve('transfer', input, manager)).toEqual(result);
     expect(result).toMatchObject({ status: 'APPROVED', assignedStaff: { id: staff.id } });
+    expect(result.transferRequestedSchedule).toEqual({ startAt: '2099-09-30T01:00:00.000Z', endAt: '2099-09-30T03:00:00.000Z' });
+    expect(await service.getForStaff('transfer', staff)).toMatchObject({ transferRequestedSchedule: result.transferRequestedSchedule });
     expect(tx.reservationUnit.create).toHaveBeenCalledTimes(1);
     expect(tx.transferRequest.update).toHaveBeenCalledTimes(1);
     expect(tx.transferRequest.update.mock.calls[0][0].data).toMatchObject({ approvedByUserId: manager.id, assignedStaffUserId: staff.id, toReservationUnitId: 'target-allocation' });
@@ -93,7 +118,7 @@ describe('Manager approval with assignment', () => {
     const { service, tx } = fixture();
     tx.user.findFirst.mockResolvedValue(null);
     await expect(service.approve('transfer', input, manager)).rejects.toThrow('đang hoạt động');
-    await expect(service.approve('transfer', { toStorageUnitId: 'target' }, manager)).rejects.toThrow('Cần chọn');
+    await expect(service.approve('transfer', { toStorageUnitId: 'target' }, manager)).rejects.toThrow('Hãy chọn nhân viên thực hiện');
     await expect(service.approve('transfer', input, staff)).rejects.toThrow('Chỉ quản lý');
     await expect(service.reject('transfer', staff, { reason: 'Không phù hợp' })).rejects.toThrow('Chỉ quản lý');
     await expect(service.intakeLegacy('support', staff)).rejects.toThrow('Chỉ quản lý');

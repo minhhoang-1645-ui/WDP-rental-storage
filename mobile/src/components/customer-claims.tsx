@@ -188,7 +188,6 @@ export function ClaimForm() {
         </View>
         <Evidence photos={photos} />
         {amount !== null ? <View style={s.card}><Fact title="Giá trị ước tính" value={formatMoney(amount)} /></View> : null}
-        {amount !== null ? <Text style={s.warning}>Giá trị ước tính không phải số tiền bồi thường được duyệt.</Text> : null}
       </> : <>
         {rentals.loading ? <LoadingState layout="compact" /> : rentals.error ? <ErrorState message={rentals.error} onRetry={rentals.refresh} />
           : choices.length ? <Pressable accessibilityRole="button" style={[s.banner, s.spread]} onPress={() => setPicker('unit')}>
@@ -340,7 +339,6 @@ const s = StyleSheet.create({
   field: { gap: 5 },
   fact: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 6, borderBottomColor: C.divider, borderBottomWidth: StyleSheet.hairlineWidth },
   factValue: { flex: 1, minWidth: 110, fontWeight: '600' },
-  warning: { backgroundColor: C.warningBackground, color: C.warning, borderRadius: 10, padding: 10, lineHeight: 19 },
   error: { color: C.danger, fontSize: 13 },
   timeline: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 5, gap: 9 },
   dot: { width: 21, height: 21, borderRadius: 11, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center' },

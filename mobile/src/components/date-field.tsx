@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 import { Calendar } from 'lucide-react-native';
 import { calendarChoice, daysInMonth, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
@@ -8,18 +8,25 @@ import { calendarChoice, daysInMonth, isCalendarDate, vietnamCalendarDate } from
  * Cross-platform date input.
  * Web accepts ISO text; native offers scrollable calendar columns.
  */
-export function DateField({ title, value, onChange, min }: { title: string; value: string; onChange: (value: string) => void; min?: string }) {
+export function DateField({ title, value, onChange, min, before, disabled }: {
+  title: string; value: string; onChange: (value: string) => void; min?: string; before?: string; disabled?: boolean;
+}) {
   const minimum = min && isCalendarDate(min) ? min : '';
-  const initialDate = isCalendarDate(value) && (!minimum || value >= minimum) ? value : minimum || vietnamCalendarDate();
+  const maximum = before && isCalendarDate(before) ? before : '';
+  const dateIssue = (day: string) => !isCalendarDate(day) ? 'Ngày không hợp lệ. Nhập theo YYYY-MM-DD.'
+    : minimum && day < minimum ? `Chọn ngày từ ${minimum} trở đi.`
+    : maximum && day >= maximum ? 'Chọn ngày trước khi hợp đồng hết hạn.' : '';
+  const initialDate = !dateIssue(value) ? value : minimum || vietnamCalendarDate();
   const [modal, setModal] = useState(false);
   const [tempYear, setTempYear] = useState(() => initialDate.slice(0, 4));
   const [tempMonth, setTempMonth] = useState(() => initialDate.slice(5, 7));
   const [tempDay, setTempDay] = useState(() => initialDate.slice(8, 10));
   const { height } = useWindowDimensions();
-  const currentIssue = value && (!isCalendarDate(value) ? 'Ngày không hợp lệ. Nhập theo YYYY-MM-DD.' : minimum && value < minimum ? `Chọn ngày từ ${minimum} trở đi.` : '');
+  const currentIssue = value && dateIssue(value);
 
   const openPicker = () => {
-    const initial = isCalendarDate(value) && (!minimum || value >= minimum) ? value : minimum || vietnamCalendarDate();
+    Keyboard.dismiss();
+    const initial = initialDate;
     setTempYear(initial.slice(0, 4));
     setTempMonth(initial.slice(5, 7));
     setTempDay(initial.slice(8, 10));
@@ -28,7 +35,7 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
 
   const confirm = () => {
     const result = calendarChoice(tempYear, tempMonth, tempDay);
-    if (!isCalendarDate(result) || minimum && result < minimum) return;
+    if (disabled || dateIssue(result)) return;
     onChange(result);
     setModal(false);
   };
@@ -36,7 +43,7 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
   if (Platform.OS === 'web') {
     return <View style={local.field}>
       <Text style={local.label}>{title}</Text>
-      <TextInput accessibilityLabel={title} value={value} onChangeText={onChange} maxLength={10} placeholder="YYYY-MM-DD" placeholderTextColor={WdpColors.muted} style={local.input} />
+      <TextInput accessibilityLabel={title} editable={!disabled} value={value} onChangeText={onChange} maxLength={10} placeholder="YYYY-MM-DD" placeholderTextColor={WdpColors.muted} style={local.input} />
       {currentIssue ? <Text accessibilityRole="alert" style={local.error}>{currentIssue}</Text> : null}
     </View>;
   }
@@ -49,13 +56,13 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
   const lastYear = Math.min(9999, Math.max(selectedYear + 10, firstYear));
   const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => String(firstYear + i));
   const candidate = calendarChoice(tempYear, tempMonth, tempDay);
-  const unavailable = Boolean(minimum && candidate < minimum);
+  const candidateIssue = dateIssue(candidate);
   const chooseMonth = (month: string) => { setTempMonth(month); setTempDay(calendarChoice(tempYear, month, tempDay).slice(8, 10)); };
   const chooseYear = (year: string) => { setTempYear(year); setTempDay(calendarChoice(year, tempMonth, tempDay).slice(8, 10)); };
 
   return <View style={local.field}>
     <Text style={local.label}>{title}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`${title}: ${value || 'chưa chọn'}`} onPress={openPicker} style={local.touchInput}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}: ${value || 'chưa chọn'}`} disabled={disabled} onPress={openPicker} style={local.touchInput}>
       <Text style={value ? local.inputText : local.placeholder}>{value || 'Chọn ngày'}</Text>
       <Calendar size={18} color={WdpColors.muted} strokeWidth={1.8} />
     </Pressable>
@@ -79,10 +86,10 @@ export function DateField({ title, value, onChange, min }: { title: string; valu
             </View>
           </View>
           <Text style={local.preview}>{candidate}</Text>
-          {unavailable && <Text accessibilityRole="alert" style={local.error}>Chọn ngày từ {minimum} trở đi.</Text>}
+          {candidateIssue ? <Text accessibilityRole="alert" style={local.error}>{candidateIssue}</Text> : null}
           <View style={local.sheetActions}>
             <Pressable onPress={() => setModal(false)} style={local.cancelBtn}><Text style={local.cancelText}>Hủy</Text></Pressable>
-            <Pressable accessibilityRole="button" disabled={unavailable} accessibilityState={{ disabled: unavailable }} onPress={confirm} style={[local.confirmBtn, unavailable && { opacity: .5 }]}><Text style={local.confirmText}>Chọn ngày này</Text></Pressable>
+            <Pressable accessibilityRole="button" disabled={Boolean(candidateIssue)} accessibilityState={{ disabled: Boolean(candidateIssue) }} onPress={confirm} style={[local.confirmBtn, candidateIssue ? { opacity: .5 } : null]}><Text style={local.confirmText}>Chọn ngày này</Text></Pressable>
           </View>
         </Pressable>
       </Pressable>

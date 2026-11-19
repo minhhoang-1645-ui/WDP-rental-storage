@@ -8,6 +8,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertTransferIntakeAvailable, createLinkedTransfer, isTransferSubject, legacyTransferFilter, transferSubjectFilter } from '../transfers/transfer-intake.js';
+import { parseTransferProposal, transferProposalView } from '../transfers/transfer-schedule.js';
 import { businessToday } from '../../business-date.js';
 
 type SupportStatus = 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED' | 'RESOLVED';
@@ -77,6 +78,10 @@ export class SupportService {
         const transferContract = candidates.length === 1 ? candidates[0] : null;
         if (transfer) {
           if (reservation.status !== 'CONFIRMED' || !transferContract || transferContract.endDate <= businessToday()) throw new ConflictException('Hãy chọn một kho đang thuê còn thời hạn để chuyển.');
+          if (parsed.proposal && (parsed.proposal.calendarDay < transferContract.startDate || parsed.proposal.calendarDay >= transferContract.endDate)) {
+            throw new BadRequestException('Chọn ngày chuyển kho trong thời hạn của hợp đồng.');
+          }
+          if (parsed.proposal && parsed.proposal.startAt <= new Date()) throw new BadRequestException('Khung giờ đã qua. Hãy chọn khung giờ khác.');
           await assertTransferIntakeAvailable(tx, reservation.id, transferContract.id);
           const legacy = await tx.supportRequest.findFirst({ where: { reservationId: reservation.id, status: { not: 'RESOLVED' }, AND: [transferSubjectFilter, { OR: [{ rentalContractId: transferContract.id }, { rentalContractId: null, OR: [{ storageUnitId: transferContract.reservationUnit.storageUnitId }, { storageUnitId: null }] }] }], transferRequests: { none: {} } }, select: { id: true } });
           if (legacy) throw new ConflictException('Kho đã có yêu cầu chuyển đang xử lý. Xem tiến độ trong Chuyển đổi kho.');
@@ -87,6 +92,8 @@ export class SupportService {
           rentalContractId: transferContract?.id ?? contract?.id, storageUnitId: transferContract?.reservationUnit.storageUnitId ?? unit?.id ?? (early ? contract?.reservationUnit.storageUnitId : undefined), invoiceId: invoice?.id,
           category: parsed.category, priority: 'MEDIUM', ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, status: 'ASSIGNED' as const } : { status: 'OPEN' as const }), subject: parsed.subject, description: parsed.description,
           idempotencyKey: parsed.idempotencyKey,
+          transferRequestedStartAt: parsed.proposal?.startAt,
+          transferRequestedEndAt: parsed.proposal?.endAt,
         }, include: this.include('CUSTOMER') });
         if (!transferContract) return this.toView(created, 'CUSTOMER');
         await createLinkedTransfer(tx, transferContract, created);
@@ -225,8 +232,9 @@ export class SupportService {
     const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision: record.subject === EARLY_RETURN_SUBJECT && record.resolvedBy?.role === 'MANAGER' ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null) : null, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).filter((transfer: { status: string; assignedStaffUserId: string | null }) =>
       mode !== 'STAFF' || Boolean(record.assignedStaffUserId && transfer.assignedStaffUserId === record.assignedStaffUserId && ['APPROVED', 'COMPLETED'].includes(transfer.status)),
     ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
-    if (mode === 'CUSTOMER') return base;
-    const operational = { ...base, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
+    const view = { ...base, transferRequestedSchedule: transferProposalView(record) };
+    if (mode === 'CUSTOMER') return view;
+    const operational = { ...view, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'STAFF') return {
       ...operational,
       hasTransferOrder: (record.transferRequests ?? []).some((transfer: { status: string }) => transfer.status !== 'REJECTED'),
@@ -238,16 +246,19 @@ export class SupportService {
   private createInput(input: Record<string, unknown>, key: string | undefined) {
     const category = input.category;
     if (typeof category !== 'string' || ![...operationalCategories, 'PAYMENT_SUPPORT', 'OTHER'].includes(category as SupportCategory)) throw new BadRequestException('category không hợp lệ.');
-    return { reservationId: this.id(input.reservationId, 'reservationId'), rentalContractId: this.optionalId(input.rentalContractId, 'rentalContractId'), storageUnitId: this.optionalId(input.storageUnitId, 'storageUnitId'), invoiceId: this.optionalId(input.invoiceId, 'invoiceId'), category: category as SupportCategory, subject: this.text(input.subject, 200, 'subject'), description: this.text(input.description, 4000, 'description'), idempotencyKey: this.key(key) };
+    const subject = this.text(input.subject, 200, 'subject');
+    return { reservationId: this.id(input.reservationId, 'reservationId'), rentalContractId: this.optionalId(input.rentalContractId, 'rentalContractId'), storageUnitId: this.optionalId(input.storageUnitId, 'storageUnitId'), invoiceId: this.optionalId(input.invoiceId, 'invoiceId'), category: category as SupportCategory, subject, description: this.text(input.description, 4000, 'description'), idempotencyKey: this.key(key), proposal: parseTransferProposal(input, isTransferSubject(subject)) };
   }
   private resolutionInput(input: Record<string, unknown>, allowed: readonly string[]) { const type = input.resolutionType; if (typeof type !== 'string' || !allowed.includes(type)) throw new BadRequestException('resolutionType không được phép.'); return { resolutionType: type as any, resolutionNote: this.text(input.resolutionNote, 4000, 'resolutionNote') }; }
-  private assertCreateRetry(record: any, parsed: any, customerId: string) {
+  private assertCreateRetry(record: any, parsed: ReturnType<SupportService['createInput']>, customerId: string) {
     const reservationMatches = record.reservationId === parsed.reservationId || record.reservation.reservationCode === parsed.reservationId;
     const contractMatches = parsed.rentalContractId
       ? [record.rentalContractId, record.rentalContract?.contractCode].includes(parsed.rentalContractId)
       : parsed.subject !== EARLY_RETURN_SUBJECT || !record.rentalContractId || record.reservation._count?.contracts === 1;
     if (record.customerUserId !== customerId || !reservationMatches || !contractMatches || record.category !== parsed.category
       || record.subject !== parsed.subject || record.description !== parsed.description
+      || record.transferRequestedStartAt?.getTime() !== parsed.proposal?.startAt.getTime()
+      || record.transferRequestedEndAt?.getTime() !== parsed.proposal?.endAt.getTime()
       || (parsed.storageUnitId && ![record.storageUnitId, record.storageUnit?.unitNumber].includes(parsed.storageUnitId))
       || (parsed.invoiceId && record.invoiceId !== parsed.invoiceId)) throw new ConflictException('Idempotency-Key đã được dùng cho Support Request khác.');
     return this.toView(record, 'CUSTOMER');

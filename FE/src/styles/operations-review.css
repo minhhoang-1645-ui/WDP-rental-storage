@@ -271,16 +271,31 @@
 .return-inventory-notice.is-blocked { border-left-color: #b7791f; background: #fffbeb; color: #594215; }
 .return-stock-counts { display: flex; flex-wrap: wrap; gap: 12px; }
 .return-stock-counts > span { padding: 8px 12px; border-radius: 8px; background: #fff; border: 1px solid #eadbb7; }
-.transfer-destination-context { display: grid; gap: 16px; min-width: 0; }
+.transfer-destination-context { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.transfer-destination-context > svg { flex: none; color: var(--workspace-primary); }
+.transfer-destination-context > div { display: grid; gap: 2px; min-width: 0; }
+.transfer-destination-filter-panel { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-canvas); }
+.transfer-destination-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.transfer-destination-toolbar h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.transfer-destination-toolbar p { margin: 2px 0 0; color: var(--workspace-secondary); font-size: 13px; }
+.transfer-destination-toolbar .button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.transfer-destination-search { display: block; position: relative; }
+.transfer-destination-search > svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--workspace-secondary); pointer-events: none; }
+.transfer-destination-picker .transfer-destination-search > input { padding-inline-start: 38px; }
+.transfer-destination-picker .transfer-destination-filters { grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.transfer-destination-filters > label { min-width: 0; }
 .transfer-destination-picker .transfer-destination-options { display: grid; gap: 12px; padding: 12px 2px; border: 0; max-height: 480px; overflow-y: auto; }
 .portal-form .transfer-destination-options .transfer-destination-card { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 14px; align-items: start; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 12px; padding: 16px; cursor: pointer; min-width: 0; }
 .portal-form .transfer-destination-options .transfer-destination-card.is-selected { border: 2px solid var(--color-navy); background: color-mix(in srgb, var(--color-navy) 8%, var(--color-surface)); padding: 15px; }
 .portal-form .transfer-destination-options .transfer-destination-card.is-unavailable { opacity: .7; background: var(--color-canvas); cursor: not-allowed; }
 .transfer-destination-card > span { display: grid; gap: 5px; min-width: 0; }
 .transfer-destination-card small { display: block; color: var(--color-slate); overflow-wrap: anywhere; }
+.transfer-destination-card-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.transfer-destination-card-heading > small { padding: 2px 8px; border-radius: 6px; background: var(--color-canvas); }
+.transfer-destination-card-heading > small.is-available { background: var(--workspace-selected, #eef6f5); color: var(--workspace-primary); }
 .portal-form .transfer-destination-card input[type="radio"] { width: 18px; height: 18px; min-height: 18px; margin: 3px 0 0; padding: 0; }
-.transfer-destination-picker > .portal-checkbox, .transfer-handover-form .portal-checkbox { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; }
-.transfer-destination-picker > .portal-checkbox input[type="checkbox"], .transfer-handover-form .portal-checkbox input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin-top: 3px; padding: 0; }
+.transfer-handover-form .portal-checkbox { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; }
+.transfer-handover-form .portal-checkbox input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin-top: 3px; padding: 0; }
 .transfer-handover-form { display: grid; gap: 16px; }
 .transfer-key-counts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .transfer-route { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 16px; align-items: center; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; }

@@ -344,6 +344,8 @@ export class RejectMaintenanceVerificationDto {
 }
 
 export class CreateSupportRequestDto {
+  @ApiPropertyOptional({ example: '2026-11-25', description: 'Ngày muốn chuyển kho theo giờ Việt Nam, gửi cùng transferRequestedSlot.' }) transferRequestedDate?: string;
+  @ApiPropertyOptional({ example: '08:00', description: 'Giờ bắt đầu của khung đề xuất từ GET customer/support-requests/transfer-schedule.' }) transferRequestedSlot?: string;
   @ApiProperty({ example: 'WDP-2026-AB12CD34' }) reservationId!: string;
   @ApiPropertyOptional({ example: 'contract-id' }) rentalContractId?: string;
   @ApiPropertyOptional({ example: 'storage-unit-id' }) storageUnitId?: string;

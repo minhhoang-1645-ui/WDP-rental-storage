@@ -10,7 +10,7 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
   onChange: (value: string) => void;
   disabled?: boolean;
   knownStaff?: Map<string, string>;
-  currentStaff?: { id: string; fullName: string } | null;
+  currentStaff?: { id: string; fullName: string; email?: string } | null;
   workloads?: Map<string, number>;
   list?: boolean;
 }) {
@@ -43,14 +43,17 @@ export function StaffPicker({ value, onChange, disabled = false, knownStaff, cur
   }, [key, list, user?.role]);
   const current = result?.key === key ? result : undefined;
   const options = new Map([...(current?.error ? knownStaff ?? [] : []), ...(current?.staff ?? [])]);
-  if (currentStaff) options.set(currentStaff.id, currentStaff.fullName);
+  if (currentStaff && !options.has(currentStaff.id)) options.set(currentStaff.id, [currentStaff.fullName, currentStaff.email].filter(Boolean).join(' · '));
   const loading = !current;
   const showManual = manual || (!loading && !options.size) || (Boolean(value) && !options.has(value));
   const normalize = (text: string) => text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const filtered = [...options].filter(([id, name]) => id === value || normalize(name).includes(normalize(search.trim()))).sort((a,b) => (workloads ? (workloads.get(a[0]) ?? 0) - (workloads.get(b[0]) ?? 0) : 0) || a[1].localeCompare(b[1], 'vi'));
   const recommendation = workloads && current && !current.error ? [...current.staff].sort((a,b) => (workloads.get(a[0]) ?? 0) - (workloads.get(b[0]) ?? 0) || a[1].localeCompare(b[1], 'vi'))[0] : undefined;
   if (list) {
-    const choices = current && !current.error ? filtered.filter(([, name]) => normalize(name).includes(normalize(search.trim()))) : [];
+    const selectedOwner = currentStaff?.id === value ? value : undefined;
+    const choices = filtered
+      .filter(([id, name]) => id === selectedOwner || (current && !current.error && normalize(name).includes(normalize(search.trim()))))
+      .sort(([a], [b]) => Number(b === selectedOwner) - Number(a === selectedOwner));
     return <div className="staff-assignee-picker">
       <label className="field-label">Tìm nhân viên<input type="search" placeholder="Tên hoặc email" value={search} disabled={disabled} onChange={event => setSearch(event.target.value)} /></label>
       {loading && <p role="status">Đang tải nhân viên…</p>}

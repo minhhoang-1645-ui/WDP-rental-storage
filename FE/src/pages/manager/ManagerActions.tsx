@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
+import { useApiResource } from '../../services/useApiResource';
 import {
   code,
   first,
@@ -20,6 +21,11 @@ import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
 
+type UnitStaffAssignments = {
+  enabled: boolean;
+  items: { storageUnitId: string; staff: { id: string; fullName: string; email?: string; accountStatus: string } }[];
+};
+
 export function ManagerActions({
   resource,
   row,
@@ -34,6 +40,12 @@ export function ManagerActions({
   onSuccess?: (message: string) => void;
 }) {
   const { user } = useAuth();
+  const sourceUnitId = resource === 'transfers' && row.status === 'REQUESTED' ? first(row, 'fromUnit.id') : '';
+  const sourceAssignments = useApiResource<UnitStaffAssignments>(
+    user?.role === 'MANAGER' && sourceUnitId ? '/manager/unit-staff-assignments' : null, user?.id, true,
+  );
+  const sourceOwner = sourceAssignments.data?.items.find(item => item.storageUnitId === sourceUnitId)?.staff;
+  const responsibleStaff = sourceOwner?.accountStatus === 'ACTIVE' ? sourceOwner : undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState(first(row, "status"));
@@ -634,10 +646,10 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!target || !transferDestinationReady) return;
+                  if (!target || !transferDestinationReady || !transferStaff) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
-                    ...(transferStaff ? { staffUserId: transferStaff } : {}),
+                    staffUserId: transferStaff,
                   });
                 }}
               >
@@ -649,10 +661,19 @@ export function ManagerActions({
                   onReady={setTransferDestinationReady}
                   disabled={busy}
                 />
-                <p className="workspace-help">Để trống nhân viên để giao cho người phụ trách kho nguồn.</p>
-                <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
-                {transferStaff && <button type="button" className="button-secondary" disabled={busy} onClick={() => setTransferStaff('')}>Dùng người phụ trách kho</button>}
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady}>
+                <div className="staff-choice-summary">
+                  <strong>Người phụ trách kho nguồn{first(row, 'fromUnit.unitCode') ? ' · ' + first(row, 'fromUnit.unitCode') : ''}</strong>
+                  {sourceAssignments.loading || sourceAssignments.refreshing ? <p role="status">Đang kiểm tra người phụ trách kho…</p>
+                    : sourceAssignments.error ? <p role="status">Chưa tải được người phụ trách. <button type="button" className="portal-text-button" disabled={busy} onClick={sourceAssignments.refresh}>Thử lại</button></p>
+                    : responsibleStaff ? <>
+                      <p>{responsibleStaff.fullName}{responsibleStaff.email ? ' · ' + responsibleStaff.email : ''}</p>
+                      <button type="button" className="button-secondary" disabled={busy || transferStaff === responsibleStaff.id} onClick={() => setTransferStaff(responsibleStaff.id)}>
+                        {transferStaff === responsibleStaff.id ? 'Đã chọn người phụ trách kho' : 'Chọn người phụ trách kho'}
+                      </button>
+                    </> : <p>Kho chưa có người phụ trách đang hoạt động. Hãy chọn một nhân viên bên dưới.</p>}
+                </div>
+                <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} currentStaff={responsibleStaff} />
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || !transferStaff}>
                   {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
                 </button>
               </form>

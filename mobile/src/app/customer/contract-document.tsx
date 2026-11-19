@@ -1,6 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { Image, StyleSheet, Text, View } from 'react-native';
-import { Box } from 'lucide-react-native';
+import { Text, View } from 'react-native';
 import { useCustomerRentalJourney } from '@/hooks/use-customer-rental-journey';
 import { useResource } from '@/operations/use-resource';
 import { object, rows, text, type Row } from '@/operations/model';
@@ -8,9 +7,19 @@ import { JourneyScreen, JourneyNotice } from '@/components/customer-journey-ui';
 import { LoadingState, ErrorState } from '@/components/screen-state';
 import { canSignContract, contractAmount } from '@/components/customer-contracts';
 import { formatDate, statusLabel } from '@/utils/format';
+import { CustomerRenewalDocuments } from '@/components/contract-renewal-history';
+
+import { DocumentPaper, DocumentSection as Section, DocumentSignature, documentStyles as s } from '@/components/customer-document-paper';
+import { CustomerRenewalDocument } from '@/components/customer-renewal-document';
 
 export default function ContractDocument() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, renewalId } = useLocalSearchParams<{ id?: string; renewalId?: string }>();
+  return typeof renewalId === 'string' && renewalId
+    ? <CustomerRenewalDocument id={renewalId} />
+    : <RentalContractDocument id={typeof id === 'string' ? id : ''} />;
+}
+
+function RentalContractDocument({ id }: { id: string }) {
   const source = useResource<Row>(id ? '/customer/contracts/' + encodeURIComponent(id) : null);
   const row = source.data;
   const flow = useCustomerRentalJourney(text(row ?? {}, 'reservation.id'));
@@ -25,18 +34,14 @@ export default function ContractDocument() {
     !flow.closed && !flow.loading && !flow.error ? {
       title: 'Tiếp tục ký', path: '/customer/contract-sign?id=' + encodeURIComponent(id) + '&reviewedHash=' + encodeURIComponent(hash),
     } : undefined;
-  const acceptedAt = text(terms, 'acceptedAt');
-  const image = text(terms, 'signatureImage');
   const lines = rows(quote.lineItems);
 
   return <JourneyScreen title="Xem hợp đồng" action={action}>
+    {!source.error && !source.loading && <CustomerRenewalDocuments contract={row} />}
     {source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
       : source.loading ? <LoadingState layout="detail" />
       : !available ? <ErrorState message="Chưa có nội dung hợp đồng để hiển thị." onRetry={source.refresh} />
-      : <View style={s.paper}>
-        <View style={s.brand}><Box size={22} color="#0758DC" /><Text style={s.logo}>NestBox</Text></View>
-        <Text accessibilityRole="header" style={s.title}>Hợp đồng thuê kho tự quản</Text>
-        <Text style={s.meta}>{text(document, 'contractCode')} · {text(document, 'version')}</Text>
+      : <DocumentPaper title="Hợp đồng thuê kho tự quản" meta={[text(document, 'contractCode'), text(document, 'version')].filter(Boolean).join(' · ')}>
         {document.legacySnapshotUnavailable ? <JourneyNotice title="Bản đối chiếu hồ sơ cũ" message="Hồ sơ này thiếu bản nội dung gốc đã ký." />
           : issuer.draft !== false ? <JourneyNotice title="Bản dự thảo" message="Thông tin pháp nhân hoặc điều khoản phát hành chưa được phê duyệt đầy đủ." /> : null}
         <Section title="Bên cho thuê" values={[
@@ -71,36 +76,7 @@ export default function ContractDocument() {
           <Text accessibilityRole="header" style={s.heading}>{text(clause, 'title')}</Text>
           <Text selectable style={s.body}>{text(clause, 'text')}</Text>
         </View>)}
-        <Section title="Xác nhận của khách thuê" values={[
-          ['Chữ ký', acceptedAt ? 'Đã ký' : 'Chưa ký'], ['Người ký', text(terms, 'acceptanceName')],
-          ['Thời điểm ký', acceptedAt ? formatDate(acceptedAt, true) : ''],
-          ['Xác thực email', text(terms, 'verification.method') === 'EMAIL_OTP'
-            ? [text(terms, 'verification.recipient'), formatDate(text(terms, 'verification.verifiedAt'), true)].join(' · ') : ''],
-        ]} />
-        {acceptedAt && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image)
-          ? <Image source={{ uri: image }} accessibilityLabel="Chữ ký của khách thuê" resizeMode="contain" style={s.signature} /> : null}
-      </View>}
+        <DocumentSignature terms={terms} />
+      </DocumentPaper>}
   </JourneyScreen>;
 }
-
-function Section({ title, values }: { title: string; values: [string, string][] }) {
-  return <View style={s.section}>
-    <Text accessibilityRole="header" style={s.heading}>{title}</Text>
-    {values.filter(([, value]) => value).map(([label, value], index) => <View key={index} style={s.line}>
-      <Text style={s.meta}>{label}</Text><Text selectable style={s.body}>{value}</Text>
-    </View>)}
-  </View>;
-}
-
-const s = StyleSheet.create({
-  paper: { borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 12, padding: 14, gap: 12, backgroundColor: 'white' },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logo: { fontSize: 18, fontWeight: '800', color: '#0758DC' },
-  title: { color: '#101828', fontWeight: '800', fontSize: 20, textAlign: 'center' },
-  meta: { fontSize: 13, color: '#475569' },
-  body: { fontSize: 15, lineHeight: 22, color: '#101828' },
-  section: { gap: 7 },
-  heading: { fontSize: 15, fontWeight: '700', color: '#132D58', padding: 8, backgroundColor: '#EDF3FD', borderRadius: 6 },
-  line: { gap: 2, paddingHorizontal: 4 },
-  signature: { width: '100%', height: 96 },
-});

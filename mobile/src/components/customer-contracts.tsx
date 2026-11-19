@@ -8,6 +8,8 @@ import { JourneyScreen } from './customer-journey-ui';
 import { StatusBadge } from './customer-ui';
 import { LoadingState, ErrorState } from './screen-state';
 import { formatDate, formatMoney } from '@/utils/format';
+import { CustomerRenewalDocuments } from './contract-renewal-history';
+import { CustomerTheme as C } from '@/constants/wdp-theme';
 
 const blue = '#0758DC';
 export function contractAmount(value: unknown) {
@@ -18,6 +20,14 @@ export function contractAmount(value: unknown) {
 export const canSignContract = (row: Row) => !text(row, 'terms.acceptedAt') &&
   Boolean(text(row, 'terms.snapshotHash')) && ['PENDING_PAYMENT', 'READY_FOR_HANDOVER'].includes(String(row.status)) &&
   !['EXPIRED', 'CANCELLED', 'REJECTED'].includes(text(row, 'reservation.status'));
+
+function ContractSignatureStatus({ signed }: { signed: boolean }) {
+  return <View style={[s.signatureBadge, signed ? s.signedBadge : s.unsignedBadge]}>
+    <Text numberOfLines={1} style={[s.signatureLabel, { color: signed ? C.success : C.warning }]}>
+      {signed ? 'Đã\u00a0ký' : 'Chưa\u00a0ký'}
+    </Text>
+  </View>;
+}
 
 function ContractList() {
   const { reservationId } = useLocalSearchParams<{ reservationId?: string }>();
@@ -41,7 +51,7 @@ function ContractList() {
                 <Text style={[s.muted, s.grow]}>{formatDate(text(row, 'startDate'))} – {formatDate(text(row, 'endDate'))}</Text>
               </View>
             </View>
-            <StatusBadge status={signed ? 'Đã ký' : 'Chờ ký'} tone={signed ? 'success' : 'warning'} />
+            <ContractSignatureStatus signed={signed} />
             <ChevronRight size={16} color="#475569" />
           </Pressable>;
         })}
@@ -82,7 +92,7 @@ function ContractDetail({ id }: { id: string }) {
           <View style={s.status}>
             <View style={[s.inline, s.statusCenter]}><PenLine size={17} color={blue} /><Text style={s.bold}>Chữ ký</Text></View>
             <View style={s.statusCenter}>
-              <StatusBadge status={signed ? 'Đã ký' : 'Chưa ký'} tone={signed ? 'success' : 'warning'} />
+              <ContractSignatureStatus signed={signed} />
             </View>
           </View>
         </View>
@@ -99,6 +109,7 @@ function ContractDetail({ id }: { id: string }) {
             <Text style={s.muted}>Xem nội dung trong ứng dụng</Text>
           </View><ChevronRight size={17} color="#475569" />
         </Pressable>
+        <CustomerRenewalDocuments contract={row} />
         {signed && status === 'PENDING_PAYMENT' && !flow.loading && !flow.error && !flow.closed
           ? <Text style={s.muted}>{flow.allSigned ? flow.pending ? 'Khoản thanh toán đang được kiểm tra.' : 'Xem hóa đơn ban đầu để theo dõi thanh toán.' : 'Cần ký đủ hợp đồng của đơn đặt trước khi thanh toán hóa đơn ban đầu.'}</Text> : null}
       </>}
@@ -121,4 +132,8 @@ const s = StyleSheet.create({
   statusCards: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   status: { flexBasis: 140, flexGrow: 1, flexShrink: 1, gap: 7, padding: 10, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 10 },
   statusCenter: { flexDirection: 'row', justifyContent: 'center' },
+  signatureBadge: { flexShrink: 0, alignSelf: 'center', minWidth: 68, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  signedBadge: { backgroundColor: C.successBackground },
+  unsignedBadge: { backgroundColor: C.warningBackground },
+  signatureLabel: { fontSize: 13, lineHeight: 18, fontWeight: '600', textAlign: 'center' },
 });

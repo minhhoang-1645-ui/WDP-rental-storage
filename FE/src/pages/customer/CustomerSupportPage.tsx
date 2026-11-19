@@ -25,6 +25,7 @@ import { ApiError } from "../../services/api";
 import { useApiResource } from "../../services/useApiResource";
 import { isTransferRequest } from '../../utils/transfer-request';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
+import type { StoredItem } from '../../types/stock';
 import type {
   CustomerInvoice,
   CustomerRental,
@@ -368,7 +369,11 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             </PortalEmpty>
           ) : (
             <div className="customer-card-list">
-              {visibleRequests.map((item) => { const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined; const transferLabel = transfer ? ({ REQUESTED: 'Chờ quản lý xem xét', APPROVED: transfer.requiresAcceptance ? 'Đã duyệt · Chờ ký phụ lục' : 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transfer.status] : undefined; return (
+              {visibleRequests.map((item) => {
+                const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined;
+                const transferContractId = transfer?.contractId || item.contract?.id;
+                const transferLabel = transfer ? ({ REQUESTED: 'Chờ quản lý xem xét', APPROVED: transfer.requiresAcceptance ? 'Đã duyệt · Chờ ký phụ lục' : 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string, string>)[transfer.status] : undefined;
+                return (
                 <DetailCard
                     detail={!focused ? { to: (transferOnly ? '/customer/transfers' : '/customer/support') + '?' + new URLSearchParams({ request: item.id }), label: `Xem yêu cầu ${item.supportCode}` } : undefined}
                   className="customer-record-card customer-record-card--compact customer-request-card"
@@ -399,6 +404,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                   <details className="customer-request-disclosure" open={focused ? true : undefined}><summary>Chi tiết và phản hồi</summary>
                   <p>{item.description}</p>
                   {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.status === 'APPROVED' && transfer.requiresAcceptance && <Link to={`/customer/transfers?transfer=${encodeURIComponent(transfer.id)}`}>Xem và ký phụ lục</Link>}{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {focused && transfer?.status === 'APPROVED' && transferContractId &&
+                    <TransferInventoryNotice contractId={transferContractId} unitCode={transfer.fromUnit.unitCode} />}
                   {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
@@ -415,4 +422,23 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
       {pagination}
     </section>
   );
+}
+
+function TransferInventoryNotice({ contractId, unitCode }: { contractId: string; unitCode: string }) {
+  const { user } = useAuth();
+  const query = new URLSearchParams({ rentalContractId: contractId });
+  const inventory = useApiResource<StoredItem[]>('/customer/stored-items?' + query, user?.id, true);
+  const count = (inventory.data ?? []).filter(item => item.balance > 0).length;
+  if (inventory.loading) return <p role="status">Đang kiểm tra hàng còn lưu ở kho nguồn…</p>;
+  if (inventory.error) return <p role="status">Chưa kiểm tra được hàng còn lưu. <button type="button" className="portal-text-button" onClick={inventory.refresh}>Thử lại</button></p>;
+  if (!count) return null;
+
+  return <div className="customer-inline-notice">
+    <strong>Còn {count} mặt hàng tại kho {unitCode}</strong>
+    <p>Phối hợp với nhân viên để chuyển hàng sang kho mới. Nếu muốn lấy hàng ra trước, hãy gửi phiếu xuất và chờ nhân viên hoàn tất phiếu.</p>
+    <div className="portal-actions">
+      <Link className="button-secondary" to={'/customer/stored-items?' + query}>Xem hàng đang lưu</Link>
+      <Link className="button-secondary" to={'/customer/stock-movements?' + new URLSearchParams({ rentalContractId: contractId, type: 'OUT', create: '1' })}>Tạo phiếu xuất hàng</Link>
+    </div>
+  </div>;
 }

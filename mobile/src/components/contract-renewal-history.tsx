@@ -3,8 +3,36 @@ import { DocumentFile } from './document-file';
 import { object, rows, text, label } from '@/operations/model';
 import { Panel, styles, money } from '@/operations/ui';
 import { formatDate } from '@/utils/format';
-import { CustomerActionRow } from './customer-premium';
+import { CustomerActionRow, customerStyles } from './customer-premium';
 import { StatusBadge } from './customer-ui';
+import { FileText } from 'lucide-react-native';
+
+export function CustomerRenewalDocuments({ contract }: { contract: unknown }) {
+  const completed = rows(object(contract).renewals)
+    .filter(renewal => renewal.status === 'COMPLETED' && text(renewal, 'id'))
+    .reverse();
+  if (!completed.length) return null;
+
+  return <View style={{ gap: 10 }}>
+    <Text accessibilityRole="header" style={customerStyles.section}>Phụ lục gia hạn</Text>
+    {completed.map(renewal => {
+      const id = text(renewal, 'id');
+      const code = text(renewal, 'appendix.code');
+      const available = Boolean(code) && object(renewal.appendix).available !== false;
+      return <View key={id} style={{ gap: 4 }}>
+        <Text style={customerStyles.secondary}>
+          {formatDate(text(renewal, 'previousEndDate'))} → {formatDate(text(renewal, 'requestedEndDate'))}
+        </Text>
+        {available ? <CustomerActionRow
+          path={`/customer/contract-document?renewalId=${encodeURIComponent(id)}`}
+          icon={FileText}
+          title="Xem phụ lục gia hạn"
+          subtitle={code}
+        /> : <Text style={customerStyles.secondary}>Lần gia hạn này chưa có nội dung phụ lục để xem.</Text>}
+      </View>;
+    })}
+  </View>;
+}
 
 export function ContractRenewalHistory({ contract: value, scope }: { contract: unknown; scope: 'customer' | 'manager' | 'staff/management' }) {
   const contract = object(value), renewals = rows(contract.renewals);

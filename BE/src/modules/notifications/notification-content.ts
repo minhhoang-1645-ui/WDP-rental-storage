@@ -241,6 +241,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   if (linkedTransfer) {
     const linkedStatus = text(linkedTransfer, 'status');
     if (linkedStatus) title = `Chuyển kho ${states[linkedStatus] ?? 'đã cập nhật'}`;
+    if (customer && linkedStatus === 'APPROVED') actionLabel = 'Kiểm tra hàng ở kho nguồn';
     version = first(linkedTransfer, 'updatedAt', 'completedAt', 'approvedAt');
   }
   const unit = first(row, 'storageUnit.unitCode', 'storageUnit.unitNumber', 'currentStorageUnit.unitNumber', 'unit.unitCode',
@@ -248,6 +249,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const summary = [
     customer ? '' : first(row, 'customer.fullName', 'reservation.customer.fullName'),
     unit || first(row, 'storageType.name', 'product.name', 'reservation.storageType.name'),
+    customer && linkedTransfer && text(linkedTransfer, 'status') === 'APPROVED' ? 'Kiểm tra hàng đang lưu trước khi chuyển.' : '',
   ].filter(Boolean).map(short).join(' · ');
   const code = first(row, 'reference', 'appointmentCode', 'invoiceCode', 'submissionCode', 'movementCode', 'maintenanceCode',
     'returnCode', 'settlementCode', 'supportCode', 'transferCode', 'claimCode', 'renewalCode', 'contractCode') || (source === 'reservations' ? id : '');

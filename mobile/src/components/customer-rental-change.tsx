@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Keyboard, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
 import { CalendarDays, Check, ChevronRight, Headphones, Info, Warehouse } from 'lucide-react-native';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { CustomerActionRow, customerStyles as s } from '@/components/customer-premium';
 import { Button } from '@/operations/ui';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
+import { DateField } from '@/components/date-field';
 import { useResource } from '@/operations/use-resource';
 import { operationMutate } from '@/operations/mutate';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
@@ -13,10 +14,14 @@ import { customerRentalActions } from '@/portals/actions';
 import { EARLY_RETURN_SUBJECT, isEarlyReturnRequest, isCurrentEarlyReturnApproval } from '@/utils/early-return';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { formatDate, formatMoney } from '@/utils/format';
-import { vietnamCalendarDate } from '@/utils/calendar-date';
+import { currentTimeMs, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
+import type { StoredItem } from '@/stock/types';
 
 type Kind = 'transfers' | 'early-returns';
+type TransferSlot = { start: string; end: string };
 const support = '/customer/support-requests';
+const slotStart = (day: string, time: string) => Date.parse(`${day}T${time}:00+07:00`);
+const vietnamTime = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 export function rentalChangePath(kind: Kind, contractId?: string) {
   return '/customer/' + kind + (contractId ? '/new?rentalContractId=' + encodeURIComponent(contractId) : '');
 }
@@ -50,8 +55,17 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const [selectedId, select] = useState(rentalContractId ?? '');
   const [form, showForm] = useState(false);
   const [reason, setReason] = useState('');
-  const [preference, setPreference] = useState('');
   const [notes, setNotes] = useState('');
+  const [requestedDay, setRequestedDay] = useState('');
+  const [requestedSlot, setRequestedSlot] = useState('');
+  const showSchedule = creating && !early && form;
+  const schedule = useResource<{ slots: TransferSlot[] }>(showSchedule ? `${support}/transfer-schedule` : null);
+  const [clock, setClock] = useState(currentTimeMs);
+  useEffect(() => {
+    if (!showSchedule) return;
+    const timer = setInterval(() => setClock(currentTimeMs()), 15_000);
+    return () => clearInterval(timer);
+  }, [showSchedule]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
@@ -83,6 +97,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         name: text(rental, 'storageType.name') || 'Kho đang thuê',
         caption: [text(contract, 'unit.unitCode'), text(contract, 'unit.zone') && 'Khu ' + text(contract, 'unit.zone'), size].filter(Boolean).join(' · '),
         end: text(contract, 'endDate'),
+        start: text(contract, 'startDate'),
         debt: text(rental, 'returnReadiness.totalOutstanding'),
         count: 1,
         blocked: early ? !earlyAction || Boolean(pending) : Boolean(pending || proposal || activeReturn),
@@ -94,6 +109,17 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   });
   const selected = choices.find(item => item.contractId === selectedId) ??
     (!selectedId && early && choices.length === 1 ? choices[0] : undefined);
+  // The API supplies proposal windows in facility time, not availability.
+  const today = vietnamCalendarDate(clock);
+  const slots = schedule.data?.slots ?? [];
+  const lastSlotPassed = slots.length > 0 && slots.every(slot => slotStart(today, slot.start) <= clock);
+  const firstDay = lastSlotPassed ? vietnamCalendarDate(clock + 86400000) : today;
+  const contractStart = selected?.start.slice(0, 10) ?? '';
+  const contractEnd = selected?.end.slice(0, 10) ?? '';
+  const earliest = contractStart > firstDay ? contractStart : firstDay;
+  const hasValidDate = isCalendarDate(requestedDay) && requestedDay >= earliest && requestedDay < contractEnd;
+  const availableSlots = hasValidDate ? slots.filter(slot => slotStart(requestedDay, slot.start) > clock) : [];
+  const canRequestSchedule = availableSlots.some(slot => slot.start === requestedSlot);
   const sources = creating ? [rentals, requests, returns] : id ? [detail] : [requests];
   const loading = sources.some(source => source.loading);
   const issue = sources.find(source => source.error)?.error;
@@ -109,6 +135,11 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
       setError('Nhập lý do ít nhất 3 ký tự.');
       return;
     }
+    if (!early && (!canRequestSchedule || slotStart(requestedDay, requestedSlot) <= currentTimeMs())) {
+      setError('Chọn ngày và khung giờ chuyển kho còn hiệu lực.');
+      return;
+    }
+    Keyboard.dismiss();
     setError('');
     sending.current = true;
     setBusy(true);
@@ -117,9 +148,9 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         reservationId: selected.reservationId,
         category: early ? 'OTHER' : 'UNIT_ISSUE',
         subject: early ? EARLY_RETURN_SUBJECT : 'Yêu cầu chuyển kho',
-        description: [reason.trim(), !early && preference.trim() && 'Kho mong muốn: ' + preference.trim(), !early && notes.trim()].filter(Boolean).join('\n\n'),
+        description: [reason.trim(), !early && notes.trim()].filter(Boolean).join('\n\n'),
         rentalContractId: selected.contractId,
-        ...(!early ? { storageUnitId: selected.unitId } : {}),
+        ...(!early ? { storageUnitId: selected.unitId, transferRequestedDate: requestedDay, transferRequestedSlot: requestedSlot } : {}),
       }, true);
       const requestId = idOf(result) || text(result, 'supportCode');
       if (requestId) open(requestId, true);
@@ -135,11 +166,12 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const record = detail.data;
   const validRecord = record && matches(record);
   const currentTransfer = !early && record && validRecord ? rows(record.transfers)[0] ?? {} : {};
+  const transferContractId = text(currentTransfer, 'contractId') || text(record ?? {}, 'contract.id');
   const previous = tickets.filter(matches);
   return <>
     <Stack.Screen options={{ title: id && !creating ? 'Chi tiết yêu cầu' : form ? 'Yêu cầu chuyển kho' : title,
       headerTitleAlign: 'center', headerTitleStyle: { color: C.cobalt, fontSize: 19, fontWeight: '700' } }} />
-    <ScrollView style={styles.screen} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled"
+    <ScrollView style={styles.screen} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}>
       {issue ? <ErrorState message={issue} onRetry={refresh} /> : loading ? <LoadingState layout="compact" /> : creating ? <>
         {!showFields ? <><Text style={s.section}>Chọn kho muốn chuyển</Text><Text style={s.secondary}>Chọn một ô kho đang thuê để gửi yêu cầu.</Text></> : null}
@@ -159,23 +191,41 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           </View>
         </Pressable>)}
         {!choices.length ? <EmptyState title="Chưa có kho phù hợp" message="Bạn có thể xem lại các yêu cầu đã gửi." /> : null}
-        {!showFields ? <Button title="Tiếp tục" disabled={!selected || selected.blocked} onPress={() => showForm(true)} /> : selected && !selected.blocked ? <>
-          {early ? <>
+        {!showFields ? <Button title="Tiếp tục" disabled={!selected || selected.blocked} onPress={() => { setClock(currentTimeMs()); showForm(true); }} /> : selected && !selected.blocked ? <>
+          {early && <>
             <View style={styles.card}><CalendarDays color={C.cobalt} size={19} /><Text style={[s.body, styles.grow]}>Hạn thuê hiện tại</Text><Text style={s.body}>{formatDate(selected.end)}</Text></View>
             <View style={styles.notice}><Info color={C.cobalt} size={18} /><View style={styles.grow}>
               <Text style={s.secondary}>{selected.debt && Number.isFinite(Number(selected.debt)) ? 'Còn phải trả theo hợp đồng: ' + formatMoney(Number(selected.debt)) + '. ' : ''}
                 Cần thanh toán đủ các khoản đã cam kết, kể cả kỳ chưa đến hạn, trước khi gửi yêu cầu trả kho chính thức. Tiền cọc được quyết toán riêng.</Text>
               <CustomerActionRow title="Xem công nợ" path="/customer/invoices" />
             </View></View>
-          </> : <Input label="Kho mong muốn (tùy chọn)" value={preference} onChange={setPreference} maxLength={160} disabled={busy} placeholder="Kích thước hoặc khu vực mong muốn" />}
+          </>}
           <Input label={early ? 'Lý do trả kho trước hạn *' : 'Lý do chuyển kho *'} value={reason}
             onChange={value => { setReason(value); setError(''); }} maxLength={early ? 3000 : 200} disabled={busy} multiline={early} />
-          {!early ? <Input label="Mô tả nhu cầu (tùy chọn)" value={notes} onChange={setNotes} maxLength={500} disabled={busy} multiline /> : null}
+          {!early && <>
+            <Input label="Mô tả thêm" value={notes} onChange={setNotes} maxLength={500} disabled={busy} multiline />
+            {schedule.error ? <ErrorState message="Chưa tải được khung giờ chuyển kho." onRetry={schedule.refresh} /> : schedule.loading ?
+              <Text style={s.secondary}>Đang tải khung giờ chuyển kho…</Text> : contractEnd <= earliest ?
+              <Text style={s.secondary}>Hợp đồng không còn ngày phù hợp để đề xuất lịch chuyển kho.</Text> : <>
+                <DateField title="Ngày muốn chuyển *" value={requestedDay} min={earliest} before={contractEnd} disabled={busy}
+                  onChange={day => { setRequestedDay(day); if (day !== requestedDay) setRequestedSlot(''); setError(''); }} />
+                <Text style={s.body}>Khung giờ mong muốn *</Text>
+                {!hasValidDate ? <Text style={s.secondary}>Chọn ngày để xem khung giờ.</Text> : !availableSlots.length ?
+                  <Text style={s.secondary}>Ngày này đã hết khung giờ. Hãy chọn ngày khác.</Text> :
+                  <View style={styles.slots}>{availableSlots.map(slot => <Pressable key={slot.start} accessibilityRole="radio"
+                    accessibilityState={{ checked: requestedSlot === slot.start, disabled: busy }} disabled={busy}
+                    onPress={() => { Keyboard.dismiss(); setRequestedSlot(slot.start); setError(''); }}
+                    style={[styles.slot, requestedSlot === slot.start && styles.selected]}>
+                    <Text style={requestedSlot === slot.start ? styles.status : s.body}>{slot.start}–{slot.end}</Text>
+                  </Pressable>)}</View>}
+              </>}
+          </>}
           <View style={[styles.notice, !early && styles.waiting]}><Info color={early ? C.cobalt : '#9A5108'} size={18} />
-            <Text style={[s.secondary, styles.grow]}>{early ? 'NestBox sẽ xem xét đề nghị. Bạn vẫn thuê kho cho đến khi hoàn tất trả kho.' : 'Chỉ chuyển hàng sau khi NestBox xác nhận kho mới.'}</Text>
+            <Text style={[s.secondary, styles.grow]}>{early ? 'NestBox sẽ xem xét đề nghị. Bạn vẫn thuê kho cho đến khi hoàn tất trả kho.' : 'Đây là lịch mong muốn. NestBox sẽ xác nhận lịch chính thức sau khi xem xét yêu cầu.\nChỉ chuyển hàng sau khi NestBox xác nhận kho mới.'}</Text>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <Button title={busy ? 'Đang gửi…' : early ? 'Gửi đề nghị' : 'Gửi yêu cầu chuyển kho'} disabled={busy} onPress={() => void submit()} />
+          <Button title={busy ? 'Đang gửi…' : early ? 'Gửi đề nghị' : 'Gửi yêu cầu chuyển kho'}
+            disabled={busy || (!early && (reason.trim().length < 3 || !canRequestSchedule || Boolean(schedule.error || schedule.loading)))} onPress={() => void submit()} />
         </> : null}
         {early ? <CustomerActionRow title="Xem yêu cầu đã gửi" path={base} /> : null}
       </> : id ? validRecord && record ? <>
@@ -183,6 +233,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           <Text style={s.body}>{text(record, 'unit.storageType.name') || text(currentTransfer, 'fromUnit.unitCode') || text(record, 'unit.unitCode') || title}</Text>
           <Text style={s.secondary}>{[text(currentTransfer, 'fromUnit.unitCode') || text(record, 'unit.unitCode', 'reservation.reference'), 'Đã gửi ' + formatDate(text(record, 'createdAt'))].filter(Boolean).join(' · ')}</Text>
         </View></View>
+        {!early && <TransferScheduleNotice schedule={object(record.transferRequestedSchedule)} closed={['COMPLETED', 'REJECTED'].includes(text(currentTransfer, 'status')) || (!text(currentTransfer, 'status') && record.status === 'RESOLVED')} />}
         <View style={styles.notice}><Info color={C.cobalt} size={18} /><View style={styles.grow}>
           <Text style={s.body}>{progress(record, early)}</Text>
           {text(currentTransfer, 'completedAt', 'approvedAt') || text(record, 'resolvedAt', 'startedAt') ? <Text style={s.secondary}>
@@ -191,6 +242,9 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           {text(currentTransfer, 'toUnit.unitCode') ? <Text style={s.secondary}>Kho mới · {text(currentTransfer, 'toUnit.unitCode')}</Text> : null}
           {early && record.earlyReturnDecision === 'APPROVED' ? <Text style={s.secondary}>Bạn có thể gửi yêu cầu trả kho khi đã thanh toán đủ và đủ điều kiện giao lại kho.</Text> : null}
         </View></View>
+        {currentTransfer.status === 'APPROVED' && transferContractId ? <TransferInventoryNotice
+          contractId={transferContractId} unitCode={text(currentTransfer, 'fromUnit.unitCode')}
+        /> : null}
         <Text style={s.section}>Nội dung đã gửi</Text><Text style={s.body}>{text(record, 'description')}</Text>
         {text(record, 'resolutionNote') || text(currentTransfer, 'rejectionReason') ? <View style={styles.notice}><View style={styles.grow}>
           <Text style={s.body}>Phản hồi của NestBox</Text><Text style={s.secondary}>{text(currentTransfer, 'rejectionReason') || text(record, 'resolutionNote')}</Text>
@@ -212,13 +266,48 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   </>;
 }
 
-function Input({ label, value, onChange, maxLength, multiline, disabled, placeholder }: {
+function TransferScheduleNotice({ schedule, closed }: { schedule: Row; closed: boolean }) {
+  const start = new Date(text(schedule, 'startAt'));
+  const end = new Date(text(schedule, 'endAt'));
+  const hasProposal = Number.isFinite(start.getTime()) && Number.isFinite(end.getTime());
+  return <View style={styles.notice}>
+    <CalendarDays size={18} color={C.cobalt} />
+    <View style={styles.grow}>
+      <Text style={s.body}>Lịch chuyển kho</Text>
+      {hasProposal ? <>
+        <Text style={s.secondary}>Lịch mong muốn · {formatDate(start.toISOString())} · {vietnamTime.format(start)}–{vietnamTime.format(end)}</Text>
+        <Text style={styles.status}>{closed ? 'Lịch đề xuất trong hồ sơ' : 'Chờ xác nhận lịch'}</Text>
+      </> : <Text style={s.secondary}>Chưa có lịch hẹn</Text>}
+    </View>
+  </View>;
+}
+
+function TransferInventoryNotice({ contractId, unitCode }: { contractId: string; unitCode: string }) {
+  const query = 'rentalContractId=' + encodeURIComponent(contractId);
+  const inventory = useResource<StoredItem[]>('/customer/stored-items?' + query);
+  const count = (inventory.data ?? []).filter(item => item.balance > 0).length;
+  if (inventory.loading) return <Text style={s.secondary}>Đang kiểm tra hàng còn lưu ở kho nguồn…</Text>;
+  if (inventory.error) return <ErrorState message="Chưa kiểm tra được hàng còn lưu ở kho nguồn." onRetry={inventory.refresh} />;
+  if (!inventory.data || !count) return null;
+
+  return <View style={[styles.notice, styles.waiting]}>
+    <Info color="#9A5108" size={18} />
+    <View style={styles.grow}>
+      <Text style={s.body}>Còn {count} mặt hàng tại {unitCode ? 'kho ' + unitCode : 'kho nguồn'}</Text>
+      <Text style={s.secondary}>Bạn tự chuyển hàng sang kho mới. Nhân viên sẽ hướng dẫn, kiểm đếm và bàn giao. Nếu muốn lấy hàng ra trước, hãy gửi phiếu xuất và chờ nhân viên hoàn tất phiếu.</Text>
+      <CustomerActionRow title="Xem hàng đang lưu" path={'/customer/stored-items?' + query + '&tab=inventory'} />
+      <CustomerActionRow title="Tạo phiếu xuất hàng" path={'/customer/stored-items?' + query + '&tab=movements&create=1&type=OUT'} />
+    </View>
+  </View>;
+}
+
+function Input({ label, value, onChange, maxLength, multiline, disabled }: {
   label: string; value: string; onChange: (value: string) => void; maxLength: number;
-  multiline?: boolean; disabled?: boolean; placeholder?: string;
+  multiline?: boolean; disabled?: boolean;
 }) {
   return <View style={{ gap: 5 }}><Text style={s.body}>{label}</Text>
     <TextInput accessibilityLabel={label} value={value} onChangeText={onChange} maxLength={maxLength}
-      multiline={multiline} editable={!disabled} placeholder={placeholder} placeholderTextColor={C.muted}
+      multiline={multiline} editable={!disabled}
       style={[styles.input, multiline && styles.multiline]} />
   </View>;
 }
@@ -228,6 +317,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0, gap: 4 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 12, borderWidth: 1, borderColor: C.divider, minHeight: 48 },
   selected: { backgroundColor: '#EDF3FE', borderColor: '#D6E4FF' },
+  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slot: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: C.divider },
   icon: { alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 10, backgroundColor: '#EEF4FF' },
   mark: { width: 20, height: 20, borderWidth: 1, borderColor: C.muted, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
   badge: { alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, backgroundColor: '#DEF6E7', color: '#126835', fontSize: 12, fontWeight: '600' },

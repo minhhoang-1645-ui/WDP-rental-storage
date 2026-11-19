@@ -40,6 +40,13 @@ export default function PaymentResult() {
         if (status.invoice.id !== invoiceId) { terminal = true; setError('Giao dịch không khớp với hóa đơn.'); return; }
         setVerified({ key, result: status });
         setError('');
+        if (status.status === 'SUCCESS' && status.payment && !status.reconciliation) {
+          terminal = true;
+          notifyDataChanged('/customer/invoices');
+          notifyDataChanged('/customer/payments');
+          router.dismissTo('/customer');
+          return;
+        }
         terminal = status.status !== 'PENDING' && (!status.reconciliation || status.reconciliation.status === 'RECONCILED');
         if (terminal) {
           notifyDataChanged('/customer/invoices');
@@ -85,7 +92,7 @@ export default function PaymentResult() {
     </View> : null}
     {!success && contextValid ? <Button title="Kiểm tra lại" variant="secondary" onPress={() => setRevision(value => value + 1)} /> : null}
     <Button title={success ? 'Xem hóa đơn' : 'Trở về hóa đơn'} onPress={() => router.dismissTo(invoicePath)} />
-    {success ? <Button title="Về trang chủ" variant="secondary" onPress={() => router.dismissTo('/customer')} /> : null}
+    <Button title="Về trang chủ" variant="secondary" onPress={() => router.dismissTo('/customer')} />
   </ScrollView>;
 }
 const s = StyleSheet.create({

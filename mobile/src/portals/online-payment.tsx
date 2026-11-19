@@ -13,7 +13,7 @@ import { readPendingOnlinePayment, removePendingOnlinePayment } from '@/services
 import { vnpayDestination } from '@/utils/vnpay-destination';
 
 type Session = { transactionId: string; merchantOrderRef?: string; expiresAt: string; paymentUrl: string };
-type Result = { transactionId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; providerStatus: string; expiresAt: string; invoice: { id: string; type: string; status: string }; reconciliation?: { reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; resolutionNote?: string | null } | null };
+type Result = { transactionId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; providerStatus: string; expiresAt: string; invoice: { id: string; type: string; status: string }; payment?: { id: string } | null; reconciliation?: { reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; resolutionNote?: string | null } | null };
 function destination(value: string) {
   return vnpayDestination(value).href;
 }
@@ -22,6 +22,7 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
   const { user } = useAuth();
   const [session, setSession] = useState<Session>(), [result, setResult] = useState<Result>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [restored, setRestored] = useState(false), [now, setNow] = useState(Date.now);
   const browserOpen = useRef(false);
+  const expoGoCheckout = useRef<string>(undefined);
   const lock = useRef(false), refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
   const key = `wdp-payment-${Array.from(`${user?.id}:${invoiceId}`).map(char => char.codePointAt(0)!.toString(16)).join('-')}`;
@@ -61,10 +62,16 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
           if (!stopped) { setSession(undefined); setResult(undefined); }
           return;
         }
+        const returnHome = expoGoCheckout.current === session.transactionId &&
+          status.status === 'SUCCESS' && status.payment && !status.reconciliation;
+        if (returnHome && AppState.currentState === 'background') {
+          scheduleNext();
+          return;
+        }
         setNow(Date.now()); setResult(status); setError('');
         consecutiveErrors = 0;
         const unresolved = Boolean(status.reconciliation && status.reconciliation.status !== 'RECONCILED');
-        terminal = !unresolved && (status.status === 'FAILED' || (status.status === 'SUCCESS' && status.invoice.status === 'PAID'));
+        terminal = Boolean(returnHome) || !unresolved && (status.status === 'FAILED' || (status.status === 'SUCCESS' && status.invoice.status === 'PAID'));
         if (terminal) {
           if (Platform.OS === 'ios' && browserOpen.current) {
             try { await WebBrowser.dismissBrowser(); } catch { /* The browser may already be closed. */ }
@@ -72,6 +79,10 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
           void paymentStorage.remove(key).catch(() => {});
           if (user?.id) void readPendingOnlinePayment(user.id).then(legacy => { if (legacy?.transactionId === session.transactionId) return removePendingOnlinePayment(user.id); }).catch(() => {});
           refreshRef.current(); notifyDataChanged('/customer/payments');
+          if (returnHome) {
+            expoGoCheckout.current = undefined;
+            router.dismissTo('/customer');
+          }
         }
       } catch (caught) {
         if (!stopped) {
@@ -110,7 +121,13 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       const url = destination(payment.paymentUrl);
       if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
         browserOpen.current = true;
-        try { await WebBrowser.openBrowserAsync(url); } finally { browserOpen.current = false; }
+        if (Platform.OS !== 'web') expoGoCheckout.current = payment.transactionId;
+        try {
+          await WebBrowser.openBrowserAsync(url);
+        } catch (caught) {
+          expoGoCheckout.current = undefined;
+          throw caught;
+        } finally { browserOpen.current = false; }
         return;
       }
       await WebBrowser.openAuthSessionAsync(url, 'wdp-storage://customer/payment-result');

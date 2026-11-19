@@ -92,14 +92,14 @@ export default function ContractSign() {
             <Text style={[s.secondary, { textAlign: 'center' }]}>Mã xác thực đã được gửi đến email {receipt.recipient}.</Text>
           </View>
           <View>
+            <TextInput accessibilityLabel="Mã xác thực email gồm 6 số" value={otp} editable={!busy}
+              onChangeText={value => { setOtp(value.replace(/\D/g, '')); setError(''); }} maxLength={otpLength}
+              keyboardType="number-pad" autoComplete="one-time-code" caretHidden underlineColorAndroid="transparent"
+              style={styles.otpInput} />
             <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.cells}>
               {Array.from({ length: otpLength }, (_, index) => <View key={index} style={[styles.cell, index === otp.length && styles.current]}>
                 <Text style={styles.digit}>{otp[index] ?? ''}</Text></View>)}
             </View>
-            <TextInput accessibilityLabel="Mã xác thực email gồm 6 số" value={otp} editable={!busy}
-              onChangeText={value => { setOtp(value.replace(/\D/g, '')); setError(''); }} maxLength={otpLength}
-              keyboardType="number-pad" autoComplete="one-time-code" caretHidden
-              style={[StyleSheet.absoluteFill, { color: 'transparent', backgroundColor: 'transparent' }]} />
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void submit(false)} style={styles.center}>
@@ -137,7 +137,8 @@ const styles = StyleSheet.create({
   otpIntro: { alignItems: 'center', gap: 12, paddingVertical: 12 },
   mailIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#EDF3FD', alignItems: 'center', justifyContent: 'center' },
   clear: { minHeight: 44, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#CDD6E5', borderRadius: 8 },
-  cells: { flexDirection: 'row', gap: 6 },
+  otpInput: { ...StyleSheet.absoluteFill, color: 'transparent', backgroundColor: 'transparent' },
+  cells: { flexDirection: 'row', gap: 6, backgroundColor: 'white' },
   cell: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#CDD6E5', borderRadius: 8 },
   current: { borderColor: '#0758DC' },
   digit: { fontSize: 21, fontWeight: '700', color: '#101828' },

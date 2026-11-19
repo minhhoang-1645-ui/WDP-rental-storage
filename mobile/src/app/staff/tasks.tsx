@@ -49,7 +49,7 @@ export default function StaffTasksScreen() {
         {activity.failed.length > 0 && <Text accessibilityRole="alert" style={[s.secondary, { color: C.danger }]}>Chưa tải đủ công việc. Kéo xuống để thử lại.</Text>}
       </>}
     </View>}
-    ListEmptyComponent={section === 'work' ? <Text style={[s.secondary, { paddingVertical: 16 }]}>{activity.loading ? 'Đang tải công việc…' : activity.failed.length ? 'Chưa thể kiểm tra đầy đủ danh sách.' : 'Không có công việc phù hợp.'}</Text> : null}
+    ListEmptyComponent={section === 'work' ? <Text style={[s.secondary, { paddingVertical: 16 }]}>{activity.loading ? 'Đang tải công việc…' : activity.failed.length ? 'Chưa thể kiểm tra đầy đủ danh sách.' : 'Không có công việc phù hợp.'}</Text> : undefined}
     renderItem={({ item }) => <StaffTaskRow resource={item.resource} row={item.row} />}
   />;
 }

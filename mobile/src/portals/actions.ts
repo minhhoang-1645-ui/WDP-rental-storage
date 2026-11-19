@@ -102,7 +102,7 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     const approved = pendingOrApproved.some(item => isCurrentEarlyReturnApproval(item, endDate));
     const unit = text(contract, 'unit.unitCode');
     if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') {
-      actions.push({ title: `Gia hạn kho ${unit}`, path: '/customer/renewals', method: 'POST', idempotent: true,
+      actions.push({ title: `Gia hạn kho ${unit}`, renewal: { name: text(contract, 'unit.storageType.name') || text(row, 'storageType.name'), endDate, quantity: '1' }, path: '/customer/renewals', method: 'POST', idempotent: true,
         description: `Hợp đồng ${text(contract, 'contractCode')} · Hạn hiện tại ${formatDate(endDate)}. Ký phụ lục và thanh toán kỳ đầu để cập nhật thời hạn.`,
         fields: [choice('termMonths', 'Số tháng gia hạn', ['1', '3', '6', '12'], '3'), choice('paymentPlan', 'Kế hoạch thanh toán', ['PAY_MONTHLY', 'PREPAID'], 'PREPAID'), confirmation()],
         transform: input => ({ ...input, reservationId, rentalContractId, termMonths: Number(input.termMonths) }) });

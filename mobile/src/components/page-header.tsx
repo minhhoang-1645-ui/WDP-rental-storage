@@ -1,20 +1,20 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Info } from 'lucide-react-native';
+import { Info, RefreshCw } from 'lucide-react-native';
 import { shortLabel } from '@/utils/ui-labels';
 import { useStaffPresentation } from '@/components/staff-ui';
 import { useCustomerPresentation } from '@/components/customer-presentation';
 
 import { WdpColors, WdpSpacing } from '@/constants/wdp-theme';
 
-export function PageHeader({ title, description }: { eyebrow: string; title: string; description: string }) {
+export function PageHeader({ title, description, onRefresh }: { eyebrow: string; title: string; description: string; onRefresh?: () => void }) {
   const [showHelp, setShowHelp] = useState(false);
   const isStaff = useStaffPresentation();
   const customer = useCustomerPresentation();
   const staff = isStaff || customer;
   return <View style={styles.header}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
     <Text accessibilityRole="header" style={[styles.title, { flex: 1 }, staff && { fontSize: 22, lineHeight: 30 }]}>{shortLabel(title)}</Text>
-    {Boolean(description) && <Pressable accessibilityRole="button" accessibilityLabel="Hướng dẫn trang" accessibilityState={{ expanded: showHelp }} onPress={() => setShowHelp(value => !value)} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><Info size={21} color={WdpColors.muted} /></Pressable>}
+    {onRefresh ? <Pressable accessibilityRole="button" accessibilityLabel="Làm mới" onPress={onRefresh} style={{minWidth:44,minHeight:44,alignItems:"center",justifyContent:"center"}}><RefreshCw size={22} color={WdpColors.navy}/></Pressable> : Boolean(description) && <Pressable accessibilityRole="button" accessibilityLabel="Hướng dẫn trang" accessibilityState={{ expanded: showHelp }} onPress={() => setShowHelp(value => !value)} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><Info size={21} color={WdpColors.muted} /></Pressable>}
   </View>{showHelp && <Text style={styles.description}>{description}</Text>}</View>;
 }
 

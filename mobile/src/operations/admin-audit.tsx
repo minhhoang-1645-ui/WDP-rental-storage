@@ -46,7 +46,7 @@ export function AdminAudit({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
       {filterError ? <Text accessibilityRole="alert" style={styles.error}>{filterError}</Text> : null}
       {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{total} bản ghi</Text>}
     </View>}
-    ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có nhật ký phù hợp" message="Thử đổi bộ lọc. Lịch sử cũ không được tạo lại." /> : null}
+    ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có nhật ký phù hợp" message="Thử đổi bộ lọc. Lịch sử cũ không được tạo lại." /> : undefined}
     renderItem={({ item }) => <Panel>
       <View style={[styles.row, { alignItems: 'center' }]}>{item.outcome === 'SUCCESS' ? <CheckCircle2 color={WdpColors.success} size={20} /> : <CircleAlert color={WdpColors.danger} size={20} />}<Text style={styles.title}>{auditAction(item.action)}</Text><Text style={[styles.copy, { color: item.outcome === 'SUCCESS' ? WdpColors.success : WdpColors.danger }]}>{item.outcome === 'SUCCESS' ? 'Thành công' : 'Thất bại'}</Text></View>
       <Text style={styles.label}>{text(item, 'actorName') || text(item, 'actorEmail') || 'Không xác định'}</Text>
@@ -55,6 +55,6 @@ export function AdminAudit({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
       {category === 'ACTIVITY' && <Text style={styles.copy}>{auditResource(item.resource)}</Text>}
       <Disclosure title="Chi tiết"><Text selectable style={styles.copy}>Mã hồ sơ: {text(item, 'resourceId') || '—'}</Text><Text selectable style={styles.copy}>IP: {text(item, 'ipAddress') || '—'} · HTTP {text(item, 'httpStatus')}</Text><Text selectable style={styles.copy}>{text(item, 'method')} {text(item, 'route')}</Text><Text style={styles.copy}>Mã hành động: {text(item, 'action')}</Text></Disclosure>
     </Panel>}
-    ListFooterComponent={data.data ? <View style={{ gap: 12 }}><Text style={styles.copy}>Trang {page}/{pages}</Text><View style={styles.row}><Button title="Trang trước" variant="secondary" disabled={data.loading || page <= 1} onPress={() => setPage(value => value - 1)} /><Button title="Trang sau" variant="secondary" disabled={data.loading || page >= pages} onPress={() => setPage(value => value + 1)} /></View></View> : null}
+    ListFooterComponent={data.data ? <View style={{ gap: 12 }}><Text style={styles.copy}>Trang {page}/{pages}</Text><View style={styles.row}><Button title="Trang trước" variant="secondary" disabled={data.loading || page <= 1} onPress={() => setPage(value => value - 1)} /><Button title="Trang sau" variant="secondary" disabled={data.loading || page >= pages} onPress={() => setPage(value => value + 1)} /></View></View> : undefined}
   />;
 }

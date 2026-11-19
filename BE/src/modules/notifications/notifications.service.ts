@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { PublicUser } from '../auth/auth.types.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { buildNotices, noticeKinds, noticeSearch, type Notice } from './notification-content.js';
+import { customerMobileNotices } from './notification-mobile-content.js';
 import { NotificationSources } from './notification-sources.js';
 
 const views = ['all', 'unread', 'action'];
@@ -29,11 +30,15 @@ export class NotificationsService {
 
   constructor(private readonly prisma: PrismaService, private readonly sources: NotificationSources) {}
 
-  private snapshot(actor: PublicUser) {
-    const key = `${actor.role}:${actor.id}`;
+  private snapshot(actor: PublicUser, mobile = false) {
+    const key = `${actor.role}:${actor.id}:${mobile}`;
     const running = this.pending.get(key);
     if (running) return running;
-    const request = this.sources.load(actor).then(data => buildNotices(actor, data))
+    const request = this.sources.load(actor).then(data => {
+      const now = Date.now();
+      const notices = buildNotices(actor, data, now);
+      return mobile ? customerMobileNotices(notices, data, now) : notices;
+    })
       .finally(() => this.pending.delete(key));
     this.pending.set(key, request);
     return request;
@@ -62,7 +67,7 @@ export class NotificationsService {
       || typeof kind !== 'string' || kind && !Object.hasOwn(noticeKinds, kind)
       || typeof search !== 'string' || search.length > 100) throw new BadRequestException('Bộ lọc thông báo không hợp lệ.');
 
-    const notices = await this.snapshot(actor);
+    const notices = await this.snapshot(actor, actor.role === 'CUSTOMER' && query.client === 'mobile');
     const seen = await this.receipts(actor.id, notices);
     const keyword = noticeSearch(search);
     const filtered = notices.filter(row =>
@@ -80,10 +85,10 @@ export class NotificationsService {
     };
   }
 
-  async mark(actor: PublicUser, token: string, open = false) {
+  async mark(actor: PublicUser, token: string, open = false, mobile = false) {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new NotFoundException(unavailable);
     // Re-evaluate visibility with current assignment, ownership and dossier status before using a saved link.
-    const notice = (await this.snapshot(actor)).find(row => row.token === token);
+    const notice = (await this.snapshot(actor, mobile && actor.role === 'CUSTOMER')).find(row => row.token === token);
     if (!notice || open && !notice.target) throw new NotFoundException(unavailable);
     await this.prisma.notificationReceipt.createMany({ data: [{ userId: actor.id, token }], skipDuplicates: true });
     return open ? { target: notice.target } : { read: true };

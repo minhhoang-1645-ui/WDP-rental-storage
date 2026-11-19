@@ -24,7 +24,7 @@ export function AdminUsers({ statusOnly = false }: { statusOnly?: boolean }) {
     <CustomerStatusFilters values={['ACTIVE','DISABLED']} selected={status} onChange={setStatus} label={label}/>
     {data.loading ? <LoadingState /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <Text style={styles.copy}>{items.length} tài khoản phù hợp</Text>}
   </View>;
-  return <FlatList keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.loading || data.error ? [] : items} ListHeaderComponent={header} keyExtractor={idOf} renderItem={({ item }) => <Navigation title={String(item.fullName || item.email)} description={`${item.email} · ${label(item.role)} · ${label(item.accountStatus)}`} path={`/admin/users/${encodeURIComponent(idOf(item))}`} />} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có tài khoản phù hợp" message="Thử đổi bộ lọc." /> : null} />;
+  return <FlatList keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page} data={data.loading || data.error ? [] : items} ListHeaderComponent={header} keyExtractor={idOf} renderItem={({ item }) => <Navigation title={String(item.fullName || item.email)} description={`${item.email} · ${label(item.role)} · ${label(item.accountStatus)}`} path={`/admin/users/${encodeURIComponent(idOf(item))}`} />} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có tài khoản phù hợp" message="Thử đổi bộ lọc." /> : undefined} />;
 }
 
 export function AdminUserDetail() {

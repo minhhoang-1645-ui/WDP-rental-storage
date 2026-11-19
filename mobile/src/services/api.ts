@@ -55,7 +55,7 @@ function sessionCancellation(message: string) {
 export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null; responseType?: 'json' | 'bytes' } = {}): Promise<T> {
   const { authenticated = true, signal, expectedToken, responseType = 'json', ...request } = options;
   const token = authenticated ? await authStorage.getToken() : null;
-  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|auth\/(me|logout))(\/|\?|$)/.test(path)) throw sessionCancellation('Phiên đăng nhập đã kết thúc.');
+  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|notifications|auth\/(me|logout))(\/|\?|$)/.test(path)) throw sessionCancellation('Phiên đăng nhập đã kết thúc.');
   if (expectedToken !== undefined && token !== expectedToken) throw sessionCancellation('Phiên đăng nhập đã thay đổi.');
   const controller = new AbortController();
   let timedOut = false;

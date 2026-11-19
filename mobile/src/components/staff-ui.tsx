@@ -1,3 +1,4 @@
+import type { ComponentRef } from 'react';
 import { createContext, useContext, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, type Href } from 'expo-router';
@@ -26,7 +27,7 @@ export function StaffShortcuts({ resources = staffWorkGroups.map(group => group.
   const pages = Array.from({ length: Math.ceil(resources.length / pageSize) }, (_, index) => resources.slice(index * pageSize, (index + 1) * pageSize));
   const [page, setPage] = useState(0);
   const [measuredWidth, setWidth] = useState(0);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const pageWidth = measuredWidth || width - 32;
   return <View style={staffStyles.surface} onLayout={event => { const next = event.nativeEvent.layout.width; if (next !== measuredWidth) { setWidth(next); setPage(0); scroll.current?.scrollTo({ x: 0, animated: false }); } }}>
     <ScrollView ref={scroll} horizontal pagingEnabled nestedScrollEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={event => setPage(Math.max(0, Math.min(pages.length - 1, Math.round(event.nativeEvent.contentOffset.x / pageWidth))))}>
@@ -58,7 +59,7 @@ export function StaffTaskRow({ resource, row, path, titleOverride }: { resource:
   </Pressable>;
 }
 export function StaffStatusFilters({ values, selected, onChange }: { values: readonly string[]; selected: string; onChange: (value: string) => void }) {
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   return <ScrollView ref={scroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
     {['', ...values].map(value => <Pressable key={value || 'all'} accessibilityRole="button" accessibilityState={{ selected: value === selected }} onLayout={event => { if (value === selected) scroll.current?.scrollTo({ x: Math.max(0, event.nativeEvent.layout.x - 8), animated: false }); }} onPress={() => onChange(value)} style={{ minHeight: 48, justifyContent: 'center', paddingVertical: 5 }}><View style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: value === selected ? C.navy : C.surfaceSecondary }}><Text style={[staffStyles.secondary, { color: value === selected ? C.surface : C.navy }]}>{value ? label(value) : 'Tất cả'}</Text></View></Pressable>)}
   </ScrollView>;

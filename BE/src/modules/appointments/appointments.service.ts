@@ -123,7 +123,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listCustomerAppointments(customerId: string, query: AppointmentListQuery) {
-    return this.appointmentPage({ reservation: { customerId } }, query, false);
+    const [page, handoverLeadDays] = await Promise.all([
+      this.appointmentPage({ reservation: { customerId } }, query, false),
+      this.policies?.value('handoverLeadDays') ?? 3,
+    ]);
+    return { ...page, handoverLeadDays };
   }
 
   async getCustomerAppointment(customerId: string, id: string) {

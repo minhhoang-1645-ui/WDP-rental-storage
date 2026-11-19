@@ -28,6 +28,7 @@ export type Claim = {
   estimatedValue: number | null;
   affectedItems: { id: string; name: string; unit: string; itemCode?: string }[];
   evidenceLinks: string[];
+  evidencePhotos?: string[] | null;
   staffFacts: string | null;
   factsRecordedAt?: string;
   reviewedAt?: string | null;

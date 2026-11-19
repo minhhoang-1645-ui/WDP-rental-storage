@@ -25,6 +25,6 @@ export function StaffTransfers() {
       {data.loading ? <LoadingState layout="list" /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : null}
     </View>}
     renderItem={({ item }) => <StaffTaskRow resource="transfers" row={item} titleOverride={text(item, 'customer.fullName', 'reservation.customer.fullName') || undefined} path={`/staff/transfers/${encodeURIComponent(idOf(item))}`} />}
-    ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có hồ sơ phù hợp" message="Thử đổi từ khóa hoặc trạng thái." /> : null}
+    ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Không có hồ sơ phù hợp" message="Thử đổi từ khóa hoặc trạng thái." /> : undefined}
   />;
 }

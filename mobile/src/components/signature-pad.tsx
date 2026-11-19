@@ -1,11 +1,12 @@
+import type { ComponentRef } from 'react';
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { PanResponder, View } from 'react-native';
+import { PanResponder, PixelRatio, Platform, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
 import type { SignaturePadHandle } from './signature-pad.types';
 
 export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad(_, ref) {
-  const view = useRef<View>(null);
+  const view = useRef<ComponentRef<typeof View>>(null);
   const drawing = useRef<string>('');
   const points = useRef(0);
   const [paths, setPaths] = useState<string[]>([]);
@@ -31,10 +32,19 @@ export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad
     clear() { drawing.current = ''; points.current = 0; setPaths([]); },
     async capture() {
       if (points.current < 2) throw new Error('Vui lòng vẽ chữ ký trong khung.');
-      const base64 = await captureRef(view, { result: 'base64', format: 'png', width: 600, height: 180 });
-      const image = `data:image/png;base64,${base64}`;
-      if (image.length > 90000) throw new Error('Chữ ký quá lớn. Vui lòng xóa và ký lại.');
-      return image;
+      // iOS ViewShot takes points and renders at device scale. Android takes pixels.
+      const scale = Platform.OS === 'ios' ? PixelRatio.get() : 1;
+      for (const width of [600, 400, 280, 200]) {
+        const base64 = await captureRef(view, {
+          result: 'base64',
+          format: 'png',
+          width: Math.round(width / scale),
+          height: Math.round(width * 0.3 / scale),
+        });
+        const image = `data:image/png;base64,${base64}`;
+        if (image.length <= 90_000) return image;
+      }
+      throw new Error('Chưa thể lưu ảnh chữ ký. Vui lòng thử gửi lại mã.');
     },
   }), []);
   return <View ref={view} collapsable={false} accessible accessibilityLabel="Khung vẽ chữ ký" {...pan.panHandlers} style={{ height: 180, backgroundColor: '#fff', borderWidth: 1, borderColor: '#81929d', borderRadius: 8, overflow: 'hidden' }}>

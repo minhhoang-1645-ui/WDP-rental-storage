@@ -10,30 +10,51 @@ export function stockSchedule(value: string) {
   if (!Number.isFinite(time) || new Date(time + 25200000).toISOString().slice(0, 16) !== local) throw new Error('Ngày giờ dự kiến không hợp lệ.');
   return new Date(time).toISOString();
 }
-export function validateStockSchedule(scheduledAt: string | undefined, contract: { startDate?: unknown; endDate?: unknown }, now = Date.now()) {
+export function validateStockSchedule(scheduledAt: string | undefined, contract: { startDate?: unknown; endDate?: unknown }, now = Date.now(), type: 'IN' | 'OUT' = 'IN') {
   if (!scheduledAt) return;
   const time = Date.parse(scheduledAt);
   if (time <= now) throw new Error('Lịch dự kiến phải ở tương lai.');
   const start = typeof contract.startDate === 'string' ? Date.parse(contract.startDate.slice(0, 10) + 'T00:00:00+07:00') : NaN;
   const end = typeof contract.endDate === 'string' ? Date.parse(contract.endDate.slice(0, 10) + 'T00:00:00+07:00') : NaN;
   if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error('Chưa đọc được kỳ thuê. Tải lại hợp đồng hoặc bỏ trống lịch dự kiến.');
-  if (time < start || time >= end) throw new Error('Chọn giờ trong kỳ thuê của kho này.');
+  if (time < start || (type === 'IN' && time >= end)) throw new Error(type === 'IN' ? 'Chọn giờ trong kỳ thuê của kho này.' : 'Chọn giờ từ ngày bắt đầu thuê.');
 }
+
+export type StockLineIssues = Partial<Record<'name' | 'unit' | 'quantity', string>>;
+
+export function stockLineIssues(contractId: string, type: 'IN' | 'OUT', lines: StockDraftLine[], items: StoredItem[], existing: Record<string, boolean> = {}) {
+  const seen = new Set<string>();
+  const available = new Map(items.map(item => [item.id, item]));
+  return lines.map((line): StockLineIssues => {
+    const issues: StockLineIssues = {};
+    const item = available.get(line.storedItemId);
+    if (!stockQuantity(line.quantity)) issues.quantity = 'Nhập số nguyên từ 1 đến 1.000.000.';
+    if (line.storedItemId) {
+      if (!item || (item.rentalContract && item.rentalContract.id !== contractId)) issues.name = 'Mặt hàng không thuộc hợp đồng đã chọn.';
+      else if (seen.has(item.id)) issues.name = 'Mỗi mặt hàng chỉ được xuất hiện một lần trong phiếu.';
+      else {
+        seen.add(item.id);
+        if (type === 'OUT' && !issues.quantity && Number(line.quantity) > item.balance) issues.quantity = 'Số lượng xuất vượt tồn hiện tại (' + item.balance + ' ' + item.unit + ').';
+      }
+    } else if (type === 'OUT' || existing[line.key]) issues.name = 'Chọn hàng đang lưu.';
+    else {
+      if (!line.name.trim()) issues.name = 'Nhập tên hàng.';
+      if (!isItemUnit(line.unit.trim())) issues.unit = 'Chọn đơn vị hàng mới trong danh mục.';
+    }
+    return issues;
+  });
+}
+
 export function stockCreateInput(contractId: string, type: 'IN' | 'OUT', lines: StockDraftLine[], items: StoredItem[], scheduledAt: string, note: string) {
   if (!contractId) throw new Error('Chọn hợp đồng đang hoạt động.');
   if (!lines.length || lines.length > 100) throw new Error('Phiếu cần từ 1 đến 100 dòng hàng.');
-  const seen = new Set<string>();
-  const parsed = lines.map((line, index) => {
-    if (!stockQuantity(line.quantity)) throw new Error(`Dòng ${index + 1}: số lượng phải là số nguyên từ 1 đến 1.000.000.`);
+  const issues = stockLineIssues(contractId, type, lines, items);
+  const invalid = issues.findIndex(issue => issue.name || issue.unit || issue.quantity);
+  if (invalid >= 0) throw new Error(`Dòng ${invalid + 1}: ${Object.values(issues[invalid]).join(' ')}`);
+  if (lines.reduce((sum, line) => sum + (line.photos?.length ?? 0), 0) > 3) throw new Error('Mỗi phiếu được đính kèm tối đa 3 ảnh.');
+  const parsed = lines.map(line => {
     const quantity = Number(line.quantity), item = items.find(value => value.id === line.storedItemId);
-    if (line.storedItemId) {
-      if (!item || (item.rentalContract && item.rentalContract.id !== contractId)) throw new Error(`Dòng ${index + 1}: mặt hàng không thuộc hợp đồng đã chọn.`);
-      if (seen.has(item.id)) throw new Error('Mỗi mặt hàng chỉ được xuất hiện một lần trong phiếu.');
-      seen.add(item.id);
-      if (type === 'OUT' && quantity > item.balance) throw new Error(`Dòng ${index + 1}: số lượng xuất vượt tồn hiện tại (${item.balance}).`);
-    } else if (type === 'OUT' || !line.name.trim() || !line.unit.trim()) throw new Error(`Dòng ${index + 1}: chọn mặt hàng hoặc nhập tên và đơn vị hàng mới.`);
-    if (!item && !isItemUnit(line.unit.trim())) throw new Error('Chọn đơn vị hàng mới trong danh mục.');
-    return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.note.trim() ? { note: line.note.trim() } : {}) };
+    return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.photos?.length ? { photos: line.photos } : {}), ...(line.note.trim() ? { note: line.note.trim() } : {}) };
   });
   return { rentalContractId: contractId, type, lines: parsed, scheduledAt: stockSchedule(scheduledAt), ...(note.trim() ? { note: note.trim() } : {}) };
 }

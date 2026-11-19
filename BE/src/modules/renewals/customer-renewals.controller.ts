@@ -58,6 +58,11 @@ export class CustomerRenewalsController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.renewals.getCustomerRenewal(request.user!.id, id); }
 
+  @Post(':id/cancel')
+  cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.renewals.cancelCustomerRenewal(request.user!.id, id);
+  }
+
   @Post(':id/appendix/signature-otp')
   requestOtp(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.renewals.requestSignatureOtp(request.user!, id, body);

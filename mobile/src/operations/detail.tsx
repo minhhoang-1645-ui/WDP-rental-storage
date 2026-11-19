@@ -48,9 +48,9 @@ function Detail({ resource, id }: { resource: string; id: string }) {
     return <HandoverDetail row={row} loading={data.loading} error={data.error} refresh={refresh} userId={user.id} now={now} />;
   }
   return <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" refreshControl={user?.role === 'STAFF' ? <RefreshControl refreshing={data.loading} onRefresh={() => { if (!action) refresh(); }} /> : undefined} contentContainerStyle={user?.role === 'STAFF' ? [staffStyles.page, { gap: 12, paddingBottom: 24 }] : styles.page}>
-    {user?.role !== 'STAFF' && <PageHeader eyebrow={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? managerReviewTitle(resource) : config.title} title={config.title} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả chờ nghiệm thu; nhân viên thực hiện vận hành.' : 'Thông tin, lịch sử và thao tác theo vai trò của bạn.'} />}
+    {user?.role !== 'STAFF' && <PageHeader onRefresh={refresh} eyebrow={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? managerReviewTitle(resource) : config.title} title={config.title} description={user?.role === 'MANAGER' && isManagerReviewWorkflow(resource) ? 'Đối chiếu hồ sơ chuyển cấp hoặc kết quả chờ nghiệm thu; nhân viên thực hiện vận hành.' : 'Thông tin, lịch sử và thao tác theo vai trò của bạn.'} />}
     {user?.role === 'MANAGER' && <ManagerParentLink resource={resource} />}
-    {user?.role !== 'STAFF' && <><Navigation mode="back-to" title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} /></>}
+    {user?.role !== 'STAFF' && <><Navigation mode="back-to" title="Về danh sách" path={`${root}/${resource}`} /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     {row?.isDemo === true && <Text style={styles.copy}>Đây là bản ghi mô phỏng có sẵn, không phải giao dịch ngân hàng thật. Không xác nhận nhận tiền cho bản ghi này.</Text>}
     {data.loading ? <LoadingState layout="detail" /> : data.error ? <ErrorState message={data.error} onRetry={refresh} /> : row && <>

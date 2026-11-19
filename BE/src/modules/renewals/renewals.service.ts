@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
+import { ONLINE_PAYMENT_TTL_MS } from '../billing/online-payment-policy.js';
 import { homogeneousInvoiceUnits, invoiceBreakdown } from '../billing/invoice-breakdown.js';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -335,6 +336,43 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       });
       return this.toRenewal(updated, true);
     }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+  }
+
+  async cancelCustomerRenewal(customerId: string, id: string) {
+    const identity = await this.prisma.renewalRequest.findFirst({
+      where: { reservation: { customerId }, OR: [{ id }, { renewalCode: id }] },
+      select: { id: true },
+    });
+    if (!identity) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+    return this.prisma.$transaction(async tx => {
+      // Match the invoice-before-renewal lock order used by payment confirmation.
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "renewalRequestId" = ${identity.id} ORDER BY "id" FOR UPDATE`);
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const renewal = await this.find(identity.id, tx);
+      if (renewal.status === 'CANCELLED') return this.toRenewal(renewal, false);
+      if (!['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(renewal.status) ||
+          renewal.invoices.some(invoice => invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID' ||
+            invoice.amountPaid > 0n || invoice.payments.length)) {
+        throw new ConflictException('Chỉ có thể hủy yêu cầu gia hạn chưa ghi nhận thanh toán.');
+      }
+      const pending = await tx.invoice.findFirst({
+        where: { renewalRequestId: renewal.id, OR: [
+          { onlinePaymentTransactions: { some: {
+            status: 'PENDING', createdAt: { gt: new Date(Date.now() - ONLINE_PAYMENT_TTL_MS) },
+          } } },
+          { onlinePaymentTransactions: { some: { reconciliation: { status: { not: 'RECONCILED' } } } } },
+          { paymentSubmissions: { some: { status: 'PENDING_VERIFICATION' } } },
+        ] },
+        select: { id: true },
+      });
+      if (pending) throw new ConflictException('Đang chờ xác nhận thanh toán. Hãy kiểm tra giao dịch trên hóa đơn trước khi hủy.');
+      await tx.invoice.updateMany({
+        where: { renewalRequestId: renewal.id, status: 'OPEN', amountPaid: 0n },
+        data: { status: 'VOID', balanceDue: 0n },
+      });
+      await tx.renewalRequest.update({ where: { id: renewal.id }, data: { status: 'CANCELLED', activeKey: null } });
+      return this.toRenewal(await this.find(renewal.id, tx), false);
+    }, { isolationLevel: 'Serializable' });
   }
 
   async completeAfterPayment(tx: Prisma.TransactionClient, renewalRequestId: string) {

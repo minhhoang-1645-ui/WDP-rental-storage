@@ -13,6 +13,8 @@ export function daysInMonth(year: string, month: string) {
 
 export const vietnamCalendarDate = (time = Date.now()) => new Date(time + 7 * 3600000).toISOString().slice(0, 10);
 
+export const currentTimeMs = () => Date.now();
+
 export function calendarChoice(year: string, month: string, day: string) {
   const safeDay = Math.max(1, Math.min(Number(day) || 1, daysInMonth(year, month)));
   return `${year}-${month.padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;

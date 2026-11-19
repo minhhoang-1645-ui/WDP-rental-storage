@@ -7,7 +7,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from './billing.service.js';
 import { VnpayService } from './vnpay.service.js';
 
-const ONLINE_PAYMENT_TTL_MS = 5 * 60_000;
+import { ONLINE_PAYMENT_TTL_MS } from './online-payment-policy.js';
 
 @Injectable()
 export class OnlinePaymentService {

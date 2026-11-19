@@ -1,18 +1,27 @@
+import { CustomerDepositDetail, CustomerDepositList } from '@/components/customer-deposits';
+import { CustomerRenewalDetail } from '@/components/customer-renewal';
+import { CustomerBookingList } from '@/components/customer-booking-list';
+import { CustomerPaymentDetail, CustomerPaymentHistory } from '@/components/customer-payment-history';
+import { InvoiceList } from '@/components/customer-invoice-list';
+import { paymentWindowClosed } from '@/utils/payment-state';
 import { CustomerWorkflowDetails } from '@/components/customer-workflow-details';
 import { CustomerBookingDetail } from '@/components/customer-booking-detail';
 import { CustomerRentals } from '@/components/customer-rentals';
 import { CustomerContracts } from '@/components/customer-contracts';
 import { CustomerAppointments } from '@/components/customer-appointments';
+import { CustomerSupportCreate, CustomerSupportDetail, CustomerSupportList } from '@/components/customer-support';
 import { CustomerInvoiceDetail } from '@/components/customer-invoice-detail';
 import { CustomerRecordActions } from '@/components/customer-record-actions';
 import { customerStyles } from '@/components/customer-premium';
 import { CustomerReservationDocuments } from '@/components/customer-reservation-documents';
 import { ContractRenewalHistory } from '@/components/contract-renewal-history';
+import { CustomerRentalChange } from '@/components/customer-rental-change';
+import { CustomerReturns } from '@/components/customer-returns';
 import { ContractTransferHistory } from '@/components/contract-transfer-history';
 import { DocumentFile } from '@/components/document-file';
 import { isEarlyReturnRequest } from '@/utils/early-return';
 import { useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack } from 'expo-router/stack';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { CustomerRecordRow, CustomerRecordSummary, CustomerRecordSections, CustomerStatusFilters } from '@/components/customer-record';
@@ -29,10 +38,8 @@ import { formatDate, formatMoney } from '@/utils/format';
 import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, returnSettlementAmount, staffMaintenanceCreate, staffRecordActions } from './actions';
 import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
-import { OnlinePayment } from './online-payment';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
-import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { DocumentAcceptance } from '@/components/document-acceptance';
 import { recordMatches } from '@/utils/record-search';
@@ -52,60 +59,63 @@ function portalStatus(role: PortalRole, resource: string, value: unknown) {
 
 export function PortalList({ role, resource: fixed }: { role: PortalRole; resource?: string }) {
   const params = useLocalSearchParams<{ resource: string }>(), { user } = useAuth();
+  const kind = fixed ?? params.resource;
+  if (role === 'CUSTOMER' && kind === 'deposit-settlements') return <CustomerDepositList key={user?.id} />;
+  if (role === 'CUSTOMER' && kind === 'returns') return <CustomerReturns key={user?.id} />;
+  if (role === 'CUSTOMER' && (kind === 'transfers' || kind === 'early-returns')) return <CustomerRentalChange key={kind} kind={kind} />;
+  if(role==='CUSTOMER'&&(fixed??params.resource)==='reservations')return <CustomerBookingList key={user?.id}/>;
   if(role==='CUSTOMER'&&(fixed??params.resource)==='contracts')return <CustomerContracts key={user?.id}/>;
+  if (role === 'CUSTOMER' && (fixed ?? params.resource) === 'payment-history') return <CustomerPaymentHistory key={user?.id} />;
+  if(role==='CUSTOMER'&&(fixed??params.resource)==='invoices')return <InvoiceList key={user?.id}/>;
   if(role==='CUSTOMER'&&(fixed??params.resource)==='appointments')return <CustomerAppointments key={user?.id}/>;
+  if(role==='CUSTOMER'&&(fixed??params.resource)==='support-requests')return <CustomerSupportList key={user?.id}/>;
   return <List key={`${user?.id}:${fixed ?? params.resource}`} role={role} resource={fixed ?? String(params.resource)} />;
 }
 function List({ role, resource }: { role: PortalRole; resource: string }) {
   const { user } = useAuth(), config = portalResource(role, resource), root = `/${role.toLowerCase()}`;
-  const customerInvoices = user?.role === 'CUSTOMER' && role === 'CUSTOMER' && resource === 'invoices';
-  const data = useResource<Row | Row[]>(user?.role === role && config ? config.path : null, config?.shape !== 'array', customerInvoices);
-  const paymentConfig = useResource<Row>(customerInvoices ? '/customer/payment-config' : null, false, true);
-  const submissions = useResource<Row>(customerInvoices ? '/customer/payment-submissions' : null, true);
+  const data = useResource<Row | Row[]>(user?.role === role && config ? config.path : null, config?.shape !== 'array');
   const [search, setSearch] = useState(''), [status, setStatus] = useState(''), [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const [pagination, setPagination] = useState({ filter: '', page: 1 });
   const filterKey = JSON.stringify([search, status]);
   const page = pagination.filter === filterKey ? pagination.page : 1;
   const setPage = (value: number) => setPagination({ filter: filterKey, page: value });
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy chức năng" message="Chọn chức năng trong khu vực của bạn." /><Navigation title="Về tổng quan" path={root} /></View>;
-  const items = rows(config.shape === 'array' ? data.data : object(data.data).items).filter(item => role !== 'CUSTOMER' || resource !== 'transfers' || item.resolutionType === 'TRANSFER_RECOMMENDED' || text(item, 'subject').toLocaleLowerCase('vi').includes('chuyển kho'));
-  const filtered = items.filter(item => (!customerInvoices || Number(item.amountPaid) > 0 || !invoicePaymentBlockedBySchedule(item)) && (!status || (item.status ?? item.rentalState) === status) && recordMatches(item, search, portalStatus(role, resource, item.status ?? item.rentalState)));
+  const items = rows(config.shape === 'array' ? data.data : object(data.data).items);
+  const filtered = items.filter(item => (!status || (item.status ?? item.rentalState) === status) && recordMatches(item, search, portalStatus(role, resource, item.status ?? item.rentalState)));
   const totalPages = Math.max(1, Math.ceil(filtered.length / 10));
   const currentPage = Math.min(page, totalPages);
   const shown = filtered.slice((currentPage - 1) * 10, currentPage * 10);
   return <FlatList refreshControl={role==='CUSTOMER'?<RefreshControl refreshing={data.loading&&Boolean(data.data)} onRefresh={()=>{if(!action)data.refresh();}}/>:undefined} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={role==='CUSTOMER'?customerStyles.page:styles.page} data={data.loading || data.error ? [] : shown} keyExtractor={(item, index) => idOf(item) || String(index)} ListHeaderComponent={<View style={{ gap: 12 }}>
-    <Stack.Screen options={{ title: config.title }} />{role==='CUSTOMER'?<View style={{flexDirection:'row',alignItems:'center',gap:12}}><Text accessibilityRole="header" style={[customerStyles.title,{flex:1}]}>{resource==='support-requests'?'Yêu cầu hỗ trợ':config.title}</Text>{resource==='support-requests'&&<Pressable accessibilityRole="button" onPress={()=>router.push('/customer/rentals')} style={{minHeight:44,justifyContent:'center'}}><Text style={customerStyles.link}>+ Tạo mới</Text></Pressable>}</View>:<><PageHeader eyebrow="Nhân viên" title={config.title} description="Mở hồ sơ để đối chiếu thông tin và thực hiện công việc được phép."/><Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading||Boolean(action)}/></>}
+    <Stack.Screen options={{ title: config.title }} />{role==='CUSTOMER'?<View style={{flexDirection:'row',alignItems:'center',gap:12}}><Text accessibilityRole="header" style={[customerStyles.title,{flex:1}]}>{config.title}</Text></View>:<><PageHeader eyebrow="Nhân viên" title={config.title} description="Mở hồ sơ để đối chiếu thông tin và thực hiện công việc được phép."/><Button title="Làm mới danh sách" onPress={data.refresh} disabled={data.loading||Boolean(action)}/></>}
     {role === 'STAFF' && resource === 'maintenance' && !action && <Button title="Báo tình trạng cần bảo trì" onPress={() => setAction(staffMaintenanceCreate())} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã gửi yêu cầu.'); data.refresh(); }} />}
     {role === 'CUSTOMER' && ['appointments', 'contracts'].includes(resource) && <Navigation title={resource === 'appointments' ? 'Đặt lịch từ hợp đồng đủ điều kiện' : 'Xem lịch bàn giao'} path={resource === 'appointments' ? '/customer/contracts' : '/customer/appointments'} />}
-    {role==='CUSTOMER'&&resource==='support-requests'&&<Navigation compact title="Hỗ trợ về hóa đơn" path="/customer/invoices"/>}
-    {role === 'CUSTOMER' && ['renewals', 'returns', 'transfers'].includes(resource) && <><Navigation title={resource === 'support-requests' ? 'Chọn kho để gửi hỗ trợ' : resource === 'transfers' ? 'Chọn kho muốn chuyển' : resource === 'renewals' ? 'Chọn kho muốn gia hạn' : 'Chọn kho muốn trả'} path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}{resource === 'support-requests' && <Navigation title="Hỗ trợ về hóa đơn" path="/customer/invoices" />}{resource === 'transfers' && <Text style={styles.copy}>Bạn có thể gửi nhu cầu chuyển kho qua mục Hỗ trợ. NestBox sẽ xác nhận kho mới và hướng dẫn bạn chuyển hàng.</Text>}</>}
+    {role === 'CUSTOMER' && ['renewals', 'returns'].includes(resource) && <><Navigation title={resource === 'renewals' ? 'Chọn kho muốn gia hạn' : 'Chọn kho muốn trả'} path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}</>}
     {role === 'CUSTOMER' && resource === 'returns' && <Panel title="Thanh toán đủ trước khi trả kho"><Text style={styles.copy}>Trả trước hạn hoặc đúng hạn đều phải tất toán toàn bộ các khoản chưa thanh toán đã cam kết, kể cả kỳ chưa đến hạn. Sau khi thanh toán đủ, xuất hết hàng và được tiếp nhận, nhân viên mới hoàn tất nhận trả kho. Tiền cọc được quyết toán riêng.</Text><Navigation title="Xem hóa đơn và tất toán" path="/customer/invoices" /></Panel>}
-    {role === 'CUSTOMER' && resource === 'invoices' && <><Navigation title="Lịch sử thanh toán" path="/customer/payment-history" /><Navigation title="Thông báo chuyển khoản" path="/customer/payment-submissions" /></>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title={role === 'CUSTOMER' ? 'Tìm trong danh sách' : 'Tìm kiếm hồ sơ'} value={search} onChange={setSearch} maxLength={120} />
     {config.statuses && (role === 'CUSTOMER' ? <CustomerStatusFilters values={config.statuses} selected={status} onChange={setStatus} label={value => portalStatus(role, resource, value)}/> : <Disclosure title={status ? "Bộ lọc · " + portalStatus(role, resource, status) : "Bộ lọc trạng thái"}><View style={styles.row}><Button title={!status ? '✓ Tất cả' : 'Tất cả'} variant={!status ? 'primary' : 'secondary'} onPress={() => setStatus('')} />{config.statuses.map(value => <Button key={value} title={`${status === value ? '✓ ' : ''}${portalStatus(role, resource, value)}`} variant={status === value ? 'primary' : 'secondary'} onPress={() => setStatus(value)} />)}</View></Disclosure>)}
     {data.loading ? <LoadingState layout="list" /> : data.error ? <ErrorState message={data.error} onRetry={data.refresh} /> : <View style={{ gap: 8 }}><Text style={styles.copy}>{filtered.length} hồ sơ · Trang {currentPage}/{totalPages}</Text>{totalPages > 1 && <View style={styles.row}><Button title="Trang trước" variant="secondary" disabled={currentPage <= 1} onPress={() => setPage(currentPage - 1)} /><Button title="Trang sau" variant="secondary" disabled={currentPage >= totalPages} onPress={() => setPage(currentPage + 1)} /></View>}</View>}
-  </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : null} renderItem={({ item }) => {
+  </View>} ListEmptyComponent={!data.loading && !data.error ? <EmptyState title="Chưa có hồ sơ phù hợp" message="Thử đổi bộ lọc hoặc tải lại dữ liệu." /> : undefined} renderItem={({ item }) => {
     const id = idOf(item);
     const link = role === 'CUSTOMER' ? <CustomerRecordRow resource={resource} row={item} path={`${root}/${resource}/${encodeURIComponent(id)}`}/> : <Navigation title={codeOf(item)} description={summary(item, transferProgress(item) || portalStatus(role, resource, item.status ?? item.rentalState))} path={`${root}/${resource}/${encodeURIComponent(id)}`} />;
-    const payable = customerInvoices && !invoicePaymentBlockedBySchedule(item) && ['OPEN', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.balanceDue) > 0;
-    if (!payable) return link;
-
-    const pending = rows(submissions.data?.items).some(row => text(row, 'invoice.id') === id && row.status === 'PENDING_VERIFICATION');
-    const eligible = paymentConfig.data?.vnpayConfigured === true && object(item.signing).complete !== false && !paymentWindowClosed(item) && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(item.type));
-    return <View style={{ gap: 8 }}>
-      {link}
-      <OnlinePayment key={id} invoiceId={id} invoiceType={String(item.type)} eligible={eligible} disabled={pending || submissions.loading || Boolean(submissions.error)} paid={false} refresh={data.refresh} />
-    </View>;
+    return link;
   }} />;
 }
 export function PortalDetail({ role }: { role: PortalRole }) {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>(), { user } = useAuth();
+  if (role === 'CUSTOMER' && resource === 'deposit-settlements') return <CustomerDepositDetail key={String(id)} id={String(id)} />;
+  if (role === 'CUSTOMER' && resource === 'returns') return <CustomerReturns key={id} id={id} />;
+  if (role === 'CUSTOMER' && (resource === 'transfers' || resource === 'early-returns')) return <CustomerRentalChange key={resource + '/' + id} kind={resource} id={id} />;
   if(role==='CUSTOMER'&&resource==='reservations') return <CustomerBookingDetail key={`${user?.id}:${id}`} id={String(id)}/>;
   if(role==='CUSTOMER'&&resource==='rentals') return <CustomerRentals key={`${user?.id}:${id}`} initialRentalId={String(id)}/>;
   if(role==='CUSTOMER'&&resource==='contracts')return <CustomerContracts key={`${user?.id}:${id}`} contractId={String(id)}/>;
   if(role==='CUSTOMER'&&resource==='appointments')return <CustomerAppointments key={`${user?.id}:${id}`} id={String(id)}/>;
+  if(role==='CUSTOMER'&&resource==='support-requests')return id==='new'
+    ? <CustomerSupportCreate key={user?.id} />
+    : <CustomerSupportDetail key={`${user?.id}:${id}`} id={String(id)} />;
+  if (role === 'CUSTOMER' && resource === 'payment-history') return <CustomerPaymentDetail key={`${user?.id}:${id}`} id={String(id)} />;
+  if (role === 'CUSTOMER' && resource === 'renewals') return <CustomerRenewalDetail key={String(id)} id={String(id)} />;
   if(role==='CUSTOMER'&&resource==='invoices')return <CustomerInvoiceDetail key={`${user?.id}:${id}`} id={String(id)}/>;
   return <Detail key={`${user?.id}:${resource}:${id}`} role={role} resource={String(resource)} id={String(id)} />;
 }
@@ -127,7 +137,6 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
   }
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
   if (role === 'CUSTOMER' && resource === 'reservations' && row) actions.push(customerSupportAction(idOf(row), { operational: false }));
-  const renewalInvoice = row && role === 'CUSTOMER' && resource === 'renewals' ? rows(row.invoices).find(invoice => Number(invoice.renewalCycle) === 1) : undefined;
   const refresh = () => { data.refresh(); sources.forEach(item => item.refresh()); };
   return <ScrollView refreshControl={role==='CUSTOMER'&&resource!=='invoices'?<RefreshControl refreshing={data.loading&&Boolean(row)} onRefresh={()=>{if(!action)refresh();}}/>:undefined} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={role==='CUSTOMER'?customerStyles.page:styles.page}>
     <Stack.Screen options={{ title: config.title }} />{role === 'STAFF' ? <><PageHeader eyebrow={config.title} title={row ? codeOf(row) : 'Chi tiết hồ sơ'} description="Đối chiếu thông tin và cập nhật kết quả công việc tại đây."/><Navigation title="Về danh sách" path={`${root}/${resource}`} /><Button title="Làm mới hồ sơ" onPress={refresh} disabled={data.loading || Boolean(action)} /></> : resource==='invoices'?<View style={styles.row}><Button title="Danh sách" variant="secondary" onPress={() => router.push(`${root}/${resource}` as Href)}/><Button title="Cập nhật" variant="secondary" onPress={refresh} disabled={data.loading || Boolean(action)}/></View>:null}
@@ -140,16 +149,10 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
       {resource === 'contracts' && role === 'STAFF' && <ContractRenewalHistory contract={row} scope="staff/management"/>}
       {resource === 'contracts' && role === 'STAFF' && <ContractTransferHistory contract={row} scope="staff/management"/>}
       {role === 'CUSTOMER' && resource === 'contracts' && <DocumentAcceptance row={row} resource="contracts" onSaved={refresh} />}
-      {role === 'CUSTOMER' && resource === 'renewals' && Boolean(row.appendix) && <DocumentAcceptance row={row} resource="renewals" onSaved={refresh} />}
-      {resource === 'renewals' && <RenewalReview audience={role === 'CUSTOMER' ? 'customer' : 'internal'} row={role === 'CUSTOMER' ? { ...row, customer: user } : row} />}
+      {resource === 'renewals' && <RenewalReview audience="internal" row={row} />}
       {role === 'CUSTOMER' ? <Disclosure title="Hướng dẫn bước tiếp theo"><Text style={[styles.copy, {fontSize: 14, lineHeight: 21}]}>{workflowGuide(resource, row.status, 'customer')}</Text></Disclosure> : <WorkflowHint text={workflowGuide(resource, row.status, 'staff')}/>}
       {(resource === 'returns' || role === 'CUSTOMER' && resource === 'rentals') && <Panel title="Điều kiện công nợ để trả kho"><Text style={styles.copy}>Trả trước hạn hoặc đúng hạn đều phải thanh toán đủ toàn bộ công nợ đã cam kết, kể cả các kỳ chưa đến hạn, trước khi được trả kho. Tiền cọc được quyết toán riêng.</Text>{Number.isFinite(returnSettlementAmount(row)) ? <Text style={returnSettlementAmount(row) > 0 ? styles.error : styles.success}>{returnSettlementAmount(row) > 0 ? `Còn phải tất toán: ${formatMoney(returnSettlementAmount(row))}. Chưa thể gửi yêu cầu trả kho hoặc hoàn tất nhận trả.` : 'Đã tất toán toàn bộ công nợ hiện có. Tiếp tục đối chiếu điều kiện trả kho và giao nhận hàng.'}</Text> : <Text style={styles.copy}>Chưa có đủ dữ liệu công nợ để xác nhận điều kiện trả kho. Hãy làm mới hồ sơ trước khi tiếp tục.</Text>}{role === 'CUSTOMER' && <Navigation title="Xem hóa đơn và tất toán" path="/customer/invoices" />}</Panel>}
       {resource === 'returns' && (Number(text(row, 'inventory.remainingItemTypes')) > 0 || Number(text(row, 'inventory.pendingMovements')) > 0) && <Panel title="Cần hoàn tất giao nhận hàng"><Text style={styles.copy}>Còn {text(row, 'inventory.remainingItemTypes') || '0'} loại hàng và {text(row, 'inventory.pendingMovements') || '0'} phiếu đang xử lý. Khách cần lấy hết hàng, nhân viên kiểm đếm trước khi nhận trả kho.</Text><Navigation title="Xem phiếu nhập – xuất" path={`${root}/stock-movements`} /></Panel>}
-      {renewalInvoice && row.status === 'APPROVED_PENDING_PAYMENT' && Boolean(text(row, 'appendix.acceptedAt')) && <>
-        <InvoicePayment key={idOf(renewalInvoice)} invoice={renewalInvoice} onlineOnly refresh={refresh} onNotice={setNotice} />
-        <Navigation title="Xem hóa đơn gia hạn" path={`/customer/invoices/${encodeURIComponent(idOf(renewalInvoice))}`} />
-      </>}
-      {role === 'CUSTOMER' && resource === 'renewals' && row.status === 'COMPLETED' && <Navigation title="Xem thời hạn thuê mới" path="/customer/rentals" />}
       {Boolean(transferProgress(row)) && <Panel title="Tiến độ chuyển kho"><Text style={styles.copy}>{transferProgress(row)}</Text><Text style={styles.copy}>{text(row, 'resolutionNote')}</Text></Panel>}
       {role === 'STAFF' && <Panel title="Thông tin đối chiếu"><Facts values={[
         ['Trạng thái', portalStatus(role, resource, row.status ?? row.rentalState)], ['Khách hàng', text(row, 'customer.fullName', 'reservation.customer.fullName') || ''], ['Yêu cầu đặt kho', text(row, 'reservation.reference', 'reservationReference')], ['Hợp đồng', text(row, 'contractCode', 'contract.contractCode')], ['Kho', text(row, 'unit.unitCode', 'storageUnit.unitCode')], ['Kho nguồn', text(row, 'fromUnit.unitCode')], ['Kho đích', text(row, 'toUnit.unitCode')], ['Lịch hẹn', formatDate(text(row, 'scheduledAt'), true)], ['Nhân viên phụ trách', text(row, 'assignedStaff.fullName')], ['Tiêu đề', row.subject], ['Mô tả', row.description],

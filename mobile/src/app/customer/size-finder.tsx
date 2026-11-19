@@ -1,42 +1,191 @@
-import { Armchair, Archive, BriefcaseBusiness, Boxes, Minus, Package, Plus, Table } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-
-import { PageHeader } from '@/components/page-header';
-import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
-import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
-import { rows, text } from '@/operations/model';
-import { Button, Disclosure, styles } from '@/operations/ui';
+import { useCallback, useState } from 'react';
+import { BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, Stack, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Armchair, Archive, Boxes, BriefcaseBusiness, ChevronLeft, ChevronRight, Info, Layers, Minus, Package, Plus, Table, Warehouse, X } from 'lucide-react-native';
+import { CustomerTheme as C } from '@/constants/wdp-theme';
+import { StorageComparison, matchingStorage } from '@/components/storage-comparison';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
+import { rows, text, type Row } from '@/operations/model';
+import { formatMoney } from '@/utils/format';
 
-const assumptions = [
-  { id: 'box', icon: Package, title: 'Thùng carton', area: 0.12, note: 'Giả định thùng xếp chồng an toàn.' },
-  { id: 'suitcase', icon: BriefcaseBusiness, title: 'Vali', area: 0.18, note: 'Giả định đặt nằm hoặc dựng đứng.' },
-  { id: 'chair', icon: Armchair, title: 'Ghế', area: 0.35, note: 'Giả định ghế có thể xếp gọn khi phù hợp.' },
-  { id: 'desk', icon: Archive, title: 'Bàn làm việc', area: 0.9, note: 'Giả định bàn tháo rời khi có thể.' },
-  { id: 'table', icon: Table, title: 'Bàn ăn', area: 1.2, note: 'Giả định bàn không tháo rời.' },
-  { id: 'cabinet', icon: Boxes, title: 'Tủ/kệ', area: 1.1, note: 'Giả định một lối tiếp cận tối thiểu.' },
+const items = [
+  { id: 'box', icon: Package, name: 'Thùng carton', area: 0.12 },
+  { id: 'suitcase', icon: BriefcaseBusiness, name: 'Vali', area: 0.18 },
+  { id: 'chair', icon: Armchair, name: 'Ghế', area: 0.35 },
+  { id: 'desk', icon: Archive, name: 'Bàn làm việc', area: 0.9 },
+  { id: 'table', icon: Table, name: 'Bàn ăn', area: 1.2 },
+  { id: 'cabinet', icon: Boxes, name: 'Tủ/kệ', area: 1.1 },
 ] as const;
-
-function areaFrom(value: string) { const number = Number(value.replace(',', '.').match(/[\d.]+/)?.[0]); return Number.isFinite(number) ? number : null; }
+type ItemId = typeof items[number]['id'];
+const maxQuantity = 50;
+const accessAllowance = 0.25;
+const format = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export default function SizeFinderScreen() {
+  const [counts, setCounts] = useState<Partial<Record<ItemId, number>>>({});
+  const [result, setResult] = useState(false);
+  const [explanation, setExplanation] = useState(false);
   const catalog = usePublicCatalog();
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const required = assumptions.reduce((sum, item) => sum + item.area * (counts[item.id] ?? 0), 0) * 1.25;
-  const sizes = rows(catalog.data?.sizes).map(size => ({ ...size, area: areaFrom(text(size, 'floorArea')) })).filter(size => size.area !== null).sort((a, b) => Number(a.area) - Number(b.area));
-  const recommended = useMemo(() => sizes.find(size => Number(size.area) >= required), [required, sizes]);
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
-    <PageHeader eyebrow="Tìm kích thước" title="Ước tính kho bạn cần" description="Đây là ước tính diện tích sàn để chọn nhóm kho. Kích thước, giá và khả dụng chính thức được NestBox xác nhận ở bước đặt kho." />
-    {catalog.loading && !catalog.data ? <LoadingState label="Đang tải kích thước kho…" /> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh} /> : <>
-      <View style={local.list}>{assumptions.map(item => <View key={item.id} style={local.item}><item.icon size={22} color={WdpColors.navy} /><View style={{ flex: 1, gap: WdpSpacing.xxs }}><Text style={local.itemTitle}>{item.title}</Text></View><View style={local.counter}><Pressable accessibilityRole="button" accessibilityLabel={`Giảm ${item.title}`} disabled={!counts[item.id]} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.max(0, (value[item.id] ?? 0) - 1) }))} style={local.counterButton}><Minus size={18} color={WdpColors.navy} /></Pressable><Text accessibilityLabel={`Số lượng ${item.title}`} style={local.count}>{counts[item.id] ?? 0}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Tăng ${item.title}`} onPress={() => setCounts(value => ({ ...value, [item.id]: Math.min(50, (value[item.id] ?? 0) + 1) }))} style={local.counterButton}><Plus size={18} color={WdpColors.navy} /></Pressable></View></View>)}</View>
-      <Disclosure title="Cách ước tính">{assumptions.map(item => <Text key={item.id} style={styles.copy}>{item.title}: {item.note}</Text>)}</Disclosure><View style={local.result}><Text style={local.resultLabel}>Diện tích ước tính (đã gồm 25% lối đi)</Text><Text style={local.resultValue}>{required ? `${required.toFixed(1)} m²` : 'Chọn đồ cần lưu'}</Text>{required ? recommended ? <><Text style={local.resultCopy}>Gợi ý: {text(recommended, 'name')} · {text(recommended, 'floorArea', 'dimensions')}.</Text><Button title="Xem loại kho phù hợp" onPress={() => router.push({ pathname: '/customer/discover', params: { size: text(recommended, 'id') } })} /></> : <Text style={local.resultCopy}>Danh mục hiện không có nhóm kho nào đủ diện tích ước tính. Vui lòng liên hệ NestBox để được tư vấn.</Text> : <Text style={local.resultCopy}>Kết quả chỉ là định hướng. Đồ cồng kềnh, không xếp chồng hoặc cần lối đi rộng có thể cần kho lớn hơn.</Text>}</View>
-      {!sizes.length && <EmptyState title="Thiếu dữ liệu kích thước" message="Catalog chưa trả về diện tích sàn để so sánh. Vui lòng liên hệ hỗ trợ để được tư vấn kích thước." />}
-    </>}
-  </ScrollView>;
+  const products = rows(catalog.data?.products);
+  const sizes = rows(catalog.data?.sizes);
+  const selected = items.filter(item => (counts[item.id] ?? 0) > 0);
+  const area = selected.reduce((sum, item) => sum + item.area * (counts[item.id] ?? 0), 0) * (1 + accessAllowance);
+  const estimate = format.format(area) + ' m²';
+  const matches = area > 0 ? matchingStorage(products, sizes, area) : [];
+  const suggestions = matches.slice(0, 3);
+  const best = matches[0];
+  const choose = (product: Row) => router.push({
+    pathname: '/customer/booking', params: { product: text(product, 'id'), minimumArea: String(area) },
+  });
+
+  useFocusEffect(useCallback(() => {
+    if (!result) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { setResult(false); return true; });
+    return () => sub.remove();
+  }, [result]));
+
+  const change = (id: ItemId, delta: number) => setCounts(previous => ({
+    ...previous, [id]: Math.max(0, Math.min(maxQuantity, (previous[id] ?? 0) + delta)),
+  }));
+
+  return <View style={s.screen}>
+    <Stack.Screen options={{
+      title: result ? 'Kết quả ước tính' : 'Ước tính diện tích kho',
+      headerTitleAlign: 'center', headerTitleStyle: { color: C.cobalt, fontSize: 17, fontWeight: '700' },
+      headerBackVisible: false, gestureEnabled: !result,
+      headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={s.headerButton}
+        onPress={() => result ? setResult(false) : router.canGoBack() ? router.back() : router.replace('/customer/discover')}>
+        <ChevronLeft color={C.cobalt} size={24} />
+      </Pressable>,
+    }} />
+    <ScrollView key={result ? 'result' : 'items'} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.page}>
+      {result ? <>
+        <View style={s.resultIcon}><Warehouse size={50} color={C.cobalt} /><Package size={24} color={C.cobalt} /></View>
+        <View style={s.summaryText}><Text style={s.heading}>Diện tích ước tính</Text><Text style={s.value}>Khoảng {estimate}</Text></View>
+        <Note>Chỉ mang tính tham khảo. Hãy đối chiếu kích thước đồ, chiều cao kho và cách xếp.</Note>
+        <Text style={s.heading}>Kho phù hợp với diện tích ước tính</Text>
+        {catalog.loading && !catalog.data ? <Text style={s.copy}>Đang tải loại kho…</Text>
+          : catalog.error ? <Pressable accessibilityRole="button" style={s.linkButton} onPress={catalog.refresh}><Text style={s.link}>Chưa tải được loại kho. Thử lại</Text></Pressable>
+          : suggestions.length ? <View style={s.selectedList}>{suggestions.map(({ product, area: floorArea }, index) =>
+            <Pressable key={text(product, 'id')} accessibilityRole="button" onPress={() => choose(product)}
+              style={[s.row, s.selectedRow, index > 0 && s.divider]}>
+              <Warehouse size={20} color={C.cobalt} />
+              <View style={s.grow}><Text style={s.label}>{text(product, 'name')}</Text>
+                {index === 0 ? <Text style={s.link}>Diện tích gần nhất</Text> : null}
+                <Text style={s.copy}>{format.format(floorArea)} m²{typeof product.monthlyPrice === 'number' ? ' · ' + formatMoney(product.monthlyPrice) + '/tháng' : ''}</Text>
+              </View><ChevronRight size={18} color={C.cobalt} />
+            </Pressable>)}</View>
+            : <Text style={s.copy}>Chưa tìm thấy loại kho có diện tích đạt mức ước tính.</Text>}
+        <Text style={s.copy}>Kiểm tra kho còn trống sau khi chọn ngày thuê.</Text>
+        {best && !catalog.error ? <Primary title="Xem kho phù hợp" onPress={() => choose(best.product)} /> : null}
+        {matches.length > 1 ? <StorageComparison products={matches.map(item => item.product)} sizes={sizes} onChoose={choose} /> : null}
+        <View style={s.spread}><Text style={s.heading}>Đồ đã chọn ({selected.length} loại)</Text>
+          <Pressable accessibilityRole="button" style={s.linkButton} onPress={() => setResult(false)}><Text style={s.link}>Chỉnh sửa</Text></Pressable>
+        </View>
+        <View style={s.selectedList}>{selected.map(({ id, name, icon: Icon }, index) =>
+          <View key={id} style={[s.row, s.selectedRow, index > 0 && s.divider]}><Icon size={18} color={C.cobalt} />
+            <Text style={[s.label, s.grow]}>{name}</Text><Text style={s.label}>{counts[id]}</Text>
+          </View>)}</View>
+        {!best && !catalog.loading && !catalog.error ? <Primary title="Xem tất cả loại kho" onPress={() => router.dismissTo('/customer/discover')} /> : null}
+      </> : <>
+        <View style={s.spread}><Text style={[s.heading, s.grow]}>Chọn đồ bạn muốn lưu</Text>
+          {area > 0 ? <Pressable accessibilityRole="button" style={s.linkButton} onPress={() => setCounts({})}><Text style={s.link}>Đặt lại</Text></Pressable> : null}
+        </View>
+        <View style={s.list}>{items.map(({ id, name, icon: Icon }) => {
+          const quantity = counts[id] ?? 0;
+          return <View key={id} style={[s.row, s.item]}>
+            <Icon size={20} color={C.cobalt} /><Text style={[s.label, s.grow]}>{name}</Text>
+            <QuantityButton label={'Giảm ' + name} disabled={!quantity} onPress={() => change(id, -1)} />
+            <Text accessibilityLabel={name + ', số lượng ' + quantity} style={s.count}>{quantity}</Text>
+            <QuantityButton label={'Tăng ' + name} plus disabled={quantity >= maxQuantity} onPress={() => change(id, 1)} />
+          </View>;
+        })}</View>
+        <Pressable accessibilityRole="button" style={[s.row, s.linkButton]} onPress={() => setExplanation(true)}>
+          <Info size={17} color={C.cobalt} /><Text style={s.link}>Xem cách tính</Text><ChevronRight size={15} color={C.cobalt} />
+        </Pressable>
+        <View style={s.summary} accessibilityLiveRegion="polite"><Text style={s.heading}>Diện tích ước tính</Text>
+          {area > 0 ? <><Text style={s.value}>{estimate}</Text><Text style={s.copy}>Số liệu tham khảo, tùy theo kích thước và cách xếp đồ.</Text></>
+            : <Text style={s.copy}>Chọn ít nhất một món đồ để ước tính.</Text>}
+          {best && !catalog.error ? <Text style={s.label}>Gợi ý: {text(best.product, 'name')} · {format.format(best.area)} m²</Text> : null}
+        </View>
+        <Primary title="Xem kho phù hợp" disabled={!area} onPress={() => setResult(true)} />
+      </>}
+    </ScrollView>
+    <Modal visible={explanation} transparent animationType="slide" onRequestClose={() => setExplanation(false)}>
+      <View style={s.overlay}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Đóng cách ước tính" onPress={() => setExplanation(false)} style={StyleSheet.absoluteFill} />
+        <SafeAreaView edges={['bottom']} style={s.sheet}>
+          <View style={s.handle} />
+          <View style={s.spread}><Text style={s.heading}>Cách ước tính</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Đóng" style={s.headerButton} onPress={() => setExplanation(false)}><X size={21} color={C.text} /></Pressable>
+          </View>
+          <ScrollView style={s.sheetScroll} contentContainerStyle={s.explanations}>
+            <View style={s.explain}><Package size={21} color={C.cobalt} /><View style={s.grow}><Text style={s.label}>Diện tích đồ vật</Text>
+              <Text style={s.copy}>Lấy số lượng nhân với diện tích sàn tham khảo của từng loại đồ, rồi cộng lại.</Text>
+              <Text style={s.copy}>{items.map(item => item.name + ' ' + item.area.toLocaleString('vi-VN') + ' m²').join(' · ')}</Text>
+            </View></View>
+            <View style={s.explain}><Layers size={21} color={C.cobalt} /><View style={s.grow}><Text style={s.label}>Cách xếp đồ</Text>
+              <Text style={s.copy}>Số tham khảo giả định thùng có thể xếp chồng, ghế xếp gọn và bàn làm việc tháo rời khi phù hợp. Chiều cao kho và kích thước thực của đồ cần được kiểm tra riêng.</Text>
+            </View></View>
+            <View style={s.explain}><Warehouse size={21} color={C.cobalt} /><View style={s.grow}><Text style={s.label}>Lối đi và chỗ thao tác</Text>
+              <Text style={s.copy}>Cộng thêm {accessAllowance * 100}% vào tổng diện tích đồ để chừa chỗ đi lại và lấy đồ.</Text>
+            </View></View>
+            <Note>Sức chứa thực tế phụ thuộc vào cách sắp xếp trong kho.</Note>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    </Modal>
+  </View>;
 }
 
-const local = StyleSheet.create({
-  list: { gap: WdpSpacing.xs }, item: { alignItems: 'center', backgroundColor: WdpColors.surface, borderColor: WdpColors.border, borderCurve: 'continuous', borderRadius: WdpRadius.md, borderWidth: 1, flexDirection: 'row', gap: WdpSpacing.sm, padding: WdpSpacing.sm }, itemTitle: { color: WdpColors.text, fontSize: 15, fontWeight: '600' }, itemNote: { color: WdpColors.muted, fontSize: 12, lineHeight: 17 }, counter: { alignItems: 'center', flexDirection: 'row', gap: WdpSpacing.xs }, counterButton: { alignItems: 'center', backgroundColor: WdpColors.tealSubtle, borderRadius: WdpRadius.full, height: 36, justifyContent: 'center', width: 36 }, counterText: { color: WdpColors.teal, fontSize: 21, fontWeight: '600' }, count: { color: WdpColors.text, fontSize: 16, fontVariant: ['tabular-nums'], minWidth: 20, textAlign: 'center' }, result: { gap: WdpSpacing.sm, backgroundColor: WdpColors.tealSubtle, borderColor: WdpColors.teal, borderCurve: 'continuous', borderRadius: WdpRadius.md, borderWidth: 1, padding: WdpSpacing.md }, resultLabel: { color: WdpColors.teal, fontSize: 13, fontWeight: '600' }, resultValue: { color: WdpColors.navy, fontSize: 28, fontWeight: '700' }, resultCopy: { color: WdpColors.text, fontSize: 14, lineHeight: 21 },
+function QuantityButton({ label, plus, disabled, onPress }: { label: string; plus?: boolean; disabled: boolean; onPress: () => void }) {
+  const Icon = plus ? Plus : Minus;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={s.stepper}>
+    <View style={[s.circle, disabled && s.disabled]}><Icon size={17} color={C.cobalt} /></View>
+  </Pressable>;
+}
+
+function Primary({ title, disabled = false, onPress }: { title: string; disabled?: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+    style={[s.primary, disabled && s.disabled]}><Text style={s.primaryText}>{title}</Text><ChevronRight size={19} color="white" /></Pressable>;
+}
+
+function Note({ children }: { children: string }) {
+  return <View style={[s.row, s.summary]}><Info size={18} color={C.cobalt} /><Text style={[s.copy, s.grow]}>{children}</Text></View>;
+}
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: 'white' },
+  page: { width: '100%', maxWidth: 540, alignSelf: 'center', padding: 16, gap: 12, paddingBottom: 24 },
+  headerButton: { minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  spread: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  list: { gap: 7 },
+  item: { borderWidth: 1, borderColor: '#E6ECF5', borderRadius: 11, paddingLeft: 11, paddingRight: 5, minHeight: 49 },
+  grow: { flex: 1, minWidth: 0 },
+  heading: { fontSize: 16, fontWeight: '700', color: C.text },
+  label: { color: C.text, fontSize: 14, fontWeight: '600' },
+  copy: { color: C.muted, fontSize: 13, lineHeight: 19 },
+  stepper: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  circle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EAF0FD', alignItems: 'center', justifyContent: 'center' },
+  count: { color: C.text, minWidth: 19, textAlign: 'center', fontWeight: '700', fontVariant: ['tabular-nums'] },
+  summary: { backgroundColor: '#EAF1FD', borderRadius: 12, padding: 12, gap: 6 },
+  summaryText: { gap: 5 },
+  value: { color: C.cobalt, fontSize: 30, fontWeight: '800' },
+  resultIcon: { alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-end', gap: 5, paddingVertical: 8 },
+  selectedList: { backgroundColor: '#F2F6FD', borderRadius: 11, paddingHorizontal: 10 },
+  selectedRow: { minHeight: 38, paddingVertical: 6 },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D5E0F0' },
+  linkButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+  link: { fontWeight: '700', fontSize: 14, color: C.cobalt },
+  primary: { minHeight: 46, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: C.cobalt, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  primaryText: { color: 'white', fontWeight: '700', fontSize: 15, textAlign: 'center', flexShrink: 1 },
+  disabled: { opacity: 0.5 },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#131C3080' },
+  sheet: { backgroundColor: 'white', maxHeight: '80%', paddingHorizontal: 16, paddingTop: 9, paddingBottom: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#AEB9C9', alignSelf: 'center' },
+  sheetScroll: { flexGrow: 0 },
+  explanations: { gap: 14, paddingBottom: 8 },
+  explain: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
 });

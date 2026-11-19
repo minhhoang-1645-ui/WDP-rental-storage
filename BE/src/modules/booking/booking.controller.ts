@@ -89,6 +89,13 @@ export class BookingController {
     return this.bookingService.getReservation(request.user!, id);
   }
 
+  @Post('reservations/:id/cancel')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('CUSTOMER')
+  cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.bookingService.cancelCustomerReservation(request.user!, id);
+  }
+
   @Get('inquiries/:id')
   @ApiTags('Contact Inquiry')
   @ApiOperation({ summary: 'Tra cứu Contact Inquiry', description: 'Guest endpoint có bảo vệ. Cần X-Inquiry-Access-Token được trả về từ POST /api/inquiries; không dùng bearer token.' })

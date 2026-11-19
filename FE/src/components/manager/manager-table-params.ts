@@ -28,4 +28,3 @@ export function managerReviewReturn(params: URLSearchParams) {
   const from = params.get('from');
   return from && (from === '/manager/reviews' || from.startsWith('/manager/reviews?')) ? from : null;
 }
-

@@ -3,7 +3,7 @@ import { mutate } from '../../services/portal';
 import { money } from '../manager/portal-data';
 import { formatPortalDate } from './CustomerPortalHelpers';
 
-export type Claim = { id: string; claimCode: string; status: string; discoveredOn: string; unitCodeSnapshot: string; description: string; updatedAt: string; estimatedValue: number | null; affectedItems: { id: string; name: string; unit: string }[]; evidenceLinks: string[]; staffFacts: string | null; decisionReason: string | null; resolutionNote: string | null; decision: string | null; customer?: { fullName: string; phone: string } };
+export type Claim = { id: string; claimCode: string; status: string; discoveredOn: string; unitCodeSnapshot: string; description: string; updatedAt: string; estimatedValue: number | null; affectedItems: { id: string; name: string; unit: string }[]; evidenceLinks: string[]; evidencePhotos?: string[] | null; staffFacts: string | null; decisionReason: string | null; resolutionNote: string | null; decision: string | null; customer?: { fullName: string; phone: string } };
 const states: Record<string, string> = { REPORTED: 'Đã gửi · chờ kiểm tra', INVESTIGATING: 'Đang xác minh thực tế', APPROVED: 'Đã chấp thuận hướng xử lý', REJECTED: 'Chưa chấp thuận đề nghị', RESOLVED: 'Đã thông báo kết quả' };
 type EditKind = 'facts' | 'decision' | 'resolve' | 'amend-decision' | 'amend-resolution';
 export function ClaimRecord({ claim, root, role, saved }: { claim: Claim; root: string; role: string; saved: () => void }) {
@@ -42,6 +42,7 @@ export function ClaimRecord({ claim, root, role, saved }: { claim: Claim; root: 
       {claim.estimatedValue !== null && <p>Khách ước tính: <strong>{money(claim.estimatedValue)}</strong> (chưa được duyệt).</p>}
       {claim.decisionReason && <p><strong>Lý do quyết định: </strong>{claim.decisionReason}</p>}
       {claim.resolutionNote && <p><strong>Kết quả: </strong>{claim.resolutionNote}</p>}
+      {claim.evidencePhotos?.map((photo, index) => <a key={index} href={photo} download={'anh-chung-cu-' + (index + 1) + '.jpg'}><img src={photo} alt={'Ảnh chứng cứ ' + (index + 1)} width={120} loading="lazy" /></a>)}
       {claim.evidenceLinks.length > 0 && <div className="portal-actions">{claim.evidenceLinks.map((link, index) => <a key={link} href={link} target="_blank" rel="noopener noreferrer">Chứng cứ {index + 1}</a>)}</div>}
     </details>
     {editorForm}
@@ -61,6 +62,7 @@ export function ClaimRecord({ claim, root, role, saved }: { claim: Claim; root: 
         {claim.decisionReason && <div><dt>Lý do quyết định</dt><dd>{claim.decisionReason}</dd></div>}
         {claim.resolutionNote && <div className="claim-detail-outcome"><dt>Kết quả</dt><dd>{claim.resolutionNote}</dd></div>}
       </dl>
+      {claim.evidencePhotos?.map((photo, index) => <a key={index} href={photo} download={'anh-chung-cu-' + (index + 1) + '.jpg'}><img src={photo} alt={'Ảnh chứng cứ ' + (index + 1)} width={120} loading="lazy" /></a>)}
       {claim.evidenceLinks.length > 0 && <div className="portal-actions">{claim.evidenceLinks.map((link, index) => <a key={link} href={link} target="_blank" rel="noopener noreferrer">Chứng cứ {index + 1}</a>)}</div>}
     </details>
   </article>;
@@ -73,6 +75,7 @@ export function ClaimRecord({ claim, root, role, saved }: { claim: Claim; root: 
     </dl>
     <section className="claim-review-description"><h3>Tình trạng khách báo</h3><p>{claim.description}</p>
       {claim.affectedItems.length > 0 && <ul className="claim-item-tags">{claim.affectedItems.map(item => <li key={item.id}>{item.name} · {item.unit}</li>)}</ul>}
+      {claim.evidencePhotos?.map((photo, index) => <a key={index} href={photo} download={'anh-chung-cu-' + (index + 1) + '.jpg'}><img src={photo} alt={'Ảnh chứng cứ ' + (index + 1)} width={120} loading="lazy" /></a>)}
       {claim.evidenceLinks.length > 0 && <div className="portal-actions">{claim.evidenceLinks.map((link, index) => <a key={link} href={link} target="_blank" rel="noopener noreferrer">Chứng cứ {index + 1}</a>)}</div>}
     </section>
     <div className="claim-review-results">

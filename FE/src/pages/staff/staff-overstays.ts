@@ -24,4 +24,3 @@ export function staffOverstayTarget(row: Overstay) {
   return row.returnRequest ? `/staff/returns/${encodeURIComponent(row.returnRequest.id)}`
     : staffRentalTarget(row.reservationId, { contract: row.id });
 }
-

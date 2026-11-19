@@ -1,87 +1,88 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { object, rows, type Row } from '@/operations/model';
-import { formatDate, formatMoney } from '@/utils/format';
+import { useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChevronRight, Info, Tag, X } from 'lucide-react-native';
+import { object, rows, text, type Row } from '@/operations/model';
+import { formatMoney } from '@/utils/format';
 import { quotePaymentSummary } from '@/utils/quote-payment-summary';
-import { serviceDisplayName } from '@/utils/service-labels';
-import { serviceCalendarMonths } from '@/utils/service-period';
 
-const positive=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>0;
+const blue = '#0758DC';
+const money = (value: number | null) => value === null ? 'Chưa có báo giá' : formatMoney(value);
+const amount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-/** Total and balances come from the quote. Unequal future invoices are never averaged. */
-export function BookingBill({quote}: {quote: Row}) {
-  const summary=quotePaymentSummary(quote), initial=object(quote.initialPaymentBreakdown);
-  const months=typeof quote.termMonths==='number'&&Number.isInteger(quote.termMonths)?quote.termMonths:0;
-  const remainingMonths=summary.monthly&&months>1?months-1:0;
-  const quantity=positive(quote.quantity)?quote.quantity:null;
-  const monthlyRent=positive(quote.monthlyUnitPrice)&&quantity!==null?quote.monthlyUnitPrice*quantity:null;
-  const depositEquivalent=quote.billingMode==='MONTHLY'&&positive(quote.depositAmount)&&monthlyRent!==null&&Number.isSafeInteger(monthlyRent)&&Number.isInteger(quote.depositAmount/monthlyRent)?quote.depositAmount/monthlyRent:null;
-  const depositLabel=depositEquivalent!==null?'Tiền cọc ('+depositEquivalent+' tháng tiền thuê)':'Tiền cọc';
-  const period=months>0?months+' tháng':positive(quote.billableDays)?quote.billableDays+' ngày':'thời gian đã chọn';
-  const rentals=rows(quote.services).filter(service=>service.kind==='RENTAL');
-  const fullMonthlyServices=Array.isArray(quote.services)&&rentals.every(service=>service.billingUnit==='MONTH'&&service.serviceStartDate===quote.startDate&&service.serviceEndDate===quote.endDate);
-  const initialEquipment=typeof initial.rentalAddOnAmount==='number'?initial.rentalAddOnAmount:0;
-  const monthlyAmount=positive(initial.rentalAmount)?initial.rentalAmount+initialEquipment:null;
-  const each=summary.laterEach ?? (fullMonthlyServices&&monthlyAmount!==null&&remainingMonths>0&&summary.remaining===monthlyAmount*remainingMonths?monthlyAmount:null);
-  const row=(title:string,value:number|string|null|undefined,emphasis=false)=>value!==null&&value!==undefined&&value!==0?<View style={s.row}><Text style={[s.label,emphasis&&s.emphasis]}>{title}</Text><Text selectable style={[s.value,emphasis&&s.emphasis]}>{typeof value==='number'?formatMoney(value):value}</Text></View>:null;
-  return <View style={{gap:16}}>
-    {positive(summary.total)&&<View style={s.block}>
-      <Text style={s.title}>Tổng tiền tất cả hóa đơn</Text>
-      <Text selectable style={s.total}>{formatMoney(summary.total)}</Text>
-      <Text style={s.note}>Tiền thuê toàn bộ thời gian + cọc + thiết bị/vật tư</Text>
-    </View>}
-    {quote.paymentPlan!=='PREPAID'&&positive(summary.first)&&<View style={s.block}>
-      <Text style={s.title}>Thanh toán lần đầu</Text>
-      <Text selectable style={s.first}>{formatMoney(summary.first)}</Text>
-      <Text style={s.note}>{summary.monthly?'Tháng đầu + cọc + thiết bị/vật tư ban đầu':'Trả một lần cho toàn bộ thời gian thuê'}</Text>
-      {summary.monthly&&<View style={{gap:2,marginTop:8}}>
-        {row('Tiền thuê tháng đầu',positive(initial.rentalAmount)?initial.rentalAmount:null)}
-        {row(depositLabel,positive(initial.depositAmount)?initial.depositAmount:null)}
-        {row('Vật tư mua một lần',positive(initial.purchaseAddOnAmount)?initial.purchaseAddOnAmount:null)}
-        {row('Thiết bị trong tháng đầu',positive(initial.rentalAddOnAmount)?initial.rentalAddOnAmount:null)}
-      </View>}
-    </View>}
-    {summary.monthly&&positive(summary.remaining)&&<View style={{gap:4}}>
-      <Text style={s.title}>Các tháng còn lại</Text>
-      <View style={s.row}><Text style={s.label}>Số tháng chưa trả</Text><Text style={s.value}>{remainingMonths} tháng</Text></View>
-      {each!==null
-        ? row('Mỗi tháng cần trả',each)
-        : <>{row('Tiền thuê kho mỗi tháng',positive(initial.rentalAmount)?initial.rentalAmount:null)}{row('Thiết bị mỗi tháng','Theo hóa đơn')}</>}
-      <View style={{borderTopWidth:1,borderColor:'#D0D5DD',marginTop:6,paddingTop:6}}>{row('Tổng còn trả sau',summary.remaining,true)}</View>
-    </View>}
-    <View style={{gap:4,borderTopWidth:1,borderColor:'#D0D5DD',paddingTop:14}}>
-      <Text style={s.title}>Chi tiết toàn bộ tiền thuê</Text>
-      {row(quote.billingMode==='DAILY'?'Đơn giá 1 kho / ngày':'Đơn giá 1 kho / tháng',quote.billingMode==='DAILY'?(positive(Number(quote.dailyUnitPrice))?Number(quote.dailyUnitPrice):null):(positive(quote.monthlyUnitPrice)?quote.monthlyUnitPrice:null))}
-      {row('Số kho',quantity!==null?quantity+' kho':null)}
-      {row('Thời hạn thuê',period)}
-      {positive(quote.discountAmount)&&positive(quote.baseRentalAmount)&&row('Tiền thuê trước giảm giá',quote.baseRentalAmount)}
-      {positive(quote.discountAmount)&&row('Giảm giá trả thẳng',-quote.discountAmount)}
-      {row('Tiền thuê '+period,positive(quote.rentalAmount)?quote.rentalAmount:null)}
-      {row(depositLabel,positive(quote.depositAmount)?quote.depositAmount:null)}
-      {positive(quote.depositAmount)&&<Text style={s.note}>Cọc thu một lần, đối chiếu khi trả kho.</Text>}
-      {rows(quote.services).filter(service=>positive(service.amount)).map((service,index)=>{
-        const unit=service.billingUnit==='DAY'?'ngày':service.billingUnit==='MONTH'?'tháng':'cái';
-        const from=typeof service.serviceStartDate==='string'?service.serviceStartDate:'';
-        const to=typeof service.serviceEndDate==='string'?service.serviceEndDate:'';
-        const duration=service.billingUnit==='MONTH'?serviceCalendarMonths(from,to):service.billingUnit==='DAY'?(Date.parse(to)-Date.parse(from))/86400000:null;
-        return <View key={String(service.serviceId??service.code??index)} style={{gap:4,paddingTop:8}}>
-          {row(serviceDisplayName(String(service.code??''),String(service.name??'Thiết bị/vật tư')),Number(service.amount))}
-          <Text style={s.note}>{positive(service.unitPrice)?formatMoney(service.unitPrice)+'/'+unit+' × ':''}{String(service.quantity??'')} {service.kind==='PURCHASE'?'sản phẩm':'thiết bị'}{typeof duration==='number'&&Number.isFinite(duration)&&duration>0?' × '+duration+' '+unit:''}</Text>
-          {from&&to&&<Text style={s.note}>{formatDate(from)} → {formatDate(to)}</Text>}
-        </View>;
-      })}
-      {row('Tổng thiết bị và vật tư',positive(quote.addOnTotalAmount)?quote.addOnTotalAmount:null)}
+function Line({ title, value }: { title: string; value: unknown }) {
+  if (value === null || value === undefined || value === '') return null;
+  return <View style={s.line}><Text style={s.label}>{title}</Text>
+    <Text style={[s.strong, typeof value === 'number' && value < 0 && s.saving]}>{typeof value === 'number' ? formatMoney(value) : String(value)}</Text></View>;
+}
+
+export function BookingBill({ quote }: { quote: Row }) {
+  const [details, setDetails] = useState(false);
+  const sum = quotePaymentSummary(quote);
+  const initial = object(quote.initialPaymentBreakdown);
+  const discount = amount(quote.discountAmount) ?? 0;
+  const duration = typeof quote.termMonths === 'number' && quote.termMonths > 0 ? quote.termMonths + ' tháng'
+    : typeof quote.billableDays === 'number' ? quote.billableDays + ' ngày' : '';
+  return <View style={s.group}>
+    {discount > 0 ? <View style={[s.panel, s.notice, s.green]}><Tag size={19} color="#09672A" />
+      <View style={s.noticeText}><Text style={s.saving}>Giảm {formatMoney(discount)}</Text><Text style={s.label}>Ưu đãi khi thanh toán toàn bộ kỳ thuê.</Text></View></View>
+      : sum.monthly ? <View style={[s.panel, s.notice]}><Info size={19} color={blue} />
+        <View style={s.noticeText}><Text style={s.linkText}>Thanh toán sau khi ký hợp đồng</Text><Text style={s.label}>Bạn sẽ thanh toán lần đầu theo hóa đơn.</Text></View></View> : null}
+    <View style={s.panel}>
+      <Text style={s.strong}>{sum.monthly ? 'Thanh toán lần đầu' : 'Dự kiến thanh toán một lần'}</Text>
+      <Text style={s.amount}>{money(sum.first ?? (!sum.monthly ? sum.total : null))}</Text>
+      {sum.monthly ? <><Text style={s.label}>Tổng dự kiến cả kỳ (gồm cọc)</Text><Text style={s.strong}>{money(sum.total)}</Text></>
+        : <Text style={s.label}>Thanh toán sau khi ký hợp đồng</Text>}
     </View>
-    <Text style={s.note}>Báo giá; thanh toán theo hóa đơn sau khi ký hợp đồng.</Text>
+    {sum.monthly ? <>
+      <Line title="Tiền thuê kỳ đầu" value={initial.rentalAmount} />
+      <Line title="Tiền cọc" value={initial.depositAmount ?? quote.depositAmount} />
+      {Number(initial.purchaseAddOnAmount) > 0 ? <Line title="Vật tư mua một lần" value={initial.purchaseAddOnAmount} /> : null}
+      {Number(initial.rentalAddOnAmount) > 0 ? <Line title="Thiết bị kỳ đầu" value={initial.rentalAddOnAmount} /> : null}
+      {sum.remaining !== null && sum.remaining > 0 ? <Line title="Các kỳ tiếp theo" value={sum.remaining} /> : null}
+    </> : <>
+      {discount > 0 ? <><Line title="Tiền thuê trước giảm giá" value={quote.baseRentalAmount} /><Line title="Giảm giá trả thẳng" value={-discount} /></> : null}
+      <Line title={discount > 0 ? 'Tiền thuê sau giảm giá' : 'Tiền thuê'} value={quote.rentalAmount} />
+      <Line title="Tiền cọc" value={quote.depositAmount} />
+      {Number(quote.addOnTotalAmount) > 0 ? <Line title="Thiết bị và vật tư" value={quote.addOnTotalAmount} /> : null}
+    </>}
+    <Pressable accessibilityRole="button" style={s.link} onPress={() => setDetails(true)}>
+      <Text style={s.linkText}>Xem chi tiết chi phí</Text><ChevronRight color={blue} size={17} />
+    </Pressable>
+    <Modal transparent visible={details} animationType="slide" onRequestClose={() => setDetails(false)}>
+      <View style={s.overlay}><SafeAreaView edges={['bottom']} style={s.sheet}>
+        <View style={s.handle} /><View style={s.line}><Text style={s.title}>Chi tiết chi phí</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Đóng" onPress={() => setDetails(false)} style={s.close}><X size={20} color="#18263B" /></Pressable></View>
+        <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={[s.group, { paddingBottom: 12 }]}>
+          <Line title={quote.billingMode === 'DAILY' ? 'Đơn giá một kho / ngày' : 'Đơn giá một kho / tháng'}
+            value={quote.billingMode === 'DAILY' && typeof quote.dailyUnitPrice === 'string' && /^\d+(?:\.\d+)?$/.test(quote.dailyUnitPrice)
+              ? formatMoney(Number(quote.dailyUnitPrice)) : quote.billingMode === 'DAILY' ? quote.dailyUnitPrice : quote.monthlyUnitPrice} />
+          <Line title="Số kho" value={typeof quote.quantity === 'number' ? quote.quantity + ' kho' : ''} />
+          <Line title="Thời hạn thuê" value={duration} />
+          <Line title={discount ? 'Tiền thuê trước giảm giá' : 'Tiền thuê'} value={quote.baseRentalAmount ?? quote.rentalAmount} />
+          {discount > 0 ? <Line title="Giảm giá trả thẳng" value={-discount} /> : null}
+          <Line title="Tiền cọc" value={quote.depositAmount} />
+          {rows(quote.services).map((item, index) => <Line key={index} title={text(item, 'name') + (item.quantity ? ' × ' + String(item.quantity) : '')} value={item.amount} />)}
+          <Line title="Tổng thiết bị và vật tư" value={quote.addOnTotalAmount} />
+          <View style={s.panel}><Text style={s.strong}>Tổng dự kiến thanh toán (gồm cọc)</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
+          {Number(quote.depositAmount) > 0 ? <View style={[s.panel, s.notice]}><Info size={18} color={blue} />
+            <View style={s.noticeText}><Text style={s.strong}>Tiền cọc được đối chiếu khi trả kho</Text><Text style={s.label}>Hoàn cọc theo điều khoản trong hợp đồng.</Text></View></View> : null}
+        </ScrollView>
+      </SafeAreaView></View>
+    </Modal>
   </View>;
 }
-const s=StyleSheet.create({
-  block:{gap:6,paddingBottom:16,borderBottomWidth:1,borderColor:'#D0D5DD'},
-  title:{fontSize:17,lineHeight:24,fontWeight:'600',color:'#17191D'},
-  total:{fontSize:28,lineHeight:36,fontWeight:'700',color:'#123E85',fontVariant:['tabular-nums']},
-  first:{fontSize:24,lineHeight:32,fontWeight:'700',color:'#123E85',fontVariant:['tabular-nums']},
-  note:{fontSize:14,lineHeight:21,color:'#475467'},
-  row:{flexDirection:'row',alignItems:'flex-start',justifyContent:'space-between',gap:16,paddingVertical:8},
-  label:{flex:1,fontSize:14,lineHeight:22,color:'#475467'},
-  value:{fontSize:16,lineHeight:24,fontWeight:'600',color:'#17191D',flexShrink:1,fontVariant:['tabular-nums']},
-  emphasis:{fontSize:17,lineHeight:25,fontWeight:'700',color:'#123E85'},
+
+const s = StyleSheet.create({
+  group: { gap: 8 }, panel: { backgroundColor: '#EDF3FD', borderRadius: 12, padding: 12, gap: 4 },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, noticeText: { flex: 1, gap: 4 },
+  green: { backgroundColor: '#E7F6E9' }, saving: { fontSize: 15, fontWeight: '700', color: '#09672A' },
+  amount: { color: blue, fontSize: 27, fontWeight: '800' }, title: { fontSize: 18, fontWeight: '800', color: '#18263B' },
+  line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 5 },
+  label: { fontSize: 13, color: '#40516A', flexShrink: 1 }, strong: { fontSize: 14, color: '#18263B', fontWeight: '700' },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 44 }, linkText: { color: blue, fontWeight: '700' },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#10182866' },
+  sheet: { maxHeight: '85%', backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16 },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#B2BDCC', alignSelf: 'center' },
+  close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 });

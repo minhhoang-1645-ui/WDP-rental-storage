@@ -10,7 +10,7 @@ import { authStorage } from '@/services/auth-storage';
 
 export function ActivityProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  return user ? <ActivitySession key={`${user.id}:${user.role}`} userId={user.id} role={user.role}>{children}</ActivitySession> : children;
+  return user && user.role !== 'CUSTOMER' ? <ActivitySession key={`${user.id}:${user.role}`} userId={user.id} role={user.role}>{children}</ActivitySession> : children;
 }
 function ActivitySession({ children, userId, role }: { children: ReactNode; userId: string; role: ActivityRole }) {
   const storageKey = `wdp.activity.${role}.${activityHash(userId)}`;

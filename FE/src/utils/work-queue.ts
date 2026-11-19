@@ -1,13 +1,9 @@
 import { isEarlyReturnRequest } from './early-return';
+import { isCustomerTransferSubject } from './transfer-request';
 
 type WorkRow = Record<string, unknown>;
 
 export const staffWorkGroups = [
-  {
-    resource: "reservations",
-    title: "Yêu cầu đặt kho",
-    description: "Theo dõi đặt kho tự xác nhận; kiểm tra hồ sơ chưa đủ điều kiện.",
-  },
   {
     resource: "appointments",
     title: "Lịch bàn giao",
@@ -62,7 +58,7 @@ export function needsStaffAssignment(resource: string) {
 }
 
 export function canAssignWork(resource: string, row: WorkRow) {
-  return !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
+  return !(resource === 'support-requests' && (isEarlyReturnRequest(row) || isCustomerTransferSubject(row.subject))) &&
     Boolean(assignableStates[resource]?.includes(String(row.status)));
 }
 
@@ -81,15 +77,13 @@ export function staffNeedsAction(
   const status = String(row.status ?? "");
   if (needsStaffAssignment(resource) && !isAssignedStaffWork(resource, row, userId)) return false;
   switch (resource) {
-    case "reservations":
-      return status === "PENDING";
     case "inquiries":
       return (
         row.requestType === "INQUIRY" &&
         ["PENDING_CONTACT", "CONTACTED", "IN_REVIEW"].includes(status)
       );
     case "appointments":
-      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId;
+      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId && row.bookingReady !== false;
     case "transfers":
       return status === "APPROVED";
     case "returns":
@@ -113,13 +107,24 @@ export function awaitingAssignment(resource: string, row: WorkRow) {
 
 /** Disabled assignees need an explicit replacement; their work is never silently reassigned. */
 export function assignmentNeedsAttention(resource: string, row: WorkRow) {
+  if (resource === 'support-requests' && (row.status === 'ESCALATED' || hasLinkedTransfer(row))
+    || resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION'
+    || resource === 'damage-claims' && Boolean(row.staffFacts)) return false;
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
   const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'STAFF'));
   return Boolean(disabled && canAssignWork(resource, row));
 }
 
+export function hasLinkedTransfer(row: WorkRow) {
+  return Array.isArray(row.transfers) && row.transfers.some(transfer =>
+    transfer && ['REQUESTED', 'APPROVED', 'COMPLETED'].includes(String(transfer.status)));
+}
+
 export function managerNeedsAction(resource: string, row: WorkRow) {
+  if (resource === 'support-requests' && isCustomerTransferSubject(row.subject)) {
+    return row.status !== 'RESOLVED' && (!Array.isArray(row.transfers) || row.transfers.length === 0);
+  }
   return assignmentNeedsAttention(resource, row)
     || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
     || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"

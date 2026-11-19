@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { StoredItemDetail } from '../../components/stock/StoredItemDetail';
 import { RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -14,6 +16,7 @@ const title = 'Hàng đang lưu theo kho';
 const movements = '/manager/operations/stock-movements';
 
 export function ManagerStoredItemsPage() {
+  const [selected, setSelected] = useState<StoredItem | null>(null);
   const { user } = useAuth();
   const { params, page, limit, update } = useManagerTableParams();
   const search = params.get('search') ?? '';
@@ -40,11 +43,12 @@ export function ManagerStoredItemsPage() {
       <Link className="button-secondary" to={movements}>Phiếu nhập – xuất</Link>
       <button className="button-secondary" type="button" onClick={data.refresh}><RefreshCw size={16} /> Làm mới</button>
     </PageHeader>
-    <ManagerTaskTable title={title} columns={columns} items={data.data?.items ?? []} rowKey={item => item.id}
+    <ManagerTaskTable title={title} columns={columns} items={data.data?.items ?? []} rowKey={item => item.id} rowDetail={item => ({ open: () => setSelected(item), label: `Xem mặt hàng ${item.name} · ${item.itemCode}` })}
       loading={data.loading} refreshing={data.refreshing} error={data.error} retry={data.refresh} page={page} limit={limit} total={data.data?.total ?? 0} update={update}
       toolbar={<>
         <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã kho, tên hàng hoặc khách hàng…" />
         {unit && <button className="button-secondary" type="button" onClick={() => update('storageUnitId', '')}>Bỏ lọc kho</button>}
       </>} emptyTitle="Chưa có hàng tồn phù hợp" />
+    {selected && <StoredItemDetail item={selected} movements={movements} onClose={() => setSelected(null)} />}
   </section>;
 }

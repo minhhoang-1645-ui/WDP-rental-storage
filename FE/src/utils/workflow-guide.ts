@@ -74,7 +74,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       RESOLVED: 'Đã xử lý xong và thông báo kết quả cho khách.',
     },
     transfers: {
-      REQUESTED: 'Nhân viên phụ trách kiểm tra hợp đồng và chọn kho mới phù hợp.',
+      REQUESTED: 'Quản lý kiểm tra hợp đồng, chọn kho đích và phân công nhân viên.',
       APPROVED: 'Chuyển hàng, thu chìa khóa cũ và giao chìa khóa mới trước khi hoàn tất.',
       COMPLETED: 'Đã chuyển xong. Hợp đồng và hàng hóa ghi nhận kho mới.',
       REJECTED: 'Yêu cầu đã từ chối. Khách xem được lý do.',

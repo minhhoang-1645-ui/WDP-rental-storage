@@ -16,9 +16,10 @@ export function returnReadiness(invoices?: InvoiceDebt[] | null) {
     unpaidInvoiceCount: effective?.filter(invoice => Number(invoice.balanceDue) > 0).length ?? 0,
     canReturn: ledgerAvailable && totalOutstanding === 0 };
 }
-export function assertReturnFullyPaid(invoices?: InvoiceDebt[] | null) {
+export function assertReturnFullyPaid(invoices?: InvoiceDebt[] | null, showAmounts = true) {
   const readiness = returnReadiness(invoices);
-  if (!readiness.canReturn) throw new ConflictException({ code: 'RETURN_UNPAID_INVOICES', message: RETURN_SETTLEMENT_MESSAGE, ...readiness });
+  if (!readiness.canReturn) throw new ConflictException({ code: 'RETURN_UNPAID_INVOICES', message: RETURN_SETTLEMENT_MESSAGE,
+    ...(showAmounts ? readiness : { canReturn: readiness.canReturn }) });
 }
 /** Reject stale clients attempting the retired waiver flow. */
 export function assertFullSettlementPolicyInput(input: Record<string, unknown>) {

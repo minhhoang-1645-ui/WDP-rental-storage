@@ -218,6 +218,9 @@ export class DepositSettlementsService {
         ...(manager ? { customer: record.returnRequest.reservation.customer } : {}),
       },
       issues,
+      returnedUnits: record.returnRequest.inspections.map((inspection: any) => ({
+        unitCode: inspection.storageUnit.unitNumber, contractCode: inspection.rentalContract.contractCode,
+      })),
       refundedAt: record.refundedAt?.toISOString() ?? null,
       settledAt: record.settledAt?.toISOString() ?? null,
       outstandingInvoice: record.outstandingInvoice ? {

@@ -29,7 +29,7 @@ export function StaffOverstayPage() {
     <LoadState loading={result.loading} error={result.error} retry={result.refresh}
       placeholder={<StaffTaskTable title="Kho quá hạn chưa trả" items={[]} columns={columns} rowKey={row => row.id} loadingRows={5} />} />
     {result.data && <>
-      {result.data.items.length ? <StaffTaskTable title="Kho quá hạn chưa trả" columns={columns} items={result.data.items} rowKey={row => row.id} />
+      {result.data.items.length ? <StaffTaskTable title="Kho quá hạn chưa trả" columns={columns} items={result.data.items} rowKey={row => row.id} rowDetail={row => ({ to: staffOverstayTarget(row), label: `Xem hồ sơ kho quá hạn ${row.storageUnit.unitNumber}` })} />
         : <Empty title="Không có kho quá hạn ở trang này" description="Kiểm tra lại khi có thay đổi về phân công hoặc trả kho." />}
       <InternalPagination page={result.data.page} limit={result.data.limit} total={result.data.total}
         onChange={value => setParams(value === 1 ? {} : { page: String(value) }, { replace: true })} />

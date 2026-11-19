@@ -41,10 +41,6 @@ export function createAction(resource: string): FormAction | undefined {
     { name: 'storageUnitId', title: 'Kho cần bảo trì', required: true, optionsPath: '/manager/units?status=AVAILABLE', optionsAccept: row => row.status === 'AVAILABLE' && !isFixtureUnit(row), optionLabel: row => `${text(row, 'unitCode', 'unitNumber')} · ${text(row, 'storageType.name')} · ${text(row, 'floor')} ${text(row, 'zone')}` },
     select('category', 'Hạng mục', ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], 'UNIT_DAMAGE'), select('priority', 'Ưu tiên', priorities, 'MEDIUM'), note('description', 'Mô tả tình trạng', true), confirm(),
   ] };
-  if (resource === 'transfers') return { title: 'Tạo yêu cầu chuyển kho', path: '/manager/transfers', method: 'POST', idempotent: true, description: 'Chỉ hợp đồng ACTIVE và kho cùng loại. Yêu cầu mới chưa thực hiện chuyển kho.', fields: [
-    { name: 'rentalContractId', title: 'Hợp đồng đang hoạt động', required: true, optionsPath: '/manager/contracts?status=ACTIVE', optionsAccept: row => row.status === 'ACTIVE', optionLabel: row => `${text(row, 'contractCode')} · ${text(row, 'reservation.customer.fullName')}` },
-    select('reason', 'Lý do chuyển', ['UNIT_ISSUE', 'FACILITY_EQUIPMENT_FAILURE', 'OPERATIONAL_RELOCATION', 'OTHER'], 'UNIT_ISSUE'), { name: 'supportRequestId', title: 'Mã hỗ trợ liên quan (cùng yêu cầu đặt kho, tùy chọn)', maxLength: 100 }, confirm(),
-  ] };
 }
 
 export function recordActions(resource: string, row: Row, role: string): FormAction[] {
@@ -85,8 +81,8 @@ export function recordActions(resource: string, row: Row, role: string): FormAct
     add('Yêu cầu sửa lại', '/reject-verification', [note('note', 'Yêu cầu sửa lại', true)], 'POST', true);
   }
   if (role === 'MANAGER' && resource === 'support-requests' && row.status === 'ESCALATED') add('Giải quyết hỗ trợ', '/resolve', [select('resolutionType', 'Hướng xử lý', ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], 'MANAGER_RESOLVED'), note('resolutionNote', 'Nội dung xử lý', true)], 'POST', true);
-  if (resource === 'transfers' && row.status === 'REQUESTED') {
-    add('Duyệt chuyển kho', '/approve', [{ name: 'toStorageUnitId', title: 'Kho đích cùng loại', required: true, optionsPath: `/manager/transfers/${encodeURIComponent(idOf(row))}/destinations`, optionsAccept: item => item.eligible === true, optionLabel: item => `${text(item, 'unitCode')} · ${text(item, 'storageType.name')} · ${text(item, 'floor') || 'Chưa có tầng'} · Khu ${text(item, 'zone') || 'chưa cập nhật'} · Trống ${text(item, 'checkedFrom')} – ${text(item, 'checkedUntil')}` }]);
+  if (role === 'MANAGER' && resource === 'transfers' && row.status === 'REQUESTED') {
+    add('Duyệt và phân công', '/approve', [{ name: 'toStorageUnitId', title: 'Kho đích cùng loại', required: true, optionsPath: `/manager/transfers/${encodeURIComponent(idOf(row))}/destinations`, optionsAccept: item => item.eligible === true, optionLabel: item => `${text(item, 'unitCode')} · ${text(item, 'storageType.name')} · ${text(item, 'floor') || 'Chưa có tầng'} · Khu ${text(item, 'zone') || 'chưa cập nhật'} · Trống ${text(item, 'checkedFrom')} – ${text(item, 'checkedUntil')}` }, { name: 'staffUserId', title: 'Nhân viên thực hiện', required: true, optionsPath: '/manager/staff', optionsAccept: item => !isFixtureStaff(item), optionLabel: item => text(item, 'fullName') }]);
     actions[actions.length - 1].description = `Kho nguồn: ${text(row, 'fromUnit.unitCode')} · ${text(row, 'fromUnit.storageType.name')}. Chỉ hiển thị kho cùng loại trống trong toàn kỳ thuê còn lại, giữ nguyên giá và thời hạn. Tìm theo mã, tên kho, tầng hoặc khu vực. Kho chỉ được giữ sau khi duyệt thành công; nếu không có lựa chọn, hãy đóng và mở lại sau khi kho khác được giải phóng.`;
     add('Từ chối chuyển kho', '/reject', [note('reason', 'Lý do từ chối chuyển kho', true, 2000)]);
   }

@@ -5,6 +5,7 @@ import { mutate } from "../../services/portal";
 import {
   first,
   label,
+  object,
   rows,
   type Row,
 } from "../../components/manager/portal-data";
@@ -12,6 +13,7 @@ import type { StaffResource } from "./staff-resources";
 import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { isTransferRequest } from '../../utils/transfer-request';
+import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointment';
 
 export function StaffActions({
   resource,
@@ -24,7 +26,7 @@ export function StaffActions({
   row: Row;
   id: string;
   refresh: () => void;
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, result?: Row) => void;
 }) {
   const { user } = useAuth();
   const [busy, setBusy] = useState(false),
@@ -35,10 +37,44 @@ export function StaffActions({
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [escalationDraft, setEscalationDraft] = useState('');
   const [recipientType, setRecipientType] = useState('CUSTOMER');
-  const customerName = first(row, 'reservation.customer.fullName', 'customer.fullName');
+  const customerName = handoverCustomer(row);
   const handoverContracts = rows(row.allocatedUnits);
+  const handoverReadiness = object(row.handoverReadiness);
+  const physicalUnits = resource === 'appointments' ? handoverUnits(row) : [];
+  const quantity = Number(first(row, 'reservation.quantity'));
+  const perUnit = physicalUnits.length > 1 && physicalUnits.every(unit => unit.id)
+    && new Set(physicalUnits.map(unit => unit.id)).size === physicalUnits.length;
+  const missingUnits = resource === 'appointments' && quantity > 1 && (!perUnit || physicalUnits.length !== quantity);
+  const tracksUnits = perUnit && Array.isArray(row.unitHandoverProgress);
+  const [savedUnits, setSavedUnits] = useState<Row[]>([]);
+  const progress = new Map([...rows(row.unitHandoverProgress), ...savedUnits].map(item => [first(item, 'unitId'), item]));
+  const allUnitsRecorded = physicalUnits.every(unit => progress.has(unit.id));
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
   const assigned = first(row, "assignedStaff.id") === user?.id;
+  async function recordPhysicalUnit(form: HTMLFormElement | null, unitId: string) {
+    if (!form || !assigned || lock.current) return;
+    const data = new FormData(form);
+    const condition = String(data.get(`condition-${unitId}`) ?? '').trim();
+    if (condition.length < 3 || data.get(`checked-${unitId}`) !== 'on') {
+      setError('Nhập hiện trạng và xác nhận đã đối chiếu người nhận, kiểm tra và giao kho.');
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await mutate(`${root}/units/${encodeURIComponent(unitId)}/handover`, 'PATCH', {
+        condition, inspected: true, identityVerified: true, accessDelivered: true,
+      });
+      setSavedUnits(rows(result.unitHandoverProgress));
+      refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể lưu kết quả bàn giao kho.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
   const run = async (
     suffix: string,
     method: "POST" | "PATCH" = "POST",
@@ -47,7 +83,7 @@ export function StaffActions({
   ) => {
     if (lock.current || user?.role !== "STAFF") return;
     if (resource === 'appointments' && suffix === '/complete-handover') {
-      const issue = handoverCompletionIssue(row.scheduledAt, Date.now(), handoverContracts);
+      const issue = handoverCompletionIssue(row.scheduledAt, undefined, handoverContracts, typeof handoverReadiness.leadDays === 'number' ? handoverReadiness.leadDays : undefined);
       if (issue) { setError(issue); return; }
     }
     lock.current = true;
@@ -59,7 +95,7 @@ export function StaffActions({
         ? result?.usageStatus === 'WAITING_FOR_RENTAL_START'
           ? 'Đã ghi nhận bàn giao giấy tờ và chìa khóa. Hợp đồng chờ đến ngày bắt đầu thuê.'
           : 'Đã ghi nhận bàn giao giấy tờ và chìa khóa.'
-        : 'Đã lưu thao tác thành công.');
+        : 'Đã lưu thao tác thành công.', result);
       refresh();
     } catch (caught) {
       setError(
@@ -82,16 +118,23 @@ export function StaffActions({
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-handover') {
+      if (tracksUnits && !allUnitsRecorded) { setError('Cần ghi nhận bàn giao từng kho trước khi hoàn tất lịch.'); return; }
+      const unitChecks = perUnit && !tracksUnits ? physicalUnits.map(unit => ({
+        unitId: unit.id,
+        condition: String(data.get(`condition-${unit.id}`) ?? '').trim(),
+        inspected: data.get(`checked-${unit.id}`) === 'on',
+      })) : undefined;
       input.handoverReport = {
         recipientType,
         recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
         authorizationBasis: recipientType === 'AUTHORIZED' ? String(data.get('authorizationBasis') ?? '').trim() : undefined,
-        condition: String(data.get('condition') ?? '').trim(),
+        condition: perUnit ? 'Đã ghi nhận hiện trạng từng kho.' : String(data.get('condition') ?? '').trim(),
         accessItemCount: Number(data.get('accessItemCount')),
         identityVerified: data.get('identityVerified') === 'on',
-        unitInspected: data.get('unitInspected') === 'on',
+        unitInspected: tracksUnits ? allUnitsRecorded : unitChecks ? unitChecks.every(unit => unit.inspected) : data.get('unitInspected') === 'on',
         accessDelivered: data.get('accessDelivered') === 'on',
         documentsDelivered: data.get('documentsDelivered') === 'on',
+        ...(unitChecks ? { unitChecks } : {}),
       };
     }
     void run(suffix, 'POST', input, idempotent);
@@ -101,7 +144,7 @@ export function StaffActions({
     String(row.status),
   );
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
-  const returnPaid = returnDebt?.canReturn === true && returnDebt.totalOutstanding === 0;
+  const returnPaid = returnDebt?.canReturn === true;
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -129,40 +172,44 @@ export function StaffActions({
         </div>
       )}
       <fieldset className="portal-action-fieldset" disabled={busy}>
-        {resource === "appointments" &&
-          (row.status === "CONFIRMED" && assigned ? (
+        {resource === "appointments" && row.status === "CONFIRMED" && assigned && (
+          missingUnits ? <p role="status">Chưa đủ thông tin các kho đã phân bổ. Hãy làm mới hồ sơ.</p> : (
             <form
               className="portal-form"
               onSubmit={(event) => submit(event, "/complete-handover", "note")}
             >
-              <h3>Bàn giao giấy tờ và chìa khóa</h3>
-              <p>Xác nhận sau khi đã giao giấy tờ, hướng dẫn và chìa khóa hoặc thẻ cho khách. Nếu nhận kho sớm, khách chỉ được sử dụng từ ngày bắt đầu thuê khi đã đủ điều kiện.</p>
               <label className="field-label">Người nhận bàn giao<select value={recipientType} onChange={event => setRecipientType(event.target.value)}><option value="CUSTOMER">Khách đứng tên hợp đồng</option><option value="AUTHORIZED">Người được ủy quyền</option></select></label>
               {recipientType === 'CUSTOMER' ? <label className="field-label">Người nhận kho<input name="recipientName" value={customerName} readOnly required /></label> : <><label className="field-label">Tên người được ủy quyền<input name="recipientName" required minLength={2} maxLength={120} /></label><label className="field-label">Căn cứ ủy quyền<textarea name="authorizationBasis" required minLength={3} maxLength={500} placeholder="Thông tin giấy ủy quyền hoặc xác nhận của khách đã được đối chiếu tại cơ sở" /></label></>}
-              <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>
+              {perUnit ? <div className="staff-handover-unit-checks">
+                {physicalUnits.map(unit => <fieldset key={unit.id} className="staff-handover-unit-check">
+                  <legend>{unit.code}</legend>
+                  {tracksUnits && progress.has(unit.id) ? <>
+                    <p><strong>Đã bàn giao</strong> · {handoverTime(progress.get(unit.id)?.completedAt)}</p>
+                    <p>{first(progress.get(unit.id) ?? {}, 'condition')}</p>
+                  </> : <>
+                    <label className="field-label">Hiện trạng<textarea name={`condition-${unit.id}`} aria-label={`Hiện trạng kho ${unit.code}`} required minLength={3} maxLength={500} rows={2} /></label>
+                    <label className="portal-checkbox"><input name={`checked-${unit.id}`} type="checkbox" aria-label={tracksUnits ? `Xác nhận bàn giao kho ${unit.code}` : `Đã kiểm tra kho ${unit.code}`} required />
+                      {tracksUnits ? 'Đã đối chiếu người nhận, kiểm tra và giao quyền truy cập kho' : 'Đã kiểm tra kho'}</label>
+                    {tracksUnits && <button type="button" className="button-secondary" onClick={event => void recordPhysicalUnit(event.currentTarget.form, unit.id)}>Ghi nhận bàn giao {unit.code}</button>}
+                  </>}
+                </fieldset>)}
+              </div> : <label className="field-label">Hiện trạng cửa, khóa, tường, sàn và thiết bị<textarea name="condition" required minLength={3} maxLength={500} rows={3} /></label>}
               <label className="field-label">Số chìa khóa/thẻ đã giao<input name="accessItemCount" type="number" min={0} max={50} step={1} required /></label>
               <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu người nhận kho</label>
-              <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>
+              {!perUnit && <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>}
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
-              <button type="submit" className="button-primary">Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
+              {tracksUnits && !allUnitsRecorded && <p role="status">Đã ghi nhận {physicalUnits.filter(unit => progress.has(unit.id)).length}/{physicalUnits.length} kho.</p>}
+              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
             </form>
-          ) : (
-            <p>
-              {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !assigned ? 'Chỉ nhân viên được quản lý phân công mới được bàn giao lịch này.' : row.status === "REQUESTED"
-                ? "Xác nhận lịch trong phần Xử lý hồ sơ trước khi bàn giao."
-                : row.usageStatus === 'WAITING_FOR_RENTAL_START'
-                  ? 'Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.'
-                  : "Lịch này không còn thao tác bàn giao."}
-            </p>
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt?.totalOutstanding != null ? `Còn ${new Intl.NumberFormat('vi-VN').format(Number(returnDebt.totalOutstanding))} đ chưa thanh toán, gồm cả kỳ chưa đến hạn. Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.` : 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt ? 'Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.' : 'Chưa xác định được tình trạng thanh toán. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -201,7 +248,7 @@ export function StaffActions({
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
-                        {!returnPaid && <li>Cần xác nhận khách đã thanh toán đủ các hóa đơn của đơn thuê.</li>}
+                        {!returnPaid && <li>Cần xác nhận khách đã thanh toán đủ các hóa đơn liên quan đến kho trả.</li>}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
                         {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
                         {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
@@ -215,7 +262,7 @@ export function StaffActions({
                   <label className="portal-checkbox">
                     <input type="checkbox" required disabled={!canFinalize}
                       aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
-                    Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra
+                    Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra
                   </label>
                   <button type="submit" className="button-primary" disabled={!canFinalize}
                     aria-describedby={!canFinalize ? returnRequirementsId : undefined}>

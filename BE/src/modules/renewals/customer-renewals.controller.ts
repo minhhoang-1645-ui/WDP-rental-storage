@@ -15,10 +15,13 @@ export class CustomerRenewalsController {
   constructor(private readonly renewals: RenewalsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Tạo yêu cầu gia hạn Active Rental', description: 'Chụp giá hiện tại thành snapshot bất biến; chưa kéo dài contract, chưa giữ chỗ khi còn PENDING.' })
+  @ApiOperation({ summary: 'Tạo yêu cầu gia hạn một hợp đồng', description: 'Lưu báo giá của kho được chọn. Thời hạn được cập nhật khi đã ký phụ lục và thanh toán kỳ đầu.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'renewal-customer-2027-001' })
-  @ApiBody({ type: CreateRenewalRequestDto, examples: { prepaid: { summary: 'PREPAID 3 tháng, giảm 5%, không cọc mới', value: { reservationId: 'WDP-2026-AB12CD34', termMonths: 3, paymentPlan: 'PREPAID' } }, monthly: { summary: 'PAY_MONTHLY', value: { reservationId: 'WDP-2026-AB12CD34', termMonths: 3, paymentPlan: 'PAY_MONTHLY' } } } })
-  @ApiCreatedResponse({ description: 'Renewal PENDING với immutable renewal quote snapshot.' })
+  @ApiBody({ type: CreateRenewalRequestDto, examples: {
+    prepaid: { summary: 'Trả trước 3 tháng', value: { reservationId: 'WDP-2026-AB12CD34', rentalContractId: 'WDP-2026-AB12CD34-C01', termMonths: 3, paymentPlan: 'PREPAID' } },
+    monthly: { summary: 'Trả hàng tháng', value: { reservationId: 'WDP-2026-AB12CD34', rentalContractId: 'WDP-2026-AB12CD34-C02', termMonths: 3, paymentPlan: 'PAY_MONTHLY' } },
+  } })
+  @ApiCreatedResponse({ description: 'Yêu cầu gia hạn đã lưu báo giá và đang chờ duyệt hoặc chờ ký phụ lục.' })
   @ApiBadRequestResponse({ description: 'Term/payment plan/Idempotency-Key không hợp lệ.' })
   @ApiConflictResponse({ description: 'Rental không ACTIVE, dữ liệu không đồng nhất, đã có renewal chưa xử lý hoặc có future allocation conflict.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
@@ -36,6 +39,16 @@ export class CustomerRenewalsController {
   list(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20') {
     const pagination = this.pagination(page, limit);
     return this.renewals.listCustomerRenewals(request.user!.id, pagination.page, pagination.limit);
+  }
+
+  @Get('quote')
+  @ApiOperation({ summary: 'Xem báo giá gia hạn một kho' })
+  @ApiQuery({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
+  @ApiQuery({ name: 'rentalContractId', example: 'WDP-2026-AB12CD34-C01' })
+  @ApiQuery({ name: 'termMonths', type: Number, example: 3 })
+  @ApiQuery({ name: 'paymentPlan', enum: ['PREPAID', 'PAY_MONTHLY'] })
+  quote(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    return this.renewals.quoteCustomerRenewal(request.user!.id, query);
   }
 
   @Get(':id')

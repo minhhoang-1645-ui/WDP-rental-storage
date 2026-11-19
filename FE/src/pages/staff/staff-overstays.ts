@@ -1,6 +1,7 @@
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import type { Page } from '../../components/manager/portal-data';
+import { staffRentalTarget } from './staff-rentals';
 
 export type Overstay = {
   id: string;
@@ -21,6 +22,6 @@ export function useStaffOverstays(page = 1) {
 
 export function staffOverstayTarget(row: Overstay) {
   return row.returnRequest ? `/staff/returns/${encodeURIComponent(row.returnRequest.id)}`
-    : `/staff/rentals/${encodeURIComponent(row.reservationId)}`;
+    : staffRentalTarget(row.reservationId, { contract: row.id });
 }
 

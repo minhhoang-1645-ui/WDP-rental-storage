@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -15,5 +15,10 @@ export class OperationalStoredItemsController {
   @Get()
   list(@Req() req: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
     return this.service.listOperationalStoredItems(req.user!, parseStoredItemQuery(query));
+  }
+
+  @Get(':id/history') @Roles('STAFF')
+  history(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
+    return this.service.listStaffStoredItemHistory(req.user!, id, parseStoredItemQuery(query));
   }
 }

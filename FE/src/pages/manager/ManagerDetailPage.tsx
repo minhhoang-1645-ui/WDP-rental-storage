@@ -45,20 +45,30 @@ import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
 import { useStaffProcessingTarget } from '../staff/useStaffProcessingTarget';
 import { StaffActions } from '../staff/StaffActions';
-import { staffResources, type StaffResource } from '../staff/staff-resources';
+import { isStaffOperationDetail, staffResources, type StaffResource } from '../staff/staff-resources';
 import { RenewalReview } from '../../components/manager/RenewalReview';
-import { ManagerCreateDialog } from './ManagerCreateDialog';
-import { isTransferRequest } from '../../utils/transfer-request';
+import { isCustomerTransferSubject, isTransferRequest } from '../../utils/transfer-request';
 import { isEarlyReturnRequest } from '../../utils/early-return';
-import { TransferSupportAction, CompletedTransferSync } from '../../components/manager/TransferRequests';
+import { CompletedTransferSync, TransferIntake } from '../../components/manager/TransferRequests';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
+import { StaffReservationDetailPage } from '../staff/StaffReservationDetailPage';
+import { StaffAppointmentDetailPage } from '../staff/StaffAppointmentDetailPage';
+import { StaffOperationDetails } from '../staff/StaffOperationDetails';
+import { staffRecordIdentity } from '../staff/staff-work';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
+  const { user } = useAuth();
+  const { id } = useParams();
+  if (resource === 'reservations' && user?.role === 'STAFF') return <StaffReservationDetailPage key={id} />;
+  if (resource === 'appointments' && user?.role === 'STAFF') return <StaffAppointmentDetailPage key={`${user.id}:${id}`} />;
+  return <ManagerOperationalDetail key={`${resource}:${id}`} resource={resource} />;
+}
+
+function ManagerOperationalDetail({ resource }: { resource: string }) {
   const { id = "" } = useParams();
   const { user } = useAuth();
   const config = resources[resource];
   const [notice, setNotice] = useState("");
-  const [creatingTransfer, setCreatingTransfer] = useState(false);
   const [editingUnit, setEditingUnit] = useState(false);
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
@@ -67,18 +77,19 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
     true,
   );
   const isStaff = user?.role === 'STAFF';
-  const listPath = isStaff ? `/staff/${resource}` : ["units", "customers", "reservations", "inquiries"].includes(
+  const listPath = isStaff ? `/staff/${resource}` : resource === 'reservations' ? '/manager' : ["units", "customers", "inquiries"].includes(
     resource,
   )
     ? `/manager/${resource}`
     : `/manager/operations/${resource}`;
   const [params] = useSearchParams();
-  const returnPath = useInternalListReturn(listPath);
   const reviewReturn = user?.role === 'MANAGER' ? managerReviewReturn(params) : null;
+  const returnPath = useInternalListReturn(reviewReturn ?? listPath);
   useStaffProcessingTarget(isStaff && Boolean(data.data));
   if (!config) return <Empty title="Không tìm thấy trang" />;
   const row = data.data;
-  const identity = row && recordIdentity(row, resource);
+  const staffOperation = isStaff && isStaffOperationDetail(resource) ? resource : null;
+  const identity = row && (staffOperation ? staffRecordIdentity(row, resource) : recordIdentity(row, resource));
   const reference = row ? code(row) : '';
   const service = resource === 'support-requests' || resource === 'maintenance';
   const rentalTitle = resource === 'rentals' && identity && [identity.typeName || identity.location || 'Kho đang thuê', identity.person && `Khách ${identity.person}`].filter(Boolean).join(' · ');
@@ -86,7 +97,13 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
     ? ['Bảo trì kho', identity?.location].filter(Boolean).join(' ')
     : identity?.person ? `Hỗ trợ khách ${identity.person}` : first(row, 'subject') || 'Hỗ trợ khách hàng');
   const staffTitle = isStaff && identity?.person && !identity.title.includes(identity.person) ? `${identity.title === reference ? config.title : identity.title} · ${identity.person}` : '';
-  const title = serviceTitle || rentalTitle || staffTitle || (row && (resource === 'customers' ? first(row, 'fullName', 'name') : identity?.title !== reference ? identity?.title : '')) || config.title;
+  const operationTitle = staffOperation && [
+    resource === 'returns' ? 'Trả kho' : config.title,
+    resource === 'transfers' && row
+      ? [first(row, 'fromUnit.unitCode', 'fromUnit.unitNumber'), first(row, 'toUnit.unitCode', 'toUnit.unitNumber')].filter(Boolean).join(' → ')
+      : resource === 'support-requests' ? identity?.person : identity?.location,
+  ].filter(Boolean).join(' · ');
+  const title = operationTitle || serviceTitle || rentalTitle || staffTitle || (row && (resource === 'customers' ? first(row, 'fullName', 'name') : identity?.title !== reference ? identity?.title : '')) || config.title;
   const status = row?.status ?? row?.rentalState ?? row?.accountStatus;
   const timeline = row ? Object.entries(timelineLabels).flatMap(([key, label]) => {
     if (isStaff && (key === 'updatedAt' || key === 'createdAt' && row.requestedAt)) return [];
@@ -94,22 +111,26 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
     const time = Date.parse(value);
     return Number.isFinite(time) ? [{ key, label, value, time }] : [];
   }).sort((left, right) => left.time - right.time) : [];
+  const transferSupport = resource === 'support-requests' && isCustomerTransferSubject(row?.subject);
   const hasInlineActions = isStaff && service;
-  const staffServiceAside = hasInlineActions && row && first(row, 'assignedStaff.id') === user?.id
-    && (resource === 'maintenance' ? ['OPEN', 'IN_PROGRESS'].includes(String(status)) : ['ASSIGNED', 'IN_PROGRESS'].includes(String(status)) && !isTransferRequest(row) && !isEarlyReturnRequest(row));
+  const staffCanWork = row && first(row, 'assignedStaff.id') === user?.id && (
+    resource === 'maintenance' ? ['OPEN', 'IN_PROGRESS'].includes(String(status))
+      : resource === 'returns' ? ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(String(status))
+      : resource === 'support-requests' && ['ASSIGNED', 'IN_PROGRESS'].includes(String(status)) && !isEarlyReturnRequest(row)
+  );
   const canConfirmAppointment = resource !== 'appointments'
     || (row?.status === 'REQUESTED' && first(row, 'assignedStaff.id') === user?.id);
   const showProcessing = !['contracts', 'rentals', 'payments', 'customers', 'units', 'returns'].includes(resource)
-    && canAccessManagerReview(user?.role ?? '', resource) && !hasInlineActions && canConfirmAppointment
+    && canAccessManagerReview(user?.role ?? '', resource) && !hasInlineActions && !transferSupport && canConfirmAppointment
     && !(service && ['RESOLVED', 'COMPLETED'].includes(String(status)))
     && (!isStaff || resource !== 'transfers' || row?.status === 'APPROVED')
-    && (!isStaff || resource !== 'reservations' || row?.status === 'PENDING');
+    && (resource !== 'reservations' || row?.status === 'PENDING');
   return (
-    <section className="record-detail-page">
+    <section className={`record-detail-page${staffOperation ? ' staff-operation-detail' : ''}`}>
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
-      <Link className="booking-back" to={reviewReturn ?? returnPath}>
+      <Link className="booking-back" to={returnPath}>
         <ArrowLeft size={16} />
-        {reviewReturn ? 'Về việc cần duyệt' : isStaff ? 'Về danh sách' : config.title}
+        {reviewReturn ? 'Về hồ sơ cần xử lý' : returnPath.startsWith('/manager/assignments') ? 'Về phân công' : isStaff ? 'Về danh sách' : resource === 'reservations' ? 'Quay lại' : config.title}
       </Link>
       {!row && !data.loading && (
         <PageHeader title={config.title} />
@@ -127,7 +148,9 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
       />
       {row && (
         <>
-          <PageHeader title={title} status={status ? <Status value={status} /> : undefined}
+          <PageHeader title={title} status={status ? <Status value={status} text={resource === 'transfers'
+            ? status === 'REQUESTED' ? 'Chờ duyệt' : status === 'APPROVED' && row.commercial && !first(row, 'commercial.acceptedAt') ? 'Chờ ký phụ lục' : status === 'APPROVED' && isStaff ? 'Chờ bàn giao' : undefined
+            : undefined} /> : undefined}
             meta={resource !== 'customers' && reference ? <CopyRecordCode value={reference} /> : undefined}>
             {resource === 'units' && user?.role === 'MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <button className="button-secondary" onClick={() => window.print()}>
@@ -143,14 +166,18 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
             </button>
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
-          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}${!showProcessing && !staffServiceAside ? ' record-detail-readonly' : ''}`}>
-            {!service && workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
+          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
+            {!staffOperation && !service && workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
+              {staffOperation ? <StaffOperationDetails resource={staffOperation} row={row} actions={
+                resource === 'support-requests' && isTransferRequest(row)
+                  ? null
+                  : staffCanWork && <StaffActions key={`${resource}:${id}`} resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />
+              } /> : <>
               {resource === 'renewals' && <RenewalReview row={row} />}
-              {(['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) && <DocumentFile path={`/${user?.role === 'STAFF' ? 'staff/management' : 'manager'}/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
-              {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee={!staffServiceAside} /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
-              {resource === 'support-requests' && user?.role === 'STAFF' && isTransferRequest(row) && <TransferSupportAction row={row} onCreate={() => setCreatingTransfer(true)} />}
-              {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
+              {user?.role !== 'STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
+                <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
+              {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
               {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
@@ -159,9 +186,13 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
                   identity={user?.id ?? ""}
                 />
               )}
+              {user?.role === 'MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
+              {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2><Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công']]} />{first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}</section>}
               {service && <ServiceReferences row={row} staff={isStaff} />}
-              {(timeline.length > 0 || operationActors.some(([field]) => first(row, field + '.fullName'))) && <DetailDisclosure title="Lịch sử xử lý">
+              </>}
+              {staffOperation === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
+              {staffOperation !== 'transfers' && (timeline.length > 0 || operationActors.some(([field]) => first(row, field + '.fullName'))) && <DetailDisclosure title="Lịch sử xử lý">
                 {operationActors.some(([field]) => first(row, field + '.fullName')) && <Facts items={operationActors.filter(([field]) => first(row, field + '.fullName')).map(([field, title]) => [field === 'approvedBy' && row.status === 'REJECTED' ? 'Người từ chối' : title, first(row, field + '.fullName')])} />}
                 <div className="portal-timeline">
                   {timeline.map(({ key, label, value }) => (
@@ -173,13 +204,8 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
                 </div>
               </DetailDisclosure>}
             </div>
-            {staffServiceAside && <aside className="manager-processing">
-              <h2>Phụ trách hồ sơ</h2>
-              <Facts items={serviceAssignee(row)} />
-              <Link className="button-secondary" to="#staff-processing" replace>Đến phần xử lý</Link>
-            </aside>}
             {showProcessing && <aside className="manager-processing" id={isStaff ? 'staff-processing' : undefined} tabIndex={isStaff ? -1 : undefined}>
-              <h2>{resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : 'Xử lý hồ sơ'}</h2>
+              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : 'Xử lý hồ sơ'}</h2>
               <ManagerActions
                 key={`${resource}:${id}:${row.updatedAt ?? row.status}`}
                 resource={resource}
@@ -192,7 +218,6 @@ export function ManagerDetailPage({ resource }: { resource: string }) {
           </div>
         </>
       )}
-      {creatingTransfer && row && <ManagerCreateDialog resource="transfers" source={row} onClose={() => setCreatingTransfer(false)} onSuccess={() => { setCreatingTransfer(false); setNotice('Đã gửi đề nghị chuyển kho cho quản lý.'); data.refresh(); }} />}
     </section>
   );
 }
@@ -290,6 +315,9 @@ function ServiceReferences({ row, staff }: { row: Row; staff: boolean }) {
 function DetailContent({ row, resource, staff }: { row: Row; resource: string; staff: boolean }) {
   const staffBooking = staff && resource === 'reservations';
   const rental = resource === 'rentals';
+  const returning = resource === 'returns';
+  const inspectionRecords = rows(row.inspections);
+  const settlement = object(row.settlement);
   const person = resource === "customers" ? row : customer(row);
   const reservation = object(row.reservation);
   const reference = first(row, "reservation.reference", "reservationReference");
@@ -305,6 +333,29 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
   );
   return (
     <>
+      {returning && <section className="manager-section">
+        <h2>Kho trong yêu cầu trả</h2>
+        <Facts items={[
+          ['Kho', inspectionRecords.map(item => first(item, 'unit.unitCode')).join(', ')],
+          ['Hợp đồng', inspectionRecords.map(item => first(item, 'contract.contractCode')).join(', ')],
+          ['Hạn thuê', date(at(row, 'reservation.effectiveEndDate'))],
+          ['Thời điểm yêu cầu', row.timing === 'EARLY' ? 'Trả trước hạn' : 'Trả từ ngày hết hạn'],
+          ['Tiến độ kiểm tra', `${inspectionRecords.filter(item => item.result !== 'PENDING').length}/${inspectionRecords.length} kho`],
+          ...(!staff && typeof row.remainingUnitCount === 'number' ? [['Kho tiếp tục thuê', String(row.remainingUnitCount)] as [string, string]] : []),
+          ...(!staff && !settlement.id ? [['Tiền cọc theo hóa đơn đã thu', typeof row.recordedDeposit === 'number' ? money(row.recordedDeposit) : 'Cần đối soát'] as [string, string]] : []),
+        ]} />
+      </section>}
+      {returning && !staff && Boolean(settlement.id) && <section className="manager-section">
+        <h2>Quyết toán cọc của kho trả</h2>
+        <Facts items={[
+          ['Trạng thái', <Status value={settlement.status} />],
+          ['Tiền cọc', money(settlement.depositAmount)],
+          ['Khấu trừ', settlement.status === 'PENDING_REVIEW' ? 'Chờ duyệt' : money(settlement.deductionAmount)],
+          ['Tiền hoàn', settlement.status === 'PENDING_REVIEW' ? 'Chờ duyệt' : money(settlement.refundAmount)],
+          ['Khoản phải thu thêm', settlement.status === 'PENDING_REVIEW' ? 'Chờ duyệt' : money(settlement.outstandingAmount)],
+        ]} />
+        <Link className="button-secondary" to={`/manager/operations/deposit-settlements/${encodeURIComponent(String(settlement.id))}`}>Xem hồ sơ quyết toán</Link>
+      </section>}
       {rental && <section className="manager-section">
         <h2>Kỳ thuê</h2>
         <Facts items={[
@@ -830,6 +881,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
           <>
             {first(item, "unit.unitCode")}
             <small>{first(item, "contract.contractCode")}</small>
+            {returning && <small>Hạn thuê {date(at(item, 'contract.endDate'))}</small>}
           </>,
           <>
             <Status value={item.result} />
@@ -906,14 +958,6 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
             tra kho đang thuê và quá hạn trước khi xử lý.
           </div>
         )}
-      {resource === "returns" && (
-        <Link
-          className="button-secondary"
-          to={`/manager/operations/deposit-settlements?search=${encodeURIComponent(first(row, "returnCode"))}`}
-        >
-          Xem quyết toán cọc liên quan
-        </Link>
-      )}
     </>
   );
 }

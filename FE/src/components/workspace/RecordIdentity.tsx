@@ -3,10 +3,10 @@ import { Copy, Check } from 'lucide-react';
 import { code, type Row } from '../manager/portal-data';
 import { recordIdentity } from '../../utils/record-identity';
 
-export function CopyRecordCode({ value, label = 'Mã hồ sơ' }: { value: string; label?: string }) {
+export function CopyRecordCode({ value, label = 'Mã hồ sơ', showLabel = true }: { value: string; label?: string; showLabel?: boolean }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   if (!value) return null;
-  return <span className="record-code"><span>{label}: <span className="record-code-value">{value}</span></span><button type="button" className="record-copy" aria-label={`Sao chép ${label.toLocaleLowerCase('vi')} ${value}`} title="Sao chép mã" onClick={async () => { try { await navigator.clipboard.writeText(value); setState('copied'); } catch { setState('failed'); } }}>{state === 'copied' ? <Check size={15} /> : <Copy size={15} />}</button>{state !== 'idle' && <small role="status">{state === 'copied' ? 'Đã sao chép' : 'Hãy chọn mã để sao chép.'}</small>}</span>;
+  return <span className="record-code"><span>{showLabel && `${label}: `}<span className="record-code-value">{value}</span></span><button type="button" className="record-copy" aria-label={`Sao chép ${label.toLocaleLowerCase('vi')} ${value}`} title="Sao chép mã" onClick={async () => { try { await navigator.clipboard.writeText(value); setState('copied'); } catch { setState('failed'); } }}>{state === 'copied' ? <Check size={15} /> : <Copy size={15} />}</button>{state !== 'idle' && <small role="status">{state === 'copied' ? 'Đã sao chép' : 'Hãy chọn mã để sao chép.'}</small>}</span>;
 }
 export function RecordIdentity({ row, resource, showPerson = false, showCode = true, showCreated = false }: { row: object; resource: string; showPerson?: boolean; showCode?: boolean; showCreated?: boolean }) {
   const identity = recordIdentity(row as Row, resource);

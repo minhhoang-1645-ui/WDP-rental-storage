@@ -57,7 +57,8 @@ const rentalContract = {
   status: "ACTIVE",
   startDate: "2020-01-01",
   endDate: "2020-02-01",
-  unit,
+  unit: { ...unit, status: 'OCCUPIED' },
+  returnReadiness: { canReturn: true, totalOutstanding: 0 },
 };
 const rental = {
   reservationId: "rental-id",
@@ -683,19 +684,18 @@ try {
   }
   await open(staff.page, "/staff/maintenance?search=MNT-104");
   await staff.page.getByText("MNT-104", { exact: true }).waitFor();
-  await staff.page.getByRole("button", { name: "Thao tác MNT-104", exact: true }).click();
-  await staff.page.getByRole("link", { name: "Xem chi tiết", exact: true }).click();
+  await staff.page.getByRole("link", { name: "Xem chi tiết hồ sơ MNT-104", exact: true }).press('Enter');
   await staff.page.waitForURL("**/staff/maintenance/maintenance-104");
-  await open(staff.page, "/staff/maintenance?limit=50");
+  await open(staff.page, "/staff/maintenance?limit=5");
   await staff.page.getByRole("button", { name: "Trang sau", exact: true }).click();
-  await staff.page.getByText("MNT-50", { exact: true }).waitFor();
+  await staff.page.getByText("MNT-5", { exact: true }).waitFor();
   await open(staff.page, "/staff/appointments?date=2030-11-01");
   await staff.page.getByText("APP-STAFF", { exact: true }).waitFor();
   await staff.page
     .getByLabel("Ngày", { exact: true })
     .fill("2030-11-02");
   await staff.page
-    .getByRole("heading", { name: "Không tìm thấy dữ liệu", exact: true })
+    .getByText("Không tìm thấy lịch bàn giao phù hợp.", { exact: true })
     .waitFor();
   assert(
     reads.some(
@@ -788,7 +788,7 @@ try {
     .check();
   await confirmHandover.click();
   await staff.page
-    .getByText("Đã hoàn tất bàn giao. Hệ thống sẽ tự kích hoạt kho khi đến ngày thuê và đủ điều kiện.", { exact: true })
+    .getByText("Kho được kích hoạt khi đến ngày bắt đầu thuê và đủ điều kiện.", { exact: true })
     .waitFor();
   await open(staff.page, "/staff/returns/return-id");
   await staff.page
@@ -806,7 +806,7 @@ try {
     .getByRole("button", { name: "Lưu kết quả kho A101", exact: true })
     .click();
   await staff.page
-    .getByLabel("Đã nhận lại thực tế toàn bộ kho và ghi đủ kết quả kiểm tra", {
+    .getByLabel("Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra", {
       exact: true,
     })
     .check();
@@ -918,7 +918,7 @@ try {
   const onlinePaymentWrite = writes.findLast((item) => item.path.endsWith("/online-payment"));
   assert.match(onlinePaymentWrite.key, /^cust-vnpay-/);
   assert.equal(onlinePaymentWrite.body.locale, "vn");
-  await open(customer.page, "/customer/contracts?limit=20&page=6");
+  await open(customer.page, "/customer/contracts?limit=10&page=11");
   await customer.page.getByText("CON-104", { exact: true }).waitFor();
   assert(
     reads.some(
@@ -1010,9 +1010,10 @@ try {
     .waitFor();
   await open(customer.page, "/customer/returns");
   await selectChoice(customer.page
-    .getByLabel("Yêu cầu thuê đủ điều kiện trả", { exact: true }), "rental-id");
+    .getByLabel("Kho muốn trả", { exact: true }), rentalContract.id);
+  await customer.page.getByRole("button", { name: "Tiếp tục", exact: true }).click();
   await customer.page
-    .getByRole("button", { name: "Gửi yêu cầu trả kho", exact: true })
+    .getByRole("dialog", { name: "Xác nhận trả kho" }).getByRole("button", { name: "Gửi yêu cầu trả kho", exact: true })
     .click();
   await customer.page
     .getByRole("status")
@@ -1084,9 +1085,9 @@ try {
   }
   await open(customer.page, '/customer/contracts');
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Contracts must remain visible at 390px');
-  await open(customer.page, '/customer/payments?limit=20');
+  await open(customer.page, '/customer/payments?limit=10');
   assert(await customer.page.locator('.customer-responsive-table').isVisible(), 'Invoices must remain visible at 390px');
-  assert.equal(await customer.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 20, 'Invoice actions remain visible with pagination');
+  assert.equal(await customer.page.getByRole('button', { name: 'Thanh toán VNPay', exact: true }).count(), 10, 'Invoice actions remain visible with pagination');
   assert(await customer.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   checks.push("390px staff/customer layouts, visible contract/invoice cards, payment pagination and mobile navigation");
   await staff.page.setViewportSize({ width: 1440, height: 1000 });

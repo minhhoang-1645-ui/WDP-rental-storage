@@ -1,6 +1,7 @@
 import 'dotenv/config';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { vi } from 'vitest';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BookingService } from '../booking/booking.service.js';
@@ -120,8 +121,16 @@ describe('ContractsService with PostgreSQL persistence', () => {
   });
 
   it('does not create a contract for a pending reservation', async () => {
-    const created = await booking.createReservation(customer, draft());
-    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: created.id } });
-    expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id } })).toBe(0);
+    // Simulate a competing allocation after the availability check so auto-confirmation leaves the booking pending.
+    const confirm = vi.spyOn(booking as unknown as { confirmReservation: () => Promise<unknown> }, 'confirmReservation')
+      .mockRejectedValueOnce(new ConflictException('Kho vừa được giữ bởi một yêu cầu khác.'));
+    try {
+      const created = await booking.createReservation(customer, draft());
+      const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: created.id } });
+      expect(reservation.status).toBe('PENDING');
+      expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id } })).toBe(0);
+    } finally {
+      confirm.mockRestore();
+    }
   });
 });

@@ -14,7 +14,8 @@ export function InvoiceBreakdown({ details, currency }: { details?: CustomerInvo
         <thead><tr><th scope="col">Kho và hợp đồng</th><th scope="col">Tiền thuê</th><th scope="col">Tiền cọc</th><th scope="col">Tổng</th></tr></thead>
         <tbody>{details.units.map(unit => <tr key={unit.contractId}>
           <th scope="row" data-label="Kho và hợp đồng"><strong>{unit.unitCode}</strong><small>{unit.storageTypeName} · {unit.contractCode}</small></th>
-          <td data-label="Tiền thuê"><span>{money(unit.rentalAmount)}<small>Giá tháng {money(unit.monthlyRate)}</small></span></td><td data-label="Tiền cọc">{money(unit.depositAmount)}</td>
+          <td data-label="Tiền thuê"><span>{money(unit.rentalAmount)}<small>Giá tháng {money(unit.monthlyRate)}</small>
+            {!!unit.discountAmount && <small>Đã giảm {money(unit.discountAmount)}</small>}</span></td><td data-label="Tiền cọc">{money(unit.depositAmount)}</td>
           <td data-label="Tổng"><strong>{money(unit.rentalAmount + unit.depositAmount)}</strong></td>
         </tr>)}</tbody>
       </table></div>

@@ -76,10 +76,10 @@ export class BookingController {
 
   @Get('reservations/:id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER', 'STAFF', 'MANAGER')
+  @Roles('CUSTOMER', 'MANAGER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'CUSTOMER chỉ xem đơn của mình; STAFF và MANAGER có thể đối chiếu để vận hành. ADMIN không có quyền nghiệp vụ thuê kho.' })
+  @ApiOperation({ summary: 'Chi tiết Reservation của khách thuê hoặc quản lý' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34', description: 'Reservation reference hoặc database id.' })
   @ApiOkResponse({ description: 'Reservation chi tiết.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })

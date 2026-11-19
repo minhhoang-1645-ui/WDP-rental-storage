@@ -1,6 +1,9 @@
 import { useId, useState, type ReactNode } from 'react';
 import { CircleHelp, Clock, FileText, RotateCcw, ShieldCheck, Wallet, XCircle, type LucideIcon } from 'lucide-react';
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../../utils/internal-pagination';
 import { InternalPagination } from '../workspace/InternalPagination';
+import { DetailRow } from '../workspace/DetailRow';
+import { RecordFactsDialog } from './PortalUi';
 import { SkeletonBone } from '../LoadingSkeleton';
 import type { ManagerPeriodReport, ManagerReport } from '../../types/manager-report';
 import { isReportCount, reportMoney } from '../../utils/reporting';
@@ -120,13 +123,14 @@ export function ReportTypeTable({ kind, categories, catalog, controls, pending =
   const id = useId();
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState(kind === 'rent' ? 'rent' : 'requests');
+  const [selected, setSelected] = useState<Category>();
   const rent = kind === 'rent';
   const title = rent ? 'Tiền thuê theo loại kho' : 'Đơn đặt theo loại kho';
   const amount = (row: Category) => sort === 'rent' ? row.rent : sort === 'confirmed' ? row.confirmed : row.requests;
   const rows = [...categories].sort((a, b) => (sort === 'name' ? 0 : (amount(b) ?? -1) - (amount(a) ?? -1))
     || a.name.localeCompare(b.name, 'vi') || a.id.localeCompare(b.id));
   const codes = new Map(catalog?.map(item => [item.id, item.code]));
-  const pageSize = 5;
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / pageSize)));
   const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -151,16 +155,27 @@ export function ReportTypeTable({ kind, categories, catalog, controls, pending =
             ? <th scope="col">Tiền thuê trên hóa đơn</th>
             : <><th scope="col">Đơn đặt</th><th scope="col">Đã xác nhận</th><th scope="col">Đang dùng / tổng kho</th></>}
           </tr></thead>
-          <tbody>{visible.map(row => <tr key={row.id}>
+          <tbody>{visible.map(row => <DetailRow key={row.id} detail={{ open: () => setSelected(row), label: `Xem số liệu ${row.name}` }}>
             <th scope="row"><span>{row.name}</span>{codes.get(row.id) && <small>{codes.get(row.id)}</small>}</th>
             {rent ? <td>{formatMoney(row.rent)}</td> : <>
               <td>{formatCount(row.requests)}</td><td>{formatCount(row.confirmed)}</td>
               <td>{formatCount(row.occupied)} / {formatCount(row.physicalUnits)}</td>
             </>}
-          </tr>)}</tbody>
+          </DetailRow>)}</tbody>
         </table>
       </div>
-      {rows.length > pageSize && <InternalPagination page={currentPage} limit={pageSize} total={rows.length} onChange={setPage} />}
+      {rows.length > PAGE_SIZE_OPTIONS[0] && <InternalPagination page={currentPage} limit={pageSize} total={rows.length} onChange={setPage} onLimitChange={value => { setPageSize(value); setPage(1); }} />}
     </> : !pending && <p className="manager-report-note">Chưa có số liệu theo loại kho cho bộ lọc này.</p>}
+    {selected && <RecordFactsDialog title={`${title} · ${selected.name}`} onClose={() => setSelected(undefined)} items={[
+      ['Mã loại kho', codes.get(selected.id)],
+      ...(rent ? [
+        ['Tiền thuê trên hóa đơn trong kỳ', formatMoney(selected.rent)],
+      ] as [string, string][] : [
+        ['Đơn đặt trong kỳ', formatCount(selected.requests)],
+        ['Đơn đã xác nhận trong kỳ', formatCount(selected.confirmed)],
+        ['Kho đang dùng hiện tại', formatCount(selected.occupied)],
+        ['Tổng kho vật lý hiện tại', formatCount(selected.physicalUnits)],
+      ] as [string, string][]),
+    ]} />}
   </section>;
 }

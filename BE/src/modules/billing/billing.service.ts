@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule } from './renewal-invoice-schedule.js';
+import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { invoiceSigningRequirements } from './payment-eligibility.js';
 import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude, invoiceMoney, invoiceUnit, savedInvoiceBreakdown } from './invoice-breakdown.js';
@@ -34,6 +35,8 @@ type HistoricalQuote = {
   rentalAmount?: unknown;
   depositAmount?: unknown;
   termMonths?: unknown;
+  startDate?: string;
+  endDate?: string;
   storageTypeName?: string;
   services?: { serviceId: string; physicalUnit?: string | null }[];
 };
@@ -113,6 +116,11 @@ export class BillingService {
     if (!Number.isSafeInteger(termMonths) || termMonths < 1) throw new ConflictException('quoteSnapshot.termMonths không hợp lệ.');
     if (termMonths === 1) return [];
     const originalRate = this.snapshotMoney(snapshot.monthlyUnitPrice, 'monthlyUnitPrice');
+    const originalStart = snapshot.startDate ? new Date(snapshot.startDate + 'T00:00:00Z') : reservation.startDate;
+    const originalEnd = snapshot.endDate ? new Date(snapshot.endDate + 'T00:00:00Z') : this.addCalendarMonths(originalStart, termMonths);
+    if (!Number.isFinite(+originalStart) || !Number.isFinite(+originalEnd) || originalEnd <= originalStart) {
+      throw new ConflictException('Thiếu kỳ thuê gốc hợp lệ để lập hóa đơn.');
+    }
     const existing = await tx.invoice.findMany({ where: { reservationId, billingCycle: { gte: 2 } } });
     const byCycle = new Map(existing.map(invoice => [invoice.billingCycle, invoice]));
     const invoices = [];
@@ -122,19 +130,23 @@ export class BillingService {
         invoices.push(issued);
         continue;
       }
-      const periodStart = this.addCalendarMonths(reservation.startDate, cycle - 1);
-      const nominalEnd = this.addCalendarMonths(reservation.startDate, cycle);
-      const periodEnd = cycle === termMonths && reservation.endDate < nominalEnd ? reservation.endDate : nominalEnd;
-      if (periodEnd > reservation.endDate || periodEnd <= periodStart) throw new ConflictException('Kỳ recurring vượt quá ngày kết thúc Reservation.');
-      const billed = reservation.contracts.filter(contract => contract.startDate < periodEnd && contract.endDate > periodStart);
+      const periodStart = this.addCalendarMonths(originalStart, cycle - 1);
+      const nominalEnd = this.addCalendarMonths(originalStart, cycle);
+      const periodEnd = cycle === termMonths && originalEnd < nominalEnd ? originalEnd : nominalEnd;
+      if (periodEnd > originalEnd || periodEnd <= periodStart) throw new ConflictException('Kỳ thu vượt quá thời hạn thuê gốc. Cần đối soát.');
+      const billed = reservation.contracts.flatMap(contract => {
+        const returnedOn = contract.status === 'COMPLETED' && contract.completedAt ? businessToday(contract.completedAt) : null;
+        const billableEnd = returnedOn && returnedOn < contract.endDate ? returnedOn : contract.endDate;
+        return contract.startDate < periodEnd && billableEnd > periodStart ? [{ contract, billableEnd }] : [];
+      });
       if (!billed.length) continue;
-      if (billed.some(contract => contract.startDate > periodStart || contract.endDate < periodEnd
+      if (billed.some(({ contract, billableEnd }) => contract.startDate > periodStart || billableEnd < periodEnd
           || contract.reservationUnit.plannedStartDate > periodStart
-          || (contract.status === 'COMPLETED' && contract.completedAt && contract.completedAt < periodEnd)
+          || (contract.status === 'COMPLETED' && !contract.completedAt)
           || (contract.rateEffectiveFrom && contract.rateEffectiveFrom > periodStart && contract.rateEffectiveFrom < periodEnd))) {
         throw new ConflictException('Kỳ thu có thay đổi hợp đồng giữa kỳ hoặc thiếu dữ liệu phân bổ. Cần đối soát trước khi lập hóa đơn.');
       }
-      const units = billed.map(contract => {
+      const units = billed.map(({ contract }) => {
         const usesNewRate = contract.rateEffectiveFrom !== null && contract.rateEffectiveFrom <= periodStart;
         const rate = usesNewRate ? contract.currentMonthlyRate : originalRate;
         if (rate === null || rate <= 0n || contract.reservationUnit.reservationId !== reservationId) throw new ConflictException('Chưa có đơn giá hoặc kho hợp lệ cho kỳ thu.');
@@ -252,7 +264,7 @@ export class BillingService {
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
           return this.paymentResult(duplicate);
         }
-        const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: closeoutReservationSelect } } });
+        const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
         if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
         await this.assertSignedBeforePayment(tx, invoice);
@@ -327,7 +339,7 @@ export class BillingService {
           this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
           return this.toPaymentSubmission(duplicate);
         }
-        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true, reservation: { select: closeoutReservationSelect } } });
+        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true, reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
@@ -704,14 +716,15 @@ export class BillingService {
   }
 
   private async invoicePage(where: Prisma.InvoiceWhereInput, page: number, limit: number, includeCustomer: boolean) {
-    const candidates = await this.prisma.reservation.findMany({
-      where: { invoices: { some: where }, contracts: { some: { status: { in: ['ACTIVE', 'COMPLETED'] } } }, supportRequests: { some: closeoutReservationSelect.supportRequests.where } },
-      select: closeoutReservationSelect,
+    const scheduled: Prisma.InvoiceWhereInput = { type: 'RENEWAL', renewalCycle: { gt: 1 }, dueAt: { gt: businessToday() }, status: 'OPEN', amountPaid: 0n };
+    const candidates = await this.prisma.invoice.findMany({
+      where: { AND: [where, scheduled, { reservation: { supportRequests: { some: closeoutReservationSelect.supportRequests.where } } }] },
+      select: { id: true, reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope },
     });
-    const closeoutIds = candidates.filter(reservation => closeoutPaymentAllowed(reservation)).map(reservation => reservation.id);
+    const closeoutIds = candidates.filter(invoice => closeoutPaymentAllowed(invoice.reservation, invoice.renewalRequest?.rentalContractId)).map(invoice => invoice.id);
     where = { AND: [where, { OR: [
-      { NOT: { type: 'RENEWAL', renewalCycle: { gt: 1 }, dueAt: { gt: new Date() }, status: 'OPEN', amountPaid: 0n } },
-      { reservationId: { in: closeoutIds } },
+      { NOT: scheduled },
+      { id: { in: closeoutIds } },
     ] }] };
     const [total, items] = await Promise.all([
       this.prisma.invoice.count({ where }),
@@ -738,7 +751,7 @@ export class BillingService {
         supportRequests: closeoutReservationSelect.supportRequests,
       } },
       payments: { include: { recordedBy: { select: { id: true, fullName: true, role: true } } }, orderBy: { receivedAt: 'asc' as const } },
-      renewalRequest: { select: { id: true, renewalCode: true, status: true, quoteSnapshot: true, appendixAcceptedAt: true } },
+      renewalRequest: { select: { id: true, renewalCode: true, rentalContractId: true, status: true, quoteSnapshot: true, appendixAcceptedAt: true } },
       depositSettlement: { select: { id: true, settlementCode: true, status: true } },
       replacesInvoice: { select: { id: true, invoiceCode: true } },
       replacementInvoice: { select: { id: true, invoiceCode: true } },
@@ -772,7 +785,7 @@ export class BillingService {
       isPastDue: record.dueAt !== null && record.dueAt < new Date() && ['OPEN', 'PARTIALLY_PAID'].includes(record.status),
       status: record.status,
       voidReason: record.voidReason ?? null, voidedAt: record.voidedAt?.toISOString() ?? null,
-      closeoutPaymentAllowed: closeoutPaymentAllowed(reservation),
+      closeoutPaymentAllowed: closeoutPaymentAllowed(reservation, record.renewalRequest?.rentalContractId),
       reservation: {
         id: reservation.id,
         reference: reservation.reservationCode,
@@ -797,7 +810,7 @@ export class BillingService {
       replacementInvoice: record.replacementInvoice ?? null,
       breakdown: savedInvoiceBreakdown(record.pricingSnapshot, record),
       historicalPricing: record.pricingSnapshot ?? (record.type === 'SETTLEMENT' ? null : record.type === 'RENEWAL' ? record.renewalRequest?.quoteSnapshot : reservation.quoteSnapshot),
-      contracts: reservation.contracts.map((contract: any) => ({
+      contracts: reservation.contracts.filter((contract: any) => !record.renewalRequest?.rentalContractId || record.renewalRequest.rentalContractId === contract.id).map((contract: any) => ({
         id: contract.id,
         contractCode: contract.contractCode,
         status: contract.status,

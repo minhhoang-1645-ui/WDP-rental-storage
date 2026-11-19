@@ -87,15 +87,17 @@ try {
     // Keep the role's existing accessible destination; no new permission or action is introduced.
     await page.goto(base+`/${role.toLowerCase()}/reservations`);
     if(role==='STAFF') {
-      await page.getByRole('button',{name:'Chờ nhân viên xử lý',exact:true}).click();
-      await page.locator('.record-attention').first().waitFor();
+      const queue = page.getByRole('button',{name:'Cần xử lý',exact:true});
+      await queue.waitFor();
+      assert.equal(await queue.getAttribute('aria-pressed'),'true');
+      await page.locator('tbody tr').first().waitFor();
       assert.equal(await page.locator('tbody .manager-status.is-confirmed').count(),0);
       assert((await page.locator('tbody tr').first().innerText()).includes(customer.fullName));
-      await page.locator('tbody tr').first().getByRole('link',{name:/Mở /}).click();
-      await page.getByRole('heading',{name:product.name,exact:true}).waitFor();
+      await page.locator('tbody tr').first().getByRole('link',{name:'Xem chi tiết',exact:true}).click();
+      await page.getByRole('heading',{name:product.name+' · '+customer.fullName,exact:true}).waitFor();
     } else {
       assert(!new URL(page.url()).pathname.startsWith('/staff/'));
-      assert.equal(await page.getByRole('button',{name:'Chờ nhân viên xử lý',exact:true}).count(),0);
+      assert.equal(await page.getByRole('button',{name:'Cần xử lý',exact:true}).count(),0);
       await page.goto(base+'/manager/operations/contracts');
       const target=page.locator('tbody tr').filter({hasText:'CON-TARGET'});
       await target.waitFor();

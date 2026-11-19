@@ -176,9 +176,6 @@
 .workspace-notification-filters .field-label { margin: 0; }
 .workspace-notification-filters :is(input, select) { min-block-size: 36px; inline-size: 100%; }
 .workspace-notification-inbox .portal-pagination > div { flex-wrap: wrap; row-gap: 6px; }
-.internal-page-numbers, .internal-page-numbers > span { display: inline-flex; align-items: center; gap: 4px; }
-.internal-page-numbers .button-secondary { min-width: 34px; min-height: 36px; padding-inline: 6px; }
-.internal-page-numbers .button-secondary[aria-current='page'] { background: var(--workspace-selected); color: var(--workspace-primary); }
 @media (max-width: 650px) {
   .workspace-notification-inbox-header { display: grid; align-items: start; gap: 10px; }
   .workspace-notification-filters { inline-size: 100%; }

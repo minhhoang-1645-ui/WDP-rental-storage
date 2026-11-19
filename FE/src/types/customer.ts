@@ -30,7 +30,18 @@ export interface CustomerContract {
   terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null; document: Record<string, unknown>; snapshotHash: string; signatureImage: string | null; otp?: { required: boolean; emailConfigured: boolean }; verification?: { method: string; verifiedAt: string; recipient: string } | null }
 }
 
+export interface ReturnReadiness {
+  requiresFullSettlement: true
+  totalOutstanding: number | null
+  canReturn: boolean
+  requiresReconciliation?: boolean
+  awaitingRenewalInvoices?: boolean
+}
+
 export interface RentalContractSummary {
+  returnReadiness?: ReturnReadiness
+  returnInProgress?: boolean
+  pendingRenewal?: CustomerRental['pendingRenewal']
   storedItems?: Array<{ id: string; itemCode: string; name: string; unit: string; balance: number }>
   transfers?: Array<{ code: string; from: string; to: string; completedAt: string | null }>
   id: string
@@ -39,11 +50,12 @@ export interface RentalContractSummary {
   startDate: string
   endDate: string
   activatedAt: string | null
-  unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null }
+  unit: { id: string; unitCode: string; status: string; storageType?: { id: string; name: string }; floor: string | null; zone: string | null; row: string | null; position: string | null }
 }
 
 export interface CustomerRental {
-  returnReadiness?: { requiresFullSettlement: true; totalOutstanding: number | null; canReturn: boolean }
+  returnReadiness?: ReturnReadiness
+  canRenewTogether?: boolean
   rentalPeriod?: import('./rental-account').RentalPeriodSummary
   paymentDetails?: import('./rental-account').RentalPaymentDetails
   reservationId: string
@@ -59,7 +71,7 @@ export interface CustomerRental {
   contractCount: number
   unitCount: number
   contracts: RentalContractSummary[]
-  pendingRenewal: { renewalCode: string; status: string; requestedEndDate: string } | null
+  pendingRenewal: { id: string; renewalCode: string; status: string; requestedEndDate: string } | null
   historicalPricing?: { billingMode?: 'DAILY' | 'MONTHLY' }
   billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number; payableBalance?: number; scheduledBalance?: number; nextInvoice: CustomerInvoice | null }
 }
@@ -70,7 +82,7 @@ export interface CustomerInvoice {
   voidedAt?: string | null
   breakdown?: {
     periodStart: string; periodEnd: string; adjustmentAmount: number;
-    units: Array<{ contractId: string; contractCode: string; unitCode: string; storageTypeName: string; monthlyRate: number; rentalAmount: number; depositAmount: number }>;
+    units: Array<{ contractId: string; contractCode: string; unitCode: string; storageTypeName: string; monthlyRate: number; rentalAmount: number; depositAmount: number; discountAmount?: number }>;
     sharedServices: Array<{ id: string; name: string; quantity: number; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; physicalUnit?: string; billablePeriods?: number; amount: number }>;
   } | null
   replacesInvoice?: { id: string; invoiceCode: string } | null
@@ -130,9 +142,20 @@ export interface CustomerAppointment {
   createdAt: string
 }
 
+export interface RenewalQuote {
+  currency: string
+  previousEndDate: string
+  requestedEndDate: string
+  totalAmount: number
+  discountAmount: number
+  monthlyUnitPrice: number
+}
+
 export interface CustomerRenewal {
   id: string
   renewalCode: string
+  rentalContractId?: string | null
+  contracts?: Array<{ id: string; contractCode: string; unitCode: string; endDate: string; status: string }>
   status: 'PENDING' | 'APPROVED_PENDING_PAYMENT' | 'COMPLETED' | 'REJECTED'
   reservation: { id: string; reference: string; quantity: number; currentEndDate: string; storageType: Pick<CustomerStorageType, 'id' | 'code' | 'name'> }
   previousEndDate: string
@@ -153,7 +176,7 @@ export interface CustomerSupportRequest {
   earlyReturnFinancialReview?: import('../components/customer/EarlyReturnFinancialNotice').EarlyReturnFinancialDecision | null
   earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
   earlyReturnForEndDate?: string | null
-  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
+  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
   id: string
   supportCode: string
   category: SupportCategory
@@ -174,7 +197,10 @@ export interface CustomerSupportRequest {
 }
 
 export interface CustomerReturnRequest {
-  returnReadiness?: { requiresFullSettlement: true; totalOutstanding: number | null; canReturn: boolean }
+  returnReadiness?: ReturnReadiness
+  rentalContractId?: string | null
+  timing?: 'EARLY' | 'ON_OR_AFTER_END'
+  remainingUnitCount?: number
   inventory?: { remainingItemTypes: number; pendingMovements: number }
   id: string
   returnCode: string
@@ -185,7 +211,7 @@ export interface CustomerReturnRequest {
   completedAt: string | null
   note: string | null
   reservation: { id: string; reference: string; status: string; quantity: number; startDate: string; endDate: string; effectiveEndDate: string; storageType: CustomerStorageType }
-  inspections: Array<{ id: string; result: 'PENDING' | 'PASS' | 'ISSUE_FOUND'; issueType: string | null; hasIssue: boolean; contract: { id: string; contractCode: string; status: string; completedAt: string | null }; unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null } }>
+  inspections: Array<{ id: string; result: 'PENDING' | 'PASS' | 'ISSUE_FOUND'; issueType: string | null; hasIssue: boolean; contract: { id: string; contractCode: string; status: string; endDate: string; completedAt: string | null }; unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null } }>
   inspectionSummary: { total: number; pending: number; passed: number; issues: number }
   settlementStatus: string | null
   createdAt: string
@@ -196,6 +222,7 @@ export interface CustomerDepositSettlement {
   id: string
   settlementCode: string
   returnCode: string
+  returnedUnits?: Array<{ unitCode: string; contractCode: string }>
   status: 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED'
   depositAmount: number
   totalApprovedCharges: number

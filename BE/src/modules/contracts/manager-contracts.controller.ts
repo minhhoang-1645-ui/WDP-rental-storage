@@ -28,7 +28,8 @@ export class ManagerContractsController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
-    return this.contracts.listManagerContracts(this.parseQuery(query), request.user!.role === 'STAFF' ? request.user!.id : undefined);
+    const parsed = this.parseQuery(query);
+    return request.user!.role === 'STAFF' ? this.contracts.listStaffContracts(parsed, request.user!.id) : this.contracts.listManagerContracts(parsed);
   }
 
   @Get(':id')
@@ -39,7 +40,7 @@ export class ManagerContractsController {
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy hợp đồng.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.contracts.getManagerContract(id, request.user!.role === 'STAFF' ? request.user!.id : undefined);
+    return request.user!.role === 'STAFF' ? this.contracts.getStaffContract(id, request.user!.id) : this.contracts.getManagerContract(id);
   }
 
   private parseQuery(query: Record<string, unknown>): ContractListQuery {

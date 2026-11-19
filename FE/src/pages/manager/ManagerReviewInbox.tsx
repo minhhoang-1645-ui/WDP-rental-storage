@@ -4,14 +4,15 @@ import { useAuth } from '../../auth/auth-context';
 import { ManagerTaskTable, ManagerTableSearch, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
 import { PageHeader, Status } from '../../components/manager/PortalUi';
-import { code, customer, date, detailPath, first, label, rows, type Page, type Row } from '../../components/manager/portal-data';
-import { StaffRowActions, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import { code, customer, date, detailPath, first, label, rows, type Row } from '../../components/manager/portal-data';
+import type { StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { useApiResource } from '../../services/useApiResource';
+import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { normalizeSearch } from '../../utils/notification-tools';
 import { isEarlyReturnRequest } from '../../utils/early-return';
-
-const recentLimit = 50;
+import { managerSections } from '../../utils/manager-sections';
+import { hasLinkedTransfer } from '../../utils/work-queue';
+import { isCustomerTransferSubject } from '../../utils/transfer-request';
 const queuePaths = {
   deposits: '/manager/deposit-settlements',
   maintenance: '/manager/maintenance',
@@ -32,7 +33,7 @@ const titles: Record<Queue, string> = {
   renewals: 'Gia hạn kho',
 };
 const statusNames: Record<string, string> = {
-  REQUESTED: 'Chờ quyết định', PENDING: 'Chờ quyết định',
+  REQUESTED: 'Chờ duyệt chuyển kho', PENDING: 'Chờ duyệt gia hạn',
   PENDING_REVIEW: 'Chờ duyệt',
   AWAITING_VERIFICATION: 'Chờ kiểm tra kết quả', ESCALATED: 'Cần quản lý quyết định', EARLY_REVIEW: 'Chờ quyết định',
   INVESTIGATING: 'Chờ quyết định sự cố', APPROVED: 'Đã chấp thuận · chờ kết thúc', REJECTED: 'Đã từ chối · chờ kết thúc',
@@ -51,7 +52,7 @@ const fullLists: Record<Queue, string> = {
   renewals: '/manager/operations/renewals',
 };
 
-function toTask(queue: Queue, row: Row, from: string): Task | null {
+function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): Task | null {
   const id = first(row, 'id');
   const status = first(row, 'status');
   if (!id) return null;
@@ -68,7 +69,7 @@ function toTask(queue: Queue, row: Row, from: string): Task | null {
       to = detailPath('maintenance', { id });
       break;
     case 'support':
-      if (status !== 'ESCALATED' || isEarlyReturnRequest(row)) return null;
+      if (status !== 'ESCALATED' || isEarlyReturnRequest(row) || isCustomerTransferSubject(row.subject) || hasLinkedTransfer(row)) return null;
       to = detailPath('support-requests', { id });
       break;
     case 'early':
@@ -81,8 +82,9 @@ function toTask(queue: Queue, row: Row, from: string): Task | null {
       to = detailPath('renewals', { id });
       break;
     case 'transfers':
-      if (status !== 'REQUESTED') return null;
-      to = detailPath('transfers', { id });
+      if (legacyTransfer ? !isCustomerTransferSubject(row.subject) || status === 'RESOLVED' || rows(row.transfers).length > 0 : status !== 'REQUESTED') return null;
+      state = 'REQUESTED';
+      to = detailPath(legacyTransfer ? 'support-requests' : 'transfers', { id });
       break;
     case 'damage':
       if (!(status === 'INVESTIGATING' && row.staffFacts) && !['APPROVED', 'REJECTED'].includes(status)) return null;
@@ -107,32 +109,39 @@ export function ManagerReviewInbox() {
   const { pathname, search: locationSearch } = useLocation();
   const { params, page, limit, update } = useManagerTableParams();
   const rawQueue = params.get('kind') ?? '';
+  const decisionOnly = params.get('view') === 'decision';
   const queue = Object.hasOwn(queuePaths, rawQueue) ? rawQueue as Queue : '';
   const rawStatus = params.get('status') ?? '';
-  const states = queue ? queueStates[queue] : Object.keys(statusNames);
+  const states = (queue ? queueStates[queue] : Object.keys(statusNames)).filter(value => !decisionOnly || !['APPROVED', 'REJECTED'].includes(value));
   const status = states.includes(rawStatus) ? rawStatus : '';
   const term = params.get('search') ?? '';
   const oldest = params.get('sort') === 'oldest';
   const queuePath = (kind: Queue, state = '') => !queue || queue === kind
-    ? queuePaths[kind] + '?limit=' + recentLimit + (state ? '&status=' + state : '')
+    ? queuePaths[kind] + '?limit=100' + (state ? '&status=' + state : '')
     : null;
-  const deposits = useApiResource<Page>(queuePath('deposits', 'PENDING_REVIEW'), user?.id, true);
-  const maintenance = useApiResource<Page>(queuePath('maintenance', 'AWAITING_VERIFICATION'), user?.id, true);
-  const support = useApiResource<Page>(queuePath('support', 'ESCALATED'), user?.id, true);
-  const early = useApiResource<Page>(queuePath('early'), user?.id, true);
-  const damage = useApiResource<Page>(queuePath('damage'), user?.id, true);
-  const transfers = useApiResource<Page>(queuePath('transfers', 'REQUESTED'), user?.id, true);
-  const renewals = useApiResource<Page>(queuePath('renewals', 'PENDING'), user?.id, true);
+  const deposits = usePaginatedResource<Row>(queuePath('deposits', 'PENDING_REVIEW'), user?.id, true);
+  const maintenance = usePaginatedResource<Row>(queuePath('maintenance', 'AWAITING_VERIFICATION'), user?.id, true);
+  const support = usePaginatedResource<Row>(queuePath('support', 'ESCALATED'), user?.id, true);
+  const early = usePaginatedResource<Row>(queuePath('early'), user?.id, true);
+  const damage = usePaginatedResource<Row>(queuePath('damage'), user?.id, true);
+  const transfers = usePaginatedResource<Row>(queuePath('transfers', 'REQUESTED'), user?.id, true);
+  const legacyTransfers = usePaginatedResource<Row>(!queue || queue === 'transfers' ? '/manager/support-requests?legacyTransfer=true&limit=100' : null, user?.id, true);
+  const renewals = usePaginatedResource<Row>(queuePath('renewals', 'PENDING'), user?.id, true);
   const sources = { deposits, maintenance, support, early, damage, transfers, renewals };
-  const resources = Object.values(sources);
+  const resources = [...Object.values(sources), legacyTransfers];
   const loading = resources.some(resource => resource.loading);
   const refreshing = resources.some(resource => resource.refreshing);
   const errors = Object.entries(sources).filter(([, resource]) => resource.error).map(([kind]) => titles[kind as Queue]);
-  const bounded = resources.some(({ data }) => data && data.items.length < data.total);
+  if (legacyTransfers.error && !transfers.error) errors.push(titles.transfers);
   const refresh = () => resources.forEach(resource => resource.refresh());
   const tasks = (Object.entries(sources) as [Queue, typeof deposits][]).flatMap(([kind, resource]) =>
     (resource.data?.items ?? []).map(row => toTask(kind, row, pathname + locationSearch)).filter((task): task is Task => task !== null));
+  for (const row of legacyTransfers.data?.items ?? []) {
+    const task = toTask('transfers', row, pathname + locationSearch, true);
+    if (task) tasks.push(task);
+  }
   const matching = tasks.filter(task => (!status || task.status === status) &&
+    (!decisionOnly || task.queue !== 'damage' || task.status === 'INVESTIGATING') &&
     normalizeSearch([task.reference, task.person, task.unit, titles[task.queue], first(task.row, 'subject', 'description'),
       first(task.row, 'reservation.reference', 'invoice.invoiceCode')].join(' ')).includes(normalizeSearch(term.trim())));
   matching.sort((a, b) => {
@@ -140,24 +149,23 @@ export function ManagerReviewInbox() {
     const byDate = a.created.localeCompare(b.created);
     return missingDate || (oldest ? byDate : -byDate) || a.reference.localeCompare(b.reference, 'vi');
   });
+  const visiblePage = Math.min(page, Math.max(1, Math.ceil(matching.length / limit)));
   const columns: StaffColumn<Task>[] = [
-    { key: 'type', label: 'Loại yêu cầu', cell: task => <><strong>{titles[task.queue]}</strong><CopyRecordCode value={task.reference} /></> },
+    { key: 'type', label: 'Loại hồ sơ', cell: task => <><strong>{titles[task.queue]}</strong><CopyRecordCode value={task.reference} /></> },
     { key: 'customer', label: 'Khách hàng / Kho', cell: task => <><strong>{task.person || task.unit || '—'}</strong>{task.person && task.unit && <small>{task.unit}</small>}</> },
     { key: 'created', label: 'Ngày tạo', sort: { direction: oldest ? 'ascending' : 'descending', toggle: () => update('sort', oldest ? '' : 'oldest') }, cell: task => date(task.created, true) },
     { key: 'priority', label: 'Ưu tiên', optional: true, cell: task => ['HIGH', 'MEDIUM', 'LOW'].includes(first(task.row, 'priority')) ? label(task.row.priority) : '—' },
     { key: 'status', label: 'Trạng thái', cell: task => <Status value={task.status} text={task.statusText} /> },
-    { key: 'actions', label: 'Thao tác', cell: task => <StaffRowActions to={task.to} code={task.reference} /> },
   ];
   return <section>
-    <PageHeader title="Việc cần duyệt"><button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button></PageHeader>
+    <PageHeader title={managerSections.reviews.title}><button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button></PageHeader>
     {errors.length > 0 && <div className="booking-alert is-error" role="alert">Chưa tải được {errors.join(', ')}. <button className="button-secondary" type="button" onClick={refresh}>Thử lại</button></div>}
-    {bounded && <p className="manager-task-note" role="status">Đang hiển thị các yêu cầu gần nhất. Mở danh sách đầy đủ để tìm yêu cầu cũ.</p>}
-    <ManagerTaskTable title="Việc cần duyệt" loading={loading} refreshing={refreshing} retry={refresh} items={matching.slice((page - 1) * limit, page * limit)}
-      columns={columns} rowKey={task => task.queue + ':' + first(task.row, 'id')} total={matching.length} page={page} limit={limit} update={update}
-      emptyTitle="Chưa có hồ sơ cần duyệt" emptyDescription={errors.length ? 'Một số nhóm yêu cầu chưa tải được. Hãy thử lại.' : undefined}
+    <ManagerTaskTable title={managerSections.reviews.title} rowDetail={task => ({ to: task.to, label: `Xem chi tiết hồ sơ ${task.reference}` })} loading={loading} refreshing={refreshing} retry={refresh} items={matching.slice((visiblePage - 1) * limit, visiblePage * limit)}
+      columns={columns} rowKey={task => task.queue + ':' + first(task.row, 'id')} total={matching.length} page={visiblePage} limit={limit} update={update}
+      emptyTitle="Không có hồ sơ cần xử lý" emptyDescription={errors.length ? 'Một số nhóm yêu cầu chưa tải được. Hãy thử lại.' : undefined}
       toolbar={<>
         <ManagerTableSearch value={term} onChange={value => update('search', value)} placeholder="Tên khách, mã hồ sơ hoặc kho…" />
-        <ManagerTableFilter label="Loại yêu cầu" value={queue} onChange={value => update('kind', value)}
+        <ManagerTableFilter label="Loại hồ sơ" value={queue} onChange={value => update('kind', value)}
           options={[[ '', 'Tất cả' ], ...Object.entries(titles)]} />
         <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)} options={[[ '', 'Tất cả' ], ...states.map(value => [value, statusNames[value]] as [string, string])]} />
         {queue && <Link className="button-secondary" to={fullLists[queue]}>Xem danh sách đầy đủ</Link>}

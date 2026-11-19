@@ -11,7 +11,7 @@ describe('Renewal activity timestamp', () => {
       reviewedAt: requestedAt, approvedAt: requestedAt, rejectedAt: null,
       previousEndDate: new Date('2027-01-01'), requestedEndDate: new Date('2027-04-01'),
       termMonths: 3, paymentPlan: 'PAY_MONTHLY', quoteSnapshot: {}, invoices: [], appendixCode: null,
-      reservation: { id: 'reservation', reservationCode: 'RES-1', quantity: 1, endDate: new Date('2027-04-01'), storageType: { id: 'type', code: 'SM', name: 'Kho nhỏ' } },
+      reservation: { id: 'reservation', reservationCode: 'RES-1', quantity: 1, endDate: new Date('2027-04-01'), storageType: { id: 'type', code: 'SM', name: 'Kho nhỏ' }, contracts: [] },
     };
     const prisma = { renewalRequest: { findFirst: vi.fn().mockResolvedValue(record) } };
     const service = new RenewalsService(prisma as never, {} as never, {} as never, {} as never);

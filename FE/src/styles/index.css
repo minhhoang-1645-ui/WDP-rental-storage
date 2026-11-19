@@ -995,9 +995,7 @@
 .manager-processing { position: sticky; top: 24px; }
 .manager-processing .field-label + .field-label { margin-top: 18px; }
 .manager-processing > small { display: block; margin-top: 12px; line-height: 1.5; color: var(--color-slate); text-align: center; }
-.manager-unit-list { display: grid; gap: 10px; }
-.manager-unit-list > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--color-border); padding-top: 10px; }
-.manager-unit-list span, .manager-action-copy { color: var(--color-slate); font-size: 13px; line-height: 1.55; }
+.manager-action-copy { color: var(--color-slate); font-size: 13px; line-height: 1.55; }
 .manager-action-secondary { width: 100%; justify-content: center; margin-top: 12px; }
 .manager-action-copy { margin-bottom: 16px; }
 .manager-processing select { width: 100%; margin-top: 8px; padding: 11px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: var(--color-ink); }

@@ -25,6 +25,51 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
 }
 
 describe('Transfer completion and linked customer request, with memory-only dependencies', () => {
+  it('rejects Staff approval before accessing transfer data and hides unapproved transfer details', async () => {
+    const app = setup('REQUESTED');
+    await expect(app.service.approve('transfer', { toStorageUnitId: 'destination' }, app.actor)).rejects.toThrow('Chỉ quản lý');
+    expect(app.prisma.$transaction).not.toHaveBeenCalled();
+    const findFirst = vi.fn(async () => null);
+    const reads = new TransfersService({ transferRequest: { findFirst } } as never);
+    await expect(reads.getForStaff('transfer', app.actor)).rejects.toThrow('Không tìm thấy');
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ assignedStaffUserId: app.actor.id, status: { in: ['APPROVED', 'COMPLETED'] } }),
+    }));
+  });
+
+  it('returns current source and destination location data to the assigned Staff detail view', async () => {
+    const app = setup('COMPLETED');
+    const findFirst = vi.fn(async () => ({
+      ...app.transfer,
+      fromStorageUnit: { ...app.transfer.fromStorageUnit, floor: 'Tầng 1', zone: 'A' },
+      toStorageUnit: { ...app.transfer.toStorageUnit, floor: 'Tầng 2', zone: 'B' },
+    }));
+    const service = new TransfersService({ transferRequest: { findFirst } } as never);
+    await expect(service.getForStaff('transfer', app.actor)).resolves.toMatchObject({
+      fromUnit: { unitCode: 'A101', floor: 'Tầng 1', zone: 'A', status: 'MAINTENANCE' },
+      toUnit: { unitCode: 'A102', floor: 'Tầng 2', zone: 'B', status: 'RESERVED' },
+    });
+  });
+
+  it('searches the assigned transfer list by customer name and returns only the name', async () => {
+    const app = setup();
+    const stamp = new Date('2026-10-27T13:00:00Z');
+    const findMany = vi.fn(async () => [{
+      ...app.transfer, reservation: { ...app.transfer.reservation, customer: { fullName: 'Khách được phân công' } },
+      createdAt: stamp, updatedAt: stamp,
+    }]);
+    const count = vi.fn(async () => 6);
+    const service = new TransfersService({ transferRequest: { count, findMany } } as never);
+    const result = await service.listForStaff({ search: 'Khách', status: 'APPROVED', page: '2', limit: '5' }, app.actor);
+    const where = expect.objectContaining({
+      assignedStaffUserId: app.actor.id, status: 'APPROVED',
+      OR: expect.arrayContaining([{ reservation: { customer: { fullName: { contains: 'Khách', mode: 'insensitive' } } } }]),
+    });
+    expect(count).toHaveBeenCalledWith({ where });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 5, take: 5 }));
+    expect(result.items[0].customer).toEqual({ fullName: 'Khách được phân công' });
+  });
+
   it('returns the actual latest modification time separately from the old creation time', async () => {
     const app = setup('COMPLETED');
     app.transfer.updatedAt = new Date('2026-11-06T05:00:00Z');
@@ -63,6 +108,14 @@ describe('Transfer completion and linked customer request, with memory-only depe
   });
   it('does not finish an unapproved transfer', async () => {
     const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
+  });
+  it('rejects completion by another Staff account and keeps pending stock movements at the source', async () => {
+    const app = setup();
+    await expect(app.service.complete('transfer', { ...app.actor, id: 'other-staff' }, handover)).rejects.toThrow('Chỉ nhân viên được giao');
+    app.tx.stockMovement.count.mockResolvedValue(1);
+    await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('Còn phiếu nhập/xuất');
+    expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
+    expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
   });
   it('supports transfers without a linked customer request', async () => {
     const app = setup(); app.transfer.supportRequestId = null; expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED'); expect(app.tx.supportRequest.findUnique).not.toHaveBeenCalled();

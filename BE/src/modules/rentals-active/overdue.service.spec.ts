@@ -1,10 +1,16 @@
 import 'dotenv/config';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { BookingService } from '../booking/booking.service.js';
 import { ActiveRentalsService } from './active-rentals.service.js';
 import { deriveOverdueState } from './overdue-state.js';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
+import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
+import { ContractsService } from '../contracts/contracts.service.js';
+import { ManagerService } from '../manager/manager.service.js';
+import type { PublicUser } from '../auth/auth.types.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `overdue-facility-${runId}`;
@@ -12,12 +18,16 @@ const storageTypeId = `overdue-product-${runId}`;
 const customerId = `overdue-customer-${runId}`;
 const otherCustomerId = `overdue-other-${runId}`;
 const managerId = `overdue-manager-${runId}`;
+const staffA = { id: `overdue-staff-a-${runId}`, role: 'STAFF' } as PublicUser;
+const staffB = { id: `overdue-staff-b-${runId}`, role: 'STAFF' } as PublicUser;
+const managerActor = { id: managerId, role: 'MANAGER' } as PublicUser;
 const unitCodes = [1, 2, 3, 4].map((value) => `OVERDUE-${runId}-${value}`);
 
 describe('Overdue Rental V1', () => {
   let prisma: PrismaService;
   let rentals: ActiveRentalsService;
   let booking: BookingService;
+  let responsibility: UnitStaffService;
 
   const dateAt = (days: number) => {
     const value = new Date();
@@ -30,7 +40,8 @@ describe('Overdue Rental V1', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    rentals = new ActiveRentalsService(prisma);
+    responsibility = new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
+    rentals = new ActiveRentalsService(prisma, responsibility);
     booking = new BookingService(prisma);
     await prisma.facility.create({ data: { id: facilityId, code: `OVERDUE-${runId}`, name: 'Overdue test', address: 'Test only' } });
     await prisma.storageType.create({ data: {
@@ -43,10 +54,13 @@ describe('Overdue Rental V1', () => {
       { id: customerId, email: `${customerId}@example.test`, fullName: 'Overdue Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
       { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Future Private Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
       { id: managerId, email: `${managerId}@example.test`, fullName: 'Overdue Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
+      ...[staffA, staffB].map(staff => ({ id: staff.id, email: `${staff.id}@example.test`, fullName: staff.id, role: staff.role, passwordHash: 'secret-hash' })),
     ] });
   });
 
   afterEach(async () => {
+    await prisma.stockMovement.deleteMany({ where: { rentalContract: { reservation: { storageTypeId } } } });
+    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -65,7 +79,7 @@ describe('Overdue Rental V1', () => {
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId] } } });
+    await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffA.id, staffB.id] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
   });
@@ -160,10 +174,11 @@ describe('Overdue Rental V1', () => {
 
   it('filters overdue rentals for Customer, Manager and Staff at reservation level with quantity > 1', async () => {
     const overdue = await rental({ quantity: 3 });
-    await rental({ endDate: dateAt(30) });
+    const active = await rental({ endDate: dateAt(30) });
+    await responsibility.assign(active.units[0].id, { staffUserId: staffA.id, expectedAssignmentId: null }, managerActor);
     const customer = await rentals.listCustomerRentals(customerId, { page: 1, limit: 20, overdue: true });
     const manager = await rentals.listManagerRentals({ page: 1, limit: 20, overdue: true, search: runId });
-    const staff = await rentals.listStaffRentals({ page: 1, limit: 20, overdue: false, search: runId });
+    const staff = await rentals.listStaffRentals(staffA, { page: 1, limit: 20, overdue: false, search: runId });
     expect(customer.total).toBe(1);
     expect(customer.items[0]).toMatchObject({ reservationId: overdue.reservation.id, quantity: 3, contractCount: 3, unitCount: 3, isOverdue: true });
     expect(customer.items[0].contracts.every((contract: any) => contract.unit.status === 'OCCUPIED')).toBe(true);
@@ -172,15 +187,78 @@ describe('Overdue Rental V1', () => {
     expect(staff.items[0]).not.toHaveProperty('historicalPricing');
   });
 
+  it('limits multi-unit rentals, filters and totals to each employee and keeps task scope separate', async () => {
+    const mixed = await rental({ quantity: 2 });
+    const other = await rental({ endDate: dateAt(30) });
+    const [a, b] = mixed.units;
+    const visibleA = await prisma.rentalContract.findFirstOrThrow({ where: { reservationUnit: { storageUnitId: a.id } } });
+    const visibleB = await prisma.rentalContract.findFirstOrThrow({ where: { reservationUnit: { storageUnitId: b.id } } });
+    await prisma.rentalContract.update({ where: { id: visibleB.id }, data: { endDate: dateAt(30) } });
+    const query = { page: 1, limit: 1 };
+    await expect(rentals.listStaffRentals(staffA, query)).resolves.toMatchObject({ total: 0, items: [], assignmentsEnabled: true });
+    const assignment = await responsibility.assign(a.id, { staffUserId: staffA.id, expectedAssignmentId: null }, managerActor);
+    await responsibility.assign(b.id, { staffUserId: staffB.id, expectedAssignmentId: null }, managerActor);
+    await responsibility.assign(other.units[0].id, { staffUserId: staffA.id, expectedAssignmentId: null }, managerActor);
+    const detailed = await rentals.getStaffRental(staffA, mixed.reservation.reservationCode);
+    expect(detailed).toMatchObject({ quantity: 1, contractCount: 1, unitCount: 1, effectiveEndDate: iso(visibleA.endDate), rentalState: 'OVERDUE' });
+    expect(detailed.contracts.map(row => row.contractCode)).toEqual([visibleA.contractCode]);
+    expect(JSON.stringify(detailed)).not.toContain(visibleB.contractCode);
+    expect(detailed).not.toHaveProperty('billingReadiness');
+    await expect(rentals.getStaffRental(staffB, mixed.reservation.id)).resolves.toMatchObject({ rentalState: 'ACTIVE', contracts: [{ unit: { id: b.id } }] });
+    await expect(rentals.getStaffRental(staffB, other.reservation.id)).rejects.toThrow('Không tìm thấy');
+    await expect(rentals.listStaffRentals(staffA, { ...query, search: b.unitNumber })).resolves.toMatchObject({ total: 0 });
+    await expect(rentals.listStaffRentals(staffA, { ...query, search: visibleB.contractCode })).resolves.toMatchObject({ total: 0 });
+    await expect(rentals.listStaffRentals(staffA, { ...query, unitCode: b.unitNumber })).resolves.toMatchObject({ total: 0 });
+    const units = new ManagerService(prisma, responsibility);
+    const contracts = new ContractsService(prisma, undefined, undefined, responsibility);
+    await expect(units.getStaffUnit(a.id, staffA.id)).resolves.toMatchObject({ id: a.id, unitCode: a.unitNumber });
+    await expect(units.getStaffUnit(b.unitNumber, staffA.id)).rejects.toThrow('Không tìm thấy');
+    await expect(units.listStaffUnits({ ...query, search: b.unitNumber }, staffA.id)).resolves.toMatchObject({ total: 0 });
+    const staffContract = await contracts.getStaffContract(visibleA.contractCode, staffA.id);
+    expect(staffContract.storageUnit.id).toBe(a.id);
+    expect(staffContract).not.toHaveProperty('reservationPricing');
+    expect(staffContract).not.toHaveProperty('terms');
+    await expect(contracts.getStaffContract(visibleB.id, staffA.id)).rejects.toThrow('Không tìm thấy');
+    await expect(contracts.listStaffContracts({ ...query, search: visibleB.contractCode }, staffA.id)).resolves.toMatchObject({ total: 0 });
+    await expect(units.getUnit(b.id)).resolves.toMatchObject({ id: b.id });
+    await expect(rentals.listStaffRentals(staffA, { ...query, overdue: true })).resolves.toMatchObject({ total: 1, items: [{ reservationId: mixed.reservation.id }] });
+    await expect(rentals.listStaffRentals(staffB, { ...query, overdue: true })).resolves.toMatchObject({ total: 0 });
+    const first = await rentals.listStaffRentals(staffA, query);
+    const second = await rentals.listStaffRentals(staffA, { ...query, page: 2 });
+    expect(first.total).toBe(2);
+    expect(second.total).toBe(2);
+    expect(new Set([...first.items, ...second.items].map(item => item.reservationId))).toEqual(new Set([mixed.reservation.id, other.reservation.id]));
+    const disabled = new ActiveRentalsService(prisma);
+    await expect(disabled.listStaffRentals(staffA, query)).resolves.toMatchObject({ total: 0, assignmentsEnabled: false });
+    await expect(disabled.getStaffRental(staffA, mixed.reservation.id)).rejects.toThrow('Không tìm thấy');
+
+    const movement = await prisma.stockMovement.create({ data: {
+      movementCode: `MOV-${runId}`, type: 'IN', status: 'ASSIGNED', rentalContractId: visibleB.id,
+      customerUserId: customerId, assignedStaffUserId: staffA.id, idempotencyKey: `mov-${runId}`,
+    } });
+    const stock = new StockMovementsService(prisma);
+    await expect(stock.getStaff(staffA, movement.id)).resolves.toMatchObject({ id: movement.id });
+    await expect(booking.getManagerReservation(mixed.reservation.id, staffA)).rejects.toThrow('Không tìm thấy');
+    await expect(contracts.getStaffContract(visibleB.id, staffA.id)).rejects.toThrow('Không tìm thấy');
+    await expect(rentals.listStaffRentals(staffA, { ...query, unitCode: b.unitNumber })).resolves.toMatchObject({ total: 0 });
+    await stock.assign(movement.id, staffB.id, managerActor);
+    await expect(stock.getStaff(staffA, movement.id)).rejects.toThrow('Không tìm thấy');
+    await expect(stock.getStaff(staffB, movement.id)).resolves.toMatchObject({ id: movement.id });
+
+    await responsibility.assign(a.id, { staffUserId: null, expectedAssignmentId: assignment!.id }, managerActor);
+    await expect(rentals.getStaffRental(staffA, mixed.reservation.id)).rejects.toThrow('Không tìm thấy');
+    await expect(rentals.getStaffRental(staffB, mixed.reservation.id)).resolves.toMatchObject({ contracts: [{ unit: { id: b.id } }] });
+  });
+
   it('shows future allocation conflict and private customer context only to Manager', async () => {
     const current = await rental();
     const { future, allocation } = await futureAllocation(current.units[0].id, dateAt(0), dateAt(30));
     const manager = await rentals.getManagerRental(current.reservation.id);
     expect(manager.futureAllocationRisk).toEqual({ hasFutureAllocation: true, hasCurrentAllocationConflict: true });
     expect(manager.contracts[0].unit.nextConfirmedAllocation).toMatchObject({ reservationReference: future.reservationCode, customer: { fullName: 'Future Private Customer' } });
-    const staff = await rentals.getStaffRental(current.reservation.id);
-    expect(staff.futureAllocationRisk).toEqual({ hasFutureAllocation: true, hasCurrentAllocationConflict: true });
-    expect(staff.contracts[0].unit.nextConfirmedAllocation).not.toHaveProperty('customer');
+    await responsibility.assign(current.units[0].id, { staffUserId: staffA.id, expectedAssignmentId: null }, managerActor);
+    const staff = await rentals.getStaffRental(staffA, current.reservation.id);
+    expect(staff.contracts[0].unit).not.toHaveProperty('nextConfirmedAllocation');
     const customer = await rentals.getCustomerRental(customerId, current.reservation.id);
     const serialized = JSON.stringify(customer);
     expect(serialized).not.toContain('Future Private Customer');
@@ -198,11 +276,13 @@ describe('Overdue Rental V1', () => {
     expect(manager.contracts[0].unit.nextConfirmedAllocation.startDate).toBe(iso(dateAt(10)));
   });
 
-  it('surfaces inconsistent ACTIVE contract end dates instead of normalizing them', async () => {
+  it('uses the latest active end date for the group and preserves each contract end date', async () => {
     const current = await rental({ quantity: 2 });
     const contract = await prisma.rentalContract.findFirstOrThrow({ where: { reservationId: current.reservation.id } });
     await prisma.rentalContract.update({ where: { id: contract.id }, data: { endDate: dateAt(1) } });
-    await expect(rentals.getManagerRental(current.reservation.id)).rejects.toMatchObject({ response: { code: 'ACTIVE_RENTAL_END_DATE_MISMATCH' } });
+    const view = await rentals.getManagerRental(current.reservation.id);
+    expect(view).toMatchObject({ effectiveEndDate: iso(dateAt(1)), isOverdue: false, canRenewTogether: false, unitCount: 2 });
+    expect(view.contracts).toEqual(expect.arrayContaining([expect.objectContaining({ id: contract.id, endDate: iso(dateAt(1)) })]));
     expect(await prisma.rentalContract.count({ where: { reservationId: current.reservation.id, status: 'ACTIVE' } })).toBe(2);
   });
 });

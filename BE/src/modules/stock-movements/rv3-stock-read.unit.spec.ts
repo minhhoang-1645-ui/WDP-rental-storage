@@ -11,28 +11,33 @@ describe('RV3 stored items and historical location', () => {
     const stored = { id: 'item', name: 'Vali', unit: 'cái', balance: 2, customer: { id: 'customer', fullName: 'Khách thuê' }, rentalContract: { id: 'contract', contractCode: 'C01', reservationUnit: { storageUnit: unit } } };
     const findMany = vi.fn().mockResolvedValue([stored]);
     const count = vi.fn().mockResolvedValue(1);
-    const service = new StockMovementsService({ storedItem: { findMany, count } } as never, { enabled: () => true } as never);
+    const service = new StockMovementsService({
+      $queryRaw: vi.fn().mockResolvedValue([{ itemId: 'item', unitId: unit.id }]),
+      storageUnit: { findFirst: vi.fn().mockResolvedValue(unit) },
+      storedItem: { findMany, count },
+    } as never, { enabled: () => true } as never);
     const result = await service.listOperationalStoredItems(staff, { page: 1, limit: 20, search: 'Vali', storageUnitId: 'unit-b' });
     expect(result.items[0]).toMatchObject({ currentStorageUnit: unit, customer: { fullName: 'Khách thuê' }, balance: 2 });
     const where = findMany.mock.calls[0][0].where;
-    expect(where.rentalContract.AND).toEqual([
+    expect(result.selectedStorageUnit).toEqual(unit);
+    expect(where.AND).toEqual([
       { OR: [
-        { stockMovements: { some: { assignedStaffUserId: staff.id } } },
-        { reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId: staff.id, endedAt: null } } } } },
+        { id: { in: ['item'] }, rentalContract: { reservationUnit: { storageUnitId: unit.id } } },
+        { rentalContract: { reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId: staff.id, endedAt: null } } } } } },
       ] },
-      { reservationUnit: { storageUnitId: unit.id } },
     ]);
-    expect(where.OR).toHaveLength(3);
+    expect(where.rentalContract).toEqual({ reservationUnit: { storageUnitId: unit.id } });
+    expect(where.OR).toHaveLength(4);
     expect(count).toHaveBeenCalledWith({ where });
   });
 
   it('does not query feature-gated assignments when unavailable and gives Manager a read-only list', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
-    const service = new StockMovementsService({ storedItem: { findMany, count: vi.fn().mockResolvedValue(0) } } as never);
-    await service.listOperationalStoredItems(staff, { page: 1, limit: 20 });
-    expect(findMany.mock.calls[0][0].where.rentalContract.AND[0].OR).toEqual([{ stockMovements: { some: { assignedStaffUserId: staff.id } } }]);
+    const service = new StockMovementsService({ $queryRaw: vi.fn().mockResolvedValue([]), storedItem: { findMany, count: vi.fn().mockResolvedValue(0) } } as never);
+    await expect(service.listOperationalStoredItems(staff, { page: 1, limit: 20 })).resolves.toMatchObject({ total: 0, items: [] });
+    expect(findMany).not.toHaveBeenCalled();
     await service.listOperationalStoredItems(manager, { page: 1, limit: 20 });
-    expect(findMany.mock.calls[1][0].where.rentalContract.AND).toEqual([{}]);
+    expect(findMany.mock.calls[0][0].where.AND).toEqual([{}]);
     await expect(service.complete('movement', {}, manager)).rejects.toThrow('được giao');
   });
 

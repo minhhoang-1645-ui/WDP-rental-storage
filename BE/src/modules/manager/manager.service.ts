@@ -1,7 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessToday } from '../../business-date.js';
+import { responsibleUnit } from '../unit-staff/operational-assignment.js';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
+import { unitHistoryCounts, unitMetadataLocked } from './unit-edit-policy.js';
+import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-location.js';
+
+const allocationContract = { id: true, contractCode: true, status: true, startDate: true, endDate: true } as const;
+const unitAllocationInclude = { reservation: { include: { customer: true } }, contract: { select: allocationContract } } as const;
+type UnitAllocation = Prisma.ReservationUnitGetPayload<{ include: typeof unitAllocationInclude }>;
+
+function openAllocation(allocation: UnitAllocation) {
+  return allocation.reservation.status === 'CONFIRMED' && allocation.releasedAt === null
+    && allocation.contract?.status !== 'COMPLETED' && allocation.contract?.status !== 'CANCELLED';
+}
+
+function byAllocationStart(left: UnitAllocation, right: UnitAllocation) {
+  return left.plannedStartDate.getTime() - right.plannedStartDate.getTime() || left.id.localeCompare(right.id);
+}
+
+const staffUnitSelect = {
+  id: true, unitNumber: true, status: true, floor: true, zone: true, row: true, position: true,
+  storageType: { select: { id: true, code: true, name: true } },
+} satisfies Prisma.StorageUnitSelect;
+const staffUnit = ({ unitNumber, ...unit }: Prisma.StorageUnitGetPayload<{ select: typeof staffUnitSelect }>) => ({ ...unit, unitCode: unitNumber });
 
 export interface UnitListQuery {
   page: number;
@@ -21,7 +44,7 @@ export interface CustomerListQuery {
 
 @Injectable()
 export class ManagerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
 
   async dashboardSummary() {
     const now = new Date();
@@ -41,11 +64,11 @@ export class ManagerService {
     return { pendingReservations, activeRentals: activeRentalRows.length, overdueRentals: overdueRows.length, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits };
   }
 
-  async listUnits(query: UnitListQuery) {
-    const where: Prisma.StorageUnitWhereInput = {
+  private unitFilters(query: UnitListQuery, aliases = false): Prisma.StorageUnitWhereInput {
+    return {
       ...(query.search ? { unitNumber: { contains: query.search, mode: 'insensitive' } } : {}),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.floor ? { floor: { equals: query.floor, mode: 'insensitive' } } : {}),
+      ...(query.floor ? { floor: { ...(aliases ? { in: unitFloorValues(query.floor) } : { equals: query.floor }), mode: 'insensitive' } } : {}),
       ...(query.zone ? { zone: { equals: query.zone, mode: 'insensitive' } } : {}),
       ...(query.storageType ? {
         storageType: {
@@ -58,6 +81,21 @@ export class ManagerService {
         },
       } : {}),
     };
+  }
+
+  async listStaffUnits(query: UnitListQuery, staffId: string) {
+    const { page, limit } = query;
+    if (!this.unitStaff?.enabled()) return { page, limit, total: 0, items: [] };
+    const where = { ...this.unitFilters(query), ...responsibleUnit(staffId) };
+    const [total, units] = await Promise.all([
+      this.prisma.storageUnit.count({ where }),
+      this.prisma.storageUnit.findMany({ where, select: staffUnitSelect, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }] }),
+    ]);
+    return { page, limit, total, items: units.map(staffUnit) };
+  }
+
+  async listUnits(query: UnitListQuery) {
+    const where = this.unitFilters(query, true);
     const today = this.today();
     const total = await this.prisma.storageUnit.count({ where });
     const units = await this.prisma.storageUnit.findMany({
@@ -79,7 +117,7 @@ export class ManagerService {
             OR: [{ plannedEndDate: { gt: today } }, { contract: { is: { status: 'ACTIVE' } } }],
             reservation: { status: 'CONFIRMED' },
           },
-          include: { reservation: { include: { customer: true } }, contract: { select: { status: true } } },
+          include: unitAllocationInclude,
           orderBy: [{ plannedStartDate: 'asc' }, { id: 'asc' }],
         },
       },
@@ -92,10 +130,22 @@ export class ManagerService {
     };
   }
 
+  async getStaffUnit(id: string, staffId: string) {
+    const notFound = () => new NotFoundException('Không tìm thấy kho vật lý thuộc phạm vi phụ trách.');
+    if (!this.unitStaff?.enabled()) throw notFound();
+    const unit = await this.prisma.storageUnit.findFirst({
+      where: { ...responsibleUnit(staffId), OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
+      select: staffUnitSelect,
+    });
+    if (!unit) throw notFound();
+    return staffUnit(unit);
+  }
+
   async getUnit(id: string) {
     const unit = await this.prisma.storageUnit.findFirst({
       where: { OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
       include: {
+        _count: { select: unitHistoryCounts },
         storageType: true,
         maintenanceRequests: {
           where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } },
@@ -104,24 +154,26 @@ export class ManagerService {
           select: { id: true, maintenanceCode: true, status: true, priority: true },
         },
         reservationUnits: {
-          include: { reservation: { include: { customer: true } }, contract: { select: { status: true } } },
+          include: unitAllocationInclude,
           orderBy: [{ plannedStartDate: 'desc' }, { id: 'asc' }],
         },
       },
     });
     if (!unit) throw new NotFoundException('Không tìm thấy kho vật lý.');
+    const audit = await this.prisma.auditEvent.findMany({
+      where: { resource: 'units', resourceId: unit.id, outcome: 'SUCCESS', action: { in: ['CREATE', 'UPDATE'] } },
+      select: { id: true, action: true, actorName: true, createdAt: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
     const today = this.today();
-    const allocations = unit.reservationUnits.map((allocation) => this.toAllocation(allocation));
-    const current = this.currentAllocation(unit.reservationUnits, today);
-    const isActive = (allocation: typeof unit.reservationUnits[number]) => allocation.id === current?.id;
-    const isFuture = (allocation: typeof unit.reservationUnits[number]) => allocation.reservation.status === 'CONFIRMED'
-      && allocation.releasedAt === null
-      && allocation.plannedStartDate > today;
+    const summary = this.toUnit(unit, today);
     return {
-      ...this.toUnit({ ...unit, reservationUnits: unit.reservationUnits.filter((allocation) => isActive(allocation) || isFuture(allocation)) }, today),
-      currentAllocation: unit.reservationUnits.find(isActive) ? this.toAllocation(unit.reservationUnits.find(isActive)!) : null,
-      futureAllocations: unit.reservationUnits.filter(isFuture).map((allocation) => this.toAllocation(allocation)),
-      allocations,
+      ...summary,
+      currentAllocation: summary.allocationSummary.current,
+      futureAllocations: summary.allocationSummary.future,
+      allocations: unit.reservationUnits.map(allocation => ({ ...this.toAllocation(allocation), createdAt: allocation.createdAt.toISOString() })),
+      editLocked: unitMetadataLocked(unit.status, unit._count),
+      history: audit,
       createdAt: unit.createdAt.toISOString(),
       updatedAt: unit.updatedAt.toISOString(),
     };
@@ -220,7 +272,10 @@ export class ManagerService {
   }
 
   private toUnit(unit: any, today: Date) {
-    const current = this.currentAllocation(unit.reservationUnits, today);
+    const eligible = (unit.reservationUnits as UnitAllocation[]).filter(openAllocation).sort(byAllocationStart);
+    const current = eligible.find(allocation => allocation.contract?.status === 'ACTIVE')
+      ?? eligible.find(allocation => allocation.plannedStartDate <= today && allocation.plannedEndDate > today);
+    const future = eligible.filter(allocation => allocation.contract?.status !== 'ACTIVE' && allocation.plannedStartDate > today);
     return {
       id: unit.id,
       unitCode: unit.unitNumber,
@@ -233,8 +288,8 @@ export class ManagerService {
         heightCm: unit.storageType.heightCm,
         display: this.dimensions(unit.storageType),
       },
-      floor: unit.floor,
-      zone: unit.zone,
+      floor: canonicalUnitFloor(unit.floor),
+      zone: canonicalUnitZone(unit.zone),
       row: unit.row,
       position: unit.position,
       status: unit.status,
@@ -243,20 +298,12 @@ export class ManagerService {
       maintenancePriority: unit.maintenanceRequests?.[0]?.priority ?? null,
       allocationSummary: {
         current: current ? this.toAllocation(current) : null,
-        future: unit.reservationUnits.filter((allocation: any) => allocation.reservation.status === 'CONFIRMED' && allocation.releasedAt === null && allocation.plannedStartDate > today).map((allocation: any) => this.toAllocation(allocation)),
+        future: future.map(allocation => this.toAllocation(allocation)),
       },
     };
   }
 
-  private currentAllocation(allocations: any[], today: Date) {
-    const eligible = allocations.filter(allocation => allocation.reservation.status === 'CONFIRMED' && allocation.releasedAt === null && allocation.plannedStartDate <= today);
-    // A customer remains the physical occupant until actual return/transfer,
-    // even when an already-confirmed future booking reaches its planned start.
-    return eligible.find(allocation => allocation.contract?.status === 'ACTIVE')
-      ?? eligible.find(allocation => allocation.plannedEndDate > today);
-  }
-
-  private toAllocation(allocation: any) {
+  private toAllocation(allocation: UnitAllocation) {
     return {
       id: allocation.id,
       reservationReference: allocation.reservation.reservationCode,
@@ -266,8 +313,10 @@ export class ManagerService {
         fullName: allocation.reservation.customer.fullName,
         email: allocation.reservation.customer.email,
       },
+      contract: allocation.contract ?? null,
       startDate: this.isoDate(allocation.plannedStartDate),
-      endDate: this.isoDate(allocation.plannedEndDate),
+      endDate: this.isoDate(!allocation.releasedAt && allocation.contract?.status === 'ACTIVE'
+        ? allocation.contract.endDate ?? allocation.plannedEndDate : allocation.plannedEndDate),
       releasedAt: allocation.releasedAt?.toISOString() ?? null,
     };
   }

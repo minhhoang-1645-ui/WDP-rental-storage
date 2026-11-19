@@ -136,7 +136,7 @@ describe('Invoice and Payment V1', () => {
       quantity, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
     });
     const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: order.id } });
-    if (reservation.status === 'PENDING') await booking.updateManagerReservationStatus(order.id, { status: 'CONFIRMED' }, actor(staffId, 'STAFF'));
+    if (reservation.status === 'PENDING') await booking.updateManagerReservationStatus(order.id, { status: 'CONFIRMED' }, actor(managerId, 'MANAGER'));
     const invoices = await prisma.invoice.findMany({ where: { reservationId: reservation.id, type: 'INITIAL' } });
     expect(invoices).toHaveLength(1);
     expect(invoices[0].totalAmount).toBe(3000000n * BigInt(quantity));
@@ -194,13 +194,13 @@ describe('Invoice and Payment V1', () => {
     expect(await prisma.payment.count({ where: { invoiceId: initial.id } })).toBe(1);
   });
 
-  it('rejects explicit partial return and renewal without recording a request or billing change', async () => {
+  it('rejects returning or renewing a contract before activation', async () => {
     const reservation = await confirmedReservation(quote({ quantity: 2 }), 2);
     const contract = await prisma.rentalContract.findFirstOrThrow({ where: { reservationId: reservation.id } });
     const invoices = await prisma.invoice.count({ where: { reservationId: reservation.id } });
     const input = { reservationId: reservation.id, rentalContractId: contract.id };
-    await expect(new ReturnsService(prisma).createCustomerReturn(actor(customerId, 'CUSTOMER'), input, 'partial-return-test')).rejects.toThrow('Chưa hỗ trợ trả riêng từng kho');
-    await expect(new RenewalsService(prisma).createCustomerRenewal(customerId, { ...input, termMonths: 2, paymentPlan: 'PREPAID' }, 'partial-renewal-test')).rejects.toThrow('Chưa hỗ trợ gia hạn riêng từng kho');
+    await expect(new ReturnsService(prisma).createCustomerReturn(actor(customerId, 'CUSTOMER'), input, 'partial-return-test')).rejects.toThrow('hợp đồng đang sử dụng');
+    await expect(new RenewalsService(prisma).createCustomerRenewal(customerId, { ...input, termMonths: 2, paymentPlan: 'PREPAID' }, 'partial-renewal-test')).rejects.toThrow('chưa đủ điều kiện gia hạn');
     expect(await prisma.returnRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
     expect(await prisma.renewalRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(invoices);
@@ -260,12 +260,8 @@ describe('Invoice and Payment V1', () => {
 
     const managerView = await rentals.getManagerRental(reservation.id);
     expect(managerView.invoices.find((invoice: { billingCycle: number }) => invoice.billingCycle === 2)?.isPastDue).toBe(true);
-    const staffView = await rentals.getStaffRental(reservation.id);
-    expect(staffView).toMatchObject({ reservationId: reservation.id, contractCount: 2, billingReadiness: { hasUnpaidInvoices: true } });
-    expect(staffView).not.toHaveProperty('paymentPlan');
-    expect(staffView).not.toHaveProperty('historicalPricing');
-    expect(staffView).not.toHaveProperty('invoices');
-    expect(JSON.stringify({ managerView, staffView })).not.toContain('secret-hash');
+    await expect(rentals.getStaffRental(actor('unassigned-staff', 'STAFF'), reservation.id)).rejects.toBeInstanceOf(NotFoundException);
+    expect(JSON.stringify(managerView)).not.toContain('secret-hash');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE' } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'OCCUPIED' } })).toBe(2);
   });
@@ -284,7 +280,7 @@ describe('Invoice and Payment V1', () => {
     const allowed: Array<[typeof CustomerActiveRentalsController | typeof ManagerActiveRentalsController | typeof StaffActiveRentalsController, PublicUser['role'][]]> = [
       [CustomerActiveRentalsController, ['CUSTOMER']],
       [ManagerActiveRentalsController, ['MANAGER']],
-      [StaffActiveRentalsController, ['STAFF', 'MANAGER']],
+      [StaffActiveRentalsController, ['STAFF']],
     ];
     for (const [controller, roles] of allowed) {
       for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {

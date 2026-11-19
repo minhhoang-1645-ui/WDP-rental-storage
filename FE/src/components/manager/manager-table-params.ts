@@ -1,10 +1,10 @@
 import { useSearchParams } from 'react-router-dom';
-import { staffTaskPageSize } from '../../utils/internal-pagination';
+import { internalPageSize } from '../../utils/internal-pagination';
 
 export function useManagerTableParams() {
   const [params, setParams] = useSearchParams();
   const page = Math.min(100000, Math.max(1, Math.floor(Number(params.get('page')) || 1)));
-  const limit = staffTaskPageSize(params);
+  const limit = internalPageSize(params);
   function update(key: string, value: string) {
     setParams(previous => {
       const next = new URLSearchParams(previous);

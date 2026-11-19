@@ -9,6 +9,8 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 type ListQuery = { page: number; limit: number; status?: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED'; type?: 'IN' | 'OUT'; search?: string; rentalContractId?: string };
 type ParsedLine = { storedItemId?: string; name?: string; unit?: string; quantity: number; note: string | null };
+type ItemQuery = { page: number; limit: number; search?: string; storageUnitId?: string };
+type MovementRecord = Prisma.StockMovementGetPayload<{ include: ReturnType<StockMovementsService['include']> }>;
 
 @Injectable()
 export class StockMovementsService {
@@ -19,7 +21,7 @@ export class StockMovementsService {
     return actor?.role === 'STAFF' ? this.listStaff(actor, query) : this.page({}, query);
   }
   async listStaff(actor: PublicUser, query: ListQuery) {
-    return this.page({ assignedStaffUserId: actor.id }, query);
+    return this.page({ assignedStaffUserId: actor.id }, query, actor);
   }
 
   async getCustomer(customerId: string, id: string) { return this.find(id, { customerUserId: customerId }); }
@@ -27,7 +29,28 @@ export class StockMovementsService {
     return actor?.role === 'STAFF' ? this.getStaff(actor, id) : this.find(id, {});
   }
   async getStaff(actor: PublicUser, id: string) {
-    return this.find(id, { assignedStaffUserId: actor.id });
+    const item = await this.findRecord(id, { assignedStaffUserId: actor.id });
+    const [visible, previousAssignments] = await Promise.all([
+      this.currentStaffItems(this.prisma, actor.id, [item]),
+      item.assignedAt ? this.prisma.auditEvent.findMany({
+        where: {
+          category: 'ACTIVITY', outcome: 'SUCCESS', action: 'ASSIGN', resource: 'stock-movements',
+          resourceId: { in: [item.id, item.movementCode] }, createdAt: { lt: item.assignedAt },
+        },
+        select: { id: true, actorName: true, createdAt: true },
+      }) : [],
+    ]);
+    const events = [
+      { id: 'create', label: 'Tạo phiếu', at: item.createdAt, actor: item.customer.fullName },
+      ...previousAssignments.map(event => ({ id: event.id, label: 'Phân công', at: event.createdAt, actor: event.actorName })),
+      ...(item.assignedAt ? [{ id: 'assign', label: 'Phân công', at: item.assignedAt, actor: item.assignedBy?.fullName ?? null }] : []),
+      ...(item.status === 'COMPLETED' && item.completedAt ? [{ id: 'complete', label: 'Hoàn tất giao nhận', at: item.completedAt, actor: item.completedBy?.fullName ?? null }] : []),
+    ];
+    return {
+      ...this.staffView(item, visible),
+      history: events.sort((a, b) => +b.at - +a.at || b.id.localeCompare(a.id))
+        .map(event => ({ ...event, at: event.at.toISOString() })),
+    };
   }
 
   async listStoredItems(customerId: string, contractId?: string) {
@@ -39,23 +62,34 @@ export class StockMovementsService {
     return items.map(({ rentalContract, ...item }) => ({ ...item, rentalContract: { id: rentalContract.id, contractCode: rentalContract.contractCode }, storageUnit: rentalContract.reservationUnit.storageUnit }));
   }
 
-  async listOperationalStoredItems(actor: PublicUser, query: { page: number; limit: number; search?: string; storageUnitId?: string }) {
+  async listOperationalStoredItems(actor: PublicUser, query: ItemQuery) {
     if (!['STAFF', 'MANAGER'].includes(actor.role)) throw new ForbiddenException('Chỉ nhân viên và quản lý được tra cứu hàng.');
-    const contractScope: Prisma.RentalContractWhereInput = actor.role === 'STAFF' ? {
-      OR: [
-        { stockMovements: { some: { assignedStaffUserId: actor.id } } },
-        ...(this.unitStaff?.enabled() ? [{ reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId: actor.id, endedAt: null } } } } }] : []),
-      ],
-    } : {};
+    const scope = actor.role === 'STAFF' ? await this.staffInventoryScope(this.prisma, actor.id, { storageUnitId: query.storageUnitId }) : {};
+    if (!scope) {
+      if (query.storageUnitId) throw new ForbiddenException('Bạn không có quyền xem hàng tại kho này.');
+      return { page: query.page, limit: query.limit, total: 0, items: [], selectedStorageUnit: undefined };
+    }
+    const selectedStorageUnit = actor.role === 'STAFF' && query.storageUnitId
+      ? await this.prisma.storageUnit.findFirst({
+        where: { id: query.storageUnitId, OR: [
+          ...(this.unitStaff?.enabled() ? [{ staffAssignments: { some: { staffUserId: actor.id, endedAt: null } } }] : []),
+          { reservationUnits: { some: { contract: { storedItems: { some: scope } } } } },
+        ] },
+        select: this.unitSelect(),
+      })
+      : null;
+    if (actor.role === 'STAFF' && query.storageUnitId && !selectedStorageUnit) {
+      throw new ForbiddenException('Bạn không có quyền xem hàng tại kho này.');
+    }
+    const match = query.search ? { contains: query.search, mode: 'insensitive' as const } : undefined;
     const where: Prisma.StoredItemWhereInput = {
       balance: { gt: 0 },
-      rentalContract: {
-        AND: [contractScope, ...(query.storageUnitId ? [{ reservationUnit: { storageUnitId: query.storageUnitId } }] : [])],
-      },
-      ...(query.search ? { OR: [
-        { name: { contains: query.search, mode: 'insensitive' as const } },
-        { customer: { fullName: { contains: query.search, mode: 'insensitive' as const } } },
-        { rentalContract: { reservationUnit: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' as const } } } } },
+      AND: [scope],
+      ...(query.storageUnitId ? { rentalContract: { reservationUnit: { storageUnitId: query.storageUnitId } } } : {}),
+      ...(match ? { OR: [
+        { name: match }, ...(actor.role === 'STAFF' ? [{ itemCode: match }] : []),
+        { customer: { fullName: match } },
+        { rentalContract: { reservationUnit: { storageUnit: { unitNumber: match } } } },
       ] } : {}),
     };
     const [total, items] = await Promise.all([
@@ -70,9 +104,82 @@ export class StockMovementsService {
         },
       }),
     ]);
-    return { page: query.page, limit: query.limit, total, items: items.map(item => ({
+    return { page: query.page, limit: query.limit, total, ...(selectedStorageUnit ? { selectedStorageUnit } : {}), items: items.map(item => ({
       ...item, currentStorageUnit: item.rentalContract.reservationUnit.storageUnit,
     })) };
+  }
+
+  async listStaffStoredItemHistory(actor: PublicUser, id: string, { page, limit }: ItemQuery) {
+    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được tra cứu lịch sử mặt hàng.');
+    const scope = await this.staffInventoryScope(this.prisma, actor.id, { itemIds: [id] });
+    if (!scope) throw new NotFoundException('Không tìm thấy mặt hàng.');
+    const item = await this.prisma.storedItem.findFirst({
+      where: { id, AND: [scope] },
+      select: { customerUserId: true, rentalContractId: true, unit: true,
+        rentalContract: { select: { reservationUnit: { select: { storageUnitId: true } } } } },
+    });
+    if (!item) throw new NotFoundException('Không tìm thấy mặt hàng.');
+    const where: Prisma.StockMovementLineWhereInput = {
+      storedItemId: id,
+      actualQty: { gte: 0 },
+      stockMovement: {
+        status: 'COMPLETED', completedAt: { not: null },
+        customerUserId: item.customerUserId, rentalContractId: item.rentalContractId,
+        OR: [
+          { storageUnitSnapshot: { path: ['id'], equals: item.rentalContract.reservationUnit.storageUnitId } },
+          { assignedStaffUserId: actor.id },
+        ],
+      },
+    };
+    const [total, lines] = await Promise.all([
+      this.prisma.stockMovementLine.count({ where }),
+      this.prisma.stockMovementLine.findMany({
+        where, skip: (page - 1) * limit, take: limit,
+        orderBy: [{ stockMovement: { completedAt: 'desc' } }, { id: 'desc' }],
+        select: { id: true, actualQty: true, stockMovement: { select: {
+          id: true, type: true, completedAt: true, movementCode: true, assignedStaffUserId: true,
+        } } },
+      }),
+    ]);
+    return { page, limit, total, items: lines.map(({ id: lineId, actualQty, stockMovement: movement }) => ({
+      id: lineId, type: movement.type, actualQty, unit: item.unit, completedAt: movement.completedAt?.toISOString(),
+      movementCode: movement.movementCode, movementId: movement.assignedStaffUserId === actor.id ? movement.id : null,
+    })) };
+  }
+
+  private async staffInventoryScope(db: Prisma.TransactionClient, staffUserId: string, filter: { storageUnitId?: string; itemIds?: string[] } = {}): Promise<Prisma.StoredItemWhereInput | null> {
+    // Task assignments cover their own item lines and physical location, even outside the Staff member's usual units.
+    const grants = await db.$queryRaw<{ itemId: string; unitId: string }[]>(Prisma.sql`
+      SELECT DISTINCT i."id" AS "itemId", ru."storageUnitId" AS "unitId"
+      FROM "StockMovement" m
+      JOIN "StockMovementLine" l ON l."stockMovementId" = m."id"
+      JOIN "StoredItem" i ON i."id" = l."storedItemId"
+        AND i."customerUserId" = m."customerUserId" AND i."rentalContractId" = m."rentalContractId"
+      JOIN "RentalContract" c ON c."id" = i."rentalContractId"
+      JOIN "ReservationUnit" ru ON ru."id" = c."reservationUnitId"
+      WHERE m."assignedStaffUserId" = ${staffUserId}
+        AND (
+          (m."status" = 'ASSIGNED' AND c."status" = 'ACTIVE'
+            AND (m."storageUnitId" IS NULL OR m."storageUnitId" = ru."storageUnitId"))
+          OR (m."status" = 'COMPLETED' AND m."completedAt" IS NOT NULL
+            AND m."storageUnitSnapshot"->>'id' = ru."storageUnitId")
+        )
+        ${filter.storageUnitId ? Prisma.sql`AND ru."storageUnitId" = ${filter.storageUnitId}` : Prisma.empty}
+        ${filter.itemIds?.length ? Prisma.sql`AND i."id" IN (${Prisma.join(filter.itemIds)})` : Prisma.empty}
+    `);
+    const byUnit = new Map<string, string[]>();
+    for (const { itemId, unitId } of grants) {
+      const ids = byUnit.get(unitId) ?? [];
+      ids.push(itemId);
+      byUnit.set(unitId, ids);
+    }
+    const scope: Prisma.StoredItemWhereInput[] = Array.from(byUnit, ([unitId, ids]) => ({
+      id: { in: ids }, rentalContract: { reservationUnit: { storageUnitId: unitId } },
+    }));
+    if (this.unitStaff?.enabled()) scope.push({
+      rentalContract: { reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId, endedAt: null } } } } },
+    });
+    return scope.length ? { OR: scope } : null;
   }
 
   async create(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -146,12 +253,21 @@ export class StockMovementsService {
     return this.serializable(async (tx) => {
       const current = await this.lock(tx, id);
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới được hoàn tất phiếu.');
-      if (current.status === 'COMPLETED') return this.view(await tx.stockMovement.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
+      if (current.status === 'COMPLETED') {
+        const item = await tx.stockMovement.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
+        return this.staffView(item, await this.currentStaffItems(tx, actor.id, [item]));
+      }
       if (current.status !== 'ASSIGNED') throw new ConflictException('Chỉ phiếu ASSIGNED mới được hoàn tất.');
       const contract = await tx.rentalContract.findUnique({ where: { id: current.rentalContractId }, select: { status: true, reservationUnit: { select: { storageUnit: { select: this.unitSelect() } } } } });
       if (contract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng đã kết thúc; không thể thay đổi tồn hàng sau trả kho.');
       const lines = await tx.stockMovementLine.findMany({ where: { stockMovementId: current.id }, include: { storedItem: true }, orderBy: { id: 'asc' } });
       if (!lines.length) throw new ConflictException('Phiếu không có dòng hàng.');
+      if (lines.some(({ storedItem }) => storedItem.rentalContractId !== current.rentalContractId || storedItem.customerUserId !== current.customerUserId)) {
+        throw new ConflictException('Mặt hàng không thuộc khách thuê hoặc hợp đồng của phiếu.');
+      }
+      if (current.storageUnitId && current.storageUnitId !== contract.reservationUnit.storageUnit.id) {
+        throw new ConflictException('Kho của hợp đồng đã thay đổi. Vui lòng kiểm tra lại phiếu trước khi giao nhận.');
+      }
       const actual = this.actualLines(input.lines);
       if (actual.size !== lines.length || lines.some(line => !actual.has(line.id))) throw new BadRequestException('Cần nhập số lượng thực tế cho tất cả dòng hàng.');
       if (lines.some(line => actual.get(line.id) !== line.requestedQty) && !completionNote) throw new BadRequestException('Cần ghi chú lý do chênh lệch số lượng kiểm đếm.');
@@ -169,10 +285,11 @@ export class StockMovementsService {
     });
   }
 
-  private async page(base: Prisma.StockMovementWhereInput, query: ListQuery) {
+  private async page(base: Prisma.StockMovementWhereInput, query: ListQuery, staff?: PublicUser) {
     const where: Prisma.StockMovementWhereInput = { ...base, ...(query.rentalContractId ? { rentalContractId: query.rentalContractId } : {}), ...(query.status ? { status: query.status } : {}), ...(query.type ? { type: query.type } : {}), ...(query.search ? { OR: [{ movementCode: { contains: query.search, mode: 'insensitive' } }, { rentalContract: { contractCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {}) };
     const [total, items] = await Promise.all([this.prisma.stockMovement.count({ where }), this.prisma.stockMovement.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() })]);
-    return { page: query.page, limit: query.limit, total, items: items.map((item) => this.view(item)) };
+    const visible = staff ? await this.currentStaffItems(this.prisma, staff.id, items) : null;
+    return { page: query.page, limit: query.limit, total, items: items.map(item => visible ? this.staffView(item, visible) : this.view(item)) };
   }
 
   private matchingRetry(item: any, customerId: string, contractId: string, parsed: ReturnType<StockMovementsService['createInput']>) {
@@ -183,9 +300,47 @@ export class StockMovementsService {
   }
 
   private async find(id: string, extra: Prisma.StockMovementWhereInput) {
+    return this.view(await this.findRecord(id, extra));
+  }
+
+  private async findRecord(id: string, extra: Prisma.StockMovementWhereInput) {
     const item = await this.prisma.stockMovement.findFirst({ where: { AND: [{ OR: [{ id }, { movementCode: id }] }, extra] }, include: this.include() });
     if (!item) throw new NotFoundException('Không tìm thấy phiếu nhập/xuất hàng.');
-    return this.view(item);
+    return item;
+  }
+
+  private async currentStaffItems(db: Prisma.TransactionClient, staffId: string, rows: MovementRecord[]) {
+    const itemIds = [...new Set(rows.flatMap(row => this.validStaffLines(row).map(line => line.storedItemId)))];
+    if (!itemIds.length) return new Map<string, string>();
+    const scope = await this.staffInventoryScope(db, staffId, { itemIds });
+    if (!scope) return new Map<string, string>();
+    const items = await db.storedItem.findMany({
+      where: { id: { in: itemIds }, AND: [scope] },
+      select: { id: true, rentalContract: { select: { reservationUnit: { select: { storageUnitId: true } } } } },
+    });
+    return new Map(items.map(item => [item.id, item.rentalContract.reservationUnit.storageUnitId]));
+  }
+
+  private validStaffLines(item: MovementRecord) {
+    return item.lines.filter(({ storedItem }) => storedItem.customerUserId === item.customerUserId && storedItem.rentalContractId === item.rentalContractId);
+  }
+
+  private staffView(item: MovementRecord, visible: Map<string, string>) {
+    const valid = this.validStaffLines(item);
+    const result = this.view({ ...item, lines: valid });
+    const unitId = result.currentStorageUnit?.id;
+    const atCurrentUnit = (itemId: string) => !!unitId && visible.get(itemId) === unitId;
+    const showCurrentUnit = valid.some(line => atCurrentUnit(line.storedItemId));
+    return {
+      ...result,
+      currentStorageUnit: showCurrentUnit ? result.currentStorageUnit : null,
+      rentalContract: { id: item.rentalContract?.id, contractCode: item.rentalContract?.contractCode, status: item.rentalContract?.status },
+      lines: valid.map(line => ({
+        id: line.id, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note,
+        storedItem: { id: line.storedItem.id, itemCode: line.storedItem.itemCode, name: line.storedItem.name, unit: line.storedItem.unit,
+          balance: atCurrentUnit(line.storedItemId) ? line.storedItem.balance : null },
+      })),
+    };
   }
 
   private async lock(tx: Prisma.TransactionClient, id: string) {
@@ -197,8 +352,20 @@ export class StockMovementsService {
 
   private unitSelect() { return { id: true, unitNumber: true, floor: true, zone: true }; }
 
-  private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true, reservationUnit: { select: { storageUnit: { select: this.unitSelect() } } } } }, assignedStaff: { select: { id: true, fullName: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } }; }
-  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, storageUnit: item.locationRecordedAt && item.storageUnitId && item.unitCodeSnapshot ? { id: item.storageUnitId, unitNumber: item.unitCodeSnapshot, floor: item.floorSnapshot, zone: item.zoneSnapshot } : null, locationEvidence: item.locationRecordedAt ? 'RECORDED' : 'UNKNOWN_LEGACY', currentStorageUnit: item.rentalContract?.reservationUnit?.storageUnit ?? null, storageUnitAtCompletion: item.storageUnitSnapshot ?? null, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
+  private include() {
+    return {
+      customer: { select: { id: true, fullName: true, email: true, phone: true } },
+      rentalContract: { select: {
+        id: true, contractCode: true, status: true,
+        reservationUnit: { select: { storageUnit: { select: this.unitSelect() } } },
+      } },
+      assignedStaff: { select: { id: true, fullName: true, accountStatus: true } },
+      assignedBy: { select: { id: true, fullName: true } },
+      completedBy: { select: { id: true, fullName: true } },
+      lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true, customerUserId: true, rentalContractId: true } } }, orderBy: { id: 'asc' as const } },
+    };
+  }
+  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, storageUnit: item.locationRecordedAt && item.storageUnitId && item.unitCodeSnapshot ? { id: item.storageUnitId, unitNumber: item.unitCodeSnapshot, floor: item.floorSnapshot, zone: item.zoneSnapshot } : null, locationEvidence: item.locationRecordedAt ? 'RECORDED' : 'UNKNOWN_LEGACY', currentStorageUnit: item.rentalContract?.reservationUnit?.storageUnit ?? null, storageUnitAtCompletion: item.storageUnitSnapshot ?? null, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: { id: line.storedItem.id, itemCode: line.storedItem.itemCode, name: line.storedItem.name, unit: line.storedItem.unit, balance: line.storedItem.balance }, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
 
   private createInput(input: Record<string, unknown>, idempotencyKey?: string) {
     const contractId = this.requiredText(input.rentalContractId, 200, 'rentalContractId');

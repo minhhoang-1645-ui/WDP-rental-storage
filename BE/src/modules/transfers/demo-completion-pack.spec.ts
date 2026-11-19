@@ -9,11 +9,13 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
 import { ManagerService } from '../manager/manager.service.js';
 import { BookingService } from '../booking/booking.service.js';
+import { SupportService } from '../support/support.service.js';
 import { TransfersService } from './transfers.service.js';
 
 describe('Demo Completion Pack smoke', () => {
   const prisma = new PrismaService();
   const transfers = new TransfersService(prisma);
+  const support = new SupportService(prisma);
   const managerService = new ManagerService(prisma);
   const booking = new BookingService(prisma);
   const runId = randomUUID().slice(0, 8);
@@ -44,6 +46,8 @@ describe('Demo Completion Pack smoke', () => {
     const reservations = await prisma.reservation.findMany({ where: { reservationCode: { startsWith: prefix } }, select: { id: true } });
     const ids = reservations.map((item) => item.id);
     await prisma.transferRequest.deleteMany({ where: { reservationId: { in: ids } } });
+    await prisma.supportRequest.deleteMany({ where: { reservationId: { in: ids } } });
+    await prisma.maintenanceRequest.deleteMany({ where: { storageUnit: { unitNumber: { startsWith: prefix } } } });
     await prisma.rentalContract.deleteMany({ where: { reservationId: { in: ids } } });
     await prisma.invoice.deleteMany({ where: { reservationId: { in: ids } } });
     await prisma.reservationUnit.deleteMany({ where: { reservationId: { in: ids } } });
@@ -69,7 +73,8 @@ describe('Demo Completion Pack smoke', () => {
   }
 
   async function requested(fixture: Awaited<ReturnType<typeof activeRental>>) {
-    return transfers.create({ rentalContractId: fixture.contract.id, reason: 'UNIT_ISSUE' }, `${prefix}-transfer-${fixture.contract.id}`, manager);
+    const request = await support.createCustomer(fixture.customer as PublicUser, { reservationId: fixture.reservation.id, rentalContractId: fixture.contract.id, storageUnitId: fixture.source.id, category: 'UNIT_ISSUE', subject: 'Yêu cầu chuyển kho', description: 'Cần chuyển sang kho phù hợp.' }, `${prefix}-transfer-${fixture.contract.id}`);
+    return request.transfers[0];
   }
 
   it('requires an ACTIVE rental', async () => {
@@ -82,36 +87,36 @@ describe('Demo Completion Pack smoke', () => {
     const result = await transfers.list({ page: '1', limit: '10', status: 'REQUESTED', search: transfer.transferCode });
     expect(result).toMatchObject({ page: 1, limit: 10, total: 1 });
     expect(result.items[0]).toMatchObject({ id: transfer.id, status: 'REQUESTED' });
-    expect(await transfers.listForStaff({ search: transfer.transferCode })).toMatchObject({ total: 0, items: [] });
-    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager);
-    const staffResult = await transfers.listForStaff({ page: '1', limit: '10', status: 'APPROVED', search: transfer.transferCode });
+    expect(await transfers.listForStaff({ search: transfer.transferCode }, staff)).toMatchObject({ total: 0, items: [] });
+    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id, staffUserId: staff.id }, manager);
+    const staffResult = await transfers.listForStaff({ page: '1', limit: '10', status: 'APPROVED', search: transfer.transferCode }, staff);
     expect(staffResult).toMatchObject({ page: 1, limit: 10, total: 1 });
     expect(staffResult.items[0]).toMatchObject({ id: transfer.id, status: 'APPROVED' });
-    expect(await transfers.getForStaff(transfer.id)).toMatchObject({ id: transfer.id, status: 'APPROVED' });
+    expect(await transfers.getForStaff(transfer.id, staff)).toMatchObject({ id: transfer.id, status: 'APPROVED' });
   });
 
   it('rejects a destination with another StorageType', async () => {
     const fixture = await activeRental({ destinationTypeId: otherStorageTypeId }); const transfer = await requested(fixture);
-    await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager)).rejects.toThrow('cùng StorageType');
+    await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id, staffUserId: staff.id }, manager)).rejects.toThrow('Chưa bật lập phụ lục đổi loại');
   });
 
   it('rejects a destination with a future confirmed allocation', async () => {
     const fixture = await activeRental(); const transfer = await requested(fixture);
     const blocker = await activeRental();
     await prisma.reservationUnit.create({ data: { reservationId: blocker.reservation.id, storageUnitId: fixture.destination.id, plannedStartDate: new Date('2027-01-01T00:00:00.000Z'), plannedEndDate: new Date('2027-02-01T00:00:00.000Z') } });
-    await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager)).rejects.toThrow('trùng khoảng thuê');
+    await expect(transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id, staffUserId: staff.id }, manager)).rejects.toThrow('trùng khoảng thuê');
   });
 
   it('excludes an approved transfer RESERVED destination from booking availability', async () => {
     const fixture = await activeRental({ storageTypeId: reservedStorageTypeId }); const transfer = await requested(fixture);
-    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager);
+    await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id, staffUserId: staff.id }, manager);
     const availability = await booking.checkAvailability({ productId: reservedStorageTypeId, startDate: new Date().toISOString().slice(0, 10), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' });
     expect(availability.available).toBe(false); expect(await prisma.storageUnit.findUniqueOrThrow({ where: { id: fixture.destination.id } })).toMatchObject({ status: 'RESERVED' });
   });
 
   it('atomically moves OCCUPIED to AVAILABLE destination while preserving financial history', async () => {
     const fixture = await activeRental(); const beforeReservation = await prisma.reservation.findUniqueOrThrow({ where: { id: fixture.reservation.id } }); const beforeInvoice = await prisma.invoice.findUniqueOrThrow({ where: { id: fixture.invoice.id } });
-    const transfer = await requested(fixture); await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id }, manager); const completed = await transfers.complete(transfer.id, staff);
+    const transfer = await requested(fixture); await transfers.approve(transfer.id, { toStorageUnitId: fixture.destination.id, staffUserId: staff.id }, manager); const completed = await transfers.complete(transfer.id, staff, { recipientName: fixture.customer.fullName, returnedKeyCount: 1, deliveredKeyCount: 1, oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true });
     const [source, destination, oldAllocation, contract, afterReservation, afterInvoice] = await Promise.all([
       prisma.storageUnit.findUniqueOrThrow({ where: { id: fixture.source.id } }), prisma.storageUnit.findUniqueOrThrow({ where: { id: fixture.destination.id } }), prisma.reservationUnit.findUniqueOrThrow({ where: { id: fixture.allocation.id } }), prisma.rentalContract.findUniqueOrThrow({ where: { id: fixture.contract.id } }), prisma.reservation.findUniqueOrThrow({ where: { id: fixture.reservation.id } }), prisma.invoice.findUniqueOrThrow({ where: { id: fixture.invoice.id } }),
     ]);

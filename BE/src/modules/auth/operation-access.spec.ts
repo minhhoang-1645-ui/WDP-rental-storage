@@ -18,9 +18,10 @@ import { MemoryUserRepository } from '../users/user.repository.js';
 import type { AuthenticatedRequest } from './auth.types.js';
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { SupportService } from '../support/support.service.js';
+import { ReturnsService } from '../returns/returns.service.js';
 
 const workflows = [
-  ['reservations', ManagerReservationsController], ['inquiries', ManagerInquiriesController],
+  ['inquiries', ManagerInquiriesController],
   ['appointments', ManagerAppointmentsController],
   ['transfers', ManagerTransfersController], ['stock-movements', ManagerStockMovementsController],
   ['support-requests', ManagerSupportController], ['maintenance', ManagerMaintenanceController],
@@ -106,6 +107,60 @@ describe.each(['maintenance', 'support-requests'] as const)('%s assigned-work fi
     expect(model.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('Staff return and maintenance cross-links on detail reads', () => {
+  const staff = { id: 'staff-current', role: 'STAFF' as const, fullName: 'Current Staff', email: 'staff@example.test', phone: '' };
+  const stamp = new Date('2026-11-17T00:00:00Z');
+  const unit = { id: 'linked-unit', unitNumber: 'UNIT-01', status: 'MAINTENANCE', reservationUnits: [], storageType: { id: 'type' } };
+  const contract = { id: 'linked-contract', contractCode: 'CON-01', endDate: stamp, reservationUnit: { releasedAt: null } };
+  const maintenance = { id: 'maintenance', maintenanceCode: 'MNT-01' };
+  const returning = { id: 'return', returnCode: 'RET-01' };
+
+  it.each([staff.id, 'staff-other', null])('only exposes the linked maintenance case for matching assignment %s', async assignee => {
+    const findFirst = vi.fn(async () => ({
+      ...returning, assignedStaffUserId: staff.id, status: 'PENDING_SETTLEMENT',
+      requestedAt: stamp, physicallyReturnedAt: stamp, createdAt: stamp, updatedAt: stamp,
+      inspections: [{
+        id: 'inspection', result: 'ISSUE_FOUND', rentalContractId: contract.id, rentalContract: contract, storageUnit: unit,
+        maintenanceRequest: { ...maintenance, assignedStaffUserId: assignee },
+      }],
+      reservation: {
+        id: 'reservation', reservationCode: 'RES-01', startDate: stamp, endDate: stamp,
+        contracts: [contract], invoices: [], renewals: [],
+      },
+    }));
+    const view = await new ReturnsService({ returnRequest: { findFirst } } as never).getStaffReturn(returning.id, staff);
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: staff.id }) }));
+    expect(view.inspections[0].maintenance).toEqual(assignee === staff.id ? maintenance : undefined);
+  });
+
+  it.each([staff.id, 'staff-other', null])('only exposes the linked return for matching assignment %s', async assignee => {
+    const findFirst = vi.fn(async () => ({
+      ...maintenance, assignedStaffUserId: staff.id, status: 'COMPLETED', verifiedAt: stamp, verificationNote: 'Checked',
+      createdAt: stamp, updatedAt: stamp, storageUnit: unit,
+      returnInspection: { returnRequest: { ...returning, assignedStaffUserId: assignee } },
+    }));
+    const view = await new MaintenanceService({ maintenanceRequest: { findFirst } } as never).getStaff(maintenance.id, staff);
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: staff.id }) }));
+    expect('returnContext' in view ? view.returnContext : undefined).toEqual(assignee === staff.id ? { returnRequest: returning } : undefined);
+    expect(view).toMatchObject({ verifiedAt: stamp.toISOString(), verificationNote: 'Checked' });
+  });
+});
+
+it('tells the assigned support worker when a transfer order exists without revealing someone else’s order', async () => {
+  const staff = { id: 'staff-current', role: 'STAFF' as const, fullName: 'Current Staff', email: 'staff@example.test', phone: '' };
+  const stamp = new Date('2026-11-17T00:00:00Z');
+  const transfer = { id: 'other-transfer', status: 'REQUESTED', assignedStaffUserId: 'staff-other' };
+  const findFirst = vi.fn(async () => ({
+    id: 'support', assignedStaffUserId: staff.id, reservation: { id: 'reservation', reservationCode: 'RES-01' },
+    createdAt: stamp, updatedAt: stamp, transferRequests: [transfer],
+  }));
+  const service = new SupportService({ supportRequest: { findFirst } } as never);
+  expect(await service.getStaff('support', staff)).toMatchObject({ hasTransferOrder: true, transfers: [] });
+  transfer.status = 'REJECTED';
+  expect(await service.getStaff('support', staff)).toMatchObject({ hasTransferOrder: false, transfers: [] });
+});
+
 const guard = new RolesGuard(new Reflector());
 function context(controller: object, handler: object, role: string | undefined, path: string, method: string) {
   return {
@@ -115,6 +170,17 @@ function context(controller: object, handler: object, role: string | undefined, 
 }
 
 describe('Staff workflow ownership after role transfer', () => {
+  it('keeps reservation lookups read-only for Staff and reserves exception updates for Manager', () => {
+    const controller = ManagerReservationsController;
+    const get = Object.getOwnPropertyDescriptor(controller.prototype, 'get')!.value as object;
+    const update = Object.getOwnPropertyDescriptor(controller.prototype, 'updateStatus')!.value as object;
+    expect(Reflect.getMetadata('path', controller)).toContain('staff/management/reservations');
+    expect(guard.canActivate(context(controller, get, 'STAFF', '/api/staff/management/reservations/R01', 'GET'))).toBe(true);
+    expect(() => guard.canActivate(context(controller, update, 'STAFF', '/api/staff/management/reservations/R01/status', 'PATCH'))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(context(controller, update, 'ADMIN', '/api/manager/reservations/R01/status', 'PATCH'))).toThrow(ForbiddenException);
+    expect(guard.canActivate(context(controller, update, 'MANAGER', '/api/manager/reservations/R01/status', 'PATCH'))).toBe(true);
+  });
+
   for (const [resource, controller] of workflows) {
     it(`${resource}: has a Staff API alias and retains Manager assignment and transfers only workflow mutations`, () => {
       expect(Reflect.getMetadata('path', controller)).toContain(`staff/management/${resource}`);

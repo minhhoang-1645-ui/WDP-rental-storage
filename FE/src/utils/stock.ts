@@ -1,5 +1,33 @@
 import { isItemUnit } from './item-units';
-import type { StockDraftLine, StoredItem, StockMovement } from '../types/stock';
+import type { StockDraftLine, StockLine, StoredItem, StockMovement } from '../types/stock';
+
+const countFormat = new Intl.NumberFormat('vi-VN');
+
+export function stockLineSummary(lines: StockLine[], completed: boolean) {
+  if (lines.length === 0) return '';
+  const [first] = lines;
+  const quantity = (line: StockLine) => completed ? line.actualQty : line.requestedQty;
+  const firstQuantity = quantity(first);
+  const name = firstQuantity == null ? first.storedItem.name : `${first.storedItem.name} · ${countFormat.format(firstQuantity)} ${first.storedItem.unit}`;
+  if (lines.length === 1) return name;
+  const amounts = lines.map(quantity);
+  if (first.storedItem.unit && lines.every(line => line.storedItem.unit === first.storedItem.unit)
+    && amounts.every(amount => amount != null)) {
+    const total = amounts.reduce((sum, amount) => sum + amount, 0);
+    return `${lines.length} mặt hàng · ${countFormat.format(total)} ${first.storedItem.unit}`;
+  }
+  return `${name} (+${lines.length - 1} mặt hàng)`;
+}
+
+export function stockMovementLocation(row: StockMovement) {
+  if (row.status === 'COMPLETED') {
+    if (row.storageUnitAtCompletion?.unitNumber) return { unit: row.storageUnitAtCompletion, label: 'Kho khi giao nhận' };
+    if (row.storageUnit?.unitNumber) return { unit: row.storageUnit, label: 'Kho lúc yêu cầu' };
+    return { unit: row.currentStorageUnit, label: 'Kho hiện tại' };
+  }
+  if (row.currentStorageUnit?.unitNumber) return { unit: row.currentStorageUnit, label: 'Kho' };
+  return { unit: row.storageUnit, label: 'Kho lúc yêu cầu' };
+}
 
 export const stockQuantity = (value: unknown) => typeof value === 'string' && value.trim() !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 1000000;
 export function stockSchedule(value: string) {
@@ -35,7 +63,7 @@ export function stockCompleteInput(row: StockMovement, quantities: Record<string
     if (typeof raw !== 'string' || !raw.trim() || !Number.isSafeInteger(Number(raw)) || Number(raw) < 0 || Number(raw) > 1000000) throw new Error(`Nhập số lượng thực tế của ${line.storedItem.name}, từ 0 đến 1.000.000.`);
     const actualQty = Number(raw);
     if (actualQty !== line.requestedQty && !note.trim()) throw new Error('Cần ghi chú lý do chênh lệch số lượng kiểm đếm.');
-    if (row.type === 'OUT' && actualQty > line.storedItem.balance) throw new Error(`Không đủ tồn của ${line.storedItem.name}. Tải lại để kiểm tra số lượng mới nhất.`);
+    if (row.type === 'OUT' && (line.storedItem.balance == null || actualQty > line.storedItem.balance)) throw new Error(`Không đủ dữ liệu tồn hoặc số lượng tồn của ${line.storedItem.name}. Tải lại để kiểm tra.`);
     return { lineId: line.id, actualQty };
   }) };
 }

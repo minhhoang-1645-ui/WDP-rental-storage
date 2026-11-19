@@ -23,13 +23,13 @@ export class ManagerInquiriesController {
   @ApiOkResponse({ description: 'Danh sách có phân trang.', schema: { example: { page: 1, limit: 20, total: 1, items: [{ id: 'WDPQ-2026-AB12CD34', reference: 'WDPQ-2026-AB12CD34', requestType: 'INQUIRY', customer: { fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000' }, product: { id: 'sm-b12', name: 'Kho nhỏ B12' }, quantity: 1, startDate: '2026-11-01', endDateExclusive: '2027-02-01', status: 'PENDING_CONTACT', quote: { status: 'QUOTE_REQUIRED', grandTotal: null } }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
-  list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20') {
+  list(@Req() request: AuthenticatedRequest, @Query('page') pageInput = '1', @Query('limit') limitInput = '20') {
     const page = Number(pageInput);
     const limit = Number(limitInput);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new BadRequestException('page phải từ 1–100000, limit phải từ 1–100.');
     }
-    return this.bookingService.listManagerInquiries(page, limit);
+    return this.bookingService.listManagerInquiries(page, limit, request.user);
   }
 
   @Get(':id')
@@ -39,8 +39,8 @@ export class ManagerInquiriesController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu.' })
-  get(@Param('id') id: string) {
-    return this.bookingService.getManagerInquiry(id);
+  get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.bookingService.getManagerInquiry(id, request.user);
   }
 
   @Patch(':id')

@@ -54,4 +54,11 @@ describe('RV3 Manager report, no database writes', () => {
     expect(tx.invoice.aggregate).toHaveBeenCalledWith({ where: { status: 'PAID', paidAt: { not: null } }, _sum: { depositAmount: true } });
     expect(tx.depositSettlement.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: { status: { in: ['APPROVED', 'AWAITING_OUTSTANDING_PAYMENT'] }, refundedAt: null } }));
   });
+  it('counts decision work independently of the assignments it supersedes', async () => {
+    const { service, tx } = setup(); await service.report({});
+    expect(tx.damageClaim.count).toHaveBeenCalledWith({ where: { status: 'INVESTIGATING', staffFacts: { not: null } } });
+    expect(tx.damageClaim.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null }) });
+    expect(tx.supportRequest.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: 'ESCALATED', transferRequests: { none: { status: { in: ['REQUESTED', 'APPROVED', 'COMPLETED'] } } } }) });
+    expect(tx.maintenanceRequest.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: { in: ['OPEN', 'IN_PROGRESS'] } }) });
+  });
 });

@@ -4,6 +4,10 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 export const operationalAssignee = { id: true, fullName: true, role: true, accountStatus: true } as const;
 
+export function responsibleUnit(staffUserId: string): Prisma.StorageUnitWhereInput {
+  return { staffAssignments: { some: { staffUserId, endedAt: null } } };
+}
+
 export function assertTaskAssignee(actor: PublicUser, assignedStaffUserId: string | null | undefined) {
   if (actor.role !== 'STAFF' || assignedStaffUserId !== actor.id) {
     throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý công việc này.');

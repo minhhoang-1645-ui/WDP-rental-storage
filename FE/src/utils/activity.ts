@@ -58,7 +58,7 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === 'ADMIN') return [{ kind: 'account-notices', path: '/admin/audit-events?category=ACCOUNT_NOTICES', title: 'Thông báo quản trị' }];
   const kinds = role === 'CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'STAFF' ? ['damage-claims', 'reservations', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
+    : role === 'STAFF' ? ['damage-claims', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
       : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'appointments', 'returns', 'transfers', 'renewals', 'invoices', 'deposit-settlements'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';
@@ -102,7 +102,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
   for (const source of activitySources(role)) for (const row of data[source.kind] ?? []) {
     const get = (path: string) => activityText(row, path), kind = source.kind, status = get('status') || get('accountStatus'), id = get('id');
     if (!id) continue;
-    if (role === 'STAFF' && needsStaffAssignment(kind) && !isAssignedStaffWork(kind, row, userId)) continue;
+    if (role === 'STAFF' && needsStaffAssignment(kind) && !isAssignedStaffWork(kind, row, userId)
+      && !(status === 'COMPLETED' && get('completedBy.id') === userId && !get('assignedStaff.id'))) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
     const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
     let title = source.title, message = '', action = false, priority = 2;
@@ -226,7 +227,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     if (context.length) message = context.join(' · ') + '. ' + message;
     if (action) priority = 1;
     if (action && (row.priority === 'HIGH' || status === 'ESCALATED' || status === 'PENDING_VERIFICATION')) priority = 0;
-    const at = ['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'updatedAt', 'approvedAt', 'rejectedAt', 'submittedAt', 'requestedAt', 'createdAt', 'terms.acceptedAt', 'appendix.acceptedAt', 'transfers.0.updatedAt', 'transfers.0.approvedAt', 'transfers.0.completedAt'].map(get).filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
+    const at = [get('activityUpdatedAt') || get('updatedAt'), ...['completedAt', 'verifiedAt', 'reviewedAt', 'resolvedAt', 'confirmedAt', 'assignedAt', 'approvedAt', 'rejectedAt', 'submittedAt', 'requestedAt', 'createdAt', 'terms.acceptedAt', 'appendix.acceptedAt', 'transfers.0.updatedAt', 'transfers.0.approvedAt', 'transfers.0.completedAt'].map(get)].filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] || '';
     const fingerprint = JSON.stringify([code, status, title, message, get('assignedStaff.id'), get('assignedStaff.fullName'), get('balanceDue'), get('amountPaid'), get('expiresAt'), get('resolutionNote'), get('rejectionReason'), get('requestedEndDate'), get('endDate'), get('scheduledAt'), get('completionNote'), get('workNote'), get('priority'), get('role'), get('fullName'), get('storageUnit.id'), get('storageUnit.unitCode'), get('unit.id'), get('unit.unitCode')]);
     const entryId = `${kind}:${id}`, token = activityHash(`${entryId}:${fingerprint}`);
     result.push({ id: entryId, token, kind, code, title, message, web, mobile, action, priority, at });

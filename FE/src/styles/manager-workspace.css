@@ -271,3 +271,57 @@
 @media (max-width: 720px) {
   .workspace-themed[data-workspace-role="manager"] .manager-task-list .portal-search { flex-basis: 100%; max-width: none; }
 }
+
+/* Manager assignments and physical unit screens. */
+.manager-assignment-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.manager-assignment-tabs button[aria-pressed="true"] { border-color: var(--workspace-primary); background: var(--workspace-selected); color: var(--workspace-primary); }
+.workspace-themed[data-workspace-role="manager"] .manager-assignments .manager-task-list .staff-table-options { display: block; }
+.manager-assignment-filters { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.manager-assignments .manager-assignment-filters .portal-search { width: 100%; max-width: none; }
+.manager-assignment-filter-more { grid-column: 1 / -1; }
+.manager-assignment-filter-more > summary { cursor: pointer; width: fit-content; color: var(--workspace-primary); }
+.manager-assignment-filter-more > div { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; margin-top: 10px; }
+.manager-assign-trigger { display: block; margin-top: 4px; }
+.manager-unit-assignments-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 14px; }
+.manager-unit-assignments-toolbar .portal-search { flex: 1 1 16rem; max-width: 420px; }
+.manager-unit-assignments .staff-table-options:empty { display: none; }
+.workspace-themed[data-workspace-role="manager"] .manager-assignments .manager-table td:last-child { width: auto; }
+.manager-assignments .manager-table-wrap, .manager-unit-list .manager-table-wrap, .manager-unit-detail .manager-table-wrap { max-width: 100%; }
+.workspace-themed .manager-unit-list .manager-table, .workspace-themed .manager-unit-detail .manager-table { min-width: 560px; }
+.manager-unit-detail .manager-section { margin-block: 0 16px; }
+.manager-unit-detail .manager-table td small { display: block; margin-top: 4px; }
+.manager-unit-detail .record-page-meta { overflow-wrap: anywhere; }
+.workspace-themed[data-workspace-role="manager"] .manager-unit-list .staff-table-options > .portal-search { flex: 1 1 145px; max-width: none; min-width: 0; }
+.manager-unit-list .staff-table-options > .field-label:not(.portal-search) { flex: 0 1 120px; min-width: 0; }
+.manager-unit-list .staff-table-options select { min-width: 0; text-overflow: ellipsis; }
+.workspace-themed[data-workspace-role="manager"] .manager-unit-list .manager-task-list .manager-table td:last-child { width: auto; }
+.manager-unit-list .record-code-value { font-weight: 600; color: var(--workspace-text); }
+.manager-unit-detail .manager-section .manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workspace-themed .manager-unit-list .manager-status.is-occupied, .workspace-themed .manager-unit-detail .manager-status.is-occupied { color: var(--report-rent); }
+.workspace-themed .manager-unit-list .manager-status.is-available, .workspace-themed .manager-unit-detail .manager-status.is-available { color: var(--report-received); }
+.workspace-themed .manager-unit-list .manager-status.is-reserved, .workspace-themed .manager-unit-detail .manager-status.is-reserved { color: var(--manager-reserved); }
+.workspace-themed .manager-unit-list .manager-status.is-maintenance, .workspace-themed .manager-unit-detail .manager-status.is-maintenance { color: var(--manager-maintenance); }
+.workspace-themed .portal-dialog.inventory-unit-dialog { width: min(680px, calc(100vw - 24px)); }
+.inventory-unit-dialog fieldset { display: grid; gap: 12px; min-width: 0; }
+.inventory-unit-dialog h3 { margin: 0; font-size: 1rem; }
+.inventory-unit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.inventory-type-preview { margin: 0; color: var(--workspace-secondary); font-size: .875rem; }
+.assignment-dialog .staff-assignee-picker { min-height: 0; }
+.assignment-dialog .assignment-staff-list { max-height: min(32dvh, 19rem); overflow: auto; overscroll-behavior: contain; padding: 4px; }
+.assignment-dialog .assignment-staff-option { grid-template-columns: auto minmax(0, 1fr) auto; padding: 6px 8px; }
+.assignment-dialog .assignment-staff-option > small { grid-column: auto; text-align: end; }
+@media (max-width: 650px) {
+  .manager-assignment-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .manager-assignment-filters > .portal-search { grid-column: 1 / -1; }
+  .inventory-unit-fields { grid-template-columns: minmax(0, 1fr); }
+  .workspace-themed[data-workspace-role="manager"] .manager-unit-list .staff-table-options > .portal-search { flex-basis: 100%; }
+}
+@media (min-height: 580px) {
+  .assignment-dialog :is(.portal-dialog-body, .portal-form, .staff-assignee-picker) { display: flex; flex-direction: column; min-height: 0; }
+  .assignment-dialog .portal-dialog-body { overflow: hidden; }
+  .assignment-dialog .portal-dialog-body > :not(.portal-form), .assignment-dialog .staff-assignee-picker > :not(fieldset) { flex-shrink: 0; }
+  .assignment-dialog .assignment-staff-list { min-height: 0; }
+}
+@media print {
+  .manager-unit-detail .record-disclosure::details-content { content-visibility: visible; }
+}

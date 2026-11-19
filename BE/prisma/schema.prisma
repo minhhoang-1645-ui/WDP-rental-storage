@@ -714,7 +714,9 @@ model RentalContract {
   transferRequests  TransferRequest[]
   storedItems       StoredItem[]
   stockMovements    StockMovement[]
+  renewals          RenewalRequest[]
 
+  @@unique([id, reservationId])
   @@index([reservationId, status])
   @@index([status, createdAt])
   @@index([termsAcceptedByUserId, termsAcceptedAt])
@@ -1172,6 +1174,8 @@ model RenewalRequest {
   renewalCode       String             @unique
   reservationId     String
   reservation       Reservation        @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  rentalContractId  String?
+  rentalContract    RentalContract?    @relation(fields: [rentalContractId, reservationId], references: [id, reservationId], onDelete: Restrict)
   status            RenewalStatus      @default(PENDING)
   previousEndDate   DateTime           @db.Date
   requestedEndDate  DateTime           @db.Date
@@ -1202,6 +1206,7 @@ model RenewalRequest {
   updatedAt         DateTime           @updatedAt
 
   @@index([reservationId, createdAt])
+  @@index([rentalContractId, status])
   @@index([status, createdAt])
   @@index([appendixAcceptedByUserId, appendixAcceptedAt])
 }

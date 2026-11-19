@@ -7,7 +7,7 @@ const browser = await launchTestBrowser(), errors = [], writes = [], checks = []
 async function setup(role, width = 1440, mobile = false) {
   const data = structuredClone(fixture);
   data['payment-submissions'] = [];
-  const rental = { ...data.rentals[0], reservationId: reservation.id, reservationReference: reservation.reference, startDate: '2026-10-01', effectiveEndDate: '2099-01-01', rentalState: 'ACTIVE', isOverdue: false, pendingRenewal: null, historicalPricing: { billingMode: 'MONTHLY' }, contracts: [{ ...data.contracts[0], unit }], billingSummary: { totalInvoiced: 1000000, totalPaid: 0, totalOutstanding: 1000000, nextInvoice: null } };
+  const rental = { ...data.rentals[0], reservationId: reservation.id, reservationReference: reservation.reference, startDate: '2026-10-01', effectiveEndDate: '2099-01-01', rentalState: 'ACTIVE', isOverdue: false, pendingRenewal: null, historicalPricing: { billingMode: 'MONTHLY' }, contracts: [{ ...data.contracts[0], endDate: '2099-01-01', unit: { ...unit, status: 'OCCUPIED' } }], billingSummary: { totalInvoiced: 1000000, totalPaid: 0, totalOutstanding: 1000000, nextInvoice: null } };
   data.rentals = [rental, { ...rental, reservationId: 'other-reservation', reservationReference: 'OTHER-RES', contracts: [{ ...rental.contracts[0], id: 'other-contract', unit: { ...unit, unitCode: 'OTHER-UNIT' } }] }];
   data.contracts = [data.contracts[0], { ...data.contracts[0], id: 'other-contract', contractCode: 'OTHER-CONTRACT', reservation: { ...reservation, id: 'other-reservation', reference: 'OTHER-RES' } }];
   data.invoices = [{ ...data.invoices[0], invoiceCode: 'SCOPE-INVOICE', reservation }, { ...data.invoices[0], id: 'other-invoice', invoiceCode: 'OTHER-INVOICE', reservation: { ...reservation, id: 'other-reservation', reference: 'OTHER-RES' } }];
@@ -54,10 +54,11 @@ try {
     await app.page.waitForFunction(id => [...document.querySelectorAll('select')].some(select => select.value === id), reservation.id);
     await app.goto('/customer/transfers?reservation=' + reservation.id);
     await app.page.waitForFunction(reference => document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value') === reference, reservation.reference);
-    await app.goto('/customer/returns?reservation=' + reservation.id);
+    const contractId = app.data.rentals[0].contracts[0].id;
+    await app.goto('/customer/returns?contract=' + encodeURIComponent(contractId) + '&early=1');
     await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).waitFor();
-    await app.page.waitForFunction(id => document.querySelector('[role=combobox][aria-label="Kho muốn trả sớm"]')?.getAttribute('data-value') === id, reservation.id);
-    assert.equal(await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).getAttribute('data-value'), reservation.id);
+    await app.page.waitForFunction(id => document.querySelector('[role=combobox][aria-label="Kho muốn trả sớm"]')?.getAttribute('data-value') === id, contractId);
+    assert.equal(await app.page.getByLabel('Kho muốn trả sớm', { exact: true }).getAttribute('data-value'), contractId);
     await app.goto('/customer/stock-movements?rentalContractId=contract-id');
     await app.page.getByRole('button', { name: 'Tạo phiếu nhập / xuất', exact: true }).click();
     await app.page.locator('input[type=radio][value="contract-id"]:checked').waitFor();

@@ -15,12 +15,12 @@ export class CustomerReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Gửi yêu cầu trả toàn bộ rental', description: 'Chỉ từ effective endDate trở đi. Tạo inspection PENDING cho từng contract/unit; không release kho và không kết thúc contract.' })
+  @ApiOperation({ summary: 'Gửi yêu cầu trả kho theo hợp đồng', description: 'Tạo một lượt kiểm tra cho hợp đồng được chọn. Trả trước hạn cần được quản lý chấp thuận.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'return-wdp-ab12cd34' })
-  @ApiBody({ type: CreateReturnRequestDto, examples: { standard: { value: { reservationId: 'WDP-2026-AB12CD34', note: 'Đã dọn hết đồ khỏi kho.' } } } })
-  @ApiCreatedResponse({ schema: { example: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'REQUESTED', reservation: { reference: 'WDP-2026-AB12CD34', quantity: 2, effectiveEndDate: '2027-05-10' }, inspectionSummary: { total: 2, pending: 2, passed: 0, issues: 0 } } } })
+  @ApiBody({ type: CreateReturnRequestDto, examples: { standard: { value: { reservationId: 'WDP-2026-AB12CD34', rentalContractId: 'WDP-2026-AB12CD34-C01', note: 'Đã dọn hết đồ khỏi kho.' } } } })
+  @ApiCreatedResponse({ schema: { example: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'REQUESTED', reservation: { reference: 'WDP-2026-AB12CD34', quantity: 1, effectiveEndDate: '2027-05-10' }, inspectionSummary: { total: 1, pending: 1, passed: 0, issues: 0 } } } })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
-  @ApiConflictResponse({ description: 'RETURN_BEFORE_END_DATE_NOT_SUPPORTED, unresolved renewal, active return hoặc rental không còn đủ ACTIVE/OCCUPIED.' })
+  @ApiConflictResponse({ description: 'Đề nghị trả sớm chưa được duyệt, còn công nợ, công việc xung đột hoặc đã có yêu cầu trả cho hợp đồng.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
   @ApiNotFoundResponse({ description: 'Reservation không tồn tại hoặc không thuộc Customer.' })

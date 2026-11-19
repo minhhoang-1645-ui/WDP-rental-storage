@@ -1,9 +1,8 @@
 import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
-import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
+import { assertTransferIntakeAvailable, createLinkedTransfer, isTransferSubject } from './transfer-intake.js';
 import { Optional } from '@nestjs/common';
 import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessToday } from '../../business-date.js';
@@ -12,7 +11,6 @@ import { SigningOtpService, signedEnvelope, signatureVerification } from '../sig
 import { snapshotHash, validateSignature } from '../contracts/signature.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const reasons = ['UNIT_ISSUE', 'FACILITY_EQUIPMENT_FAILURE', 'OPERATIONAL_RELOCATION', 'OTHER'] as const;
 const statuses = ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] as const;
 
 @Injectable()
@@ -63,58 +61,28 @@ export class TransfersService {
     return this.getCustomerOrder(customer, row.id);
   }
 
-  async create(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    const rentalContractId = this.text(input.rentalContractId, 'rentalContractId');
-    const reason = input.reason;
-    if (!reasons.includes(reason as never)) throw new BadRequestException('Transfer reason không hợp lệ.');
-    const idempotencyKey = this.key(key);
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên gửi đề nghị chuyển kho.');
-    const supportRequestId = typeof input.supportRequestId === 'string' && input.supportRequestId.trim() ? input.supportRequestId.trim() : null;
-    try {
-      return await this.serializable(async tx => {
-        const duplicate = await tx.transferRequest.findUnique({ where: { idempotencyKey }, include: { rentalContract: { select: { contractCode: true } } } });
-        if (duplicate) {
-          if (duplicate.requestedByUserId !== actor.id || duplicate.reason !== reason ||
-              ![duplicate.rentalContractId, duplicate.rentalContract.contractCode].includes(rentalContractId) ||
-              duplicate.supportRequestId !== supportRequestId) {
-            throw new ConflictException('Idempotency-Key đã được dùng.');
-          }
-          return { id: duplicate.id };
-        }
-        const contract = await tx.rentalContract.findFirst({
-          where: { OR: [{ id: rentalContractId }, { contractCode: rentalContractId }] },
-          include: { reservationUnit: { include: { storageUnit: true } } },
-        });
-        if (!contract) throw new NotFoundException('Không tìm thấy RentalContract.');
-        if (contract.status !== 'ACTIVE') throw new ConflictException('Transfer yêu cầu RentalContract ACTIVE.');
-        if (contract.reservationUnit.releasedAt || contract.reservationUnit.storageUnit.status !== 'OCCUPIED') {
-          throw new ConflictException('Transfer yêu cầu unit nguồn đang OCCUPIED và allocation chưa release.');
-        }
-        if (supportRequestId) {
-          await tx.$queryRaw(Prisma.sql`SELECT id FROM "SupportRequest" WHERE id = ${supportRequestId} FOR UPDATE`);
-          const support = await tx.supportRequest.findUnique({ where: { id: supportRequestId }, select: { reservationId: true, rentalContractId: true, storageUnitId: true, assignedStaffUserId: true, subject: true } });
-          if (!support || support.reservationId !== contract.reservationId || support.subject === EARLY_RETURN_SUBJECT ||
-              support.rentalContractId && support.rentalContractId !== contract.id ||
-              support.storageUnitId && support.storageUnitId !== contract.reservationUnit.storageUnitId) {
-            throw new BadRequestException('Hồ sơ hỗ trợ không hợp lệ cho kho này.');
-          }
-          assertTaskAssignee(actor, support.assignedStaffUserId);
-        } else {
-          const unitId = contract.reservationUnit.storageUnitId;
-          await tx.$queryRaw(Prisma.sql`SELECT id FROM "StorageUnit" WHERE id = ${unitId} FOR UPDATE`);
-          const responsibility = await this.unitStaff?.resolveStaff(tx, [unitId]);
-          assertTaskAssignee(actor, responsibility?.staffUserId);
-        }
-        return tx.transferRequest.create({ data: {
-          transferCode: this.code(), reservationId: contract.reservationId, rentalContractId: contract.id,
-          fromStorageUnitId: contract.reservationUnit.storageUnitId, fromReservationUnitId: contract.reservationUnitId,
-          supportRequestId, reason: reason as (typeof reasons)[number], requestedByUserId: actor.id, idempotencyKey,
-        }, select: { id: true } });
-      }, 'Hồ sơ vừa thay đổi. Tải lại trước khi gửi đề nghị.');
-    } catch (error) {
-      if (this.prismaCode(error, 'P2002')) throw new ConflictException('Contract đã có Transfer đang xử lý hoặc Idempotency-Key đã được dùng.');
-      throw error;
-    }
+  async create(_input: Record<string, unknown>, _key: string | undefined, _actor: PublicUser) {
+    throw new ForbiddenException('Chỉ khách hàng gửi yêu cầu chuyển kho qua hồ sơ thuê.');
+  }
+
+  async intakeLegacy(id: string, actor: PublicUser) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý tiếp nhận yêu cầu chuyển kho cũ.');
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${id} FOR UPDATE`);
+      const support = await tx.supportRequest.findUnique({ where: { id }, include: { transferRequests: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } } } });
+      if (!support || !isTransferSubject(support.subject)) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho của khách.');
+      if (support.transferRequests[0]) return support.transferRequests[0];
+      if (support.status === 'RESOLVED') throw new ConflictException('Yêu cầu đã được xử lý.');
+      const contracts = await tx.rentalContract.findMany({
+        where: { reservationId: support.reservationId, reservation: { customerId: support.customerUserId, status: 'CONFIRMED' },
+          ...(support.rentalContractId ? { id: support.rentalContractId } : {}), status: 'ACTIVE', endDate: { gt: this.today() },
+          reservationUnit: { releasedAt: null, storageUnit: { status: 'OCCUPIED' }, ...(support.storageUnitId ? { storageUnitId: support.storageUnitId } : {}) } },
+        include: { reservationUnit: true }, take: 2,
+      });
+      if (contracts.length !== 1) throw new ConflictException('Không xác định được một hợp đồng đang thuê khớp với yêu cầu cũ.');
+      await assertTransferIntakeAvailable(tx, support.reservationId, contracts[0].id);
+      return createLinkedTransfer(tx, contracts[0], support);
+    }, 'Yêu cầu vừa thay đổi. Tải lại trước khi tiếp nhận.');
   }
 
   async list(query: Record<string, unknown>) {
@@ -134,6 +102,7 @@ export class TransfersService {
       ...(search ? { OR: [
         { transferCode: { contains: search, mode: 'insensitive' } },
         { reservation: { reservationCode: { contains: search, mode: 'insensitive' } } },
+        ...(assignedStaffUserId ? [{ reservation: { customer: { fullName: { contains: search, mode: 'insensitive' as const } } } }] : []),
         { rentalContract: { contractCode: { contains: search, mode: 'insensitive' } } },
         { fromStorageUnit: { unitNumber: { contains: search, mode: 'insensitive' } } },
         { toStorageUnit: { unitNumber: { contains: search, mode: 'insensitive' } } },
@@ -219,14 +188,18 @@ export class TransfersService {
   async approve(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được duyệt chuyển kho.');
     const toStorageUnitId = this.text(input.toStorageUnitId, 'toStorageUnitId');
+    const staffId = managerAssignmentInput(actor, input);
     return this.serializable(async (tx) => {
       const identity = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, select: { id: true } });
       if (!identity) throw new NotFoundException('Không tìm thấy TransferRequest.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
+      if (['APPROVED', 'COMPLETED'].includes(current.status) && current.approvedByUserId === actor.id
+        && current.toStorageUnitId === toStorageUnitId && current.assignedStaffUserId === staffId) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
-      if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
+      if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromReservationUnit?.releasedAt || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
+      await assertActiveAssignee(tx, staffId);
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
@@ -246,7 +219,7 @@ export class TransfersService {
       const targetAllocation = await tx.reservationUnit.create({ data: { reservationId: current.reservationId, storageUnitId: destination.id, plannedStartDate: start, plannedEndDate: end } });
       const reserved = await tx.storageUnit.updateMany({ where: { id: destination.id, status: 'AVAILABLE' }, data: { status: 'RESERVED' } });
       if (reserved.count !== 1) throw new ConflictException('Unit đích vừa được sử dụng bởi thao tác khác.');
-      const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'APPROVED', toStorageUnitId: destination.id, toReservationUnitId: targetAllocation.id, approvedByUserId: actor.id, approvedAt: new Date(), ...(commercialSnapshot ? { commercialSnapshot } : {}) }, include: this.include() });
+      const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'APPROVED', toStorageUnitId: destination.id, toReservationUnitId: targetAllocation.id, approvedByUserId: actor.id, assignedStaffUserId: staffId, approvedAt: new Date(), ...(commercialSnapshot ? { commercialSnapshot } : {}) }, include: this.include() });
       return this.toTransfer(updated);
     }, 'Không thể duyệt Transfer do xung đột đồng thời.');
   }
@@ -323,8 +296,8 @@ export class TransfersService {
     if (!transfer.supportRequestId) return;
     const support = await tx.supportRequest.findUnique({ where: { id: transfer.supportRequestId } });
     if (!support || support.reservationId !== transfer.reservationId || (support.rentalContractId && support.rentalContractId !== transfer.rentalContractId)) throw new ConflictException('Yêu cầu gốc không khớp hợp đồng chuyển kho.');
-    const subject = support.subject.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
-    if (!subject.includes('chuyen kho') && support.resolutionType !== 'TRANSFER_RECOMMENDED') return;
+    const transferSubject = isTransferSubject(support.subject);
+    if (!transferSubject && support.resolutionType !== 'TRANSFER_RECOMMENDED') return;
     if (support.status === 'RESOLVED' && support.resolutionType !== 'TRANSFER_RECOMMENDED') return;
     const resolutionNote = `Đã hoàn tất chuyển kho từ ${transfer.fromStorageUnit.unitNumber} sang ${transfer.toStorageUnit.unitNumber}. Lệnh ${transfer.transferCode}, hợp đồng ${transfer.rentalContract.contractCode}.`;
     await tx.supportRequest.updateMany({
@@ -334,27 +307,37 @@ export class TransfersService {
   }
 
   private include(includeAssignee = true): Prisma.TransferRequestInclude { return {
-    reservation: { select: { id: true, reservationCode: true, startDate: true, endDate: true, quoteSnapshot: true } },
+    reservation: { select: { id: true, reservationCode: true, startDate: true, endDate: true, quoteSnapshot: true, customer: { select: { fullName: true } } } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true } },
+    fromReservationUnit: { select: { releasedAt: true } },
     fromStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { activeKey: { not: null } }, select: { id: true, maintenanceCode: true, status: true, assignedStaffUserId: true }, take: 1 } } },
     toStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } } } },
     ...(includeAssignee ? { assignedStaff: { select: operationalAssignee } } : {}),
     requestedBy: { select: { id: true, fullName: true, role: true } }, approvedBy: { select: { id: true, fullName: true, role: true } }, completedBy: { select: { id: true, fullName: true, role: true } },
-    supportRequest: { select: { id: true, supportCode: true, status: true, resolutionType: true, assignedStaffUserId: true } },
+    supportRequest: { select: { id: true, supportCode: true, status: true, resolutionType: true, assignedStaffUserId: true, subject: true, description: true } },
   }; }
   private toTransfer(record: any, { staffId, customer = false }: { staffId?: string; customer?: boolean } = {}) {
     const support = record.supportRequest;
     const maintenance = record.fromStorageUnit.maintenanceRequests?.[0];
-    return { id: record.id, transferCode: record.transferCode, status: record.status, rejectionReason: record.rejectionReason ?? null, handoverReport: record.handoverReport ?? null, ...(customer ? {} : { assignedStaff: record.assignedStaff }), reason: record.reason, commercial: record.commercialSnapshot ? { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
-  private unit(unit: any) { return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType }; }
+    return { id: record.id, transferCode: record.transferCode, status: record.status, rejectionReason: record.rejectionReason ?? null, handoverReport: record.handoverReport ?? null, ...(customer ? {} : { assignedStaff: record.assignedStaff }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId)), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId)) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
+  private unit(unit: any, includeLocation = false) { return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType, ...(includeLocation ? { floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position } : {}) }; }
   private text(value: unknown, label: string) { if (typeof value !== 'string' || !value.trim()) throw new BadRequestException(`${label} là bắt buộc.`); return value.trim(); }
-  private key(value: string | undefined) { const key = value?.trim() ?? ''; if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự.'); return key; }
   private integer(value: unknown, fallback: number, max: number, label: string) { if (value === undefined) return fallback; const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) throw new BadRequestException(`${label} không hợp lệ.`); return parsed; }
   private today() { return businessToday(); }
   private iso(value: Date) { return value.toISOString().slice(0, 10); }
-  private code() { return `WDP-TRF-${randomBytes(5).toString('hex').toUpperCase()}`; }
   private prismaCode(error: unknown, code: string) { return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code; }
-  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, message: string) { for (let attempt = 0; attempt < 3; attempt += 1) { try { return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 }); } catch (error) { if (this.prismaCode(error, 'P2034') && attempt < 2) continue; if (this.prismaCode(error, 'P2034')) throw new ConflictException(message); throw error; } } throw new ConflictException(message); }
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, message: string) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      } catch (error) {
+        if (this.prismaCode(error, 'P2034') && attempt < 2) continue;
+        if (this.prismaCode(error, 'P2034') || this.prismaCode(error, 'P2002')) throw new ConflictException(message);
+        throw error;
+      }
+    }
+    throw new ConflictException(message);
+  }
 }
 
 export function transferHandover(input: Record<string, unknown>) {

@@ -35,7 +35,7 @@ try {
     if (!records[resource]) return route.fulfill({ json: { items: [], total: 0, page: 1, limit: 20 } });
     assert.equal(url.pathname, `/api/staff/management/${resource}`);
     const query = url.searchParams;
-    requests.push({ resource, page: query.get('page'), priority: query.get('priority') });
+    requests.push({ resource, page: query.get('page'), limit: query.get('limit'), priority: query.get('priority') });
     const items = records[resource].filter(row =>
       row.assignedStaff?.id === staff.id &&
       (!query.get('priority') || row.priority === query.get('priority')));
@@ -51,6 +51,15 @@ try {
     await page.getByText('Trang 2 / 2', { exact: true }).waitFor();
     assert.equal(await table.locator('tbody tr').count(), 2);
     assert.doesNotMatch(await table.innerText(), /Nhân viên khác|Chưa phân công/);
+    const pageSize = page.getByLabel('Số dòng mỗi trang');
+    await pageSize.selectOption('5');
+    await page.getByText('Trang 1 / 3', { exact: true }).waitFor();
+    assert.equal(await table.locator('tbody tr').count(), 5);
+    assert(requests.some(request => request.resource === resource && request.page === '1' && request.limit === '5'));
+    await pageSize.selectOption('10');
+    await page.getByText('Trang 1 / 2', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Trang sau' }).click();
+    await page.getByText('Trang 2 / 2', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Trang trước' }).click();
     await page.getByText('Trang 1 / 2', { exact: true }).waitFor();
     assert.equal(await table.locator('tbody tr').count(), 10);

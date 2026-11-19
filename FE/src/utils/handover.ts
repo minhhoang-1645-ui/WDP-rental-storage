@@ -12,11 +12,11 @@ export function handoverWindow(contracts: { startDate: string; endDate: string }
   const start = starts.at(-1) ?? ''
   return { start, pickupStart: keyCollectionStartDate(start), end: ends[0] ?? '' }
 }
-export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: { contractStartDate?: string; contractEndDate?: string }[] = []) {
+export function handoverCompletionIssue(scheduledAt: unknown, now = Date.now(), contracts: { contractStartDate?: string; contractEndDate?: string }[] = [], leadDays = 3) {
   const planned = typeof scheduledAt === 'string' ? Date.parse(scheduledAt) : NaN
   if (!Number.isFinite(planned)) return 'Chưa có thời điểm bàn giao hợp lệ. Vui lòng kiểm tra lại lịch.'
   const today = vietnamLocalMinute(now).slice(0, 10)
-  if (contracts.some(contract => contract.contractStartDate && today < keyCollectionStartDate(contract.contractStartDate))) return 'Chỉ được bàn giao chìa khóa sớm tối đa 3 ngày trước ngày thuê.'
+  if (contracts.some(contract => contract.contractStartDate && today < keyCollectionStartDate(contract.contractStartDate, leadDays))) return `Chỉ được bàn giao chìa khóa sớm tối đa ${leadDays} ngày trước ngày thuê.`
   if (contracts.some(contract => contract.contractEndDate && today >= contract.contractEndDate)) return 'Không thể hoàn tất bàn giao sau ngày kết thúc thuê.'
   return ''
 }

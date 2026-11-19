@@ -65,13 +65,17 @@ describe('Scheduled invoices for approved rental closeout', () => {
   });
   it('keeps invoice pagination ownership-scoped and includes future invoices only for approved current periods', async () => {
     const approved = reservation(), stale = { ...reservation(), id: 'stale', supportRequests: [] };
-    const db = { reservation: { findMany: vi.fn().mockResolvedValue([approved, stale]) }, invoice: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) } };
+    const db = { invoice: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValueOnce([
+      { id: 'approved-invoice', reservation: approved }, { id: 'stale-invoice', reservation: stale },
+    ]).mockResolvedValue([]) } };
     const service = new BillingService(db as never, {} as never);
     await service.listCustomerInvoices(customer.id, 2, 5);
-    expect(db.reservation.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ invoices: { some: { reservation: { customerId: customer.id } } } }), select: closeoutReservationSelect }));
+    expect(db.invoice.findMany.mock.calls[0][0]).toMatchObject({ where: { AND: [
+      { reservation: { customerId: customer.id } }, expect.objectContaining({ type: 'RENEWAL' }), expect.any(Object),
+    ] }, select: { reservation: { select: closeoutReservationSelect } } });
     const where = db.invoice.count.mock.calls[0][0].where;
     expect(where.AND[0]).toEqual({ reservation: { customerId: customer.id } });
-    expect(where.AND[1].OR[1]).toEqual({ reservationId: { in: ['reservation'] } });
+    expect(where.AND[1].OR[1]).toEqual({ id: { in: ['approved-invoice'] } });
     expect(db.invoice.findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 5, take: 5 }));
   });
 });

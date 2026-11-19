@@ -1,8 +1,10 @@
+import { DetailCard } from '../../components/workspace/DetailRow';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { EarlyReturnFinancialNotice } from '../../components/customer/EarlyReturnFinancialNotice';
 import { moneyLabel } from '../../components/customer/CustomerPortalHelpers';
 import type { PendingReservation } from '../../types/booking';
 import { EntitySelect } from '../../components/EntitySelect';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
@@ -44,6 +46,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
   const { user } = useAuth();
   const [params] = useSearchParams();
   const focused = params.get('request');
+  const returnPath = useInternalListReturn((transferOnly ? '/customer/transfers' : '/customer/support'));
   const requests = usePaginatedResource<CustomerSupportRequest>(
     "/customer/support-requests?limit=100",
     user?.id ?? "",
@@ -104,8 +107,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
       item.reservation.reference === reservationId,
   );
 
-  const { items: visibleRequests, pagination } = useCustomerPagination(
-    (requests.data?.items ?? []).filter(item => (!transferOnly || isTransferRequest(item)) && (!focused || item.id === focused)),
+  const { items: visibleRequests, pagination } = useListPagination(
+    (requests.data?.items ?? []).filter(item => (transferOnly ? isTransferRequest(item) : focused || !isTransferRequest(item)) && (!focused || item.id === focused)),
   );
 
   const submit = async (event: FormEvent) => {
@@ -130,7 +133,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
         },
         true,
       );
-      setMessage({ kind: "ok", text: transferOnly ? 'Đã gửi yêu cầu chuyển kho. Nhân viên sẽ kiểm tra kho hiện tại và sắp xếp kho đích phù hợp.' : "Đã gửi yêu cầu hỗ trợ đến NestBox." });
+      setMessage({ kind: "ok", text: transferOnly ? 'Đã gửi yêu cầu chuyển kho. Yêu cầu đang chờ quản lý xem xét.' : "Đã gửi yêu cầu hỗ trợ đến NestBox." });
       setSubject(transferOnly ? 'Yêu cầu chuyển kho' : '');
       setDescription("");
       setContractId("");
@@ -156,7 +159,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
       <PortalPageHeader
         eyebrow={transferOnly ? 'Chuyển đổi kho' : 'Hỗ trợ'}
         title={transferOnly ? 'Yêu cầu chuyển kho' : 'Yêu cầu hỗ trợ'}
-        description={transferOnly ? 'Chọn hợp đồng và kho đang sử dụng, mô tả lý do để nhân viên kiểm tra và sắp xếp chuyển sang kho cùng loại.' : 'Gửi vấn đề gắn với yêu cầu đặt kho, kho hoặc hóa đơn và theo dõi tiến độ xử lý.'}
+        description={transferOnly ? 'Chọn hợp đồng và kho đang sử dụng, mô tả lý do để quản lý kiểm tra và chọn kho đích.' : 'Gửi vấn đề gắn với yêu cầu đặt kho, kho hoặc hóa đơn và theo dõi tiến độ xử lý.'}
         action={
           <button
             className="button-secondary"
@@ -349,7 +352,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             </div>
             <CircleHelp size={20} />
           </div>
-          {focused && <p className="customer-filter-notice"><Link to={transferOnly ? '/customer/transfers' : '/customer/support'}>Xem tất cả yêu cầu</Link></p>}
+          {focused && <p className="customer-filter-notice"><Link to={returnPath}>Xem tất cả yêu cầu</Link></p>}
           {requests.status === 401 ? (
             <CustomerSessionExpired />
           ) : requests.loading ? (
@@ -365,8 +368,9 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             </PortalEmpty>
           ) : (
             <div className="customer-card-list">
-              {visibleRequests.map((item) => { const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined; const transferLabel = transfer ? ({ REQUESTED: 'Chờ xác nhận kho mới', APPROVED: 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transfer.status] : undefined; return (
-                <article
+              {visibleRequests.map((item) => { const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined; const transferLabel = transfer ? ({ REQUESTED: 'Chờ quản lý xem xét', APPROVED: transfer.requiresAcceptance ? 'Đã duyệt · Chờ ký phụ lục' : 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string,string>)[transfer.status] : undefined; return (
+                <DetailCard
+                    detail={!focused ? { to: (transferOnly ? '/customer/transfers' : '/customer/support') + '?' + new URLSearchParams({ request: item.id }), label: `Xem yêu cầu ${item.supportCode}` } : undefined}
                   className="customer-record-card customer-record-card--compact customer-request-card"
                   key={item.id}
                 >
@@ -394,7 +398,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                   {!focused && <p className="customer-request-excerpt">{item.description}</p>}
                   <details className="customer-request-disclosure" open={focused ? true : undefined}><summary>Chi tiết và phản hồi</summary>
                   <p>{item.description}</p>
-                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
+                  {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.status === 'APPROVED' && transfer.requiresAcceptance && <Link to={`/customer/transfers?transfer=${encodeURIComponent(transfer.id)}`}>Xem và ký phụ lục</Link>}{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
                   {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
@@ -402,7 +406,7 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                     </p>
                   )}
                   </details>
-                </article>
+                </DetailCard>
               )})}
             </div>
           )}

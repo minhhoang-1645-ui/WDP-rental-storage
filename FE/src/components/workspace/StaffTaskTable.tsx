@@ -1,14 +1,11 @@
+import { DetailRow, type RowDetail } from './DetailRow';
 import { Ellipsis, SlidersHorizontal } from 'lucide-react';
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { InternalPagination, type InternalPaginationProps } from './InternalPagination';
+export { InternalPagination as StaffTaskPagination } from './InternalPagination';
 import { safeSessionStorage } from '../../services/browser-storage';
-import { staffTaskPageSizes } from '../../utils/internal-pagination';
 import { TableSkeleton } from '../LoadingSkeleton';
 
-export function StaffTaskPagination(props: InternalPaginationProps) {
-  return <InternalPagination {...props} pageSizes={staffTaskPageSizes} />;
-}
 
 export function TablePopover({ name, trigger, children }: { name: string; trigger: ReactNode; children: ReactNode }) {
   const id = useId();
@@ -32,11 +29,10 @@ export function TablePopover({ name, trigger, children }: { name: string; trigge
   </>;
 }
 
-export function StaffRowActions({ to, code, primary, onOpen, startLabel, detailLabel = 'Xem chi tiết' }: {
-  to: string; code: string; primary?: string; onOpen?: () => void; startLabel?: string; detailLabel?: string;
+export function StaffRowActions({ to, code, onOpen, startLabel, detailLabel = 'Xem chi tiết' }: {
+  to: string; code: string; onOpen?: () => void; startLabel?: string; detailLabel?: string;
 }) {
   return <div className="staff-table-actions">
-    {primary && <Link className="button-secondary" to={to} onClick={onOpen}>{primary}</Link>}
     <TablePopover name={`Thao tác ${code}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
       <Link to={to} onClick={onOpen}>{detailLabel}</Link>
       {startLabel && <Link to={to + '#staff-processing'} onClick={onOpen}>{startLabel}</Link>}
@@ -49,8 +45,8 @@ export type StaffColumn<T> = {
   sort?: { direction: 'ascending' | 'descending' | 'none'; toggle: () => void };
 };
 
-export function StaffTaskTable<T>({ title, columns, items, rowKey, emphasized, selected, toolbar, hideTable = false, loadingRows, preferenceScope = 'staff' }: {
-  title: string; columns: StaffColumn<T>[]; items: T[]; rowKey: (row: T) => string; emphasized?: (row: T) => boolean; selected?: (row: T) => boolean;
+export function StaffTaskTable<T>({ title, columns, items, rowKey, rowDetail, emphasized, selected, toolbar, hideTable = false, loadingRows, preferenceScope = 'staff' }: {
+  title: string; columns: StaffColumn<T>[]; items: T[]; rowKey: (row: T) => string; rowDetail?: (row: T) => RowDetail | undefined; emphasized?: (row: T) => boolean; selected?: (row: T) => boolean;
   toolbar?: ReactNode; hideTable?: boolean; loadingRows?: number; preferenceScope?: string;
 }) {
   const preference = `nestbox-${preferenceScope}-table-columns:${title}`;
@@ -74,9 +70,9 @@ export function StaffTaskTable<T>({ title, columns, items, rowKey, emphasized, s
         <thead><tr>{visible.map(column => <th key={column.key} scope="col" className={column.numeric ? 'table-number' : undefined} aria-sort={column.sort?.direction}>
           {column.sort ? <button type="button" className="staff-table-sort" onClick={column.sort.toggle}>{column.label} <span aria-hidden="true">{column.sort.direction === 'ascending' ? '↑' : column.sort.direction === 'descending' ? '↓' : '↕'}</span></button> : column.header ?? column.label}
         </th>)}</tr></thead>
-        <tbody>{items.map(row => <tr key={rowKey(row)} data-selected={selected?.(row) || undefined} className={emphasized?.(row) ? 'is-priority' : undefined}>
+        <tbody>{items.map(row => <DetailRow key={rowKey(row)} detail={rowDetail?.(row)} data-selected={selected?.(row) || undefined} className={emphasized?.(row) ? 'is-priority' : undefined}>
           {visible.map(column => <td key={column.key} className={column.numeric ? 'table-number' : undefined}>{column.cell(row)}</td>)}
-        </tr>)}</tbody>
+        </DetailRow>)}</tbody>
       </table>
     </div>}
   </div>;

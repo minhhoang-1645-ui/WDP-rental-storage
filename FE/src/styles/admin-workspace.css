@@ -194,32 +194,6 @@
   width: 44px;
 }
 
-.admin-accounts .manager-table tbody tr:has(.admin-account-link) {
-  position: relative;
-}
-
-.admin-accounts .admin-account-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.admin-accounts .admin-account-link:is(:hover, :focus-visible) {
-  color: var(--workspace-primary);
-  text-decoration: underline;
-}
-
-.admin-accounts .admin-account-link::after {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  content: '';
-}
-
-.admin-accounts .manager-table tbody :is(input[type="checkbox"], .staff-table-trigger) {
-  position: relative;
-  z-index: 2;
-}
-
 .admin-accounts input[type="checkbox"] {
   width: 17px;
   height: 17px;

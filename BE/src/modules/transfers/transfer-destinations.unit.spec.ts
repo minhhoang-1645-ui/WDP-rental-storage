@@ -45,7 +45,7 @@ describe('Transfer destination availability, without database writes', () => {
     expect((await app.service.destinations('transfer', {})).items.every(item => !item.eligible)).toBe(true);
     const tx = { $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue({ id: 'transfer' }), findUniqueOrThrow: vi.fn().mockResolvedValue(app.transfer) }, storageUnit: { findUnique: vi.fn() } };
     const service = new TransfersService({ $transaction: (operation: (value: unknown) => unknown) => operation(tx) } as never);
-    await expect(service.approve('transfer', { toStorageUnitId: 'free' }, { role: 'MANAGER' } as never)).rejects.toThrow('kho nguồn đã thay đổi');
+    await expect(service.approve('transfer', { toStorageUnitId: 'free', staffUserId: 'staff' }, { role: 'MANAGER' } as never)).rejects.toThrow('kho nguồn đã thay đổi');
     expect(tx.storageUnit.findUnique).not.toHaveBeenCalled();
   });
 });

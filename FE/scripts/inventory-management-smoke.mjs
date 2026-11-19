@@ -20,11 +20,16 @@ await context.route('**/*', async route => {
   if (request.method() !== 'GET') {
     writes.push({ path, method: request.method(), body: request.postDataJSON() });
     if (path === 'manager/storage-types/real-type') Object.assign(type, request.postDataJSON());
+    if (path === 'manager/units' && request.postDataJSON().position === 1) {
+      return route.fulfill({ status: 409, json: { message: 'Vị trí này đã có kho SM-A-001.' } });
+    }
+    if (path === 'manager/units') return send({ ...unit, unitNumber: 'SM-A-AUTO' });
     return send(path.includes('storage-types') ? type : unit);
   }
   if (path === 'booking/catalog') return send({ products: [{ ...type, monthlyPrice: type.monthlyRate, dimensions: '1,5 × 2 × 2,4 m', status: 'available' }], sizes: [{ id: 'small', name: 'Kho nhỏ' }], approvedDurations: [1, 3, 6, 12] });
   if (path === 'manager/storage-types') return send({ items: [type], facilities: [{ id: 'facility', code: 'FAC', name: 'Cơ sở chính' }], total: 1, page: 1, limit: 1 });
   if (path === 'manager/additional-services' || path === 'manager/additional-services/inventory') return send([]);
+  if (path === 'manager/unit-locations') return send({ floors: ['Tầng trệt', 'Tầng 1'], zones: ['A', 'B'] });
   if (path === 'manager/units/unit') return send(unit);
   return send({ items: path === 'manager/units' ? [unit] : [], total: path === 'manager/units' ? 1 : 0, page: 1, limit: 20 });
 });
@@ -95,15 +100,53 @@ try {
   assert.equal(await breadcrumb.innerText(), 'Danh sách kho');
   assert.equal(await unitLink.getAttribute('aria-current'), 'page');
   assert.equal(await catalogLink.getAttribute('aria-current'), null);
-  await page.getByRole('table', { name: 'Danh sách kho' }).getByText('SM-A-001', { exact: true }).waitFor();
+  const unitTable = page.getByRole('table', { name: 'Danh sách kho' });
+  await unitTable.getByText('SM-A-001', { exact: true }).waitFor();
+  for (const width of [1920, 1366, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 740 });
+    assert(await page.locator('.manager-unit-list').evaluate(section => {
+      const region = section.querySelector('.manager-table-wrap').getBoundingClientRect();
+      const footer = section.querySelector('.portal-pagination').getBoundingClientRect();
+      return Math.abs(region.width - section.clientWidth) <= 2 && footer.top >= region.bottom && document.documentElement.scrollWidth <= innerWidth + 1;
+    }), 'Unit table and pagination must stack at ' + width);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: /Sao chép mã kho SM-A-001/ }).click();
+  assert.equal(new URL(page.url()).pathname, '/manager/units');
+  const size = page.getByRole('combobox', { name: 'Số dòng mỗi trang' });
+  assert.deepEqual(await size.locator('option').allTextContents(), ['5', '10']);
+  assert.equal(await size.inputValue(), '10');
+  await size.selectOption('5');
+  await page.waitForURL(url => url.searchParams.get('limit') === '5');
+
+  const filteredUnits = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith('/manager/units') && ['search', 'status', 'floor', 'zone'].map(key => url.searchParams.get(key)).join('|') === 'SM-A|AVAILABLE|Trệt|A';
+  });
+  await page.getByRole('searchbox', { name: 'Tìm kiếm' }).fill('SM-A');
+  await page.getByRole('combobox', { name: 'Trạng thái' }).selectOption('AVAILABLE');
+  await page.getByLabel('Tầng', { exact: true }).fill('Trệt');
+  await page.getByLabel('Khu vực', { exact: true }).fill('A');
+  await filteredUnits;
   assert.equal(await page.getByRole('button', { name: 'Thêm loại kho', exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Thêm kho', exact: true }).click();
-  await selectChoice(page.getByLabel('Loại kho áp dụng', { exact: true }), 'real-type');
-  await page.getByLabel('Mã kho (tùy chọn)', { exact: true }).fill('SM-A-002');
-  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const addUnit = dialog.getByRole('button', { name: 'Thêm kho', exact: true });
+  await selectChoice(dialog.getByLabel('Loại kho áp dụng', { exact: true }), 'real-type');
+  assert.equal(await dialog.locator('input[name="unitNumber"]').count(), 0);
+  await dialog.getByLabel('Tầng', { exact: true }).selectOption('Tầng trệt');
+  await dialog.getByLabel('Khu', { exact: true }).selectOption('A');
+  await dialog.getByLabel('Hàng', { exact: true }).fill('1');
+  await dialog.getByLabel('Vị trí trong hàng', { exact: true }).fill('1');
+  await addUnit.click();
+  await dialog.getByRole('alert').getByText('Vị trí này đã có kho SM-A-001.').waitFor();
+  await dialog.getByLabel('Vị trí trong hàng', { exact: true }).fill('2');
+  await addUnit.click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(writes.at(-1).path, 'manager/units');
   assert.equal(writes.at(-1).body.storageTypeId, 'real-type');
+  assert(!Object.hasOwn(writes.at(-1).body, 'unitNumber'));
+  await page.getByText('Đã thêm kho SM-A-AUTO.', { exact: true }).waitFor();
   assert(!Object.hasOwn(writes.at(-1).body, 'status'));
 
   await page.goto(`${base}/manager/units/unit`);
@@ -111,13 +154,25 @@ try {
   assert.equal(await breadcrumb.innerText(), 'Danh sách kho');
   assert.equal(await unitLink.getAttribute('aria-current'), 'page');
   await page.getByRole('button', { name: 'Sửa thông tin kho', exact: true }).click();
-  await selectChoice(page.getByLabel('Khu', { exact: true }), '__new_location__');
+  await dialog.getByLabel('Khu', { exact: true }).selectOption('__new_location__');
   await page.getByLabel('Nhập khu mới', { exact: true }).fill('B');
-  await page.getByRole('button', { name: 'Lưu', exact: true }).click();
+  await page.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   assert.equal(writes.at(-1).path, 'manager/units/unit');
   assert.equal(writes.at(-1).body.zone, 'B');
   assert.equal(writes.at(-1).body.expectedUpdatedAt, version);
+  assert(!Object.hasOwn(writes.at(-1).body, 'unitNumber'));
+  unit.editLocked = true;
+  unit.history = [{ id: 'audit', action: 'UPDATE', actorName: 'Quản lý kho', createdAt: version }];
+  await page.getByRole('button', { name: 'Làm mới hồ sơ' }).click();
+  await page.getByText('Lịch sử xử lý', { exact: true }).click();
+  await page.getByText('Quản lý kho', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Sửa thông tin kho', exact: true }).click();
+  await dialog.getByText(/vị trí kho đã khóa/).waitFor();
+  assert(await dialog.getByRole('combobox', { name: 'Tầng', exact: true }).isDisabled());
+  assert.equal(await dialog.getByRole('button', { name: 'Lưu thay đổi' }).count(), 0);
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Menu tài khoản' }).click();
   await page.getByRole('button', { name: 'Chuyển sang giao diện tối' }).click();
   await page.keyboard.press('Escape');
@@ -145,7 +200,7 @@ try {
     page.getByRole('combobox', { name: 'Trạng thái' }).selectOption('true'),
   ]);
   assert.equal(await breadcrumb.innerText(), 'Kho đang thuê');
-  assert.equal(await writes.length, 4);
+  assert.equal(await writes.length, 5);
   assert.deepEqual(errors, []);
   console.log('PASS: Manager web create/edit type, price and physical unit; version payload; no manual status writes. All APIs mocked.');
 } catch (error) {

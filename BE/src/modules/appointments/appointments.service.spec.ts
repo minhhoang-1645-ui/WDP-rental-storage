@@ -220,6 +220,13 @@ describe('Appointment and Staff Handover V1', () => {
     const requested = await requestAppointment(created.id);
     await service.confirmAppointment(requested.id, staff);
     await makeAppointmentDue(created.id, requested.id);
+    const capture = { condition: 'Kho bình thường', inspected: true, identityVerified: true, accessDelivered: true };
+    const first = await service.recordUnitHandover(requested.id, requested.allocatedUnits[0].unitId, capture, staff);
+    expect(first.status).toBe('CONFIRMED');
+    expect(first.unitHandoverProgress).toHaveLength(1);
+    expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE' } })).toBe(0);
+    const second = await service.recordUnitHandover(requested.id, requested.allocatedUnits[1].unitId, capture, staff);
+    expect(second.unitHandoverProgress).toHaveLength(2);
     const completed = await service.completeHandover(requested.id, { note: 'Units handed over successfully', handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true } }, staff);
     expect(completed.status).toBe('COMPLETED');
     expect(completed.completedAt).not.toBeNull();
@@ -244,7 +251,8 @@ describe('Appointment and Staff Handover V1', () => {
     const allocation = await prisma.reservationUnit.findFirstOrThrow({ where: { reservationId: created.id } });
     await prisma.storageUnit.update({ where: { id: allocation.storageUnitId }, data: { status: 'MAINTENANCE' } });
     await expect(service.completeHandover(requested.id, {
-      handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true },
+      handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true,
+        unitChecks: requested.allocatedUnits.map(unit => ({ unitId: unit.unitId, condition: 'Kho bình thường', inspected: true })) },
     }, staff)).rejects.toBeInstanceOf(ConflictException);
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE' } })).toBe(0);
     expect((await prisma.handoverAppointment.findUniqueOrThrow({ where: { id: requested.id } })).status).toBe('CONFIRMED');

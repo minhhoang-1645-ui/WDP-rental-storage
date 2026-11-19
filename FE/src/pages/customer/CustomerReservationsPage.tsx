@@ -1,9 +1,10 @@
+import { DetailCard, DetailRow } from '../../components/workspace/DetailRow';
 
 import { ReservationPaymentSummary } from '../../components/customer/ReservationLifecycle';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { newestFirst, isJustCreated, lastCreatedKey } from '../../utils/record-identity';
 import { safeSessionStorage } from '../../services/browser-storage';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { label } from "../../components/manager/portal-data";
 import { CalendarDays, Filter, Plus, RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -36,7 +37,7 @@ export function CustomerReservationsPage() {
   const {
     items: visibleItems,
     pagination,
-  } = useCustomerPagination(
+  } = useListPagination(
     reservations.filter(item => (filter === 'ALL' || item.status === filter) && `${item.id} ${item.product.name}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))),
   );
   const statuses = Array.from(new Set(reservations.map((item) => item.status)));
@@ -131,7 +132,7 @@ export function CustomerReservationsPage() {
                   </thead>
                   <tbody>
                     {visibleItems.map((item) => (
-                      <tr key={item.id}>
+                      <DetailRow key={item.id} detail={{ to: `/customer/reservations/${encodeURIComponent(item.id)}`, label: `Xem đơn đặt kho ${item.id}` }}>
                         <td>
                           <Link
                             className="customer-table-reference"
@@ -168,14 +169,14 @@ export function CustomerReservationsPage() {
                           <ReservationStatus status={item.status} />
                         </td>
                         <td>{formatPortalDate(item.createdAt, true)}</td>
-                      </tr>
+                      </DetailRow>
                     ))}
                   </tbody>
                 </table>
               </div>
               <div className="customer-reservation-cards">
                 {visibleItems.map((item) => (
-                  <article key={item.id} className="customer-reservation-card">
+                  <DetailCard key={item.id} className="customer-reservation-card" detail={{ to: `/customer/reservations/${encodeURIComponent(item.id)}`, label: `Mở đơn đặt kho ${item.id}` }}>
                     <div className="customer-card-top">
                       <Link to={`/customer/reservations/${encodeURIComponent(item.id)}`}>
                         {item.product.name}
@@ -208,7 +209,7 @@ export function CustomerReservationsPage() {
                     >
                       Xem chi tiết
                     </Link>
-                  </article>
+                  </DetailCard>
                 ))}
               </div>
             </>

@@ -36,7 +36,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     fullName: 'Test Manager',
     email: `manager-${runId}@example.test`,
     phone: '0900000099',
-    role: 'STAFF',
+    role: 'MANAGER',
   };
 
   beforeAll(async () => {
@@ -227,9 +227,8 @@ describe('BookingService with PostgreSQL persistence', () => {
     expect(await prisma.rentalContract.count({ where: { reservation: { reservationCode: created.id } } })).toBe(2);
     expect(await prisma.invoice.count({ where: { reservation: { reservationCode: created.id } } })).toBe(1);
 
-    const cancelled = await service.updateManagerReservationStatus(created.id, { status: 'CANCELLED' }, manager);
-    expect(cancelled.status).toBe('CANCELLED');
-    expect(cancelled.allocatedUnits.every((unit) => unit.releasedAt !== null)).toBe(true);
+    await expect(service.updateManagerReservationStatus(created.id, { status: 'CANCELLED' }, manager)).rejects.toBeInstanceOf(ConflictException);
+    expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id }, releasedAt: null } })).toBe(2);
   });
 
   it('keeps the historical pricing snapshot immutable during Manager confirmation', async () => {

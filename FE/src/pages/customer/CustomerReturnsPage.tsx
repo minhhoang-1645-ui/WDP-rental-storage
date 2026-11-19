@@ -1,6 +1,8 @@
+import { DetailCard } from '../../components/workspace/DetailRow';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { EntitySelect } from '../../components/EntitySelect';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
@@ -27,8 +29,9 @@ import {
 } from "../../components/customer/CustomerPortalUi";
 import { ApiError } from "../../services/api";
 import { EarlyReturnPanel } from '../../components/customer/EarlyReturnPanel';
+import { Modal } from '../../components/manager/PortalUi';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
-import { isCurrentEarlyReturnApproval } from '../../utils/early-return';
+import { earlyReturnAppliesTo, isCurrentEarlyReturnApproval } from '../../utils/early-return';
 import { vietnamCalendarDate } from '../../utils/business-date';
 import { ReturnInventoryNotice } from '../../components/customer/ReturnInventoryNotice';
 import type {
@@ -38,18 +41,10 @@ import type {
   CustomerSupportRequest,
 } from "../../types/customer";
 
-function outstandingForReturn(rental: CustomerRental): number | null {
-  const value = rental.returnReadiness ? rental.returnReadiness.totalOutstanding : rental.paymentDetails?.totalOutstanding ?? rental.billingSummary?.totalOutstanding;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function isFullySettled(rental: CustomerRental) {
-  return outstandingForReturn(rental) === 0 && rental.returnReadiness?.canReturn !== false;
-}
-
 export function CustomerReturnsPage() {
   const { user } = useAuth();
   const [params] = useSearchParams();
+  const returnPath = useInternalListReturn('/customer/returns');
   const returnFilter = params.get('return');
   const settlementFilter = params.get('settlement');
   const rentals = usePaginatedResource<CustomerRental>(
@@ -74,6 +69,7 @@ export function CustomerReturnsPage() {
   useEffect(() => { const timer = window.setInterval(() => setCheckedAt(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const submitLock = useRef(false);
   const [message, setMessage] = useState<{
     kind: "ok" | "error";
@@ -82,19 +78,20 @@ export function CustomerReturnsPage() {
   const activeReturnIds = new Set(
     (returns.data?.items ?? [])
       .filter((item) => item.status !== "COMPLETED")
-      .map((item) => item.reservation.id),
+      .flatMap(item => item.inspections.map(inspection => inspection.contract.id)),
   );
-  const eligibleRentals = (rentals.data?.items ?? []).filter(
-    (item) =>
-      (item.effectiveEndDate.slice(0, 10) <= vietnamCalendarDate(checkedAt) || approvals.data?.items.some(request => request.reservation.id === item.reservationId && isCurrentEarlyReturnApproval(request, item.effectiveEndDate))) &&
-      !item.pendingRenewal &&
-      !activeReturnIds.has(item.reservationId),
-  );
+  const today = vietnamCalendarDate(checkedAt);
+  const available = (rentals.data?.items ?? []).flatMap(rental => rental.pendingRenewal ? [] : rental.contracts
+    .filter(contract => contract.unit.status === 'OCCUPIED' && !contract.pendingRenewal && !contract.returnInProgress && !activeReturnIds.has(contract.id))
+    .filter(contract => contract.endDate <= today || approvals.data?.items.some(request =>
+      earlyReturnAppliesTo(request, rental.reservationId, contract.id) && isCurrentEarlyReturnApproval(request, contract.endDate)))
+    .map(contract => ({ contract, rental })));
   const current = view === "returns" ? returns : settlements;
-  const [reservationId, setReservationId] = useScopedSelection('reservation', eligibleRentals.map(item => ({ value: item.reservationId, aliases: [item.reservationReference] })));
-  const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
-  const selectedDebt = selectedRental ? outstandingForReturn(selectedRental) : null;
-  const canSubmitReturn = Boolean(selectedRental && isFullySettled(selectedRental));
+  const [contractId, setContractId] = useScopedSelection('contract', available.map(({ contract }) => ({ value: contract.id, aliases: [contract.contractCode] })));
+  const selected = available.find(item => item.contract.id === contractId);
+  const selectedDebt = selected?.contract.returnReadiness?.totalOutstanding ?? null;
+  const canSubmitReturn = selected?.contract.returnReadiness?.canReturn === true;
+  const otherUnits = selected?.rental.contracts.filter(contract => contract.id !== contractId).map(contract => contract.unit.unitCode) ?? [];
   const refresh = () => {
     setCheckedAt(Date.now());
     returns.refresh();
@@ -103,23 +100,26 @@ export function CustomerReturnsPage() {
     approvals.refresh();
   };
 
-  const submit = async (event: FormEvent) => {
+  const openConfirmation = (event: FormEvent) => {
     event.preventDefault();
-    if (submitLock.current) return;
+    if (canSubmitReturn) setConfirming(true);
+  };
+
+  const submit = async () => {
+    if (submitLock.current || !selected || !canSubmitReturn) return;
     submitLock.current = true;
+    setConfirming(false);
     setMessage(null);
     setSubmitting(true);
     try {
-      const selectedRental = eligibleRentals.find(item => item.reservationId === reservationId);
-      if (!selectedRental || !isFullySettled(selectedRental)) throw new Error('Hãy thanh toán đủ các hóa đơn còn hiệu lực, kể cả các kỳ đã cam kết chưa đến hạn, trước khi gửi yêu cầu trả kho.');
       await mutate<CustomerReturnRequest>(
         "/customer/returns",
         "POST",
-        { reservationId, note: note.trim() || undefined },
+        { reservationId: selected.rental.reservationId, rentalContractId: selected.contract.id, note: note.trim() || undefined },
         true,
       );
       setMessage({ kind: "ok", text: "Đã gửi yêu cầu trả kho." });
-      setReservationId("");
+      setContractId("");
       setNote("");
       returns.refresh();
       rentals.refresh();
@@ -157,7 +157,7 @@ export function CustomerReturnsPage() {
       {!returnFilter && !settlementFilter && <ReturnInventoryNotice />}
       <div className={returnFilter || settlementFilter ? "record-focused-layout" : "customer-module-layout"}>
         <section className="customer-panel">
-          {returnFilter || settlementFilter ? <p className="customer-filter-notice"><Link to="/customer/returns">Xem tất cả hồ sơ trả kho</Link></p> :
+          {returnFilter || settlementFilter ? <p className="customer-filter-notice"><Link to={returnPath}>Xem tất cả hồ sơ trả kho</Link></p> :
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -188,12 +188,12 @@ export function CustomerReturnsPage() {
           ) : current.error ? (
             <PortalError message={current.error} onRetry={refresh} />
           ) : view === "returns" ? (
-            <ReturnList items={(returns.data?.items ?? []).filter(item => !returnFilter || item.id === returnFilter)} />
+            <ReturnList focused={Boolean(returnFilter)} items={(returns.data?.items ?? []).filter(item => !returnFilter || item.id === returnFilter)} />
           ) : (
-            <SettlementList items={(settlements.data?.items ?? []).filter(item => !settlementFilter || item.id === settlementFilter)} />
+            <SettlementList focused={Boolean(settlementFilter)} items={(settlements.data?.items ?? []).filter(item => !settlementFilter || item.id === settlementFilter)} />
           )}
         </section>
-        {!returnFilter && !settlementFilter && <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={submit}>
+        {!returnFilter && !settlementFilter && <div className="customer-return-forms"><form id="return-request-form" className="customer-panel customer-module-form" onSubmit={openConfirmation}>
           <CustomerFormSources resources={[rentals, returns, approvals]} retry={refresh} />
           <fieldset
             disabled={
@@ -204,29 +204,27 @@ export function CustomerReturnsPage() {
             }
           >
             <h2>Gửi yêu cầu trả kho</h2>
-            <p>
-              Chọn đơn đã đến hạn hoặc được duyệt trả sớm. Yêu cầu áp dụng cho toàn bộ kho trong đơn. Vui lòng thanh toán đủ các hóa đơn, kể cả kỳ cam kết chưa đến hạn.
-            </p>
+            <p>Chọn kho đã đến hạn hoặc được quản lý chấp thuận trả sớm.</p>
             <label className="field-label">
-              Yêu cầu thuê đủ điều kiện trả
+              Kho muốn trả
               <EntitySelect
-                aria-label="Yêu cầu thuê đủ điều kiện trả"
+                aria-label="Kho muốn trả"
                 required
-                value={reservationId}
-                onValueChange={(selectedValue) => setReservationId(selectedValue)}
+                value={contractId}
+                onValueChange={setContractId}
               >
                 <option value="">Chọn kho muốn trả</option>
-                {eligibleRentals.map((item) => (
-                  <option key={item.reservationId} value={item.reservationId}>
-                    {item.contracts.map(contract => contract.unit.unitCode).join(', ') || item.storageType.name} · {isFullySettled(item) ? 'Đã thanh toán đủ' : outstandingForReturn(item) === null ? 'Cần kiểm tra khoản còn thiếu' : `Cần thanh toán ${moneyLabel(outstandingForReturn(item))}`} · {item.reservationReference}
+                {available.map(({ rental, contract }) => (
+                  <option key={contract.id} value={contract.id}>
+                    {contract.unit.unitCode} · {contract.unit.storageType?.name ?? rental.storageType.name} · Hạn {formatPortalDate(contract.endDate)}
                   </option>
                 ))}
               </EntitySelect>
             </label>
-            {selectedRental && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
-              <strong>{canSubmitReturn ? 'Đã thanh toán đủ · Có thể gửi yêu cầu trả kho' : selectedDebt === null || selectedDebt === 0 ? 'Cần kiểm tra khoản còn thiếu' : 'Cần thanh toán trước khi trả kho'}</strong>
-              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho và xử lý tiền cọc sau khi nhận yêu cầu.' : selectedDebt === null || selectedDebt === 0 ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Chưa thanh toán: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
-              {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selectedRental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
+            {selected && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
+              <strong>{canSubmitReturn ? 'Có thể gửi yêu cầu trả kho' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Đang chờ hóa đơn gia hạn' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối soát trước khi trả kho' : 'Cần thanh toán trước khi trả kho'}</strong>
+              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho. Tiền cọc được quyết toán sau khi nhận kho.' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Làm mới để kiểm tra các kỳ gia hạn đã phát hành.' : selectedDebt === null || selectedDebt === 0 ? 'Hãy liên hệ NestBox để đối chiếu hóa đơn và tiền cọc của hợp đồng này.' : <>Số dư các hóa đơn liên quan, gồm cả hóa đơn chung nếu có: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
+              {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selected.rental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
             </div>}
             <label className="field-label">
               Ghi chú
@@ -252,22 +250,33 @@ export function CustomerReturnsPage() {
               disabled={submitting || !canSubmitReturn}
             >
               <RotateCcw size={17} />{" "}
-              {submitting ? "Đang gửi…" : "Gửi yêu cầu trả kho"}
+              {submitting ? "Đang gửi…" : "Tiếp tục"}
             </button>
-            {!rentals.loading && eligibleRentals.length === 0 && (
+            {!rentals.loading && available.length === 0 && (
               <small>
                 Chưa có kho đến hạn hoặc được chấp thuận trả sớm. Bạn có thể gửi đề nghị trả trước hạn bên dưới.
               </small>
             )}
           </fieldset>
-        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} onUpdated={approvals.refresh} /></div>}
+        </form><EarlyReturnPanel checkedAt={checkedAt} rentals={rentals.data?.items ?? []} activeReturnIds={activeReturnIds} requests={approvals} /></div>}
       </div>
+      {confirming && selected && <Modal title="Xác nhận trả kho" onClose={() => setConfirming(false)} footer={<>
+        <button type="button" className="button-secondary" onClick={() => setConfirming(false)}>Quay lại</button>
+        <button type="button" className="button-primary" disabled={!canSubmitReturn || submitting} onClick={() => void submit()}>Gửi yêu cầu trả kho</button>
+      </>}>
+        <dl className="customer-record-facts">
+          <div><dt>Kho trả</dt><dd>{selected.contract.unit.unitCode}</dd></div>
+          <div><dt>Hợp đồng</dt><dd>{selected.contract.contractCode}</dd></div>
+          {otherUnits.length > 0 && <div><dt>Kho tiếp tục thuê</dt><dd>{otherUnits.join(', ')}</dd></div>}
+        </dl>
+        {selected.contract.endDate > today && <p>Quản lý đã chấp thuận trả trước hạn cho kho này.</p>}
+      </Modal>}
     </section>
   );
 }
 
-function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
-  const { items: visible, pagination } = useCustomerPagination(items);
+function ReturnList({ items, focused }: { items: CustomerReturnRequest[]; focused: boolean }) {
+  const { items: visible, pagination } = useListPagination(items);
   if (!items.length)
     return (
       <PortalEmpty
@@ -283,14 +292,15 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
     <>
       <div className="customer-card-list">
         {visible.map((item) => (
-          <article
+          <DetailCard
+                    detail={!focused ? { to: '/customer/returns' + '?' + new URLSearchParams({ return: item.id }), label: `Xem yêu cầu trả kho ${item.returnCode}` } : undefined}
             className="customer-record-card customer-record-card--compact"
             key={item.id}
           >
             <div className="customer-record-heading">
               <div>
                 <CopyRecordCode value={item.returnCode} />
-                <h2>{item.reservation.storageType.name}</h2>
+                <h2>{item.inspections.map(inspection => inspection.unit.unitCode).join(', ') || item.reservation.storageType.name}</h2>
               </div>
               <CustomerStatus status={item.status} />
             </div>
@@ -333,7 +343,7 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
             >
               {item.inspections.map((inspection) => (
                 <p key={inspection.id}>
-                  <strong>{inspection.unit.unitCode}</strong> ·{" "}
+                  <strong>{inspection.unit.unitCode}</strong> · {inspection.contract.contractCode} ·{" "}
                   {inspection.result === "PASS"
                     ? "Đạt"
                     : inspection.result === "ISSUE_FOUND"
@@ -344,7 +354,7 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
             </div>
             {item.note && <p>Ghi chú: {item.note}</p>}
             {item.inventory && (item.inventory.remainingItemTypes > 0 || item.inventory.pendingMovements > 0) && <p className="customer-inline-notice">Bạn còn {item.inventory.remainingItemTypes} loại hàng và {item.inventory.pendingMovements} phiếu giao nhận đang xử lý. Cần lấy hết hàng trước khi nhận trả kho. <a href="/customer/stock-movements">Mở phiếu nhập – xuất</a></p>}
-          </article>
+          </DetailCard>
         ))}
       </div>
       {pagination}
@@ -352,8 +362,8 @@ function ReturnList({ items }: { items: CustomerReturnRequest[] }) {
   );
 }
 
-function SettlementList({ items }: { items: CustomerDepositSettlement[] }) {
-  const { items: visible, pagination } = useCustomerPagination(items);
+function SettlementList({ items, focused }: { items: CustomerDepositSettlement[]; focused: boolean }) {
+  const { items: visible, pagination } = useListPagination(items);
   if (!items.length)
     return (
       <PortalEmpty
@@ -367,14 +377,15 @@ function SettlementList({ items }: { items: CustomerDepositSettlement[] }) {
     <>
       <div className="customer-card-list">
         {visible.map((item) => (
-          <article
+          <DetailCard
+                    detail={!focused ? { to: '/customer/returns' + '?' + new URLSearchParams({ settlement: item.id }), label: `Xem quyết toán cọc ${item.settlementCode}` } : undefined}
             className="customer-record-card customer-record-card--compact"
             key={item.id}
           >
             <div className="customer-record-heading">
               <div>
                 <CopyRecordCode value={item.settlementCode} />
-                <h2>{item.reservation.storageType.name}</h2>
+                <h2>{item.returnedUnits?.map(unit => unit.unitCode).join(', ') || item.reservation.storageType.name}</h2>
               </div>
               <CustomerStatus status={item.status} />
             </div>
@@ -418,7 +429,7 @@ function SettlementList({ items }: { items: CustomerDepositSettlement[] }) {
                 {moneyLabel(issue.approvedChargeAmount)}
               </p>
             ))}
-          </article>
+          </DetailCard>
         ))}
       </div>
       {pagination}

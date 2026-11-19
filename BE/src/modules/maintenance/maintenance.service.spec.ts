@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BookingService } from '../booking/booking.service.js';
 import { ManagerService } from '../manager/manager.service.js';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { MaintenanceService } from './maintenance.service.js';
 
 const runId = randomUUID().slice(0, 8);
@@ -116,6 +118,32 @@ describe('Maintenance V1', () => {
     const started = await maintenance.start(created.id, key('start'), staff);
     expect(started).toMatchObject({ status: 'IN_PROGRESS', unit: { status: 'MAINTENANCE' } });
     expect((await unit()).status).toBe('MAINTENANCE');
+  });
+
+  it('keeps warehouse responsibility separate from maintenance at a different warehouse', async () => {
+    const unitStaff = new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
+    const responsibleUnit = await unit(0);
+    const otherUnit = await unit(1);
+    const assignment = await unitStaff.assign(responsibleUnit.id, { staffUserId: staff.id, expectedAssignmentId: null }, manager);
+    try {
+      const remoteWork = await manual(1);
+      const localWork = await manual(0);
+      await maintenance.assign(remoteWork.id, { staffUserId: staff.id }, key('assign-remote'), manager);
+      await maintenance.assign(localWork.id, { staffUserId: otherStaff.id }, key('assign-local'), manager);
+
+      expect((await unitStaff.list(staff)).items.map(item => item.storageUnit.id)).toEqual([responsibleUnit.id]);
+      expect((await unitStaff.list(otherStaff)).items).toEqual([]);
+      expect((await maintenance.listStaff({ page: 1, limit: 10, assignedToMe: true }, staff)).items.map(item => item.id)).toEqual([remoteWork.id]);
+      await expect(maintenance.getStaff(localWork.id, staff)).rejects.toThrow('Không tìm thấy');
+      await expect(maintenance.getStaff(remoteWork.id, staff)).resolves.toMatchObject({ unit: { id: otherUnit.id } });
+
+      await unitStaff.assign(responsibleUnit.id, { staffUserId: otherStaff.id, expectedAssignmentId: assignment.id }, manager);
+      expect((await unitStaff.list(staff)).items).toEqual([]);
+      expect((await unitStaff.list(otherStaff)).items.map(item => item.storageUnit.id)).toEqual([responsibleUnit.id]);
+      await expect(maintenance.getStaff(remoteWork.id, staff)).resolves.toMatchObject({ unit: { id: otherUnit.id } });
+    } finally {
+      await prisma.unitStaffAssignment.deleteMany({ where: { storageUnitId: responsibleUnit.id } });
+    }
   });
 
   it('requires work note, keeps unit offline, supports rejection and only Manager verification releases it', async () => {

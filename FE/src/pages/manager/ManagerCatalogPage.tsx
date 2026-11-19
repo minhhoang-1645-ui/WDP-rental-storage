@@ -1,3 +1,4 @@
+import { useListPagination } from '../../components/workspace/useListPagination';
 import { RefreshCw } from "lucide-react";
 import { useState } from 'react';
 import { InventoryEditor } from './InventoryEditor';
@@ -7,6 +8,7 @@ import { ManagerAvailabilityForm } from "./ManagerAvailabilityForm";
 import { Link } from 'react-router-dom';
 import { operationPath } from '../../auth/portal-routing';
 import { managerStorageLabels } from '../../utils/manager-sections';
+import { DetailRow } from '../../components/workspace/DetailRow';
 import {
   first,
   label,
@@ -18,6 +20,7 @@ import {
   Empty,
   LoadState,
   PageHeader,
+  RecordFactsDialog,
   Status,
 } from "../../components/manager/PortalUi";
 export function ManagerCatalogPage() {
@@ -25,8 +28,10 @@ export function ManagerCatalogPage() {
   const resource = useApiResource<Row>("/booking/catalog", user?.id ?? "");
   const managed = useApiResource<Row>(user?.role === 'MANAGER' ? '/manager/storage-types' : null, user?.id ?? '');
   const [editor, setEditor] = useState<{ record?: Row }>();
+  const [selected, setSelected] = useState<Row>();
   const refresh = () => { resource.refresh(); managed.refresh(); };
   const products = rows(resource.data?.products);
+  const { items: visibleProducts, pagination } = useListPagination(products);
   const categories = new Map(
     rows(resource.data?.sizes).map((row) => [
       first(row, "id"),
@@ -68,20 +73,34 @@ export function ManagerCatalogPage() {
           {products.length ? (
             <div className="manager-table-wrap catalog-table-wrap"><table className="manager-table catalog-table" aria-label="Loại kho và đơn giá">
               <thead><tr><th>Loại kho</th><th>Kích thước</th><th>Giá thuê / tháng</th><th>Điều kiện thuê</th><th>Trạng thái</th>{user?.role === 'MANAGER' && <th>Thao tác</th>}</tr></thead>
-              <tbody>{products.map(row => <tr key={first(row, 'id')}>
+              <tbody>{visibleProducts.map(row => <DetailRow key={first(row, 'id')} detail={{ open: () => setSelected(row), label: `Xem loại kho ${first(row, 'name')}` }}>
                 <td><strong>{first(row, 'name')}</strong><small>{first(row, 'code')} · {label(row.condition)}</small><small>{categories.get(first(row, 'sizeId')) || 'Chưa phân nhóm'}</small></td>
                 <td>{first(row, 'dimensions')}<small>{[first(row, 'floorArea'), first(row, 'volume')].filter(Boolean).join(' / ')}</small></td>
                 <td><strong>{money(row.monthlyPrice)}</strong></td>
                 <td><span>Cọc: {row.depositMonths == null ? 'Chưa thiết lập' : `${first(row, 'depositMonths')} tháng`}</span><small>Thuê tối thiểu: {row.minRentalDays == null ? 'Chưa thiết lập' : `${first(row, 'minRentalDays')} ngày`}</small><small>Theo ngày: {row.allowDailyRental == null ? 'Chưa thiết lập' : row.allowDailyRental ? 'Có' : 'Không'}</small></td>
                 <td><Status value={first(row, 'status').toUpperCase()} /></td>
                 {user?.role === 'MANAGER' && <td><div className="manager-inline-actions"><button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Chỉnh sửa</button></div></td>}
-              </tr>)}</tbody>
+              </DetailRow>)}</tbody>
             </table></div>
           ) : (
             <Empty />
           )}
+          {pagination}
         </>
       )}
+      {selected && <RecordFactsDialog title={first(selected, 'name')} onClose={() => setSelected(undefined)} items={[
+        ['Mã loại kho', first(selected, 'code')],
+        ['Nhóm kích thước', categories.get(first(selected, 'sizeId'))],
+        ['Điều kiện bảo quản', label(selected.condition)],
+        ['Kích thước', first(selected, 'dimensions')],
+        ['Diện tích', first(selected, 'floorArea') || undefined],
+        ['Thể tích', first(selected, 'volume') || undefined],
+        ['Giá thuê / tháng', money(selected.monthlyPrice)],
+        ['Tiền cọc', selected.depositMonths == null ? 'Chưa thiết lập' : `${first(selected, 'depositMonths')} tháng`],
+        ['Thuê tối thiểu', selected.minRentalDays == null ? 'Chưa thiết lập' : `${first(selected, 'minRentalDays')} ngày`],
+        ['Cho thuê theo ngày', selected.allowDailyRental == null ? 'Chưa thiết lập' : selected.allowDailyRental ? 'Có' : 'Không'],
+        ['Trạng thái', label(selected.status)],
+      ]} />}
     </section>
   );
 }

@@ -1,19 +1,20 @@
-import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { ActiveRentalsService, type ActiveRentalListQuery } from './active-rentals.service.js';
 
 @Controller('staff/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('STAFF')
 @ApiTags('Staff Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class StaffActiveRentalsController {
   constructor(private readonly rentals: ActiveRentalsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách Active Rental vận hành', description: 'STAFF/MANAGER. Không trả historical pricing hay chi tiết số tiền.' })
+  @ApiOperation({ summary: 'Kho đang thuê thuộc phân công phụ trách của nhân viên' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'MD-E06-001' })
@@ -21,12 +22,12 @@ export class StaffActiveRentalsController {
   @ApiQuery({ name: 'unitCode', required: false, example: 'MD-E06-001' })
   @ApiQuery({ name: 'customer', required: false, example: 'Nguyen Van A' })
   @ApiQuery({ name: 'overdue', required: false, enum: ['true', 'false'] })
-  @ApiOkResponse({ description: 'Customer contact, overdue state, active contracts, unit location và future-allocation risk; không có historical pricing.', schema: { example: { reservationReference: 'WDP-2026-AB12CD34', isOverdue: true, overdueSince: '2026-10-01', contracts: [{ status: 'ACTIVE', unit: { unitCode: 'MD-E06-001', status: 'OCCUPIED', nextConfirmedAllocation: { reservationReference: 'WDP-2026-FUTURE01', startDate: '2026-10-01', endDate: '2026-11-01' } } }], futureAllocationRisk: { hasFutureAllocation: true, hasCurrentAllocationConflict: true } } } })
+  @ApiOkResponse({ description: 'Kho và hợp đồng đang thuê theo phạm vi phụ trách. assignmentsEnabled phản ánh cấu hình phân công kho.' })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
-  list(@Query() query: Record<string, unknown>) {
-    return this.rentals.listStaffRentals(this.query(query));
+  list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    return this.rentals.listStaffRentals(request.user!, this.query(query));
   }
 
   @Get(':reservationId')
@@ -36,8 +37,8 @@ export class StaffActiveRentalsController {
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Active Rental.' })
-  get(@Param('reservationId') id: string) {
-    return this.rentals.getStaffRental(id);
+  get(@Req() request: AuthenticatedRequest, @Param('reservationId') id: string) {
+    return this.rentals.getStaffRental(request.user!, id);
   }
 
   private query(input: Record<string, unknown>): ActiveRentalListQuery {

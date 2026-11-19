@@ -5,7 +5,7 @@ import type { Page } from "../components/manager/portal-data";
 import { hasDraft, useLiveRefresh } from './live-events';
 
 export function usePaginatedResource<T>(
-  path: string,
+  path: string | null,
   identity = "",
   refreshOnFocus = false,
 ) {
@@ -29,6 +29,7 @@ export function usePaginatedResource<T>(
     return () => window.removeEventListener("focus", focus);
   }, [refreshOnFocus, refresh]);
   useEffect(() => {
+    if (!path) return;
     const controller = new AbortController();
     allPages<T>(path, controller.signal)
       .then((data) => {
@@ -49,12 +50,12 @@ export function usePaginatedResource<T>(
       });
     return () => controller.abort();
   }, [path, key, sourceKey]);
-  const current = result?.sourceKey === sourceKey ? result : undefined;
+  const current = path && result?.sourceKey === sourceKey ? result : undefined;
   return {
     data: current?.data ?? null,
     error: current?.error ?? "",
     status: current?.status ?? null,
-    loading: !current,
+    loading: Boolean(path && !current),
     refreshing: Boolean(current && current.key !== key),
     asOf: current?.asOf ?? 0,
     refresh,

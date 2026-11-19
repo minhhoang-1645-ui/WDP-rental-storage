@@ -24,7 +24,7 @@ export default function StaffLayout() {
       <Stack.Screen name="stock-movements/index" options={{ title: 'Nhập – xuất hàng' }} />
       <Stack.Screen name="stock-movements/[id]" options={{ title: 'Chi tiết nhập – xuất' }} />
       <Stack.Screen name="assigned-units" options={{ title: 'Kho tôi phụ trách' }} />
-      <Stack.Screen name="create-transfer" options={{ title: 'Tạo phiếu chuyển kho' }} />
+      <Stack.Screen name="create-transfer" options={{ title: 'Chuyển kho' }} />
       <Stack.Screen name="contract-details" options={{ title: 'Chi tiết hợp đồng' }} />
       <Stack.Screen name="appointments" options={{ title: 'Lịch bàn giao' }} />
       <Stack.Screen name="handover-history/[id]" options={{ title: 'Hồ sơ & lịch sử' }} />

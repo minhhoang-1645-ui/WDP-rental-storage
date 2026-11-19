@@ -1,9 +1,20 @@
 import { CheckCircle2, ClipboardCheck, KeyRound, UserRound } from 'lucide-react';
-import { date, first, object } from '../manager/portal-data';
+import { date, first, object, rows } from '../manager/portal-data';
 import { handoverReportView } from '../../utils/handover-report';
 
 export function HandoverReportCard({ appointment }: { appointment: unknown }) {
   const row = object(appointment), report = handoverReportView(row);
+  const progress = rows(row.unitHandoverProgress);
+  if (!report && progress.length) return <section className="handover-report">
+    <h3>Tiến độ bàn giao</h3>
+    <ul className="handover-report-checks">{rows(row.allocatedUnits).map(unit => {
+      const recorded = progress.find(check => check.unitId === unit.unitId);
+      return <li key={first(unit, 'unitId', 'unitCode')}>
+        <strong>{first(unit, 'unitCode')}</strong>
+        <span>{recorded ? `Đã bàn giao · ${date(recorded.completedAt, true)}` : 'Chưa bàn giao'}</span>
+      </li>;
+    })}</ul>
+  </section>;
   if (!report) return row.handoverNote ? <section className="handover-report"><h3>Ghi chú bàn giao</h3><p className="handover-report-legacy">{first(row, 'handoverNote')}</p></section> : null;
   const confirmations = [
     ['identityVerified', 'Đã đối chiếu người nhận kho'], ['unitInspected', 'Đã kiểm tra hiện trạng các kho'],
@@ -21,6 +32,12 @@ export function HandoverReportCard({ appointment }: { appointment: unknown }) {
     </dl>
     {Boolean(report.authorizationBasis) && <div className="handover-report-condition"><strong>Căn cứ ủy quyền</strong><p>{first(report, 'authorizationBasis')}</p></div>}
     <div className="handover-report-condition"><strong>Hiện trạng kho khi bàn giao</strong><p>{first(report, 'condition') || 'Chưa ghi nhận'}</p></div>
+    {rows(report.unitChecks).length > 0 && <ul className="handover-report-checks" aria-label="Kết quả từng kho">
+      {rows(report.unitChecks).map(check => <li key={first(check, 'unitId', 'unitCode')}>
+        <strong>{first(check, 'unitCode')}</strong>
+        <span>{first(check, 'condition')}{check.completedAt ? ` · ${date(check.completedAt, true)}` : ''}</span>
+      </li>)}
+    </ul>}
     <ul className="handover-report-checks">{confirmations.map(([key, title]) => <li key={key} className={report[key] === true ? 'is-verified' : ''}><CheckCircle2 size={18} /><span>{report[key] === true ? title : `${title.replace(/^Đã /, '')}: chưa có ghi nhận`}</span></li>)}</ul>
     {Boolean(report.note) && <div className="handover-report-condition"><strong>Ghi chú thêm</strong><p>{first(report, 'note')}</p></div>}
   </section>;

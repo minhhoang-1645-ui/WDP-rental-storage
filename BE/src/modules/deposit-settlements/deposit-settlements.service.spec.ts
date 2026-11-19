@@ -103,7 +103,8 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
 
   async function physicalReturn(options: { quantity?: number; deposit?: number; issues?: Array<{ index: number; issueType?: string }> } = {}) {
     const rental = await activeRental(options.quantity ?? 1, options.deposit ?? 1500000);
-    const request = await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id, note: 'Ready' }, `return-${randomUUID()}`);
+    const request = rental.reservation.quantity > 1 ? await historicalReturn(rental.reservation.id, rental.reservation.reservationCode)
+      : await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id, note: 'Ready' }, `return-${randomUUID()}`);
     await returns.assign(request.id, { staffUserId: staffId }, manager);
     const started = await returns.startInspection(request.id, staff);
     const issueMap = new Map((options.issues ?? []).map((issue) => [issue.index, issue.issueType ?? 'CUSTOMER_DAMAGE']));
@@ -116,6 +117,15 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
     const finalized = await returns.finalize(request.id, staff);
     const settlement = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: request.id } });
     return { ...rental, request, started, finalized, settlement };
+  }
+
+  async function historicalReturn(reservationId: string, reservationCode: string) {
+    const contracts = await prisma.rentalContract.findMany({ where: { reservationId }, include: { reservationUnit: true }, orderBy: { contractCode: 'asc' } });
+    return prisma.returnRequest.create({ data: {
+      reservationId, returnCode: `${reservationCode}-RT01`, activeKey: `RETURN:${reservationId}`,
+      requestedByUserId: customerId, idempotencyKey: `historical-return-${randomUUID()}`,
+      inspections: { create: contracts.map(contract => ({ rentalContractId: contract.id, storageUnitId: contract.reservationUnit.storageUnitId })) },
+    } });
   }
 
   const review = (settlementId: string, inspectionId: string, issueType: string, amount: number, reason: string | undefined, key = `review-${randomUUID()}`) =>
@@ -250,11 +260,12 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   });
 
   it('keeps physical finalization and settlement creation atomic when deposit history is inconsistent', async () => {
-    const rental = await activeRental(2, 1500000); const request = await returns.createCustomerReturn(customer, { reservationId: rental.reservation.id }, `return-${randomUUID()}`);
+    const rental = await activeRental(2, 1500000);
+    const request = await historicalReturn(rental.reservation.id, rental.reservation.reservationCode);
     await returns.assign(request.id, { staffUserId: staffId }, manager);
     const started = await returns.startInspection(request.id, staff);
     for (const inspection of started.inspections) await returns.updateInspection(request.id, inspection.id, { result: 'PASS' }, staff);
-    await prisma.invoice.update({ where: { id: rental.initial.id }, data: { depositAmount: 1400000n, totalAmount: rental.initial.totalAmount - 100000n } });
+    await prisma.invoice.update({ where: { id: rental.initial.id }, data: { depositAmount: 1400000n, totalAmount: rental.initial.totalAmount - 100000n, amountPaid: rental.initial.amountPaid - 100000n } });
     await expect(returns.finalize(request.id, staff)).rejects.toMatchObject({ response: { code: 'DEPOSIT_HISTORY_MISMATCH' } });
     expect(await prisma.rentalContract.count({ where: { reservationId: rental.reservation.id, status: 'ACTIVE' } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: rental.reservation.id, releasedAt: null } })).toBe(2);

@@ -23,7 +23,6 @@ import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
 import { ManagerCustomersPage } from "../pages/manager/ManagerCustomersPage";
 import { ManagerCustomerDetailPage } from "../pages/manager/ManagerCustomerDetailPage";
-import { ManagerReservationsPage } from "../pages/manager/ManagerReservationsPage";
 import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservationDetailPage";
 import { ManagerReportsPage, ManagerReportsRedirect } from "../pages/manager/ManagerReportsPage";
 import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
@@ -186,14 +185,15 @@ export function AppRouter() {
           <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
           <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
           <Route path="overstays" element={<StaffOverstayPage />} />
+          <Route path="unit-checks" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
           <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
-          <Route path="inquiries/*" element={<Navigate to="/staff/reservations" replace />} />
-          <Route path="operations/inquiries/*" element={<Navigate to="/staff/reservations" replace />} />
-          <Route path="reservations" element={<ManagerReservationsPage />} />
+          <Route path="inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="operations/inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="reservations" element={<Navigate to="/staff/appointments" replace />} />
           <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
-          {staffWorkflows.filter(resource => !['reservations', 'stock-movements'].includes(resource)).map(resource => <Route key={resource} path={resource}>
+          {staffWorkflows.filter(resource => resource !== 'stock-movements').map(resource => <Route key={resource} path={resource}>
             <Route index element={<ManagerListPage key={resource} resource={resource} />} />
             <Route path=":id" element={<ManagerDetailPage key={resource} resource={resource} />} />
           </Route>)}
@@ -216,6 +216,9 @@ export function AppRouter() {
           <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
           <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
           <Route path="overstays" element={<OverstayPage />} />
+          <Route path="reservations" element={<Navigate to="/manager" replace />} />
+          <Route path="operations/reservations" element={<Navigate to="/manager" replace />} />
+          <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
           {operationalRoutes("/manager")}
         </Route>
       </Route>

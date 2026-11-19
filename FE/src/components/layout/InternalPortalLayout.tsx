@@ -1,5 +1,5 @@
 import '../../styles/internal-web.css';
-import { listMemoryKey } from '../workspace/internal-list-memory';
+import { listMemoryKey, useInternalListReturn } from '../workspace/internal-list-memory';
 import { safeLocalStorage, safeSessionStorage } from '../../services/browser-storage';
 import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown';
@@ -21,8 +21,8 @@ import { NavigationGroup } from '../workspace/NavigationGroup';
 import { ActivityBell } from '../../activity/ActivityCenter';
 import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
-import { staffPriorityActivities } from '../../utils/activity';
 import { actionCountForPath } from '../../utils/notification-tools';
+import { staffWorkItems } from '../../pages/staff/staff-work';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
 const matchesAlias = (item: InternalNavItem, pathname: string) =>
   Boolean(item.match?.some(path => item.end ? pathname === path : matchesPath(pathname, path)));
@@ -50,6 +50,7 @@ export function InternalPortalLayout({
   const activity = useActivity();
   const location = useLocation();
   const notificationInbox = user ? workspaceInboxPath(user.role) : undefined;
+  const notificationBack = useInternalListReturn(notificationInbox ?? '');
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
   const profileMenu = themed && user && ['STAFF', 'MANAGER', 'ADMIN'].includes(user.role) ? user : null;
@@ -126,20 +127,27 @@ export function InternalPortalLayout({
       </div>
     </Link>
   );
-  const navigationActivity = staff ? staffPriorityActivities(activity.entries) : activity.entries;
-  const countFor = (item: InternalNavItem) => item.end ? 0 : staff && item.to === '/staff/tasks'
-    ? navigationActivity.length : actionCountForPath(navigationActivity, [item.to, ...(item.match ?? [])]);
+  const personalTasks = staff ? staffWorkItems(activity, user?.id) : [];
+  const navigationActivity = staff ? personalTasks.map(task => task.entry) : activity.entries;
+  const personalTaskCount = personalTasks.length;
+  const countFor = (item: InternalNavItem) => {
+    if (item.end) return 0;
+    if (staff && item.to === '/staff/tasks') return personalTaskCount;
+    return actionCountForPath(navigationActivity, [item.to, ...(item.match ?? [])]);
+  };
   const nav = (iconOnly = false) => (
     <nav aria-label={`Điều hướng ${label}`}>
       {groups.map(({ group, items }, index) => {
         const active = items.some(item => (item.end ? location.pathname === item.to : matchesPath(location.pathname, item.to))
           || matchesAlias(item, location.pathname));
-        const count = staff ? 0 : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
+        const count = staff || user?.role === 'MANAGER' && group === 'Quản lý' ? 0
+          : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
         return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
           {items.map(item => {
             const { to, label: itemLabel, icon: Icon, end, match } = item;
             const aliasActive = matchesAlias(item, location.pathname);
-            const count = staff ? countFor(item) : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
+            const count = staff ? countFor(item) : user?.role === 'MANAGER' && group === 'Quản lý' ? 0
+              : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
             return <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined}
               aria-label={iconOnly ? itemLabel : undefined}
               className={({ isActive }) => isActive || aliasActive ? 'active' : undefined}>
@@ -209,7 +217,7 @@ export function InternalPortalLayout({
         </header>
         <main className="manager-main" id="portal-main" tabIndex={-1}>
           {notificationInbox && location.state?.notificationInbox === notificationInbox && location.pathname !== notificationInbox &&
-            <Link to={notificationInbox} className="workspace-notification-back"><ArrowLeft size={15} aria-hidden="true" />Về thông báo</Link>}
+            <Link to={notificationBack} className="workspace-notification-back"><ArrowLeft size={15} aria-hidden="true" />Về thông báo</Link>}
           <Outlet />
         </main>
       </div>

@@ -10,9 +10,9 @@ interface AccountInvoice {
 }
 export interface RentalAccountRecord {
   startDate: Date; endDate: Date; durationMonths?: number | null; quoteSnapshot: unknown;
-  contracts?: Array<{ status: string; startDate?: Date; endDate?: Date }>;
+  contracts?: Array<{ id?: string; status: string; startDate?: Date; endDate?: Date }>;
   invoices?: AccountInvoice[];
-  renewals?: Array<{ status: string; termMonths: number; previousEndDate: Date; requestedEndDate: Date }>;
+  renewals?: Array<{ rentalContractId?: string | null; status: string; termMonths: number; previousEndDate: Date; requestedEndDate: Date }>;
 }
 const money = (value?: Money) => {
   const amount = Number(value ?? 0);
@@ -29,13 +29,18 @@ const groupNames: Record<string, string> = {
 export function rentalAccountSummary(record: RentalAccountRecord, now = new Date()) {
   const snapshot = (record.quoteSnapshot ?? {}) as Record<string, unknown>;
   const completed = (record.renewals ?? []).filter(renewal => renewal.status === 'COMPLETED');
-  const contracts = (record.contracts ?? []).filter(contract => contract.status !== 'CANCELLED');
+  const allContracts = (record.contracts ?? []).filter(contract => contract.status !== 'CANCELLED');
+  const activeContracts = allContracts.filter(contract => contract.status === 'ACTIVE');
+  const contracts = activeContracts.length ? activeContracts : allContracts;
   const starts = contracts.map(contract => dateOnly(contract.startDate)).filter((date): date is string => !!date).sort();
   const ends = contracts.map(contract => dateOnly(contract.endDate)).filter((date): date is string => !!date).sort();
   const originalStartDate = typeof snapshot.startDate === 'string' ? snapshot.startDate : starts[0] ?? businessDate(record.startDate);
   const originalEndDate = typeof snapshot.endDate === 'string' ? snapshot.endDate : completed.map(renewal => dateOnly(renewal.previousEndDate)!).sort()[0] ?? ends.at(-1) ?? businessDate(record.endDate);
   const originalMonths = typeof snapshot.termMonths === 'number' ? snapshot.termMonths : record.durationMonths ?? null;
-  const extendedMonths = completed.reduce((sum, renewal) => sum + renewal.termMonths, 0);
+  const longest = contracts.reduce<typeof contracts[number] | undefined>((latest, contract) =>
+    !latest || (contract.endDate?.getTime() ?? 0) > (latest.endDate?.getTime() ?? 0) ? contract : latest, undefined);
+  const extendedMonths = completed.filter(renewal => !renewal.rentalContractId || renewal.rentalContractId === longest?.id)
+    .reduce((sum, renewal) => sum + renewal.termMonths, 0);
   const rentalPeriod = {
     originalStartDate, originalEndDate, originalMonths, extendedMonths,
     currentStartDate: starts[0] ?? originalStartDate,

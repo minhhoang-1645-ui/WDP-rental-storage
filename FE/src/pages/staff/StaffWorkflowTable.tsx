@@ -1,46 +1,38 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { code, date, first, label, type Row } from '../../components/manager/portal-data';
 import { Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { StaffRowActions, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import { StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { staffRecordIdentity } from './staff-work';
-import { staffNeedsAction } from '../../utils/work-queue';
 import type { StaffTableWorkflow } from './staff-resources';
+import { handoverCustomer, handoverRecipient, handoverTime, handoverUnits } from './staff-appointment';
 
-function handoverRecipient(row: Row) {
-  return first(row, 'handoverReport.recipientName', 'recipientName') ||
-    /^BIÊN BẢN BÀN GIAO KHO\r?\nNgười nhận: ([^\r\n]+)/.exec(first(row, 'handoverNote'))?.[1] || '—';
-}
-
-export function StaffWorkflowTable({ resource, title, items, userId, loadingRows }: {
-  resource: StaffTableWorkflow; title: string; items: Row[]; userId: string; loadingRows?: number;
+export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
+  resource: StaffTableWorkflow; title: string; items: Row[]; loadingRows?: number;
 }) {
-  const booking = resource === 'reservations';
+  const { pathname, search } = useLocation();
   const appointments = resource === 'appointments';
   const maintenance = resource === 'maintenance';
   const overdue = (row: Row) => appointments && row.status === 'CONFIRMED' && Date.parse(first(row, 'scheduledAt')) < Date.now();
   const identity = (row: Row) => staffRecordIdentity(row, resource);
   const rowId = (row: Row) => first(row, 'id');
   const columns: StaffColumn<Row>[] = [
-    { key: 'identity', label: maintenance ? 'Kho' : booking || appointments ? 'Khách hàng' : 'Khách hàng / Kho', cell: row => {
+    { key: 'identity', label: maintenance ? 'Kho / Mã phiếu' : resource === 'transfers' || resource === 'support-requests' ? 'Khách hàng / Hồ sơ' : 'Khách hàng / Kho', cell: row => {
+      if (appointments) {
+        const name = handoverCustomer(row);
+        const units = handoverUnits(row).map(unit => unit.code).join(', ');
+        return <><strong>{name || units || '—'}</strong>
+          {name && units && <small>{units}</small>}
+          <CopyRecordCode value={first(row, 'appointmentCode')} /></>;
+      }
       const { person, location } = identity(row);
       const primary = maintenance ? location : person || location;
       return <><strong>{primary || '—'}</strong>
-        {resource !== 'transfers' && !booking && !appointments && !maintenance && person && location && <small>{location}</small>}
+        {resource !== 'transfers' && !maintenance && person && location && <small>{location}</small>}
         <CopyRecordCode value={code(row)} /></>;
     } },
   ];
-  if (booking) columns.push(
-    { key: 'type', label: 'Loại kho', cell: row => identity(row).typeName || '—' },
-    { key: 'quantity', label: 'Số lượng', numeric: true, cell: row => identity(row).quantity || '—' },
-    { key: 'period', label: 'Thời gian thuê', cell: row => identity(row).period || '—' },
-  );
-  if (appointments) columns.push(
-    { key: 'units', label: 'Kho', cell: row => identity(row).location || 'Chưa phân bổ' },
-    { key: 'recipient', label: 'Người nhận', optional: true, cell: handoverRecipient },
-    { key: 'assignee', label: 'Nhân viên bàn giao', optional: true, cell: row => first(row, 'assignedStaff.fullName', 'completedBy.fullName') || '—' },
-  );
-  if (resource === 'transfers') columns.push({ key: 'units', label: 'Kho chuyển', cell: row => {
+  if (resource === 'transfers') columns.push({ key: 'units', label: 'Kho nguồn → Kho đích', cell: row => {
     const from = first(row, 'fromUnit.unitCode', 'fromUnit.unitNumber');
     const to = first(row, 'toUnit.unitCode', 'toUnit.unitNumber');
     return [from, to].filter(Boolean).join(' → ') || '—';
@@ -52,19 +44,21 @@ export function StaffWorkflowTable({ resource, title, items, userId, loadingRows
       return <><strong>{subject}</strong>
         {description && <small className="staff-table-description" title={description}>{description}</small>}</>;
     } },
-    { key: 'priority', label: 'Ưu tiên', optional: true, cell: row => row.priority ? <Status value={row.priority} /> : '—' },
+    { key: 'priority', label: 'Ưu tiên', cell: row => row.priority ? <Status value={row.priority} /> : '—' },
   );
-  if (!booking) columns.push({ key: 'date', label: appointments ? 'Ngày / giờ hẹn' : 'Ngày cập nhật',
-    cell: row => <>{date(appointments ? row.scheduledAt : row.updatedAt ?? row.requestedAt ?? row.createdAt, true)}
+  columns.push({ key: 'date', label: appointments ? 'Ngày giờ hẹn' : 'Ngày cập nhật',
+    cell: row => <>{appointments ? handoverTime(row.scheduledAt) || '—' : date(row.updatedAt ?? row.requestedAt ?? row.createdAt, true)}
       {overdue(row) && <small className="staff-table-overdue">Đã quá giờ</small>}</> });
-  columns.push(
-    { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.status} /> },
-    { key: 'actions', label: 'Thao tác', cell: row => {
-      const to = `/staff/${resource}/${encodeURIComponent(rowId(row))}`;
-      return booking ? <Link to={to} className="button-secondary">Xem chi tiết</Link> :
-        <StaffRowActions to={to} code={code(row)} primary={staffNeedsAction(resource, row, userId) ? 'Mở xử lý' : undefined} />;
-    } },
-  );
-  return <StaffTaskTable title={title} columns={columns} items={items} rowKey={rowId} loadingRows={loadingRows}
+  if (appointments) columns.push({ key: 'recipient', label: 'Người nhận', cell: row => {
+    const { name, authorized } = handoverRecipient(row);
+    if (!name) return '—';
+    if (!authorized && name.trim().toLocaleLowerCase('vi') === handoverCustomer(row).trim().toLocaleLowerCase('vi')) return <small>Khách thuê</small>;
+    return <><strong>{name}</strong>{authorized && <small>Được ủy quyền</small>}</>;
+  } });
+  columns.push({ key: 'status', label: 'Trạng thái', cell: row => <Status value={row.status} /> });
+  if (appointments) columns.push({ key: 'actions', label: 'Thao tác', cell: row =>
+    <Link to={`/staff/appointments/${encodeURIComponent(rowId(row))}`} state={{ returnTo: pathname + search }} className="button-secondary">Xem chi tiết</Link>,
+  });
+  return <StaffTaskTable title={title} columns={columns} items={items} rowKey={rowId} rowDetail={row => rowId(row) ? { to: `/staff/${resource}/${encodeURIComponent(rowId(row))}`, label: `Xem chi tiết hồ sơ ${code(row)}` } : undefined} loadingRows={loadingRows}
     emphasized={row => row.priority === 'HIGH' || overdue(row)} />;
 }

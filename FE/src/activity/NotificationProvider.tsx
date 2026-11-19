@@ -5,6 +5,7 @@ import { apiRequest, ApiError } from '../services/api';
 import { useApiResource } from '../services/useApiResource';
 import { safeLocalStorage } from '../services/browser-storage';
 import { DATA_CHANGED } from '../services/live-events';
+import { DEFAULT_PAGE_SIZE } from '../utils/internal-pagination';
 import { DATA_PULSE_KEY } from '../utils/notification-tools';
 import { AUTH_TOKEN_KEY } from '../data/booking';
 import { NotificationContext, noticeQuery, workspaceInboxPath, type Notice, type NotificationPage, type NotificationRole } from './workspace-notifications';
@@ -21,12 +22,19 @@ function NotificationSession({ children, userId, role }: { children: ReactNode; 
   const navigate = useNavigate();
   const root = '/' + role.toLowerCase();
   const inbox = workspaceInboxPath(role);
-  const query = pathname === inbox ? noticeQuery(search) : { view: 'all', page: 1, limit: 5, kind: '', search: '' };
+  const query = pathname === inbox ? noticeQuery(search) : { view: 'all', page: 1, limit: DEFAULT_PAGE_SIZE, kind: '', search: '' };
+  const isPreviewPage = query.view === 'all' && query.page === 1 && query.limit === DEFAULT_PAGE_SIZE && !query.kind && !query.search;
+  const [previewOpen, setPreviewOpen] = useState(false);
   const params = new URLSearchParams({ view: query.view, page: String(query.page), limit: String(query.limit) });
   if (query.kind) params.set('kind', query.kind);
   if (query.search) params.set('search', query.search);
   const feed = useApiResource<NotificationPage>((pathname === root || pathname.startsWith(root + '/')) ? '/notifications?' + params : null, userId);
-  const { refresh } = feed;
+  const preview = useApiResource<NotificationPage>(
+    previewOpen && !isPreviewPage ? `/notifications?view=all&page=1&limit=${DEFAULT_PAGE_SIZE}` : null, userId,
+  );
+  const { refresh: refreshFeed } = feed;
+  const { refresh: refreshPreview } = preview;
+  const refresh = useCallback(() => { refreshFeed(); refreshPreview(); }, [refreshFeed, refreshPreview]);
   const [lastPage, setLastPage] = useState<NotificationPage | null>(null);
   const [operationError, setOperationError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,7 +76,9 @@ function NotificationSession({ children, userId, role }: { children: ReactNode; 
       });
       safeLocalStorage.setItem(receiptPulse, crypto.randomUUID());
       refresh();
-      if (result.target?.startsWith(root + '/')) navigate(result.target, { state: { notificationInbox: inbox } });
+      if (result.target?.startsWith(root + '/')) {
+        navigate(result.target, { state: { notificationInbox: inbox, returnTo: pathname === inbox ? inbox + search : inbox } });
+      }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
       if (caught instanceof ApiError && caught.status === 404) {
@@ -83,7 +93,8 @@ function NotificationSession({ children, userId, role }: { children: ReactNode; 
 
   const summary = feed.error ? null : feed.data ?? lastPage;
   return <NotificationContext.Provider value={{
-    data: feed.data, recent: summary?.recent ?? [], kinds: summary?.kinds ?? [], unread: summary?.unreadTotal ?? null,
+    data: feed.data, recent: (isPreviewPage ? summary?.items : preview.data?.items) ?? summary?.recent ?? [],
+    setPreviewOpen, kinds: summary?.kinds ?? [], unread: summary?.unreadTotal ?? null,
     loading: feed.loading, updating: feed.refreshing, error: feed.error, operationError, busy, refresh: retry,
     mark: notice => change(`${notice.token}/read`), markAll: () => change('read-all'),
     open: (notice: Notice) => change(`${notice.token}/open`, true),

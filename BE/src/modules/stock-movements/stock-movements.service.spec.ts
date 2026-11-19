@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { vi } from 'vitest';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -51,5 +52,82 @@ describe('Customer stock movements V1', () => {
     const outbound = await service.create(customer, { rentalContractId: contractId, type: 'OUT', lines: [{ storedItemId: received.lines[0].storedItem.id, quantity: 2 }] }, `stock-out-${runId}`);
     await service.assign(outbound.id, staff.id, manager); await service.complete(outbound.id, { lines: outbound.lines.map(line => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
     expect((await prisma.storedItem.findUniqueOrThrow({ where: { id: received.lines[0].storedItem.id } })).balance).toBe(1);
+  });
+
+  it('keeps scheduled and actual time separate and reconciles repeated movements without changing rental state', async () => {
+    vi.setSystemTime(new Date('2026-11-14T03:00:00.000Z'));
+    try {
+      const scheduledAt = '2026-12-14T05:12:00.000Z';
+      const inbound = await service.create(customer, {
+        rentalContractId: contractId, type: 'IN', scheduledAt,
+        lines: [{ name: 'Hồ sơ', unit: 'thùng', quantity: 4 }, { name: 'Ghế', unit: 'cái', quantity: 2 }],
+      }, `stock-schedule-in-${runId}`);
+      await service.assign(inbound.id, staff.id, manager);
+      const inboundCounts = inbound.lines.map(line => ({ lineId: line.id, actualQty: line.storedItem.name === 'Hồ sơ' ? 3 : 2 }));
+      await expect(service.complete(inbound.id, { lines: inboundCounts }, staff)).rejects.toThrow('lý do chênh lệch');
+      const received = await service.complete(inbound.id, { lines: inboundCounts, note: 'Khách mang thiếu một thùng.' }, staff);
+      const receivedItem = received.lines.find(line => line.storedItem.name === 'Hồ sơ')!;
+      expect(received).toMatchObject({ scheduledAt, completedAt: '2026-11-14T03:00:00.000Z' });
+      expect(receivedItem).toMatchObject({ requestedQty: 4, actualQty: 3, storedItem: { balance: 3, unit: 'thùng' } });
+      const itemId = receivedItem.storedItem.id;
+      const otherStaff = actor('wrong-staff', 'STAFF');
+      const itemPage = { page: 1, limit: 5, search: receivedItem.storedItem.itemCode, storageUnitId: ids.unit };
+      await expect(service.listOperationalStoredItems(staff, itemPage)).resolves.toMatchObject({
+        total: 1, selectedStorageUnit: { id: ids.unit }, items: [{ id: itemId, balance: 3, currentStorageUnit: { id: ids.unit } }],
+      });
+      await expect(service.listOperationalStoredItems(otherStaff, itemPage)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.listOperationalStoredItems(otherStaff, { page: 1, limit: 5 })).resolves.toMatchObject({ total: 0, items: [] });
+      await expect(service.listStaffStoredItemHistory(otherStaff, itemId, itemPage)).rejects.toThrow('Không tìm thấy mặt hàng');
+
+      const outgoingTime = '2026-12-16T03:01:00.000Z';
+      const outbound = await service.create(customer, {
+        rentalContractId: contractId, type: 'OUT', scheduledAt: outgoingTime,
+        lines: [{ storedItemId: receivedItem.storedItem.id, quantity: 2 }],
+      }, `stock-schedule-out-${runId}`);
+      await service.assign(outbound.id, staff.id, manager);
+      await expect(service.getStaff(actor('wrong-staff', 'STAFF'), outbound.id)).rejects.toThrow('Không tìm thấy');
+      const counts = [{ lineId: outbound.lines[0].id, actualQty: 3 }];
+      await expect(service.complete(outbound.id, { lines: counts }, staff)).rejects.toThrow('lý do chênh lệch');
+      await expect(service.complete(outbound.id, { lines: [{ ...counts[0], actualQty: 4 }], note: 'Khách yêu cầu thêm.' }, staff)).rejects.toThrow('Không đủ tồn');
+      vi.setSystemTime(new Date(outgoingTime));
+      const delivered = await service.complete(outbound.id, { lines: counts, note: 'Đã giao thêm một thùng.' }, staff);
+      expect(delivered).toMatchObject({ scheduledAt: outgoingTime, completedAt: outgoingTime, status: 'COMPLETED' });
+      expect(delivered.lines[0]).toMatchObject({ requestedQty: 2, actualQty: 3, storedItem: { balance: 0 } });
+      const reread = await service.getStaff(staff, inbound.id);
+      expect(reread.rentalContract).not.toHaveProperty('reservation');
+      expect(reread.lines.find(line => line.id === receivedItem.id)).toMatchObject({ requestedQty: 4, actualQty: 3, storedItem: { balance: 0 } });
+      expect(reread.history).toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: 'Tạo phiếu', actor: customer.fullName }),
+        expect.objectContaining({ label: 'Phân công', actor: manager.fullName }),
+        expect.objectContaining({ label: 'Hoàn tất giao nhận', actor: staff.fullName, at: received.completedAt }),
+      ]));
+      await expect(service.listOperationalStoredItems(staff, itemPage)).resolves.toMatchObject({ total: 0, items: [] });
+      await expect(service.listStaffStoredItemHistory(staff, itemId, { page: 1, limit: 1 })).resolves.toMatchObject({
+        total: 2, items: [{ type: 'OUT', movementId: outbound.id, completedAt: outgoingTime, actualQty: 3 }],
+      });
+      await expect(service.listStaffStoredItemHistory(staff, itemId, { page: 2, limit: 1 })).resolves.toMatchObject({
+        total: 2, items: [{ type: 'IN', movementId: inbound.id, completedAt: received.completedAt, actualQty: 3 }],
+      });
+      const destination = await prisma.storageUnit.create({
+        data: { storageTypeId: ids.type, unitNumber: `ST-${runId}-02`, status: 'AVAILABLE' },
+      });
+      const contract = await prisma.rentalContract.findUniqueOrThrow({ where: { id: contractId } });
+      try {
+        await prisma.reservationUnit.update({ where: { id: contract.reservationUnitId }, data: { storageUnitId: destination.id } });
+        await expect(service.getStaff(staff, inbound.id)).resolves.toMatchObject({
+          currentStorageUnit: null, storageUnitAtCompletion: { id: ids.unit },
+          lines: expect.arrayContaining([expect.objectContaining({ storedItem: expect.objectContaining({ id: itemId, balance: null }) })]),
+        });
+        await expect(service.listStaffStoredItemHistory(staff, itemId, { page: 1, limit: 5 })).rejects.toThrow('Không tìm thấy mặt hàng');
+      } finally {
+        await prisma.reservationUnit.update({ where: { id: contract.reservationUnitId }, data: { storageUnitId: ids.unit } });
+        await prisma.storageUnit.delete({ where: { id: destination.id } });
+      }
+      await expect(service.listStaff(staff, { page: 1, limit: 5, status: 'ASSIGNED' })).resolves.toMatchObject({ total: 0, items: [] });
+      expect((await prisma.rentalContract.findUniqueOrThrow({ where: { id: contractId } })).status).toBe('ACTIVE');
+      expect((await prisma.storageUnit.findUniqueOrThrow({ where: { id: ids.unit } })).status).toBe('OCCUPIED');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

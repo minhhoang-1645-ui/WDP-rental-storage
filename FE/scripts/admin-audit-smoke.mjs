@@ -134,6 +134,13 @@ try {
   assert(!queries.some(query => query.from === '2026-11-03' && query.to === '2026-11-02'));
   await Promise.all([page.waitForResponse(response => response.url().includes('audit-events') && response.url().includes('page=2')), page.getByRole('button', { name: 'Trang sau', exact: true }).click()]);
   assert(queries.some(query => query.page === '2'));
+  const attempted = auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' });
+  await attempted.getByRole('link', { name: /^Xem sự kiện Đăng nhập thất bại/ }).press('Enter');
+  await page.waitForURL(url => url.searchParams.get('event') === 'attempt');
+  await page.getByRole('heading', { name: 'Thông tin sự kiện đăng nhập' }).waitFor();
+  await page.getByRole('link', { name: 'Về lịch sử đăng nhập' }).click();
+  assert.equal(new URL(page.url()).searchParams.get('page'), '2');
+  assert.equal(await auditSearch.inputValue(), 'attempt@example.test');
   await Promise.all([waitForAuditQuery(params => params.get('category') === 'LOGIN' && params.get('page') === '1' && !params.has('search')), page.getByRole('button', { name: 'Xóa bộ lọc', exact: true }).click()]);
   assert.equal(await auditSearch.inputValue(), '');
   assert.equal(await fromDate.inputValue(), '');
@@ -142,6 +149,10 @@ try {
   await auditTable.getByText('Khóa tài khoản', { exact: true }).waitFor();
   await auditTable.getByText('Mở khóa tài khoản', { exact: true }).waitFor();
   await auditTable.getByText('Bắt đầu xử lý hỗ trợ', { exact: true }).waitFor();
+  await auditTable.getByText('Bắt đầu xử lý hỗ trợ', { exact: true }).click();
+  await page.waitForURL(url => url.searchParams.get('event') === 'support-start');
+  await page.getByRole('heading', { name: 'Bắt đầu xử lý hỗ trợ', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Về nhật ký hoạt động' }).click();
   await auditTable.getByText('Hoạt động chưa có nhãn', { exact: true }).waitFor();
   await auditTable.getByText('Thất bại', { exact: true }).waitFor();
   const disabledAccount = auditTable.getByRole('row').filter({ hasText: 'Khóa tài khoản' });
@@ -197,9 +208,30 @@ try {
   await page.getByText('Bạn đang dùng tài khoản này.', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Khóa tài khoản' }).count(), 0);
   await page.getByRole('link', { name: 'Về danh sách tài khoản' }).click();
-  await page.getByText('user-19@example.test', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Trang sau', exact: true }).click();
+  await page.getByText('user-9@example.test', { exact: true }).waitFor();
+  const pageSize = page.getByRole('combobox', { name: 'Số dòng mỗi trang' });
+  assert.deepEqual(await pageSize.locator('option').allTextContents(), ['5', '10']);
+  assert.equal(await pageSize.inputValue(), '10');
+  const selectAll = page.getByRole('checkbox', { name: 'Chọn tất cả tài khoản đủ điều kiện trên trang' });
+  await selectAll.check();
+  await page.getByText('Đã chọn 9 trên trang này', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Trang cuối' }).click();
   await page.getByText('user-24@example.test', { exact: true }).waitFor();
+  await page.getByText('21–25 / 25 bản ghi', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('group', { name: 'Thao tác tài khoản đã chọn' }).count(), 0);
+  assert(await page.getByRole('button', { name: 'Trang sau' }).isDisabled());
+  await selectAll.check();
+  await page.getByText('Đã chọn 5 trên trang này', { exact: true }).waitFor();
+  await pageSize.selectOption('5');
+  await page.getByText('1–5 / 25 bản ghi', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('group', { name: 'Thao tác tài khoản đã chọn' }).count(), 0);
+  for (const width of [1920, 1366, 768, 390]) {
+    await page.setViewportSize({ width, height: 840 });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Pagination overflow at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await pageSize.selectOption('10');
+  await page.getByText('1–10 / 25 bản ghi', { exact: true }).waitFor();
   await page.getByLabel('Tìm tài khoản').fill('user-23@');
   await page.waitForURL(url => url.searchParams.get('search') === 'user-23@');
   await page.getByText('1–1 / 1 bản ghi', { exact: true }).waitFor();
@@ -207,7 +239,7 @@ try {
   await page.getByRole('button', { name: 'Nhân viên', exact: true }).click();
   const accountSelection = page.getByRole('checkbox', { name: 'Chọn user-23@example.test', exact: true });
   await accountSelection.check();
-  const accountLink = page.getByRole('link', { name: 'Fixture User 23', exact: true });
+  const accountLink = page.getByRole('link', { name: 'Xem chi tiết tài khoản Fixture User 23', exact: true });
   const roleCell = await page.getByRole('row').filter({ has: accountLink }).getByRole('cell', { name: 'Nhân viên', exact: true }).boundingBox();
   assert(roleCell);
   await page.mouse.click(roleCell.x + roleCell.width / 2, roleCell.y + roleCell.height / 2);

@@ -1,3 +1,4 @@
+import { DetailRow } from '../../components/workspace/DetailRow';
 import { internalPageSize } from '../../utils/internal-pagination';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -17,14 +18,26 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
   const from = params.get('from') ?? '', to = params.get('to') ?? '';
   const invalidRange = Boolean(from && to && from > to);
   const query = new URLSearchParams({ category, page: String(page), limit: String(limit) });
-  const eventId = category === 'ACTIVITY' ? params.get('event') : null;
-  if (eventId) query.set('event', eventId);
-  for (const key of auditFilterKeys) {
+  const eventId = params.get('event');
+  if (eventId && category === 'ACTIVITY') {
+    query.set('event', eventId);
+    query.set('page', '1');
+  }
+  for (const key of eventId && category === 'ACTIVITY' ? [] : auditFilterKeys) {
     const value = params.get(key)?.trim();
     if (value) query.set(key, value);
   }
   const data = useInternalListResource<AuditEvent>(user?.role === 'ADMIN' && !invalidRange ? `/admin/audit-events?${query}` : null, user?.id ?? '', true, true);
   const login = category === 'LOGIN';
+  const listPath = login ? '/admin/login-history' : '/admin/activity';
+  const listParams = new URLSearchParams(params);
+  listParams.delete('event');
+  const listUrl = listParams.size ? `${listPath}?${listParams}` : listPath;
+  const eventPath = (id: string) => {
+    const next = new URLSearchParams(listParams);
+    next.set('event', id);
+    return `${listPath}?${next}`;
+  };
 
   function changeFilter(key: typeof auditFilterKeys[number], value: string) {
     setParams(previous => {
@@ -50,21 +63,22 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
   if (eventId) {
     const event = data.data?.items.find(item => item.id === eventId);
     return <section className="admin-audit record-detail-page">
-      <Link className="booking-back" to="/admin/activity"><ArrowLeft size={16} aria-hidden="true" />Về nhật ký hoạt động</Link>
-      <PageHeader title={event ? auditTitle(event) : 'Chi tiết hoạt động'}
+      <Link className="booking-back" to={listUrl}><ArrowLeft size={16} aria-hidden="true" />{login ? 'Về lịch sử đăng nhập' : 'Về nhật ký hoạt động'}</Link>
+      <PageHeader title={event ? auditTitle(event) : login ? 'Chi tiết đăng nhập' : 'Chi tiết hoạt động'}
         status={event?.outcome === 'FAILURE' ? <Status value="REJECTED" text="Thất bại" /> : undefined}>
         <button type="button" className="button-secondary" disabled={data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
       </PageHeader>
       <LoadState loading={data.loading} error={data.error} retry={data.refresh} layout="detail" />
       {event ? <section className="manager-section record-focused-layout">
-        <h2>Thông tin hoạt động</h2>
+        <h2>{login ? 'Thông tin sự kiện đăng nhập' : 'Thông tin hoạt động'}</h2>
         <Facts items={[
           ['Thời gian (UTC+7)', <time key="time" dateTime={event.createdAt}>{date(event.createdAt, true)}</time>],
           ['Người thực hiện', auditActor(event)],
+          ...(login && event.actorEmail && event.actorEmail !== auditActor(event) ? [['Email', event.actorEmail]] as [string, string][] : []),
           ['Vai trò', event.actorRole ? label(event.actorRole) : 'Chưa xác thực'],
           ...(event.targetAccount && event.resourceId ? [['Tài khoản liên quan', <Link key="account" to={`/admin/users/${encodeURIComponent(event.resourceId)}`}>{event.targetAccount.fullName}</Link>]] as [string, React.ReactNode][] : []),
         ]} />
-      </section> : data.data && <Empty title="Không tìm thấy hoạt động" description="Mở nhật ký để xem các sự kiện hiện có." />}
+      </section> : data.data && <Empty title={login ? 'Không tìm thấy sự kiện đăng nhập' : 'Không tìm thấy hoạt động'} description="Mở nhật ký để xem các sự kiện hiện có." />}
     </section>;
   }
 
@@ -86,7 +100,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
     {data.data && <>
       {data.data.items.length ? <div className="manager-table-wrap" tabIndex={0} role="region" aria-label={login ? 'Bảng lịch sử đăng nhập' : 'Bảng nhật ký hoạt động'}><table className="manager-table admin-audit-table"><thead><tr><th scope="col">Thời gian</th><th scope="col">Tài khoản</th><th scope="col">Vai trò</th><th scope="col">{login ? 'Sự kiện' : 'Hoạt động'}</th></tr></thead><tbody>
         {data.data.items.map(event => (
-          <tr key={event.id}>
+          <DetailRow key={event.id} detail={{ to: eventPath(event.id), label: `Xem sự kiện ${auditTitle(event)} · ${auditActor(event)} · ${date(event.createdAt, true)}` }}>
             <td><time dateTime={event.createdAt}>{date(event.createdAt, true)}</time></td>
             <td><strong>{auditActor(event)}</strong>{event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}</td>
             <td>{event.actorRole ? label(event.actorRole) : 'Chưa xác thực'}</td>
@@ -97,7 +111,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
               </small>}
               {!login && event.outcome === 'FAILURE' && <small className="audit-failure">Thất bại</small>}
             </td>
-          </tr>
+          </DetailRow>
         ))}
       </tbody></table></div> : <Empty title="Chưa có nhật ký phù hợp" description="Thử đổi bộ lọc. Lịch sử trước khi bật tính năng không được tạo lại." />}
       <Pagination page={page} limit={limit} onLimitChange={limit => setParams(previous => { const next = new URLSearchParams(previous); next.set('limit', String(limit)); next.delete('page'); return next; }, { replace: true })} total={data.data.total} disabled={data.loading} onChange={next => setParams(previous => { const value = new URLSearchParams(previous); value.set('page', String(next)); return value; })} />

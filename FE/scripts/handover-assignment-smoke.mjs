@@ -116,12 +116,14 @@ try {
   appointment = { ...appointment, status: 'COMPLETED', handoverNote: legacyNote, completedBy: staff, completedAt: when };
   const staffApp = await setup('STAFF');
   await staffApp.page.goto(base + '/staff/appointments/appointment-id');
-  const report = staffApp.page.getByRole('region', { name: 'Biên bản bàn giao kho' });
+  const report = staffApp.page.locator('.staff-handover-result');
   await report.waitFor();
   assert.match(await report.innerText(), /Kho sạch, cửa và khóa bình thường/);
-  assert.match(await report.innerText(), /1 chiếc/);
+  const notes = staffApp.page.getByText('Biên bản và ghi chú', { exact: true });
+  await notes.click();
+  assert.match(await notes.locator('..').innerText(), /Số chìa khóa\/thẻ đã giao\s+1/);
   assert.equal(await staffApp.page.getByText(legacyId, { exact: false }).count(), 0);
-  assert.equal(await report.locator('.is-verified').count(), 4);
+  assert.equal(await report.locator('.staff-handover-steps li').count(), 4);
   await shot(staffApp.page, 'staff-handover-report');
   await staffApp.page.setViewportSize({ width: 390, height: 844 });
   await shot(staffApp.page, 'staff-handover-report-mobile');
@@ -129,12 +131,13 @@ try {
   appointment = { ...appointment, handoverNote: null, handoverReport: { recipientType: 'AUTHORIZED', recipientName: 'Người nhận được ủy quyền', customerName: customer.fullName, authorizationBasis: 'Văn bản ủy quyền đã đối chiếu', condition: 'Kho sạch, đã kiểm tra khóa', accessItemCount: 2, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true }, completedAt: when };
   await staffApp.page.reload(); await report.waitFor();
   assert.match(await report.innerText(), /Người nhận được ủy quyền/);
-  assert.match(await report.innerText(), /2 chiếc/);
-  assert.match(await report.innerText(), /Văn bản ủy quyền đã đối chiếu/);
+  await notes.click();
+  assert.match(await notes.locator('..').innerText(), /Số chìa khóa\/thẻ đã giao\s+2/);
+  assert.match(await notes.locator('..').innerText(), /Văn bản ủy quyền đã đối chiếu/);
 
   appointment = { ...appointment, status: 'CONFIRMED', assignedStaff: null, handoverReport: null };
   await staffApp.page.reload();
-  await staffApp.page.getByText('Chỉ nhân viên được quản lý phân công mới được bàn giao lịch này.', { exact: false }).waitFor();
+  await staffApp.page.getByText('Chỉ nhân viên được phân công mới được xử lý lịch.', { exact: true }).waitFor();
   assert.equal(await staffApp.page.getByRole('button', { name: 'Hoàn tất bàn giao', exact: true }).count(), 0);
   assert.deepEqual(errors, []);
   console.log('PASS: manager assignment, customer visibility, legacy/structured reports, responsive layout and Staff action gating');

@@ -1,4 +1,5 @@
 import { EntitySelect } from '../EntitySelect';
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../../utils/internal-pagination';
 import { InternalPagination } from '../workspace/InternalPagination';
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RefreshCw, Search, X } from "lucide-react";
@@ -103,6 +104,7 @@ export function Pagination({
 }
 export function Modal({
   title,
+  titleBadge,
   onClose,
   children,
   busy = false,
@@ -110,6 +112,7 @@ export function Modal({
   footer,
 }: {
   title: string;
+  titleBadge?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   busy?: boolean;
@@ -147,7 +150,7 @@ export function Modal({
       } : undefined}
     >
       <header>
-        <h2>{title}</h2>
+        {titleBadge ? <div className="record-page-title"><h2>{title}</h2>{titleBadge}</div> : <h2>{title}</h2>}
         <button
           type="button"
           className="icon-button"
@@ -174,6 +177,11 @@ export function Facts({ items }: { items: Array<[string, ReactNode]> }) {
     </dl>
   );
 }
+export function RecordFactsDialog({ title, items, onClose }: { title: string; items: Array<[string, ReactNode]>; onClose: () => void }) {
+  return <Modal title={title} onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
+    <Facts items={items} />
+  </Modal>;
+}
 export function RecordPicker({
   path,
   value,
@@ -196,7 +204,7 @@ export function RecordPicker({
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState<number>(DEFAULT_PAGE_SIZE);
   const [state, setState] = useState<{
     key: string;
     data?: Page;
@@ -293,7 +301,7 @@ export function RecordPicker({
       {current?.data && !choices.length && (
         <small>Không có lựa chọn phù hợp.</small>
       )}
-      {!local && current?.data && current.data.total > 5 && (
+      {!local && current?.data && current.data.total > PAGE_SIZE_OPTIONS[0] && (
         <Pagination
           page={page}
           limit={limit}

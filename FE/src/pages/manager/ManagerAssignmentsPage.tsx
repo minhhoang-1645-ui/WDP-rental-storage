@@ -1,10 +1,11 @@
 import { ManagerTaskTable, ManagerTableSearch, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import type { StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
-import { Ellipsis, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { useSearchParams } from 'react-router-dom';
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import {
@@ -43,6 +44,10 @@ type WorkKind = keyof typeof workNames;
 type Task = { kind: WorkKind; row: Row };
 const workKinds = Object.keys(workNames) as WorkKind[];
 const workName = (kind: WorkKind) => workNames[kind];
+const workDetail = ({ kind, row }: Task) => {
+  const id = encodeURIComponent(first(row, 'id'));
+  return kind === 'damage-claims' ? `/manager/damage-claims?claim=${id}` : `/manager/operations/${kind}/${id}`;
+};
 const finished = (task: Task) => ['COMPLETED', 'RESOLVED', 'CANCELLED', 'REJECTED', 'PENDING_SETTLEMENT'].includes(String(task.row.status));
 const canAssign = (task: Task) => canAssignWork(task.kind, task.row);
 const relatedUnit = (row: Row) =>
@@ -64,7 +69,8 @@ export function ManagerAssignmentsPage() {
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   useLiveRefresh('/manager/*', refresh);
   const [manualSelection, setSelected] = useState<Task>();
-  const [unitAssignmentsOpen, setUnitAssignmentsOpen] = useState(false);
+  const [, setParams] = useSearchParams();
+  const unitsTab = params.get('tab') === 'units' && !params.has('record');
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
     key: string;
@@ -75,6 +81,7 @@ export function ManagerAssignmentsPage() {
   const key = user?.id ?? '';
 
   useEffect(() => {
+    if (unitsTab) return;
     const controller = new AbortController();
     Promise.all(workKinds.map(async kind => {
       const { items } = await allPages(`/manager/${kind}`, controller.signal);
@@ -103,7 +110,7 @@ export function ManagerAssignmentsPage() {
           });
       });
     return () => controller.abort();
-  }, [key, revision]);
+  }, [key, revision, unitsTab]);
 
   const current = state?.key === key ? state : undefined;
   const refreshing = Boolean(current && current.revision !== revision);
@@ -111,8 +118,10 @@ export function ManagerAssignmentsPage() {
   const search = params.get("search") ?? "";
   const kind = params.get("kind") ?? "all";
   const record = params.get("record");
-  const selected = manualSelection ?? (record ? allTasks.find(task =>
-    task.kind === kind && first(task.row, "id") === record) : undefined);
+  const selectedId = manualSelection ? first(manualSelection.row, 'id') : record;
+  const selectedKind = manualSelection?.kind ?? kind;
+  const selected = selectedId ? allTasks.find(task =>
+    task.kind === selectedKind && first(task.row, 'id') === selectedId) : undefined;
   const assignment = params.get("assignment") ?? "all";
   const scope = params.get('scope') ?? 'active';
   const assignee = params.get('assignee') ?? '';
@@ -145,58 +154,76 @@ export function ManagerAssignmentsPage() {
     const byDate = (Date.parse(taskDate(a)) || 0) - (Date.parse(taskDate(b)) || 0);
     return order === 'newest' ? -byDate : order === 'oldest' ? byDate : assignmentWorkRank(a.row) - assignmentWorkRank(b.row) || byDate;
   });
+  const visiblePage = Math.min(page, Math.max(1, Math.ceil(tasks.length / limit)));
   const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const workloads = new Map<string, number>();
   for (const task of allTasks) { const staffId = first(task.row, 'assignedStaff.id'); if (staffId && !finished(task)) workloads.set(staffId, (workloads.get(staffId) ?? 0) + 1); }
   const closeDetails = () => {
     setSelected(undefined);
-    if (record) update('record', '');
+    if (record) setParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('record');
+      return next;
+    }, { replace: true });
   };
+  function changeTab(units: boolean) {
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (units) next.set('tab', 'units');
+      else next.delete('tab');
+      return next;
+    });
+  }
   const statuses = [...new Set(allTasks.map(task => first(task.row, 'status')).filter(Boolean))];
   const columns: StaffColumn<Task>[] = [
     { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
-    { key: 'kind', label: 'Nhóm', optional: true, cell: task => workName(task.kind) },
     { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}</> },
-    { key: 'staff', label: 'Nhân viên phụ trách', cell: ({ row }) => <>{first(row, 'assignedStaff.fullName') || 'Chưa phân công'}{first(row, 'assignedStaff.accountStatus') === 'DISABLED' && <small>Đã vô hiệu hóa · cần đổi người</small>}</> },
+    { key: 'staff', label: 'Nhân viên', cell: task => {
+      const assigned = first(task.row, 'assignedStaff.fullName');
+      return <><strong>{assigned || 'Chưa phân công'}</strong>
+        {assigned && assignmentNeedsAttention(task.kind, task.row) && <small>Cần đổi nhân viên</small>}
+        {canAssign(task) && <button type="button" className="portal-text-button manager-assign-trigger" onClick={() => setSelected(task)}>{assigned ? 'Đổi nhân viên' : 'Phân công'}</button>}
+      </>;
+    } },
     { key: 'date', label: 'Ngày yêu cầu', sort: { direction: order === 'oldest' ? 'ascending' : order === 'newest' ? 'descending' : 'none', toggle: () => update('sort', order === 'newest' ? 'oldest' : 'newest') }, cell: task => date(taskDate(task), true) },
-    { key: 'priority', label: 'Ưu tiên', optional: true, cell: ({ row }) => first(row, 'priority') ? label(row.priority) : '—' },
     { key: 'status', label: 'Trạng thái', cell: ({ row }) => <Status value={row.status} /> },
-    { key: 'actions', label: 'Thao tác', cell: task => <div className="staff-table-actions"><TablePopover
-      name={`Thao tác ${code(task.row)}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
-        <button type="button" onClick={event => {
-          event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
-          setSelected(task);
-        }}>{!canAssign(task) ? 'Xem chi tiết' : first(task.row, 'assignedStaff.id') ? 'Xem / Đổi nhân viên' : 'Xem / Phân công'}</button>
-      </TablePopover></div> },
   ];
 
   return (
-    <section>
-      <PageHeader title="Phân công nhân viên" description="Lịch nhận kho cần quản lý chọn người phụ trách trước khi nhân viên thực hiện bàn giao.">
-        <button type="button" className="button-secondary" onClick={() => setUnitAssignmentsOpen(value => !value)}>{unitAssignmentsOpen ? 'Thu gọn phân công theo kho' : 'Phân công theo kho'}</button>
-        <button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>
+    <section className="manager-assignments">
+      <PageHeader title="Phân công nhân viên">
+        {!unitsTab && <button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>}
       </PageHeader>
-      {unitAssignmentsOpen && <UnitStaffAssignments onSaved={refresh} />}
+      <div className="manager-assignment-tabs" role="group" aria-label="Phạm vi phân công">
+        <button className="button-secondary" type="button" aria-pressed={!unitsTab} onClick={() => changeTab(false)}>Công việc</button>
+        <button className="button-secondary" type="button" aria-pressed={unitsTab} onClick={() => changeTab(true)}>Phụ trách kho</button>
+      </div>
+      {unitsTab ? <UnitStaffAssignments onSaved={refresh} /> : <>
       {notice && (
         <div className="portal-success" role="status">
           {notice}
         </div>
       )}
       <ManagerTaskTable title="Phân công nhân viên" columns={columns} loading={!current} refreshing={refreshing} error={current?.error} retry={refresh}
-        items={tasks.slice((page - 1) * limit, page * limit)} rowKey={task => task.kind + ':' + first(task.row, 'id')}
+        items={tasks.slice((visiblePage - 1) * limit, visiblePage * limit)} rowDetail={task => ({ to: workDetail(task), label: `Mở hồ sơ công việc ${code(task.row)}` })} rowKey={task => task.kind + ':' + first(task.row, 'id')}
         emphasized={task => canAssign(task) && assignmentNeedsAttention(task.kind, task.row)}
-        page={page} limit={limit} total={tasks.length} update={update}
-        toolbar={<>
+        page={visiblePage} limit={limit} total={tasks.length} update={update}
+        toolbar={<div className="manager-assignment-filters">
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã, kho hoặc nhân viên…" />
-          <ManagerTableFilter label="Nhóm" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
-            options={[[ 'all', 'Tất cả' ], ...workKinds.map(value => [value, workName(value)] as [string, string])]} />
-          <ManagerTableFilter label="Phân công" value={assignment} onChange={value => update('assignment', value === 'all' ? '' : value)}
-            options={[[ 'all', 'Tất cả' ], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người'], ['assigned', 'Đã phân công']]} />
-          <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
-            options={[[ '', 'Tất cả' ], ...knownStaff]} />
           <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)}
             options={[[ 'active', 'Chưa hoàn tất' ], ['all', 'Tất cả'], ...statuses.map(value => [value, label(value)] as [string, string])]} />
-        </>} />
+          <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
+            options={[[ '', 'Tất cả' ], ...knownStaff]} />
+          <details className="manager-assignment-filter-more" open={kind !== 'all' || assignment !== 'all' || undefined}>
+            <summary>Bộ lọc nâng cao</summary>
+            <div>
+              <ManagerTableFilter label="Nhóm" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
+                options={[[ 'all', 'Tất cả' ], ...workKinds.map(value => [value, workName(value)] as [string, string])]} />
+              <ManagerTableFilter label="Phân công" value={assignment} onChange={value => update('assignment', value === 'all' ? '' : value)}
+                options={[[ 'all', 'Tất cả' ], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người'], ['assigned', 'Đã phân công']]} />
+            </div>
+          </details>
+        </div>} />
       {selected && (
         <AssignmentDetail
           key={`${selected.kind}:${first(selected.row, "id")}`}
@@ -210,6 +237,7 @@ export function ManagerAssignmentsPage() {
           }}
         />
       )}
+      </>}
     </section>
   );
 }
@@ -231,12 +259,13 @@ function AssignmentDetail({
   const formId = useId();
   const [staffId, setStaffId] = useState('');
   const assignable = canAssign(task);
-  const destination = task.kind === 'damage-claims'
-    ? `/manager/damage-claims?claim=${encodeURIComponent(id)}`
-    : `/manager/operations/${task.kind}/${encodeURIComponent(id)}`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
+  const close = () => {
+    if (busy || staffId && staffId !== currentStaffId && !window.confirm('Bỏ thay đổi phân công chưa lưu?')) return;
+    onClose();
+  };
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current || !assignable || !staffId || staffId === currentStaffId) return;
@@ -263,9 +292,9 @@ function AssignmentDetail({
     }
   };
   return (
-    <Modal title={assignable ? 'Phân công nhân viên' : 'Chi tiết phân công'} onClose={onClose} busy={busy}
+    <Modal title={assignable ? currentStaffId ? 'Đổi nhân viên' : 'Phân công nhân viên' : 'Chi tiết phân công'} onClose={close} busy={busy}
       className="assignment-dialog" footer={<>
-        <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>{assignable ? 'Hủy' : 'Đóng'}</button>
+        <button type="button" className="button-secondary" disabled={busy} onClick={close}>{assignable ? 'Hủy' : 'Đóng'}</button>
         {assignable && <button type="submit" form={formId} className="button-primary" disabled={busy || !staffId || staffId === currentStaffId}>
           {busy ? 'Đang lưu…' : currentStaffId ? 'Xác nhận đổi nhân viên' : 'Xác nhận phân công'}
         </button>}
@@ -276,9 +305,11 @@ function AssignmentDetail({
           ...(first(customer(task.row), 'fullName') ? [['Khách hàng', first(customer(task.row), 'fullName')]] as [string, string][] : []),
           ['Kho / Đặt thuê', relatedUnit(task.row)],
           ...(task.kind === 'appointments' && task.row.scheduledAt ? [['Giờ bàn giao', date(task.row.scheduledAt, true)]] as [string, string][] : []),
-          ['Nhân viên hiện tại', currentStaffName || 'Chưa phân công'],
+          ['Đang phụ trách', currentStaffName || 'Chưa phân công'],
         ]} />
-        <Link to={destination} className="portal-text-button" onClick={onClose}>Xem hồ sơ công việc</Link>
+        <Link to={workDetail(task)} className="portal-text-button" onClick={event => {
+          if (busy || staffId && staffId !== currentStaffId && !window.confirm('Bỏ thay đổi phân công chưa lưu?')) event.preventDefault();
+        }}>Xem hồ sơ công việc</Link>
       </div>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>

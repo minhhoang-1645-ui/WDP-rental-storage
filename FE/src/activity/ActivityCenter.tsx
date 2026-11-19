@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { CheckCheck, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
+import { DEFAULT_PAGE_SIZE } from '../utils/internal-pagination';
 import { InternalPagination } from '../components/workspace/InternalPagination';
 import { NotificationResult } from './NotificationRows';
 import { WorkspaceNotificationDropdown } from './WorkspaceNotificationDropdown';
-import { noticePageSizes, noticeQuery, noticeViews, useNotifications } from './workspace-notifications';
+import { noticeQuery, noticeViews, useNotifications } from './workspace-notifications';
 
 export function ActivityBell() {
   const { user } = useAuth();
@@ -82,8 +83,8 @@ export function ActivityInboxPage() {
       <NotificationResult items={feed.data?.items ?? []} view={query.view} filtered={Boolean(query.kind || query.search)} />
     </div>
     {!feed.error && feed.data && <InternalPagination page={feed.data.page} limit={feed.data.limit} total={feed.data.total}
-      pageSizes={noticePageSizes} recordsLabel="thông báo" showBoundaryControls={feed.data.total > feed.data.limit} showPageNumbers
+      recordsLabel="thông báo" showBoundaryControls={feed.data.total > feed.data.limit}
       onChange={page => change('page', page === 1 ? '' : String(page))}
-      onLimitChange={limit => change('limit', limit === 10 ? '' : String(limit))} />}
+      onLimitChange={limit => change('limit', limit === DEFAULT_PAGE_SIZE ? '' : String(limit))} />}
   </section>;
 }

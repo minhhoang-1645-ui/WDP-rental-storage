@@ -28,6 +28,12 @@ function setup() {
 
 describe('transfer invoice protection', () => {
   const service = new TransferCommercialService({} as never);
+  it('requires the signed appendix before applying commercial changes', async () => {
+    const tx = setup();
+    await expect(service.apply(tx as never, { ...transfer, customerAcceptedAt: null, commercialSignedSnapshot: null })).rejects.toThrow('Khách cần ký');
+    expect(tx.invoice.create).not.toHaveBeenCalled();
+    expect(tx.rentalContract.update).not.toHaveBeenCalled();
+  });
   it('blocks a commercial change on a multi-unit reservation', async () => {
     const tx = setup();
     await expect(service.prepare(tx as never, transfer, {})).rejects.toThrow('chỉ áp dụng cho đơn có một kho');

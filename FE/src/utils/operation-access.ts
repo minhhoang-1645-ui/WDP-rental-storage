@@ -1,7 +1,7 @@
-export const staffWorkflows = ['reservations', 'support-requests', 'appointments', 'stock-movements', 'transfers', 'returns', 'maintenance'] as const;
-export const staffLookups = ['units', 'contracts'] as const;
+export const staffWorkflows = ['support-requests', 'appointments', 'stock-movements', 'transfers', 'returns', 'maintenance'] as const;
+export const staffLookups = ['units', 'contracts', 'reservations'] as const;
 export const isStaffWorkflow = (resource: string) => (staffWorkflows as readonly string[]).includes(resource);
-export const managerResources = ['units', 'customers', 'catalog', 'additional-services', 'contracts', 'rentals', 'invoices', 'payments', 'deposit-settlements', 'appointments', 'returns', 'transfers', 'renewals'] as const;
+export const managerResources = ['units', 'customers', 'catalog', 'additional-services', 'contracts', 'rentals', 'invoices', 'payments', 'deposit-settlements', 'appointments', 'reservations', 'returns', 'transfers', 'renewals'] as const;
 export const isManagerResource = (resource: string) => (managerResources as readonly string[]).includes(resource);
 export const managerPages = ['assignments', 'reports', 'early-returns', 'reviews', 'finance', 'rental-records', 'facility'] as const;
 // Read-only lookup routes do not grant operational write permissions.

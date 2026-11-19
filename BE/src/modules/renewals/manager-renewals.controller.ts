@@ -36,7 +36,7 @@ export class ManagerRenewalsController {
   @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
   @ApiOkResponse({ description: 'Approved pending payment. PREPAID tạo 1 invoice; PAY_MONTHLY tạo invoice cho từng tháng.', schema: { examples: {
     approved: { summary: 'Approved pending payment', value: { renewalCode: 'WDPR-2027-AB12CD34EF', status: 'APPROVED_PENDING_PAYMENT', previousEndDate: '2027-05-10', requestedEndDate: '2027-08-10', paymentPlan: 'PAY_MONTHLY', invoices: [{ type: 'RENEWAL', renewalCycle: 1, billingPeriodStart: '2027-05-10', billingPeriodEnd: '2027-06-10', depositAmount: 0, status: 'OPEN' }] } },
-    quantityThree: { summary: 'Một request gia hạn toàn bộ 3 contracts', value: { renewalCode: 'WDPR-2027-QTY3', status: 'APPROVED_PENDING_PAYMENT', reservation: { quantity: 3 }, contracts: [{ contractCode: 'C01' }, { contractCode: 'C02' }, { contractCode: 'C03' }] } },
+    scoped: { summary: 'Gia hạn một kho', value: { renewalCode: 'WDPR-2027-UNIT', rentalContractId: 'contract-id', status: 'APPROVED_PENDING_PAYMENT', reservation: { quantity: 1 }, contracts: [{ contractCode: 'C01', unitCode: 'MD-E06-001' }] } },
     completed: { summary: 'Invoice kích hoạt PAID, contracts đã được kéo dài', value: { renewalCode: 'WDPR-2027-DONE', status: 'COMPLETED', previousEndDate: '2027-05-10', requestedEndDate: '2027-08-10', reservation: { currentEndDate: '2027-08-10' } } },
   } } })
   @ApiConflictResponse({ description: 'RENEWAL_ALLOCATION_CONFLICT, rental/endDate thay đổi hoặc trạng thái không hợp lệ.' })

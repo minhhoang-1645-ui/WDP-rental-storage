@@ -192,6 +192,15 @@ export class CreateHandoverAppointmentRequestDto {
   note?: string;
 }
 
+class HandoverUnitCheckRequestDto {
+  @ApiProperty({ description: 'ID kho vật lý lấy từ allocatedUnits.' })
+  unitId!: string;
+  @ApiProperty({ minLength: 3, maxLength: 500 })
+  condition!: string;
+  @ApiProperty({ enum: [true] })
+  inspected!: boolean;
+}
+
 export class HandoverReportRequestDto {
   @ApiProperty({ minLength: 2, maxLength: 120 })
   recipientName!: string;
@@ -207,10 +216,12 @@ export class HandoverReportRequestDto {
   accessDelivered!: boolean;
   @ApiPropertyOptional({ enum: [true], description: 'Xác nhận giấy tờ đã được giao. Client cũ có thể bỏ qua trường này.' })
   documentsDelivered?: boolean;
+  @ApiPropertyOptional({ type: [HandoverUnitCheckRequestDto], description: 'Khi gửi, phải có đúng một kết quả cho mỗi kho vật lý trong lịch.' })
+  unitChecks?: HandoverUnitCheckRequestDto[];
 }
 
 export class CompleteHandoverRequestDto {
-  @ApiPropertyOptional({ type: HandoverReportRequestDto, description: 'Web/mobile mới gửi checklist này. Nội dung được lưu vào handoverNote hiện có; không đổi schema.' })
+  @ApiPropertyOptional({ type: HandoverReportRequestDto, description: 'Biên bản được lưu dưới dạng dữ liệu có cấu trúc và văn bản.' })
   handoverReport?: HandoverReportRequestDto;
   @ApiPropertyOptional({ example: 'Đã bàn giao đầy đủ các kho cho khách hàng.', maxLength: 2000 })
   note?: string;
@@ -219,6 +230,9 @@ export class CompleteHandoverRequestDto {
 export class CreateRenewalRequestDto {
   @ApiProperty({ example: 'WDP-2026-AB12CD34', description: 'Reservation id hoặc reference của Active Rental thuộc Customer.' })
   reservationId!: string;
+
+  @ApiPropertyOptional({ example: 'WDP-2026-AB12CD34-C01', description: 'ID hoặc mã hợp đồng. Bắt buộc với đơn có nhiều hợp đồng.' })
+  rentalContractId?: string;
 
   @ApiProperty({ example: 3, minimum: 1, maximum: 120, description: 'Số tháng lịch nguyên; Renewal V1 không hỗ trợ ngày lẻ.' })
   termMonths!: number;
@@ -235,6 +249,9 @@ export class RejectRenewalRequestDto {
 export class CreateReturnRequestDto {
   @ApiProperty({ example: 'WDP-2026-AB12CD34', description: 'Reservation id hoặc reference của Active Rental thuộc Customer.' })
   reservationId!: string;
+
+  @ApiPropertyOptional({ example: 'WDP-2026-AB12CD34-C01', description: 'ID hoặc mã hợp đồng. Bắt buộc với đơn có nhiều hợp đồng.' })
+  rentalContractId?: string;
 
   @ApiPropertyOptional({ example: 'Khách đã dọn hết đồ và sẵn sàng kiểm tra kho.', maxLength: 2000 })
   note?: string;
@@ -350,5 +367,6 @@ export class CreateTransferDto {
 }
 
 export class ApproveTransferDto {
-  @ApiProperty({ example: 'destination-storage-unit-id', description: 'Unit AVAILABLE cùng StorageType và không có confirmed allocation trùng kỳ.' }) toStorageUnitId!: string;
+  @ApiProperty({ example: 'destination-storage-unit-id', description: 'Kho khả dụng trong toàn bộ kỳ thuê còn lại.' }) toStorageUnitId!: string;
+  @ApiProperty({ example: 'active-staff-user-id' }) staffUserId!: string;
 }

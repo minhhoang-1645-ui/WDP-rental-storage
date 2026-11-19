@@ -75,8 +75,8 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       RESOLVED: 'Yêu cầu đã được giải quyết. Khách hàng có thể xem kết quả xử lý trong hồ sơ.',
     },
     transfers: {
-      REQUESTED: 'Nhân viên phụ trách kiểm tra hợp đồng, kho nguồn và kho đích rồi duyệt hoặc từ chối.',
-      APPROVED: 'Nhân viên phụ trách đã duyệt. Nhân viên chỉ hoàn tất sau khi thực hiện chuyển kho thực tế.',
+      REQUESTED: 'Quản lý kiểm tra hợp đồng, chọn kho đích và phân công nhân viên.',
+      APPROVED: 'Quản lý đã duyệt. Nhân viên được giao ghi nhận kết quả sau khi chuyển kho thực tế.',
       COMPLETED: 'Đã chuyển kho thực tế. Xem vị trí kho và lịch sử hợp đồng đã được cập nhật.',
     },
   };

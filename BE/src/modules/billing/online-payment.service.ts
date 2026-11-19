@@ -1,4 +1,4 @@
-import { closeoutReservationSelect, invoicePaymentBlockedBySchedule } from './renewal-invoice-schedule.js';
+import { closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -34,7 +34,7 @@ export class OnlinePaymentService {
     }
     const transaction = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${identity.id} FOR UPDATE`);
-      const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: { select: closeoutReservationSelect } } });
+      const invoice = await tx.invoice.findUnique({ where: { id: identity.id }, include: { reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
       if (!invoice || invoice.reservation.customerId !== customer.id) throw new NotFoundException('Không tìm thấy hóa đơn thuộc tài khoản này.');
       if (invoice.status === 'VOID') throw new ConflictException({ code: 'INVOICE_CANCELLED', message: 'Hóa đơn đã hủy; không thể tạo phiên thanh toán mới.' });
       if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
@@ -97,24 +97,24 @@ export class OnlinePaymentService {
         });
         if (!invoice) return { RspCode: '01', Message: 'Order not found' };
         if (invoice.status === 'VOID' || invoice.balanceDue !== transaction.amount || (invoice.type === 'INITIAL' && (invoice.reservation.status === 'EXPIRED' || (invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())))) {
-          await tx.onlinePaymentTransaction.updateMany({
-            where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED', 'CANCELLED'] } },
-            data: { status: 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode },
-          });
-          await tx.onlinePaymentReconciliation.upsert({
-            where: { onlinePaymentTransactionId: transaction.id },
-            update: { providerTransactionId: payload.providerTransactionId, amount: transaction.amount },
-            create: {
-              reconciliationCode: this.reconciliationCode(), onlinePaymentTransactionId: transaction.id,
-              reason: invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.'
-                : invoice.balanceDue !== transaction.amount ? 'VNPay xác nhận thành công nhưng số dư hóa đơn đã thay đổi do khoản thanh toán khác; cần đối chiếu tiền thực nhận, không tự ghi thu thêm.'
-                : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.',
-              providerTransactionId: payload.providerTransactionId, amount: transaction.amount,
-            },
-          });
-          return { RspCode: '00', Message: 'Confirm Success - reconciliation required' };
+          const reason = invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.'
+            : invoice.balanceDue !== transaction.amount ? 'VNPay xác nhận thành công nhưng số dư hóa đơn đã thay đổi do khoản thanh toán khác; cần đối chiếu tiền thực nhận, không tự ghi thu thêm.'
+              : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.';
+          return this.reconcileIpn(tx, transaction, payload, reason);
         }
-        await this.billing.recordVerifiedOnlinePayment(tx, invoice, transaction, payload.providerTransactionId);
+        if (invoice.type === 'RENEWAL') {
+          await tx.$executeRaw`SAVEPOINT renewal_payment`;
+          try {
+            await this.billing.recordVerifiedOnlinePayment(tx, invoice, transaction, payload.providerTransactionId);
+          } catch (error) {
+            if (!(error instanceof ConflictException)) throw error;
+            await tx.$executeRaw`ROLLBACK TO SAVEPOINT renewal_payment`;
+            return this.reconcileIpn(tx, transaction, payload, 'VNPay đã xác nhận tiền nhưng hợp đồng chưa thể kích hoạt gia hạn. Cần đối chiếu thanh toán và phân bổ kho.');
+          }
+          await tx.$executeRaw`RELEASE SAVEPOINT renewal_payment`;
+        } else {
+          await this.billing.recordVerifiedOnlinePayment(tx, invoice, transaction, payload.providerTransactionId);
+        }
         await tx.onlinePaymentTransaction.update({ where: { id: transaction.id }, data: { status: 'SUCCESS', providerTransactionId: payload.providerTransactionId, responseCode: payload.responseCode, bankCode: payload.bankCode, paidAt: new Date() } });
         return { RspCode: '00', Message: 'Confirm Success' };
       }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
@@ -130,6 +130,20 @@ export class OnlinePaymentService {
       this.logIpn('processing_error', { ...payload, error: error instanceof Error ? error.name : 'UnknownError' });
       throw error;
     }
+  }
+
+  private async reconcileIpn(tx: Prisma.TransactionClient, transaction: { id: string; amount: bigint }, payload: ReturnType<VnpayService['verify']>, reason: string) {
+    await tx.onlinePaymentTransaction.updateMany({
+      where: { id: transaction.id, status: { in: ['PENDING', 'EXPIRED', 'CANCELLED'] } },
+      data: { status: 'FAILED', responseCode: payload.responseCode, providerTransactionId: payload.providerTransactionId, bankCode: payload.bankCode },
+    });
+    await tx.onlinePaymentReconciliation.upsert({
+      where: { onlinePaymentTransactionId: transaction.id },
+      update: { providerTransactionId: payload.providerTransactionId, amount: transaction.amount },
+      create: { reconciliationCode: this.reconciliationCode(), onlinePaymentTransactionId: transaction.id,
+        reason, providerTransactionId: payload.providerTransactionId, amount: transaction.amount },
+    });
+    return { RspCode: '00', Message: 'Confirm Success - reconciliation required' };
   }
 
   async getCustomerStatus(transactionIdentity: string, customer: PublicUser) {

@@ -5,16 +5,19 @@ import { selectChoice } from './select-choice.mjs';
 import { fixture, customer, staff, when } from './fixtures/workspace.mjs';
 
 const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
-const output = 'artifacts/return-settlement';
+const output = process.env.WDP_SCREENSHOTS_DIR || 'artifacts/return-settlement';
 await mkdir(output, { recursive: true });
 const browser = await launchTestBrowser();
 const errors = [], writes = [];
 let debt = 3000000, readinessDebt = 3000000, early = true, decided = false;
 const endDate = () => early ? '2099-01-01' : '2026-10-01';
+const contractId = fixture.contracts[0].id;
 const rental = () => ({ ...fixture.rentals[0], effectiveEndDate: endDate(), pendingRenewal: null,
   billingSummary: { totalInvoiced: 9000000, totalPaid: 9000000 - debt, totalOutstanding: debt, payableBalance: 0, scheduledBalance: debt },
   paymentDetails: { totalInvoiced: 9000000, totalPaid: 9000000 - debt, totalOutstanding: debt, groups: [] },
   returnReadiness: { requiresFullSettlement: true, totalOutstanding: readinessDebt, canReturn: readinessDebt === 0 },
+  contracts: [{ ...fixture.contracts[0], endDate: endDate(), unit: { ...fixture.contracts[0].storageUnit, status: 'OCCUPIED' },
+    returnReadiness: { requiresFullSettlement: true, totalOutstanding: readinessDebt, canReturn: readinessDebt === 0 } }],
 });
 const approval = () => ({ ...fixture['support-requests'][0], id: 'approval', subject: 'Đề nghị trả kho trước hạn', status: 'RESOLVED', earlyReturnDecision: 'APPROVED', earlyReturnForEndDate: endDate(), reservation: { id: rental().reservationId, reference: rental().reservationReference }, resolutionNote: 'Chấp thuận thời điểm trả sớm.' });
 const proposal = () => ({ id: 'proposal', supportCode: 'EARLY-SETTLEMENT', status: decided ? 'RESOLVED' : 'OPEN', decision: decided ? 'APPROVED' : null, description: 'Không còn nhu cầu sử dụng kho', updatedAt: when, createdAt: when, resolvedAt: decided ? when : null, resolvedBy: staff, customer,
@@ -46,17 +49,13 @@ try {
   for (const timing of ['early', 'normal']) {
     early = timing === 'early'; debt = readinessDebt = 3000000;
     await page.goto(base + '/customer/returns');
-    assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
-    const choice = page.getByRole('combobox', { name: 'Yêu cầu thuê đủ điều kiện trả', exact: true });
-    await choice.click();
-    const option = page.locator(`[role="option"][data-value="${rental().reservationId}"]`);
-    await option.waitFor();
-    assert.match(await option.innerText(), /Cần thanh toán/);
-    await option.click();
+    assert(await page.getByRole('button', { name: 'Tiếp tục', exact: true }).isDisabled());
+    const choice = page.getByRole('combobox', { name: 'Kho muốn trả', exact: true });
+    await selectChoice(choice, contractId);
     const payment = page.getByRole('region', { name: 'Thanh toán của kho muốn trả' });
     await payment.getByText('3.000.000', { exact: false }).waitFor();
     assert.equal(await payment.getByRole('link').getAttribute('href'), `/customer/payments?reservation=${rental().reservationId}`);
-    assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
+    assert(await page.getByRole('button', { name: 'Tiếp tục', exact: true }).isDisabled());
     assert.equal(await page.getByRole('region', { name: 'Điều kiện thanh toán trước khi trả kho' }).count(), 0);
     if (timing === 'early') {
       await shot(page, 'customer-scheduled-debt-blocked');
@@ -65,14 +64,14 @@ try {
     }
     debt = readinessDebt = 0;
     await page.reload();
-    await selectChoice(choice, rental().reservationId);
-    assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isEnabled());
+    await selectChoice(choice, contractId);
+    assert(await page.getByRole('button', { name: 'Tiếp tục', exact: true }).isEnabled());
   }
   readinessDebt = null;
   await page.reload();
-  await selectChoice(page.getByRole('combobox', { name: 'Yêu cầu thuê đủ điều kiện trả', exact: true }), rental().reservationId);
-  await page.getByText('Chưa xác định được số tiền còn thiếu.', { exact: false }).waitFor();
-  assert(await page.getByRole('button', { name: 'Gửi yêu cầu trả kho', exact: true }).isDisabled());
+  await selectChoice(page.getByRole('combobox', { name: 'Kho muốn trả', exact: true }), contractId);
+  await page.getByText('Cần đối soát trước khi trả kho', { exact: true }).waitFor();
+  assert(await page.getByRole('button', { name: 'Tiếp tục', exact: true }).isDisabled());
 
   debt = readinessDebt = 3000000;
   const manager = await setup('MANAGER');

@@ -18,6 +18,7 @@ type UnitLine = {
   contractId: string; contractCode: string; reservationUnitId: string; storageUnitId: string;
   unitCode: string; storageTypeId: string; storageTypeName: string; monthlyRate: number;
   rentalAmount: number; depositAmount: number;
+  discountAmount?: number;
 };
 export type InvoiceServiceLine = {
   id: string; name: string; quantity: number; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number;
@@ -83,5 +84,7 @@ function matchesTotals(details: InvoiceBreakdown, totals: Totals) {
 
 export function savedInvoiceBreakdown(snapshot: unknown, totals: Totals) {
   const details = (snapshot as { breakdown?: InvoiceBreakdown } | null)?.breakdown;
-  return details?.version === 1 && Array.isArray(details.units) && Array.isArray(details.sharedServices) && matchesTotals(details, totals) ? details : null;
+  return details?.version === 1 && Array.isArray(details.units) && details.units.every(unit => unit && typeof unit === 'object')
+    && Array.isArray(details.sharedServices) && details.sharedServices.every(service => service && typeof service === 'object')
+    && matchesTotals(details, totals) ? details : null;
 }

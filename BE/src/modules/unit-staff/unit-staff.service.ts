@@ -18,15 +18,20 @@ export class UnitStaffService {
   async assign(unitId: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được phân công người phụ trách kho.');
     if (!this.enabled()) throw new ServiceUnavailableException({ code: 'UNIT_ASSIGNMENTS_NOT_ENABLED', message: 'Phân công theo kho chưa được bật; database hiện chưa được thay đổi.' });
+    const revoke = input.staffUserId === null;
     const staffUserId = typeof input.staffUserId === 'string' ? input.staffUserId.trim() : '';
-    if (!staffUserId || !Object.hasOwn(input, 'expectedAssignmentId') || input.expectedAssignmentId !== null && typeof input.expectedAssignmentId !== 'string') throw new BadRequestException('Cần chọn nhân viên và gửi phiên bản phân công hiện tại.');
+    if ((!revoke && !staffUserId) || !Object.hasOwn(input, 'expectedAssignmentId') || input.expectedAssignmentId !== null && typeof input.expectedAssignmentId !== 'string') throw new BadRequestException('Cần gửi người phụ trách và phiên bản phân công hiện tại.');
     try {
       return await this.prisma.$transaction(async tx => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${unitId} FOR UPDATE`);
         if (!await tx.storageUnit.findUnique({ where: { id: unitId }, select: { id: true } })) throw new NotFoundException('Không tìm thấy kho.');
+        const current = await tx.unitStaffAssignment.findFirst({ where: { storageUnitId: unitId, endedAt: null } });
+        if (revoke) {
+          if ((current?.id ?? null) !== input.expectedAssignmentId) throw new ConflictException('Phân công đã thay đổi. Vui lòng tải lại danh sách kho.');
+          return current ? tx.unitStaffAssignment.update({ where: { id: current.id }, data: { endedAt: new Date() }, include: this.include() }) : null;
+        }
         const staff = await tx.user.findFirst({ where: { id: staffUserId, role: 'STAFF', accountStatus: 'ACTIVE' }, select: { id: true } });
         if (!staff) throw new BadRequestException('Nhân viên phải là STAFF đang hoạt động.');
-        const current = await tx.unitStaffAssignment.findFirst({ where: { storageUnitId: unitId, endedAt: null } });
         const unchanged = current?.staffUserId === staffUserId;
         if (!unchanged && (current?.id ?? null) !== input.expectedAssignmentId) throw new ConflictException('Phân công đã thay đổi. Vui lòng tải lại danh sách kho.');
         const now = new Date();

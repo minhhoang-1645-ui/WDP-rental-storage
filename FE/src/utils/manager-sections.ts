@@ -6,7 +6,7 @@ export const managerStorageLabels = {
 /** Management destinations only. Daily customer operations belong to Staff. */
 export const managerSections = {
   reviews: {
-    title: 'Việc cần duyệt', description: 'Xem yêu cầu cần quyết định và kết quả nhân viên gửi kiểm tra.',
+    title: 'Hồ sơ cần xử lý', description: 'Các hồ sơ cần quản lý xem xét hoặc xác nhận.',
     items: [
       { title: 'Sự cố hàng hóa', description: 'Xem tình trạng hàng và quyết định cách giải quyết.', web: '/manager/damage-claims', mobile: '/manager/damage-claims' },
       { title: 'Đề nghị trả trước hạn', description: 'Kiểm tra tiền còn phải trả và duyệt thời điểm trả sớm.', web: '/manager/early-returns', mobile: '/manager/early-returns' },
@@ -40,7 +40,7 @@ export const managerSections = {
 } as const;
 export type ManagerSection = keyof typeof managerSections;
 export const managerPrimaryMenu = [
-  { title: 'Tổng quan', key: '' }, { title: 'Việc cần duyệt', key: 'reviews' },
+  { title: 'Tổng quan', key: '' }, { title: managerSections.reviews.title, key: 'reviews' },
   { title: 'Phân công nhân viên', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
   { title: 'Kho & hàng hóa', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
   { title: 'Dịch vụ & bảng giá', key: 'catalog' }, { title: 'Báo cáo', key: 'reports' },

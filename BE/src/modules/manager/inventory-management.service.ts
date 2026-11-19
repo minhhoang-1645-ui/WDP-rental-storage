@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { unitHistoryCounts, unitMetadataLocked } from './unit-edit-policy.js';
+import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-location.js';
 
 const groups: Record<string, string> = { locker: 'Tủ lưu trữ', small: 'Kho nhỏ', medium: 'Kho vừa', large: 'Kho lớn' };
 const typeFields = ['facilityId', 'code', 'name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'allowDailyRental', 'minRentalDays', 'image', 'imageAlt', 'expectedUpdatedAt'];
@@ -72,33 +74,59 @@ export class InventoryManagementService {
     });
   }
 
+  async listUnitLocations() {
+    const locations = await this.prisma.storageUnit.groupBy({ by: ['floor', 'zone'] });
+    const collator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+    const options = (values: (string | null)[]) => [...new Map(values.filter((value): value is string => Boolean(value))
+      .map(value => [value.toLocaleLowerCase('vi'), value])).values()].sort((left, right) => collator.compare(left, right));
+    return {
+      floors: options(locations.map(row => canonicalUnitFloor(row.floor))),
+      zones: options(locations.map(row => canonicalUnitZone(row.zone))),
+    };
+  }
+
   async saveUnit(id: string | undefined, input: Record<string, unknown>, actor: PublicUser) {
     this.manager(actor); this.body(input, unitFields);
     return this.write(async tx => {
       // Match booking's unit locks; serializable transactions also protect history predicates.
       if (id) await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${id} FOR UPDATE`);
-      const current = id ? await tx.storageUnit.findUnique({ where: { id }, include: { _count: { select: {
-        reservationUnits: true, maintenanceRequests: true, supportRequests: true, outgoingTransfers: true, incomingTransfers: true, returnInspections: true, staffAssignments: true,
-      } } } }) : null;
+      const current = id ? await tx.storageUnit.findUnique({ where: { id }, include: { _count: { select: unitHistoryCounts }, storageType: { select: { facilityId: true } } } }) : null;
       if (id && !current) throw new NotFoundException('Không tìm thấy kho vật lý.');
       if (current) this.version(current.updatedAt, input.expectedUpdatedAt);
       const value = { ...current, ...input };
       const storageTypeId = this.text(value.storageTypeId, 'Loại kho', 100);
-      const storageType = await tx.storageType.findUnique({ where: { id: storageTypeId }, select: { code: true } });
+      const storageType = await tx.storageType.findUnique({ where: { id: storageTypeId }, select: { code: true, facilityId: true } });
       if (!storageType) throw new BadRequestException('Loại kho không tồn tại.');
       const autoCode = !current && (value.unitNumber === undefined || value.unitNumber === '' || value.unitNumber === null);
+      const floor = canonicalUnitFloor(this.optionalText(value.floor, 'Tầng', 100));
+      const zone = canonicalUnitZone(this.optionalText(value.zone, 'Khu', 100));
+      const sameFloor = Boolean(current && floor?.toLocaleLowerCase('vi') === canonicalUnitFloor(current.floor)?.toLocaleLowerCase('vi'));
+      const sameZone = Boolean(current && zone === canonicalUnitZone(current.zone));
       const data = {
         unitNumber: autoCode
           ? `${storageType.code.slice(0, 33)}-${randomBytes(8).toString('hex').toUpperCase()}`
-          : this.code(value.unitNumber, 'Mã kho'),
+          : current && value.unitNumber === current.unitNumber ? current.unitNumber : this.code(value.unitNumber, 'Mã kho'),
         storageTypeId,
-        floor: this.optionalText(value.floor, 'Tầng', 100), zone: this.optionalText(value.zone, 'Khu', 100),
+        floor: current && sameFloor ? current.floor : floor,
+        zone: current && sameZone ? current.zone : zone,
         row: this.optionalInteger(value.row, 'Hàng'), position: this.optionalInteger(value.position, 'Vị trí'),
       };
       if (current && Object.entries(data).some(([key, v]) => v !== current[key as keyof typeof current])) {
-        if (current.status !== 'AVAILABLE' || Object.values(current._count).some(count => count > 0)) {
+        if (unitMetadataLocked(current.status, current._count)) {
           throw new ConflictException('Kho đã có hồ sơ, phân công hoặc đang sử dụng. Không đổi mã, loại hoặc vị trí; hãy tạo kho mới.');
         }
+      }
+      const locationChanged = !current || !sameFloor || !sameZone || current.row !== data.row
+        || current.position !== data.position || (current.storageTypeId !== storageTypeId && current.storageType.facilityId !== storageType.facilityId);
+      if (locationChanged && floor && zone && data.row !== null && data.position !== null) {
+        const occupied = await tx.storageUnit.findFirst({ where: {
+          ...(id ? { id: { not: id } } : {}),
+          storageType: { facilityId: storageType.facilityId },
+          floor: { in: unitFloorValues(floor), mode: 'insensitive' },
+          zone: { equals: zone, mode: 'insensitive' },
+          row: data.row, position: data.position,
+        }, select: { unitNumber: true } });
+        if (occupied) throw new ConflictException(`Vị trí này đã có kho ${occupied.unitNumber}.`);
       }
       return current ? tx.storageUnit.update({ where: { id: current.id }, data }) : tx.storageUnit.create({ data });
     });

@@ -1,4 +1,4 @@
-import { first, type Row } from './portal-data';
+import type { Row } from './portal-data';
 
 export function TransferHandoverForm({ row, busy, onSubmit }: { row: Row; busy: boolean; onSubmit: (input: Row) => void }) {
   const unsigned = Boolean(row.commercial && typeof row.commercial === 'object' && !('acceptedAt' in row.commercial && row.commercial.acceptedAt));
@@ -7,8 +7,6 @@ export function TransferHandoverForm({ row, busy, onSubmit }: { row: Row; busy: 
     const fields = new FormData(event.currentTarget);
     onSubmit({ recipientName: fields.get('recipientName'), returnedKeyCount: Number(fields.get('returnedKeyCount')), deliveredKeyCount: Number(fields.get('deliveredKeyCount')), oldKeysReturned: fields.get('oldKeysReturned') === 'on', newKeysDelivered: fields.get('newKeysDelivered') === 'on', goodsMoved: fields.get('goodsMoved') === 'on', note: fields.get('note') });
   }}>
-    <h3>Bàn giao kho mới và đổi chìa khóa</h3>
-    <div className="transfer-route"><span><small>Thu hồi quyền kho cũ</small><strong>{first(row, 'fromUnit.unitCode')}</strong></span><span aria-hidden="true">→</span><span><small>Bàn giao quyền kho mới</small><strong>{first(row, 'toUnit.unitCode')}</strong></span></div>
     <p>Chỉ xác nhận sau khi chuyển hết hàng sang kho mới và đối chiếu chìa khóa/thẻ hoặc mã truy cập với khách.</p>
     {unsigned && <p className="booking-alert is-warning">Khách cần ký phụ lục đổi loại kho trước khi hoàn tất.</p>}
     <label className="field-label">Người nhận kho mới<input name="recipientName" required minLength={2} maxLength={120} /></label>

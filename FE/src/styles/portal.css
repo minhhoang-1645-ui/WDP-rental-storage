@@ -387,6 +387,9 @@
   flex-wrap: wrap;
   gap: var(--space-8);
 }
+@media (max-width: 480px) {
+  .portal-pagination button:is([aria-label="Trang trước"], [aria-label="Trang sau"]) > span { display: none; }
+}
 .portal-pagination .icon-button {
   width: 31px;
   height: 31px;

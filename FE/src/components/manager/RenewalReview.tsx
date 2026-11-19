@@ -7,7 +7,7 @@ export function RenewalReview({ row, showContracts = true, audience = 'internal'
   const facts: [string, string][] = [
     ...(audience === 'internal' ? [
       ['Khách hàng', first(row, 'customer.fullName', 'requestedBy.fullName') || '—'],
-      ['Kho thuê', first(reservation, 'storageType.name') + (reservation.quantity ? ' · ' + reservation.quantity + ' kho' : '')],
+      ['Loại kho', first(reservation, 'storageType.name')],
     ] as [string, string][] : []),
     ['Gia hạn' + (typeof row.termMonths === 'number' ? ' · ' + row.termMonths + ' tháng' : ''), date(row.previousEndDate) + ' – ' + date(row.requestedEndDate)],
     ['Thanh toán', label(row.paymentPlan)],

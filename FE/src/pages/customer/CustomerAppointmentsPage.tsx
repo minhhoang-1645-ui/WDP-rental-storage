@@ -1,6 +1,8 @@
+import { DetailCard } from '../../components/workspace/DetailRow';
+import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { EntitySelect } from '../../components/EntitySelect';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { CustomerFormSources } from "../../components/customer/CustomerFormSources";
 import { mutate } from "../../services/portal";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
@@ -31,6 +33,7 @@ export function CustomerAppointmentsPage() {
   const { user } = useAuth();
   const [params] = useSearchParams();
   const focused = params.get('appointment');
+  const returnPath = useInternalListReturn('/customer/appointments');
   const appointments = usePaginatedResource<CustomerAppointment>(
     "/customer/appointments?limit=100",
     user?.id ?? "",
@@ -106,7 +109,7 @@ export function CustomerAppointmentsPage() {
   );
 
   const { items: visible, pagination } =
-    useCustomerPagination(filteredAppointments);
+    useListPagination(filteredAppointments);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -176,7 +179,7 @@ export function CustomerAppointmentsPage() {
       />
       <div className={focused ? "record-focused-layout" : "customer-module-layout"}>
         <section className="customer-appointments-list" aria-label="Các yêu cầu bàn giao">
-          {focused ? <p className="customer-filter-notice"><Link to="/customer/appointments">Xem tất cả lịch</Link></p> :
+          {focused ? <p className="customer-filter-notice"><Link to={returnPath}>Xem tất cả lịch</Link></p> :
           <div className="customer-module-tabs" role="tablist">
             <button
               type="button"
@@ -220,7 +223,8 @@ export function CustomerAppointmentsPage() {
           ) : (
             <div className="customer-card-list appointment-request-list">
               {visible.map((item) => (
-                <article
+                <DetailCard
+                    detail={!focused ? { to: '/customer/appointments' + '?' + new URLSearchParams({ appointment: item.id }), label: `Xem lịch bàn giao ${item.appointmentCode}` } : undefined}
                   className="customer-record-card customer-record-card--compact appointment-request-card"
                   key={item.id}
                 >
@@ -241,7 +245,7 @@ export function CustomerAppointmentsPage() {
                   {item.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Đã nhận giấy tờ, hướng dẫn và chìa khóa. Chờ ngày bắt đầu thuê để sử dụng kho và đưa hàng vào; hệ thống tự kích hoạt khi đủ điều kiện.</p>}
                   {item.usageStatus !== 'WAITING_FOR_RENTAL_START' && workflowGuide('appointments', item.status, 'customer') && <WorkflowHint>{workflowGuide('appointments', item.status, 'customer')}</WorkflowHint>}
                   </details>
-                </article>
+                </DetailCard>
               ))}
             </div>
           )}

@@ -1,35 +1,36 @@
-import { useAuth } from '../../auth/auth-context'
-import { usePaginatedResource } from '../../services/usePaginatedResource'
-import { isTransferRequest } from '../../utils/transfer-request'
-import { code, customer, first, type Row } from './portal-data'
-import { Status } from './PortalUi'
-import { OperationsLink as Link } from './OperationsLink'
-import { useState } from 'react'
-import { mutate } from '../../services/portal'
+import { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { mutate } from '../../services/portal';
+import { DetailDisclosure } from '../workspace/DetailDisclosure';
+import { first, rows, type Row } from './portal-data';
 
-/** Customer transfer requests use SupportRequest in the existing BE; surface them in the transfer workspace. */
-export function TransferRequests({ onCreate, revision = 0 }: { onCreate: (row: Row) => void; revision?: number }) {
-  const { user } = useAuth()
-  const requests = usePaginatedResource<Row>('/manager/support-requests?limit=100', `${user?.id}:${revision}`, true)
-  const transfers = usePaginatedResource<Row>('/manager/transfers?limit=100', `${user?.id}:${revision}`, true)
-  const linked = new Map((transfers.data?.items ?? []).filter(row => first(row, 'supportRequest.id')).map(row => [first(row, 'supportRequest.id'), row]))
-  const pending = (requests.data?.items ?? []).filter(row => isTransferRequest(row) && (!linked.has(first(row, 'id')) || linked.get(first(row, 'id'))?.status === 'REJECTED') && (row.status !== 'RESOLVED' || row.resolutionType === 'TRANSFER_RECOMMENDED'))
-  return <section className="manager-section transfer-request-inbox" aria-label="Yêu cầu chuyển kho từ khách hàng">
-    <h2>Yêu cầu chuyển kho từ khách hàng</h2><p>Đối chiếu hợp đồng rồi gửi đề nghị để quản lý duyệt kho đích.</p>
-    {(requests.loading || transfers.loading) ? <p role="status">Đang đối chiếu yêu cầu chuyển kho…</p> : requests.error || transfers.error ? <div role="alert"><p>{requests.error || transfers.error}</p><button className="button-secondary" onClick={() => { requests.refresh(); transfers.refresh() }}>Thử lại yêu cầu chuyển kho</button></div> : !pending.length ? <p>Chưa có yêu cầu chuyển kho cần tiếp nhận.</p> : <div className="transfer-request-cards">{pending.map(row => {
-      const person = customer(row)
-      return <article key={first(row, 'id')}><div><strong>{first(person, 'fullName') || 'Khách hàng'} · {first(person, 'phone', 'email')}</strong><p>{first(row, 'subject')} · {row.status === 'RESOLVED' ? <span>Đã đề xuất chuyển</span> : <Status value={row.status} />}</p><small>{code(row)} · {first(row, 'reservation.reference')} · Kho {first(row, 'unit.unitCode', 'storageUnit.unitNumber') || 'Chưa chọn'}</small><p>{first(row, 'description')}</p><small>Phụ trách: {first(row, 'assignedStaff.fullName') || 'Chưa phân công'}</small></div><div className="portal-actions"><button className="button-primary" onClick={() => onCreate(row)}>Gửi đề nghị</button><Link className="button-secondary" to={`/manager/operations/support-requests/${encodeURIComponent(first(row, 'id'))}`}>Xem yêu cầu gốc</Link></div></article>
-    })}</div>}
-  </section>
-}
-
-export function TransferSupportAction({ row, onCreate }: { row: Row; onCreate: () => void }) {
-  const { user } = useAuth()
-  const transfers = usePaginatedResource<Row>('/manager/transfers?limit=100', user?.id ?? '', true)
-  const linked = transfers.data?.items.find(item => first(item, 'supportRequest.id') === first(row, 'id'))
-  const assigned = first(row, 'assignedStaff.id') === user?.id
-  const open = !['RESOLVED', 'CANCELLED'].includes(String(row.status)) || row.resolutionType === 'TRANSFER_RECOMMENDED'
-  return <section className="manager-section transfer-request-inbox"><h2>Yêu cầu chuyển kho</h2>{transfers.loading ? <p role="status">Đang kiểm tra lệnh chuyển liên quan…</p> : transfers.error ? <><p role="alert">{transfers.error}</p><button className="button-secondary" onClick={transfers.refresh}>Thử lại lệnh chuyển</button></> : linked ? <><p>Lệnh {code(linked)} · <Status value={linked.status} /></p>{Boolean(linked.rejectionReason) && <p><strong>Lý do từ chối: </strong>{first(linked, 'rejectionReason')}</p>}<Link className="button-primary" to={`/manager/operations/transfers/${encodeURIComponent(first(linked, 'id'))}`}>Mở lệnh chuyển kho</Link></> : assigned && open ? <><p>Đối chiếu kho hiện tại và lý do khách đề nghị, sau đó tạo lệnh để chọn kho đích và ghi nhận bàn giao.</p><button className="button-primary" onClick={onCreate}>Tạo lệnh chuyển từ yêu cầu này</button></> : <p>{assigned ? 'Yêu cầu đã đóng. Xem kết quả xử lý trong hồ sơ.' : 'Chỉ nhân viên được phân công mới được tiếp nhận yêu cầu chuyển kho này.'}</p>}<Link className="comparison-detail" to="/manager/operations/transfers">Theo dõi chuyển kho</Link></section>
+export function TransferIntake({ row, from }: { row: Row; from: string }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const locked = useRef(false);
+  const existing = first(rows(row.transfers)[0] ?? {}, 'id');
+  const destination = (id: string) => `/manager/operations/transfers/${encodeURIComponent(id)}${from ? '?' + new URLSearchParams({ from }) : ''}`;
+  if (existing) return <Link className="button-secondary" to={destination(existing)}>Mở hồ sơ chuyển kho</Link>;
+  if (row.status === 'RESOLVED') return null;
+  async function open() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const transfer = await mutate<{ id: string }>(`/manager/transfers/intake/${encodeURIComponent(first(row, 'id'))}`, 'POST');
+      void navigate(destination(transfer.id), { replace: true });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể mở hồ sơ chuyển kho.');
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
+  }
+  return <div className="portal-form">
+    <button type="button" className="button-primary" disabled={busy} onClick={() => void open()}>{busy ? 'Đang mở…' : 'Mở để xét yêu cầu cũ'}</button>
+    {error && <p role="alert">{error}</p>}
+  </div>;
 }
 
 export function CompletedTransferSync({ row, refresh }: { row: Row; refresh: () => void }) {
@@ -38,5 +39,9 @@ export function CompletedTransferSync({ row, refresh }: { row: Row; refresh: () 
   const synced = !supportId || first(row, 'supportRequest.status') === 'RESOLVED' && first(row, 'supportRequest.resolutionType') !== 'TRANSFER_RECOMMENDED'
   const needsSync = !synced || row.sourceMaintenanceMissing === true
   const sync = async () => { if (busy) return; setBusy(true); setError(''); try { await mutate(`/staff/transfers/${encodeURIComponent(first(row, 'id'))}/complete`, 'POST', undefined, true); refresh() } catch (caught) { setError(caught instanceof Error ? caught.message : 'Chưa đồng bộ được kết quả. Vui lòng thử lại.') } finally { setBusy(false) } }
-  return <section className="manager-section"><h2>Kết quả gửi khách hàng</h2><p>{synced ? supportId ? 'Đã hoàn tất chuyển kho và cập nhật yêu cầu của khách.' : 'Lệnh chuyển kho đã hoàn tất.' : 'Lệnh chuyển đã hoàn tất. Đồng bộ hồ sơ cũ để yêu cầu của khách nhận đúng kết quả; thao tác này không chuyển kho lần nữa.'}</p>{needsSync && <button className="button-primary" disabled={busy} onClick={() => void sync()}>{busy ? 'Đang đồng bộ…' : synced ? 'Đồng bộ bảo trì kho nguồn' : 'Đồng bộ kết quả cho khách'}</button>}{error && <p role="alert">{error}</p>}<p>{first(row, 'fromUnit.status') === 'MAINTENANCE' ? 'Kho nguồn được giữ để kiểm tra và sửa chữa; chỉ đưa vào sử dụng lại sau nghiệm thu.' : 'Kho nguồn được quản lý theo trạng thái hiện tại; đồng bộ hồ sơ cũ không thay đổi lại trạng thái vật lý.'}</p>{row.sourceMaintenanceMissing === true && <p>Hồ sơ cũ chưa có phiếu bảo trì kho nguồn. Dùng nút đồng bộ để bổ sung phiếu.</p>}{first(row, 'sourceMaintenance.id') && <Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(row, 'sourceMaintenance.id'))}`}>Xem bảo trì kho nguồn · {first(row, 'sourceMaintenance.maintenanceCode')}</Link>}{supportId && <Link className="comparison-detail" to={`/manager/operations/support-requests/${encodeURIComponent(supportId)}`}>Xem yêu cầu của khách</Link>}</section>
+  if (!needsSync) return null
+  return <DetailDisclosure title="Đồng bộ hồ sơ cũ">
+    <button className="button-secondary" disabled={busy} onClick={() => void sync()}>{busy ? 'Đang đồng bộ…' : synced ? 'Đồng bộ bảo trì kho nguồn' : 'Đồng bộ kết quả cho khách'}</button>
+    {error && <p role="alert">{error}</p>}
+  </DetailDisclosure>
 }

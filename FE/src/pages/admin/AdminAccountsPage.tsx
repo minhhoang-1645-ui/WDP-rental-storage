@@ -13,7 +13,7 @@ import { StaffTaskTable, TablePopover, type StaffColumn } from '../../components
 import { date, first, label, type Row } from '../../components/manager/portal-data';
 import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 
-const sizes = [10, 20, 50] as const;
+import { internalPageSize } from '../../utils/internal-pagination';
 const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
 const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã khóa' };
 type AccountStatus = keyof typeof statuses;
@@ -45,7 +45,7 @@ export function AdminAccountsPage() {
   const search = params.get('search') ?? '';
   const role = params.get('role') ?? '';
   const status = params.get('status') ?? '';
-  const limit = sizes.find(size => size === Number(params.get('limit'))) ?? 20;
+  const limit = internalPageSize(params);
   const page = Math.max(1, Math.min(100000, Math.floor(Number(params.get('page')) || 1)));
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set('search', search.trim());
@@ -107,7 +107,7 @@ export function AdminAccountsPage() {
       const id = first(row, 'id');
       const name = first(row, 'fullName', 'email');
       return <>
-        <strong>{id ? <Link className="admin-account-link" to={accountDetailPath(id)}>{name}</Link> : name}</strong>
+        <strong>{name}</strong>
         <small>{first(row, 'email')}</small>
         {id === user?.id && <small>Tài khoản của bạn</small>}
       </>;
@@ -166,14 +166,14 @@ export function AdminAccountsPage() {
     </div>
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
     {data.data && <>
-      {data.data.items.length ? <StaffTaskTable title="Danh sách tài khoản" items={data.data.items} columns={columns} rowKey={row => first(row, 'id')} selected={row => selectedIds.has(first(row, 'id'))} />
+      {data.data.items.length ? <StaffTaskTable title="Danh sách tài khoản" items={data.data.items} columns={columns} rowKey={row => first(row, 'id')} rowDetail={row => ({ to: accountDetailPath(first(row, 'id')), label: `Xem chi tiết tài khoản ${first(row, 'fullName', 'email')}` })} selected={row => selectedIds.has(first(row, 'id'))} />
         : <Empty title="Không tìm thấy tài khoản" />}
-      <InternalPagination page={page} limit={limit} total={data.data.total} pageSizes={sizes} showBoundaryControls
+      <InternalPagination page={page} limit={limit} total={data.data.total} showBoundaryControls
         onChange={value => change('page', String(value))} onLimitChange={value => change('limit', String(value))} />
     </>}
     {!!selected.length && <div className="admin-bulk-bar" role="group" aria-label="Thao tác tài khoản đã chọn">
       <button type="button" className="icon-button" aria-label="Bỏ chọn tất cả" onClick={() => rememberSelection()}><X size={16} /></button>
-      <span aria-live="polite">Đã chọn {selected.length}</span>
+      <span aria-live="polite">Đã chọn {selected.length} trên trang này</span>
       <button type="button" className="button-secondary" disabled={!selected.some(row => row.accountStatus === 'DISABLED')}
         onClick={() => startBulk('ACTIVE')}><UserRoundCheck size={16} />Mở khóa tài khoản</button>
       <button type="button" className="button-secondary portal-danger" disabled={!selected.some(row => row.accountStatus === 'ACTIVE')}

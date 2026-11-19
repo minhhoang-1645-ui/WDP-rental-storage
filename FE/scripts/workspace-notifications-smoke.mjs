@@ -105,7 +105,7 @@ async function setup(role, id, { width = 1440, theme = 'light' } = {}) {
   const bell = page.getByRole('button', { name: /^Thông báo,/ });
   const showInbox = () => open('/notifications');
   const tab = name => inbox.getByRole('button', { name, exact: true }).click();
-  const current = number => inbox.locator(`button[aria-label="Trang ${number}"][aria-current="page"]`).waitFor();
+  const current = number => inbox.getByText(new RegExp(`^Trang ${number} / `)).waitFor();
   return { context, page, open, showInbox, rows, bell, tab, current, inbox, flag };
 }
 
@@ -137,18 +137,20 @@ try {
   await app.current(14);
   assert.equal(await app.rows.count(), 1);
   assert.equal(await app.inbox.getByRole('button', { name: 'Trang sau' }).isEnabled(), false);
-  await app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' }).selectOption('50');
-  await app.page.getByText('1–50 / 131 thông báo', { exact: true }).waitFor();
-  assert.equal(await app.rows.count(), 50);
-  await app.inbox.getByRole('button', { name: 'Trang 2', exact: true }).click();
+  const limits = app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' });
+  assert.deepEqual(await limits.locator('option').allTextContents(), ['5', '10']);
+  await limits.selectOption('5');
+  await app.page.getByText('1–5 / 131 thông báo', { exact: true }).waitFor();
+  assert.equal(await app.rows.count(), 5);
+  await app.inbox.getByRole('button', { name: 'Trang sau', exact: true }).click();
   await app.current(2);
   const secondPage = await app.rows.locator('strong').allTextContents();
-  assert.equal(secondPage.length, 50);
-  assert.equal(new Set(secondPage).size, 50);
-  await app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' }).selectOption('20');
-  await app.page.getByText('1–20 / 131 thông báo', { exact: true }).waitFor();
+  assert.equal(secondPage.length, 5);
+  assert.equal(new Set(secondPage).size, 5);
+  await app.inbox.getByRole('combobox', { name: 'Số dòng mỗi trang' }).selectOption('10');
+  await app.page.getByText('1–10 / 131 thông báo', { exact: true }).waitFor();
   await app.inbox.getByRole('combobox', { name: 'Loại thông báo' }).selectOption('support-requests');
-  await app.page.getByText('1–20 / 130 thông báo', { exact: true }).waitFor();
+  await app.page.getByText('1–10 / 130 thông báo', { exact: true }).waitFor();
   const search = app.inbox.getByRole('searchbox', { name: 'Tìm thông báo' });
   await search.fill('dac biet');
   await app.rows.getByText('Yêu cầu hỗ trợ 129', { exact: true }).waitFor();
@@ -162,7 +164,7 @@ try {
   await app.page.keyboard.press('Enter');
   const popover = app.page.getByRole('dialog', { name: 'Thông báo', exact: true });
   await popover.waitFor();
-  assert.equal(await popover.locator('.workspace-notification-row').count(), 5);
+  assert.equal(await popover.locator('.workspace-notification-row').count(), 10);
   assert.equal(await app.bell.locator('.workspace-notification-badge').innerText(), '99+');
   await app.page.waitForFunction(() => document.activeElement?.matches('.workspace-notification-panel'));
   await app.page.keyboard.press('Escape');
@@ -184,6 +186,9 @@ try {
   await app.bell.getAttribute('aria-label').then(value => assert.match(value, /130 chưa đọc/));
   assert.equal(await app.rows.count(), 1, 'Reading does not finish the task');
   await app.tab('Tất cả');
+  await limits.selectOption('5');
+  await search.fill('Bàn giao');
+  await app.page.waitForURL(url => url.searchParams.get('limit') === '5' && url.searchParams.get('search') === 'Bàn giao');
   await app.rows.getByText('Bàn giao đã hoàn tất', { exact: true }).waitFor();
   await app.rows.first().getByRole('button', { name: 'Xem chi tiết', exact: true }).click();
   await app.page.waitForURL('**/customer/appointments?appointment=own-appointment');
@@ -191,6 +196,8 @@ try {
   await app.page.locator('.appointment-request-card').first().waitFor();
   assert.equal(await app.page.locator('.appointment-request-card').count(), 1);
   await app.page.getByRole('link', { name: 'Về thông báo' }).click();
+  await app.page.waitForURL(url => url.searchParams.get('limit') === '5' && url.searchParams.get('search') === 'Bàn giao');
+  await app.showInbox();
   await app.rows.first().waitFor();
   await app.inbox.getByRole('button', { name: 'Đánh dấu tất cả đã đọc' }).click();
   await app.page.getByRole('button', { name: 'Thông báo, 0 chưa đọc', exact: true }).waitFor();
@@ -267,8 +274,11 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(otherWrites, []);
   assert(reads.get('customer-owned').some(path => path.includes('view=action')));
-  assert(reads.get('customer-owned').some(path => path.includes('limit=50')));
-  console.log('PASS all four Web notification roles, 131 items, search, filters, read and action states, five-item bell, navigation, reload, stale links, errors, keyboard focus and responsive themes');
+  const requests = reads.get('customer-owned').filter(path => path.startsWith('GET notifications?'));
+  assert(requests.some(path => path.includes('limit=5')));
+  assert(requests.some(path => path.includes('limit=10')));
+  assert(requests.every(path => /limit=(5|10)(?:&|$)/.test(path)));
+  console.log('PASS all four Web notification roles, 131 items, 5/10 pagination, search, filters, read and action states, ten-item bell, navigation, reload, stale links, errors, keyboard focus and responsive themes');
 } finally {
   await browser.close();
 }

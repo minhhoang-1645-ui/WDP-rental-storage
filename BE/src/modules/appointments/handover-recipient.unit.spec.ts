@@ -38,6 +38,16 @@ function setup(status = 'CONFIRMED') {
   return { service: new AppointmentsService(prisma as never, {} as never, {} as never), row, update };
 }
 
+function addSecondUnit(row: ReturnType<typeof setup>['row']) {
+  row.reservation.quantity = 2;
+  row.reservation.units.push({ id: 'allocation-2', storageUnitId: 'unit-2' });
+  const first = row.reservation.contracts[0];
+  row.reservation.contracts.push({
+    ...first, id: 'contract-2', contractCode: 'C02', reservationUnitId: 'allocation-2',
+    reservationUnit: { storageUnit: { ...first.reservationUnit.storageUnit, id: 'unit-2', unitNumber: 'A02' } },
+  });
+}
+
 describe('RV3 handover completion service', () => {
   it('records actual early collection before the planned appointment without activating the rental', async () => {
     const state = setup();
@@ -80,5 +90,53 @@ describe('RV3 handover completion service', () => {
     state.row.reservation.invoices[0].status = 'OPEN';
     await expect(state.service.completeHandover('appointment', { handoverReport: report }, staff)).rejects.toThrow('thanh toán');
     expect(state.update).not.toHaveBeenCalled();
+  });
+  it('requires complete, distinct physical unit checks when the client sends a checklist', async () => {
+    const { service, row, update } = setup();
+    addSecondUnit(row);
+    const one = { unitId: 'unit', unitCode: 'Invoice-01', condition: 'Cửa và sàn tốt', inspected: true };
+    const two = { unitId: 'unit-2', condition: 'Có vết xước nhẹ', inspected: true };
+    for (const unitChecks of [[one], [one, one], [one, { ...two, inspected: false }], [one, { ...two, unitId: 'unallocated' }]]) {
+      await expect(service.completeHandover('appointment', { handoverReport: { ...report, unitChecks } }, staff)).rejects.toThrow();
+    }
+    expect(update).not.toHaveBeenCalled();
+    const result = await service.completeHandover('appointment', { handoverReport: { ...report, unitChecks: [two, one] } }, staff);
+    expect(result.handoverReport).toMatchObject({ unitChecks: [
+      { ...one, unitCode: 'A01' }, { ...two, unitCode: 'A02' },
+    ] });
+    expect(result.handoverNote).toContain('Kho A02: Có vết xước nhẹ');
+    await service.completeHandover('appointment', {}, staff);
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it('records each physical handover independently and preserves the two saved times through retries and finalization', async () => {
+    const { service, row, update } = setup();
+    addSecondUnit(row);
+    const begin = new Date();
+    const later = new Date(begin.getTime() + 1000);
+    const capture = { condition: 'Cửa và khóa bình thường', inspected: true, identityVerified: true, accessDelivered: true };
+    vi.setSystemTime(begin);
+    try {
+      await expect(service.recordUnitHandover('appointment', 'unit', capture, { ...staff, id: 'other' })).rejects.toThrow('phân công');
+      await expect(service.recordUnitHandover('appointment', 'foreign', capture, staff)).rejects.toThrow('không thuộc');
+      const first = await service.recordUnitHandover('appointment', 'unit', capture, staff);
+      expect(first.status).toBe('CONFIRMED');
+      expect(first.unitHandoverProgress).toEqual([expect.objectContaining({ unitId: 'unit', completedAt: begin.toISOString() })]);
+      expect(first.activityUpdatedAt).toBe(row.updatedAt.toISOString());
+      await expect(service.completeHandover('appointment', { handoverReport: report }, staff)).rejects.toThrow('từng kho');
+      vi.setSystemTime(later);
+      const retry = await service.recordUnitHandover('appointment', 'unit', capture, staff);
+      expect(retry.unitHandoverProgress).toEqual(first.unitHandoverProgress);
+      const second = await service.recordUnitHandover('appointment', 'unit-2', capture, staff);
+      expect(second.unitHandoverProgress).toEqual([...first.unitHandoverProgress!, expect.objectContaining({ unitId: 'unit-2', completedAt: later.toISOString() })]);
+      const done = await service.completeHandover('appointment', { handoverReport: report }, staff);
+      expect(done.status).toBe('COMPLETED');
+      expect(done.handoverReport.unitChecks).toEqual([
+        expect.objectContaining({ unitId: 'unit', completedAt: begin.toISOString() }),
+        expect.objectContaining({ unitId: 'unit-2', completedAt: later.toISOString() }),
+      ]);
+      expect((await service.recordUnitHandover('appointment', 'unit', capture, staff)).status).toBe('COMPLETED');
+      expect(update).toHaveBeenCalledTimes(3);
+    } finally { vi.useRealTimers(); }
   });
 });

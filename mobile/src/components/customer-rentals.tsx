@@ -4,7 +4,7 @@ import { Stack, router, type Href } from 'expo-router';
 import { ArrowDownUp, Boxes, MapPin, FileText, CreditCard, Headphones, ChevronRight } from 'lucide-react-native';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { useResource } from '@/operations/use-resource';
-import { idOf, rows, text, type Row } from '@/operations/model';
+import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { customerStyles as s, CustomerActionRow } from '@/components/customer-premium';
 import { CustomerReveal } from '@/components/customer-flow';
@@ -15,6 +15,8 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state'
 import { customerRentalActions, customerSupportAction } from '@/portals/actions';
 import type { FormAction } from '@/operations/form';
 import { formatDate, formatMoney } from '@/utils/format';
+import { vietnamCalendarDate } from '@/utils/calendar-date';
+import { isEarlyReturnRequest } from '@/utils/early-return';
 
 export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
   const catalog=usePublicCatalog();
@@ -31,25 +33,27 @@ export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
   const invoices=useResource<Row>(rental?'/customer/invoices':null,true);
   const returns=useResource<Row>(rental?'/customer/returns':null,true);
   const requests=useResource<Row>(rental?'/customer/support-requests':null,true);
+  const pendingEarlyReturn=rows(requests.data?.items).some(item=>isEarlyReturnRequest(item) && item.status!=='RESOLVED'
+    && text(item,'reservation.id')===text(rental??{},'reservationId') && (!text(item,'contract.id') || text(item,'contract.id')===contractId));
   const related=rows(invoices.data?.items).filter(item=>text(item,'reservation.id')===text(rental??{},'reservationId')||Boolean(text(rental??{},'reservationReference'))&&text(item,'reservation.reference')===text(rental??{},'reservationReference'));
-  const authorized=rental&&!returns.loading&&!returns.error&&!requests.loading&&!requests.error?customerRentalActions(rental,rows(returns.data?.items),now,rows(requests.data?.items)):[];
+  const authorized=rental&&!returns.loading&&!returns.error&&!requests.loading&&!requests.error?customerRentalActions(rental,rows(returns.data?.items),now,rows(requests.data?.items),contractId):[];
   const contextual=authorized.filter(item=>!item.title.startsWith('Yêu cầu chuyển kho')&&item.title!=='Gửi yêu cầu hỗ trợ');
   const transfer=authorized.find(item=>item.title.startsWith('Yêu cầu chuyển kho')&&item.description?.includes(text(contract??{},'contractCode')));
   if(transfer)contextual.push(transfer);
   const support=rental&&contract?customerSupportAction(text(rental,'reservationId'),{contractId,unitId:text(contract,'unit.id')}):undefined;
-  const refresh=()=>{if(!action){rentals.refresh();invoices.refresh();returns.refresh();requests.refresh();}};
-  const product=rows(catalog.data?.products).find(item=>text(item,'id')===text(rental??{},'storageType.id'));
-  const name=rental?text(rental,'storageType.name'):'';
+  const refresh=()=>{rentals.refresh();invoices.refresh();returns.refresh();requests.refresh();};
+  const product=rows(catalog.data?.products).find(item=>text(item,'id')===(text(contract??{},'unit.storageType.id')||text(rental??{},'storageType.id')));
+  const name=text(contract??{},'unit.storageType.name')||text(rental??{},'storageType.name');
   const go=(path:string)=>router.push(path as Href);
   const shortcuts=[{title:'Nhập / xuất',icon:ArrowDownUp,path:'/customer/stock-movements?rentalContractId='+encodeURIComponent(contractId)},{title:'Hàng đang lưu',icon:Boxes,path:'/customer/stored-items?rentalContractId='+encodeURIComponent(contractId)},{title:'Vị trí kho',icon:MapPin,path:'/customer/floor-plan?rentalId='+encodeURIComponent(rental?idOf(rental):'')+'&rentalContractId='+encodeURIComponent(contractId)}];
   const rawFloor=text(contract??{},'unit.floor');
   const floor=/^ground(?: floor)?$/i.test(rawFloor)?'Tầng trệt':/^floor\s+\d+$/i.test(rawFloor)?rawFloor.replace(/^floor\s+/i,'Tầng '):/^\d+$/.test(rawFloor)?'Tầng '+rawFloor:rawFloor;
   const location=[floor,text(contract??{},'unit.zone')?'Khu '+text(contract??{},'unit.zone'):''].filter(Boolean).join(' · ');
-  return <View style={{flex:1,backgroundColor:'white'}}><Stack.Screen options={{title:'Kho thuê',headerBackVisible:Boolean(initialRentalId),headerTitleStyle:{fontSize:22,fontWeight:'700'}}}/><ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={rentals.loading&&Boolean(rentals.data)} onRefresh={refresh}/>} contentContainerStyle={s.page}>
+  return <View style={{flex:1,backgroundColor:'white'}}><Stack.Screen options={{title:'Kho thuê',headerBackVisible:Boolean(initialRentalId),headerTitleStyle:{fontSize:22,fontWeight:'700'}}}/><ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={rentals.loading&&Boolean(rentals.data)} onRefresh={()=>{if(!action)refresh();}}/>} contentContainerStyle={s.page}>
     {rentals.loading?<LoadingState layout="detail"/>:rentals.error?<ErrorState message={rentals.error} onRetry={rentals.refresh}/>:current&&rental&&contract?<CustomerReveal key={contractId}>
-      {choices.length>1&&<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingBottom:8}}>{choices.map((item,index)=><Pressable key={idOf(item.contract)} accessibilityRole="radio" accessibilityState={{checked:idOf(item.contract)===contractId}} onPress={()=>{setSelected(idOf(item.contract));setNotice('');}} style={{minHeight:44,paddingHorizontal:14,paddingVertical:10,borderRadius:22,backgroundColor:idOf(item.contract)===contractId?C.navy:C.soft}}><Text style={{fontSize:14,lineHeight:20,color:idOf(item.contract)===contractId?'white':C.text}}>{text(item.rental,'storageType.name')||'Kho thuê'}{choices.filter(other=>text(other.rental,'storageType.name')===text(item.rental,'storageType.name')).length>1?' · '+(index+1):''}</Text></Pressable>)}</ScrollView>}
+      {choices.length>1&&<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingBottom:8}}>{choices.map(item=><Pressable key={idOf(item.contract)} accessibilityRole="radio" accessibilityState={{checked:idOf(item.contract)===contractId}} onPress={()=>{setSelected(idOf(item.contract));setNotice('');}} style={{minHeight:44,paddingHorizontal:14,paddingVertical:10,borderRadius:22,backgroundColor:idOf(item.contract)===contractId?C.navy:C.soft}}><Text style={{fontSize:14,lineHeight:20,color:idOf(item.contract)===contractId?'white':C.text}}>{text(item.contract,'unit.unitCode')||text(item.contract,'contractCode')}</Text></Pressable>)}</ScrollView>}
       <View style={{gap:14,padding:16,borderRadius:16,backgroundColor:'#F1F5FD'}}>
-        <View style={{flexDirection:'row',alignItems:'flex-start',gap:12}}><Text accessibilityRole="header" style={{fontSize:20,lineHeight:28,fontWeight:'700',color:C.text,flex:1}}>{name||'Kho của bạn'}</Text><StatusBadge status={rental.rentalState==='OVERDUE'?'OVERDUE':'ACTIVE'}/></View>
+        <View style={{flexDirection:'row',alignItems:'flex-start',gap:12}}><Text accessibilityRole="header" style={{fontSize:20,lineHeight:28,fontWeight:'700',color:C.text,flex:1}}>{text(contract,'unit.unitCode')} · {name||'Kho của bạn'}</Text><StatusBadge status={text(contract,'endDate')<=vietnamCalendarDate(now)?'OVERDUE':'ACTIVE'}/></View>
         {catalog.loading?<LoadingState layout="compact"/>:catalog.error?<ErrorState message={catalog.error} onRetry={catalog.refresh}/>:null}
         <CustomerInfoGrid values={[["Kích thước",text(product??{},'dimensions')],['Diện tích',text(product??{},'floorArea')],['Vị trí',location],['Hạn thuê đến',formatDate(text(contract,'endDate')||text(rental,'effectiveEndDate'))]]}/>
         <View style={{paddingTop:12,borderTopWidth:0.5,borderTopColor:'#D9E3F3',gap:4}}><Text style={s.secondary}>Thời gian thuê</Text><Text style={[s.body,{fontWeight:'600'}]}>{formatDate(text(contract,'startDate')||text(rental,'startDate'))} → {formatDate(text(contract,'endDate')||text(rental,'effectiveEndDate'))}</Text></View>
@@ -62,7 +66,11 @@ export function CustomerRentals({initialRentalId}:{initialRentalId?:string}) {
 
       </View>
       {[returns,requests].filter(source=>source.error).map((source,index)=><ErrorState key={index} message={source.error!} onRetry={source.refresh}/>)}
-      {rental.pendingRenewal?<CustomerActionRow title="Gia hạn đang xử lý" path="/customer/renewals"/>:null}
+      {rental.pendingRenewal||contract.pendingRenewal?<CustomerActionRow title="Gia hạn đang xử lý" path="/customer/renewals"/>:null}
+      {contract.returnInProgress?<CustomerActionRow title="Đang xử lý yêu cầu trả kho" path="/customer/returns"/>:null}
+      {pendingEarlyReturn?<Text style={s.secondary}>Đề nghị đang chờ quản lý</Text>:null}
+      {object(contract.returnReadiness).requiresReconciliation===true?<Text style={s.secondary}>Cần NestBox đối soát hóa đơn hoặc tiền cọc của kho này trước khi trả.</Text>:null}
+      {object(contract.returnReadiness).awaitingRenewalInvoices===true?<Text style={s.secondary}>Kiểm tra hóa đơn các kỳ gia hạn trước khi trả kho.</Text>:null}
       <CustomerRecordActions actions={contextual} selected={action} onSelect={setAction} onClose={()=>setAction(undefined)} onSaved={()=>{setAction(undefined);setNotice('Đã gửi yêu cầu.');refresh();}}/>
       {notice?<Text accessibilityRole="alert" style={{...s.body,color:C.success}}>{notice}</Text>:null}
       {support&&<Pressable accessibilityRole="button" onPress={()=>setAction(support)} style={({pressed})=>[s.row,{borderBottomWidth:0,opacity:pressed?0.65:1}]}><Headphones size={20} color={C.navy}/><Text style={[s.body,{flex:1}]}>Cần hỗ trợ về kho này?</Text><ChevronRight size={18} color={C.muted}/></Pressable>}

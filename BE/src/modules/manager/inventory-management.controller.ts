@@ -15,6 +15,8 @@ export class InventoryManagementController {
   constructor(private readonly inventory: InventoryManagementService) {}
   @Get('storage-types') @ApiOperation({ summary: 'Loại kho và cơ sở để quản lý bảng giá' })
   list() { return this.inventory.listTypes(); }
+  @Get('unit-locations') @ApiOperation({ summary: 'Danh sách tầng và khu từ toàn bộ kho vật lý' })
+  unitLocations() { return this.inventory.listUnitLocations(); }
   @Post('storage-types') @ApiOperation({ summary: 'Tạo loại kho, kích thước và giá tháng' })
   createType(@Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return this.inventory.saveType(undefined, body, req.user!); }
   @Patch('storage-types/:id') @ApiOperation({ summary: 'Sửa danh mục, không thay snapshot lịch sử; yêu cầu expectedUpdatedAt' })

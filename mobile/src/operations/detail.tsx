@@ -13,15 +13,12 @@ import { PageHeader } from '@/components/page-header';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { recordActions } from './actions';
 import { OperationForm, type FormAction } from './form';
-import { codeOf, idOf, rows, text, operationRoot, resources, type Row } from './model';
-import { RecordView } from './record-view';
+import { codeOf, text, operationRoot, resources, type Row } from './model';
 import { useResource } from './use-resource';
 import { Button, Disclosure, Navigation, styles } from './ui';
 import { RenewalReview } from './renewal-review';
 import { WorkflowHint } from '@/components/workspace-hub';
 import { workflowGuide } from '@/utils/workflow-guide';
-import { isTransferRequest } from '@/utils/transfer-request';
-import { transferFromSupport, transferIntakeAllowed } from './transfer-inbox';
 import { staffStyles } from '@/components/staff-ui';
 import { StaffRecordSections } from '@/components/staff-record-sections';
 import { HandoverDetail } from './handover-detail';
@@ -37,7 +34,6 @@ function Detail({ resource, id }: { resource: string; id: string }) {
   const allowed = canAccessManagerReview(user?.role ?? '', resource);
   const data = useResource<Row>(allowed && config && resource !== 'catalog' ? `${config.path}/${encodeURIComponent(id)}` : null);
   const stock = useResource<Row>(allowed && resource === 'additional-services' ? `/manager/additional-services/${encodeURIComponent(id)}/inventory` : null);
-  const activeContracts = useResource<Row>(user?.role === 'STAFF' && resource === 'support-requests' && data.data && isTransferRequest(data.data) ? '/manager/contracts?status=ACTIVE' : null, true);
   const [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -64,7 +60,6 @@ function Detail({ resource, id }: { resource: string; id: string }) {
         <Text style={staffStyles.secondary}>{workflowGuide(resource, row.status, 'staff')}</Text>
         {resource === 'renewals' && (action ? <RenewalReview row={row} /> : <Disclosure title="Đối chiếu gia hạn"><RenewalReview row={row} /></Disclosure>)}
         {action ? <OperationForm key={action.title} action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã lưu thành công.'); refresh(); }} /> : [...recordActions(resource, row, 'STAFF'), ...staffRecordActions(resource, row, user.id, now)].map((item, index) => <Button key={`${item.method}:${item.path}:${item.title}:${index}`} variant={index > 0 ? 'secondary' : 'primary'} title={item.title} onPress={() => { setNotice(''); setAction(item); }} />)}
-      {user?.role === 'STAFF' && resource === 'support-requests' && isTransferRequest(row) && (rows(row.transfers).find(transfer => transfer.status !== 'REJECTED') ? <Navigation title="Mở lệnh chuyển kho" path={`/staff/transfers/${encodeURIComponent(idOf(rows(row.transfers).find(transfer => transfer.status !== 'REJECTED')!))}`} /> : !action && !activeContracts.loading && !activeContracts.error && transferIntakeAllowed(row, rows(activeContracts.data?.items)) && <Button title="Tạo phiếu chuyển kho" onPress={() => setAction(transferFromSupport(row))} />)}
       {user?.role === 'STAFF' && resource === 'transfers' && row.status === 'COMPLETED' && (row.sourceMaintenanceMissing === true || text(row, 'supportRequest.id') && (text(row, 'supportRequest.status') !== 'RESOLVED' || text(row, 'supportRequest.resolutionType') === 'TRANSFER_RECOMMENDED')) && !action && <Button title="Đồng bộ kết quả cho khách" onPress={() => setAction({ title: 'Đồng bộ kết quả cho khách', path: `/staff/transfers/${encodeURIComponent(id)}/complete`, method: 'POST', idempotent: true, description: 'Cập nhật yêu cầu gốc cho lệnh đã hoàn tất; không chuyển kho lần nữa.', fields: [{ name: '_confirmed', title: 'Tôi xác nhận đồng bộ kết quả', checkbox: true, required: true, clientOnly: true }] })} />}
       </View>} />}
       {resource === 'contracts' && <ContractRenewalHistory contract={row} scope={user?.role === 'STAFF' ? 'staff/management' : 'manager'} />}

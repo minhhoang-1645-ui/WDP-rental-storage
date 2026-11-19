@@ -55,4 +55,19 @@ describe('unit responsibility feature gate and ownership', () => {
     expect(tx.maintenanceRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: null, status: 'OPEN' }) }));
     expect(tx.stockMovement.updateMany).not.toHaveBeenCalled();
   });
+
+  it('ends only the current responsibility and leaves individually assigned tasks in place', async () => {
+    const current = { id: 'active-assignment', staffUserId: staff.id };
+    const update = vi.fn().mockResolvedValue({ ...current, endedAt: new Date() });
+    const tx = { $queryRaw: vi.fn(), storageUnit: { findUnique: vi.fn().mockResolvedValue({ id: 'unit' }) },
+      unitStaffAssignment: { findFirst: vi.fn().mockResolvedValue(current), update },
+      supportRequest: { updateMany: vi.fn() }, maintenanceRequest: { updateMany: vi.fn() } };
+    const service = new UnitStaffService({ $transaction: vi.fn(operation => operation(tx)) } as never, config(true) as never);
+    await expect(service.assign('unit', { staffUserId: null, expectedAssignmentId: 'old' }, manager)).rejects.toThrow('Phân công đã thay đổi');
+    expect(update).not.toHaveBeenCalled();
+    await expect(service.assign('unit', { staffUserId: null, expectedAssignmentId: current.id }, manager)).resolves.toMatchObject({ endedAt: expect.any(Date) });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: current.id }, data: { endedAt: expect.any(Date) } }));
+    expect(tx.supportRequest.updateMany).not.toHaveBeenCalled();
+    expect(tx.maintenanceRequest.updateMany).not.toHaveBeenCalled();
+  });
 });

@@ -7,7 +7,6 @@ import { managerSections, managerStorageLabels } from '../../utils/manager-secti
 const managerNavigation: InternalNavItem[] = [
   { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
   { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
-  { to: '/manager/reservations', label: 'Yêu cầu đặt kho', icon: ClipboardCheck, group: 'Tiếp nhận & phân công' },
   { to: '/manager/operations/support-requests', label: 'Hỗ trợ khách hàng', icon: Headphones, group: 'Tiếp nhận & phân công' },
   { to: '/manager/assignments', label: 'Phân công nhân viên', icon: ClipboardCheck, group: 'Nhân sự' },
   { to: '/manager/operations/appointments', label: 'Lịch bàn giao', icon: CalendarClock, group: 'Giao nhận & thay đổi' },
@@ -27,7 +26,7 @@ const managerNavigation: InternalNavItem[] = [
 export function operationsNavigation(): InternalNavItem[] {
   return [
     { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Quản lý' },
-    { to: '/manager/reviews', label: 'Việc cần duyệt', icon: ClipboardCheck, group: 'Quản lý', match: managerSections.reviews.items.map(item => item.web.split('?')[0]) },
+    { to: '/manager/reviews', label: managerSections.reviews.title, icon: ClipboardCheck, group: 'Quản lý', match: managerSections.reviews.items.map(item => item.web.split('?')[0]) },
     { to: '/manager/assignments', label: 'Phân công', icon: Users, group: 'Quản lý', match: ['/manager/operations/stock-movements'] },
     { to: '/manager/units', label: managerStorageLabels.units.title, icon: Warehouse, group: 'Kho & khách hàng', match: ['/manager/facility', '/manager/overstays'] },
     { to: '/manager/stored-items', label: 'Hàng đang lưu', icon: Package, group: 'Kho & khách hàng' },

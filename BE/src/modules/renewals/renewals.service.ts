@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
-import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude } from '../billing/invoice-breakdown.js';
+import { homogeneousInvoiceUnits, invoiceBreakdown } from '../billing/invoice-breakdown.js';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -11,6 +11,10 @@ import { SigningOtpService, signedDocument, signedEnvelope, signatureVerificatio
 import { DocumentPolicy } from '../documents/document-policy.js';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../guest-booking/email.service.js';
+import { businessToday } from '../../business-date.js';
+import { contractReturnReadiness, returnInvoiceFields } from '../returns/contract-return-finance.js';
+import { closeoutPaymentAllowed, closeoutReservationSelect } from '../billing/renewal-invoice-schedule.js';
+import { openRenewalStatuses, renewalOverlapsUnits } from './renewal-scope.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type PaymentPlan = 'PAY_MONTHLY' | 'PREPAID';
@@ -24,6 +28,7 @@ export interface RenewalListQuery {
 }
 
 type RenewalSnapshot = {
+  scope?: { reservationId: string; rentalContractId: string; contractCode: string; reservationUnitId: string; storageUnitId: string; unitCode: string };
   currency: 'VND';
   storageTypeId: string;
   storageTypeName: string;
@@ -41,6 +46,14 @@ type RenewalSnapshot = {
   depositAmount: 0;
   totalAmount: number;
 };
+
+const renewalRentalInclude = {
+  customer: { select: { id: true, fullName: true, email: true, phone: true } },
+  storageType: true,
+  contracts: { include: { reservationUnit: { include: { storageUnit: { include: { storageType: true } } } } }, orderBy: { contractCode: 'asc' } },
+} satisfies Prisma.ReservationInclude;
+type RenewalRental = Prisma.ReservationGetPayload<{ include: typeof renewalRentalInclude }>;
+type RenewalContract = RenewalRental['contracts'][number];
 
 @Injectable()
 export class RenewalsService implements OnModuleInit, OnModuleDestroy {
@@ -65,7 +78,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       id: renewalId,
       status: 'COMPLETED',
       paymentPlan: 'PAY_MONTHLY',
-      previousEndDate: { lt: now },
+      OR: [{ previousEndDate: { lt: now } }, { reservation: { supportRequests: { some: closeoutReservationSelect.supportRequests.where } } }],
       reservation: { status: 'CONFIRMED', contracts: { some: { status: 'ACTIVE' } } },
     } satisfies Prisma.RenewalRequestWhereInput;
     try {
@@ -76,14 +89,16 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
             const renewal = await tx.renewalRequest.findFirst({
               where: { ...eligible, id },
               include: {
-                reservation: { select: { storageTypeId: true, quantity: true, contracts: { include: invoiceContractInclude } } },
+                reservation: { include: { ...renewalRentalInclude, supportRequests: closeoutReservationSelect.supportRequests } },
                 invoices: { select: { renewalCycle: true } },
               },
             });
             if (!renewal) return;
             const snapshot = this.snapshot(renewal);
             this.assertSnapshot(renewal, snapshot);
-            await this.createInvoices(tx, renewal, snapshot, now, new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
+            const contracts = this.targetContracts(renewal.reservation, renewal.rentalContractId);
+            const closeout = closeoutPaymentAllowed(renewal.reservation, renewal.rentalContractId);
+            await this.createInvoices(tx, renewal, snapshot, contracts, closeout ? renewal.requestedEndDate : businessToday(now), new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
           }, { isolationLevel: 'Serializable' });
         } catch (error) {
           this.logger.warn(`Không thể phát hành hóa đơn gia hạn ${id}: ${String(error)}`);
@@ -114,7 +129,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createCustomerRenewal(customerId: string, input: Record<string, unknown>, idempotencyKey: string | undefined) {
-    const parsed = this.createInput(input, idempotencyKey);
+    const parsed = { ...this.quoteInput(input), idempotencyKey: this.requestKey(idempotencyKey) };
     const identity = await this.prisma.reservation.findFirst({
       where: { customerId, OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }] },
       select: { id: true },
@@ -123,59 +138,66 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
 
     const duplicate = await this.prisma.renewalRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
     if (duplicate) {
-      this.assertMatchingRetry(duplicate, customerId, parsed.termMonths, parsed.paymentPlan, identity.id);
+      this.assertMatchingRetry(duplicate, customerId, parsed, identity.id);
       return this.tryAutomaticRenewalApproval(duplicate.id);
     }
 
     try {
-      const created = await this.prisma.$transaction(async (tx) => {
+      const created = await this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${identity.id} FOR UPDATE`);
-        const reservation = await tx.reservation.findUnique({ where: { id: identity.id }, include: this.activeRentalInclude() });
-        const rental = this.assertActiveRental(reservation, customerId);
+        const retry = await tx.renewalRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
+        if (retry) {
+          this.assertMatchingRetry(retry, customerId, parsed, identity.id);
+          return retry;
+        }
+        const reservation = await tx.reservation.findUnique({ where: { id: identity.id, customerId }, include: renewalRentalInclude });
+        if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
+        const contract = this.customerContract(reservation, parsed.rentalContractId);
+        const rental = this.assertActiveRental(reservation, contract.id);
         await this.lockUnits(tx, rental.unitIds);
-        const existing = await tx.renewalRequest.findFirst({ where: { reservationId: reservation!.id, status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } });
-        if (existing) throw new ConflictException({ code: 'ACTIVE_RENEWAL_EXISTS', message: 'Rental này đã có yêu cầu gia hạn chưa được xử lý.' });
-
-        const requestedEndDate = this.addCalendarMonths(rental.endDate, parsed.termMonths);
-        await this.assertNoAllocationConflict(tx, reservation!.id, rental.unitIds, rental.endDate, requestedEndDate);
-        const quote = this.pricing.calculate(reservation!.storageType, {
-          storageTypeId: reservation!.storageTypeId,
-          quantity: reservation!.quantity,
-          startDate: this.isoDate(rental.endDate),
-          endDate: this.isoDate(requestedEndDate),
-          paymentPlan: parsed.paymentPlan,
-        });
-        if (quote.billingMode !== 'MONTHLY' || quote.termMonths !== parsed.termMonths) throw new ConflictException('Không thể tạo báo giá gia hạn theo tháng.');
-        const snapshot: RenewalSnapshot = {
-          currency: 'VND', storageTypeId: reservation!.storageTypeId, storageTypeName: reservation!.storageType.name,
-          quantity: reservation!.quantity, previousEndDate: this.isoDate(rental.endDate), renewalStartDate: this.isoDate(rental.endDate),
-          requestedEndDate: this.isoDate(requestedEndDate), termMonths: parsed.termMonths, paymentPlan: parsed.paymentPlan,
-          monthlyUnitPrice: quote.monthlyUnitPrice, baseRentalAmount: quote.baseRentalAmount, discountPercent: quote.discountPercent,
-          discountAmount: quote.discountAmount, rentalAmount: quote.rentalAmount, depositAmount: 0, totalAmount: quote.rentalAmount,
-        };
+        const requestedEndDate = this.addCalendarMonths(contract.endDate, parsed.termMonths);
+        await this.assertNoAllocationConflict(tx, rental.contracts, contract.endDate, requestedEndDate);
+        await this.assertNoOperationalConflict(tx, reservation, rental.contracts);
+        const snapshot = this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
+        if (input.expectedTotalAmount !== undefined && input.expectedTotalAmount !== snapshot.totalAmount
+            || input.expectedEndDate !== undefined && input.expectedEndDate !== snapshot.requestedEndDate) {
+          throw new ConflictException({ code: 'RENEWAL_QUOTE_CHANGED', message: 'Giá hoặc hạn thuê đã thay đổi. Vui lòng tải lại báo giá.' });
+        }
         const created = await tx.renewalRequest.create({
           data: {
-            renewalCode: this.reference(), reservationId: reservation!.id, previousEndDate: rental.endDate, requestedEndDate,
+            renewalCode: this.reference(), reservationId: reservation.id, rentalContractId: contract.id, previousEndDate: rental.endDate, requestedEndDate,
             termMonths: parsed.termMonths, paymentPlan: parsed.paymentPlan, quoteSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-            requestedByUserId: customerId, activeKey: reservation!.id, idempotencyKey: parsed.idempotencyKey,
+            requestedByUserId: customerId, activeKey: `RENEWAL:${contract.id}`, idempotencyKey: parsed.idempotencyKey,
           },
           include: this.include(),
         });
         return created;
-      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      });
       return this.tryAutomaticRenewalApproval(created.id);
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const retry = await this.prisma.renewalRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
         if (retry) {
-          this.assertMatchingRetry(retry, customerId, parsed.termMonths, parsed.paymentPlan, identity.id);
+          this.assertMatchingRetry(retry, customerId, parsed, identity.id);
           return this.tryAutomaticRenewalApproval(retry.id);
         }
-        throw new ConflictException({ code: 'ACTIVE_RENEWAL_EXISTS', message: 'Rental này đã có yêu cầu gia hạn chưa được xử lý.' });
+        throw new ConflictException({ code: 'ACTIVE_RENEWAL_EXISTS', message: 'Kho này đã có yêu cầu gia hạn chưa được xử lý.' });
       }
       if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Rental vừa được cập nhật. Vui lòng tải lại và thử lại.');
       throw error;
     }
+  }
+
+  async quoteCustomerRenewal(customerId: string, input: Record<string, unknown>) {
+    const parsed = this.quoteInput(input);
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { customerId, OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }] },
+      include: renewalRentalInclude,
+    });
+    if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
+    const contract = this.customerContract(reservation, parsed.rentalContractId);
+    this.assertActiveRental(reservation, contract.id);
+    return this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
   }
 
   listCustomerRenewals(customerId: string, page: number, limit: number) {
@@ -214,24 +236,26 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
 
   private async tryAutomaticRenewalApproval(renewalId: string) {
     try {
-      const record = await this.prisma.$transaction(async (tx) => {
+      const record = await this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${renewalId} FOR UPDATE`);
         const current = await tx.renewalRequest.findUnique({ where: { id: renewalId }, include: this.include() });
         if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
         if (current.status !== 'PENDING') return current;
-        const rental = this.assertActiveRental(current.reservation);
+        await this.lockReservation(tx, current.reservationId);
+        const rental = this.assertActiveRental(current.reservation, current.rentalContractId);
         this.assertExpectedEnd(current, rental.endDate);
         await this.lockUnits(tx, rental.unitIds);
-        await this.assertNoAllocationConflict(tx, current.reservationId, rental.unitIds, current.previousEndDate, current.requestedEndDate);
+        await this.assertNoAllocationConflict(tx, rental.contracts, current.previousEndDate, current.requestedEndDate, current.id);
+        await this.assertNoOperationalConflict(tx, current.reservation, rental.contracts, current.id);
         const snapshot = this.snapshot(current);
         this.assertSnapshot(current, snapshot);
-        await this.createInvoices(tx, current, snapshot);
+        await this.createInvoices(tx, current, snapshot, rental.contracts);
         return tx.renewalRequest.update({
           where: { id: current.id },
           data: { status: 'APPROVED_PENDING_PAYMENT', reviewedByUserId: null, reviewedAt: new Date(), approvedAt: new Date(), ...this.appendixDocument(current) },
           include: this.include(),
         });
-      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      });
       return this.toRenewal(record, false);
     } catch (error) {
       if (!(error instanceof ConflictException) && !(error instanceof BadRequestException) && !this.isPrismaCode(error, 'P2034')) throw error;
@@ -247,7 +271,9 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } },
       { reservation: { customer: { fullName: { contains: query.search, mode: 'insensitive' } } } },
       { reservation: { customer: { email: { contains: query.search, mode: 'insensitive' } } } },
-      { reservation: { units: { some: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } } } },
+      { rentalContract: { contractCode: { contains: query.search, mode: 'insensitive' } } },
+      { rentalContract: { reservationUnit: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } } },
+      { rentalContractId: null, reservation: { units: { some: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } } } },
     ] });
     return this.page(filters.length ? { AND: filters } : {}, query, true);
   }
@@ -268,13 +294,15 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
         if (['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(current.status)) return this.toRenewal(current, true);
         if (current.status !== 'PENDING') throw new ConflictException('Chỉ Renewal PENDING mới được duyệt.');
-        const rental = this.assertActiveRental(current.reservation);
+        await this.lockReservation(tx, current.reservationId);
+        const rental = this.assertActiveRental(current.reservation, current.rentalContractId);
         this.assertExpectedEnd(current, rental.endDate);
         await this.lockUnits(tx, rental.unitIds);
-        await this.assertNoAllocationConflict(tx, current.reservationId, rental.unitIds, current.previousEndDate, current.requestedEndDate);
+        await this.assertNoAllocationConflict(tx, rental.contracts, current.previousEndDate, current.requestedEndDate, current.id);
+        await this.assertNoOperationalConflict(tx, current.reservation, rental.contracts, current.id);
         const snapshot = this.snapshot(current);
         this.assertSnapshot(current, snapshot);
-        await this.createInvoices(tx, current, snapshot);
+        await this.createInvoices(tx, current, snapshot, rental.contracts);
         const updated = await tx.renewalRequest.update({
           where: { id: current.id },
           data: { status: 'APPROVED_PENDING_PAYMENT', reviewedByUserId: actor.id, reviewedAt: new Date(), approvedAt: new Date(), ...this.appendixDocument(current) },
@@ -319,22 +347,28 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     const activationInvoice = renewal.invoices.find((invoice: any) => invoice.renewalCycle === 1);
     if (!activationInvoice || activationInvoice.status !== 'PAID') return;
 
-    const rental = this.assertActiveRental(renewal.reservation);
+    if (renewal.rentalContractId && !renewal.appendixAcceptedAt) throw new ConflictException('Cần ký phụ lục trước khi kích hoạt gia hạn.');
+    await this.lockReservation(tx, renewal.reservationId);
+    const rental = this.assertActiveRental(renewal.reservation, renewal.rentalContractId);
     this.assertExpectedEnd(renewal, rental.endDate);
     await this.lockUnits(tx, rental.unitIds);
-    await this.assertNoAllocationConflict(tx, renewal.reservationId, rental.unitIds, renewal.previousEndDate, renewal.requestedEndDate);
+    await this.assertNoAllocationConflict(tx, rental.contracts, renewal.previousEndDate, renewal.requestedEndDate, renewal.id);
+    await this.assertNoOperationalConflict(tx, renewal.reservation, rental.contracts, renewal.id);
 
     const contracts = await tx.rentalContract.updateMany({
-      where: { reservationId: renewal.reservationId, status: 'ACTIVE', endDate: renewal.previousEndDate },
+      where: { reservationId: renewal.reservationId, id: { in: rental.contracts.map(contract => contract.id) }, status: 'ACTIVE', endDate: renewal.previousEndDate },
       data: { endDate: renewal.requestedEndDate },
     });
-    if (contracts.count !== renewal.reservation.quantity) throw new ConflictException('Không thể gia hạn một phần hợp đồng.');
+    if (contracts.count !== rental.contracts.length) throw new ConflictException('Hợp đồng cần gia hạn vừa thay đổi.');
     const allocations = await tx.reservationUnit.updateMany({
-      where: { reservationId: renewal.reservationId, releasedAt: null, plannedEndDate: renewal.previousEndDate },
+      where: { reservationId: renewal.reservationId, id: { in: rental.contracts.map(contract => contract.reservationUnitId) }, releasedAt: null, plannedEndDate: renewal.previousEndDate },
       data: { plannedEndDate: renewal.requestedEndDate },
     });
-    if (allocations.count !== renewal.reservation.quantity) throw new ConflictException('Không thể gia hạn một phần allocation.');
-    await tx.reservation.update({ where: { id: renewal.reservationId }, data: { endDate: renewal.requestedEndDate } });
+    if (allocations.count !== rental.contracts.length) throw new ConflictException('Phân bổ kho cần gia hạn vừa thay đổi.');
+    const aggregate = await tx.rentalContract.aggregate({
+      where: { reservationId: renewal.reservationId, status: 'ACTIVE', reservationUnit: { releasedAt: null } }, _max: { endDate: true },
+    });
+    await tx.reservation.update({ where: { id: renewal.reservationId }, data: { endDate: aggregate._max.endDate ?? renewal.requestedEndDate } });
     const appendixSnapshot = {
       version: 'WDP-RENEWAL-APPENDIX-V1', renewalCode: renewal.renewalCode,
       reservationReference: renewal.reservation.reservationCode,
@@ -350,7 +384,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     } });
   }
 
-  private async createInvoices(tx: Prisma.TransactionClient, renewal: any, snapshot: RenewalSnapshot, dueThrough?: Date, existingCycles = new Set<number | null>()) {
+  private async createInvoices(tx: Prisma.TransactionClient, renewal: { id: string; renewalCode: string; reservationId: string; previousEndDate: Date; requestedEndDate: Date }, snapshot: RenewalSnapshot, contracts: RenewalContract[], dueThrough?: Date, existingCycles = new Set<number | null>()) {
     const count = snapshot.paymentPlan === 'PREPAID' ? 1 : snapshot.termMonths;
     for (let cycle = 1; cycle <= count; cycle += 1) {
       const start = this.addCalendarMonths(renewal.previousEndDate, cycle - 1);
@@ -359,13 +393,23 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       const end = snapshot.paymentPlan === 'PREPAID'
         ? renewal.requestedEndDate
         : cycle === count ? renewal.requestedEndDate : this.addCalendarMonths(renewal.previousEndDate, cycle);
-      const contracts = renewal.reservation.contracts;
-      if (contracts.length !== snapshot.quantity || (cycle > 1 && contracts.some((contract: { status: string; endDate: Date }) => contract.status !== 'ACTIVE' || contract.endDate < end))) {
+      if (contracts.length !== snapshot.quantity || (cycle > 1 && contracts.some(contract => contract.endDate < end))) {
         throw new ConflictException('Các hợp đồng không còn bao phủ đủ kỳ gia hạn. Cần đối soát trước khi lập hóa đơn.');
       }
       const monthlyRate = BigInt(snapshot.monthlyUnitPrice);
-      const rentalAmount = snapshot.paymentPlan === 'PREPAID' ? BigInt(snapshot.rentalAmount) : monthlyRate * BigInt(snapshot.quantity);
-      const units = homogeneousInvoiceUnits(contracts, monthlyRate, rentalAmount, 0n, snapshot.storageTypeName);
+      const billed = contracts.filter(contract => contract.status === 'ACTIVE'
+        || contract.status === 'COMPLETED' && contract.completedAt && businessToday(contract.completedAt) >= end);
+      if (contracts.some(contract => !billed.includes(contract) && !(contract.status === 'COMPLETED'
+        && contract.completedAt && businessToday(contract.completedAt) <= start))) {
+        throw new ConflictException('Thời điểm trả kho cắt ngang kỳ gia hạn. Cần đối soát trước khi lập hóa đơn.');
+      }
+      if (!billed.length) continue;
+      const rentalAmount = snapshot.paymentPlan === 'PREPAID' ? BigInt(snapshot.rentalAmount) : monthlyRate * BigInt(billed.length);
+      const units = homogeneousInvoiceUnits(billed, monthlyRate, rentalAmount, 0n, snapshot.storageTypeName).map(unit => ({
+        ...unit, ...(snapshot.scope ? { reservationUnitId: snapshot.scope.reservationUnitId, storageUnitId: snapshot.scope.storageUnitId,
+          unitCode: snapshot.scope.unitCode, storageTypeId: snapshot.storageTypeId } : {}),
+        ...(snapshot.paymentPlan === 'PREPAID' && snapshot.scope ? { discountAmount: snapshot.discountAmount } : {}),
+      }));
       const breakdown = invoiceBreakdown(start, end, units, [], { rentalAmount, depositAmount: 0n, serviceAmount: 0n, totalAmount: rentalAmount });
       await tx.invoice.upsert({
         where: { renewalRequestId_renewalCycle: { renewalRequestId: renewal.id, renewalCycle: cycle } },
@@ -381,55 +425,117 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private assertActiveRental(reservation: any, customerId?: string) {
-    if (!reservation || (customerId && reservation.customerId !== customerId)) throw new NotFoundException('Không tìm thấy Active Rental thuộc khách hàng.');
-    if (reservation.status !== 'CONFIRMED') throw new ConflictException('Chỉ Reservation CONFIRMED mới được gia hạn.');
+  private customerContract(reservation: RenewalRental, ref: string | null) {
+    if (!ref && (reservation.quantity !== 1 || reservation.contracts.length !== 1)) {
+      throw new BadRequestException('Hãy chọn hợp đồng của kho muốn gia hạn.');
+    }
+    const contract = reservation.contracts.find(item => !ref || item.id === ref || item.contractCode === ref);
+    if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng trong đơn thuê này.');
+    return contract;
+  }
+
+  private targetContracts(reservation: RenewalRental, contractId: string | null) {
+    const contracts = contractId ? reservation.contracts.filter(contract => contract.id === contractId) : reservation.contracts;
+    if (contracts.length !== (contractId ? 1 : reservation.quantity) || !contracts.length) {
+      throw new ConflictException('Phạm vi hợp đồng của yêu cầu gia hạn chưa khớp hồ sơ thuê.');
+    }
+    return contracts;
+  }
+
+  private assertActiveRental(reservation: RenewalRental, contractId: string | null) {
+    if (reservation.status !== 'CONFIRMED') throw new ConflictException('Chỉ đơn thuê đã xác nhận mới được gia hạn.');
     const original = reservation.quoteSnapshot as Record<string, unknown>;
-    if (original.billingMode !== 'MONTHLY') throw new ConflictException('Renewal V1 chỉ hỗ trợ rental theo tháng.');
-    if (reservation.contracts.length !== reservation.quantity || reservation.units.length !== reservation.quantity) throw new ConflictException('Rental không có đủ contract/allocation để gia hạn.');
-    if (reservation.contracts.some((contract: any) => contract.status !== 'ACTIVE')) throw new ConflictException('Tất cả RentalContract phải ACTIVE.');
-    if (reservation.contracts.some((contract: any) => contract.reservationUnit.storageUnit.status !== 'OCCUPIED' || contract.reservationUnit.releasedAt !== null)) {
-      throw new ConflictException('Tất cả StorageUnit phải còn OCCUPIED bởi rental hiện tại.');
+    if (original?.billingMode !== 'MONTHLY') throw new ConflictException('Gia hạn áp dụng cho hợp đồng thuê theo tháng.');
+    const contracts = this.targetContracts(reservation, contractId);
+    const endDate = contracts[0].endDate;
+    if (contracts.some(contract => contract.status !== 'ACTIVE' || contract.reservationUnit.reservationId !== reservation.id
+      || contract.reservationUnit.releasedAt || contract.reservationUnit.storageUnit.status !== 'OCCUPIED'
+      || +contract.reservationUnit.plannedEndDate !== +contract.endDate)) {
+      throw new ConflictException('Hợp đồng hoặc phân bổ kho đang thuê chưa đủ điều kiện gia hạn.');
     }
-    const timestamps = new Set(reservation.contracts.map((contract: any) => contract.endDate.getTime()));
-    if (timestamps.size !== 1) throw new ConflictException({ code: 'RENEWAL_END_DATE_MISMATCH', message: 'Các hợp đồng ACTIVE có endDate không đồng nhất.' });
-    return { endDate: reservation.contracts[0].endDate as Date, unitIds: reservation.contracts.map((contract: any) => contract.reservationUnit.storageUnitId as string) };
+    if (contracts.some(contract => +contract.endDate !== +endDate)) {
+      throw new ConflictException({ code: 'RENEWAL_END_DATE_MISMATCH', message: 'Hồ sơ gia hạn toàn đơn cũ có nhiều hạn thuê. Cần đối soát trước khi xử lý.' });
+    }
+    return { contracts, endDate, unitIds: contracts.map(contract => contract.reservationUnit.storageUnitId) };
   }
 
-  private async assertNoAllocationConflict(db: DbClient, reservationId: string, unitIds: string[], start: Date, end: Date) {
-    const allocations = await db.reservationUnit.findMany({
-      where: { reservationId: { not: reservationId }, storageUnitId: { in: unitIds }, releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' } },
-      select: { storageUnitId: true, plannedStartDate: true, plannedEndDate: true, reservation: { select: { reservationCode: true } }, storageUnit: { select: { unitNumber: true } } },
-    });
-    const approvedRenewals = await db.renewalRequest.findMany({
-      where: { reservationId: { not: reservationId }, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: { lt: end }, requestedEndDate: { gt: start }, reservation: { units: { some: { storageUnitId: { in: unitIds }, releasedAt: null } } } },
-      select: { renewalCode: true, previousEndDate: true, requestedEndDate: true, reservation: { select: { units: { where: { storageUnitId: { in: unitIds } }, select: { storageUnit: { select: { unitNumber: true } } } } } } },
-    });
-    if (allocations.length || approvedRenewals.length) {
-      throw new ConflictException({
-        code: 'RENEWAL_ALLOCATION_CONFLICT', message: 'Kho vật lý đã có allocation chặn khoảng gia hạn.',
-        conflicts: [
-          ...allocations.map((item) => ({ unitCode: item.storageUnit.unitNumber, reference: item.reservation.reservationCode, startDate: this.isoDate(item.plannedStartDate), endDate: this.isoDate(item.plannedEndDate) })),
-          ...approvedRenewals.flatMap((item) => item.reservation.units.map((unit) => ({ unitCode: unit.storageUnit.unitNumber, reference: item.renewalCode, startDate: this.isoDate(item.previousEndDate), endDate: this.isoDate(item.requestedEndDate) }))),
-        ],
-      });
+  private contractQuote(reservation: RenewalRental, contract: RenewalContract, termMonths: number, paymentPlan: PaymentPlan): RenewalSnapshot {
+    const start = contract.endDate;
+    const end = this.addCalendarMonths(start, termMonths);
+    const original = reservation.quoteSnapshot as { monthlyUnitPrice?: unknown };
+    const effective = contract.rateEffectiveFrom;
+    if (effective && effective > start && effective < end) {
+      throw new ConflictException('Đơn giá thay đổi giữa kỳ đề nghị gia hạn. Cần đối soát báo giá.');
     }
-  }
-
-  private activeRentalInclude() {
+    const allocation = contract.reservationUnit;
+    const unit = allocation.storageUnit;
+    const product = unit.storageType;
+    const rate = effective ? effective <= start ? Number(contract.currentMonthlyRate) : original.monthlyUnitPrice : Number(product.monthlyRate);
+    if (!Number.isSafeInteger(rate) || Number(rate) <= 0 || contract.currentMonthlyRate !== null && !effective) {
+      throw new ConflictException('Chưa xác định được đơn giá hiệu lực của hợp đồng.');
+    }
+    const startDate = this.isoDate(start);
+    const endDate = this.isoDate(end);
+    const quote = this.pricing.calculate({ ...product, monthlyRate: new Prisma.Decimal(Number(rate)) }, {
+      storageTypeId: product.id, quantity: 1, startDate, endDate, paymentPlan,
+    });
+    if (quote.billingMode !== 'MONTHLY' || quote.termMonths !== termMonths) throw new ConflictException('Không thể lập báo giá gia hạn theo tháng.');
     return {
-      customer: { select: { id: true, fullName: true, email: true, phone: true } },
-      storageType: true,
-      contracts: { include: { reservationUnit: { include: { storageUnit: true } } }, orderBy: { contractCode: 'asc' as const } },
-      units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' as const } },
+      scope: { reservationId: reservation.id, rentalContractId: contract.id, contractCode: contract.contractCode,
+        reservationUnitId: allocation.id, storageUnitId: unit.id, unitCode: unit.unitNumber },
+      currency: 'VND', storageTypeId: product.id, storageTypeName: product.name, quantity: 1,
+      previousEndDate: startDate, renewalStartDate: startDate, requestedEndDate: endDate, termMonths, paymentPlan,
+      monthlyUnitPrice: quote.monthlyUnitPrice, baseRentalAmount: quote.baseRentalAmount, discountPercent: quote.discountPercent,
+      discountAmount: quote.discountAmount, rentalAmount: quote.rentalAmount, depositAmount: 0, totalAmount: quote.rentalAmount,
     };
+  }
+
+  private async assertNoOperationalConflict(tx: Prisma.TransactionClient, reservation: RenewalRental, contracts: RenewalContract[], renewalId?: string) {
+    const ids = contracts.map(contract => contract.id);
+    const existing = await tx.renewalRequest.findFirst({ where: {
+      id: { not: renewalId }, reservationId: reservation.id, status: { in: [...openRenewalStatuses] },
+      OR: [{ rentalContractId: null }, { rentalContractId: { in: ids } }],
+    }, select: { id: true } });
+    if (existing) throw new ConflictException({ code: 'ACTIVE_RENEWAL_EXISTS', message: 'Kho này đã có yêu cầu gia hạn chưa được xử lý.' });
+    const returning = await tx.returnRequest.findFirst({ where: {
+      reservationId: reservation.id, status: { not: 'COMPLETED' },
+      OR: [{ activeKey: `RETURN:${reservation.id}` }, { inspections: { some: { rentalContractId: { in: ids } } } }],
+    }, select: { id: true } });
+    if (returning) throw new ConflictException({ code: 'RENEWAL_RETURN_IN_PROGRESS', message: 'Kho này đang có yêu cầu trả. Vui lòng xử lý hồ sơ trả kho trước.' });
+    if (await tx.transferRequest.count({ where: { rentalContractId: { in: ids }, status: { in: ['REQUESTED', 'APPROVED'] } } })) {
+      throw new ConflictException('Cần xử lý yêu cầu chuyển kho trước khi gia hạn hợp đồng này.');
+    }
+    const invoices = await tx.invoice.findMany({ where: {
+      reservationId: reservation.id, balanceDue: { gt: 0 }, status: { not: 'VOID' },
+      OR: [{ dueAt: null }, { dueAt: { lte: businessToday() } }],
+      ...(renewalId ? { NOT: { renewalRequestId: renewalId, type: 'RENEWAL' } } : {}),
+    }, select: { ...returnInvoiceFields, renewalRequest: { select: { rentalContractId: true } } } });
+    const readiness = contractReturnReadiness(invoices, ids, reservation.contracts.map(contract => contract.id));
+    if (!readiness.canReturn) throw new ConflictException({ code: 'RENEWAL_OUTSTANDING_BALANCE',
+      message: readiness.requiresReconciliation ? 'Cần đối soát công nợ đến hạn trên hóa đơn chung trước khi gia hạn.' : 'Cần thanh toán các hóa đơn đến hạn của kho trước khi gia hạn.',
+    });
+  }
+
+  private async assertNoAllocationConflict(db: DbClient, contracts: RenewalContract[], start: Date, end: Date, renewalId?: string) {
+    const unitIds = contracts.map(contract => contract.reservationUnit.storageUnitId);
+    const allocation = await db.reservationUnit.findFirst({ where: {
+      id: { notIn: contracts.map(contract => contract.reservationUnitId) }, storageUnitId: { in: unitIds }, releasedAt: null,
+      plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' },
+    }, select: { id: true } });
+    const approved = await db.renewalRequest.findFirst({ where: {
+      id: { not: renewalId }, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: { lt: end }, requestedEndDate: { gt: start },
+      ...renewalOverlapsUnits(unitIds),
+    }, select: { id: true } });
+    if (allocation || approved) {
+      throw new ConflictException({ code: 'RENEWAL_ALLOCATION_CONFLICT', message: 'Kho đã có phân bổ hoặc gia hạn giữ chỗ trùng với kỳ đề nghị.' });
+    }
   }
 
   private include() {
     return {
       requestedBy: { select: { id: true, fullName: true, email: true } },
       reviewedBy: { select: { id: true, fullName: true, role: true } },
-      reservation: { include: this.activeRentalInclude() },
+      reservation: { include: { ...renewalRentalInclude, supportRequests: closeoutReservationSelect.supportRequests } },
       invoices: { include: { payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } }, orderBy: { renewalCycle: 'asc' as const } },
     };
   }
@@ -449,7 +555,10 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private toRenewal(record: any, manager: boolean) {
-    const invoices = record.invoices.filter((invoice: any) => invoice.amountPaid > 0n || !isScheduledRenewalInvoice(invoice)).map((invoice: any) => ({
+    const scope = this.snapshot(record).scope;
+    const contracts = (record.reservation.contracts as RenewalContract[]).filter(contract => !record.rentalContractId || contract.id === record.rentalContractId);
+    const invoices = record.invoices.filter((invoice: any) => invoice.amountPaid > 0n || !isScheduledRenewalInvoice(invoice)
+      || closeoutPaymentAllowed(record.reservation, record.rentalContractId)).map((invoice: any) => ({
       id: invoice.id, invoiceCode: invoice.invoiceCode, type: invoice.type, renewalCycle: invoice.renewalCycle,
       billingPeriodStart: this.isoDate(invoice.billingPeriodStart), billingPeriodEnd: this.isoDate(invoice.billingPeriodEnd), dueAt: this.isoDate(invoice.dueAt),
       status: invoice.status, rentalAmount: this.money(invoice.rentalAmount), depositAmount: this.money(invoice.depositAmount), totalAmount: this.money(invoice.totalAmount),
@@ -458,35 +567,48 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     }));
     return {
       id: record.id, renewalCode: record.renewalCode, status: record.status,
-      reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, quantity: record.reservation.quantity, currentEndDate: this.isoDate(record.reservation.endDate), storageType: { id: record.reservation.storageType.id, code: record.reservation.storageType.code, name: record.reservation.storageType.name } },
+      rentalContractId: record.rentalContractId ?? null,
+      contracts: contracts.map(contract => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status,
+        endDate: this.isoDate(contract.endDate), unitCode: scope?.unitCode ?? contract.reservationUnit.storageUnit.unitNumber })),
+      reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, quantity: record.rentalContractId ? 1 : record.reservation.quantity,
+        currentEndDate: this.isoDate(record.rentalContractId ? contracts[0]?.endDate ?? record.previousEndDate : record.reservation.endDate),
+        storageType: { id: scope ? this.snapshot(record).storageTypeId : record.reservation.storageType.id, code: contracts[0]?.reservationUnit.storageUnit.storageType?.code ?? record.reservation.storageType.code,
+          name: scope ? this.snapshot(record).storageTypeName : record.reservation.storageType.name } },
       previousEndDate: this.isoDate(record.previousEndDate), requestedEndDate: this.isoDate(record.requestedEndDate), termMonths: record.termMonths, paymentPlan: record.paymentPlan,
       quoteSnapshot: record.quoteSnapshot, invoices,
       billingSummary: { totalInvoiced: invoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0), totalPaid: invoices.reduce((sum: number, invoice: any) => sum + invoice.amountPaid, 0), totalOutstanding: invoices.reduce((sum: number, invoice: any) => sum + invoice.balanceDue, 0) },
       rejectionReason: record.rejectionReason, requestedAt: record.requestedAt.toISOString(), reviewedAt: record.reviewedAt?.toISOString() ?? null, approvedAt: record.approvedAt?.toISOString() ?? null, rejectedAt: record.rejectedAt?.toISOString() ?? null, updatedAt: record.updatedAt.toISOString(),
       appendix: record.appendixCode ? { code: record.appendixCode, version: record.appendixVersion, snapshot: signedDocument(record.appendixSnapshot), snapshotHash: snapshotHash(signedDocument(record.appendixSnapshot)), verification: signatureVerification(record.appendixSnapshot), otp: this.signing.availability(), acceptedAt: record.appendixAcceptedAt?.toISOString() ?? null, acceptanceName: record.appendixAcceptanceName ?? null, signatureImage: record.appendixSignatureImage ?? null } : null,
-      ...(manager ? { customer: record.reservation.customer, contracts: record.reservation.contracts.map((contract: any) => ({ contractCode: contract.contractCode, status: contract.status, endDate: this.isoDate(contract.endDate), unitCode: contract.reservationUnit.storageUnit.unitNumber })) , requestedBy: record.requestedBy, reviewedBy: record.reviewedBy } : {}),
+      ...(manager ? { customer: record.reservation.customer, requestedBy: record.requestedBy, reviewedBy: record.reviewedBy } : {}),
     };
   }
 
-  private createInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {
-    if (['rentalContractId', 'contractId', 'storageUnitId', 'reservationUnitId', 'rentalContractIds', 'contractIds', 'storageUnitIds', 'reservationUnitIds'].some(key => input[key] != null)) {
-      throw new BadRequestException('Gia hạn áp dụng cho toàn bộ đơn thuê. Chưa hỗ trợ gia hạn riêng từng kho.');
+  private quoteInput(input: Record<string, unknown>) {
+    if (['contractId', 'storageUnitId', 'reservationUnitId', 'rentalContractIds', 'contractIds', 'storageUnitIds', 'reservationUnitIds'].some(key => input[key] != null)) {
+      throw new BadRequestException('Chọn một kho bằng rentalContractId.');
     }
     const reservationId = typeof input.reservationId === 'string' ? input.reservationId.trim() : '';
     if (!reservationId) throw new BadRequestException('reservationId là bắt buộc.');
+    const rentalContractId = typeof input.rentalContractId === 'string' ? input.rentalContractId.trim() : null;
+    if (input.rentalContractId != null && (!rentalContractId || rentalContractId.length > 200)) throw new BadRequestException('rentalContractId không hợp lệ.');
     const termMonths = Number(input.termMonths);
     if (!Number.isSafeInteger(termMonths) || termMonths < 1 || termMonths > 120) throw new BadRequestException('termMonths phải là số nguyên từ 1 đến 120.');
     const paymentPlan = typeof input.paymentPlan === 'string' ? input.paymentPlan : '';
     if (!['PAY_MONTHLY', 'PREPAID'].includes(paymentPlan)) throw new BadRequestException('paymentPlan phải là PAY_MONTHLY hoặc PREPAID.');
+    return { reservationId, rentalContractId, termMonths, paymentPlan: paymentPlan as PaymentPlan };
+  }
+
+  private requestKey(idempotencyKey?: string) {
     const key = idempotencyKey?.trim() ?? '';
     if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key phải dài 8–200 ký tự và chỉ chứa ký tự an toàn.');
-    return { reservationId, termMonths, paymentPlan: paymentPlan as PaymentPlan, idempotencyKey: key };
+    return key;
   }
 
   private appendixDocument(renewal: any) {
+    const contracts = this.targetContracts(renewal.reservation, renewal.rentalContractId);
     return {
       appendixCode: `${renewal.renewalCode}-PL01`, appendixVersion: 'NESTBOX-RENEWAL-APPENDIX-V2',
-      appendixSnapshot: { issuer: this.policy.issuer(), customer: renewal.reservation.customer, version: 'NESTBOX-RENEWAL-APPENDIX-V2', renewalCode: renewal.renewalCode, reservationReference: renewal.reservation.reservationCode, previousEndDate: this.isoDate(renewal.previousEndDate), requestedEndDate: this.isoDate(renewal.requestedEndDate), termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan, quote: this.snapshot(renewal), contracts: renewal.reservation.contracts.map((contract: any) => ({ contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber })) } as unknown as Prisma.InputJsonValue,
+      appendixSnapshot: { issuer: this.policy.issuer(), customer: renewal.reservation.customer, version: 'NESTBOX-RENEWAL-APPENDIX-V2', renewalCode: renewal.renewalCode, reservationReference: renewal.reservation.reservationCode, previousEndDate: this.isoDate(renewal.previousEndDate), requestedEndDate: this.isoDate(renewal.requestedEndDate), termMonths: renewal.termMonths, paymentPlan: renewal.paymentPlan, quote: this.snapshot(renewal), contracts: contracts.map(contract => ({ contractCode: contract.contractCode, unitCode: contract.reservationUnit.storageUnit.unitNumber })) } as unknown as Prisma.InputJsonValue,
     };
   }
 
@@ -495,12 +617,22 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertSnapshot(record: any, snapshot: RenewalSnapshot) {
-    const valid = snapshot.currency === 'VND' && snapshot.storageTypeId === record.reservation.storageTypeId
-      && snapshot.quantity === record.reservation.quantity && snapshot.previousEndDate === this.isoDate(record.previousEndDate)
+    const scope = snapshot?.scope;
+    const contract = record.rentalContractId ? (record.reservation.contracts as RenewalContract[]).find(item => item.id === record.rentalContractId) : undefined;
+    const scopedMatch = record.rentalContractId
+      ? !!scope && !!contract && snapshot.quantity === 1 && scope.reservationId === record.reservationId
+        && scope.rentalContractId === contract.id && scope.contractCode === contract.contractCode
+        && (record.status === 'COMPLETED' || scope.reservationUnitId === contract.reservationUnitId
+          && scope.storageUnitId === contract.reservationUnit.storageUnitId && snapshot.storageTypeId === contract.reservationUnit.storageUnit.storageTypeId)
+      : !scope && snapshot?.storageTypeId === record.reservation.storageTypeId && snapshot?.quantity === record.reservation.quantity;
+    const valid = scopedMatch && snapshot.currency === 'VND' && snapshot.previousEndDate === this.isoDate(record.previousEndDate)
       && snapshot.requestedEndDate === this.isoDate(record.requestedEndDate) && snapshot.termMonths === record.termMonths
       && snapshot.paymentPlan === record.paymentPlan && snapshot.depositAmount === 0
       && [snapshot.monthlyUnitPrice, snapshot.baseRentalAmount, snapshot.discountPercent, snapshot.discountAmount, snapshot.rentalAmount, snapshot.totalAmount].every(Number.isSafeInteger)
-      && snapshot.monthlyUnitPrice > 0 && snapshot.totalAmount === snapshot.rentalAmount;
+      && snapshot.monthlyUnitPrice > 0 && snapshot.totalAmount > 0 && snapshot.totalAmount === snapshot.rentalAmount
+      && snapshot.discountAmount >= 0 && snapshot.baseRentalAmount - snapshot.discountAmount === snapshot.totalAmount
+      && (snapshot.paymentPlan !== 'PAY_MONTHLY' || snapshot.discountAmount === 0
+        && BigInt(snapshot.monthlyUnitPrice) * BigInt(snapshot.termMonths) * BigInt(snapshot.quantity) === BigInt(snapshot.totalAmount));
     if (!valid) throw new ConflictException('Renewal quoteSnapshot không hợp lệ hoặc không khớp yêu cầu.');
   }
 
@@ -508,8 +640,11 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     if (record.previousEndDate.getTime() !== actual.getTime()) throw new ConflictException({ code: 'RENEWAL_EFFECTIVE_END_CHANGED', message: 'Ngày kết thúc hiện tại đã thay đổi; yêu cầu gia hạn cần được xem xét lại.' });
   }
 
-  private assertMatchingRetry(record: any, customerId: string, termMonths: number, paymentPlan: PaymentPlan, reservationId: string) {
-    if (record.requestedByUserId !== customerId || record.reservationId !== reservationId || record.termMonths !== termMonths || record.paymentPlan !== paymentPlan) {
+  private assertMatchingRetry(record: any, customerId: string, parsed: { termMonths: number; paymentPlan: PaymentPlan; rentalContractId: string | null }, reservationId: string) {
+    const scope = this.snapshot(record).scope;
+    const matchesScope = parsed.rentalContractId ? !!scope && [scope.rentalContractId, scope.contractCode].includes(parsed.rentalContractId)
+      : !record.rentalContractId || record.reservation.quantity === 1;
+    if (!matchesScope || record.requestedByUserId !== customerId || record.reservationId !== reservationId || record.termMonths !== parsed.termMonths || record.paymentPlan !== parsed.paymentPlan) {
       throw new ConflictException('Idempotency-Key đã được dùng cho yêu cầu gia hạn khác.');
     }
   }
@@ -520,6 +655,20 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
 
   private lockUnits(tx: Prisma.TransactionClient, unitIds: string[]) {
     return tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" IN (${Prisma.join(unitIds)}) ORDER BY "id" FOR UPDATE`);
+  }
+
+  private lockReservation(tx: Prisma.TransactionClient, id: string) {
+    return tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${id} FOR UPDATE`);
+  }
+
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      } catch (error) {
+        if (attempt >= 3 || !this.isPrismaCode(error, 'P2034')) throw error;
+      }
+    }
   }
 
   private addCalendarMonths(original: Date, months: number) {

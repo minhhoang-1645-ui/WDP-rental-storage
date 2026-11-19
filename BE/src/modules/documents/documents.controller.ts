@@ -83,16 +83,13 @@ export class ManagerDocumentsController {
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('STAFF')
 export class StaffDocumentsController {
-  @Get('transfer-addenda/:id')
-  async transferAddendum(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.transfers.getForStaff(id, request.user!); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
   constructor(private readonly contracts: ContractsService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
   async transfer(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
-    await this.transfers.getForStaff(transferId, request.user!);
-    const record = await this.contracts.getManagerContract(id, request.user!.id);
-    const transfer = completedTransfer(record, transferId);
-    send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
+    const task = await this.transfers.getForStaff(transferId, request.user!);
+    if (task.status !== 'COMPLETED' || (task.contract.id !== id && task.contract.contractCode !== id)) throw new NotFoundException('Không tìm thấy biên bản chuyển kho thuộc nhiệm vụ này.');
+    const record = await this.contracts.getManagerContract(task.contract.id);
+    const transfer = completedTransfer(record, task.id);
+    send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${task.id}-chuyen-kho`);
   }
-  @Get('contracts/:id')
-  async contract(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id, request.user!.id); send(response, await this.pdf.contract(record), record.contractCode); }
 }

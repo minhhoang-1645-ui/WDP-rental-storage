@@ -1,8 +1,10 @@
+import { DetailCard } from '../../components/workspace/DetailRow';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { vietnamCalendarDate } from '../../utils/business-date';
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { useState } from "react";
 import { DocumentFile } from "../../components/customer/DocumentFile";
 import { InvoiceTransferDialog } from "../../components/customer/InvoiceTransferDialog";
@@ -40,7 +42,7 @@ export function CustomerRentalsPage() {
       user?.id ?? "",
       true,
     );
-  const { items: rentals, pagination } = useCustomerPagination(
+  const { items: rentals, pagination } = useListPagination(
     (data?.items ?? []).filter(item => !reservationFilter || item.reservationId === reservationFilter || item.reservationReference === reservationFilter),
   );
 
@@ -87,7 +89,8 @@ export function CustomerRentalsPage() {
       ) : (
         <div className="customer-card-list">
           {rentals.map((rental) => (
-            <article
+            <DetailCard
+              detail={{ to: `/customer/reservations/${encodeURIComponent(rental.reservationId)}`, label: `Xem đơn thuê ${rental.reservationReference}` }}
               className="customer-panel customer-record-card"
               key={rental.reservationId}
             >
@@ -129,7 +132,17 @@ export function CustomerRentalsPage() {
                           .join(" · ") || "Chưa có vị trí chi tiết"}
                       </small>
                     </span>
-                    <CustomerStatus status={contract.status} />
+                    <CustomerStatus status={contract.endDate <= vietnamCalendarDate() ? 'OVERDUE' : contract.status} />
+                    <p>{contract.unit.storageType?.name ?? rental.storageType.name} · Hạn {formatPortalDate(contract.endDate)}</p>
+                    {contract.returnInProgress && <p>Đang xử lý yêu cầu trả kho.</p>}
+                    {contract.pendingRenewal && <Link to={`/customer/renewals?${new URLSearchParams({ renewal: contract.pendingRenewal.id })}`}>Gia hạn {contract.pendingRenewal.renewalCode} đang xử lý</Link>}
+                    {!rental.pendingRenewal && !contract.pendingRenewal && !contract.returnInProgress && contract.unit.status === 'OCCUPIED'
+                      && rental.historicalPricing?.billingMode === 'MONTHLY' && <Link className="button-secondary"
+                      to={`/customer/renewals?${new URLSearchParams({ contract: contract.id })}`}>Gia hạn kho</Link>}
+                    {!rental.pendingRenewal && !contract.pendingRenewal && !contract.returnInProgress && contract.unit.status === 'OCCUPIED' && <Link className="button-secondary"
+                      to={`/customer/returns?${new URLSearchParams({ contract: contract.id, ...(contract.endDate > vietnamCalendarDate() ? { early: '1' } : {}) })}`}>
+                      {contract.endDate > vietnamCalendarDate() ? 'Trả trước hạn' : 'Trả kho'}
+                    </Link>}
                     <section className="rental-goods" aria-label={`Hàng đang lưu tại ${contract.unit.unitCode}`}>
                       <h3>Hàng đang lưu · {contract.storedItems?.length ?? 0} mặt hàng</h3>
                       {contract.storedItems === undefined ? <p>Chưa tải được danh sách hàng.</p> : contract.storedItems.length ? <ul>{contract.storedItems.map(item => <li key={item.id}><span>{item.name}<small>{item.itemCode}</small></span><strong>{item.balance} {item.unit}</strong></li>)}</ul> : <p>Kho này chưa có hàng đang lưu. Tồn hàng được cập nhật sau khi nhân viên hoàn tất phiếu nhập.</p>}
@@ -149,7 +162,7 @@ export function CustomerRentalsPage() {
                   {formatPortalDate(rental.pendingRenewal.requestedEndDate)}.
                 </p>
               )}
-            </article>
+            </DetailCard>
           ))}
         </div>
       )}

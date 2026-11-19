@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { safeSessionStorage } from '../../services/browser-storage';
-import { listMemoryKey } from '../workspace/internal-list-memory';
+import { listMemoryKey, useInternalListReturn } from '../workspace/internal-list-memory';
 import { NavigationGroup } from "../workspace/NavigationGroup";
 import { startTransition, useEffect, useRef, useState } from "react";
 import {
@@ -72,6 +72,7 @@ export function CustomerLayout() {
   const { user, loading, logout } = useAuth();
   const activity = useActivity();
   const location = useLocation();
+  const notificationBack = useInternalListReturn('/customer/notifications');
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(true);
   useEffect(() => { if (user) safeSessionStorage.setItem(listMemoryKey(user.id, location.pathname), location.pathname + location.search); }, [user, location.pathname, location.search]);
@@ -245,7 +246,7 @@ export function CustomerLayout() {
           </div>
         </div>
         {location.state?.notificationInbox === '/customer/notifications' && location.pathname !== '/customer/notifications' &&
-          <Link to="/customer/notifications" className="workspace-notification-back">Về thông báo</Link>}
+          <Link to={notificationBack} className="workspace-notification-back">Về thông báo</Link>}
         <Outlet />
       </main>
     </div>

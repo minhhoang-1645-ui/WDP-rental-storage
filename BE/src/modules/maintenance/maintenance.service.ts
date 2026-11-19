@@ -44,7 +44,7 @@ export class MaintenanceService {
   async getStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }], assignedStaffUserId: actor.id }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return this.toMaintenance(record, 'STAFF');
+    return this.toMaintenance(record, 'STAFF', actor.id);
   }
 
   async getManager(id: string) {
@@ -239,11 +239,11 @@ export class MaintenanceService {
       reportedBy: { select: { id: true, fullName: true, role: true } },
       assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
       verifiedBy: { select: { id: true, fullName: true, role: true } },
-      returnInspection: { include: { returnRequest: { select: { id: true, returnCode: true } } } },
+      returnInspection: { include: { returnRequest: { select: { id: true, returnCode: true, assignedStaffUserId: true } } } },
     };
   }
 
-  private toMaintenance(record: any, mode: ViewMode) {
+  private toMaintenance(record: any, mode: ViewMode, staffDetailId?: string) {
     const future = record.storageUnit.reservationUnits.map((allocation: any) => ({
       reservationId: allocation.reservation.id,
       reservationReference: allocation.reservation.reservationCode,
@@ -262,14 +262,20 @@ export class MaintenanceService {
       workCompletedAt: record.workCompletedAt?.toISOString() ?? null, workNote: record.workNote,
       createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
     };
-    if (mode === 'STAFF') return base;
+    const relatedReturn = record.returnInspection?.returnRequest;
+    if (mode === 'STAFF') return staffDetailId ? {
+      ...base, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
+      verifiedAt: record.verifiedAt?.toISOString() ?? null,
+      ...(relatedReturn?.assignedStaffUserId === staffDetailId
+        ? { returnContext: { returnRequest: { id: relatedReturn.id, returnCode: relatedReturn.returnCode } } } : {}),
+    } : base;
     return {
       ...base, reportedBy: record.reportedBy, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
       verifiedAt: record.verifiedAt?.toISOString() ?? null,
       returnContext: record.returnInspection ? {
         inspectionId: record.returnInspection.id, result: record.returnInspection.result, issueType: record.returnInspection.issueType,
         conditionNote: record.returnInspection.conditionNote, issueNote: record.returnInspection.issueNote,
-        returnRequest: record.returnInspection.returnRequest,
+        returnRequest: { id: relatedReturn.id, returnCode: relatedReturn.returnCode },
       } : null,
       hasFutureAllocation: future.length > 0, nextConfirmedAllocation: future[0] ?? null, futureAllocations: future,
     };

@@ -1,12 +1,7 @@
-export const internalPageSizes = [10, 20, 50] as const;
+export const PAGE_SIZE_OPTIONS = [5, 10] as const;
+export const DEFAULT_PAGE_SIZE = 10;
 
-export function internalPageSize(params: URLSearchParams) {
-  const value = Number(params.get('limit'));
-  return value === 5 ? 5 : internalPageSizes.find(size => size === value) ?? 10;
-}
-export const staffTaskPageSizes = internalPageSizes;
-
-export function staffTaskPageSize(params: URLSearchParams) {
-  const size = Number(params.get('limit'));
-  return staffTaskPageSizes.find(value => value === size) ?? 20;
+export function internalPageSize(params: URLSearchParams, key = 'limit') {
+  const value = Number(params.get(key));
+  return PAGE_SIZE_OPTIONS.find(size => size === value) ?? DEFAULT_PAGE_SIZE;
 }

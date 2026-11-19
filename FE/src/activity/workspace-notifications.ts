@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { internalPageSize } from '../utils/internal-pagination';
 
 export type NotificationRole = 'STAFF' | 'MANAGER' | 'ADMIN' | 'CUSTOMER';
 export type NoticeView = 'all' | 'unread' | 'action';
@@ -17,12 +18,12 @@ export type NotificationPage = {
   page: number; limit: number; total: number; unreadTotal: number;
   items: Notice[]; recent: Notice[]; kinds: { value: string; label: string }[];
 };
-export const noticePageSizes = [10, 20, 50] as const;
 export const noticeViews: [NoticeView, string][] = [['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['action', 'Cần xử lý']];
 
 type NotificationState = {
   data: NotificationPage | null;
   recent: Notice[];
+  setPreviewOpen: (open: boolean) => void;
   kinds: NotificationPage['kinds'];
   unread: number | null;
   loading: boolean;
@@ -44,6 +45,6 @@ export function noticeQuery(search: string) {
   const candidate = params.get('view');
   const view = noticeViews.find(([value]) => value === candidate)?.[0] ?? 'all';
   const page = Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(Number(params.get('page'))) || 1));
-  const limit = noticePageSizes.find(value => value === Number(params.get('limit'))) ?? 10;
+  const limit = internalPageSize(params);
   return { view, page, limit, kind: params.get('kind') ?? '', search: (params.get('search') ?? '').slice(0, 100) };
 }

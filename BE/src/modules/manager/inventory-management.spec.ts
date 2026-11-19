@@ -17,13 +17,30 @@ function fixture() {
     $queryRaw: vi.fn().mockResolvedValue([]),
     storageType: { findUnique: vi.fn().mockResolvedValue(type), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
     facility: { findUnique: vi.fn().mockResolvedValue({ id: 'facility' }), findMany: vi.fn().mockResolvedValue([{ id: 'facility', name: 'Cơ sở' }]) },
-    storageUnit: { findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => data) },
+    storageUnit: { groupBy: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => data) },
     reservation: { count: vi.fn().mockResolvedValue(0) }, guestBookingRequest: { count: vi.fn().mockResolvedValue(0) }, contactInquiry: { count: vi.fn().mockResolvedValue(0) },
   };
   const prisma = { ...tx, $transaction: vi.fn().mockImplementation(async operation => operation(tx)) };
   return { tx, prisma, service: new InventoryManagementService(prisma as never) };
 }
 describe('Manager inventory configuration safety (mock DB only)', () => {
+  it('merges equivalent ground labels and lists locations independently of pagination', async () => {
+    const { service, tx } = fixture();
+    tx.storageUnit.groupBy.mockResolvedValue([{ floor: 'Ground', zone: 'a' }, { floor: 'Tầng trệt', zone: 'A' }, { floor: 'Tầng 1', zone: 'B' }]);
+    expect(await service.listUnitLocations()).toEqual({ floors: ['Tầng 1', 'Tầng trệt'], zones: ['A', 'B'] });
+  });
+  it('prevents duplicate full coordinates but preserves partial and unchanged legacy positions', async () => {
+    const { service, tx } = fixture();
+    tx.storageUnit.findFirst.mockResolvedValue({ unitNumber: 'EXISTING' });
+    await expect(service.saveUnit(undefined, { storageTypeId: 'type', floor: 'Ground', zone: 'a', row: 1, position: 1 }, actor)).rejects.toThrow('Vị trí này đã có kho EXISTING');
+    expect(tx.storageUnit.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+      storageType: { facilityId: 'facility' }, floor: { in: ['Ground', 'Trệt', 'Tầng trệt'], mode: 'insensitive' },
+    }) }));
+    expect(tx.storageUnit.create).not.toHaveBeenCalled();
+    await expect(service.saveUnit(undefined, { storageTypeId: 'type', floor: 'Ground' }, actor)).resolves.toMatchObject({ floor: 'Tầng trệt', zone: null });
+    await expect(service.saveUnit('unit', { expectedUpdatedAt: version, floor: 'Tầng trệt' }, actor)).resolves.toMatchObject({ floor: 'Trệt', unitNumber: unit.unitNumber });
+    expect(tx.storageUnit.findFirst).toHaveBeenCalledTimes(1);
+  });
   it('returns real prices and preserves unavailable prices', async () => {
     const { service } = fixture();
     expect(await service.listTypes()).toMatchObject({ total: 2, items: [{ monthlyRate: 1500000 }, { monthlyRate: null }] });
@@ -94,11 +111,15 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
     const { service, tx } = fixture(); tx.storageUnit.create.mockRejectedValue({ code });
     await expect(service.saveUnit(undefined, { unitNumber: 'NEW', storageTypeId: 'type' }, actor)).rejects.toBeInstanceOf(ConflictException);
   });
+  it('generates a type-prefixed physical unit code on the server when omitted', async () => {
+    const { service } = fixture();
+    await expect(service.saveUnit(undefined, { unitNumber: '', storageTypeId: 'type' }, actor)).resolves.toMatchObject({ unitNumber: expect.stringMatching(/^SM-A-[A-F0-9]{16}$/) });
+  });
   it('route guard grants configuration only to Manager, including GET list', () => {
     const guard = new RolesGuard(new Reflector());
-    for (const name of ['list', 'createType', 'updateType', 'createUnit', 'updateUnit'] as const) {
+    for (const name of ['list', 'unitLocations', 'createType', 'updateType', 'createUnit', 'updateUnit'] as const) {
       for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
-        const context = { getClass: () => InventoryManagementController, getHandler: () => InventoryManagementController.prototype[name], switchToHttp: () => ({ getRequest: () => ({ method: name === 'list' ? 'GET' : 'POST', originalUrl: '/api/manager/storage-types', user: { role } }) }) } as unknown as ExecutionContext;
+        const context = { getClass: () => InventoryManagementController, getHandler: () => InventoryManagementController.prototype[name], switchToHttp: () => ({ getRequest: () => ({ method: ['list', 'unitLocations'].includes(name) ? 'GET' : 'POST', originalUrl: '/api/manager/storage-types', user: { role } }) }) } as unknown as ExecutionContext;
         if (role === 'MANAGER') expect(guard.canActivate(context)).toBe(true);
         else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
       }

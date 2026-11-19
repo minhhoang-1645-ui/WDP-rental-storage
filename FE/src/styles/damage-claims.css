@@ -17,10 +17,15 @@
 .claims-page .manager-status { white-space: normal; }
 .claims-detail-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 16px; }
 .claims-detail-stack { display: grid; gap: 16px; }
+.claims-staff-detail { max-width: 1100px; gap: 14px; }
+.claims-staff-references { grid-column: 1 / -1; display: grid; gap: 12px; }
 .claims-page .claims-card { display: grid; gap: 12px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .claims-page .claims-card h2 { display: flex; align-items: center; gap: 8px; margin: 0; }
 .claims-page .claims-card > .manager-status, .claims-page .claims-cash > button { justify-self: start; }
 .claims-page .claims-card > .manager-facts { margin: 0; }
+.workspace-themed .claims-page .claims-staff-detail :is(.claims-card, .record-disclosure) { margin-block: 0; }
+.workspace-themed .claims-page .claims-staff-detail .claims-card { gap: 10px; }
+.claims-staff-detail .claims-card strong + .claims-text { margin-top: 4px; }
 .claims-page .claims-text { margin: 0; white-space: pre-wrap; }
 .claims-page .claims-muted, .claims-history span { margin: 0; color: var(--workspace-muted); font-size: 14px; }
 .claims-items-list { list-style: disc; padding-inline-start: 20px; }

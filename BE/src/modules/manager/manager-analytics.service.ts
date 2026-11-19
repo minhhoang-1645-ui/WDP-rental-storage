@@ -1,3 +1,4 @@
+import { legacyTransferFilter, transferSubjectFilter } from '../transfers/transfer-intake.js';
 import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -44,24 +45,22 @@ export class ManagerAnalyticsService {
         { assignedStaffUserId: null },
         { assignedStaff: { is: { OR: [{ role: { not: 'STAFF' as const } }, { accountStatus: 'DISABLED' as const }] } } },
       ] };
-      const ordinarySupport = { subject: { not: EARLY_RETURN_SUBJECT } };
+      const ordinarySupport = { subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter };
       const queue = {
         unassignedStock: await tx.stockMovement.count({ where: { status: { in: ['REQUESTED', 'ASSIGNED'] }, ...missingAssignee } }),
-        unassignedSupport: await tx.supportRequest.count({ where: { status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'] }, ...ordinarySupport, ...missingAssignee } }),
-        unassignedMaintenance: await tx.maintenanceRequest.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] }, ...missingAssignee } }),
+        unassignedSupport: await tx.supportRequest.count({ where: { status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] }, ...ordinarySupport, ...missingAssignee, transferRequests: { none: { status: { in: ['REQUESTED', 'APPROVED', 'COMPLETED'] } } } } }),
+        unassignedMaintenance: await tx.maintenanceRequest.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] }, ...missingAssignee } }),
         unassignedAppointments: await tx.handoverAppointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, ...missingAssignee } }),
         unassignedReturns: await tx.returnRequest.count({ where: { status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] }, ...missingAssignee } }),
         unassignedTransfers: await tx.transferRequest.count({ where: { status: 'APPROVED', ...missingAssignee } }),
-        unassignedClaims: await tx.damageClaim.count({ where: { status: { in: ['REPORTED', 'INVESTIGATING'] }, OR: [
+        unassignedClaims: await tx.damageClaim.count({ where: { status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null, OR: [
           { assignedStaffId: null }, { assignedStaffId: { notIn: staff.filter(person => person.accountStatus === 'ACTIVE').map(person => person.id) } },
         ] } }),
-        escalatedSupport: await tx.supportRequest.count({ where: { status: 'ESCALATED', ...ordinarySupport } }),
+        escalatedSupport: await tx.supportRequest.count({ where: { status: 'ESCALATED', ...ordinarySupport, transferRequests: { none: { status: { in: ['REQUESTED', 'APPROVED', 'COMPLETED'] } } } } }),
         earlyReturnReview: await tx.supportRequest.count({ where: { status: { in: ['OPEN', 'ESCALATED'] }, category: 'OTHER', subject: EARLY_RETURN_SUBJECT } }),
         renewalReview: await tx.renewalRequest.count({ where: { status: 'PENDING' } }),
-        transferReview: await tx.transferRequest.count({ where: { status: 'REQUESTED' } }),
-        damageReview: await tx.damageClaim.count({ where: { OR: [
-          { status: 'INVESTIGATING', staffFacts: { not: null } }, { status: { in: ['APPROVED', 'REJECTED'] } },
-        ] } }),
+        transferReview: await tx.transferRequest.count({ where: { status: 'REQUESTED' } }) + await tx.supportRequest.count({ where: legacyTransferFilter }),
+        damageReview: await tx.damageClaim.count({ where: { status: 'INVESTIGATING', staffFacts: { not: null } } }),
         maintenanceReview: await tx.maintenanceRequest.count({ where: { status: 'AWAITING_VERIFICATION' } }),
         paymentVerification: await tx.paymentSubmission.count({ where: { status: 'PENDING_VERIFICATION' } }),
         depositReview: await tx.depositSettlement.count({ where: { status: 'PENDING_REVIEW' } }),

@@ -34,21 +34,32 @@ export const staffResources = {
 } as const;
 export type StaffResource = keyof typeof staffResources;
 
-const staffTableWorkflows = ['reservations', 'appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
+const staffTableWorkflows = ['appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
 export type StaffTableWorkflow = (typeof staffTableWorkflows)[number];
 export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
   return (staffTableWorkflows as readonly string[]).includes(resource);
 }
+
+const staffOperationDetails = ['transfers', 'returns', 'support-requests', 'maintenance'] as const;
+export type StaffOperation = typeof staffOperationDetails[number];
+export function isStaffOperationDetail(resource: string): resource is StaffOperation {
+  return (staffOperationDetails as readonly string[]).includes(resource);
+}
+
+const staffDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+});
 
 export function staffDay(value: unknown) {
   if (typeof value !== "string" && typeof value !== "number") return "";
   const instant = new Date(value);
   return Number.isNaN(instant.getTime())
     ? ""
-    : new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Bangkok",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(instant);
+    : staffDayFormatter.format(instant);
+}
+
+export function staffDayAfter(day: string, days: number) {
+  const date = new Date(day + 'T00:00:00Z');
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

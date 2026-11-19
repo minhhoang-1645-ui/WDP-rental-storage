@@ -26,10 +26,11 @@ export type Claim = {
   createdAt: string;
   updatedAt: string;
   estimatedValue: number | null;
-  affectedItems: { id: string; name: string; unit: string }[];
+  affectedItems: { id: string; name: string; unit: string; itemCode?: string }[];
   evidenceLinks: string[];
   staffFacts: string | null;
   factsRecordedAt?: string;
+  reviewedAt?: string | null;
   decisionReason: string | null;
   resolutionNote: string | null;
   decision: 'APPROVED' | 'REJECTED' | null;

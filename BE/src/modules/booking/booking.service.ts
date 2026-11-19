@@ -12,6 +12,7 @@ import { ContractsService } from '../contracts/contracts.service.js';
 import { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
 import type { PaymentPlan } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
+import { reservationDetailInclude, reservationWorkflow } from './reservation-detail.js';
 import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
@@ -26,7 +27,7 @@ type LockedStorageUnit = { id: string; unitNumber: string; floor: string | null;
 
 const reservationTransitions: Record<ManagerReservationStatus, readonly ManagerReservationStatus[]> = {
   PENDING: ['CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
-  CONFIRMED: ['CANCELLED'],
+  CONFIRMED: [],
   REJECTED: [],
   CANCELLED: [],
   EXPIRED: [],
@@ -334,41 +335,58 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getReservation(user: PublicUser, id: string) {
+    if (user.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const record = await this.prisma.reservation.findFirst({
       where: { OR: [{ id }, { reservationCode: id }] },
       include: this.customerReservationInclude(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
-    if (record.customerId !== user.id && !['STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) {
+    if (record.customerId !== user.id && !['MANAGER', 'ADMIN'].includes(user.role)) {
       throw new ForbiddenException('Bạn không có quyền xem yêu cầu đặt kho này.');
     }
     return this.toReservation(record);
   }
 
-  async listManagerReservations(page: number, limit: number) {
+  private reservationReadScope(actor?: PublicUser): Prisma.ReservationWhereInput {
+    if (actor?.role !== 'STAFF') return {};
+    return { appointments: { some: this.staffHandoverScope(actor.id) } };
+  }
+
+  private staffHandoverScope(staffId: string): Prisma.HandoverAppointmentWhereInput {
+    return { assignedStaffUserId: staffId, status: { in: ['REQUESTED', 'CONFIRMED'] } };
+  }
+
+  async listManagerReservations(page: number, limit: number, actor?: PublicUser) {
+    const where = this.reservationReadScope(actor);
     const [total, records] = await Promise.all([
-      this.prisma.reservation.count(),
+      this.prisma.reservation.count({ where }),
       this.prisma.reservation.findMany({
+        where,
         skip: (page - 1) * limit,
         take: limit,
         include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
-    return { page, limit, total, items: records.map((record) => this.toManagerReservation(record)) };
+    return { page, limit, total, items: records.map((record) =>
+      actor?.role === 'STAFF' ? this.toStaffHandoverReservation(record) : this.toManagerReservation(record)) };
   }
 
-  async getManagerReservation(id: string) {
+  async getManagerReservation(id: string, actor?: PublicUser) {
     const record = await this.prisma.reservation.findFirst({
-      where: { OR: [{ id }, { reservationCode: id }] },
-      include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+      where: { AND: [{ OR: [{ id }, { reservationCode: id }] }, this.reservationReadScope(actor)] },
+      include: actor?.role === 'STAFF' ? { ...reservationDetailInclude, appointments: {
+        ...reservationDetailInclude.appointments, where: this.staffHandoverScope(actor.id),
+      } } : reservationDetailInclude,
     });
     if (!record) throw new NotFoundException('Không tìm thấy reservation.');
-    return this.toManagerReservation(record);
+    const workflow = reservationWorkflow(record, actor);
+    if (actor?.role === 'STAFF') return { ...this.toStaffHandoverReservation(record), workflow };
+    return { ...this.toManagerReservation(record), workflow };
   }
 
   async updateManagerReservationStatus(id: string, input: Record<string, unknown>, manager: PublicUser) {
-    if (manager.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được cập nhật yêu cầu đặt kho.');
+    if (manager.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý ngoại lệ đặt kho.');
     const requestedStatus = typeof input.status === 'string' ? input.status : '';
     if (!managerReservationStatuses.includes(requestedStatus as ManagerReservationStatus)) {
       throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
@@ -385,27 +403,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
         });
         if (!current) throw new NotFoundException('Không tìm thấy reservation.');
-        if (current.status === targetStatus) {
-          // Safely backfill legacy confirmed reservations only when their complete allocation exists.
-          if (targetStatus === 'CONFIRMED') {
-            await this.contracts.ensureForConfirmedReservation(tx, current.id);
-            await this.billing.ensureInitialInvoice(tx, current.id);
-          }
-          const refreshed = await tx.reservation.findUnique({
-            where: { id: current.id },
-            include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
-          });
-          return this.toManagerReservation(refreshed!);
-        }
+        if (current.status === targetStatus) return this.toManagerReservation(current);
         const allowed = reservationTransitions[current.status as ManagerReservationStatus] ?? [];
         if (!allowed.includes(targetStatus)) {
           throw new ConflictException(`Không thể chuyển reservation từ ${current.status} sang ${targetStatus}.`);
         }
         if (targetStatus === 'CONFIRMED') return this.confirmReservation(tx, current);
 
-        if (current.status === 'CONFIRMED' && targetStatus === 'CANCELLED') {
-          await tx.reservationUnit.updateMany({ where: { reservationId: current.id, releasedAt: null }, data: { releasedAt: new Date() } });
-        }
         if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(targetStatus)) await this.inventory.releasePurchases(tx, current.id);
         const updated = await tx.reservation.update({
           where: { id: current.id },
@@ -432,10 +436,11 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return this.toInquiry(record);
   }
 
-  async listManagerInquiries(page: number, limit: number) {
+  async listManagerInquiries(page: number, limit: number, actor?: PublicUser) {
+    if (actor?.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const [inquiries, reservations] = await Promise.all([
       this.prisma.contactInquiry.findMany({ include: { storageType: true, processedBy: true }, orderBy: { createdAt: 'desc' } }),
-      this.prisma.reservation.findMany({ include: { customer: true, storageType: true }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.reservation.findMany({ where: this.reservationReadScope(actor), include: { customer: true, storageType: true }, orderBy: { createdAt: 'desc' } }),
     ]);
     const items = [
       ...inquiries.map((record) => this.toManagerInquiry(record)),
@@ -445,14 +450,15 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return { page, limit, total, items: items.slice((page - 1) * limit, page * limit) };
   }
 
-  async getManagerInquiry(id: string) {
+  async getManagerInquiry(id: string, actor?: PublicUser) {
+    if (actor?.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const inquiry = await this.prisma.contactInquiry.findFirst({
       where: { OR: [{ id }, { inquiryCode: id }] },
       include: { storageType: true, processedBy: true },
     });
     if (inquiry) return this.toManagerInquiry(inquiry);
     const reservation = await this.prisma.reservation.findFirst({
-      where: { OR: [{ id }, { reservationCode: id }] },
+      where: { AND: [{ OR: [{ id }, { reservationCode: id }] }, this.reservationReadScope(actor)] },
       include: { customer: true, storageType: true },
     });
     if (!reservation) throw new NotFoundException('Không tìm thấy yêu cầu.');
@@ -460,7 +466,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateManagerInquiry(id: string, input: Record<string, unknown>, manager: PublicUser) {
-    if (manager.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý yêu cầu tư vấn.');
+    if (manager.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý yêu cầu tư vấn.');
     const status = typeof input.status === 'string' ? input.status : '';
     const internalNotes = typeof input.internalNotes === 'string' ? input.internalNotes.trim().slice(0, 2000) : undefined;
     const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { OR: [{ id }, { inquiryCode: id }] } });
@@ -482,7 +488,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     }
     const currentReservation = await this.prisma.reservation.findFirst({ where: { OR: [{ id }, { reservationCode: id }] }, select: { id: true } });
     if (!currentReservation) throw new NotFoundException('Không tìm thấy yêu cầu.');
-    return this.updateManagerReservationStatus(currentReservation.id, { status }, manager);
+    throw new ForbiddenException('Yêu cầu đặt kho cần được xử lý tại trang ngoại lệ của quản lý.');
   }
 
   private async confirmReservation(tx: Prisma.TransactionClient, reservation: any) {
@@ -731,11 +737,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         status: 'APPROVED_PENDING_PAYMENT',
         previousEndDate: { lt: end },
         requestedEndDate: { gt: start },
-        reservation: { units: { some: { storageUnitId: { in: candidateUnitIds }, releasedAt: null } } },
+        ...renewalOverlapsUnits(candidateUnitIds),
       },
-      select: { reservation: { select: { units: { where: { storageUnitId: { in: candidateUnitIds }, releasedAt: null }, select: { storageUnitId: true } } } } },
+      select: { rentalContract: { select: { reservationUnit: { select: { storageUnitId: true } } } },
+        reservation: { select: { units: { where: { storageUnitId: { in: candidateUnitIds }, releasedAt: null }, select: { storageUnitId: true } } } } },
     });
-    return renewals.flatMap((renewal) => renewal.reservation.units.map((unit) => unit.storageUnitId));
+    return renewals.flatMap(renewal => renewal.rentalContract ? [renewal.rentalContract.reservationUnit.storageUnitId]
+      : renewal.reservation.units.map(unit => unit.storageUnitId));
   }
 
   private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string, knownStorageType?: any) {
@@ -934,6 +942,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private toStaffHandoverReservation(record: Parameters<BookingService['toManagerReservation']>[0]) {
+    const { databaseId, id, reference, requestType, customer, quantity, startDate, endDateExclusive,
+      customerNotes, status, confirmedAt, allocatedUnits, createdAt, updatedAt } = this.toManagerReservation(record);
+    return { databaseId, id, reference, requestType, customer, product: { name: record.storageType.name }, quantity,
+      startDate, endDateExclusive, customerNotes, status, confirmedAt, allocatedUnits, createdAt, updatedAt };
+  }
+
   private toManagerReservation(record: any) {
     return {
       databaseId: record.id,
@@ -1027,3 +1042,4 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return value.trim();
   }
 }
+import { renewalOverlapsUnits } from '../renewals/renewal-scope.js';

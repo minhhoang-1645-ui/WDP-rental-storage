@@ -10,8 +10,8 @@ const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u0
 const date = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value;
 
 /** Inline choices avoid dropdowns clipped by the operation sidebar. */
-export function TransferDestinationPicker({ transferId, source, value, onChange, disabled }: {
-  transferId: string; source: Row; value: string; onChange: (id: string) => void; disabled: boolean;
+export function TransferDestinationPicker({ transferId, source, value, onChange, onReady, disabled }: {
+  transferId: string; source: Row; value: string; onChange: (id: string) => void; onReady: (ready: boolean) => void; disabled: boolean;
 }) {
   const { user } = useAuth();
   const [search, setSearch] = useState(''), [floor, setFloor] = useState(''), [zone, setZone] = useState('');
@@ -34,6 +34,7 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
     && normalize([first(unit, 'unitCode'), first(unit, 'storageType.name'), first(unit, 'floor'), first(unit, 'zone')].join(' ')).includes(normalize(search.trim())))
     .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true));
   const preview = useApiResource<{ sameType: boolean; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; differencePerMonth: number; smaller: boolean } }>(selected && otherTypes ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
+  useEffect(() => { onReady(Boolean(selected && (!otherTypes || preview.data && !preview.loading && !preview.error))); }, [selected, otherTypes, preview.data, preview.loading, preview.error, onReady]);
   const floors = [...new Set(units.map(unit => first(unit, 'floor')).filter(Boolean))];
   const zones = [...new Set(units.map(unit => first(unit, 'zone')).filter(Boolean))];
   return <section className="transfer-destination-picker" aria-label="Chọn kho đích">
@@ -64,7 +65,7 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
         </label>)}
       </fieldset>
       {!choices.length && <p>Không có kho khớp bộ lọc. <button type="button" disabled={disabled} onClick={() => { setSearch(''); setFloor(''); setZone(''); }}>Xóa bộ lọc</button></p>}
-      {selected && <p className="transfer-destination-notice" role="status">Đã chọn <strong>{first(selected, 'unitCode')}</strong>. Kho chỉ được giữ sau khi bạn bấm Duyệt chuyển kho thành công.</p>}
+      {selected && <p className="transfer-destination-notice" role="status">Đã chọn <strong>{first(selected, 'unitCode')}</strong>. Kho sẽ được giữ sau khi duyệt và phân công.</p>}
     </>}
   </section>;
 }

@@ -106,9 +106,11 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const customer = actor.role === 'CUSTOMER';
   const staff = actor.role === 'STAFF';
   const early = source === 'support-requests' && (row.subject === EARLY_RETURN_SUBJECT || Boolean(row.earlyReturnDecision));
-  const transfer = source === 'support-requests' && !early && (row.resolutionType === 'TRANSFER_RECOMMENDED' || noticeSearch(get('subject')).includes('chuyen kho'));
+  const transfer = source === 'support-requests' && !early && (row.resolutionType === 'TRANSFER_RECOMMENDED' || /chuyen (doi )?kho/.test(noticeSearch(get('subject'))));
   const linkedTransfer = transfer ? list(row.transfers)[0] : undefined;
-  if (staff && (assignedId !== actor.id || early || source === 'transfers' && !['APPROVED', 'COMPLETED'].includes(status))) return;
+  if (actor.role === 'MANAGER' && linkedTransfer) return;
+  if (staff && (source === 'reservations' || assignedId !== actor.id || early || source === 'transfers' && !['APPROVED', 'COMPLETED'].includes(status))) return;
+  if (staff && source === 'appointments' && staffActionable.appointments.includes(status) && row.bookingReady === false) return;
   if (staff && linkedTransfer && data.transfers?.some(item => item.id === linkedTransfer.id && text(item, 'assignedStaff.id') === actor.id)) return;
   if (customer && ['customerId', 'customerUserId', 'customer.id', 'reservation.customerId', 'reservation.customer.id'].map(get).some(owner => owner && owner !== actor.id)) return;
   const kind = early ? 'early-returns' : transfer ? 'transfers' : source;
@@ -137,7 +139,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     } as Record<string, string>)[source] ?? '';
   }
   if (!customer && !staff) {
-    const needsAssignment = !early && managerAssignable[source]?.includes(status)
+    const needsAssignment = !early && !transfer && managerAssignable[source]?.includes(status)
       && (!assignedId || get('assignedStaff.accountStatus') === 'DISABLED' || get('assignedStaff.role') && get('assignedStaff.role') !== 'STAFF');
     if (needsAssignment) {
       actionLabel = assignedId ? 'Đổi người phụ trách' : 'Phân công nhân viên';
@@ -146,7 +148,8 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     } else if (early) {
       target = queryPath('/manager/early-returns', { record: id });
       if (!row.earlyReturnDecision && !ended.includes(status)) actionLabel = 'Xem xét trả trước hạn';
-    } else if (source === 'support-requests' && status === 'ESCALATED') actionLabel = 'Xem xét hỗ trợ';
+    } else if (transfer && !ended.includes(status)) actionLabel = 'Xem xét chuyển kho';
+    else if (source === 'support-requests' && status === 'ESCALATED') actionLabel = 'Xem xét hỗ trợ';
     else if (source === 'maintenance' && status === 'AWAITING_VERIFICATION') actionLabel = 'Nghiệm thu bảo trì';
     else if (source === 'transfers' && status === 'REQUESTED') actionLabel = 'Xem xét chuyển kho';
     else if (source === 'renewals' && status === 'PENDING') actionLabel = 'Xem xét gia hạn';
@@ -219,14 +222,18 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     if (early) {
       const decision = get('earlyReturnDecision');
       title = decision === 'APPROVED' ? 'Đã chấp thuận trả trước hạn' : decision === 'REJECTED' ? 'Trả trước hạn chưa được chấp thuận' : 'Trả trước hạn chờ xem xét';
-      const currentContracts = (data.contracts ?? []).filter(item => text(item, 'reservation.id') === reservationId);
+      const contractId = get('contract.id');
+      const currentContracts = (data.contracts ?? []).filter(item => text(item, 'reservation.id') === reservationId && (!contractId || item.id === contractId));
       const approvalEnd = get('earlyReturnForEndDate');
       const currentApproval = approvalEnd && currentContracts.length > 0
         && currentContracts.every(item => item.status === 'ACTIVE' && text(item, 'endDate').slice(0, 10) === approvalEnd);
-      const pendingRenewal = data.renewals?.some(item => text(item, 'reservation.id') === reservationId && ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(String(item.status)));
+      const pendingRenewal = data.renewals?.some(item => text(item, 'reservation.id') === reservationId
+        && (!contractId || !item.rentalContractId || item.rentalContractId === contractId)
+        && ['PENDING', 'APPROVED_PENDING_PAYMENT'].includes(String(item.status)));
       if (decision === 'APPROVED' && reservationId && currentApproval && !pendingRenewal
-        && !data.returns?.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'CANCELLED')) {
-        target = queryPath('/customer/returns', { reservation: reservationId });
+        && !data.returns?.some(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED'
+          && (!contractId || list(item.inspections).some(inspection => text(inspection, 'contract.id') === contractId)))) {
+        target = queryPath('/customer/returns', contractId ? { contract: contractId } : { reservation: reservationId });
         actionLabel = 'Xem điều kiện trả kho';
       }
     }
@@ -237,14 +244,14 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     version = first(linkedTransfer, 'updatedAt', 'completedAt', 'approvedAt');
   }
   const unit = first(row, 'storageUnit.unitCode', 'storageUnit.unitNumber', 'currentStorageUnit.unitNumber', 'unit.unitCode',
-    'allocatedUnits.0.unitCode', 'inspections.0.unit.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode');
+    'allocatedUnits.0.unitCode', 'inspections.0.unit.unitCode', 'contracts.0.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode');
   const summary = [
     customer ? '' : first(row, 'customer.fullName', 'reservation.customer.fullName'),
     unit || first(row, 'storageType.name', 'product.name', 'reservation.storageType.name'),
   ].filter(Boolean).map(short).join(' · ');
   const code = first(row, 'reference', 'appointmentCode', 'invoiceCode', 'submissionCode', 'movementCode', 'maintenanceCode',
     'returnCode', 'settlementCode', 'supportCode', 'transferCode', 'claimCode', 'renewalCode', 'contractCode') || (source === 'reservations' ? id : '');
-  const at = [version, ...['updatedAt', 'createdAt', 'assignedAt', 'resolvedAt', 'completedAt', 'verifiedAt', 'approvedAt',
+  const at = [version, first(row, 'activityUpdatedAt', 'updatedAt'), ...['createdAt', 'assignedAt', 'resolvedAt', 'completedAt', 'verifiedAt', 'approvedAt',
     'confirmedAt', 'requestedAt', 'submittedAt', 'terms.acceptedAt', 'appendix.acceptedAt', 'compensation.handedOverAt'].map(get)]
     .filter(date => Number.isFinite(Date.parse(date))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   if (!at) return;

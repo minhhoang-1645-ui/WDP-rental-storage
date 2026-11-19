@@ -1,10 +1,11 @@
+import { DetailRow } from '../../components/workspace/DetailRow';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { Modal } from '../../components/manager/PortalUi';
 import { CopyRecordCode, RecordIdentity } from '../../components/workspace/RecordIdentity';
 import { ContractRenewalHistory } from '../../components/customer/ContractRenewalHistory';
 import { ContractTransferHistory } from '../../components/customer/ContractTransferHistory';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useCustomerPagination } from "../../components/customer/useCustomerPagination";
+import { useListPagination } from "../../components/workspace/useListPagination";
 import { usePaginatedResource } from "../../services/usePaginatedResource";
 import { FileText, RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -37,7 +38,7 @@ export function CustomerContractsPage() {
       user?.id ?? "",
       true,
     );
-  const { items: contracts, pagination } = useCustomerPagination(
+  const { items: contracts, pagination } = useListPagination(
     (data?.items ?? []).filter(contract => (!contractFilter || contract.id === contractFilter) && (!reservationFilter || contract.reservation.reference === reservationFilter || contract.reservation.id === reservationFilter)),
   );
   const [acceptingId, setAcceptingId] = useState("");
@@ -103,7 +104,7 @@ export function CustomerContractsPage() {
             </thead>
             <tbody>
               {contracts.map((contract) => (
-                <tr key={contract.id}>
+                <DetailRow key={contract.id} detail={{ open: () => setSelected(contract), label: `Mở hợp đồng ${contract.contractCode}` }}>
                   <td data-label="Mã hợp đồng">
                     <RecordIdentity row={contract} resource="contracts" />
                     <small>Đơn: {contract.reservation.reference}</small>
@@ -128,7 +129,7 @@ export function CustomerContractsPage() {
                     {contract.terms.acceptedAt ? <div className="customer-contract-confirmation"><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="button-secondary" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Đặt lịch bàn giao</Link>}</div> :
                       <button type="button" className="button-secondary payment-table-action" onClick={() => setSelected(contract)}>Xem và xác nhận</button>}
                   </td>
-                </tr>
+                </DetailRow>
               ))}
             </tbody>
           </table>

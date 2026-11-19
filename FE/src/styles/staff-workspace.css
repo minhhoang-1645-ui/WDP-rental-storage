@@ -197,7 +197,14 @@ a.staff-metric:hover {
 }
 .staff-task-copy strong { font-size: 15px; }
 .staff-task-copy .staff-late-time { color: var(--workspace-warning); }
-.staff-task-copy>span,.staff-task-arrow { color: var(--workspace-secondary); }
+.staff-task-copy>span { color: var(--workspace-secondary); }
+.staff-task-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--workspace-primary);
+  font-size: 13px;
+}
 .staff-panel-empty { padding-top: 16px; }
 .internal-web.workspace-themed .manager-table .button-secondary { min-height: 36px; padding: 7px 12px; }
 
@@ -213,6 +220,18 @@ a.staff-metric:hover {
 .workspace-themed[data-workspace-role="staff"] .staff-table-guidance { padding: 10px 12px; }
 .staff-table-guidance summary { cursor: pointer; font-weight: 650; }
 .staff-table-guidance[open] > p { margin-block: 8px; }
+.staff-operation-list { min-width: 0; }
+.workspace-themed[data-workspace-role="staff"] .staff-operation-list .staff-table .manager-table { min-width: 540px; }
+.workspace-themed[data-workspace-role="staff"] :is(.staff-operation-list-maintenance, .staff-operation-list-support-requests) .staff-table .manager-table { min-width: 620px; }
+.staff-operation-list .staff-table-options:empty { display: none; }
+.staff-operation-list .transfer-request-inbox { margin-block: 0 12px; }
+.staff-operation-list .transfer-request-cards > article { flex-wrap: wrap; }
+.staff-operation-list .transfer-request-cards strong { overflow-wrap: anywhere; }
+.staff-operation-claim-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 200px); gap: 12px; width: 100%; }
+.staff-operation-claim-filters .portal-search { width: auto; max-width: none; }
+@media (max-width: 540px) {
+  .staff-operation-claim-filters { grid-template-columns: minmax(0, 1fr); }
+}
 .staff-table { min-width: 0; }
 .staff-table-options { display: flex; justify-content: flex-end; margin-block: 8px; }
 .staff-table-scroll { max-width: 100%; overflow: auto; }
@@ -288,7 +307,7 @@ a.staff-metric:hover {
   .staff-metric-heading { min-height: 46px; font-size: 14px; }
   .staff-metric strong { font-size: 28px; }
   .staff-task-list a { grid-template-columns: minmax(0, 1fr) auto; }
-  .staff-task-arrow { display: none; }
+  .staff-task-action { grid-column: 1 / -1; justify-self: end; }
 }
 
 .workspace-themed[data-workspace-role="staff"] {
@@ -332,7 +351,6 @@ a.staff-metric:hover {
   padding-inline: 0;
 }
 .staff-dashboard-panels { align-items: start; }
-.staff-dashboard-column { display: grid; min-width: 0; gap: var(--space-20); }
 .staff-work-panel>header h2,
 .workspace-themed[data-workspace-role="staff"] .staff-unit-dialog h3 { font-size: clamp(17px, 1.5vw, 20px); }
 .staff-task-list a { min-width: 0; }
@@ -340,10 +358,32 @@ a.staff-metric:hover {
 .staff-panel-empty { margin: 0; }
 .staff-assigned-units, .staff-record-stack { max-width: 68rem; }
 .staff-record-stack, .staff-unit-detail { display: grid; gap: var(--space-16); }
+.workspace-themed[data-workspace-role="staff"] .staff-unit-dialog { width: min(560px, calc(100vw - 24px)); }
+.staff-unit-dialog .record-page-title { min-width: 0; overflow-wrap: anywhere; }
+.staff-unit-detail .manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.staff-unit-detail .manager-facts dd { overflow-wrap: anywhere; }
 .staff-unit-detail > section { border-top: 1px solid var(--workspace-border); padding-top: var(--space-16); }
-.staff-unit-detail :is(h3, p) { margin: 0 0 var(--space-12); }
-.staff-unit-work { display: grid; gap: var(--space-8); padding: 0; list-style: none; }
-.staff-unit-work li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-8); }
+.staff-unit-detail h3 { margin: 0 0 var(--space-8); }
+.staff-unit-detail p { margin: 0; }
+.staff-unit-work { margin: 0; padding: 0; list-style: none; }
+.staff-unit-work li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding-block: 8px; }
+.staff-unit-work li + li { border-top: 1px solid var(--workspace-border); }
+.staff-unit-work li > div, .staff-unit-work a { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.staff-unit-work small { color: var(--workspace-secondary); flex-basis: 100%; overflow-wrap: anywhere; }
+.staff-unit-work a { color: var(--workspace-primary); font-weight: 600; }
+.staff-unit-work a:hover { text-decoration: underline; }
+.staff-rental-list .staff-table .manager-table { table-layout: fixed; min-width: 0; }
+.staff-rental-list .manager-table th:first-child { width: 40%; }
+.staff-rental-list .manager-table :is(th, td) { min-width: 0; }
+.staff-rental-list .manager-table td .manager-status { max-width: 100%; white-space: normal; }
+.staff-rental-detail .manager-facts dd { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .workspace-themed[data-workspace-role="staff"] .staff-rental-list .manager-table :is(th, td) { padding: 10px 8px; white-space: normal; }
+  .staff-rental-list .manager-table :is(th, td):nth-child(2) { display: none; }
+}
+@media (max-width: 550px) {
+  :is(.staff-unit-detail, .staff-rental-detail) .manager-facts { grid-template-columns: 1fr; }
+}
 .workspace-themed[data-workspace-role="staff"] :is(.staff-table td small, .staff-task-copy small, .staff-unit-work small, .portal-timeline span, .manager-facts dt) { font-size: 14px; }
 .workspace-themed[data-workspace-role="staff"] .manager-table td { font-size: 15px; }
 .workspace-themed[data-workspace-role="staff"] #staff-processing { scroll-margin-top: 85px; }

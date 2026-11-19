@@ -1,11 +1,13 @@
+import { useApiResource } from '../../services/useApiResource';
+import { DetailRow } from '../../components/workspace/DetailRow';
 import { ManagerTaskTable } from '../../components/manager/ManagerTaskTable';
 import { TableSkeleton } from '../../components/LoadingSkeleton';
 import { isManagerTaskResource, managerResourceColumns } from './manager-task-columns';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
-import { newestFirst, recordIdentity } from '../../utils/record-identity';
-import { internalPageSize, staffTaskPageSize } from '../../utils/internal-pagination';
+import { recordIdentity } from '../../utils/record-identity';
+import { internalPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Plus, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
@@ -24,6 +26,7 @@ import {
   object,
   rows,
   resources,
+  recordId,
   type Page,
   type Row,
 } from "../../components/manager/portal-data";
@@ -37,27 +40,41 @@ import {
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
 import { InventoryEditor } from './InventoryEditor';
-import { TransferRequests } from '../../components/manager/TransferRequests';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 import { normalizeSearch } from '../../utils/notification-tools';
 import { StaffTaskPagination } from '../../components/workspace/StaffTaskTable';
 import { StaffWorkflowTable } from '../staff/StaffWorkflowTable';
 import { isStaffTableWorkflow, staffDay } from '../staff/staff-resources';
 import { managerStorageLabels } from '../../utils/manager-sections';
+import '../../styles/staff-appointments.css';
+
+const appointmentViews = [
+  ['upcoming', 'Sắp tới'], ['today', 'Hôm nay'], ['completed', 'Đã hoàn tất'], ['all', 'Tất cả'],
+] as const;
+type AppointmentView = typeof appointmentViews[number][0];
 
 export function ManagerListPage({ resource }: { resource: string }) {
   const config = resources[resource];
   const { user } = useAuth();
-  const [notice, setNotice] = useState("");
   const [params, setParams] = useSearchParams();
+  const pendingParams = useRef(params);
+  useLayoutEffect(() => {
+    // A delayed render can still have the preceding query during rapid filter changes.
+    if (params.toString() === new URLSearchParams(window.location.search).toString()) pendingParams.current = params;
+  }, [params]);
   const staffTable = user?.role === 'STAFF' && isStaffTableWorkflow(resource) ? resource : null;
+  const staffAppointments = staffTable === 'appointments';
+  const requestedView = params.get('agenda');
+  const appointmentView = appointmentViews.find(([value]) => value === requestedView)?.[0];
+  const [today, setToday] = useState(() => staffDay(Date.now()));
+  const filterDate = staffAppointments && appointmentView === 'today' ? today : params.get('date') ?? '';
   const managerTable = user?.role === 'MANAGER' && isManagerTaskResource(resource) ? resource : null;
-  const limit = staffTable || managerTable ? staffTaskPageSize(params) : internalPageSize(params);
+  const limit = internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
   const staffTransferList = user?.role === 'STAFF' && resource === 'transfers';
   const statuses = staffTransferList ? ['APPROVED', 'COMPLETED'] : config?.statuses ?? [];
-  const suppliedStatus = params.get('status') ?? '';
+  const suppliedStatus = staffAppointments && appointmentView === 'completed' ? 'COMPLETED' : params.get('status') ?? '';
   const status = reviewOnly ? managerReviewStatus(resource) : staffTransferList && !statuses.includes(suppliedStatus) ? '' : suppliedStatus;
   const page = Math.min(
     100000,
@@ -66,7 +83,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
   const [creatingUnit, setCreatingUnit] = useState(false);
-  const [transferSource, setTransferSource] = useState<Row>();
+  const [unitCreated, setUnitCreated] = useState('');
+  const unitTypes = useApiResource<{ items: Row[] }>(managerTable === 'units' ? '/manager/storage-types' : null, user?.id);
   const [createdMaintenance, setCreatedMaintenance] = useState<{ owner: string; row: Row }>();
   const [state, setState] = useState<{
     key: string;
@@ -75,16 +93,21 @@ export function ManagerListPage({ resource }: { resource: string }) {
     error?: string;
   }>();
   const local = Boolean(
-    config?.local ||
-    (resource === "returns" && status === "PENDING_SETTLEMENT"),
+    (config?.local && !staffTransferList) ||
+    (resource === "returns" && !staffTable && status === "PENDING_SETTLEMENT"),
   );
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (search.trim()) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
+  const from = staffAppointments && !filterDate ? params.get('from') : null;
+  const through = staffAppointments && !filterDate ? params.get('through') : null;
+  if (staffAppointments) query.set('agenda', appointmentView === 'upcoming' ? 'upcoming' : 'all');
+  if (filterDate) query.set('date', filterDate);
+  if (from) query.set('from', from);
+  if (through) query.set('through', through);
   for (const field of [
     "priority",
     "type",
-    "date",
     "storageType",
     "floor",
     "zone",
@@ -122,10 +145,14 @@ export function ManagerListPage({ resource }: { resource: string }) {
     };
   }, [key, path, local, config, oldest, page, limit, revision]);
   useEffect(() => {
-    const refresh = () => { if (!hasDraft()) setRevision((v) => v + 1); };
+    const refresh = () => {
+      if (hasDraft()) return;
+      if (staffAppointments) setToday(staffDay(Date.now()));
+      setRevision((v) => v + 1);
+    };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, []);
+  }, [staffAppointments]);
   const current = state?.key === key ? state : undefined;
   const refreshing = Boolean(current && current.revision !== revision);
   let items = current?.data?.items ?? [];
@@ -141,23 +168,48 @@ export function ManagerListPage({ resource }: { resource: string }) {
         (!params.get("date") ||
           date(row.createdAt) === date(params.get("date"))),
     );
-  if (local && resource === 'reservations') items = newestFirst(items);
   const total = local ? items.length : (current?.data?.total ?? 0);
   const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : page;
   const visible = local ? items.slice((visiblePage - 1) * limit, visiblePage * limit) : items;
-  const refresh = () => setRevision((v) => v + 1);
+  const refresh = () => {
+    if (staffAppointments) setToday(staffDay(Date.now()));
+    setRevision((v) => v + 1);
+  };
   useLiveRefresh(path, refresh);
-  const change = (name: string, value: string) =>
-    setParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        if (value) next.set(name, value);
-        else next.delete(name);
-        if (name !== "page") next.delete("page");
-        return next;
-      },
-      { replace: true },
-    );
+  function applyParams(next: URLSearchParams) {
+    pendingParams.current = next;
+    setParams(next, { replace: true });
+  }
+  function change(name: string, value: string) {
+    const next = new URLSearchParams(pendingParams.current);
+    if (staffAppointments && (name === 'date' || name === 'status')) {
+      if (next.get('agenda') === 'today') next.set('date', today);
+      if (next.get('agenda') === 'completed') next.set('status', 'COMPLETED');
+      next.delete('agenda');
+    }
+    if (value) next.set(name, value);
+    else next.delete(name);
+    if (name !== 'page') next.delete('page');
+    if (name === 'date' && staffAppointments) {
+      next.delete('from');
+      next.delete('through');
+    }
+    applyParams(next);
+  }
+  function changeAppointmentView(view: AppointmentView) {
+    const next = new URLSearchParams(pendingParams.current);
+    for (const field of ['date', 'from', 'through', 'status', 'page']) next.delete(field);
+    if (view === 'all') next.delete('agenda');
+    else next.set('agenda', view);
+    applyParams(next);
+  }
+  function toggleSettlementSort() {
+    const next = new URLSearchParams(params);
+    if (oldest) next.delete('sort');
+    else next.set('sort', 'oldest');
+    next.delete('page');
+    setParams(next, { replace: true });
+  }
   if (!config) return <Empty title="Không tìm thấy trang" />;
   const listTitle = staffTable === 'returns' ? 'Trả kho' : config.title;
   let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
@@ -174,7 +226,12 @@ export function ManagerListPage({ resource }: { resource: string }) {
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
-        {resource === 'reservations' && user?.role === 'STAFF' && <button type="button" className="button-secondary" onClick={() => change('status', 'PENDING')}>Chờ nhân viên xử lý</button>}
+        {managerTable === 'units' && <label className="field-label">Loại kho
+          <select value={params.get('storageType') ?? ''} onChange={event => change('storageType', event.target.value)}>
+            <option value="">Tất cả</option>
+            {(unitTypes.data?.items ?? []).map(type => <option key={first(type, 'id')} value={first(type, 'id')}>{first(type, 'name')}</option>)}
+          </select>
+        </label>}
         {config.statuses && !reviewOnly && (
           <label className="field-label">
             {resource === "payments" ? "Phương thức" : "Trạng thái"}
@@ -229,15 +286,15 @@ export function ManagerListPage({ resource }: { resource: string }) {
         )}
         {["appointments", "returns"].includes(resource) && (
           <label className="field-label">
-            Ngày
+            {staffTable === 'returns' ? 'Ngày gửi yêu cầu' : 'Ngày'}
             <input
               type="date"
-              value={params.get("date") ?? ""}
+              value={filterDate}
+              lang={staffAppointments ? 'vi-VN' : undefined}
               onChange={(event) => change("date", event.target.value)}
             />
           </label>
         )}
-        {staffTable === 'appointments' && <button type="button" className="button-secondary" onClick={() => change('date', staffDay(Date.now()))}>Hôm nay</button>}
         {resource === "units" && (
           <>
             <label className="field-label">
@@ -258,21 +315,24 @@ export function ManagerListPage({ resource }: { resource: string }) {
             </label>
           </>
         )}
-        {((managerTable || staffTable) ? [...params.keys()].some(name => !['page', 'limit'].includes(name)) : params.size > 0) && (
-          <button className="button-secondary" onClick={() => setParams((managerTable || staffTable) && params.has('limit') ? { limit: String(limit) } : {})}>
+        {[...params.keys()].some(name => !['page', 'limit'].includes(name)) && (
+          <button className="button-secondary" onClick={() => {
+            const next = new URLSearchParams();
+            if (params.has('limit')) next.set('limit', String(limit));
+            applyParams(next);
+          }}>
             Xóa bộ lọc
           </button>
         )}
   </>;
   return (
-    <section>
-      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={() => { setCreatingUnit(false); refresh(); }} />}
+    <section className={managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
+      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
-        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => setCreatingUnit(true)}><Plus size={17} />Thêm kho</button>}
-        {user?.role === 'STAFF' && ["maintenance", "transfers"].includes(resource) && (
-          <button className="button-primary" onClick={() => setCreating(true)}>
-            <Plus size={17} />
-            {resource === "maintenance" ? "Tạo bảo trì" : "Gửi đề nghị chuyển kho"}
+        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
+        {user?.role === 'STAFF' && resource === 'maintenance' && (
+          <button type="button" className="button-primary" onClick={() => setCreating(true)}>
+            <Plus size={17} /> Báo vấn đề bảo trì
           </button>
         )}
         <button
@@ -284,21 +344,34 @@ export function ManagerListPage({ resource }: { resource: string }) {
           Làm mới
         </button>
       </PageHeader>
-      {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <section className="manager-section" role="status"><h2>Đã tạo phiếu bảo trì {code(createdMaintenance.row)}</h2><p>Quản lý sẽ phân công nhân viên phụ trách. Nhân viên được giao bắt đầu sửa chữa, gửi kết quả rồi nghiệm thu; kho được giữ ở trạng thái bảo trì cho đến khi hoàn tất.</p><Link className="button-secondary" to={`/manager/operations/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu bảo trì vừa tạo</Link></section>}
-      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Kho trống: tạo phiếu bảo trì, phân công, sửa chữa và nghiệm thu. Kho đang cho thuê: tiếp nhận sự cố từ khách; nếu cần giải phóng kho để sửa, xử lý chuyển kho trước.</p><div className="portal-actions"><Link className="button-secondary" to="/manager/operations/rentals">Tra cứu kho đang thuê</Link><Link className="button-secondary" to="/manager/operations/support-requests">Yêu cầu sự cố</Link></div></details>}
-      {resource === 'transfers' && user?.role === 'STAFF' && <TransferRequests revision={revision} onCreate={row => { setTransferSource(row); setCreating(true); }} />}
+      {managerTable === 'units' && unitCreated && <p className="portal-success" role="status">Đã thêm kho {unitCreated}.</p>}
+      {staffAppointments && <div className="staff-appointment-views" role="group" aria-label="Xem lịch bàn giao">
+        {appointmentViews.map(([value, title]) => {
+          const selected = value === (appointmentView ?? (!filterDate && !status && !from && !through ? 'all' : undefined));
+          return <button key={value} type="button" className="button-secondary" aria-pressed={selected} onClick={() => changeAppointmentView(value)}>{title}</button>;
+        })}
+      </div>}
+      {resource === 'maintenance' && createdMaintenance && createdMaintenance.owner === user?.id && <div className="portal-success" role="status">
+        Đã báo vấn đề bảo trì {code(createdMaintenance.row)}.{' '}
+        {first(createdMaintenance.row, 'assignedStaff.id') === user?.id
+          ? <Link to={`/staff/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu được giao</Link>
+          : first(createdMaintenance.row, 'assignedStaff.id') ? 'Đã có người phụ trách.' : 'Chờ phân công.'}
+      </div>}
+      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Báo vấn đề ở kho trống. Với kho đang thuê, xử lý yêu cầu hỗ trợ và chuyển kho khi cần. Sau khi sửa, gửi kết quả để quản lý nghiệm thu.</p></details>}
       {managerTable ? <ManagerTaskTable title={config.title} columns={managerResourceColumns(managerTable, {
-        direction: oldest ? 'ascending' : 'descending', toggle: () => change('sort', oldest ? '' : 'oldest'),
+        direction: oldest ? 'ascending' : 'descending', toggle: toggleSettlementSort,
       })} items={visible}
+        rowDetail={row => ({ to: detailPath(managerTable, row), label: `Xem chi tiết hồ sơ ${code(row)}` })}
         rowKey={row => first(row, 'id')} loading={!current} refreshing={refreshing} error={current?.error} retry={refresh}
-        page={visiblePage} limit={limit} total={total} update={change} toolbar={toolbar} /> : <>
+        page={visiblePage} limit={limit} total={total} update={(key, value) => change(key, value)} toolbar={toolbar} /> : <>
       <div className={`portal-toolbar${staffTable ? ' staff-table-toolbar' : ''}`}>{toolbar}</div>
+        {from && through && <p className="portal-result-heading" role="status">Lịch từ {date(from)} đến {date(through)}</p>}
       <RefreshStatus active={refreshing} />
       <LoadState
         loading={!current}
         error={current?.error ?? ""}
         retry={refresh}
-        placeholder={staffTable ? <StaffWorkflowTable resource={staffTable} title={listTitle} items={[]} userId={user?.id ?? ''} loadingRows={Math.min(limit, 6)} /> : <TableSkeleton columns={['record', 'related', 'detail', 'status', 'actions']} rows={Math.min(limit, 6)} pagination />}
+        placeholder={staffTable ? <StaffWorkflowTable resource={staffTable} title={listTitle} items={[]} loadingRows={Math.min(limit, 6)} /> : <TableSkeleton columns={['record', 'related', 'detail', 'status', 'actions']} rows={Math.min(limit, 6)} pagination />}
       />
       {current?.data && (
         <>
@@ -313,7 +386,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
                 : "Dữ liệu từ hệ thống"}
             </small>
           </div>}
-          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={listTitle} items={visible} userId={user?.id ?? ''} /> : (
+          {visible.length ? staffTable ? <StaffWorkflowTable key={staffTable} resource={staffTable} title={listTitle} items={visible} /> : (
             <div className="manager-table-wrap">
               <table className="manager-table">
                 <thead>
@@ -353,7 +426,12 @@ export function ManagerListPage({ resource }: { resource: string }) {
               </table>
             </div>
           ) : (
-            <Empty />
+            staffAppointments ? <p className="manager-section staff-appointment-empty">
+              {filterDate === today ? 'Không có lịch bàn giao hôm nay.' : 'Không tìm thấy lịch bàn giao phù hợp.'}
+            </p> : staffTable ? <Empty
+              title={search || status || filterDate || params.get('priority') ? 'Không tìm thấy hồ sơ phù hợp' : 'Chưa có hồ sơ'}
+              description={search || status || filterDate || params.get('priority') ? 'Thử đổi từ khóa hoặc bộ lọc.' : 'Hồ sơ thuộc phạm vi của bạn sẽ xuất hiện tại đây.'}
+            /> : <Empty />
           )}
           {staffTable ? <StaffTaskPagination page={visiblePage} limit={limit} total={total}
             onLimitChange={value => change('limit', String(value))} onChange={value => change('page', String(value))} /> : <Pagination
@@ -366,18 +444,13 @@ export function ManagerListPage({ resource }: { resource: string }) {
         </>
       )}
       </>}
-      {notice && <div className="portal-success" role="status">{notice}</div>}
       {creating && (
         <ManagerCreateDialog
-          resource={resource}
-          source={transferSource}
-          onClose={() => { setCreating(false); setTransferSource(undefined); }}
+          onClose={() => setCreating(false)}
           onSuccess={created => {
             setCreating(false);
-            setTransferSource(undefined);
             refresh();
             if (resource === 'maintenance') setCreatedMaintenance({ owner: user?.id ?? '', row: created });
-            if (resource === 'transfers') setNotice('Đã gửi đề nghị chuyển kho cho quản lý.');
           }}
         />
       )}
@@ -406,6 +479,8 @@ async function oldestSettlementPage(path: string, page: number, limit: number, s
 function ListRow({ resource, row }: { resource: string; row: Row }) {
   const person = customer(row);
   const { user } = useAuth();
+  const id = recordId(row);
+  const to = user?.role === 'STAFF' ? `/staff/${resource}/${encodeURIComponent(id)}` : detailPath(resource, row);
   const identity = recordIdentity(row, resource);
   const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'stock-movements', 'rentals'].includes(resource);
   const needsStaff = resource === 'reservations' && user?.role === 'STAFF' && row.status === 'PENDING';
@@ -423,9 +498,9 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
             "reservation.reference",
           );
   return (
-    <tr>
+    <DetailRow detail={id ? { to, label: `Xem chi tiết hồ sơ ${code(row)}` } : undefined}>
       <td>
-        <Link className="portal-record-link" to={detailPath(resource, row)}>
+        <Link className="portal-record-link" to={to}>
           {recognizable ? identity.person || identity.title : code(row)}
         </Link>
         {recognizable && <CopyRecordCode value={code(row)} />}
@@ -535,6 +610,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
           </>
         ) : resource === "renewals" ? (
           <>
+            <strong>{rows(row.contracts).map(contract => first(contract, 'unitCode')).filter(Boolean).join(', ')}</strong>
             <span>
               {date(row.previousEndDate)} → {date(row.requestedEndDate)}
             </span>
@@ -544,13 +620,11 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
           </>
         ) : resource === "returns" ? (
           <>
-            <span>
-              {first(row, "inspectionSummary.passed") || "0"} đạt /{" "}
-              {first(row, "inspectionSummary.total") || "0"} kho
-            </span>
+            <strong>{rows(row.inspections).map(item => first(item, 'unit.unitCode')).join(', ')}</strong>
+            <small>{rows(row.inspections).map(item => first(item, 'contract.contractCode')).join(', ')}</small>
+            <small>{row.timing === 'EARLY' ? 'Trả trước hạn' : 'Trả từ ngày hết hạn'} · Hạn {date(first(row, 'reservation.effectiveEndDate'))}</small>
             <small>
-              {first(row, "inspectionSummary.issues") || "0"} vấn đề ·{" "}
-              {label(row.settlementStatus)}
+              Kiểm tra {rows(row.inspections).filter(item => item.result !== 'PENDING').length}/{rows(row.inspections).length}{row.settlementStatus ? ` · ${label(row.settlementStatus)}` : ''}
             </small>
           </>
         ) : (
@@ -580,11 +654,11 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         <Link
           className="manager-open"
           aria-label={`Mở ${code(row)}`}
-          to={detailPath(resource, row)}
+          to={to}
         >
           <span>Xem chi tiết</span><ArrowRight size={17} />
         </Link>
       </td>
-    </tr>
+    </DetailRow>
   );
 }

@@ -24,7 +24,10 @@ export class ManagerAppointmentsController {
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
   @ApiQuery({ name: 'status', required: false, enum: statuses })
   @ApiQuery({ name: 'date', required: false, example: '2026-11-10', description: 'Ngày địa phương UTC+07, YYYY-MM-DD.' })
-  @ApiOkResponse({ description: 'Stable sorting theo scheduledAt và id.' })
+  @ApiQuery({ name: 'from', required: false, example: '2026-11-10', description: 'Ngày đầu khoảng hẹn, tính cả ngày này.' })
+  @ApiQuery({ name: 'through', required: false, example: '2026-11-17', description: 'Ngày cuối khoảng hẹn, tính cả ngày này.' })
+  @ApiQuery({ name: 'agenda', required: false, enum: ['all', 'upcoming'], description: 'Sắp xếp lịch vận hành Staff. upcoming chỉ gồm lịch chưa bàn giao có giờ hẹn sắp tới.' })
+  @ApiOkResponse({ description: 'Danh sách phân trang trong phạm vi nhân viên, theo thời gian hẹn hoặc hoàn tất.' })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
@@ -56,7 +59,7 @@ export class ManagerAppointmentsController {
   @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', confirmedBy: { fullName: 'WDP Demo Manager', role: 'MANAGER' }, confirmedAt: '2026-11-08T03:00:00.000Z' } } })
   @ApiConflictResponse({ description: 'Không còn ở REQUESTED hoặc trạng thái tài chính/contract không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được xác nhận.' })
+  @ApiForbiddenResponse({ description: 'Chỉ nhân viên đã được phân công có thể xác nhận.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
   confirm(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.appointments.confirmAppointment(id, request.user!);
@@ -69,7 +72,9 @@ export class ManagerAppointmentsController {
     const status = this.optional(input.status, 'status');
     if (status && !statuses.includes(status as (typeof statuses)[number])) throw new BadRequestException('Appointment status không hợp lệ.');
     const date = this.optional(input.date, 'date');
-    return { page, limit, ...(search ? { search } : {}), ...(status ? { status: status as AppointmentListQuery['status'] } : {}), ...(date ? { date } : {}) };
+    const agenda = this.optional(input.agenda, 'agenda');
+    if (agenda !== undefined && agenda !== 'all' && agenda !== 'upcoming') throw new BadRequestException('Bộ lọc lịch không hợp lệ.');
+    return { page, limit, search, status: status as AppointmentListQuery['status'], date, from: this.optional(input.from, 'from'), through: this.optional(input.through, 'through'), agenda };
   }
 
   private integer(value: unknown, fallback: number, maximum: number, label: string) {

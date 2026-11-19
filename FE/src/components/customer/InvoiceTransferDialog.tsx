@@ -49,7 +49,8 @@ export function InvoiceTransferDialog({ id, onlinePending, onlineBusy = false, o
   const signed = row?.signing?.complete !== false;
   const isOpen = !!row && ['OPEN', 'PARTIALLY_PAID'].includes(row.status) && row.balanceDue > 0;
   const paymentActionsReady = payable && !!bank.data && !bank.loading && !bank.error && !submissions.loading && !submissions.error;
-  const vnpay = Boolean(onOnlinePay) && paymentActionsReady && bank.data?.vnpayConfigured === true && row.type !== 'SETTLEMENT';
+  const canOfferVnpay = Boolean(onOnlinePay) && paymentActionsReady && row.type !== 'SETTLEMENT';
+  const vnpayConfigured = bank.data?.vnpayConfigured === true;
   return <Modal title="Chi tiết hóa đơn" onClose={onClose} busy={busy} footer={<button type="button" className="button-secondary" onClick={onClose} disabled={busy}>Đóng</button>}>
     {invoice.loading ? <PortalLoading label="Đang tải hóa đơn…" />
       : invoice.error ? <PortalError message={invoice.error} onRetry={invoice.refresh} />
@@ -65,7 +66,9 @@ export function InvoiceTransferDialog({ id, onlinePending, onlineBusy = false, o
           {paymentWindowClosed(row) && <p role="alert">Đã hết hạn giữ kho. Nếu đã chuyển tiền, hãy gửi yêu cầu hỗ trợ.</p>}
           {submissions.error && <PortalError message={submissions.error} onRetry={submissions.refresh} />}
           {payable && submissions.loading && <PortalLoading label="Đang kiểm tra giao dịch…" />}
-          {vnpay && <button type="button" className="button-secondary" onClick={() => onOnlinePay?.(row)} disabled={onlineBusy || busy}>Thanh toán VNPay</button>}
+          {canOfferVnpay && (vnpayConfigured
+            ? <button type="button" className="button-secondary" onClick={() => onOnlinePay?.(row)} disabled={onlineBusy || busy}>Thanh toán VNPay</button>
+            : <p role="status">Thanh toán VNPay chưa khả dụng.</p>)}
           {payable && (bank.loading ? <PortalLoading label="Đang tải thông tin ngân hàng…" />
             : bank.error ? <PortalError message={bank.error} onRetry={bank.refresh} />
             : paymentActionsReady && (!bank.data?.configured

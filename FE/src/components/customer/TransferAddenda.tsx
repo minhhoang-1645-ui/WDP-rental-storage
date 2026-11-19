@@ -1,3 +1,6 @@
+import { DetailCard } from '../workspace/DetailRow';
+import { useInternalListReturn } from '../workspace/internal-list-memory';
+import { useListPagination } from '../workspace/useListPagination';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -38,8 +41,12 @@ export function TransferAddenda() {
   const { user } = useAuth();
   const result = usePaginatedResource<Order>('/customer/transfer-orders', user?.id, true);
   const [params] = useSearchParams();
+  const returnPath = useInternalListReturn('/customer/transfers');
   const focused = params.get('transfer');
-  const items = (result.data?.items ?? []).filter(item => !focused || item.id === focused);
+  const { items, pagination } = useListPagination(
+    (result.data?.items ?? []).filter(item => !focused || item.id === focused),
+    { page: 'addendaPage', limit: 'addendaLimit' },
+  );
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
 
@@ -62,7 +69,7 @@ export function TransferAddenda() {
 
   if (!focused && !items.length && !result.error) return null;
   return <section className="record-detail-page" aria-label="Phụ lục đổi loại kho">
-    {focused && <PageHeader title="Phụ lục chuyển kho"><Link className="button-secondary" to="/customer/transfers">Xem tất cả phụ lục</Link></PageHeader>}
+    {focused && <PageHeader title="Phụ lục chuyển kho"><Link className="button-secondary" to={returnPath}>Xem tất cả phụ lục</Link></PageHeader>}
     <LoadState loading={Boolean(focused) && result.loading} error={result.error} retry={result.refresh} layout="detail" />
     {focused && !result.loading && !result.error && !items.length && <p role="status">Phụ lục không còn khả dụng.</p>}
     {message && <p role="status" className="booking-alert">{message}</p>}
@@ -71,7 +78,7 @@ export function TransferAddenda() {
         const terms = order.commercial;
         const document = terms.snapshot;
         const path = '/customer/transfer-orders/' + encodeURIComponent(order.id);
-        return <article className="customer-panel" key={order.id}>
+        return <DetailCard className="customer-panel" key={order.id} detail={!focused ? { to: `/customer/transfers?transfer=${encodeURIComponent(order.id)}`, label: `Xem phụ lục ${order.transferCode}` } : undefined}>
           <div className="record-page-title">
             <h2>Đổi kho · {document.from.code} → {document.to.code}</h2>
             <CustomerStatus status={order.status} />
@@ -101,8 +108,9 @@ export function TransferAddenda() {
             <p>Kỳ thuê hiện tại và tiền cọc giữ nguyên.</p>
             {document.futureInvoices.length > 0 && <p>{document.futureInvoices.length} hóa đơn chưa thu của các kỳ tiếp theo sẽ được thay thế. Bạn vẫn có thể đối chiếu bản cũ.</p>}
           </DetailDisclosure>
-        </article>;
+        </DetailCard>;
       })}
     </div>
+    {pagination}
   </section>;
 }

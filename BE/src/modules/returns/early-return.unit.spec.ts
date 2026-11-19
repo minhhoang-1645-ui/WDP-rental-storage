@@ -8,15 +8,15 @@ import type { PublicUser } from '../auth/auth.types.js';
 function setup() {
   const actor = { id: 'manager', role: 'MANAGER', fullName: 'Quản lý', email: 'manager@example.test', phone: '' } satisfies PublicUser;
   const end = new Date('2030-04-01T00:00:00Z');
-  const allocation = { id: 'allocation-current', storageUnitId: 'unit-new', releasedAt: null, storageUnit: { status: 'OCCUPIED', unitNumber: 'B02' } };
+  const allocation = { id: 'allocation-current', reservationId: 'rental', storageUnitId: 'unit-new', releasedAt: null, storageUnit: { status: 'OCCUPIED', unitNumber: 'B02' } };
   const reservation = { id: 'rental', reservationCode: 'RES-1', customerId: 'customer', status: 'CONFIRMED', quantity: 1, endDate: end, storageType: { id: 'type', name: 'Kho nhỏ' }, units: [allocation],
     contracts: [{ id: 'contract', contractCode: 'CON-1', status: 'ACTIVE', endDate: end, reservationUnitId: allocation.id, reservationUnit: allocation }], renewals: [] as { status: string }[], supportRequests: [] as any[],
     invoices: [{ invoiceCode: 'INV-1', totalAmount: 300n, amountPaid: 200n, balanceDue: 100n, depositAmount: 50n }] };
-  const request = { id: 'proposal', supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
+  const request = { id: 'proposal', rentalContractId: null, supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
   const tx = { $queryRaw: vi.fn(async () => []), supportRequest: {
     findFirst: vi.fn(async () => ({ id: request.id, reservationId: reservation.id })), findUniqueOrThrow: vi.fn(async () => request),
     update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { Object.assign(request, data); request.resolvedBy = actor; return request; }),
-  }, returnRequest: { findUnique: vi.fn(async () => null as any) } };
+  }, returnRequest: { findFirst: vi.fn(async () => null as any) } };
   const prisma = { $transaction: vi.fn(async (run: (value: typeof tx) => Promise<unknown>) => run(tx)) };
   const service = new ReturnsService(prisma as unknown as PrismaService);
   const input = { decision: 'APPROVED', note: 'Đã đối chiếu công nợ, giữ nguyên nghĩa vụ hóa đơn.', financialReviewConfirmed: true, reviewedEndDate: '2030-04-01', reviewedOutstandingAmount: 100, reviewedPaidAmount: 200 };
@@ -36,7 +36,7 @@ describe('Early return approval with memory-only persistence', () => {
     for (const change of [{ financialReviewConfirmed: false }, { reviewedEndDate: '2030-05-01' }, { reviewedOutstandingAmount: 99 }, { reviewedPaidAmount: 199 }]) { const app = setup(); await expect(app.service.decideEarlyReturn('proposal', { ...app.input, ...change }, app.actor)).rejects.toThrow(); expect(app.tx.supportRequest.update).not.toHaveBeenCalled(); }
   });
   it('blocks approval during renewal or an active return', async () => {
-    const app = setup(); app.reservation.renewals.push({ status: 'PENDING' }); await expect(app.service.decideEarlyReturn('proposal', app.input, app.actor)).rejects.toThrow('gia hạn'); app.reservation.renewals = []; app.tx.returnRequest.findUnique.mockResolvedValue({ id: 'return' }); await expect(app.service.decideEarlyReturn('proposal', app.input, app.actor)).rejects.toThrow('hồ sơ trả kho');
+    const app = setup(); app.reservation.renewals.push({ status: 'PENDING' }); await expect(app.service.decideEarlyReturn('proposal', app.input, app.actor)).rejects.toThrow('gia hạn'); app.reservation.renewals = []; app.tx.returnRequest.findFirst.mockResolvedValue({ id: 'return' }); await expect(app.service.decideEarlyReturn('proposal', app.input, app.actor)).rejects.toThrow('yêu cầu trả chưa hoàn tất');
   });
   it('supports retries but rejects a conflicting second decision', async () => {
     const app = setup(); await app.service.decideEarlyReturn('proposal', app.input, app.actor); await app.service.decideEarlyReturn('proposal', app.input, app.actor); expect(app.tx.supportRequest.update).toHaveBeenCalledTimes(1);
@@ -72,16 +72,16 @@ describe('Early return approval with memory-only persistence', () => {
     await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', app.actor)).rejects.toThrow('trả trước hạn');
     expect(app.tx.supportRequest.update).not.toHaveBeenCalled();
   });
-  it('creates one whole-rental proposal and blocks duplicates while pending or approved', async () => {
+  it('creates a contract-scoped proposal and blocks duplicates while pending or approved', async () => {
     const app = setup(); let duplicate = false;
     const tx = { $queryRaw: vi.fn(async () => []), reservation: { findUnique: vi.fn(async () => ({ ...app.reservation, invoices: [] })) }, supportRequest: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => duplicate ? { id: 'existing' } : null), create: vi.fn(async ({ data }: any) => ({ id: 'new', ...data })) } };
     const prisma = { reservation: { findFirst: vi.fn(async () => ({ id: app.reservation.id })) }, supportRequest: { findUnique: vi.fn(async () => null) }, $transaction: vi.fn(async (run: any) => run(tx)) };
     const service = new SupportService(prisma as unknown as PrismaService); vi.spyOn(service as any, 'toView').mockImplementation(record => record);
     const customer = { ...app.actor, id: 'customer', role: 'CUSTOMER' as const }, input = { reservationId: 'rental', category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Tôi không còn nhu cầu sử dụng.' };
-    await service.createCustomer(customer, input, 'isolated-proposal-123'); expect(tx.supportRequest.create).toHaveBeenCalledTimes(1);
-    duplicate = true; await expect(service.createCustomer(customer, input, 'isolated-proposal-456')).rejects.toThrow('Đã có đề nghị'); expect(tx.supportRequest.create).toHaveBeenCalledTimes(1);
+    await expect(service.createCustomer(customer, input, 'isolated-proposal-123')).resolves.toMatchObject({ rentalContractId: 'contract' });
+    duplicate = true; await expect(service.createCustomer(customer, input, 'isolated-proposal-456')).rejects.toThrow('đã có đề nghị'); expect(tx.supportRequest.create).toHaveBeenCalledTimes(1);
     duplicate = false;
-    for (const change of [{ category: 'UNIT_ISSUE' }, { rentalContractId: 'contract' }, { storageUnitId: 'unit-new' }]) await expect(service.createCustomer(customer, { ...input, ...change }, 'isolated-proposal-789')).rejects.toThrow('toàn bộ kỳ thuê');
-    app.reservation.contracts[0].status = 'COMPLETED'; await expect(service.createCustomer(customer, input, 'isolated-proposal-999')).rejects.toThrow('toàn bộ kho');
+    for (const change of [{ category: 'UNIT_ISSUE' }, { storageUnitId: 'unit-new' }]) await expect(service.createCustomer(customer, { ...input, ...change }, 'isolated-proposal-789')).rejects.toThrow('chọn hợp đồng');
+    app.reservation.contracts[0].status = 'COMPLETED'; await expect(service.createCustomer(customer, input, 'isolated-proposal-999')).rejects.toThrow('kho đang sử dụng');
   });
 });

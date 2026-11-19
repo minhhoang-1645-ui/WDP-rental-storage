@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CompleteHandoverRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -40,6 +40,13 @@ export class StaffAppointmentsController {
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.appointments.getOperationalAppointment(id, request.user!);
+  }
+
+  @Patch(':id/units/:unitId/handover')
+  @ApiOperation({ summary: 'Ghi nhận bàn giao từng kho', description: 'Chỉ nhân viên được phân công. Ghi giờ thực tế của kho mà không hoàn tất cả lịch.' })
+  @ApiBody({ schema: { example: { condition: 'Cửa và khóa hoạt động tốt', inspected: true, identityVerified: true, accessDelivered: true } } })
+  recordUnit(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('unitId') unitId: string, @Body() body: Record<string, unknown>) {
+    return this.appointments.recordUnitHandover(id, unitId, body, request.user!);
   }
 
   @Post(':id/complete-handover')

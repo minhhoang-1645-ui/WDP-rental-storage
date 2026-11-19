@@ -240,7 +240,7 @@ try {
 
   await page.goto(base + '/staff/stock-movements?status=ASSIGNED');
   await page.getByRole('table', { name: 'Danh sách phiếu nhập – xuất' }).getByText('MOV-TEST', { exact: true }).first().waitFor();
-  await page.getByRole('link', { name: 'Xem phiếu' }).first().click();
+  await page.getByRole('link', { name: 'Xem chi tiết phiếu MOV-TEST', exact: true }).first().press('Enter');
   const quantity = page.getByRole('spinbutton', { name: /Số lượng thực tế/ });
   await quantity.waitFor();
   assert.equal(await quantity.inputValue(), '');
@@ -289,14 +289,12 @@ try {
   await page.getByRole('searchbox', { name: 'Tìm công việc' }).fill('không khớp');
   await page.getByText('Không có công việc phù hợp', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Xóa bộ lọc' }).click();
-  await page.getByRole('button', { name: 'Hiển thị cột' }).click();
-  await page.locator('.staff-table-popover:popover-open').getByRole('checkbox', { name: 'Ưu tiên' }).uncheck();
+  await tasks.waitFor();
   assert.equal(await tasks.getByRole('columnheader', { name: 'Ưu tiên' }).count(), 0);
-  await page.keyboard.press('Escape');
-  const taskActions = page.getByRole('button', { name: 'Thao tác SUP-TEST' });
-  await taskActions.focus();
-  await page.keyboard.press('Enter');
-  await page.locator('.staff-table-popover:popover-open').getByRole('link', { name: 'Xem chi tiết' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Hiển thị cột' }).count(), 0);
+  const supportTask = page.getByRole('link', { name: /Xem chi tiết.*SUP-TEST/ });
+  await supportTask.focus();
+  assert(await supportTask.evaluate(element => element.matches(':focus-visible')));
   await page.screenshot({ path: `${output}/tasks-dark.png` });
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.staff-table-popover:popover-open').count(), 0);
@@ -320,8 +318,7 @@ try {
 
   await page.goto(base + '/staff/maintenance');
   await page.getByRole('combobox', { name: 'Trạng thái' }).selectOption('AWAITING_VERIFICATION');
-  await page.getByRole('button', { name: 'Thao tác MNT-TEST' }).click();
-  await page.locator('.staff-table-popover:popover-open').getByRole('link', { name: 'Xem chi tiết' }).click();
+  await page.getByText('MNT-TEST', { exact: true }).click();
   await page.getByText('Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Nghiệm thu hoàn tất' }).count(), 0);
   await page.goto(base + '/staff/appointments');

@@ -1,6 +1,7 @@
 import { ArrowRight, Bell, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { DEFAULT_PAGE_SIZE } from '../utils/internal-pagination';
 import { NotificationResult } from './NotificationRows';
 import { useNotifications, workspaceInboxPath, type NotificationRole } from './workspace-notifications';
 import '../styles/workspace-notifications.css';
@@ -53,6 +54,7 @@ export function WorkspaceNotificationDropdown({ role }: { role: NotificationRole
       onToggle={event => {
         const open = event.currentTarget.matches(':popover-open');
         setExpanded(open);
+        feed.setPreviewOpen(open);
         if (open) event.currentTarget.focus();
       }} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
@@ -62,7 +64,7 @@ export function WorkspaceNotificationDropdown({ role }: { role: NotificationRole
         <span aria-live="polite">{count}</span>
         <button type="button" className="workspace-notification-close" aria-label="Đóng thông báo" onClick={close}><X size={18} aria-hidden="true" /></button>
       </header>
-      {expanded && <NotificationResult items={feed.recent.slice(0, 5)} compact />}
+      {expanded && <NotificationResult items={feed.recent.slice(0, DEFAULT_PAGE_SIZE)} compact />}
       <Link className="workspace-notification-footer" to={workspaceInboxPath(role)} onClick={() => panel.current?.hidePopover()}>
         Xem tất cả thông báo <ArrowRight size={15} aria-hidden="true" />
       </Link>

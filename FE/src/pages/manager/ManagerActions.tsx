@@ -14,6 +14,7 @@ import {
 } from "../../components/manager/portal-data";
 import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
 import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
+import { StaffPicker } from '../../components/manager/StaffPicker';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
@@ -46,6 +47,8 @@ export function ManagerActions({
   const [maintenancePassed, setMaintenancePassed] = useState(true);
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
   const [target, setTarget] = useState("");
+  const [transferStaff, setTransferStaff] = useState('');
+  const [transferDestinationReady, setTransferDestinationReady] = useState(false);
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
   const lock = useRef(false);
   const root = `/manager/${resource}/${encodeURIComponent(id)}`;
@@ -153,7 +156,7 @@ export function ManagerActions({
       )}
       <fieldset disabled={busy}>
         {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
-        {resource === "reservations" &&
+        {resource === "reservations" && user?.role === 'MANAGER' &&
           (row.status === "PENDING" ? (
             <form
               className="portal-form"
@@ -163,7 +166,7 @@ export function ManagerActions({
               }}
             >
               <p>
-                Khi xác nhận, hệ thống kiểm tra và cấp đủ{" "}
+                Khi thử phân bổ lại, hệ thống kiểm tra và cấp đủ{" "}
                 {first(row, "quantity")} kho cho toàn bộ kỳ thuê.
               </p>
               <label className="field-label">
@@ -177,7 +180,7 @@ export function ManagerActions({
                   {["CONFIRMED", "REJECTED", "CANCELLED", "EXPIRED"].map(
                     (v) => (
                       <option key={v} value={v}>
-                        {label(v)}
+                        {v === 'CONFIRMED' ? 'Thử phân bổ lại' : label(v)}
                       </option>
                     ),
                   )}
@@ -631,8 +634,10 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (!transferStaff || !transferDestinationReady) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
+                    staffUserId: transferStaff,
                   });
                 }}
               >
@@ -641,10 +646,12 @@ export function ManagerActions({
                   source={object(row.fromUnit)}
                   value={target}
                   onChange={setTarget}
+                  onReady={setTransferDestinationReady}
                   disabled={busy}
                 />
-                <button className="button-primary" disabled={busy || !target}>
-                  Duyệt chuyển kho
+                <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
+                <button className="button-primary" disabled={busy || !target || !transferStaff || !transferDestinationReady}>
+                  {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
                 </button>
               </form>
               <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
@@ -655,7 +662,7 @@ export function ManagerActions({
           ) : (
             <p>
               {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích.'}
-              {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>Phân công chuyển kho</Link></>}
+              {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>{first(row, 'assignedStaff.id') ? 'Đổi nhân viên' : 'Phân công hồ sơ cũ'}</Link></>}
             </p>
           ))}
         {[

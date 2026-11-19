@@ -31,7 +31,7 @@ export function CustomerDashboardPage() {
   return <section className="customer-page workspace-home">
     <PortalPageHeader eyebrow="Tổng quan" title={`Chào ${user?.fullName ?? 'bạn'}`} action={<div className="customer-header-actions"><button className="button-secondary" onClick={refresh} disabled={sources.some(source => source.loading)}><RefreshCw size={17} />Làm mới</button><Link className="button-primary" to="/booking"><Plus size={17} />Đặt kho mới</Link></div>} />
     <InternalKpis items={[
-      { title: 'Kho đang thuê', value: count(rentals, rentals.data?.total ?? 0), to: '/customer/rentals' },
+      { title: 'Kho đang thuê', value: count(rentals, (rentals.data?.items ?? []).reduce((sum, rental) => sum + (rental.unitCount ?? rental.contracts.length), 0)), to: '/customer/rentals' },
       { title: 'Hóa đơn cần trả', value: count(invoices, payable.length), hint: invoices.loading || invoices.error ? undefined : payable.length ? moneyLabel(payable.reduce((sum, item) => sum + item.balanceDue, 0)) : 'Không có khoản cần trả', to: '/customer/payments' },
       { title: 'Lịch bàn giao', value: count(appointments, upcoming.length), to: '/customer/appointments' },
       { title: 'Đơn chờ xử lý', value: count(reservations, pending.length), to: '/customer/reservations' },

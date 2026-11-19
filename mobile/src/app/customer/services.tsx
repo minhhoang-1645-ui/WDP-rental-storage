@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeftRight, Box, CalendarDays, Check, ChevronRight, ClipboardList, FileText, Headphones, History, RefreshCw, Search, TriangleAlert, UserRound, Wallet, Warehouse, X } from 'lucide-react-native';
+import { ArrowLeftRight, Box, CalendarDays, Check, ChevronRight, ClipboardList, FileText, Headphones, RefreshCw, Search, TriangleAlert, UserRound, Wallet, Warehouse, X } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { useAuth } from '@/auth/use-auth';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
@@ -11,6 +11,7 @@ import { CustomerRecordActions } from '@/components/customer-record-actions';
 import { ErrorState, LoadingState } from '@/components/screen-state';
 import { useResource } from '@/operations/use-resource';
 import { idOf, rows, text, type Row } from '@/operations/model';
+import { Button } from '@/operations/ui';
 import type { FormAction } from '@/operations/form';
 import { customerRentalActions } from '@/portals/actions';
 import { recordMatches } from '@/utils/record-search';
@@ -27,7 +28,6 @@ const groups: { title: string; items: Service[] }[] = [
     { title: 'Đơn đặt kho', icon: ClipboardList, path: 'reservations', hint: 'Yêu cầu đặt kho' },
     { title: 'Lịch nhận kho', icon: CalendarDays, path: 'appointments', hint: 'Lịch hẹn bàn giao' },
     { title: 'Hợp đồng', icon: FileText, path: 'contracts', hint: 'Hợp đồng thuê', purple: true },
-    { title: 'Lịch sử đặt kho', icon: History, path: 'booking-history', hint: 'Kho đã trả và đơn cũ', purple: true },
   ] },
   { title: 'Tài chính & hỗ trợ', items: [
     { title: 'Tiền cọc', icon: Wallet, path: 'deposit-settlements', hint: 'Quyết toán hoàn cọc', purple: true },
@@ -37,7 +37,7 @@ const groups: { title: string; items: Service[] }[] = [
 const go = (path: string) => router.push(('/customer/' + path) as Href);
 
 export default function CustomerServicesScreen() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { rentalContractId } = useLocalSearchParams<{ rentalContractId?: string }>();
   const [search, setSearch] = useState('');
   const [service, setService] = useState<Service>();
@@ -101,6 +101,7 @@ export default function CustomerServicesScreen() {
         {groups.map(group => <View key={group.title}><Text style={s.heading}>{group.title}</Text>{group.items.map(item => serviceRow(item))}</View>)}
       </>}
       {notice ? <Text accessibilityRole="alert" style={{ color: C.success }}>Đã gửi yêu cầu.</Text> : null}
+      <Button title="Đăng xuất" variant="secondary" onPress={async () => { await logout(); router.replace('/login'); }} />
     </ScrollView>
     <Modal visible={Boolean(service)} transparent animationType="slide" onRequestClose={() => setService(undefined)}>
       <SafeAreaView edges={['bottom']} style={s.overlay}><View style={s.sheet}><View style={s.handle} />

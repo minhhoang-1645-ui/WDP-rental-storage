@@ -79,7 +79,7 @@ export function CustomerPaymentHistory() {
       ListEmptyComponent={source.loading ? <LoadingState layout="list" /> : source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
         : <EmptyState title={search || method ? 'Không tìm thấy giao dịch phù hợp' : 'Chưa có giao dịch'} message="Các khoản thanh toán đã ghi nhận sẽ hiển thị tại đây." />}
       ListFooterComponent={limit < matches.length ? <Pressable accessibilityRole="button" style={s.history} onPress={() => setLimit(value => value + 20)}>
-        <Text style={s.link}>Xem thêm giao dịch</Text></Pressable> : null}
+        <Text style={s.link}>Xem thêm giao dịch</Text></Pressable> : undefined}
       renderSectionHeader={({ section }) => <View style={[s.row, local.month]}><Calendar size={16} color={C.muted} />
         <Text accessibilityRole="header" style={s.title}>{section.title}</Text></View>}
       renderItem={({ item }) => <Pressable accessibilityRole="button" style={[s.row, local.transaction]}

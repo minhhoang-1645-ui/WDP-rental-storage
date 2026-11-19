@@ -232,7 +232,25 @@ export class DepositSettlementsService {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
-    if (!manager) return base;
+    if (!manager) {
+      const method = record.refundMethod;
+      const reference = record.refundReference?.trim();
+      return {
+        ...base,
+        returnId: record.returnRequest.id,
+        physicallyReturnedAt: record.returnRequest.physicallyReturnedAt?.toISOString() ?? null,
+        reviewedAt: record.reviewedAt?.toISOString() ?? null,
+        unitCodes: record.returnRequest.inspections.map((inspection: any) => inspection.storageUnit.unitNumber),
+        refundRecord: record.refundedAt && reference && (method === 'BANK_TRANSFER' || method === 'CASH')
+          ? {
+            method,
+            recordedAt: record.refundedAt.toISOString(),
+            referenceSuffix: /^[A-Za-z0-9._-]{8,200}$/.test(reference) && /^[A-Za-z0-9]{4}$/.test(reference.slice(-4))
+              ? reference.slice(-4) : null,
+          }
+          : null,
+      };
+    }
     return {
       ...base,
       reviewNote: record.reviewNote,

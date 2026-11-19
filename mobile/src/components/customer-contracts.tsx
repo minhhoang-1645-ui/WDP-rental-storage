@@ -68,7 +68,7 @@ function ContractDetail({ id }: { id: string }) {
       ? { title: 'Xem hóa đơn', path: flow.next.path }
       : status === 'READY_FOR_HANDOVER' && flow.next?.path.startsWith('/customer/appointments') ? flow.next : undefined
     : undefined;
-  return <JourneyScreen title="Hợp đồng thuê" action={source.error ? undefined : signable ? { title: 'Đọc và ký hợp đồng', path: document } : next}>
+  return <JourneyScreen title="Hợp đồng thuê" action={source.error ? undefined : signable ? { title: 'Xem hợp đồng', path: document } : next}>
     {source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : !row
       ? source.loading ? <LoadingState layout="detail" /> : null : <>
         <Text accessibilityRole="header" style={s.title}>{text(row, 'storageType.name') || 'Kho thuê'}</Text>
@@ -87,14 +87,10 @@ function ContractDetail({ id }: { id: string }) {
           {deposit ? <Text style={s.muted}>{Number(quantity) > 1 ? 'Tiền cọc của đơn đặt' : 'Tiền cọc'} · {deposit}</Text> : null}
         </View>
         <Pressable accessibilityRole="button" style={s.row} onPress={() => router.push(document as Href)}>
-          <FileText size={21} color={blue} /><View style={s.grow}><Text style={s.bold}>Đọc hợp đồng</Text>
+          <FileText size={21} color={blue} /><View style={s.grow}><Text style={s.bold}>Xem hợp đồng</Text>
             <Text style={s.muted}>Xem nội dung trong ứng dụng</Text>
           </View><ChevronRight size={17} color="#475569" />
         </Pressable>
-        {status === 'ACTIVE' && reservationId ? <Pressable accessibilityRole="button" style={[s.inline, s.tap, { justifyContent: 'center' }]}
-          onPress={() => router.push(('/customer/rentals/' + encodeURIComponent(reservationId) + '?rentalContractId=' + encodeURIComponent(idOf(row))) as Href)}>
-          <Warehouse size={19} color={blue} /><Text style={s.link}>Xem chi tiết kho</Text><ChevronRight size={16} color={blue} />
-        </Pressable> : null}
         {signed && status === 'PENDING_PAYMENT' && !flow.loading && !flow.error && !flow.closed
           ? <Text style={s.muted}>{flow.allSigned ? flow.pending ? 'Khoản thanh toán đang được kiểm tra.' : 'Xem hóa đơn ban đầu để theo dõi thanh toán.' : 'Cần ký đủ hợp đồng của đơn đặt trước khi thanh toán hóa đơn ban đầu.'}</Text> : null}
       </>}
@@ -114,7 +110,5 @@ const s = StyleSheet.create({
   title: { fontSize: 23, fontWeight: '800', color: '#101828' },
   bold: { fontWeight: '700', fontSize: 15, color: '#101828' },
   muted: { fontSize: 13, color: '#475569' },
-  link: { color: blue, fontWeight: '700' },
-  tap: { minHeight: 44, justifyContent: 'center' },
   status: { flex: 1, alignSelf: 'stretch', alignItems: 'center', gap: 7, padding: 10, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 10 },
 });

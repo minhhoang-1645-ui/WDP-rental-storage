@@ -179,7 +179,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Button title={busy ? 'Đang gửi…' : early ? 'Gửi đề nghị' : 'Gửi yêu cầu chuyển kho'} disabled={busy} onPress={() => void submit()} />
         </> : null}
-        <CustomerActionRow title="Xem yêu cầu đã gửi" path={base} />
+        {early ? <CustomerActionRow title="Xem yêu cầu đã gửi" path={base} /> : null}
       </> : id ? validRecord && record ? <>
         <View style={[styles.card, styles.selected]}><Warehouse color={C.cobalt} size={22} /><View style={styles.grow}>
           <Text style={s.body}>{text(record, 'unit.storageType.name') || text(currentTransfer, 'fromUnit.unitCode') || text(record, 'unit.unitCode') || title}</Text>
@@ -197,7 +197,8 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         {text(record, 'resolutionNote') || text(currentTransfer, 'rejectionReason') ? <View style={styles.notice}><View style={styles.grow}>
           <Text style={s.body}>Phản hồi của NestBox</Text><Text style={s.secondary}>{text(currentTransfer, 'rejectionReason') || text(record, 'resolutionNote')}</Text>
         </View></View> : null}
-        {record.earlyReturnDecision === 'APPROVED' ? <CustomerActionRow title="Xem điều kiện và gửi yêu cầu trả kho" path={'/customer/rentals/' + encodeURIComponent(text(record, 'reservation.id'))} /> : null}
+        {early && record.earlyReturnDecision === 'APPROVED' && text(record, 'reservation.id') ? <CustomerActionRow title="Xem điều kiện và gửi yêu cầu trả kho"
+          path={'/customer/returns/new?approvedEarlyReturn=1&reservationId=' + encodeURIComponent(text(record, 'reservation.id'))} /> : null}
         <CustomerActionRow title="Cần hỗ trợ?" icon={Headphones} path={'/customer/support-requests/new?reservationId=' + encodeURIComponent(text(record, 'reservation.id'))} />
       </> : <EmptyState title="Không tìm thấy yêu cầu" message="Kiểm tra lại trong danh sách yêu cầu đã gửi." /> : <>
         <Button title={early ? 'Gửi đề nghị mới' : 'Chọn kho muốn chuyển'} onPress={() => router.push((base + '/new') as Href)} />
@@ -208,7 +209,6 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
             <Text style={s.secondary}>{formatDate(text(item, 'createdAt'))}</Text><Text style={styles.status}>{progress(item, early)}</Text>
           </View><ChevronRight size={17} color={C.muted} />
         </Pressable>) : <EmptyState title="Chưa có yêu cầu" message="Yêu cầu đã gửi sẽ hiển thị tại đây." />}
-        {early ? <><CustomerActionRow title="Theo dõi bàn giao trả kho" path="/customer/returns" /><CustomerActionRow title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" /></> : null}
       </>}
     </ScrollView>
   </>;

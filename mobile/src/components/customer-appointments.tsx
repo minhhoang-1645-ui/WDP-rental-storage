@@ -227,7 +227,7 @@ function Overview() {
     .sort((a, b) => text(a, 'scheduledAt').localeCompare(text(b, 'scheduledAt')));
   const visible = history ? visits.filter(item => item.status === 'COMPLETED') : pending;
   const cancelled = !history ? visits.filter(item => item.status === 'CANCELLED') : [];
-  if (!loading && !error && book === '1' && selected) return <Booking key={selected.key} {...selected} />;
+  if (!loading && !error && book === '1' && selected) return <Booking key={selected.key} group={selected.group} first={selected.first} end={selected.end} start={selected.start} />;
   return <Page title={book === '1' ? 'Đặt lịch nhận' : 'Lịch nhận kho'} refresh={refresh} loading={loading}>
     {error ? <ErrorState message={error} onRetry={refresh} /> : loading ? <LoadingState layout="detail" /> : book === '1' ?
       <Notice>Đơn này hiện chưa thể đặt lịch. Kiểm tra lại đơn đặt hoặc lịch đã xác nhận.</Notice> : <>

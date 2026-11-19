@@ -1,11 +1,10 @@
-import { DocumentFile } from '@/components/document-file';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { ErrorState, LoadingState } from '@/components/screen-state';
 import { OperationForm, type FormAction } from '@/operations/form';
 import { idOf, rows, text, type Row } from '@/operations/model';
-import { Button, Disclosure, Facts, Field, Navigation, Panel, money, styles } from '@/operations/ui';
+import { Button, Facts, Field, Navigation, Panel, money, styles } from '@/operations/ui';
 import { buildVietQrPayload } from '@/utils/vietqr';
 import { useResource } from '@/operations/use-resource';
 import { supportPath } from '@/components/customer-support';
@@ -57,8 +56,5 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, 
       </> : <Text style={styles.copy}>{bank.data?.vnpayConfigured === true ? 'Chuyển khoản chưa khả dụng. Bạn có thể thanh toán qua VNPay hoặc gửi hỗ trợ.' : 'Thanh toán trực tuyến hiện chưa khả dụng. Bạn có thể thanh toán tại cơ sở hoặc gửi hỗ trợ về hóa đơn để được hướng dẫn. Chỉ khi NestBox xác nhận thu tiền, hóa đơn mới được cập nhật.'}</Text>}
     </>}
     {form ? <OperationForm key={form.title} action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); onNotice('Đã gửi. NestBox sẽ kiểm tra và cập nhật kết quả.'); refresh(); }} /> : invoiceId ? <Navigation compact title="Hỗ trợ về hóa đơn" path={supportPath + '/new?invoiceId=' + encodeURIComponent(invoiceId)} /> : null}
-    <Disclosure title="Tài liệu và thông báo">
-      <DocumentFile path={`/customer/documents/invoices/${encodeURIComponent(invoiceId)}`} name={text(invoice, 'invoiceCode')} />
-    </Disclosure>
   </Panel>;
 }

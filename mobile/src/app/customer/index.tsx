@@ -159,7 +159,7 @@ export default function CustomerHomeScreen() {
                   setCardIndex(index);
                 }}
                 ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
-                ListFooterComponent={count > 1 ? <View style={{ width: Math.max(0, availableWidth - 40 - cardWidth) }} /> : null}
+                ListFooterComponent={count > 1 ? <View style={{ width: Math.max(0, availableWidth - 40 - cardWidth) }} /> : undefined}
                 renderItem={({ item: { rental, contract } }) => {
                   const floor = text(contract, 'unit.floor').replace(/^ground(?: floor)?$/i, 'Tầng trệt').replace(/^(?:floor\s+)?(\d+)$/i, 'Tầng $1');
                   const zone = text(contract, 'unit.zone');

@@ -538,7 +538,7 @@ export class ReturnsService {
       updatedAt: record.updatedAt.toISOString(),
       settlementStatus: record.depositSettlement?.status ?? null,
     };
-    if (mode === 'CUSTOMER') return { ...base, requestedBy: record.requestedBy };
+    if (mode === 'CUSTOMER') return { ...base, requestedBy: record.requestedBy, settlementId: record.depositSettlement?.id ?? null };
     const renewals = record.reservation.renewals.map((renewal: any) => ({
       renewalCode: renewal.renewalCode,
       status: renewal.status,

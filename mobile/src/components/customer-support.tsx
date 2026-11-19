@@ -57,10 +57,6 @@ export function CustomerSupportList() {
   return <Page title="Hỗ trợ" refresh={{ busy: source.loading, run: source.refresh }}>
     <View style={s.row}><View style={s.grow}><Text style={s.title}>Yêu cầu hỗ trợ</Text><Text style={s.muted}>Theo dõi và gửi yêu cầu của bạn.</Text></View>
       <Action title="+ Tạo mới" onPress={() => go(supportPath + '/new')} /></View>
-    <Pressable accessibilityRole="button" style={[s.row, s.tint]} onPress={() => go(supportPath + '/new?category=PAYMENT_SUPPORT')}>
-      <View style={s.icon}><CreditCard size={21} color={C.cobalt} /></View><View style={s.grow}><Text style={s.label}>Hỗ trợ về hóa đơn</Text>
-        <Text style={s.muted}>Hóa đơn, khoản thu và thanh toán</Text></View><ChevronRight size={17} color={C.muted} />
-    </Pressable>
     {tickets.length ? <><View style={[s.row, s.input]}><Search size={17} color={C.muted} />
       <TextInput style={[s.grow, s.fieldText]} value={query} onChangeText={setQuery} accessibilityLabel="Tìm yêu cầu" placeholder="Tìm yêu cầu…" />
     </View><View style={s.filters}>{['Tất cả', 'Đang xử lý', 'Đã giải quyết'].map((label, index) =>

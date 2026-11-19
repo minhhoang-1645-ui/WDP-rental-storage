@@ -12,7 +12,6 @@ export const groups = [
     { title: 'Thông báo chuyển khoản', path: '/customer/payment-submissions', description: 'Xem kết quả NestBox đối chiếu tiền đã chuyển.' },
   ] },
   { title: 'Kho & hàng của tôi', items: [
-    { title: 'Lịch sử đặt kho', path: '/customer/booking-history', description: 'Xem toàn bộ đơn, kho đã trả và đơn đã hủy hoặc hết hạn.' },
     { title: 'Kho đang thuê', path: '/customer/rentals', description: 'Hợp đồng hoạt động và các yêu cầu tiếp theo.' },
     { title: 'Nhập – xuất hàng', path: '/customer/stock-movements', description: 'Gửi/lấy hàng và theo dõi nhân viên kiểm đếm.' },
     { title: 'Hàng đang lưu', path: '/customer/stored-items', description: 'Số lượng thực tế theo hợp đồng.' },

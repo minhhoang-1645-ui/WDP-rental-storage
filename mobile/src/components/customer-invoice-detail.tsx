@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import { Stack, router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
-import { ArrowLeft, Calendar, Check, ChevronRight, CreditCard, Headphones, History, Info } from 'lucide-react-native';
-import { supportPath } from './customer-support';
+import { ArrowLeft, Calendar, Check, ChevronRight, CreditCard, History, Info } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { OnlinePayment } from '@/portals/online-payment';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { formatDate, formatMoney } from '@/utils/format';
-import { DocumentFile } from './document-file';
 import { InvoiceIdentity, outstanding } from './customer-invoice-list';
 import { invoiceStyles as s } from './customer-invoice-styles';
 import { EmptyState, LoadingState, ErrorState } from './screen-state';
@@ -111,13 +109,18 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
           <Text style={[s.body, s.grow]}>Bạn sẽ mở cổng VNPay để hoàn tất giao dịch. NestBox sẽ kiểm tra kết quả khi bạn quay lại.</Text></View>
       </View> : <>
         <View style={s.section}>
+          <Text accessibilityRole="header" style={s.title}>Thông tin hóa đơn</Text>
+          <Fact title="Ngày phát hành" value={dateLabel(text(invoice, 'issuedAt')) || '—'} />
+          {text(invoice, 'billingPeriodStart') ? <Fact title="Bắt đầu kỳ tính phí" value={dateLabel(text(invoice, 'billingPeriodStart'))} /> : null}
+          {text(invoice, 'billingPeriodEnd') ? <Fact title="Kết thúc kỳ tính phí" value={dateLabel(text(invoice, 'billingPeriodEnd'))} /> : null}
+        </View>
+        <View style={s.section}>
           <Text accessibilityRole="header" style={s.title}>Chi tiết các khoản thu</Text>
           {([['Tiền thuê', invoice.rentalAmount], ['Tiền cọc', invoice.depositAmount], ['Dịch vụ', invoice.serviceAmount], ['Phí đã duyệt', invoice.chargeAmount]] as const)
             .filter(([, value]) => typeof value === 'number' && value !== 0).map(([title, value]) => <Fact key={title} title={title} value={amount(value)} />)}
           <Fact title="Tổng" value={amount(invoice.totalAmount)} total />
           {!paid && !voided && Number(invoice.amountPaid) > 0 ? <><Fact title="Đã trả" value={amount(invoice.amountPaid)} /><Fact title="Còn lại" value={amount(invoice.balanceDue)} /></> : null}
         </View>
-        <View style={s.card}><DocumentFile title="Xem PDF hóa đơn" name={text(invoice, 'invoiceCode')} path={'/customer/documents/invoices/' + encodeURIComponent(id)} /></View>
         {payments.length ? <View style={s.card}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPayments }} style={[s.row, { minHeight: 44 }]} onPress={() => setShowPayments(value => !value)}>
             <History size={18} color={C.navy} /><Text style={[s.link, s.grow]}>{showPayments ? 'Ẩn giao dịch' : 'Xem giao dịch'}</Text><ChevronRight size={16} color={C.muted} />
@@ -128,12 +131,6 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
             <Text style={s.body}>{amount(row.amount)}</Text>
           </View>) : null}
         </View> : null}
-        <Pressable accessibilityRole="button" style={[s.hero, s.row]} onPress={() => router.push((supportPath + '/new?invoiceId=' + encodeURIComponent(id)) as Href)}>
-          <Headphones size={21} color={C.cobalt} />
-          <View style={s.grow}><Text style={s.heading}>Cần hỗ trợ về hóa đơn này?</Text>
-            <Text style={s.muted}>Gửi yêu cầu để được kiểm tra và hỗ trợ</Text></View>
-          <ChevronRight size={17} color={C.muted} />
-        </Pressable>
       </>}
 
       {reason ? <Text accessibilityRole="alert" style={s.muted}>{reason}</Text> : null}

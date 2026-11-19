@@ -134,7 +134,7 @@ export function InvoiceList() {
       ListEmptyComponent={source.loading ? <LoadingState layout="list" /> : source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
         : <EmptyState title="Chưa có hóa đơn phù hợp" message="Hóa đơn của bạn sẽ xuất hiện tại đây." />}
       ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-      ListFooterComponent={limit < filtered.length ? <Pressable accessibilityRole="button" style={s.history} onPress={() => setLimit(value => value + 15)}><Text style={s.link}>Xem thêm hóa đơn</Text></Pressable> : null}
+      ListFooterComponent={limit < filtered.length ? <Pressable accessibilityRole="button" style={s.history} onPress={() => setLimit(value => value + 15)}><Text style={s.link}>Xem thêm hóa đơn</Text></Pressable> : undefined}
       renderItem={({ item }) => {
         const badge = invoiceBadge(item);
         const date = text(item, item.status === 'PAID' ? 'paidAt' : 'dueAt');

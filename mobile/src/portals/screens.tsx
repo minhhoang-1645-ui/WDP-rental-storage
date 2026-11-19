@@ -1,3 +1,4 @@
+import { CustomerDepositDetail, CustomerDepositList } from '@/components/customer-deposits';
 import { CustomerRenewalDetail } from '@/components/customer-renewal';
 import { CustomerBookingList } from '@/components/customer-booking-list';
 import { CustomerPaymentDetail, CustomerPaymentHistory } from '@/components/customer-payment-history';
@@ -59,6 +60,7 @@ function portalStatus(role: PortalRole, resource: string, value: unknown) {
 export function PortalList({ role, resource: fixed }: { role: PortalRole; resource?: string }) {
   const params = useLocalSearchParams<{ resource: string }>(), { user } = useAuth();
   const kind = fixed ?? params.resource;
+  if (role === 'CUSTOMER' && kind === 'deposit-settlements') return <CustomerDepositList key={user?.id} />;
   if (role === 'CUSTOMER' && kind === 'returns') return <CustomerReturns key={user?.id} />;
   if (role === 'CUSTOMER' && (kind === 'transfers' || kind === 'early-returns')) return <CustomerRentalChange key={kind} kind={kind} />;
   if(role==='CUSTOMER'&&(fixed??params.resource)==='reservations')return <CustomerBookingList key={user?.id}/>;
@@ -102,6 +104,7 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
 }
 export function PortalDetail({ role }: { role: PortalRole }) {
   const { resource, id } = useLocalSearchParams<{ resource: string; id: string }>(), { user } = useAuth();
+  if (role === 'CUSTOMER' && resource === 'deposit-settlements') return <CustomerDepositDetail key={String(id)} id={String(id)} />;
   if (role === 'CUSTOMER' && resource === 'returns') return <CustomerReturns key={id} id={id} />;
   if (role === 'CUSTOMER' && (resource === 'transfers' || resource === 'early-returns')) return <CustomerRentalChange key={resource + '/' + id} kind={resource} id={id} />;
   if(role==='CUSTOMER'&&resource==='reservations') return <CustomerBookingDetail key={`${user?.id}:${id}`} id={String(id)}/>;

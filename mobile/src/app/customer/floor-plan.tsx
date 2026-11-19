@@ -6,7 +6,6 @@ import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { customerStyles } from '@/components/customer-premium';
 import { BookingUnitSelector } from '@/components/booking-unit-selector';
-import { supportPath } from '@/components/customer-support';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import type { FloorPlanUnit } from '@/components/floor-plan-viewer';
@@ -119,7 +118,7 @@ function LocationDetails({ rental, contract }: { rental: Row; contract: Row }) {
     </View>
 
     {reservationId ? <>
-      <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: `${supportPath}/new` as "/customer/support-requests/new", params: { reservationId, rentalContractId: idOf(contract) } })} style={({ pressed }) => [styles.contact, pressed && styles.pressed]}>
+      <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/customer/[resource]/[id]", params: { resource: "support-requests", id: "new", reservationId, rentalContractId: idOf(contract) } })} style={({ pressed }) => [styles.contact, pressed && styles.pressed]}>
         <Headphones size={21} color={C.navy} />
         <Text style={styles.contactText}>Liên hệ nhân viên</Text>
       </Pressable>

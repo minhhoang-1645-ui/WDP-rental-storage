@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react';
 import { router, type Href } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { notifyDataChanged } from '@/services/live-events';
 import { CalendarDays, CircleCheck, Minus, Plus } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
-import { Button, Navigation } from '@/operations/ui';
+import { Button } from '@/operations/ui';
 import { operationMutate } from '@/operations/mutate';
 import { idOf, rows, text, type Row } from '@/operations/model';
 import type { FormAction } from '@/operations/form';
@@ -77,40 +76,14 @@ function DateCard({ label, value, highlighted = false }: { label: string; value:
 }
 
 export function CustomerRenewalDetail({ id }: { id: string }) {
-  const source = useResource<Row>('/customer/renewals/' + encodeURIComponent(id));
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelError, setCancelError] = useState('');
-  const [cancelling, setCancelling] = useState(false);
-  const [cancelled, setCancelled] = useState(false);
-  const cancelLock = useRef(false);
+  const source = useResource<Row>('/customer/renewals/' + encodeURIComponent(id), false, true);
   const row = source.data;
   const invoice = rows(row?.invoices).find(item => item.type === 'RENEWAL' && Number(item.renewalCycle) === 1 && idOf(item));
   const invoicePath = invoice ? '/customer/invoices/' + encodeURIComponent(idOf(invoice)) : '';
   const signed = Boolean(text(row ?? {}, 'appendix.acceptedAt'));
   const completed = row?.status === 'COMPLETED';
-  const isCancelled = cancelled || row?.status === 'CANCELLED';
+  const isCancelled = row?.status === 'CANCELLED';
   const approved = !isCancelled && row?.status === 'APPROVED_PENDING_PAYMENT';
-  const canCancel = !isCancelled && (row?.status === 'PENDING' || approved) &&
-    rows(row?.invoices).every(item => !['PAID', 'PARTIALLY_PAID'].includes(String(item.status)) && Number(item.amountPaid) === 0);
-  async function cancel() {
-    if (cancelLock.current || !canCancel) return;
-    cancelLock.current = true;
-    setCancelling(true);
-    setCancelError('');
-    try {
-      await operationMutate('/customer/renewals/' + encodeURIComponent(id) + '/cancel', 'POST');
-      setCancelled(true);
-      setConfirmCancel(false);
-      notifyDataChanged('/customer/invoices');
-      notifyDataChanged('/customer/renewals');
-      source.refresh();
-    } catch (error) {
-      setCancelError(error instanceof Error ? error.message : 'Chưa hủy được yêu cầu gia hạn.');
-    } finally {
-      cancelLock.current = false;
-      setCancelling(false);
-    }
-  }
   const payable = approved && signed && invoice && ['OPEN', 'PARTIALLY_PAID'].includes(String(invoice.status)) && Number(invoice.balanceDue) > 0;
   const rentalId = text(row ?? {}, 'reservation.id');
   const money = (value: unknown) => typeof value === 'number' ? formatMoney(value) : '—';
@@ -135,16 +108,8 @@ export function CustomerRenewalDetail({ id }: { id: string }) {
       </View>
       {text(row, 'rejectionReason') ? <Text style={s.error}>{text(row, 'rejectionReason')}</Text> : null}
       {Boolean(row.appendix) && !payable && !isCancelled ? <DocumentAcceptance row={row} resource="renewals" onSaved={source.refresh} /> : null}
-      {invoice && signed ? <Navigation title="Xem hóa đơn gia hạn" path={invoicePath} /> : null}
       {approved && signed && !invoice ? <ErrorState message="Chưa tìm thấy hóa đơn kỳ đầu của lần gia hạn này." onRetry={source.refresh} /> : null}
       {approved && signed && invoice?.status === 'PAID' ? <JourneyNotice title="Đã thanh toán hóa đơn" message="Đang cập nhật thời hạn thuê." /> : null}
-      {canCancel && (confirmCancel ? <View style={s.card}>
-        <Text style={s.heading}>Hủy yêu cầu gia hạn?</Text>
-        <Text style={s.muted}>Hóa đơn gia hạn chưa thanh toán sẽ được hủy. Hạn thuê hiện tại vẫn áp dụng.</Text>
-        {cancelError ? <Text accessibilityRole="alert" style={s.error}>{cancelError}</Text> : null}
-        <Button title={cancelling ? 'Đang hủy…' : 'Xác nhận hủy'} disabled={cancelling} onPress={() => void cancel()} />
-        <Button title="Giữ yêu cầu" variant="secondary" disabled={cancelling} onPress={() => setConfirmCancel(false)} />
-      </View> : <Button title="Hủy yêu cầu gia hạn" variant="secondary" onPress={() => { setCancelError(''); setConfirmCancel(true); }} />)}
     </> : null}
   </JourneyScreen>;
 }

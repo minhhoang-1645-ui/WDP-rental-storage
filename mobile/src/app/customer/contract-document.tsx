@@ -29,7 +29,7 @@ export default function ContractDocument() {
   const image = text(terms, 'signatureImage');
   const lines = rows(quote.lineItems);
 
-  return <JourneyScreen title="Đọc hợp đồng" action={action}>
+  return <JourneyScreen title="Xem hợp đồng" action={action}>
     {source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
       : source.loading ? <LoadingState layout="detail" />
       : !available ? <ErrorState message="Chưa có nội dung hợp đồng để hiển thị." onRetry={source.refresh} />

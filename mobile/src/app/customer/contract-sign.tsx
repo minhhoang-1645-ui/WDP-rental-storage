@@ -83,7 +83,7 @@ export default function ContractSign() {
         : !row ? null : !canSignContract(row) ? <Text style={s.body}>{text(terms, 'acceptedAt') ? 'Hợp đồng đã được ký.' : 'Hợp đồng hiện chưa thể ký.'}</Text>
         : !reviewed ? <>
           <Text style={s.body}>Vui lòng đọc phiên bản hiện tại của hợp đồng trước khi ký.</Text>
-          <Button title="Đọc hợp đồng" onPress={() => router.replace({ pathname: '/customer/contract-document', params: { id } })} />
+          <Button title="Xem hợp đồng" onPress={() => router.replace({ pathname: '/customer/contract-document', params: { id } })} />
         </> : receipt ? <>
           <View style={styles.otpIntro}>
             <View style={styles.mailIcon}><Mail size={32} color="#0758DC" /></View>

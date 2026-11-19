@@ -1,13 +1,12 @@
 import { useCustomerRentalJourney } from '@/hooks/use-customer-rental-journey';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Stack, router, type Href } from 'expo-router';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ChevronRight, FileText, Headphones, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CalendarDays, FileText } from 'lucide-react-native';
 import { apiRequest } from '@/services/api';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
-import { supportPath } from './customer-support';
 import { formatDate, formatMoney } from '@/utils/format';
 import { isScheduledRenewalInvoice, paymentWindowClosed } from '@/utils/payment-state';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
@@ -17,10 +16,10 @@ import { ErrorState, LoadingState } from './screen-state';
 
 export function CustomerBookingDetail({id}:{id:string}) {
   const source=useResource<Row>('/reservations/'+encodeURIComponent(id));
-  const row=source.data, confirmed=row?.status==='CONFIRMED', insets=useSafeAreaInsets();
+  const row=source.data, confirmed=row?.status==='CONFIRMED';
   const flow=useCustomerRentalJourney(text(row??{},'id')||id);
   const {contracts,invoices,appointments,submissions}=flow;
-  const [now,setNow]=useState(Date.now),[help,setHelp]=useState(false);
+  const [now,setNow]=useState(Date.now);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[]);
   const refs=new Set([id,row?idOf(row):'',text(row??{},'reference','id')].filter(Boolean));
   const related=(item:Row)=>refs.has(text(item,'reservation.id'))||refs.has(text(item,'reservation.reference'));
@@ -31,7 +30,7 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const unsigned=documents.find(item=>['PENDING_PAYMENT','READY_FOR_HANDOVER'].includes(String(item.status))&&Boolean(text(item,'terms.snapshotHash'))&&!text(item,'terms.acceptedAt'));
   const pendingIds=new Set(rows(submissions.data?.items).filter(item=>item.status==='PENDING_VERIFICATION').map(item=>text(item,'invoice.id')));
   const payable=bills.find(item=>['OPEN','PARTIALLY_PAID'].includes(String(item.status))&&Number(item.balanceDue)>0&&!isScheduledRenewalInvoice(item,now)&&!paymentWindowClosed(item,now)&&object(item.signing).complete===true&&!pendingIds.has(idOf(item)));
-  const primary=confirmed&&ready&&!expired?(flow.unsigned?{title:'Đọc và ký hợp đồng',path:'/customer/contracts?reservationId='+encodeURIComponent(text(row??{},'id')||id)}:flow.next):undefined;
+  const primary=confirmed&&ready&&!expired?(flow.unsigned?{title:'Xem hợp đồng',path:'/customer/contracts?reservationId='+encodeURIComponent(text(row??{},'id')||id)}:flow.next):undefined;
   const [cancelOpen,setCancelOpen]=useState(false), [cancelBusy,setCancelBusy]=useState(false), [cancelError,setCancelError]=useState(''), [cancelled,setCancelled]=useState(false);
   const cancelLock=useRef(false);
   const canCancel=ready && !cancelled && (row?.status==='PENDING' || confirmed) &&
@@ -62,12 +61,7 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const days=start&&end?Math.round((Date.parse(end)-Date.parse(start))/86400000):0;
   const quote=object(row?.quote),amount=quote.quotedTotalAmount??quote.totalAmount;
   const months=Number(row?.durationMonths??(quote.billingMode==='MONTHLY'?quote.termMonths:undefined)),duration=Number.isInteger(months)&&months>0?months+' tháng':days>0?days+' ngày':'';
-  const refresh=()=>{if(!help)sources.forEach(item=>item.refresh());};
-  const chooseTopic = (topic: string) => {
-    if (!row) return;
-    setHelp(false);
-    router.push((supportPath + '/new?reservationId=' + encodeURIComponent(idOf(row)) + '&subject=' + encodeURIComponent(topic)) as Href);
-  };
+  const refresh=()=>{sources.forEach(item=>item.refresh());};
   return <View style={{flex:1,backgroundColor:C.surface}}><Stack.Screen options={{title:'Chi tiết đơn đặt kho',headerTitleStyle:{fontSize:20,fontWeight:'600'},headerBackButtonDisplayMode:'minimal'}}/>
     <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={<RefreshControl refreshing={source.loading&&Boolean(row)} onRefresh={refresh}/>} contentContainerStyle={[s.page,{gap:12}]}>
       {source.loading?<LoadingState layout="detail"/>:source.error?<ErrorState message={source.error} onRetry={source.refresh}/>:row?<>
@@ -91,7 +85,6 @@ export function CustomerBookingDetail({id}:{id:string}) {
           subtitle={text(flow.visit,'scheduledAt')?formatDate(text(flow.visit,'scheduledAt'),true):undefined}
           trailing={<StatusBadge status={String(flow.visit.status)}/>} path={'/customer/appointments/'+encodeURIComponent(idOf(flow.visit))}/>
           : status==='CONFIRMED' && ready ? <View style={s.row}><CalendarDays size={20} color={C.cobalt}/><Text style={[s.body,{flex:1}]}>Lịch nhận kho</Text><StatusBadge status="Chưa đặt"/></View> : null}
-        <Pressable accessibilityRole="button" onPress={()=>setHelp(true)} style={({pressed})=>[s.row,{opacity:pressed?0.65:1,borderBottomWidth:0}]}><Headphones size={20} color={C.navy}/><Text style={[s.body,{flex:1}]}>Cần trợ giúp về đơn này?</Text><ChevronRight size={18} color={C.muted}/></Pressable>
       </>:null}
     </ScrollView>
     {!cancelled&&primary&&<View style={{paddingHorizontal:20,paddingVertical:12,borderTopWidth:0.5,borderTopColor:C.divider}}><Pressable accessibilityRole="button" onPress={()=>router.push(primary.path as Href)} style={({pressed})=>({minHeight:52,borderRadius:12,backgroundColor:C.cobalt,justifyContent:'center',alignItems:'center',padding:12,opacity:pressed?0.75:1})}><Text style={{fontSize:16,lineHeight:24,fontWeight:'600',color:'white'}}>{primary.title}</Text></Pressable></View>}
@@ -116,6 +109,5 @@ export function CustomerBookingDetail({id}:{id:string}) {
         </SafeAreaView>
       </View>
     </Modal>
-    <Modal visible={help} transparent animationType="slide" onRequestClose={()=>setHelp(false)}><View style={{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(16,24,40,0.4)'}}><SafeAreaView edges={['bottom']} style={{maxHeight:'90%',backgroundColor:'white',borderTopLeftRadius:24,borderTopRightRadius:24,paddingBottom:Math.max(insets.bottom,12)}}><KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined}><ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={s.page}><><View style={{flexDirection:'row',alignItems:'center'}}><Text style={[s.section,{flex:1}]}>Bạn cần hỗ trợ gì?</Text><Pressable accessibilityRole="button" accessibilityLabel="Đóng hỗ trợ" onPress={()=>setHelp(false)} style={{minWidth:44,minHeight:44,alignItems:'center',justifyContent:'center'}}><X size={20} color={C.text}/></Pressable></View>{['Hỏi về trạng thái đơn','Thay đổi ngày thuê','Vấn đề khác'].map(topic=><Pressable key={topic} accessibilityRole="button" onPress={()=>chooseTopic(topic)} style={s.row}><Text style={[s.body,{flex:1}]}>{topic}</Text><ChevronRight size={18} color={C.muted}/></Pressable>)}</></ScrollView></KeyboardAvoidingView></SafeAreaView></View></Modal>
   </View>;
 }

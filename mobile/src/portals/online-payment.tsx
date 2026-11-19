@@ -12,15 +12,16 @@ import { Button, Navigation, styles } from '@/operations/ui';
 import { readPendingOnlinePayment, removePendingOnlinePayment } from '@/services/online-payment-session';
 import { vnpayDestination } from '@/utils/vnpay-destination';
 
-type Session = { transactionId: string; expiresAt: string; paymentUrl: string };
-type Result = { transactionId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; providerStatus: string; expiresAt: string; invoice: { type: string; status: string }; reconciliation?: { reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; resolutionNote?: string | null } | null };
+type Session = { transactionId: string; merchantOrderRef?: string; expiresAt: string; paymentUrl: string };
+type Result = { transactionId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; providerStatus: string; expiresAt: string; invoice: { id: string; type: string; status: string }; reconciliation?: { reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; resolutionNote?: string | null } | null };
 function destination(value: string) {
   return vnpayDestination(value).href;
 }
 
-export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void }) {
+export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange, actionTitle = 'Thanh toán VNPay', hidePaidSummary = false, showStartAction = true }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void; actionTitle?: string; hidePaidSummary?: boolean; showStartAction?: boolean }) {
   const { user } = useAuth();
   const [session, setSession] = useState<Session>(), [result, setResult] = useState<Result>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [restored, setRestored] = useState(false), [now, setNow] = useState(Date.now);
+  const browserOpen = useRef(false);
   const lock = useRef(false), refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
   const key = `wdp-payment-${Array.from(`${user?.id}:${invoiceId}`).map(char => char.codePointAt(0)!.toString(16)).join('-')}`;
@@ -55,12 +56,19 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       try {
         const status = await apiRequest<Result>(`/customer/online-payments/${encodeURIComponent(session.transactionId)}`, { signal: controller.signal });
         if (stopped) return;
-        setResult(status); setError('');
+        if (status.invoice.id !== invoiceId) {
+          await paymentStorage.remove(key);
+          if (!stopped) { setSession(undefined); setResult(undefined); }
+          return;
+        }
+        setNow(Date.now()); setResult(status); setError('');
         consecutiveErrors = 0;
         const unresolved = Boolean(status.reconciliation && status.reconciliation.status !== 'RECONCILED');
         terminal = !unresolved && (status.status === 'FAILED' || (status.status === 'SUCCESS' && status.invoice.status === 'PAID'));
         if (terminal) {
-          if (Platform.OS === "ios") { try { WebBrowser.dismissBrowser(); } catch {} }
+          if (Platform.OS === 'ios' && browserOpen.current) {
+            try { await WebBrowser.dismissBrowser(); } catch { /* The browser may already be closed. */ }
+          }
           void paymentStorage.remove(key).catch(() => {});
           if (user?.id) void readPendingOnlinePayment(user.id).then(legacy => { if (legacy?.transactionId === session.transactionId) return removePendingOnlinePayment(user.id); }).catch(() => {});
           refreshRef.current(); notifyDataChanged('/customer/payments');
@@ -79,17 +87,20 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
     void poll();
     const listener = AppState.addEventListener('change', state => { clearTimeout(timer); if (state === 'active') { consecutiveErrors = 0; void poll(); } });
     return () => { stopped = true; controller.abort(); clearTimeout(timer); listener.remove(); };
-  }, [session, key, paid, user?.id]);
+  }, [session, key, paid, user?.id, invoiceId]);
   const waiting = !paid && Boolean(session) && (!result || result.status === 'PENDING');
+  const canResume = waiting && result?.status === 'PENDING' && Boolean(session?.paymentUrl) &&
+    Date.parse(result.expiresAt) > now;
   const reconciliation = Boolean(result?.reconciliation);
   const unresolved = Boolean(result?.reconciliation && result.reconciliation.status !== 'RECONCILED');
   useEffect(() => { onWaitingChange?.(waiting || unresolved); return () => onWaitingChange?.(false); }, [waiting, unresolved, onWaitingChange]);
   const open = async (qr = false) => {
-    if (lock.current || reconciliation || !restored || (!waiting && (!eligible || disabled))) return;
+    if (lock.current || reconciliation || !restored || !eligible || disabled) return;
+    if (waiting && (!result || Date.parse(result.expiresAt) <= Date.now())) return;
     lock.current = true; setBusy(true); setError('');
     try {
       let payment = session;
-      if (!waiting) {
+      if (!canResume) {
         payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}), ...(Platform.OS !== 'web' ? { channel: 'mobile' } : {}) }) });
         destination(payment.paymentUrl);
         setSession(payment); setResult(undefined);
@@ -98,13 +109,12 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       if (!payment?.paymentUrl) return;
       const url = destination(payment.paymentUrl);
       if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-        await WebBrowser.openBrowserAsync(url);
+        browserOpen.current = true;
+        try { await WebBrowser.openBrowserAsync(url); } finally { browserOpen.current = false; }
         return;
       }
-      const invoicePath = `/customer/invoices/${encodeURIComponent(invoiceId)}`;
-      const callback = `wdp-storage://${invoicePath.slice(1)}`;
-      const completed = await WebBrowser.openAuthSessionAsync(url, callback);
-      if (completed.type === 'success') router.navigate(invoicePath as Href);
+      await WebBrowser.openAuthSessionAsync(url, 'wdp-storage://customer/payment-result');
+      router.navigate({ pathname: '/customer/payment-result', params: { invoiceId, transaction: payment.merchantOrderRef || payment.transactionId } } as Href);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không mở được VNPay.'); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -121,7 +131,7 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       <Navigation title="Xem lịch sử thanh toán" path="/customer/payment-history" />
       <Button title="Đóng kết quả đối soát" variant="secondary" onPress={() => { setSession(undefined); setResult(undefined); setError(''); }} />
     </> : !paid && result?.status === 'FAILED' && <Text accessibilityRole="alert" style={styles.error}>{result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : result.providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán VNPay.' : 'Chưa ghi nhận thanh toán thành công.'} {result.invoice.status === 'VOID' ? 'Hóa đơn đã hủy. Nếu đã bị trừ tiền, hãy gửi hỗ trợ.' : 'Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi hỗ trợ.'}</Text>}
-    {success && <><Text accessibilityLiveRegion="polite" style={styles.success}>Thanh toán đã được xác nhận.</Text><Navigation title={(result?.invoice.type || invoiceType) === 'INITIAL' ? 'Đặt lịch nhận kho' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? 'Xem gia hạn và thời hạn mới' : 'Xem lịch sử thanh toán'} path={(result?.invoice.type || invoiceType) === 'INITIAL' ? '/customer/appointments' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? '/customer/renewals' : '/customer/payment-history'} /></>}
-    {!success && !reconciliation && (eligible || waiting) && <Button title={busy ? 'Đang mở VNPay…' : waiting ? 'Mở lại VNPay' : 'Thanh toán VNPay'} disabled={busy || !restored || waiting && !session?.paymentUrl || (!waiting && disabled)} onPress={() => void open()} />}
+    {success && !hidePaidSummary && <><Text accessibilityLiveRegion="polite" style={styles.success}>Thanh toán đã được xác nhận.</Text><Navigation title={(result?.invoice.type || invoiceType) === 'INITIAL' ? 'Đặt lịch nhận kho' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? 'Xem gia hạn và thời hạn mới' : 'Xem lịch sử thanh toán'} path={(result?.invoice.type || invoiceType) === 'INITIAL' ? '/customer/appointments' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? '/customer/renewals' : '/customer/payment-history'} /></>}
+    {showStartAction && !success && !reconciliation && (eligible || waiting) && <Button title={busy ? 'Đang mở VNPay…' : canResume ? 'Mở lại VNPay' : waiting && !result ? 'Đang kiểm tra phiên VNPay…' : actionTitle} disabled={busy || !restored || !eligible || disabled || waiting && (!result || Date.parse(result.expiresAt) <= now)} onPress={() => void open()} />}
   </>;
 }

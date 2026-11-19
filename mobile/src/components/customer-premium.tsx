@@ -15,11 +15,12 @@ export const customerStyles = StyleSheet.create({
   row: { minHeight: 64, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
 });
 
-export function CustomerHero({children,topInset=0}: {children: ReactNode;topInset?:number}) {
+export function CustomerHero({children,topInset=0,compact=false}: {children: ReactNode;topInset?:number;compact?:boolean}) {
   const [size,setSize]=useState({width:0,height:0});
-  return <View onLayout={({nativeEvent:{layout}})=>setSize(previous=>previous.width===layout.width&&previous.height===layout.height?previous:{width:layout.width,height:layout.height})} style={{backgroundColor:C.cobalt, overflow:'hidden', paddingHorizontal:20,paddingTop:topInset+8,paddingBottom:24, gap:20}}>
+  const startColor = compact ? '#08429F' : C.cobalt;
+  return <View onLayout={({nativeEvent:{layout}})=>setSize(previous=>previous.width===layout.width&&previous.height===layout.height?previous:{width:layout.width,height:layout.height})} style={{backgroundColor:startColor, overflow:'hidden', paddingHorizontal:20,paddingTop:topInset+8,paddingBottom:compact?9:24, gap:compact?8:20}}>
     <Svg pointerEvents="none" width={size.width} height={size.height} style={StyleSheet.absoluteFill} preserveAspectRatio="none">
-      <Defs><LinearGradient id="customerHero" x1="0%" y1="0%" x2="100%" y2="100%"><Stop offset="0" stopColor={C.cobalt}/><Stop offset="1" stopColor={C.deepNavy}/></LinearGradient></Defs>
+      <Defs><LinearGradient id="customerHero" x1="0%" y1="0%" x2="100%" y2="100%"><Stop offset="0" stopColor={startColor}/><Stop offset="1" stopColor={compact ? '#072458' : C.deepNavy}/></LinearGradient></Defs>
       <Rect width="100%" height="100%" fill="url(#customerHero)"/>
     </Svg>{children}
   </View>;

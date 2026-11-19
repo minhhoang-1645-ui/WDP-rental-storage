@@ -30,7 +30,20 @@ export class ActiveRentalsService {
   async getCustomerRental(customerId: string, id: string) {
     const record = await this.prisma.reservation.findFirst({ where: { ...this.activeWhere(), customerId, OR: [{ id }, { reservationCode: id }] }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy Active Rental.');
-    return this.toRental(record, 'CUSTOMER', new Date());
+    const units = record.contracts.map(contract => contract.reservationUnit.storageUnit);
+    const areas = units.filter(unit => unit.floor && unit.zone);
+    const locationUnits = areas.length ? await this.prisma.storageUnit.findMany({
+      where: { OR: areas.map(({ storageTypeId, floor, zone }) => ({ storageTypeId, floor, zone })) },
+      select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, storageTypeId: true },
+    }) : [];
+    return {
+      ...this.toRental(record, 'CUSTOMER', new Date()),
+      unitLayouts: units.map(unit => ({
+        unitId: unit.id,
+        units: locationUnits.filter(other => other.storageTypeId === unit.storageTypeId && other.floor === unit.floor && other.zone === unit.zone)
+          .map(({ id, unitNumber, row, position }) => ({ id, code: unitNumber, row, position })),
+      })),
+    };
   }
 
   listManagerRentals(query: ActiveRentalListQuery) {
@@ -100,7 +113,7 @@ export class ActiveRentalsService {
           storedItems: { where: { balance: { gt: 0 } }, select: { id: true, itemCode: true, name: true, unit: true, balance: true }, orderBy: { name: 'asc' as const } },
           transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
           reservationUnit: { include: { storageUnit: { select: {
-          id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
+          id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true, storageTypeId: true,
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
             select: { id: true, reservationId: true, plannedStartDate: true, plannedEndDate: true, reservation: { select: { reservationCode: true, customer: { select: { id: true, fullName: true, email: true, phone: true } } } } },

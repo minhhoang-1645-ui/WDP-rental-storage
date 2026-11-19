@@ -122,6 +122,7 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
         </ClaimSection>
         <ClaimSection title="Hàng bị ảnh hưởng">
           {claim.affectedItems.length ? <ul className="claims-items-list">{claim.affectedItems.map(item => <li key={item.id}>{item.name} · {item.unit}</li>)}</ul> : <p className="claims-muted">Xem tên và số lượng trong mô tả sự cố.</p>}
+          {claim.evidencePhotos?.map((photo, index) => <a key={index} href={photo} download={'anh-chung-cu-' + (index + 1) + '.jpg'}><img src={photo} alt={'Ảnh chứng cứ ' + (index + 1)} width={120} loading="lazy" /></a>)}
           {claim.evidenceLinks.length > 0 && <ul className="claims-evidence" aria-label="Chứng cứ">{claim.evidenceLinks.map((link, index) => <li key={index}><a href={link} target="_blank" rel="noopener noreferrer">Chứng cứ {index + 1} ↗</a></li>)}</ul>}
         </ClaimSection>
         <ClaimSection title="Kết quả kiểm tra">

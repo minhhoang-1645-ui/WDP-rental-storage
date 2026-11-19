@@ -1,5 +1,5 @@
 import type { ComponentRef } from 'react';
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams, type Href } from 'expo-router';
 import { Check, Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -10,6 +10,12 @@ import { destination } from '@/auth/routing';
 
 export default function LoginScreen() {
   const { user, login } = useAuth();
+  const { paymentTransaction, paymentInvoice } = useLocalSearchParams<{ paymentTransaction?: string; paymentInvoice?: string }>();
+  const next = (role: Parameters<typeof destination>[0]): Href => role === 'CUSTOMER' &&
+    typeof paymentTransaction === 'string' && /^[\w-]{1,100}$/.test(paymentTransaction) &&
+    typeof paymentInvoice === 'string' && /^[\w-]{1,100}$/.test(paymentInvoice)
+    ? { pathname: '/customer/payment-result', params: { transaction: paymentTransaction, invoiceId: paymentInvoice } }
+    : destination(role);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -18,7 +24,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const lock = useRef(false);
   const passwordInput = useRef<ComponentRef<typeof TextInput>>(null);
-  if (user) return <Redirect href={destination(user.role)} />;
+  if (user) return <Redirect href={next(user.role)} />;
 
   const submit = async (submittedPassword = password) => {
     if (lock.current) return;
@@ -31,7 +37,7 @@ export default function LoginScreen() {
     setError('');
     try {
       const loggedInUser = await login(normalizedEmail, submittedPassword, rememberMe);
-      router.replace(destination(loggedInUser.role));
+      router.replace(next(loggedInUser.role));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không thể đăng nhập.');
     } finally {

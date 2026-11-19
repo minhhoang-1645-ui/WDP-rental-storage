@@ -1157,3 +1157,22 @@
 .manager-overview-panel { min-width:0; padding:24px; border-radius:16px; }
 .manager-overview .manager-dashboard-card strong { font-size:clamp(22px,2.1vw,32px); overflow-wrap:anywhere; }
 @media(max-width:900px){.manager-overview-panels{grid-template-columns:1fr;}}
+
+.nestbox-mobile-return {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: white;
+  color: #111d37;
+  padding: 28px 20px;
+  text-align: center;
+}
+.nestbox-mobile-return header { display: flex; align-items: center; gap: 8px; font-size: 25px; font-weight: 800; }
+.nestbox-mobile-return header svg { color: #0758dc; }
+.nestbox-mobile-return-icon { display: grid; place-items: center; margin-top: 22px; width: 120px; height: 120px; border-radius: 50%; background: #edf4ff; color: #0758dc; }
+.nestbox-mobile-return h1 { margin: 4px 0 0; font-size: 26px; }
+.nestbox-mobile-return p { max-width: 350px; margin: 0; line-height: 1.55; }
+.nestbox-mobile-return a { display: flex; align-items: center; justify-content: center; gap: 9px; width: min(100%, 350px); min-height: 48px; border-radius: 12px; background: #0758dc; color: white; text-decoration: none; font-weight: 700; }
+.nestbox-mobile-return summary { cursor: pointer; padding: 10px 0; color: #0758dc; }

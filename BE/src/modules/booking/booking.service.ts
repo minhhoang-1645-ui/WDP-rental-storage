@@ -345,6 +345,43 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return this.toReservation(record);
   }
 
+  async cancelCustomerReservation(user: PublicUser, id: string) {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const booking = await tx.reservation.findFirst({
+          where: { customerId: user.id, OR: [{ id }, { reservationCode: id }] },
+          select: { id: true, status: true },
+        });
+        if (!booking) throw new NotFoundException('Không tìm thấy đơn đặt kho.');
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${booking.id} FOR UPDATE`);
+        if (booking.status === 'CANCELLED') return;
+        const changed = await tx.reservation.updateMany({
+          where: {
+            id: booking.id, status: { in: ['PENDING', 'CONFIRMED'] },
+            contracts: { every: { termsAcceptedAt: null, status: 'PENDING_PAYMENT' } },
+            appointments: { none: { status: { not: 'CANCELLED' } } },
+            invoices: { none: { OR: [
+              { amountPaid: { gt: 0n } }, { status: { in: ['PAID', 'PARTIALLY_PAID'] } },
+              { payments: { some: {} } },
+              { paymentSubmissions: { some: { status: 'PENDING_VERIFICATION' } } },
+              { onlinePaymentTransactions: { some: { status: { in: ['PENDING', 'SUCCESS'] } } } },
+            ] } },
+          },
+          data: { status: 'CANCELLED' },
+        });
+        if (!changed.count) throw new ConflictException('Đơn không còn đủ điều kiện tự hủy. Hãy kiểm tra hợp đồng hoặc giao dịch thanh toán.');
+        await tx.invoice.updateMany({ where: { reservationId: booking.id, status: 'OPEN' }, data: { status: 'VOID', balanceDue: 0n } });
+        await tx.rentalContract.updateMany({ where: { reservationId: booking.id, status: 'PENDING_PAYMENT' }, data: { status: 'CANCELLED' } });
+        await tx.reservationUnit.updateMany({ where: { reservationId: booking.id, releasedAt: null }, data: { releasedAt: new Date() } });
+        await this.inventory.releasePurchases(tx, booking.id);
+      }, { isolationLevel: 'Serializable' });
+    } catch (error) {
+      if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Đơn vừa được cập nhật. Hãy tải lại và thử lại.');
+      throw error;
+    }
+    return this.getReservation(user, id);
+  }
+
   async listManagerReservations(page: number, limit: number) {
     const [total, records] = await Promise.all([
       this.prisma.reservation.count(),

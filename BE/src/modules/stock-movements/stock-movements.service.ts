@@ -1,3 +1,4 @@
+import { customerPhotos } from '../../customer-photos.js';
 import { Optional } from '@nestjs/common';
 import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
@@ -8,7 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 type ListQuery = { page: number; limit: number; status?: 'REQUESTED' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED'; type?: 'IN' | 'OUT'; search?: string; rentalContractId?: string };
-type ParsedLine = { storedItemId?: string; name?: string; unit?: string; quantity: number; note: string | null };
+type ParsedLine = { storedItemId?: string; name?: string; unit?: string; quantity: number; note: string | null; photos: string[] };
 
 @Injectable()
 export class StockMovementsService {
@@ -123,7 +124,7 @@ export class StockMovementsService {
           if (!isItemUnit(line.unit)) throw new BadRequestException('Đơn vị hàng mới phải thuộc danh mục chuẩn.');
           item = await tx.storedItem.create({ data: { itemCode: this.itemCode(), customerUserId: customer.id, rentalContractId: contract.id, name: line.name, unit: line.unit, note: line.note } });
         }
-        await tx.stockMovementLine.create({ data: { stockMovementId: movement.id, storedItemId: item.id, requestedQty: line.quantity, note: line.note } });
+        await tx.stockMovementLine.create({ data: { stockMovementId: movement.id, storedItemId: item.id, requestedQty: line.quantity, note: line.note, ...(line.photos.length ? { photos: line.photos } : {}) } });
       }
       return this.view(await tx.stockMovement.findUniqueOrThrow({ where: { id: movement.id }, include: this.include() }));
     });
@@ -176,8 +177,8 @@ export class StockMovementsService {
   }
 
   private matchingRetry(item: any, customerId: string, contractId: string, parsed: ReturnType<StockMovementsService['createInput']>) {
-    const expected = parsed.lines.map(line => JSON.stringify([line.storedItemId || `${line.name}:${line.unit}`, line.quantity, line.note])).sort();
-    const actual = item.lines.map((line: any) => JSON.stringify([parsed.lines.some(input => input.storedItemId === line.storedItemId) ? line.storedItemId : `${line.storedItem.name}:${line.storedItem.unit}`, line.requestedQty, line.note])).sort();
+    const expected = parsed.lines.map(line => JSON.stringify([line.storedItemId || `${line.name}:${line.unit}`, line.quantity, line.note, line.photos])).sort();
+    const actual = item.lines.map((line: any) => JSON.stringify([parsed.lines.some(input => input.storedItemId === line.storedItemId) ? line.storedItemId : `${line.storedItem.name}:${line.storedItem.unit}`, line.requestedQty, line.note, line.photos ?? []])).sort();
     if (item.customerUserId !== customerId || item.rentalContractId !== contractId || item.type !== parsed.type || (item.note ?? null) !== parsed.note || (item.scheduledAt?.toISOString() ?? null) !== (parsed.scheduledAt?.toISOString() ?? null) || JSON.stringify(expected) !== JSON.stringify(actual)) throw new ConflictException('Idempotency-Key đã dùng cho một yêu cầu khác.');
     return this.view(item);
   }
@@ -198,17 +199,18 @@ export class StockMovementsService {
   private unitSelect() { return { id: true, unitNumber: true, floor: true, zone: true }; }
 
   private include() { return { customer: { select: { id: true, fullName: true, email: true, phone: true } }, rentalContract: { select: { id: true, contractCode: true, status: true, reservationUnit: { select: { storageUnit: { select: this.unitSelect() } } } } }, assignedStaff: { select: { id: true, fullName: true, accountStatus: true } }, assignedBy: { select: { id: true, fullName: true } }, completedBy: { select: { id: true, fullName: true } }, lines: { include: { storedItem: { select: { id: true, itemCode: true, name: true, unit: true, balance: true } } }, orderBy: { id: 'asc' as const } } } satisfies Prisma.StockMovementInclude; }
-  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, storageUnit: item.locationRecordedAt && item.storageUnitId && item.unitCodeSnapshot ? { id: item.storageUnitId, unitNumber: item.unitCodeSnapshot, floor: item.floorSnapshot, zone: item.zoneSnapshot } : null, locationEvidence: item.locationRecordedAt ? 'RECORDED' : 'UNKNOWN_LEGACY', currentStorageUnit: item.rentalContract?.reservationUnit?.storageUnit ?? null, storageUnitAtCompletion: item.storageUnitSnapshot ?? null, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
+  private view(item: any) { return { id: item.id, movementCode: item.movementCode, type: item.type, status: item.status, customer: item.customer, rentalContract: item.rentalContract, storageUnit: item.locationRecordedAt && item.storageUnitId && item.unitCodeSnapshot ? { id: item.storageUnitId, unitNumber: item.unitCodeSnapshot, floor: item.floorSnapshot, zone: item.zoneSnapshot } : null, locationEvidence: item.locationRecordedAt ? 'RECORDED' : 'UNKNOWN_LEGACY', currentStorageUnit: item.rentalContract?.reservationUnit?.storageUnit ?? null, storageUnitAtCompletion: item.storageUnitSnapshot ?? null, scheduledAt: item.scheduledAt?.toISOString() ?? null, note: item.note, assignedStaff: item.assignedStaff, assignedBy: item.assignedBy, assignedAt: item.assignedAt?.toISOString() ?? null, completedBy: item.completedBy, completedAt: item.completedAt?.toISOString() ?? null, completionNote: item.completionNote, lines: item.lines.map((line: any) => ({ id: line.id, storedItem: line.storedItem, requestedQty: line.requestedQty, actualQty: line.actualQty, note: line.note, photos: line.photos ?? [] })), createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString() }; }
 
   private createInput(input: Record<string, unknown>, idempotencyKey?: string) {
     const contractId = this.requiredText(input.rentalContractId, 200, 'rentalContractId');
     const type: 'IN' | 'OUT' | null = input.type === 'IN' || input.type === 'OUT' ? input.type : null;
     if (!type) throw new BadRequestException('type phải là IN hoặc OUT.');
     if (!Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 100) throw new BadRequestException('lines phải có 1–100 dòng.');
-    const lines: ParsedLine[] = input.lines.map((raw) => { const line = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>; const quantity = Number(line.quantity); if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000) throw new BadRequestException('quantity phải là số nguyên dương.'); return { ...(line.storedItemId ? { storedItemId: this.requiredText(line.storedItemId, 200, 'storedItemId') } : {}), ...(line.name ? { name: this.requiredText(line.name, 160, 'name') } : {}), ...(line.unit ? { unit: this.requiredText(line.unit, 40, 'unit') } : {}), quantity, note: this.optionalText(line.note, 500, 'line.note') }; });
+    const lines: ParsedLine[] = input.lines.map((raw) => { const line = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>; const quantity = Number(line.quantity); if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000) throw new BadRequestException('quantity phải là số nguyên dương.'); return { ...(line.storedItemId ? { storedItemId: this.requiredText(line.storedItemId, 200, 'storedItemId') } : {}), ...(line.name ? { name: this.requiredText(line.name, 160, 'name') } : {}), ...(line.unit ? { unit: this.requiredText(line.unit, 40, 'unit') } : {}), quantity, photos: customerPhotos(line.photos), note: this.optionalText(line.note, 500, 'line.note') }; });
     const scheduledAt = input.scheduledAt ? new Date(this.requiredText(input.scheduledAt, 60, 'scheduledAt')) : null;
     if (scheduledAt && Number.isNaN(scheduledAt.getTime())) throw new BadRequestException('scheduledAt không hợp lệ.');
     const key = idempotencyKey?.trim() ?? ''; if (!/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Idempotency-Key không hợp lệ.');
+    if (lines.reduce((count, line) => count + line.photos.length, 0) > 3) throw new BadRequestException('Mỗi phiếu được đính kèm tối đa 3 ảnh.');
     return { contractId, type, lines, scheduledAt, note: this.optionalText(input.note, 2000, 'note'), key };
   }
   private actualLines(value: unknown) {

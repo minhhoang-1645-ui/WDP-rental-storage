@@ -211,6 +211,7 @@ enum AppointmentStatus {
 }
 
 enum RenewalStatus {
+  CANCELLED
   PENDING
   APPROVED_PENDING_PAYMENT
   COMPLETED
@@ -823,6 +824,7 @@ model DamageClaim {
   description       String
   affectedItems     Json
   evidenceLinks     Json
+  evidencePhotos    Json?
   estimatedValue    BigInt?
   assignedStaffId   String?
   staffFacts        String?
@@ -874,6 +876,7 @@ model StockMovementLine {
   requestedQty    Int
   actualQty       Int?
   note            String?
+  photos          Json?
   createdAt       DateTime      @default(now())
 
   @@unique([stockMovementId, storedItemId])

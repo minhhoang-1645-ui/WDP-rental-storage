@@ -1,43 +1,120 @@
-import { useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
-import { Text, View } from 'react-native';
+import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { CalendarDays, ChevronRight, FileText, PenLine, Warehouse } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
-import { idOf, rows, label, text, type Row } from '@/operations/model';
-import { ContractRenewalHistory } from './contract-renewal-history';
-import { ContractTransferHistory } from './contract-transfer-history';
+import { idOf, rows, text, type Row } from '@/operations/model';
 import { useCustomerRentalJourney } from '@/hooks/use-customer-rental-journey';
-import { JourneyNotice, JourneyScreen } from './customer-journey-ui';
-import { CustomerActionRow, customerStyles as s } from './customer-premium';
-import { CustomerInfoGrid } from './customer-info-grid';
-import { CustomerStatusFilters } from './customer-record';
+import { JourneyScreen } from './customer-journey-ui';
 import { StatusBadge } from './customer-ui';
 import { LoadingState, ErrorState } from './screen-state';
-import { FileText } from 'lucide-react-native';
-import { formatDate } from '@/utils/format';
+import { formatDate, formatMoney } from '@/utils/format';
 
-export function CustomerContracts({contractId}:{contractId?:string}){
-  const params=useLocalSearchParams<{reservationId?:string}>();
-  const detail=useResource<Row>(contractId?'/customer/contracts/'+encodeURIComponent(contractId):null);
-  const [choice,setChoice]=useState('');
-  const preferredReservation=contractId?text(detail.data??{},'reservation.id'):params.reservationId||choice;
-  const flow=useCustomerRentalJourney(preferredReservation, !contractId && !params.reservationId);
-  const reservation = flow.reservationId;
-  const groups=[...new Map(flow.all.map(item=>[text(item,'reservation.id'),item])).values()];
-  const selected=contractId?detail.data:flow.group[0];
-  const signed=contractId?Boolean(text(selected??{},'terms.acceptedAt')):flow.allSigned;
-  const action=contractId&&!signed&&selected&&!flow.closed&&['PENDING_PAYMENT','READY_FOR_HANDOVER'].includes(String(selected.status))?{title:'Xem và ký hợp đồng',path:'/customer/contract-document?id='+encodeURIComponent(contractId)}:flow.next;
-  return <JourneyScreen title={contractId?'Hợp đồng thuê':'Tài liệu thuê kho'} action={flow.loading||flow.error||detail.loading||detail.error?undefined:action}>
-    {detail.error?<ErrorState message={detail.error} onRetry={detail.refresh}/>:detail.loading?<LoadingState layout="detail"/>:null}
-    {!contractId&&!params.reservationId&&groups.length>0&&<View><Text style={s.secondary}>Chọn đơn thuê</Text><CustomerStatusFilters values={groups.map(item=>text(item,'reservation.id'))} selected={reservation} onChange={setChoice} label={value=>text(groups.find(item=>text(item,'reservation.id')===value)??{},'storageType.name')||'Đơn thuê'}/></View>}
-    {flow.error?<ErrorState message={flow.error} onRetry={flow.refresh}/>:flow.loading?<LoadingState layout="list"/>:reservation&&!flow.group.length?<Text style={s.secondary}>Chưa tìm thấy hợp đồng của đơn này. Hãy cập nhật lại tài liệu.</Text>:!reservation?<View>{flow.all.length?<Text style={s.secondary}>Chọn đơn thuê để xem hợp đồng và bước tiếp theo.</Text>:<Text style={s.secondary}>Hợp đồng sẽ xuất hiện khi đơn đặt được xác nhận.</Text>}</View>:<>
-      <Text style={s.title}>{contractId?text(selected??{},'storageType.name')||'Hợp đồng thuê kho':'Hợp đồng của bạn'}</Text>
-      {contractId&&selected?<View style={{gap:8}}><Text style={s.secondary}>Tình trạng hợp đồng</Text><StatusBadge status={String(selected.status)}/><Text style={s.secondary}>Chữ ký</Text><StatusBadge status={signed?'Đã ký':'Chưa ký'} tone={signed?'success':'warning'}/></View>:<Text style={s.secondary}>{flow.group.length} hợp đồng cho đơn thuê {flow.expected||flow.group.length} ô kho.</Text>}
-      <JourneyNotice title={flow.closed?'Đơn đã đóng hoặc hết hạn':flow.active?'Kho đã hoạt động':flow.early?'Đã bàn giao — Chờ đến ngày bắt đầu thuê':flow.pending?'Đang đối chiếu thanh toán':flow.allSigned?'Chữ ký đã hoàn tất':'Cần hoàn tất hợp đồng'} message={flow.closed?'Bạn có thể xem lại tài liệu. Kiểm tra hóa đơn hoặc liên hệ NestBox nếu đã chuyển tiền.':flow.active?'Hợp đồng là tài liệu tham chiếu. Quản lý kho tại mục Kho thuê.':flow.early?'Đã nhận chìa khóa; chỉ sử dụng kho từ ngày bắt đầu thuê.':flow.pending?'NestBox đang kiểm tra khoản chuyển. Chưa ghi nhận thanh toán hoàn tất.':flow.allSigned?flow.active?'Kho đã hoạt động. Quản lý kho tại mục Kho thuê.':flow.paid?'Bạn có thể theo dõi hoặc đặt lịch nhận kho khi đủ điều kiện.':'Bước tiếp theo là thanh toán hóa đơn ban đầu.':'Đã ký '+flow.signed+'/'+flow.expected+' hợp đồng. Cần ký tất cả trước khi thanh toán.'} success={flow.allSigned&&!flow.pending&&!flow.early}/>
-      {!contractId&&<><Text style={s.section}>Danh sách hợp đồng</Text>{flow.group.map(item=><CustomerActionRow key={idOf(item)} title={'Hợp đồng · '+text(item,'storageType.name')} subtitle={[label(item.status),text(item,'createdAt')?formatDate(text(item,'createdAt')):''].filter(Boolean).join(' · ')} icon={FileText} trailing={<StatusBadge status={text(item,'terms.acceptedAt')?'Đã ký':'Chưa ký'} tone={text(item,'terms.acceptedAt')?'success':'warning'}/>} path={'/customer/contracts/'+encodeURIComponent(idOf(item))}/>)}</>}
-      <Text style={s.section}>Thông tin kỳ thuê</Text><CustomerInfoGrid values={[["Từ ngày",selected?formatDate(text(selected,'startDate')):''],['Đến ngày',selected?formatDate(text(selected,'endDate')):'']]}/><Text style={s.secondary}>“Đã ký” là trạng thái chữ ký, không đồng nghĩa kho đã hoạt động.</Text>
-      {contractId&&selected&&<CustomerActionRow title="Đọc hợp đồng PDF" icon={FileText} path={'/customer/contract-document?id='+encodeURIComponent(contractId)}/>}
-      {contractId&&selected&&rows(selected.renewals).length>0&&<ContractRenewalHistory contract={selected} scope="customer"/>}
-      {contractId&&selected&&rows(selected.transfers).length>0&&<ContractTransferHistory contract={selected} scope="customer"/>}
-    </>}
+const blue = '#0758DC';
+export function contractAmount(value: unknown) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return '';
+  const amount = Number(value);
+  return Number.isFinite(amount) ? formatMoney(amount) : '';
+}
+export const canSignContract = (row: Row) => !text(row, 'terms.acceptedAt') &&
+  Boolean(text(row, 'terms.snapshotHash')) && ['PENDING_PAYMENT', 'READY_FOR_HANDOVER'].includes(String(row.status)) &&
+  !['EXPIRED', 'CANCELLED', 'REJECTED'].includes(text(row, 'reservation.status'));
+
+function ContractList() {
+  const { reservationId } = useLocalSearchParams<{ reservationId?: string }>();
+
+  const source = useResource<Row>('/customer/contracts', true);
+  const contracts = rows(source.data?.items).filter(row => !reservationId ||
+    [text(row, 'reservation.id'), text(row, 'reservation.reference')].includes(reservationId));
+  return <ScrollView style={s.screen} contentContainerStyle={s.list}
+    refreshControl={<RefreshControl refreshing={source.loading} onRefresh={source.refresh} />}>
+    <Stack.Screen options={{ title: 'Hợp đồng', headerTitleAlign: 'center' }} />
+    {source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : source.loading && !source.data
+      ? <LoadingState layout="list" /> : <>
+        {contracts.length === 0 ? <Text style={s.muted}>Chưa có hợp đồng.</Text> : contracts.map(row => {
+          const signed = Boolean(text(row, 'terms.acceptedAt'));
+          return <Pressable key={idOf(row)} accessibilityRole="button" style={s.row}
+            onPress={() => router.push(('/customer/contracts/' + encodeURIComponent(idOf(row))) as Href)}>
+            <Warehouse size={22} color={blue} />
+            <View style={s.grow}>
+              <Text style={s.bold}>{text(row, 'storageType.name', 'storageUnit.unitCode') || 'Kho thuê'}</Text>
+              <View style={s.inline}><CalendarDays size={13} color="#475569" />
+                <Text style={[s.muted, s.grow]}>{formatDate(text(row, 'startDate'))} – {formatDate(text(row, 'endDate'))}</Text>
+              </View>
+            </View>
+            <StatusBadge status={signed ? 'Đã ký' : 'Chờ ký'} tone={signed ? 'success' : 'warning'} />
+            <ChevronRight size={16} color="#475569" />
+          </Pressable>;
+        })}
+      </>}
+  </ScrollView>;
+}
+
+function ContractDetail({ id }: { id: string }) {
+  const detailPath = '/customer/contracts/' + encodeURIComponent(id);
+  // The detail endpoint returns a single contract. Only the list uses pagination.
+  const source = useResource<Row>(detailPath, false);
+  const row = source.data;
+  const reservationId = text(row ?? {}, 'reservation.id');
+  const flow = useCustomerRentalJourney(reservationId);
+  const signed = Boolean(text(row ?? {}, 'terms.acceptedAt'));
+  const status = text(row ?? {}, 'status');
+  const document = '/customer/contract-document?id=' + encodeURIComponent(id);
+  const signable = row && canSignContract(row) && !flow.closed && !flow.loading && !flow.error;
+  const monthly = contractAmount(row && text(row, 'terms.document.pricing.monthlyUnitPrice'));
+  const deposit = contractAmount(row && text(row, 'terms.document.pricing.depositAmount'));
+  const quantity = text(row ?? {}, 'terms.document.quantity');
+  const next = !flow.closed && !flow.error && !flow.loading && signed
+    ? status === 'PENDING_PAYMENT' && flow.next?.path.startsWith('/customer/invoices/')
+      ? { title: 'Xem hóa đơn', path: flow.next.path }
+      : status === 'READY_FOR_HANDOVER' && flow.next?.path.startsWith('/customer/appointments') ? flow.next : undefined
+    : undefined;
+  return <JourneyScreen title="Hợp đồng thuê" action={source.error ? undefined : signable ? { title: 'Đọc và ký hợp đồng', path: document } : next}>
+    {source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : !row
+      ? source.loading ? <LoadingState layout="detail" /> : null : <>
+        <Text accessibilityRole="header" style={s.title}>{text(row, 'storageType.name') || 'Kho thuê'}</Text>
+        <View style={s.inline}>
+          <View style={s.status}><View style={s.inline}><FileText size={17} color={blue} /><Text style={s.bold}>Hợp đồng</Text></View>
+            <StatusBadge status={status} displayLabel={status === 'ACTIVE' ? 'Đang hoạt động' : undefined} /></View>
+          <View style={s.status}><View style={s.inline}><PenLine size={17} color={blue} /><Text style={s.bold}>Chữ ký</Text></View>
+            <StatusBadge status={signed ? 'Đã ký' : 'Chưa ký'} tone={signed ? 'success' : 'warning'} /></View>
+        </View>
+        <View style={{ gap: 10 }}>
+          <Text style={s.bold}>Thông tin kỳ thuê</Text>
+          <View style={s.inline}>{[['Từ ngày', 'startDate'], ['Đến ngày', 'endDate']].map(([label, field]) =>
+            <View key={field} style={s.grow}><Text style={s.muted}>{label}</Text><Text style={s.bold}>{formatDate(text(row, field))}</Text></View>)}</View>
+          {text(row, 'storageUnit.unitCode') ? <Text style={s.muted}>Ô kho {text(row, 'storageUnit.unitCode')}</Text> : null}
+          {monthly ? <Text style={s.muted}>Giá thuê mỗi kho / tháng · {monthly}</Text> : null}
+          {deposit ? <Text style={s.muted}>{Number(quantity) > 1 ? 'Tiền cọc của đơn đặt' : 'Tiền cọc'} · {deposit}</Text> : null}
+        </View>
+        <Pressable accessibilityRole="button" style={s.row} onPress={() => router.push(document as Href)}>
+          <FileText size={21} color={blue} /><View style={s.grow}><Text style={s.bold}>Đọc hợp đồng</Text>
+            <Text style={s.muted}>Xem nội dung trong ứng dụng</Text>
+          </View><ChevronRight size={17} color="#475569" />
+        </Pressable>
+        {status === 'ACTIVE' && reservationId ? <Pressable accessibilityRole="button" style={[s.inline, s.tap, { justifyContent: 'center' }]}
+          onPress={() => router.push(('/customer/rentals/' + encodeURIComponent(reservationId) + '?rentalContractId=' + encodeURIComponent(idOf(row))) as Href)}>
+          <Warehouse size={19} color={blue} /><Text style={s.link}>Xem chi tiết kho</Text><ChevronRight size={16} color={blue} />
+        </Pressable> : null}
+        {signed && status === 'PENDING_PAYMENT' && !flow.loading && !flow.error && !flow.closed
+          ? <Text style={s.muted}>{flow.allSigned ? flow.pending ? 'Khoản thanh toán đang được kiểm tra.' : 'Xem hóa đơn ban đầu để theo dõi thanh toán.' : 'Cần ký đủ hợp đồng của đơn đặt trước khi thanh toán hóa đơn ban đầu.'}</Text> : null}
+      </>}
   </JourneyScreen>;
 }
+
+export function CustomerContracts({ contractId }: { contractId?: string }) {
+  return contractId ? <ContractDetail id={contractId} /> : <ContractList />;
+}
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: 'white' },
+  list: { padding: 16, gap: 9 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12, minHeight: 58, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 12 },
+  grow: { flex: 1, minWidth: 0, gap: 4 },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 23, fontWeight: '800', color: '#101828' },
+  bold: { fontWeight: '700', fontSize: 15, color: '#101828' },
+  muted: { fontSize: 13, color: '#475569' },
+  link: { color: blue, fontWeight: '700' },
+  tap: { minHeight: 44, justifyContent: 'center' },
+  status: { flex: 1, alignSelf: 'stretch', alignItems: 'center', gap: 7, padding: 10, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 10 },
+});

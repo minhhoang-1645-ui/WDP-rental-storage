@@ -18,4 +18,4 @@ export interface StockMovement {
   scheduledAt: string | null; assignedAt?: string | null; completedAt: string | null;
   createdAt: string; updatedAt: string; note: string | null; completionNote: string | null; lines: StockLine[];
 }
-export interface StockDraftLine { key: string; storedItemId: string; name: string; unit: string; quantity: string; note: string }
+export interface StockDraftLine { key: string; storedItemId: string; name: string; unit: string; quantity: string; note: string; photos?: string[] }

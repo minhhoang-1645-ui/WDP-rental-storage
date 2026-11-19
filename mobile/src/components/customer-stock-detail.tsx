@@ -41,7 +41,7 @@ export function CustomerStockDetail() {
         <Text style={s.title}>Hàng hóa</Text>
         {row.lines.map(line => <View key={line.id} style={s.line}>
           <Text style={s.label}>{line.storedItem.name}</Text>
-          <ItemPhotos photos={row.type === 'IN' ? line.photos ?? line.storedItem.photos ?? [] : line.storedItem.photos ?? []}/>
+          <ItemPhotos photos={line.photos?.length ? line.photos : line.storedItem.photos ?? []}/>
           <CustomerInfoGrid values={[
             ['Yêu cầu', line.requestedQty + ' ' + line.storedItem.unit],
             ['Đã giao nhận', line.actualQty == null ? 'Chưa kiểm đếm' : line.actualQty + ' ' + line.storedItem.unit],

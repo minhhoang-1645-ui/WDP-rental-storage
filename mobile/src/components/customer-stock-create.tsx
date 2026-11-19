@@ -1,5 +1,6 @@
+import { ItemPhotos } from '@/components/item-photos';
 import { useRef, useState, type ComponentRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowLeft, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useResource } from '@/operations/use-resource';
@@ -7,7 +8,7 @@ import { operationMutate } from '@/operations/mutate';
 import { stockCreateInput, stockLineIssues } from '@/stock/validation';
 import { itemUnits } from '@/stock/item-units';
 import type { StockDraftLine, StoredItem } from '@/stock/types';
-import { idOf, text, type Row } from '@/operations/model';
+import { idOf, rows, text, type Row } from '@/operations/model';
 import { useDraftGuard } from '@/services/live-events';
 import { vietnamCalendarDate } from '@/utils/calendar-date';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -109,6 +110,7 @@ export function CustomerStockCreate({ contract: initialContract, warehouses, ini
   const [expanded, setExpanded] = useState(() => new Set(['1']));
   const [note, setNote] = useState('');
   const [step, setStep] = useState(1);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showIssues, setShowIssues] = useState(false);
@@ -198,7 +200,11 @@ export function CustomerStockCreate({ contract: initialContract, warehouses, ini
   }
 
   async function advance() {
-    if (lock.current) return;
+    if (lock.current || photoBusy) return;
+    if (lines.reduce((sum, line) => sum + (line.photos?.length ?? 0), 0) > 3) {
+      setError('Mỗi phiếu được đính kèm tối đa 3 ảnh.');
+      return;
+    }
     try {
       if (!validate()) return;
       if (step < 2) {
@@ -210,8 +216,11 @@ export function CustomerStockCreate({ contract: initialContract, warehouses, ini
       setBusy(true);
       onBusyChange(true);
       setError('');
-      await operationMutate('/customer/stock-movements', 'POST', input, true);
+      const result = await operationMutate('/customer/stock-movements', 'POST', input, true);
+      const photoCount = input.lines.reduce((count, line) => count + (line.photos?.length ?? 0), 0);
+      const savedPhotoCount = rows(result.lines).reduce((count, line) => count + (Array.isArray(line.photos) ? line.photos.length : 0), 0);
       onSaved(selectedId);
+      if (savedPhotoCount < photoCount) Alert.alert('Phiếu đã gửi', 'Máy chủ chưa lưu ảnh. Bạn có thể liên hệ nhân viên và cung cấp mã phiếu ' + text(result, 'movementCode') + '.');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Chưa gửi được phiếu. Vui lòng thử lại.');
     } finally {
@@ -286,6 +295,8 @@ export function CustomerStockCreate({ contract: initialContract, warehouses, ini
                 <View style={s.half}>{useExisting ? <View style={s.field}><Text style={s.label}>Đơn vị</Text><View style={s.control}><Text style={s.controlText}>{item?.unit || '—'}</Text></View></View> :
                   <Select label="Đơn vị" value={line.unit} placeholder="Chọn đơn vị" options={itemUnits.map(unit => ({ value: unit, label: unit }))} error={issues?.unit} onChange={value => patch(line.key, { unit: value })}/>}</View>
               </View>
+              <Text style={s.label}>Ảnh mặt hàng (tùy chọn)</Text>
+              <ItemPhotos editable photos={line.photos ?? []} onChange={photos => patch(line.key, { photos })} onBusyChange={setPhotoBusy} />
               <Input label="Ghi chú mặt hàng (tùy chọn)" value={line.note} onChange={value => patch(line.key, { note: value })} maxLength={500}/>
             </View>}
           </View>;
@@ -304,14 +315,15 @@ export function CustomerStockCreate({ contract: initialContract, warehouses, ini
           const item = items.find(value => value.id === line.storedItemId);
           return <View key={line.key} style={s.reviewCard}>
             <View style={s.row}><Text style={[s.label, s.half]}>{item?.name || line.name}</Text><Text style={s.label}>{line.quantity} {item?.unit || line.unit}</Text></View>
+            <ItemPhotos photos={line.photos ?? []} />
             {Boolean(line.note.trim()) && <Text style={s.help}>{line.note.trim()}</Text>}
           </View>;
         })}
         <Text style={s.help}>Số lượng đang lưu sẽ cập nhật sau khi nhân viên giao nhận và kiểm đếm.</Text>
       </>}
     </ScrollView>
-    <View style={s.footer}><FieldError message={error}/><Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || inventory.loading }}
-      disabled={busy || inventory.loading} style={[s.submit, (busy || inventory.loading) && s.disabled]} onPress={() => void advance()}>
+    <View style={s.footer}><FieldError message={error}/><Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || photoBusy || inventory.loading }}
+      disabled={busy || photoBusy || inventory.loading} style={[s.submit, (busy || photoBusy || inventory.loading) && s.disabled]} onPress={() => void advance()}>
       <Text style={[s.label, s.white]}>{busy ? 'Đang gửi phiếu…' : step === 1 ? 'Kiểm tra phiếu' : 'Gửi phiếu'}</Text>
     </Pressable></View>
   </View>;

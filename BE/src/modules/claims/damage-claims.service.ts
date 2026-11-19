@@ -1,3 +1,4 @@
+import { customerPhotos } from '../../customer-photos.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -23,13 +24,15 @@ export class DamageClaimsService {
     const contractId = this.text(input.rentalContractId, 'Kho đang thuê', 1, 200), description = this.text(input.description, 'Mô tả', 10);
     const date = this.text(input.discoveredOn, 'Ngày phát hiện', 10, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date || date > businessDate()) throw new BadRequestException('Ngày phát hiện không được ở tương lai và phải hợp lệ.');
+    const photos = customerPhotos(input.evidencePhotos);
+    if (input.evidencePhotos !== undefined && !photos.length) throw new BadRequestException('Thêm ít nhất một ảnh chứng cứ.');
     const links = claimEvidence(input.evidenceLinks ?? []), ids = input.storedItemIds;
     if (!Array.isArray(ids) || ids.length > 100 || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) throw new BadRequestException('Danh sách hàng bị ảnh hưởng không hợp lệ.');
     const estimated = input.estimatedValue === null || input.estimatedValue === undefined ? null : input.estimatedValue;
     if (estimated !== null && (typeof estimated !== 'number' || !Number.isSafeInteger(estimated) || estimated < 0)) throw new BadRequestException('Giá trị ước tính phải là số nguyên VND không âm, hoặc để trống.');
     if (!key || !/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Cần khóa gửi yêu cầu hợp lệ.');
     const idempotencyKey = createHash('sha256').update(`${actor.id}:${key}`).digest('hex');
-    const inputHash = createHash('sha256').update(JSON.stringify([contractId, description, date, estimated, links, [...ids].sort((a: string, b: string) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
+    const inputHash = createHash('sha256').update(JSON.stringify([contractId, description, date, estimated, links, [...ids].sort((a: string, b: string) => a < b ? -1 : a > b ? 1 : 0), ...(photos.length ? [photos] : [])])).digest('hex');
     const duplicate = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('CUSTOMER') });
     if (duplicate) { if (duplicate.inputHash !== inputHash) throw new ConflictException('Khóa gửi đã dùng cho nội dung khác.'); return this.view(duplicate, 'CUSTOMER'); }
     return this.prisma.$transaction(async tx => {
@@ -44,7 +47,7 @@ export class DamageClaimsService {
         select: { id: true, name: true, unit: true, itemCode: true },
       });
       if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
-      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash } });
+      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, ...(photos.length ? { evidencePhotos: photos } : {}), estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash } });
       return this.view(row, 'CUSTOMER');
     }).catch(async error => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

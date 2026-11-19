@@ -1,4 +1,4 @@
-import { Redirect, usePathname } from 'expo-router';
+import { Redirect, useGlobalSearchParams, usePathname } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { View, StyleSheet } from 'react-native';
 
@@ -14,18 +14,22 @@ export const unstable_settings = { initialRouteName: 'index' };
 
 export default function CustomerLayout() {
   const pathname = usePathname();
+  const { transaction, invoiceId } = useGlobalSearchParams();
   const { user } = useAuth();
-  if (!user) return <Redirect href="/login" />;
+  if (!user) return <Redirect href={pathname === '/customer/payment-result' && typeof transaction === 'string' && typeof invoiceId === 'string' &&
+    /^[\w-]{1,100}$/.test(transaction) && /^[\w-]{1,100}$/.test(invoiceId)
+    ? { pathname: '/login', params: { paymentTransaction: transaction, paymentInvoice: invoiceId } } : '/login'} />;
   if (user.role !== 'CUSTOMER') return <Redirect href="/" />;
   return <CustomerPresentation.Provider value><View style={layout.root}>
     <Stack screenOptions={{ headerTransparent: false, headerRight: () => <CustomerNotifications />, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', headerTintColor: WdpColors.navy, contentStyle: { backgroundColor: WdpColors.background } }}>
       <Stack.Screen name="index" options={{ title: 'NestBox', headerShown: false }} />
       <Stack.Screen name="discover" options={{ title: 'Tìm kho' }} />
       <Stack.Screen name="booking" options={{ title: 'Đặt kho' }} />
-      <Stack.Screen name="size-finder" options={{ title: 'Chọn kích thước kho' }} />
+      <Stack.Screen name="size-finder" options={{ title: 'Ước tính diện tích kho' }} />
       <Stack.Screen name="floor-plan" options={{ title: 'Sơ đồ mặt bằng' }} />
       <Stack.Screen name="rentals" options={{ title: 'Kho thuê', headerBackVisible: false, headerTitleStyle: {fontSize:22,fontWeight:'700'} }} />
       <Stack.Screen name="payments" options={{ title: 'Thanh toán' }} />
+      <Stack.Screen name="payment-result" options={{ title: 'Thanh toán hóa đơn' }} />
       <Stack.Screen name="account" options={{ title: 'Tài khoản' }} />
       <Stack.Screen name="services" options={{ title: 'Dịch vụ của bạn' }} />
       <Stack.Screen name="[resource]/index" options={resourceOptions} />

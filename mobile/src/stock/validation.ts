@@ -51,9 +51,10 @@ export function stockCreateInput(contractId: string, type: 'IN' | 'OUT', lines: 
   const issues = stockLineIssues(contractId, type, lines, items);
   const invalid = issues.findIndex(issue => issue.name || issue.unit || issue.quantity);
   if (invalid >= 0) throw new Error(`Dòng ${invalid + 1}: ${Object.values(issues[invalid]).join(' ')}`);
+  if (lines.reduce((sum, line) => sum + (line.photos?.length ?? 0), 0) > 3) throw new Error('Mỗi phiếu được đính kèm tối đa 3 ảnh.');
   const parsed = lines.map(line => {
     const quantity = Number(line.quantity), item = items.find(value => value.id === line.storedItemId);
-    return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.note.trim() ? { note: line.note.trim() } : {}) };
+    return { ...(item ? { storedItemId: item.id } : { name: line.name.trim(), unit: line.unit.trim() }), quantity, ...(line.photos?.length ? { photos: line.photos } : {}), ...(line.note.trim() ? { note: line.note.trim() } : {}) };
   });
   return { rentalContractId: contractId, type, lines: parsed, scheduledAt: stockSchedule(scheduledAt), ...(note.trim() ? { note: note.trim() } : {}) };
 }

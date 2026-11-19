@@ -63,7 +63,7 @@ async function payOnline(invoice: any) {
 }
 
 
-async function signDocument(resource: 'contracts' | 'renewals', row: any) {
+async function signDocument(resource: 'contracts' | 'renewals', row: any, otherCustomer = 'OTHER_CUSTOMER') {
   vi.setSystemTime(new Date(Date.now() + 61_000));
   const terms = resource === 'contracts' ? row.terms : row.appendix;
   const base = `/customer/${resource}/${row.id}/${resource === 'contracts' ? '' : 'appendix/'}`;
@@ -71,7 +71,7 @@ async function signDocument(resource: 'contracts' | 'renewals', row: any) {
   await api('POST', base + 'accept', 'CUSTOMER', body, 400);
   const receipt = await api('POST', base + 'signature-otp', 'CUSTOMER', body);
   expect(receipt).not.toHaveProperty('otp'); expect(receipt).not.toHaveProperty('code');
-  await api('POST', base + 'accept', 'OTHER_CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) }, 404);
+  await api('POST', base + 'accept', otherCustomer, { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) }, 404);
   const signed = await api('POST', base + 'accept', 'CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) });
   const result = resource === 'contracts' ? signed.terms : signed.appendix;
   expect(result.verification.method).toBe('EMAIL_OTP'); expect(result.snapshotHash).toBe(terms.snapshotHash);
@@ -140,7 +140,8 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     invoice = await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER'); expect(invoice.signing.complete).toBe(true); await pay(invoice, unsignedNotice);
     const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', { reservationId: booking.id, scheduledAt: new Date(Math.max(Date.parse(appointmentAt), Date.now() + 60_000)).toISOString() });
     expect(appointment.status).toBe('CONFIRMED');
-    const handover = { note: 'Local test, not a real handover', handoverReport: { recipientName: 'Local receiver', condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true } };
+    const handover = { note: 'Local test, not a real handover', handoverReport: { recipientType: 'CUSTOMER', recipientName: users.CUSTOMER.fullName, condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true } };
+    vi.setSystemTime(new Date(Date.parse(startDate + 'T00:00:00+07:00') - 4 * 86_400_000));
     await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover, 409);
     vi.setSystemTime(new Date(appointment.scheduledAt));
     expect((await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover)).status).toBe('COMPLETED');
@@ -161,7 +162,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'STAFF', counted);
     const stored = (await api('GET', '/customer/stored-items', 'CUSTOMER'))[0]; expect(stored.balance).toBe(2);
     const outgoing = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: stored.id, quantity: 2 }] });
-    await api('POST', `/staff/stock-movements/${outgoing.id}/complete`, 'STAFF', {});
+    await api('POST', `/staff/stock-movements/${outgoing.id}/complete`, 'STAFF', { lines: [{ lineId: outgoing.lines[0].id, actualQty: outgoing.lines[0].requestedQty }] });
     expect(await api('GET', '/customer/stored-items', 'CUSTOMER')).toHaveLength(0);
     let renewal = await api('POST', '/customer/renewals', 'CUSTOMER', { reservationId: booking.id, termMonths: 3, paymentPlan: 'PREPAID' });
     expect(renewal.status).toBe('APPROVED_PENDING_PAYMENT');
@@ -171,8 +172,12 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     const transferRequest = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Yêu cầu chuyển kho', description: 'Local transfer request' });
     const transfer = await api('POST', '/staff/management/transfers', 'STAFF', { rentalContractId: contract.id, supportRequestId: transferRequest.id, reason: 'UNIT_ISSUE' });
     const destination = units.find(u => u.id !== contract.storageUnit.id)!;
-    await api('POST', `/staff/management/transfers/${transfer.id}/approve`, 'STAFF', { toStorageUnitId: destination.id });
-    await api('POST', `/staff/transfers/${transfer.id}/complete`, 'STAFF', {});
+    await api('POST', `/staff/management/transfers/${transfer.id}/approve`, 'STAFF', { toStorageUnitId: destination.id }, 403);
+    await api('POST', `/manager/transfers/${transfer.id}/approve`, 'MANAGER', { toStorageUnitId: destination.id });
+    await api('PATCH', `/manager/transfers/${transfer.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
+    await api('POST', `/staff/transfers/${transfer.id}/complete`, 'STAFF', {
+      goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, recipientName: users.CUSTOMER.fullName, returnedKeyCount: 1, deliveredKeyCount: 1,
+    });
     expect((await api('GET', `/customer/support-requests/${transferRequest.id}`, 'CUSTOMER')).status).toBe('RESOLVED');
     expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).storageUnit.id).toBe(destination.id);
     const maintenance = (await api('GET', '/manager/maintenance', 'MANAGER')).items.find((m: any) => m.unit.id === contract.storageUnit.id);
@@ -185,22 +190,33 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     const proposal = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Local early return proposal' });
     const review = (await api('GET', '/manager/early-return-requests', 'MANAGER')).items.find((r: any) => r.id === proposal.id);
     await api('POST', `/manager/early-return-requests/${proposal.id}/decision`, 'MANAGER', { decision: 'APPROVED', financialReviewConfirmed: true, reviewedEndDate: review.reservation.effectiveEndDate, reviewedOutstandingAmount: review.financialSummary.outstandingAmount, reviewedPaidAmount: review.financialSummary.paidAmount, note: 'Local review; no new fee or refund policy' });
+    await api('POST', '/customer/returns', 'CUSTOMER', { reservationId: booking.id }, 409);
+    const unpaid = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items
+      .filter((invoice: any) => invoice.reservation.id === contract.reservation.id && invoice.status === 'OPEN' && invoice.balanceDue > 0);
+    expect(unpaid.length).toBeGreaterThan(0);
+    for (const invoice of unpaid) {
+      await api('POST', `/manager/invoices/${invoice.id}/payments`, 'MANAGER', { amount: invoice.balanceDue, method: 'CASH' });
+    }
     const returned = await api('POST', '/customer/returns', 'CUSTOMER', { reservationId: booking.id });
+    await api('PATCH', `/manager/returns/${returned.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
     await api('POST', `/staff/returns/${returned.id}/start-inspection`, 'STAFF', {});
     for (const inspection of returned.inspections) await api('PATCH', `/staff/returns/${returned.id}/inspections/${inspection.id}`, 'STAFF', { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Khóa cần kiểm tra, không phải lỗi khách', conditionNote: 'Kho đã lấy hết hàng' });
     const pendingGoods = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Local final item', unit: 'thùng', quantity: 1 }] });
     await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {}, 409);
-    await api('POST', `/staff/stock-movements/${pendingGoods.id}/complete`, 'STAFF', {});
+    await api('POST', `/staff/stock-movements/${pendingGoods.id}/complete`, 'STAFF', { lines: [{ lineId: pendingGoods.lines[0].id, actualQty: pendingGoods.lines[0].requestedQty }] });
     await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {}, 409);
     const lastItem = (await api('GET', '/customer/stored-items', 'CUSTOMER'))[0];
     const finalOut = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: lastItem.id, quantity: 1 }] });
-    await api('POST', `/staff/stock-movements/${finalOut.id}/complete`, 'STAFF', {});
+    await api('POST', `/staff/stock-movements/${finalOut.id}/complete`, 'STAFF', { lines: [{ lineId: finalOut.lines[0].id, actualQty: finalOut.lines[0].requestedQty }] });
     await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {});
     const settlement = (await api('GET', '/manager/deposit-settlements', 'MANAGER')).items.find((s: any) => s.reservation.id === contract.reservation.id);
     await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'STAFF', { issues: [] }, 403);
     const reviewed = await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'MANAGER', { issues: returned.inspections.map((i: any) => ({ inspectionId: i.id, issueType: 'FACILITY_FAULT', approvedChargeAmount: 0, reason: 'Lỗi thiết bị cơ sở, không thu phí khách' })), note: 'Local review' });
     if (reviewed.refundAmount > 0) await api('POST', `/manager/deposit-settlements/${settlement.id}/refund`, 'MANAGER', { method: 'BANK_TRANSFER', reference: 'LOCAL-ONLY-NO-REAL-REFUND', note: 'No real bank call' });
-    expect((await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'CUSTOMER')).status).toBe('SETTLED');
+    const customerSettlement = await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'CUSTOMER');
+    expect(customerSettlement).toMatchObject({ status: 'SETTLED', returnId: returned.id, unitCodes: [destination.unitNumber] });
+    if (reviewed.refundAmount > 0) expect(customerSettlement.refundRecord).toMatchObject({ method: 'BANK_TRANSFER' });
+    await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'OTHER_CUSTOMER', undefined, 404);
     expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).status).toBe('COMPLETED');
     await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Not allowed', unit: 'thùng', quantity: 1 }] }, 409);
     const lateBooking = await api('POST', '/reservations', 'CUSTOMER', { ...bookingBody, startDate: new Date(baseTime + 86400000 + 25200000).toISOString().slice(0, 10), durationMonths: 1 });
@@ -270,18 +286,42 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('GET', '/manager/reports', 'STAFF', undefined, 403);
     await api('GET', '/manager/reports?from=2026-02-31', 'MANAGER', undefined, 400);
     await api('GET', '/manager/reports?group=month%27%3BDROP', 'MANAGER', undefined, 400);
-    const contract = await db.rentalContract.findFirst({ where: { reservation: { customerId: users.CUSTOMER.id }, status: { in: ['ACTIVE', 'COMPLETED'] } } });
-    const claim = await api('POST', '/customer/damage-claims', 'CUSTOMER', { rentalContractId: contract.id, discoveredOn: new Date(Date.now() + 25200000).toISOString().slice(0, 10), description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', storedItemIds: [], evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 });
-    expect(claim.status).toBe('REPORTED');
+    const closed = await db.rentalContract.findFirstOrThrow({
+      where: { reservation: { customerId: users.CUSTOMER.id }, status: 'COMPLETED' },
+      include: { reservation: true },
+    });
+    const today = new Date(Date.now() + 25_200_000).toISOString().slice(0, 10);
+    const claimBody = { discoveredOn: today, description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', storedItemIds: [], evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 };
+    await api('POST', '/customer/damage-claims', 'CUSTOMER', { ...claimBody, rentalContractId: closed.id }, 404);
+
+    const booking = await api('POST', '/reservations', 'CUSTOMER', {
+      productId: closed.reservation.storageTypeId, startDate: today, periodMode: 'duration', durationMonths: 1,
+      quantity: 1, paymentPlan: 'PREPAID', paymentChoice: 'pay-later', addonIds: [], services: [],
+    });
+    const contract = (await api('GET', '/customer/contracts?limit=100', 'CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id);
     tokens.CLAIM_OTHER = (await app.get(AuthService).register({ email: `${tag}-claim-other@example.test`, fullName: 'Khách khác trong kiểm thử', password, phone: '0900000000' })).token;
+    await signDocument('contracts', contract, 'CLAIM_OTHER');
+    const invoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id && item.type === 'INITIAL');
+    await payOnline(invoice);
+    const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', {
+      reservationId: booking.id, scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    vi.setSystemTime(new Date(appointment.scheduledAt));
+    await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', {
+      handoverReport: { recipientType: 'CUSTOMER', recipientName: users.CUSTOMER.fullName, condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true },
+    });
+
+    const claim = await api('POST', '/customer/damage-claims', 'CUSTOMER', { ...claimBody, rentalContractId: contract.id });
+    expect(claim.status).toBe('REPORTED');
     expect((await api('GET', '/customer/damage-claims', 'CLAIM_OTHER')).items).toEqual([]);
     await api('PATCH', `/manager/damage-claims/${claim.id}`, 'CUSTOMER', { decision: 'APPROVED' }, 403);
-    const facts = await api('PATCH', `/staff/management/damage-claims/${claim.id}`, 'STAFF', { expectedUpdatedAt: claim.updatedAt, staffFacts: 'Đã kiểm tra hiện trường và ghi nhận tài liệu bị ẩm.' });
+    const assigned = await api('PATCH', `/manager/damage-claims/${claim.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
+    const facts = await api('PATCH', `/staff/management/damage-claims/${claim.id}`, 'STAFF', { expectedUpdatedAt: assigned.updatedAt, staffFacts: 'Đã kiểm tra hiện trường và ghi nhận tài liệu bị ẩm.' });
     expect(facts.status).toBe('INVESTIGATING');
     const decision = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: facts.updatedAt, decision: 'APPROVED', decisionReason: 'Chấp thuận kiểm tra xử lý, chưa quyết định trách nhiệm hoặc tiền bồi thường.' });
     expect(decision.status).toBe('APPROVED');
     const resolved = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: decision.updatedAt, action: 'resolve', resolutionNote: 'Đã trao đổi hướng xử lý và lưu chứng cứ cùng khách.' });
-    expect(resolved.status).toBe('RESOLVED'); expect(resolved.history).toHaveLength(3);
+    expect(resolved.status).toBe('RESOLVED'); expect(resolved.history).toHaveLength(4);
   });
 
   it('allows only bounded non-secret Admin policies and audits the change', async () => {

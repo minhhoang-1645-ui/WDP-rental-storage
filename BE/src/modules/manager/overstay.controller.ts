@@ -21,7 +21,7 @@ export class OverstayController {
     const activeReturn: Prisma.ReturnRequestWhereInput = { assignedStaffUserId: staffId, physicallyReturnedAt: null, status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] } };
     const where: Prisma.RentalContractWhereInput = { status: 'ACTIVE', endDate: { lte: today }, reservationUnit: { releasedAt: null } };
     if (staffId) {
-      if (this.config.get<string>('UNIT_STAFF_ASSIGNMENTS_ENABLED') !== 'true') return { page, limit, total: 0, items: [] };
+      if ((this.config.get<string>('UNIT_STAFF_ASSIGNMENTS_ENABLED') ?? 'true') !== 'true') return { page, limit, total: 0, items: [] };
       where.reservationUnit = { releasedAt: null, storageUnit: responsibleUnit(staffId) };
     }
     const [total, rows] = await Promise.all([

@@ -4,7 +4,7 @@ export interface StoredItem {
   id: string; itemCode: string; name: string; unit: string; balance: number;
   storageUnit?: StockStorageUnit | null; note?: string | null; customer?: { id: string; fullName: string }; currentStorageUnit?: StockStorageUnit | null; rentalContract?: { id: string; contractCode: string; reservationUnit?: { storageUnit: StockStorageUnit } };
 }
-export interface StockLine { id: string; storedItem: Omit<StoredItem, 'balance'> & { balance: number | null }; requestedQty: number; actualQty: number | null; note: string | null }
+export interface StockLine { id: string; storedItem: Omit<StoredItem, 'balance'> & { balance: number | null }; requestedQty: number; actualQty: number | null; note: string | null; photos?: string[] | null }
 export interface StoredItemMovement {
   id: string; type: 'IN' | 'OUT'; actualQty: number; unit: string; completedAt: string;
   movementCode: string; movementId: string | null;

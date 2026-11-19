@@ -8,7 +8,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 @Injectable()
 export class UnitStaffService {
   constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
-  enabled() { return this.config.get<string>('UNIT_STAFF_ASSIGNMENTS_ENABLED') === 'true'; }
+  enabled() { return (this.config.get<string>('UNIT_STAFF_ASSIGNMENTS_ENABLED') ?? 'true') === 'true'; }
   async list(actor: PublicUser) {
     if (!['MANAGER', 'STAFF'].includes(actor.role)) throw new ForbiddenException('Chức năng dành cho quản lý và nhân viên phụ trách.');
     if (!this.enabled()) return { enabled: false, items: [], message: 'Phân công theo kho chưa được bật. Cần áp dụng migration đã chuẩn bị trước khi bật cấu hình.' };

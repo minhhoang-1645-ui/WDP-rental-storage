@@ -1,11 +1,12 @@
 import { customerPhotos } from '../../customer-photos.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { Prisma, type DamageClaim, type DamageClaimCompensation } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
 import { businessDate } from '../../business-date.js';
+import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 
 type ClaimRow = DamageClaim & {
   compensation?: (DamageClaimCompensation & { approvedBy?: { fullName: string }; recordedBy?: { fullName: string } | null }) | null;
@@ -17,7 +18,7 @@ export function claimEvidence(value: unknown): string[] {
 }
 @Injectable()
 export class DamageClaimsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
   private text(value: unknown, name: string, min = 3, max = 3000) { if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max) throw new BadRequestException(`${name}: nhập ${min}–${max} ký tự.`); return value.trim(); }
   async create(actor: PublicUser, input: Record<string, unknown>, key?: string) {
     if (actor.role !== 'CUSTOMER') throw new ForbiddenException();
@@ -47,7 +48,8 @@ export class DamageClaimsService {
         select: { id: true, name: true, unit: true, itemCode: true },
       });
       if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
-      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, ...(photos.length ? { evidencePhotos: photos } : {}), estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash } });
+      const responsibility = await this.unitStaff?.resolveStaff(tx, [contract.reservationUnit.storageUnit.id]);
+      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, ...(photos.length ? { evidencePhotos: photos } : {}), estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash, ...(responsibility ? { assignedStaffId: responsibility.staffUserId } : {}) } });
       return this.view(row, 'CUSTOMER');
     }).catch(async error => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

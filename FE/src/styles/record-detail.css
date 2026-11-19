@@ -39,6 +39,8 @@
 .staff-stock-summary h2 { margin-bottom: 10px; }
 .staff-stock-summary .manager-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
 .staff-stock-results > h2 { margin: 0; }
+.staff-stock-results label.stock-confirmation { display: grid; grid-template-columns: 18px minmax(0, 1fr); justify-self: start; max-width: 100%; }
+.staff-stock-results label.stock-confirmation > input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 2px 0 0; }
 .staff-stock-completion { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .staff-stock-count-status { color: var(--workspace-primary); font-weight: 600; }
 .staff-stock-history { margin: 0; padding: 0; list-style: none; }
@@ -72,6 +74,15 @@
 .portal-dialog-body > * + * { margin-top: 16px; }
 .portal-dialog-footer { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--workspace-border); padding: 12px 20px; }
 .workspace-themed .portal-dialog.assignment-dialog { width: min(580px, calc(100vw - 32px)); }
+.unit-assignment-dialog .portal-dialog-body { overflow: auto; }
+.unit-assignment-dialog .portal-form { flex-shrink: 0; }
+.unit-assignment-dialog .entity-select-popup {
+  position: static;
+  min-width: 0;
+  margin-top: 6px;
+  box-shadow: none;
+}
+.unit-assignment-dialog .entity-select-options { max-height: min(32dvh, 19rem); }
 .assignment-overview { display: grid; gap: 10px; min-width: 0; }
 .assignment-title { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; overflow-wrap: anywhere; }
 .assignment-dialog .manager-facts { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }

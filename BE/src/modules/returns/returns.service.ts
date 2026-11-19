@@ -60,8 +60,7 @@ export class ReturnsService {
         await this.assertNoConflictingWork(tx, [rental.contractId]);
         contractDeposit(reservation!.invoices, [rental.contractId], reservation!.contracts.map(contract => contract.id), reservation!.quoteSnapshot, false);
         const sequence = await tx.returnRequest.count({ where: { reservationId: identity.id } }) + 1;
-        const beforeEnd = businessDate(now) < this.isoDate(rental.endDate)!;
-        const responsibility = beforeEnd ? null : await this.unitStaff?.resolveStaff(tx, rental.unitIds);
+        const responsibility = await this.unitStaff?.resolveStaff(tx, rental.unitIds);
         const created = await tx.returnRequest.create({
           data: {
             returnCode: `${reservation!.reservationCode}-RT${String(sequence).padStart(2, '0')}`,

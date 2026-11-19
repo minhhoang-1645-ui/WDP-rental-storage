@@ -368,5 +368,5 @@ export class CreateTransferDto {
 
 export class ApproveTransferDto {
   @ApiProperty({ example: 'destination-storage-unit-id', description: 'Kho khả dụng trong toàn bộ kỳ thuê còn lại.' }) toStorageUnitId!: string;
-  @ApiProperty({ example: 'active-staff-user-id' }) staffUserId!: string;
+  @ApiPropertyOptional({ example: 'active-staff-user-id', description: 'Bỏ trống để giao người phụ trách kho nguồn.' }) staffUserId?: string;
 }

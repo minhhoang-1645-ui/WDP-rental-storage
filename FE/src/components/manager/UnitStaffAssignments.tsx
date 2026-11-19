@@ -83,7 +83,7 @@ function UnitAssignmentDialog({ initialUnit, assignments, onClose, onSaved }: { 
     event.preventDefault();
     if (staffId) void save(staffId);
   };
-  return <Modal title="Phân công phụ trách kho" onClose={close} busy={busy} className="assignment-dialog" footer={<>
+  return <Modal title="Phân công phụ trách kho" onClose={close} busy={busy} className="assignment-dialog unit-assignment-dialog" footer={<>
     {current && <button type="button" className="button-secondary" disabled={busy} onClick={() => void save(null)}>Thu hồi</button>}
     <button type="button" className="button-secondary" disabled={busy} onClick={close}>Hủy</button>
     <button type="submit" form={formId} className="button-primary" disabled={busy || !unitId || !staffId || current?.staff.id === staffId}>

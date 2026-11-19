@@ -173,7 +173,7 @@ describe('Return and Inspection V1', () => {
     return returns.getStaffReturn(returnId, staff);
   }
 
-  it.each(['APPROVED', 'REJECTED'] as const)('keeps an early return %s decision with Manager and requires explicit physical assignment', async (decision) => {
+  it.each(['APPROVED', 'REJECTED'] as const)('keeps the early return %s decision with Manager and assigns eligible physical intake to the unit owner', async (decision) => {
     const { reservation } = await activeRental({ end: day(2) });
     const proposal = await support.createCustomer(customer, {
       reservationId: reservation.id, category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Tôi muốn trả kho trước hạn.',
@@ -195,10 +195,6 @@ describe('Return and Inspection V1', () => {
       return;
     }
     const physical = await requestReturn(reservation.id);
-    expect((await returns.getManagerReturn(physical.id)).assignedStaff).toBeNull();
-    await expect(returns.getStaffReturn(physical.id, staff)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(returns.startInspection(physical.id, staff)).rejects.toBeInstanceOf(ForbiddenException);
-    await returns.assign(physical.id, { staffUserId: staff.id }, manager);
     await expect(returns.getStaffReturn(physical.id, staff)).resolves.toMatchObject({ status: 'REQUESTED', assignedStaff: { id: staff.id } });
     expect(await prisma.depositSettlement.count({ where: { returnRequestId: physical.id } })).toBe(0);
   });

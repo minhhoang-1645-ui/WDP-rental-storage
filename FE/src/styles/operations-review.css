@@ -12,6 +12,13 @@
 .stock-count-editor { display: grid; grid-template-columns: minmax(160px,220px) minmax(0,1fr); align-items: end; gap: 20px; padding: 16px 20px; border-top: 1px solid var(--color-border); }
 .stock-count-editor p { margin: 0 0 10px; color: var(--color-slate); font-size: 14px; }
 .stock-item-note, .stock-item-difference { margin: 0; padding: 0 20px 16px; font-size: 14px; }
+.stock-item-photos { display: grid; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
+.stock-item-review > .stock-item-photos { padding: 0 20px 16px; }
+.stock-result-table .stock-item-photos { margin-top: 8px; }
+.stock-item-photo-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.stock-item-photo-list > button { width: 68px; height: 68px; padding: 0; border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; background: var(--color-canvas); cursor: zoom-in; }
+.stock-item-photo-list img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.stock-item-photo-preview { display: block; max-width: 100%; max-height: 70vh; margin-inline: auto; object-fit: contain; }
 .reservation-payment-summary { display: grid; gap: 6px; min-width: 170px; font-size: 13px; }
 .reservation-payment-summary > span { display: block; }
 .reservation-payment-summary strong { font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -1,7 +1,31 @@
+import { useState } from 'react';
 import type { StockLine } from '../../types/stock';
+import { Modal } from '../manager/PortalUi';
 
 const formatQuantity = (amount: number, unit: string) => `${amount.toLocaleString('vi-VN')} ${unit}`.trim();
 const formatBalance = (amount: number | null, unit: string) => amount == null || amount < 0 ? '—' : formatQuantity(amount, unit);
+
+function StockItemPhotos({ itemName, photos }: { itemName: string; photos: StockLine['photos'] }) {
+  const [selected, setSelected] = useState<{ src: string; label: string }>();
+  const images = Array.isArray(photos)
+    ? photos.filter(photo => typeof photo === 'string' && photo.startsWith('data:image/jpeg;base64,')) : [];
+  if (!images.length) return null;
+
+  return <div className="stock-item-photos">
+    <span>Ảnh khách đính kèm</span>
+    <div className="stock-item-photo-list">
+      {images.map((src, index) => {
+        const label = `Ảnh ${index + 1} · ${itemName}`;
+        return <button type="button" key={index} aria-label={`Xem ${label}`} onClick={() => setSelected({ src, label })}>
+          <img src={src} alt="" loading="lazy" />
+        </button>;
+      })}
+    </div>
+    {selected && <Modal title={selected.label} onClose={() => setSelected(undefined)}>
+      <img className="stock-item-photo-preview" src={selected.src} alt={selected.label} />
+    </Modal>}
+  </div>;
+}
 
 export function StockReconciliation({ lines, quantities, onQuantityChange, movementType = 'IN', compact = false, staffResults = false }: {
   lines: StockLine[]; quantities?: Record<string, string>; onQuantityChange?: (id: string, value: string) => void; movementType?: 'IN' | 'OUT';
@@ -13,8 +37,10 @@ export function StockReconciliation({ lines, quantities, onQuantityChange, movem
     return <div className="stock-result-table">
       <table className="manager-table" aria-label="Số lượng hàng giao nhận">
         <thead><tr><th scope="col">Mặt hàng</th><th scope="col">Yêu cầu</th><th scope="col">Thực tế</th><th scope="col">{balanceLabel}</th></tr></thead>
-        <tbody>{lines.map(({ id, storedItem, requestedQty, actualQty, note }) => <tr key={id}>
-          <th scope="row">{storedItem.name}{!staffResults && <small>Đơn vị: {storedItem.unit}</small>}{note && <small>{note}</small>}</th>
+        <tbody>{lines.map(({ id, storedItem, requestedQty, actualQty, note, photos }) => <tr key={id}>
+          <th scope="row">{storedItem.name}{!staffResults && <small>Đơn vị: {storedItem.unit}</small>}{note && <small>{note}</small>}
+            {staffResults && <StockItemPhotos itemName={storedItem.name} photos={photos} />}
+          </th>
           <td data-label="Yêu cầu">{staffResults ? formatQuantity(requestedQty, storedItem.unit) : requestedQty}</td>
           <td data-label="Thực tế">{actualQty == null || actualQty < 0 ? 'Chưa kiểm đếm' : staffResults ? formatQuantity(actualQty, storedItem.unit) : actualQty}
             {staffResults && actualQty != null && actualQty !== requestedQty && <small>
@@ -37,6 +63,7 @@ export function StockReconciliation({ lines, quantities, onQuantityChange, movem
         <div><span>Thực tế giao nhận</span><strong>{line.actualQty == null ? 'Chưa kiểm đếm' : `${line.actualQty} ${line.storedItem.unit}`}</strong></div>
         <div><span>{staffResults ? 'Còn trong kho' : 'Đang lưu hiện tại'}</span><strong>{formatBalance(line.storedItem.balance, line.storedItem.unit)}</strong></div>
       </div>
+      {staffResults && <StockItemPhotos itemName={line.storedItem.name} photos={line.photos} />}
       {onQuantityChange && <div className="stock-count-editor"><label className="field-label">Số lượng thực tế · {line.storedItem.name}<input required type="number" min={0} max={movementType === 'OUT' ? Math.max(0, Math.min(1000000, line.storedItem.balance ?? 0)) : 1000000} step={1} inputMode="numeric" value={draft ?? ''} onChange={event => onQuantityChange(line.id, event.target.value)} /></label><p>{difference == null ? 'Nhập số lượng đã kiểm đếm tại kho.' : difference === 0 ? 'Khớp với số lượng yêu cầu.' : `Chênh lệch ${difference > 0 ? '+' : ''}${difference} ${line.storedItem.unit}. Cần ghi rõ lý do.`}</p></div>}
       {!onQuantityChange && difference !== null && difference !== 0 && <p className="stock-item-difference">Chênh lệch: {difference > 0 ? '+' : ''}{difference} {line.storedItem.unit}</p>}
       {line.note && <p className="stock-item-note">Ghi chú: {line.note}</p>}

@@ -188,7 +188,8 @@ export class TransfersService {
   async approve(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được duyệt chuyển kho.');
     const toStorageUnitId = this.text(input.toStorageUnitId, 'toStorageUnitId');
-    const staffId = managerAssignmentInput(actor, input);
+    const requestedStaffId = input.staffUserId === undefined || input.staffUserId === ''
+      ? undefined : managerAssignmentInput(actor, input);
     return this.serializable(async (tx) => {
       const identity = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, select: { id: true } });
       if (!identity) throw new NotFoundException('Không tìm thấy TransferRequest.');
@@ -196,9 +197,11 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (['APPROVED', 'COMPLETED'].includes(current.status) && current.approvedByUserId === actor.id
-        && current.toStorageUnitId === toStorageUnitId && current.assignedStaffUserId === staffId) return this.toTransfer(current);
+        && current.toStorageUnitId === toStorageUnitId && (!requestedStaffId || current.assignedStaffUserId === requestedStaffId)) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
       if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromReservationUnit?.releasedAt || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
+      const staffId = requestedStaffId ?? (await this.unitStaff?.resolveStaff(tx, [current.fromStorageUnitId]))?.staffUserId;
+      if (!staffId) throw new BadRequestException('Kho nguồn chưa có người phụ trách đang hoạt động. Hãy chọn nhân viên thực hiện.');
       await assertActiveAssignee(tx, staffId);
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');

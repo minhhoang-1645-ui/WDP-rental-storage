@@ -634,10 +634,10 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!transferStaff || !transferDestinationReady) return;
+                  if (!target || !transferDestinationReady) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
-                    staffUserId: transferStaff,
+                    ...(transferStaff ? { staffUserId: transferStaff } : {}),
                   });
                 }}
               >
@@ -649,8 +649,10 @@ export function ManagerActions({
                   onReady={setTransferDestinationReady}
                   disabled={busy}
                 />
+                <p className="workspace-help">Để trống nhân viên để giao cho người phụ trách kho nguồn.</p>
                 <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
-                <button className="button-primary" disabled={busy || !target || !transferStaff || !transferDestinationReady}>
+                {transferStaff && <button type="button" className="button-secondary" disabled={busy} onClick={() => setTransferStaff('')}>Dùng người phụ trách kho</button>}
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady}>
                   {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
                 </button>
               </form>

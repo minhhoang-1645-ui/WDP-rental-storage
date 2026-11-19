@@ -72,11 +72,19 @@ function ContractDetail({ id }: { id: string }) {
     {source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : !row
       ? source.loading ? <LoadingState layout="detail" /> : null : <>
         <Text accessibilityRole="header" style={s.title}>{text(row, 'storageType.name') || 'Kho thuê'}</Text>
-        <View style={s.inline}>
-          <View style={s.status}><View style={s.inline}><FileText size={17} color={blue} /><Text style={s.bold}>Hợp đồng</Text></View>
-            <StatusBadge status={status} displayLabel={status === 'ACTIVE' ? 'Đang hoạt động' : undefined} /></View>
-          <View style={s.status}><View style={s.inline}><PenLine size={17} color={blue} /><Text style={s.bold}>Chữ ký</Text></View>
-            <StatusBadge status={signed ? 'Đã ký' : 'Chưa ký'} tone={signed ? 'success' : 'warning'} /></View>
+        <View style={s.statusCards}>
+          <View style={s.status}>
+            <View style={[s.inline, s.statusCenter]}><FileText size={17} color={blue} /><Text style={s.bold}>Hợp đồng</Text></View>
+            <View style={s.statusCenter}>
+              <StatusBadge status={status} displayLabel={status === 'ACTIVE' ? 'Đang hoạt động' : undefined} />
+            </View>
+          </View>
+          <View style={s.status}>
+            <View style={[s.inline, s.statusCenter]}><PenLine size={17} color={blue} /><Text style={s.bold}>Chữ ký</Text></View>
+            <View style={s.statusCenter}>
+              <StatusBadge status={signed ? 'Đã ký' : 'Chưa ký'} tone={signed ? 'success' : 'warning'} />
+            </View>
+          </View>
         </View>
         <View style={{ gap: 10 }}>
           <Text style={s.bold}>Thông tin kỳ thuê</Text>
@@ -110,5 +118,7 @@ const s = StyleSheet.create({
   title: { fontSize: 23, fontWeight: '800', color: '#101828' },
   bold: { fontWeight: '700', fontSize: 15, color: '#101828' },
   muted: { fontSize: 13, color: '#475569' },
-  status: { flex: 1, alignSelf: 'stretch', alignItems: 'center', gap: 7, padding: 10, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 10 },
+  statusCards: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  status: { flexBasis: 140, flexGrow: 1, flexShrink: 1, gap: 7, padding: 10, borderWidth: 1, borderColor: '#DCE3ED', borderRadius: 10 },
+  statusCenter: { flexDirection: 'row', justifyContent: 'center' },
 });

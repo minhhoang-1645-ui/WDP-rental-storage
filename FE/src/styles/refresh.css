@@ -181,7 +181,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-navy); }
 .stock-line { display: grid; gap: 12px; border: 1px solid var(--border, #dce3eb); border-radius: 14px; padding: 16px; min-width: 0; }
 .stock-fields input:not([type="checkbox"]), .stock-fields select, .stock-fields textarea { max-width: 100%; width: 100%; }
 .stock-confirmation { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; line-height: 1.6; }
-.stock-form .stock-confirmation input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; padding: 0; margin: 2px 0 0; accent-color: var(--color-navy); }
+.stock-confirmation > input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; padding: 0; margin: 2px 0 0; accent-color: var(--color-navy); }
 .stock-assignment { display: grid; gap: 14px; padding-top: 20px; border-top: 1px solid var(--color-border); }
 .stock-assignment h2 { font-size: 18px; font-weight: 700; color: var(--color-navy); }
 .staff-assignee-picker { display: grid; gap: 10px; min-width: 0; }

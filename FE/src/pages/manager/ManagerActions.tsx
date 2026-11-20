@@ -506,7 +506,7 @@ export function ManagerActions({
               }}
             >
               <p>
-                Khoản cần hoàn: <strong>{money(row.refundAmount)}</strong>. Ghi
+                Tiền cọc cần hoàn <strong>{money(row.refundAmount)}</strong>. Ghi
                 nhận sau khi đã hoàn tiền cho khách.
               </p>
               {paymentFields}

@@ -37,7 +37,9 @@ async function open(role, width, path, mobile = false) {
       if (path === 'booking/catalog') return send({ products: [] });
       if (role === 'STAFF' && kind === 'support-requests' && id) return send({ message: 'Không tìm thấy yêu cầu hỗ trợ.' }, 404);
       if (kind === 'early-return-requests') return send({ page: 1, limit: 100, total: proposals.length, items: review() });
-      if (kind === 'deposit-settlements' && id === deposit.id && role === 'MANAGER') return send(deposit);
+      if (kind === 'deposit-settlements' && id === deposit.id && role === 'MANAGER') return send({
+        ...deposit, earlyReturnSettlement: proposals[0]?.closeoutReview ?? null,
+      });
       const approved = proposals.find(item => item.earlyReturnDecision === 'APPROVED');
       const currentRental = { ...rental, contracts: [{ ...contract, returnReadiness: { canReturn: Boolean(approved), totalOutstanding: 100,
         ...(approved ? { policy: 'PERIOD_CLOSEOUT_V1', earlyReturnBlockReason: null } : {}) }, earlyReturnEstimate: estimate }] };
@@ -93,6 +95,7 @@ try {
   const recordRefund = refund.page.getByRole('button', { name: 'Ghi nhận hoàn tiền', exact: true });
   await recordRefund.waitFor();
   assert(await recordRefund.isDisabled());
+  assert.equal(await refund.page.getByRole('region', { name: 'Hoàn tiền thuê và dịch vụ' }).count(), 0);
   assert.equal(await refund.page.getByLabel('Mã giao dịch hoàn tiền', { exact: true }).count(), 0);
   await refund.page.getByRole('checkbox', { name: 'Tôi đã hoàn tiền thực tế cho khách.' }).check();
   await recordRefund.click();
@@ -167,13 +170,27 @@ try {
     await handover.page.getByText('Đã lưu thao tác thành công.').first().waitFor();
     await handover.context.close();
     proposals[0].closeoutReview = { returnId: 'return-early', physicallyReturnedAt: new Date().toISOString(), closeout: { ...estimate, appliedAt: new Date().toISOString() }, rentRefund: {} };
-    const settlement = await open('MANAGER', width, '/manager/early-returns?record=early-proposal');
-    await settlement.page.getByRole('heading', { name: 'Quyết toán chính thức' }).waitFor();
-    await settlement.page.getByRole('button', { name: 'Duyệt quyết toán' }).click();
+    const earlyReturnPath = '/manager/early-returns?record=early-proposal';
+    const depositPath = '/manager/operations/deposit-settlements/' + deposit.id;
+    const fromDeposit = width === 1440;
+    const settlement = await open('MANAGER', width, fromDeposit ? depositPath : earlyReturnPath);
+    const rentRefund = settlement.page.getByRole('region', { name: 'Hoàn tiền thuê và dịch vụ' });
+    await rentRefund.getByText('100 ₫', { exact: true }).waitFor();
+    if (fromDeposit) {
+      await rentRefund.getByText('Chi tiết miễn thu và hoàn tiền (2 hóa đơn)').click();
+      await rentRefund.getByText('Hóa đơn gia hạn', { exact: false }).waitFor();
+      assert.equal(await settlement.page.getByRole('button', { name: 'Ghi nhận hoàn tiền', exact: true }).count(), 0);
+    }
+    await rentRefund.getByRole('button', { name: 'Duyệt quyết toán tiền thuê' }).click();
     await settlement.page.getByLabel('Mã chuyển khoản').fill('REF-MOCK-01');
     await settlement.page.getByLabel('Thời điểm chuyển khoản').fill('2026-11-20T04:00:00');
     await settlement.page.getByRole('button', { name: /Xác nhận đã chuyển/ }).click();
-    await settlement.page.getByText(/REF-MOCK-01/).waitFor(); await settlement.context.close();
+    await rentRefund.getByText(/REF-MOCK-01/).waitFor();
+    assert.equal(await rentRefund.getByRole('button', { name: /Xác nhận đã chuyển/ }).count(), 0);
+    await settlement.context.close();
+    const linkedSettlement = await open('MANAGER', width, fromDeposit ? earlyReturnPath : depositPath);
+    await linkedSettlement.page.getByRole('region', { name: 'Hoàn tiền thuê và dịch vụ' }).getByText(/REF-MOCK-01/).waitFor();
+    await linkedSettlement.context.close();
     const operator = await open('STAFF', width, '/staff/support-requests/early-proposal'); await operator.page.getByText('Không tìm thấy yêu cầu hỗ trợ.', { exact: false }).waitFor(); assert.equal(await operator.page.getByRole('button', { name: 'Hoàn tất hỗ trợ', exact: true }).count(), 0); await operator.context.close();
     checks.push(`${width}px: proposal → stale ledger caught → Manager approval → Customer request → Staff handover → Manager settlement approval → refund recorded`);
   }

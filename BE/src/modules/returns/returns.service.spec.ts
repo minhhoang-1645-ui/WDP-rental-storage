@@ -501,7 +501,12 @@ describe('Return and Inspection V1', () => {
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(isPrepaid ? 1 : 6);
     const deposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: requested.id } });
     expect(deposit).toMatchObject({ refundAmount: 1500000n, status: 'APPROVED' });
-    await new DepositSettlementsService(prisma).refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
+    const settlements = new DepositSettlementsService(prisma);
+    expect(await settlements.getManager(deposit.id)).toMatchObject({ refundAmount: 1500000, earlyReturnSettlement: {
+      returnId: requested.id, closeout: { appliedAt: expect.any(String), refundAmount }, rentRefund: { approvedAt: null, refundedAt: null },
+    } });
+    expect(await settlements.getCustomer(customerId, deposit.id)).not.toHaveProperty('earlyReturnSettlement');
+    await settlements.refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
     expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
     const approved = await service.settleEarlyReturn(requested.id, { amount: refundAmount }, manager);
     expect(approved).toMatchObject({ approvedAt: expect.any(String), refundedAt: null });
@@ -509,6 +514,7 @@ describe('Return and Inspection V1', () => {
       const transfer = { amount: refundAmount, reference: 'rent-' + initial.id, transferredAt: new Date().toISOString() };
       expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
       const confirmed = await service.settleEarlyReturn(requested.id, transfer, manager, true);
+      expect(await settlements.getManager(deposit.id)).toMatchObject({ status: 'SETTLED', earlyReturnSettlement: { rentRefund: confirmed } });
       expect(await service.settleEarlyReturn(requested.id, transfer, manager, true)).toEqual(confirmed);
       await expect(service.settleEarlyReturn(requested.id, { ...transfer, reference: 'another' }, manager, true)).rejects.toThrow('đã được ghi nhận');
     }

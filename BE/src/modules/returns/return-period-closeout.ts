@@ -7,6 +7,10 @@ import type { returnInvoiceFields } from './contract-return-finance.js';
 import { PERIOD_CLOSEOUT } from './early-return-classification.js';
 
 export { PERIOD_CLOSEOUT };
+export function rentRefundView(record: { rentRefundApprovedAt?: Date | null; rentRefundedAt?: Date | null; rentRefundReference?: string | null }) {
+  return { approvedAt: record.rentRefundApprovedAt?.toISOString() ?? null, refundedAt: record.rentRefundedAt?.toISOString() ?? null, reference: record.rentRefundReference ?? null };
+}
+
 export function earlyReturnSettlementPending(record: { earlyReturnCloseout?: unknown; rentRefundApprovedAt?: Date | null; rentRefundedAt?: Date | null }) {
   const closeout = record.earlyReturnCloseout as { appliedAt?: string; refundAmount?: number } | null;
   return Boolean(closeout?.appliedAt && (!record.rentRefundApprovedAt || (Number(closeout.refundAmount) > 0 && !record.rentRefundedAt)));

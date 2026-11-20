@@ -41,6 +41,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
+import { EarlyReturnRefundActions } from '../../components/manager/EarlyReturnFinanceReview';
 import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
@@ -221,6 +222,8 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
                 refresh={data.refresh}
                 onSuccess={setNotice}
               />
+              {resource === 'deposit-settlements' && user?.role === 'MANAGER' && Boolean(row.earlyReturnSettlement) &&
+                <EarlyReturnRefundActions key={id} item={object(row.earlyReturnSettlement)} refresh={data.refresh} showBreakdown />}
             </aside>}
           </div>
         </>
@@ -779,7 +782,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Tiền cọc", money(row.depositAmount)],
               ["Tổng phí được duyệt", money(row.totalApprovedCharges)],
               ["Khấu trừ cọc", money(row.deductionAmount)],
-              ["Hoàn lại", money(row.refundAmount)],
+              ["Tiền cọc hoàn lại", money(row.refundAmount)],
               ["Thu thêm", money(row.outstandingAmount)],
               ["Phương thức hoàn", label(row.refundMethod)],
               ...(first(row, "refundReference") ? [["Tham chiếu hoàn", first(row, "refundReference")] as [string, string]] : []),

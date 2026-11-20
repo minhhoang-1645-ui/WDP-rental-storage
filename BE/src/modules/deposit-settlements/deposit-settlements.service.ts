@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
+import { earlyReturnSettlementPending, rentRefundView } from '../returns/return-period-closeout.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type SettlementStatus = 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED';
@@ -49,7 +49,19 @@ export class DepositSettlementsService {
   }
 
   async getManager(id: string) {
-    return this.toSettlement(await this.find(id, this.prisma), true);
+    const record = await this.find(id, this.prisma);
+    const returned = record.returnRequest;
+    const closeout = returned.earlyReturnCloseout;
+    const applied = returned.physicallyReturnedAt && closeout && typeof closeout === 'object' && !Array.isArray(closeout) &&
+      typeof closeout.appliedAt === 'string' && typeof closeout.refundAmount === 'number';
+    return {
+      ...this.toSettlement(record, true),
+      earlyReturnSettlement: applied ? {
+        returnId: returned.id,
+        closeout: { appliedAt: closeout.appliedAt, refundAmount: closeout.refundAmount, adjustedInvoices: closeout.adjustedInvoices },
+        rentRefund: rentRefundView(returned),
+      } : null,
+    };
   }
 
   async review(id: string, input: Record<string, unknown>, idempotencyKey: string | undefined, actor: PublicUser) {

@@ -12,7 +12,7 @@ import { contractDeposit, contractReturnReadiness, recordedContractDeposit, retu
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { BillingService } from '../billing/billing.service.js';
-import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, summarizeEarlyReturn } from './return-period-closeout.js';
+import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, rentRefundView, summarizeEarlyReturn } from './return-period-closeout.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type ViewMode = 'CUSTOMER' | 'MANAGER' | 'STAFF';
@@ -371,11 +371,11 @@ export class ReturnsService {
         if (!current.physicallyReturnedAt || !closeout?.appliedAt || input.amount !== closeout.refundAmount) throw new ConflictException('Số tiền trong hồ sơ quyết toán đã thay đổi hoặc kho chưa được bàn giao.');
         if (confirmTransfer) {
           if (current.rentRefundedAt) {
-            if (current.rentRefundReference === reference && +current.rentRefundedAt === +transferredAt!) return this.rentRefundView(current);
+            if (current.rentRefundReference === reference && +current.rentRefundedAt === +transferredAt!) return rentRefundView(current);
             throw new ConflictException('Khoản hoàn đã được ghi nhận chuyển khoản.');
           }
           if (!current.rentRefundApprovedAt || !closeout.refundAmount || Math.floor(+transferredAt! / 1000) < Math.floor(+current.rentRefundApprovedAt / 1000)) throw new ConflictException('Cần duyệt quyết toán trước khi chuyển tiền hoàn.');
-        } else if (current.rentRefundApprovedAt) return this.rentRefundView(current);
+        } else if (current.rentRefundApprovedAt) return rentRefundView(current);
         const now = new Date();
         const complete = current.depositSettlement?.status === 'SETTLED' && (confirmTransfer || closeout.refundAmount === 0);
         const updated = await tx.returnRequest.update({ where: { id }, data: {
@@ -383,7 +383,7 @@ export class ReturnsService {
             : { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id }),
           ...(complete ? { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
         } });
-        return this.rentRefundView(updated);
+        return rentRefundView(updated);
       }, 'Quyết toán vừa thay đổi. Hãy tải lại hồ sơ.');
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Mã chuyển khoản đã được ghi nhận trong hồ sơ khác.');
@@ -506,7 +506,7 @@ export class ReturnsService {
       currentDeposit: recordedContractDeposit(invoices, targets.map(contract => contract.id), contractIds, reservation.quoteSnapshot, false),
       facilityFaultReviewAvailable: !returned?.physicallyReturnedAt && returned?.earlyReturnCloseout?.policy === PERIOD_CLOSEOUT && returned.inspections.some((inspection: { result: string; issueType: string | null }) => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT'),
       facilityFaultDecision: returned?.earlyReturnCloseout?.facilityFaultDecision ?? null,
-      returnId: returned?.id ?? null, closeout: returned?.earlyReturnCloseout?.appliedAt ? returned.earlyReturnCloseout : null, rentRefund: returned ? this.rentRefundView(returned) : null,
+      returnId: returned?.id ?? null, closeout: returned?.earlyReturnCloseout?.appliedAt ? returned.earlyReturnCloseout : null, rentRefund: returned ? rentRefundView(returned) : null,
       depositSettlement: returned?.depositSettlement ? {
         ...returned.depositSettlement, refundAmount: Number(returned.depositSettlement.refundAmount),
         deductionAmount: Number(returned.depositSettlement.deductionAmount), outstandingAmount: Number(returned.depositSettlement.outstandingAmount),
@@ -516,10 +516,6 @@ export class ReturnsService {
       contracts: targets.map(contract => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status, unitCode: contract.reservationUnit.storageUnit.unitNumber })),
       invoices: invoices.map((invoice: any) => ({ invoiceCode: invoice.invoiceCode, totalAmount: Number(invoice.totalAmount), amountPaid: Number(invoice.amountPaid), balanceDue: Number(invoice.balanceDue) })),
       financialSummary: { outstandingAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.balanceDue), 0), paidAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0), invoicedDeposit: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.depositAmount), 0) } };
-  }
-
-  private rentRefundView(record: { rentRefundApprovedAt?: Date | null; rentRefundedAt?: Date | null; rentRefundReference?: string | null }) {
-    return { approvedAt: record.rentRefundApprovedAt?.toISOString() ?? null, refundedAt: record.rentRefundedAt?.toISOString() ?? null, reference: record.rentRefundReference ?? null };
   }
 
   private assertReturnEligible(reservation: (ReturnRental & {
@@ -734,7 +730,7 @@ export class ReturnsService {
         waivedAmount: closeout.waivedAmount, refundAmount: closeout.refundAmount, facilityFaultCredit: closeout.facilityFaultCredit,
         rentalAmount: closeout.rentalAmount, serviceAmount: closeout.serviceAmount, penaltyAmount: closeout.penaltyAmount,
       },
-      rentRefund: mode === 'STAFF' || !record.physicallyReturnedAt ? null : this.rentRefundView(record),
+      rentRefund: mode === 'STAFF' || !record.physicallyReturnedAt ? null : rentRefundView(record),
       returnCode: record.returnCode, inventory: { remainingItemTypes: contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),

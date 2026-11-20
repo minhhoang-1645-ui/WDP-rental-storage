@@ -2,7 +2,7 @@ import { Boxes, CalendarClock, ChartColumn, ClipboardCheck, ClipboardList, FileT
 import { isStaffWorkflow } from '../../utils/operation-access';
 import { isManagerReviewWorkflow, managerReviewTitle } from '../../utils/manager-review-access';
 import type { InternalNavItem } from '../layout/InternalPortalLayout';
-import { managerSections, managerStorageLabels } from '../../utils/manager-sections';
+import { managerRefundTitle, managerSections, managerStorageLabels } from '../../utils/manager-sections';
 
 const managerNavigation: InternalNavItem[] = [
   { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
@@ -14,7 +14,7 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/operations/renewals', label: 'Gia hạn kho', icon: Undo2, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/transfers', label: 'Chuyển kho', icon: ShieldCheck, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/returns', label: 'Trả kho', icon: RefreshCcw, group: 'Giao nhận & thay đổi' },
-  { to: '/manager/operations/deposit-settlements', label: 'Quyết toán cọc', icon: WalletCards, group: 'Thanh toán & hợp đồng' },
+  { to: '/manager/operations/deposit-settlements', label: managerRefundTitle, icon: WalletCards, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/early-returns', label: 'Đề nghị trả trước hạn', icon: Undo2, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: WalletCards, group: 'Thanh toán & hợp đồng' },
   { to: '/manager/operations/contracts', label: 'Hợp đồng thuê', icon: FileText, group: 'Thanh toán & hợp đồng' },
@@ -35,7 +35,7 @@ export function operationsNavigation(): InternalNavItem[] {
     { to: '/manager/operations/rentals', label: 'Kho đang thuê', icon: Repeat2, group: 'Kho & khách hàng' },
     { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: Receipt, group: 'Tài chính', match: ['/manager/finance'] },
     { to: '/manager/operations/payments', label: 'Khoản thu', icon: Wallet, group: 'Tài chính' },
-    { to: '/manager/operations/deposit-settlements', label: 'Tiền cọc', icon: WalletCards, group: 'Tài chính' },
+    { to: '/manager/operations/deposit-settlements', label: managerRefundTitle, icon: WalletCards, group: 'Tài chính' },
     { to: '/manager/catalog', label: managerStorageLabels.catalog.title, icon: Tags, end: true, group: 'Danh mục & bảng giá' },
     { to: '/manager/catalog/additional-services', label: 'Dịch vụ bổ sung', icon: Boxes, group: 'Danh mục & bảng giá' },
     { to: '/manager/reports', label: 'Báo cáo', icon: ChartColumn, group: 'Phân tích' },

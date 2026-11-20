@@ -1,5 +1,5 @@
 import { useListPagination } from '../../components/workspace/useListPagination';
-import { EarlyReturnFinanceFields, EarlyReturnRefundActions } from '../../components/manager/EarlyReturnFinanceReview';
+import { EarlyReturnFinanceFields } from '../../components/manager/EarlyReturnFinanceReview';
 import { useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -124,7 +124,6 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
         <button className="button-secondary" disabled={busy || !faultEvidence.trim()} onClick={() => void run(settlementPath + '/facility-review', { approved: false, reference: faultEvidence })}>Giữ cách tính thông thường</button>
       </div>
     </section>}
-    <EarlyReturnRefundActions item={item} refresh={refresh} />
     {error && <p role="alert">{error}</p>}
   </article>;
 }

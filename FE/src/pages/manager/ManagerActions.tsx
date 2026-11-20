@@ -20,6 +20,7 @@ import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
+import { CombinedReturnRefund } from '../../components/manager/EarlyReturnFinanceReview';
 
 type UnitStaffAssignments = {
   enabled: boolean;
@@ -485,7 +486,7 @@ export function ManagerActions({
                 Duyệt quyết toán
               </button>
             </form>
-          ) : row.status === "APPROVED" &&
+          ) : row.earlyReturnSettlement ? null : row.status === "APPROVED" &&
             Number(row.refundAmount) > 0 &&
             Number(row.outstandingAmount) === 0 ? (
             <form
@@ -525,6 +526,8 @@ export function ManagerActions({
                 : ""}
             </p>
           ))}
+        {resource === 'deposit-settlements' && Boolean(row.earlyReturnSettlement) && <CombinedReturnRefund
+          row={row} busy={busy} onConfirm={body => void run(`${root}/confirm-return-refund`, 'POST', body, true)} />}
         {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
           <form className="portal-form" onSubmit={event => {
             event.preventDefault();

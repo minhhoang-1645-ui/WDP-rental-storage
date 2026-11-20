@@ -440,11 +440,11 @@ describe('Return and Inspection V1', () => {
     await expect(prisma.invoice.findUnique({ where: { id: initial.id } })).resolves.toEqual(initial);
   });
 
-  it.each(['future-unpaid', 'prepaid', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async scenario => {
+  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async scenario => {
     const start = day(-40);
     const end = monthlyBoundary(start, 6);
     const { reservation, contracts: [contract], initial, quote } = await activeRental({ end });
-    const isPrepaid = scenario === 'prepaid';
+    const isPrepaid = scenario === 'prepaid' || scenario === 'prepaid-combined';
     const billing = new BillingService(prisma);
     const service = new ReturnsService(prisma, undefined, undefined, billing);
     const terms = { ...quote, termMonths: 6, paymentPlan: isPrepaid ? 'PREPAID' : 'PAY_MONTHLY' };
@@ -506,6 +506,18 @@ describe('Return and Inspection V1', () => {
       returnId: requested.id, closeout: { appliedAt: expect.any(String), refundAmount }, rentRefund: { approvedAt: null, refundedAt: null },
     } });
     expect(await settlements.getCustomer(customerId, deposit.id)).not.toHaveProperty('earlyReturnSettlement');
+    if (scenario === 'prepaid-combined') {
+      const key = 'combined-' + initial.id;
+      const body = { depositAmount: 1500000, rentAmount: refundAmount, refundConfirmed: true };
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, refundConfirmed: false }, key, manager)).rejects.toThrow('xác nhận');
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, rentAmount: 1 }, key, manager)).rejects.toThrow('Số tiền cần hoàn vừa thay đổi');
+      const confirmed = await settlements.confirmReturnRefund(deposit.id, body, key, manager);
+      expect(confirmed).toMatchObject({ status: 'SETTLED', refundReference: null, refundedAt: expect.any(String),
+        earlyReturnSettlement: { rentRefund: { approvedAt: confirmed.refundedAt, refundedAt: confirmed.refundedAt, reference: null } } });
+      expect(await settlements.confirmReturnRefund(deposit.id, body, key, manager)).toEqual(confirmed);
+      expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED', rentRefundedById: manager.id });
+      return;
+    }
     await settlements.refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
     expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
     const approved = await service.settleEarlyReturn(requested.id, { amount: refundAmount }, manager);

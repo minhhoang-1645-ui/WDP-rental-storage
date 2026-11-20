@@ -571,7 +571,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
           </>
         ) : resource === "deposit-settlements" ? (
           <>
-            <strong>Hoàn: {money(row.refundAmount)}</strong>
+            <strong>Hoàn cọc: {money(row.refundAmount)}</strong>
             <small>
               Cọc: {money(row.depositAmount)} · Khấu trừ:{" "}
               {money(row.deductionAmount)}

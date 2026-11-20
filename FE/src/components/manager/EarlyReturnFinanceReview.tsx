@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { date, first, money, object, rows, type Row } from './portal-data';
 import { Facts } from './PortalUi';
 import { Link } from 'react-router-dom';
-import { mutate } from '../../services/portal';
 
 const amount = (value: unknown) => typeof value === 'number' ? money(value) : 'Chưa xác định';
 const invoiceTypes: Record<string, string> = {
@@ -47,63 +46,53 @@ export function EarlyReturnFinanceFields({ item }: { item: Row }) {
       ['Tiền dịch vụ', amount(finance.serviceAmount)],
       ['Còn phải thu tiền thuê và dịch vụ', amount(finance.outstandingAmount)],
       ['Miễn thu phần hóa đơn chưa thanh toán', amount(finance.waivedAmount)],
-      [official ? 'Tiền thuê và dịch vụ cần hoàn' : 'Tiền thuê và dịch vụ dự kiến hoàn', amount(finance.refundAmount)],
-      [official ? 'Tiền cọc cần hoàn' : 'Tiền cọc hiện có', deposit.status === 'PENDING_REVIEW' ? 'Chờ duyệt cọc' : amount(official ? deposit.refundAmount : item.currentDeposit)],
+      [official ? (first(item, 'rentRefund.refundedAt') ? 'Tiền thuê và dịch vụ đã hoàn' : 'Tiền thuê và dịch vụ cần hoàn') : 'Tiền thuê và dịch vụ dự kiến hoàn', amount(finance.refundAmount)],
+      [official ? (deposit.refundedAt ? 'Tiền cọc đã hoàn' : 'Tiền cọc cần hoàn') : 'Tiền cọc hiện có', deposit.status === 'PENDING_REVIEW' ? 'Chờ duyệt cọc' : amount(official ? deposit.refundAmount : item.currentDeposit)],
       ...(official ? [['Khấu trừ tiền cọc', deposit.status === 'PENDING_REVIEW' ? 'Chờ duyệt cọc' : amount(deposit.deductionAmount)]] as [string, string][] : []),
       ...(Number(deposit.outstandingAmount) > 0 ? [['Còn phải thu sau khấu trừ cọc', amount(deposit.outstandingAmount)]] as [string, string][] : []),
       ...(Number(finance.facilityFaultCredit) > 0 ? [['Giảm do lỗi cơ sở', amount(finance.facilityFaultCredit)]] as [string, string][] : []),
     ]} /> : <p>{first(item, 'estimateIssue') || 'Chưa có số tiền quyết toán cho hồ sơ này.'}</p>}
     <InvoiceAdjustments invoices={invoices} official={official} />
-    {typeof deposit.id === 'string' && <Link to={'/manager/operations/deposit-settlements/' + encodeURIComponent(deposit.id)}>Xem hồ sơ tiền cọc</Link>}
+    {typeof deposit.id === 'string' && <Link to={'/manager/operations/deposit-settlements/' + encodeURIComponent(deposit.id)}>Xem hồ sơ hoàn tiền</Link>}
     {!official && <p>Số tiền chính thức được tính khi nhân viên nhận lại kho. Tiền cọc được xử lý riêng.</p>}
   </section>;
 }
 
-export function EarlyReturnRefundActions({ item, refresh, showBreakdown = false }: { item: Row; refresh: () => void; showBreakdown?: boolean }) {
-  const [reference, setReference] = useState('');
-  const [transferredAt, setTransferredAt] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const lock = useRef(false);
-  const closeout = object(item.closeout);
-  const refundAmount = closeout.refundAmount;
-  const returnId = first(item, 'returnId');
-  const approvedAt = first(item, 'rentRefund.approvedAt');
-  const refundedAt = first(item, 'rentRefund.refundedAt');
-  if (!returnId || !first(closeout, 'appliedAt') || typeof refundAmount !== 'number') return null;
-
-  const save = async (action: 'settlement-approval' | 'refund-confirmation', details?: Row) => {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      await mutate(`/manager/early-return-requests/returns/${encodeURIComponent(returnId)}/${action}`, 'POST', { amount: refundAmount, ...details }, true);
-      refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Chưa lưu được quyết toán.');
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  };
-
-  return <section className="early-return-finance-review" aria-label="Hoàn tiền thuê và dịch vụ">
-    <h3>Hoàn tiền thuê và dịch vụ</h3>
-    {refundedAt ? <p role="status">Đã hoàn <strong>{money(refundAmount)}</strong> · {date(refundedAt, true)} · {first(item, 'rentRefund.reference')}</p> :
-      refundAmount > 0 ? <p>Số tiền cần hoàn <strong>{money(refundAmount)}</strong></p> : <p>Không phát sinh tiền hoàn.</p>}
-    {showBreakdown && <InvoiceAdjustments invoices={rows(closeout.adjustedInvoices)} official />}
-    {!approvedAt ? <button className="button-primary" disabled={busy}
-      onClick={() => void save('settlement-approval')}>Duyệt quyết toán tiền thuê</button> :
-      <p>Đã duyệt quyết toán {date(approvedAt, true)}.</p>}
-    {approvedAt && !refundedAt && refundAmount > 0 && <form className="portal-form" onSubmit={event => {
-      event.preventDefault();
-      void save('refund-confirmation', { reference: reference.trim(), transferredAt: new Date(transferredAt).toISOString() });
-    }}>
-      <label className="field-label">Mã chuyển khoản<input required maxLength={160} value={reference} onChange={event => setReference(event.target.value)} /></label>
-      <label className="field-label">Thời điểm chuyển khoản<input required type="datetime-local" step="1" value={transferredAt} onChange={event => setTransferredAt(event.target.value)} /></label>
-      <button className="button-primary" disabled={busy || !reference.trim() || !transferredAt}>Xác nhận đã chuyển {money(refundAmount)}</button>
-    </form>}
-    {error && <p role="alert">{error}</p>}
+export function CombinedReturnRefund({ row, busy, onConfirm }: { row: Row; busy: boolean; onConfirm: (body: Row) => void }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const settlement = object(row.earlyReturnSettlement);
+  const closeout = object(settlement.closeout);
+  const rentRefund = object(settlement.rentRefund);
+  const rentAmount = Number(closeout.refundAmount);
+  const depositAmount = Number(row.refundAmount);
+  const depositPending = row.status !== 'SETTLED' && !row.refundedAt ? depositAmount : 0;
+  const rentPending = rentRefund.refundedAt ? 0 : rentAmount;
+  const total = depositPending + rentPending;
+  const ready = row.status === 'SETTLED' || row.status === 'APPROVED' && depositPending > 0 && Number(row.outstandingAmount) === 0;
+  const complete = total === 0 && Boolean(rentRefund.approvedAt) && row.status === 'SETTLED';
+  return <section className="early-return-finance-review" aria-label="Xác nhận hoàn tiền">
+    <h3>Xác nhận hoàn tiền</h3>
+    <Facts items={[
+      [row.refundedAt ? 'Tiền cọc đã hoàn' : 'Tiền cọc cần hoàn', money(depositAmount)],
+      [rentRefund.refundedAt ? 'Tiền thuê và dịch vụ đã hoàn' : 'Tiền thuê và dịch vụ cần hoàn', money(rentAmount)],
+    ]} />
+    <InvoiceAdjustments invoices={rows(closeout.adjustedInvoices)} official />
+    {complete ? <p role="status">{depositAmount + rentAmount > 0 ? <>Đã ghi nhận hoàn <strong>{money(depositAmount + rentAmount)}</strong>.</> : 'Đã hoàn tất quyết toán. Không phát sinh tiền hoàn.'}</p> :
+      !ready ? <p>{row.status === 'PENDING_REVIEW' ? 'Duyệt tiền cọc để chốt tổng tiền hoàn.' : 'Xử lý khoản phải thu thêm để hoàn tất quyết toán.'}</p> :
+        <form className="portal-form" onSubmit={event => {
+          event.preventDefault();
+          if (busy || total > 0 && !confirmed) return;
+          onConfirm({ depositAmount: depositPending, rentAmount: rentPending, refundConfirmed: total > 0 });
+        }}>
+          {total > 0 && <>
+            <p>Tổng cần chuyển <strong>{money(total)}</strong></p>
+            <label className="portal-checkbox"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
+              Tôi đã chuyển số tiền trên cho khách.
+            </label>
+          </>}
+          <button className="button-primary" disabled={busy || total > 0 && !confirmed}>
+            {total > 0 ? 'Xác nhận đã chuyển tiền' : 'Hoàn tất quyết toán'}
+          </button>
+        </form>}
   </section>;
 }

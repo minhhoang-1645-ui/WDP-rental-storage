@@ -41,7 +41,6 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerActions } from "./ManagerActions";
-import { EarlyReturnRefundActions } from '../../components/manager/EarlyReturnFinanceReview';
 import { HandoverReportCard } from '../../components/workspace/HandoverReportCard';
 import { InventoryEditor } from './InventoryEditor';
 import { ManagerContractTransfers } from "./ManagerContractTransfers";
@@ -222,8 +221,6 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
                 refresh={data.refresh}
                 onSuccess={setNotice}
               />
-              {resource === 'deposit-settlements' && user?.role === 'MANAGER' && Boolean(row.earlyReturnSettlement) &&
-                <EarlyReturnRefundActions key={id} item={object(row.earlyReturnSettlement)} refresh={data.refresh} showBreakdown />}
             </aside>}
           </div>
         </>
@@ -364,7 +361,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
           ['Tiền hoàn', settlement.status === 'PENDING_REVIEW' ? 'Chờ duyệt' : money(settlement.refundAmount)],
           ['Khoản phải thu thêm', settlement.status === 'PENDING_REVIEW' ? 'Chờ duyệt' : money(settlement.outstandingAmount)],
         ]} />
-        <Link className="button-secondary" to={`/manager/operations/deposit-settlements/${encodeURIComponent(String(settlement.id))}`}>Xem hồ sơ quyết toán</Link>
+        <Link className="button-secondary" to={`/manager/operations/deposit-settlements/${encodeURIComponent(String(settlement.id))}`}>Xem hồ sơ hoàn tiền</Link>
       </section>}
       {rental && <section className="manager-section">
         <h2>Kỳ thuê</h2>
@@ -776,7 +773,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
       )}
       {resource === "deposit-settlements" && (
         <section className="manager-section">
-          <h2>Quyết toán cọc</h2>
+          <h2>Hoàn tiền cọc</h2>
           <Facts
             items={[
               ["Tiền cọc", money(row.depositAmount)],

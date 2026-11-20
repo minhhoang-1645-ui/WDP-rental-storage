@@ -1,4 +1,4 @@
-import { at, code, customer, date, first, object, rows, type Row } from '../components/manager/portal-data';
+import { at, code, customer, date, first, object, resources, rows, type Row } from '../components/manager/portal-data';
 
 /** Presentation only: read explicit objects returned by APIs; never match code prefixes. */
 export function recordIdentity(row: Row, resource: string) {
@@ -12,7 +12,7 @@ export function recordIdentity(row: Row, resource: string) {
   const start = first(row, 'startDate', 'reservation.startDate', 'rentalContract.startDate', 'billingPeriodStart');
   const end = first(row, 'endDateExclusive', 'endDate', 'effectiveEndDate', 'reservation.endDate', 'rentalContract.endDate', 'billingPeriodEnd');
   const period = start || end ? `${date(start)} – ${date(end)}` : '';
-  const kind: Record<string, string> = { contracts: 'Hợp đồng', invoices: 'Hóa đơn', appointments: 'Bàn giao', 'stock-movements': row.type === 'OUT' ? 'Xuất hàng' : 'Nhập hàng', renewals: 'Gia hạn', returns: 'Trả kho', transfers: 'Chuyển kho', 'deposit-settlements': 'Quyết toán cọc' };
+  const kind: Record<string, string> = { contracts: 'Hợp đồng', invoices: 'Hóa đơn', appointments: 'Bàn giao', 'stock-movements': row.type === 'OUT' ? 'Xuất hàng' : 'Nhập hàng', renewals: 'Gia hạn', returns: 'Trả kho', transfers: 'Chuyển kho', 'deposit-settlements': resources['deposit-settlements'].title };
   const title = ['reservations', 'inquiries', 'rentals'].includes(resource) ? typeName || 'Thuê kho' : kind[resource] ? `${kind[resource]} · ${location || typeName || 'Thuê kho'}` : first(row, 'subject', 'storageType.name') || code(row);
   return { title, person: first(customer(row), 'fullName'), typeName, location, quantity: quantity ? `${quantity} kho` : '', period, created: row.createdAt ? date(row.createdAt, true) : '' };
 }

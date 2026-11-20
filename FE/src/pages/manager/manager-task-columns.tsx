@@ -30,9 +30,9 @@ export function managerResourceColumns(resource: TableResource, dateSort?: Staff
     { key: 'contract', label: 'Hợp đồng', optional: true, cell: row => contractCodes(row.physicalInspections, 'contract.contractCode') || '—' },
     { key: 'deposit', label: 'Tiền cọc', numeric: true, cell: row => amount(row.depositAmount) },
     { key: 'deduction', label: 'Khấu trừ', numeric: true, cell: row => row.status === 'PENDING_REVIEW' ? '—' : amount(row.deductionAmount) },
-    { key: 'refund', label: 'Tiền hoàn theo quyết toán', numeric: true, cell: row => row.status === 'PENDING_REVIEW' ? '—' : amount(row.refundAmount) },
+    { key: 'refund', label: 'Tiền cọc hoàn lại', numeric: true, cell: row => row.status === 'PENDING_REVIEW' ? '—' : amount(row.refundAmount) },
     { key: 'date', label: 'Ngày tạo', optional: true, sort: dateSort, cell: row => date(row.createdAt, true) },
-    status,
+    { ...status, label: 'Trạng thái cọc' },
   ];
   if (resource === 'invoices') return [
     { key: 'customer', label: 'Khách hàng / Hợp đồng', cell: row => <><strong>{person(row)}</strong><small>{contractCodes(row.contracts)}</small><CopyRecordCode value={first(row, 'invoiceCode')} /></> },

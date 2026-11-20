@@ -3,6 +3,8 @@ export const managerStorageLabels = {
   catalog: { title: 'Loại kho & đơn giá', description: 'Quản lý loại kho, kích thước và giá thuê.' },
 } as const;
 
+export const managerRefundTitle = 'Hoàn tiền';
+
 /** Management destinations only. Daily customer operations belong to Staff. */
 export const managerSections = {
   reviews: {
@@ -15,10 +17,10 @@ export const managerSections = {
     ],
   },
   finance: {
-    title: 'Tài chính', description: 'Theo dõi hóa đơn, khoản đã thu, tiền còn thiếu và tiền cọc.',
+    title: 'Tài chính', description: 'Theo dõi hóa đơn, khoản đã thu, tiền còn thiếu và các khoản hoàn.',
     items: [
       { title: 'Hóa đơn & khoản phải thu', description: 'Xem tiền còn thiếu và ghi nhận khoản đã nhận.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
-      { title: 'Xử lý tiền cọc', description: 'Duyệt khoản khấu trừ và tiền hoàn sau khi kiểm tra kho.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
+      { title: managerRefundTitle, description: 'Xem và ghi nhận hoàn tiền cọc, tiền thuê và dịch vụ sau khi nhận lại kho.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
       { title: 'Lịch sử thu tiền', description: 'Tra cứu các khoản thu đã ghi nhận.', web: '/manager/operations/payments', mobile: '/manager/payments' },
     ],
   },

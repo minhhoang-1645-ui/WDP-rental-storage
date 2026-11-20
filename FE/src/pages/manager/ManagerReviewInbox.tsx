@@ -10,7 +10,7 @@ import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { normalizeSearch } from '../../utils/notification-tools';
 import { isEarlyReturnRequest } from '../../utils/early-return';
-import { managerSections } from '../../utils/manager-sections';
+import { managerRefundTitle, managerSections } from '../../utils/manager-sections';
 import { hasLinkedTransfer } from '../../utils/work-queue';
 import { isCustomerTransferSubject } from '../../utils/transfer-request';
 const queuePaths = {
@@ -27,7 +27,7 @@ type Queue = keyof typeof queuePaths;
 type Task = { queue: Queue; row: Row; status: string; statusText: string; created: string; reference: string; person: string; unit: string; to: string };
 
 const titles: Record<Queue, string> = {
-  deposits: 'Quyết toán cọc',
+  deposits: managerRefundTitle,
   maintenance: 'Nghiệm thu bảo trì', support: 'Hỗ trợ chuyển cấp', early: 'Trả kho trước hạn', damage: 'Sự cố hàng hóa',
   transfers: 'Chuyển kho',
   renewals: 'Gia hạn kho',

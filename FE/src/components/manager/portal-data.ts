@@ -283,8 +283,8 @@ export const resources: Record<
     statuses: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ESCALATED", "RESOLVED"],
   },
   "deposit-settlements": {
-    title: "Quyết toán tiền cọc",
-    description: "Duyệt từng vấn đề, khấu trừ và ghi nhận hoàn cọc.",
+    title: "Hoàn tiền",
+    description: "Xem và ghi nhận các khoản hoàn tiền cọc, tiền thuê và dịch vụ sau khi nhận lại kho.",
     statuses: [
       "PENDING_REVIEW",
       "APPROVED",

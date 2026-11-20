@@ -61,6 +61,16 @@ export class ManagerDepositSettlementsController {
     return this.settlements.refund(id, body, key, request.user!);
   }
 
+  @Post(':id/confirm-return-refund')
+  @ApiOperation({ summary: 'Xác nhận hoàn tiền cọc, tiền thuê và dịch vụ khi trả trước hạn' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiBody({ schema: { type: 'object', required: ['depositAmount', 'rentAmount'], properties: {
+    depositAmount: { type: 'integer', minimum: 0 }, rentAmount: { type: 'integer', minimum: 0 }, refundConfirmed: { type: 'boolean' },
+  } } })
+  confirmReturnRefund(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.settlements.confirmReturnRefund(id, body ?? {}, key, request.user!);
+  }
+
   private query(input: Record<string, unknown>): SettlementListQuery {
     const page = this.integer(input.page, 1, 100000, 'page'); const limit = this.integer(input.limit, 20, 100, 'limit');
     const search = this.optional(input.search, 'search'); const status = this.optional(input.status, 'status');

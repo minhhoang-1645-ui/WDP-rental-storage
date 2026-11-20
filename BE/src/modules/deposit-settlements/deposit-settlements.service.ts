@@ -17,6 +17,13 @@ export interface SettlementListQuery {
 
 type ReviewedIssue = { inspectionId: string; issueType: IssueType; approvedChargeAmount: bigint; reason: string | null };
 
+function appliedCloseout(value: Prisma.JsonValue) {
+  return value && typeof value === 'object' && !Array.isArray(value) && typeof value.appliedAt === 'string' &&
+    typeof value.refundAmount === 'number' && Number.isSafeInteger(value.refundAmount) && value.refundAmount >= 0
+    ? { appliedAt: value.appliedAt, refundAmount: value.refundAmount, adjustedInvoices: value.adjustedInvoices }
+    : null;
+}
+
 @Injectable()
 export class DepositSettlementsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -49,16 +56,17 @@ export class DepositSettlementsService {
   }
 
   async getManager(id: string) {
-    const record = await this.find(id, this.prisma);
+    return this.managerView(await this.find(id, this.prisma));
+  }
+
+  private managerView(record: Awaited<ReturnType<DepositSettlementsService['find']>>) {
     const returned = record.returnRequest;
-    const closeout = returned.earlyReturnCloseout;
-    const applied = returned.physicallyReturnedAt && closeout && typeof closeout === 'object' && !Array.isArray(closeout) &&
-      typeof closeout.appliedAt === 'string' && typeof closeout.refundAmount === 'number';
+    const closeout = returned.physicallyReturnedAt ? appliedCloseout(returned.earlyReturnCloseout) : null;
     return {
       ...this.toSettlement(record, true),
-      earlyReturnSettlement: applied ? {
+      earlyReturnSettlement: closeout ? {
         returnId: returned.id,
-        closeout: { appliedAt: closeout.appliedAt, refundAmount: closeout.refundAmount, adjustedInvoices: closeout.adjustedInvoices },
+        closeout,
         rentRefund: rentRefundView(returned),
       } : null,
     };
@@ -149,19 +157,62 @@ export class DepositSettlementsService {
         throw new ConflictException('Settlement chưa đủ điều kiện ghi nhận refund.');
       }
       const now = new Date();
-      await tx.depositSettlement.update({ where: { id: current.id }, data: {
-        status: 'SETTLED',
-        refundMethod: parsed.method,
-        refundReference: parsed.reference,
-        refundNote: parsed.note,
-        refundIdempotencyKey: parsed.idempotencyKey,
-        refundedAt: now,
-        settledByUserId: actor.id,
-        settledAt: now,
-      } });
+      await this.recordDepositRefund(tx, current.id, parsed, actor.id, now);
       await this.completeReturn(tx, current.returnRequestId, actor.id, now);
       return this.toSettlement(await this.find(current.id, tx), true);
     }, 'Refund vừa được ghi nhận bởi thao tác khác. Vui lòng tải lại.');
+  }
+
+  async confirmReturnRefund(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xác nhận hoàn tiền trả kho.');
+    const idempotencyKey = this.idempotencyKey(key);
+    const { depositAmount, rentAmount } = input;
+    if (typeof depositAmount !== 'number' || !Number.isSafeInteger(depositAmount) || depositAmount < 0 ||
+        typeof rentAmount !== 'number' || !Number.isSafeInteger(rentAmount) || rentAmount < 0) {
+      throw new BadRequestException('Số tiền hoàn phải là số nguyên VND không âm.');
+    }
+    if ((depositAmount > 0 || rentAmount > 0) && input.refundConfirmed !== true) {
+      throw new BadRequestException('Cần xác nhận đã chuyển tiền hoàn cho khách.');
+    }
+    const identity = await this.identity(id);
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const current = await this.find(identity.id, tx);
+      const returned = current.returnRequest;
+      const closeout = returned.physicallyReturnedAt ? appliedCloseout(returned.earlyReturnCloseout) : null;
+      if (!closeout) throw new ConflictException('Chưa có quyết toán trả kho trước hạn.');
+      const depositRefund = this.money(current.refundAmount);
+      const pendingDeposit = !current.refundedAt && current.status !== 'SETTLED' ? depositRefund : 0;
+      const pendingRent = returned.rentRefundedAt ? 0 : closeout.refundAmount;
+      if (current.status === 'SETTLED' && !earlyReturnSettlementPending(returned) &&
+          (depositAmount === 0 || current.refundedAt && depositAmount === depositRefund) &&
+          (rentAmount === 0 || returned.rentRefundedAt && rentAmount === closeout.refundAmount)) return this.managerView(current);
+      if (returned.status !== 'PENDING_SETTLEMENT' || current.outstandingAmount !== 0n ||
+          !(current.status === 'SETTLED' || current.status === 'APPROVED' && pendingDeposit > 0)) {
+        throw new ConflictException('Cần xử lý xong quyết toán cọc và khoản phải thu thêm trước khi xác nhận hoàn tiền.');
+      }
+      if (depositAmount !== pendingDeposit || rentAmount !== pendingRent) {
+        throw new ConflictException('Số tiền cần hoàn vừa thay đổi. Vui lòng tải lại hồ sơ.');
+      }
+
+      const now = new Date();
+      if (pendingDeposit > 0) {
+        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference: null, note: null, idempotencyKey }, actor.id, now);
+      }
+      await tx.returnRequest.update({ where: { id: returned.id }, data: {
+        ...(!returned.rentRefundApprovedAt ? { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id } : {}),
+        ...(pendingRent > 0 ? { rentRefundedAt: now, rentRefundedById: actor.id } : {}),
+      } });
+      await this.completeReturn(tx, returned.id, actor.id, now);
+      return this.managerView(await this.find(current.id, tx));
+    }, 'Khoản hoàn vừa được cập nhật. Vui lòng tải lại hồ sơ.');
+  }
+
+  private recordDepositRefund(tx: Prisma.TransactionClient, id: string, refund: ReturnType<DepositSettlementsService['refundInput']>, actorId: string, now: Date) {
+    return tx.depositSettlement.update({ where: { id }, data: {
+      status: 'SETTLED', refundMethod: refund.method, refundReference: refund.reference, refundNote: refund.note,
+      refundIdempotencyKey: refund.idempotencyKey, refundedAt: now, settledByUserId: actorId, settledAt: now,
+    } });
   }
 
   private async completeReturn(tx: Prisma.TransactionClient, returnRequestId: string, actorId: string, now: Date) {

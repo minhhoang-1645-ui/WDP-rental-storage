@@ -886,6 +886,12 @@ model StockMovementLine {
 }
 
 model ReturnRequest {
+  earlyReturnCloseout    Json?
+  rentRefundApprovedAt   DateTime?
+  rentRefundApprovedById String?
+  rentRefundedAt         DateTime?
+  rentRefundedById       String?
+  rentRefundReference    String?            @unique
   id                     String             @id @default(cuid())
   returnCode             String             @unique
   reservationId          String

@@ -9,10 +9,13 @@ import { RefreshCw, Search, Warehouse } from 'lucide-react';
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLocaleLowerCase('vi');
 const date = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : value;
+type FinancialReview = { leaseEnd: string; renewals: { code: string; appendixCode: string; start: string; end: string }[];
+  paidAmount: number; outstandingAmount: number; depositAmount: number; dueAmount: number; futureRentIncrease: number; futureRentReduction: number };
 
 /** Inline choices avoid dropdowns clipped by the operation sidebar. */
-export function TransferDestinationPicker({ transferId, source, value, onChange, onReady, disabled }: {
+export function TransferDestinationPicker({ transferId, source, value, onChange, onReady, onReviewed, disabled }: {
   transferId: string; source: Row; value: string; onChange: (id: string) => void; onReady: (ready: boolean) => void; disabled: boolean;
+  onReviewed: (hash: string) => void;
 }) {
   const { user } = useAuth();
   const [search, setSearch] = useState(''), [floor, setFloor] = useState(''), [zone, setZone] = useState('');
@@ -34,8 +37,15 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
   const choices = units.filter(unit => (showUnavailable || unit.eligible === true) && (!floor || unit.floor === floor) && (!zone || unit.zone === zone)
     && normalize([first(unit, 'unitCode'), first(unit, 'storageType.name'), first(unit, 'floor'), first(unit, 'zone')].join(' ')).includes(normalize(search.trim())))
     .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true));
-  const preview = useApiResource<{ sameType: boolean; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; differencePerMonth: number; smaller: boolean } }>(selected && otherTypes ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
-  useEffect(() => { onReady(Boolean(selected && (!otherTypes || preview.data && !preview.loading && !preview.error))); }, [selected, otherTypes, preview.data, preview.loading, preview.error, onReady]);
+  const preview = useApiResource<{ sameType: boolean; reviewHash?: string; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; smaller: boolean; financialReview?: FinancialReview } }>(selected && otherTypes ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
+  const terms = preview.data?.snapshot;
+  const finance = terms?.financialReview;
+  const rentAdjustment = finance ? finance.futureRentIncrease - finance.futureRentReduction : 0;
+  useEffect(() => {
+    const reviewed = selected && preview.data && !preview.loading && !preview.refreshing && !preview.error;
+    onReady(Boolean(selected && (!otherTypes || reviewed)));
+    onReviewed(reviewed ? preview.data?.reviewHash ?? '' : '');
+  }, [selected, otherTypes, preview.data, preview.loading, preview.refreshing, preview.error, onReady, onReviewed]);
   const floors = [...new Set(units.map(unit => first(unit, 'floor')).filter(Boolean))];
   const zones = [...new Set(units.map(unit => first(unit, 'zone')).filter(Boolean))];
   const filteredEligibleCount = choices.filter(unit => unit.eligible === true).length;
@@ -80,7 +90,6 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
         <label className="field-label">Tầng<select value={floor} disabled={disabled} onChange={event => setFloor(event.target.value)}><option value="">Tất cả tầng</option>{floors.map(item => <option key={item}>{item}</option>)}</select></label>
         <label className="field-label">Khu vực<select value={zone} disabled={disabled} onChange={event => setZone(event.target.value)}><option value="">Tất cả khu vực</option>{zones.map(item => <option key={item}>{item}</option>)}</select></label>
       </div>
-      {otherTypes && <small className="workspace-help">Chọn kho khác loại có thể đổi giá. Khách cần ký phụ lục trước khi chuyển.</small>}
     </div>
     <div className="transfer-destination-toolbar">
       <div>
@@ -106,10 +115,29 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
         </label>)}
       </fieldset>}
       {!choices.length && eligible.length > 0 && <p className="transfer-destination-notice">Không có kho khớp bộ lọc. Thử đổi tiêu chí hoặc xóa bộ lọc.</p>}
-      {selected && <p className="transfer-destination-notice" role="status">Đã chọn kho <strong>{first(selected, 'unitCode')}</strong>. Kho được giữ sau khi duyệt.</p>}
+      {selected && !terms && <p className="transfer-destination-notice" role="status">Đã chọn kho <strong>{first(selected, 'unitCode')}</strong>. Kho được giữ sau khi duyệt.</p>}
     </>}
-    {preview.loading && <p role="status">Đang tính giá thuê kho mới…</p>}
-    {preview.error && <p role="alert">{preview.error}</p>}
-    {preview.data?.snapshot && <div className="booking-alert"><strong>Đổi loại kho cần khách ký phụ lục</strong><p>Giá hiện tại {money(preview.data.snapshot.currentRate)}/tháng. Giá mới {money(preview.data.snapshot.newRate)}/tháng từ {date(preview.data.snapshot.effectiveFrom)}.</p><p>Chênh lệch tháng {money(Math.abs(preview.data.snapshot.differencePerMonth))} {preview.data.snapshot.differencePerMonth >= 0 ? 'tăng' : 'giảm'}. Kỳ hiện tại và cọc giữ nguyên.</p>{preview.data.snapshot.smaller && <p>Kho mới nhỏ hơn. Khách cần kiểm tra hàng hóa có vừa kho hay không.</p>}</div>}
+    {(preview.loading || preview.refreshing) && <p role="status">Đang tính giá thuê kho mới…</p>}
+    {preview.error && <div className="transfer-destination-notice" role="alert"><strong>Chưa thể lập phụ lục đổi loại</strong><p>{preview.error}</p><button type="button" className="button-secondary" disabled={disabled} onClick={preview.refresh}>Kiểm tra lại</button></div>}
+    {terms && <div className="transfer-destination-notice transfer-price-review">
+      <strong>Đổi loại kho · {first(source, 'unitCode')} → {first(selected ?? {}, 'unitCode')}</strong>
+      <dl className="transfer-price-rates">
+        <div><dt>Giá hiện tại</dt><dd>{money(terms.currentRate)}/tháng</dd></div>
+        <div><dt>{finance && terms.effectiveFrom >= finance.leaseEnd ? 'Giá nếu gia hạn tiếp' : 'Giá mới từ ' + date(terms.effectiveFrom)}</dt><dd>{money(terms.newRate)}/tháng</dd></div>
+      </dl>
+      {finance && <p>{rentAdjustment ? `Tiền thuê kỳ sau ${rentAdjustment > 0 ? 'tăng' : 'giảm'} ${money(Math.abs(rentAdjustment))}. ` : 'Không đổi tiền thuê trong kỳ hiện tại. '}Không thu phí chuyển kho.</p>}
+      <p><strong>Khách cần ký phụ lục</strong>{finance && finance.dueAmount > 0 ? ` và trả ${money(finance.dueAmount)} đến hạn` : ''} trước khi nhân viên nhận việc.</p>
+      {terms.smaller && <p>Kho mới nhỏ hơn. Khách cần kiểm tra hàng có vừa kho.</p>}
+      {finance && <details key={transferId + ':' + value}>
+        <summary>Chi tiết thanh toán và gia hạn</summary>
+        <dl className="transfer-price-rates">
+          <div><dt>Đã trả</dt><dd>{money(finance.paidAmount)}</dd></div>
+          <div><dt>Còn phải trả theo hóa đơn</dt><dd>{money(finance.outstandingAmount)}</dd></div>
+          <div><dt>Cọc giữ nguyên</dt><dd>{money(finance.depositAmount)}</dd></div>
+        </dl>
+        <p>Thời hạn thuê giữ nguyên đến trước {date(finance.leaseEnd)}.</p>
+        {finance.renewals.length > 0 && <><p>Giữ nguyên giá đã ký cho các kỳ gia hạn.</p><ul>{finance.renewals.map(item => <li key={item.code}>{item.appendixCode} · {date(item.start)} đến trước {date(item.end)}</li>)}</ul></>}
+      </details>}
+    </div>}
   </section>;
 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { DocumentPolicy } from './document-policy.js';
 import { signaturePngBytes } from '../contracts/signature.js';
 import type { InvoiceBreakdown } from '../billing/invoice-breakdown.js';
+import { transferAddendumContent } from '../transfers/transfer-addendum-content.js';
 
 const money = (value: unknown) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${new Intl.NumberFormat('vi-VN').format(Number(value))} đ` : 'Chưa xác định';
 const date = (value: unknown) => { const text = typeof value === 'string' ? value : value instanceof Date ? value.toISOString() : ''; const parsed = new Date(text); return text && !Number.isNaN(parsed.getTime()) ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', ...(text.includes('T') ? { hour: '2-digit', minute: '2-digit' } : {}) }).format(parsed) : 'Chưa ghi nhận'; };
@@ -17,11 +18,11 @@ export class PdfDocumentService {
     const terms = transfer.commercial, snapshot = terms?.snapshot;
     if (!snapshot) throw new Error('Phụ lục đổi loại chưa được lập.');
     return this.render('PHỤ LỤC ĐỔI LOẠI KHO', snapshot.code, snapshot.issuer, pdf => {
-      this.party(pdf, snapshot.issuer, snapshot.customer ?? {});
-      this.rows(pdf, [['Hợp đồng gốc', snapshot.contractCode], ['Lệnh chuyển', transfer.transferCode], ['Kho đang dùng', `${snapshot.from.code} - ${snapshot.from.typeName}`], ['Kho chuyển đến', `${snapshot.to.code} - ${snapshot.to.typeName}`], ['Giá hiện tại/tháng', money(snapshot.currentRate)], ['Giá mới/tháng', money(snapshot.newRate)], ['Áp dụng giá mới từ', date(snapshot.effectiveFrom)]]);
-      this.paragraph(pdf, 'Kỳ thu hiện tại giữ nguyên. Giá mới áp dụng từ kỳ thu tiếp theo nêu trên; tiền cọc giữ nguyên để quyết toán theo hợp đồng. Hóa đơn kỳ tương lai chưa thu được thay bằng hóa đơn mới có liên kết, không xóa hóa đơn hoặc chứng cứ cũ.');
-      this.paragraph(pdf, snapshot.smaller ? 'Kho đích có diện tích nhỏ hơn. Khách tự kiểm tra khả năng xếp hàng; không có bảo đảm mọi hàng hóa đều vừa kho mới.' : 'Khách kiểm tra kích thước và nhu cầu lưu trữ trước khi chấp thuận.');
-      this.paragraph(pdf, 'Chuyển thực tế chỉ được hoàn tất sau khi khách ký phụ lục và nhân viên đối chiếu hàng hóa. Chữ ký hợp đồng ban đầu được giữ nguyên.');
+      for (const section of transferAddendumContent(snapshot, transfer.transferCode).sections) {
+        this.section(pdf, section.title);
+        if (section.rows) this.rows(pdf, section.rows);
+        for (const paragraph of section.paragraphs ?? []) this.paragraph(pdf, paragraph);
+      }
       this.signature(pdf, terms);
       this.paragraph(pdf, `Mã đối chiếu nội dung SHA-256: ${terms.snapshotHash}`, 8);
     });

@@ -145,6 +145,7 @@ export function StaffActions({
   );
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
   const returnPaid = returnDebt?.canReturn === true;
+  const periodCloseout = returnDebt?.policy === 'PERIOD_CLOSEOUT_V1';
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -209,7 +210,10 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status"><strong>Phải thanh toán đủ trước khi nhận lại kho</strong><p>{returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt ? 'Khách cần thanh toán đủ trước khi hoàn tất nhận kho trả.' : 'Chưa xác định được tình trạng thanh toán. Hãy làm mới hồ sơ để kiểm tra.'}</p></div>}
+            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status">
+              <strong>{periodCloseout ? 'Trả kho trước hạn' : 'Điều kiện thanh toán'}</strong>
+              <p>{periodCloseout ? 'Quyết toán dựa vào ngày nhận kho thực tế.' : returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt ? 'Khách cần thanh toán số dư để hoàn tất nhận kho.' : 'Hãy làm mới hồ sơ để kiểm tra tình trạng thanh toán.'}</p>
+            </div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -241,14 +245,14 @@ export function StaffActions({
                   className="portal-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (canFinalize) void run("/finalize");
+                    if (canFinalize) void run('/finalize', 'POST', periodCloseout ? { accessRevoked: true } : undefined);
                   }}
                 >
                   {!canFinalize && (
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
-                        {!returnPaid && <li>Cần xác nhận khách đã thanh toán đủ các hóa đơn liên quan đến kho trả.</li>}
+                        {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.' : 'Cần kiểm tra các hóa đơn liên quan đến kho trả.'}</li>}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
                         {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
                         {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
@@ -262,7 +266,7 @@ export function StaffActions({
                   <label className="portal-checkbox">
                     <input type="checkbox" required disabled={!canFinalize}
                       aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
-                    Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra
+                    {periodCloseout ? 'Đã nhận kho, lưu kết quả kiểm tra và thu hồi chìa khóa, thẻ hoặc quyền truy cập' : 'Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra'}
                   </label>
                   <button type="submit" className="button-primary" disabled={!canFinalize}
                     aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
@@ -273,7 +277,7 @@ export function StaffActions({
             )}
             {!inspecting && row.status !== "REQUESTED" && (
               <p>
-                Đã nhận kho trả. Quyết toán tiền cọc được quản lý xử lý riêng.
+                Đã nhận kho trả. Quản lý sẽ theo dõi quyết toán.
               </p>
             )}
           </>

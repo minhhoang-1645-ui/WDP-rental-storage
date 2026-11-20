@@ -3,6 +3,7 @@ import { ReturnsService } from './returns.service.js';
 import { SupportService } from '../support/support.service.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { EARLY_RETURN_APPROVAL_MESSAGE, PERIOD_CLOSEOUT } from './early-return-classification.js';
 
 // Memory-only dependencies: these tests never construct PrismaService or load credentials.
 function setup() {
@@ -31,6 +32,26 @@ describe('Early return approval with memory-only persistence', () => {
     const app = setup(), before = structuredClone(app.reservation); const result = await app.service.decideEarlyReturn('proposal', app.input, app.actor);
     expect(result.decision).toBe('APPROVED'); expect(app.request.status).toBe('RESOLVED'); expect(app.request.lastActionIdempotencyKey).toBe('early-return:proposal:2030-04-01'); expect(app.reservation).toEqual(before); expect(app.tx.$queryRaw).toHaveBeenCalledTimes(2);
     expect(result.financialSummary).toEqual({ outstandingAmount: 100, paidAmount: 200, invoicedDeposit: 50 });
+    expect(result.resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' ' + app.input.note);
+  });
+  it('replaces obsolete approval text for Manager and Customer views while keeping the manager note', () => {
+    const app = setup();
+    const support = new SupportService(app.prisma as unknown as PrismaService) as any;
+    const record = { ...app.request, status: 'RESOLVED', resolvedBy: app.actor, lastAction: 'EARLY_RETURN_APPROVED', updatedAt: new Date() };
+    for (const saved of [
+      'Đã chấp thuận trả trước hạn. Khách phải thanh toán đủ hóa đơn liên quan đến kho này, kể cả các kỳ chưa đến hạn, trước khi gửi yêu cầu và bàn giao lại kho.',
+      'Đã chấp thuận trả trước hạn. Khách phải thanh toán đủ toàn bộ công nợ, kể cả các kỳ chưa đến hạn, trước khi gửi yêu cầu trả kho và bàn giao lại kho.',
+    ]) {
+      const legacy = { ...record, resolutionNote: saved + ' Chấp nhận.' };
+      const expected = EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.';
+      expect(app.internal.toEarlyReturn(legacy).resolutionNote).toBe(expected);
+      expect(support.toView(legacy, 'CUSTOMER').resolutionNote).toBe(expected);
+      expect(support.toView({ ...legacy, lastAction: 'EARLY_RETURN_REJECTED' }, 'CUSTOMER').resolutionNote).toBe(legacy.resolutionNote);
+    }
+    const current = { ...record, earlyReturnFinancialReview: { policy: PERIOD_CLOSEOUT },
+      resolutionNote: 'Đã chấp thuận trả trước hạn. Các kỳ chưa bắt đầu được điều chỉnh khi hoàn tất bàn giao. Chấp nhận.' };
+    expect(app.internal.toEarlyReturn(current).resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.');
+    expect(support.toView(current, 'CUSTOMER').resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.');
   });
   it('requires explicit financial review and rejects stale end dates or ledger values', async () => {
     for (const change of [{ financialReviewConfirmed: false }, { reviewedEndDate: '2030-05-01' }, { reviewedOutstandingAmount: 99 }, { reviewedPaidAmount: 199 }]) { const app = setup(); await expect(app.service.decideEarlyReturn('proposal', { ...app.input, ...change }, app.actor)).rejects.toThrow(); expect(app.tx.supportRequest.update).not.toHaveBeenCalled(); }
@@ -44,17 +65,29 @@ describe('Early return approval with memory-only persistence', () => {
   });
   it('records a rejection without granting early return permission', async () => {
     const app = setup(); expect((await app.service.decideEarlyReturn('proposal', { ...app.input, decision: 'REJECTED', financialReviewConfirmed: false }, app.actor)).decision).toBe('REJECTED');
-    app.reservation.supportRequests.push(app.request); expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2029-01-01'))).toThrow('quản lý chấp thuận');
+    app.reservation.supportRequests.push(app.request); expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2029-01-01'))).toThrow('Quản lý cần chấp thuận');
   });
   it('requires authoritative approval for the current rental period, then permits return before expiry', async () => {
-    const app = setup(), now = new Date('2029-01-01'); expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow('quản lý chấp thuận');
+    const app = setup(), now = new Date('2029-01-01'); expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow('Quản lý cần chấp thuận');
     await app.service.decideEarlyReturn('proposal', app.input, app.actor); app.reservation.supportRequests.push(app.request);
-    expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow('thanh toán đủ');
-    app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n;
+    expect(app.internal.assertReturnEligible(app.reservation, 'customer', now).closeout).toMatchObject({ policy: 'PERIOD_CLOSEOUT_V1' });
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', now).unitIds).toEqual(['unit-new']);
     app.request.resolvedBy = { role: 'STAFF' }; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     app.request.resolvedBy = app.actor; app.request.lastActionIdempotencyKey = 'early-return:proposal:2029-04-01'; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     expect(() => app.internal.assertReturnEligible(app.reservation, 'another-customer', now)).toThrow('thuộc khách hàng');
+  });
+  it('applies period closeout automatically to a valid old approval, including signed contracts with outstanding invoices', () => {
+    const app = setup();
+    app.reservation.supportRequests.push({ ...app.request, status: 'RESOLVED', resolvedBy: app.actor,
+      lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: 'early-return:proposal:2030-04-01' });
+    const eligibility = () => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2029-01-01'), 'contract');
+    expect(eligibility().closeout).toMatchObject({ policy: PERIOD_CLOSEOUT, approvedEndDate: '2030-04-01', supportRequestId: 'proposal' });
+    Object.assign(app.reservation.contracts[0], { termsAcceptedAt: new Date('2028-01-01') });
+    expect(eligibility().closeout).toMatchObject({ policy: PERIOD_CLOSEOUT, supportRequestId: 'proposal' });
+    const existing = { activeKey: 'RETURN_CONTRACT:contract', requestedAt: new Date('2029-01-01'),
+      inspections: [{ rentalContractId: 'contract' }], reservation: app.reservation };
+    expect(app.internal.closeoutForReturn(existing)).toMatchObject({ policy: PERIOD_CLOSEOUT, supportRequestId: 'proposal' });
+    expect(app.internal.closeoutForReturn({ ...existing, physicallyReturnedAt: new Date('2029-01-02') })).toBeNull();
   });
   it('retains normal expiry returns and excludes released transfer allocations in both read and eligibility queries', () => {
     const app = setup(); app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n; expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-04-02')).unitIds).toEqual(['unit-new']);
@@ -62,7 +95,7 @@ describe('Early return approval with memory-only persistence', () => {
   });
   it('accepts normal returns from the exclusive end date at Vietnamese midnight', () => {
     const app = setup(); app.reservation.invoices[0].amountPaid = 300n; app.reservation.invoices[0].balanceDue = 0n;
-    expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T16:59:59.999Z'))).toThrow('quản lý chấp thuận');
+    expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T16:59:59.999Z'))).toThrow('Quản lý cần chấp thuận');
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', new Date('2030-03-31T17:00:00Z')).unitIds).toEqual(['unit-new']);
   });
   it('prevents ordinary support transitions from modifying early-return approval state', async () => {

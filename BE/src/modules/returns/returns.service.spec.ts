@@ -22,6 +22,7 @@ import { CustomerReturnsController } from './customer-returns.controller.js';
 import { ManagerReturnsController } from './manager-returns.controller.js';
 import { ReturnsService } from './returns.service.js';
 import { StaffReturnsController } from './staff-returns.controller.js';
+import { monthlyBoundary } from './return-period-closeout.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `return-facility-${runId}`;
@@ -33,8 +34,7 @@ const staffId = `return-staff-${runId}`;
 const adminId = `return-admin-${runId}`;
 const unitCodes = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => `RETURN-${runId}-${index}`);
 const day = (offset: number) => {
-  const value = new Date();
-  value.setUTCHours(0, 0, 0, 0);
+  const value = new Date(businessDate() + 'T00:00:00Z');
   value.setUTCDate(value.getUTCDate() + offset);
   return value;
 };
@@ -430,15 +430,130 @@ describe('Return and Inspection V1', () => {
     await expect(returns.decideEarlyReturn(proposal.id, { decision: 'APPROVED', note: 'Đã kiểm tra.', financialReviewConfirmed: true, reviewedEndDate: dateText(endDate), reviewedPaidAmount: Number(initial.amountPaid), reviewedOutstandingAmount: 0 }, manager)).resolves.toMatchObject({ rentalContractId: a.id, contracts: [{ id: a.id }] });
     await expect(requestContract(reservation.id, b.id)).rejects.toMatchObject({ response: { code: 'EARLY_RETURN_APPROVAL_REQUIRED' } });
     const request = await requestContract(reservation.id, a.id);
-    await expect(returns.getStaffReturn(request.id, staff)).rejects.toBeInstanceOf(NotFoundException);
-    await returns.assign(request.id, { staffUserId: staff.id }, manager);
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({ assignedStaff: { id: staff.id } });
     await passAll(request.id);
-    await returns.finalize(request.id, staff);
+    await returns.finalize(request.id, staff, { accessRevoked: true });
     const billing = new BillingService(prisma);
     const recurring = await prisma.$transaction(tx => billing.ensureRecurringInvoices(tx, reservation.id));
     expect(recurring).toHaveLength(2);
     for (const invoice of recurring) expect(invoice).toMatchObject({ rentalAmount: 1500000n, pricingSnapshot: { breakdown: { units: [{ contractId: b.id }] } } });
     await expect(prisma.invoice.findUnique({ where: { id: initial.id } })).resolves.toEqual(initial);
+  });
+
+  it.each(['future-unpaid', 'prepaid', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async scenario => {
+    const start = day(-40);
+    const end = monthlyBoundary(start, 6);
+    const { reservation, contracts: [contract], initial, quote } = await activeRental({ end });
+    const isPrepaid = scenario === 'prepaid';
+    const billing = new BillingService(prisma);
+    const service = new ReturnsService(prisma, undefined, undefined, billing);
+    const terms = { ...quote, termMonths: 6, paymentPlan: isPrepaid ? 'PREPAID' : 'PAY_MONTHLY' };
+    await prisma.reservation.update({ where: { id: reservation.id }, data: { quoteSnapshot: terms } });
+    const initialTotal = isPrepaid ? 10500000n : 3000000n;
+    const initialRent = initialTotal - 1500000n;
+    const initialEnd = isPrepaid ? end : monthlyBoundary(start, 1);
+    const breakdown = invoiceBreakdown(start, initialEnd, [invoiceUnit(contract, 1500000n, initialRent, 1500000n)], [], {
+      rentalAmount: initialRent, depositAmount: 1500000n, serviceAmount: 0n, totalAmount: initialTotal,
+    });
+    const paidInitial = await prisma.invoice.update({ where: { id: initial.id }, data: {
+      billingPeriodEnd: initialEnd, totalAmount: initialTotal, amountPaid: initialTotal, rentalAmount: initialRent, pricingSnapshot: { ...terms, breakdown },
+    } });
+    const payment = await prisma.payment.create({ data: { idempotencyKey: 'prepaid-' + initial.id, paymentCode: initial.invoiceCode + '-P',
+      invoiceId: initial.id, amount: initialTotal, method: 'BANK_TRANSFER' } });
+    await prisma.$transaction(tx => billing.ensureRecurringInvoices(tx, reservation.id));
+    if (scenario === 'future-unpaid') {
+      const second = await prisma.invoice.update({ where: { reservationId_billingCycle: { reservationId: reservation.id, billingCycle: 2 } }, data: { status: 'PAID', amountPaid: 1500000n, balanceDue: 0n } });
+      await prisma.payment.create({ data: { idempotencyKey: 'second-' + initial.id, paymentCode: second.invoiceCode + '-P', invoiceId: second.id, amount: 1500000n, method: 'CASH' } });
+    }
+    const proposal = await support.createCustomer(customer, { reservationId: reservation.id, rentalContractId: contract.id,
+      category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Không còn nhu cầu.', earlyReturnRequestedDate: businessDate(), earlyReturnReason: 'NO_LONGER_NEEDED',
+    }, 'period-closeout-' + initial.id);
+    const ledger = await prisma.invoice.findMany({ where: { reservationId: reservation.id } });
+    await service.decideEarlyReturn(proposal.id, { decision: 'APPROVED', note: 'Đã kiểm tra.', financialReviewConfirmed: true,
+      reviewedEndDate: dateText(end), reviewedPaidAmount: ledger.reduce((sum, item) => sum + Number(item.amountPaid), 0),
+      reviewedOutstandingAmount: ledger.reduce((sum, item) => sum + Number(item.balanceDue), 0),
+    }, manager);
+    if (scenario === 'future-unpaid') {
+      await prisma.supportRequest.update({ where: { id: proposal.id }, data: { earlyReturnFinancialReview: Prisma.DbNull } });
+      expect(await rentals.getCustomerRental(customerId, reservation.id)).toMatchObject({ contracts: [{ returnReadiness: {
+        canReturn: true, requiresFullSettlement: false, totalOutstanding: 6000000,
+      } }] });
+    }
+    expect(await prisma.invoice.findMany({ where: { reservationId: reservation.id, status: 'VOID' } })).toHaveLength(0);
+    expect(await prisma.rentalContract.findUnique({ where: { id: contract.id } })).toMatchObject({ status: 'ACTIVE' });
+    const requested = await service.createCustomerReturn(customer, { reservationId: reservation.id, rentalContractId: contract.id }, 'handover-' + initial.id);
+    await service.assign(requested.id, { staffUserId: staff.id }, manager);
+    await passAll(requested.id);
+    await expect(service.finalize(requested.id, staff)).rejects.toThrow('thu hồi');
+    await service.finalize(requested.id, staff, { accessRevoked: true });
+    await service.finalize(requested.id, staff, { accessRevoked: true });
+    const refundAmount = isPrepaid ? 6000000 : 0;
+    expect(await service.getCustomerReturn(customerId, requested.id)).toMatchObject({ status: 'PENDING_SETTLEMENT', earlyReturnCloseout: {
+      rentalAmount: 3000000, outstandingAmount: scenario === 'used-debt' ? 1500000 : 0, refundAmount,
+      waivedAmount: isPrepaid ? 0 : 6000000, penaltyAmount: 0,
+    }, rentRefund: { approvedAt: null, refundedAt: null } });
+    expect(await prisma.rentalContract.findUnique({ where: { id: contract.id } })).toMatchObject({ status: 'COMPLETED' });
+    expect(await prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } })).toMatchObject({ status: 'AVAILABLE' });
+    expect(await prisma.invoice.findUnique({ where: { id: initial.id } })).toEqual(paidInitial);
+    expect(await prisma.payment.findUnique({ where: { id: payment.id } })).toEqual(payment);
+    expect(await prisma.invoice.count({ where: { reservationId: reservation.id, status: 'VOID' } })).toBe(isPrepaid ? 0 : 4);
+    await expect(prisma.$transaction(tx => billing.ensureRecurringInvoices(tx, reservation.id))).rejects.toThrow('đã được bàn giao');
+    expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(isPrepaid ? 1 : 6);
+    const deposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: requested.id } });
+    expect(deposit).toMatchObject({ refundAmount: 1500000n, status: 'APPROVED' });
+    await new DepositSettlementsService(prisma).refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
+    expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    const approved = await service.settleEarlyReturn(requested.id, { amount: refundAmount }, manager);
+    expect(approved).toMatchObject({ approvedAt: expect.any(String), refundedAt: null });
+    if (isPrepaid) {
+      const transfer = { amount: refundAmount, reference: 'rent-' + initial.id, transferredAt: new Date().toISOString() };
+      expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
+      const confirmed = await service.settleEarlyReturn(requested.id, transfer, manager, true);
+      expect(await service.settleEarlyReturn(requested.id, transfer, manager, true)).toEqual(confirmed);
+      await expect(service.settleEarlyReturn(requested.id, { ...transfer, reference: 'another' }, manager, true)).rejects.toThrow('đã được ghi nhận');
+    }
+    expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED' });
+  });
+
+  it('allows an early return approval for a previously signed contract using the standard decision', async () => {
+    const { reservation, contracts: [contract], initial } = await activeRental({ end: day(10) });
+    await prisma.rentalContract.update({ where: { id: contract.id }, data: { termsAcceptedAt: day(-39) } });
+    const request = await support.createCustomer(customer, { reservationId: reservation.id, rentalContractId: contract.id,
+      category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Trả kho trước hạn theo thỏa thuận.' }, 'old-terms-' + initial.id);
+    const decision = { decision: 'APPROVED', note: 'Hai bên đồng ý trả sớm', financialReviewConfirmed: true,
+      reviewedEndDate: dateText(contract.endDate), reviewedPaidAmount: Number(initial.amountPaid), reviewedOutstandingAmount: 0 };
+    await expect(returns.decideEarlyReturn(request.id, decision, manager)).resolves.toMatchObject({
+      decision: 'APPROVED', financialReview: { policy: 'PERIOD_CLOSEOUT_V1' },
+    });
+  });
+
+  it.each([true, false])('applies facility relief only with evidence and review (%s)', async verified => {
+    const { reservation, contracts: [contract], initial } = await activeRental({ end: day(10) });
+    await prisma.payment.create({ data: { idempotencyKey: 'fault-' + initial.id, paymentCode: initial.invoiceCode + '-P', invoiceId: initial.id,
+      amount: initial.totalAmount, method: 'CASH' } });
+    const proposal = await support.createCustomer(customer, { reservationId: reservation.id, rentalContractId: contract.id,
+      category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Kho có sự cố.', earlyReturnReason: 'FACILITY_ISSUE',
+    }, 'proposal-fault-' + initial.id);
+    await returns.decideEarlyReturn(proposal.id, { decision: 'APPROVED', note: 'Cho phép trả sớm', financialReviewConfirmed: true,
+      reviewedEndDate: dateText(contract.endDate), reviewedPaidAmount: Number(initial.amountPaid), reviewedOutstandingAmount: 0,
+    }, manager);
+    const request = await requestContract(reservation.id, contract.id);
+    const inspection = (await returns.startInspection(request.id, staff)).inspections[0];
+    const evidence = { approved: true, reference: 'INCIDENT-01' };
+    await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).rejects.toThrow('Cần kết quả kiểm tra');
+    if (verified) {
+      await returns.updateInspection(request.id, inspection.id, { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Rò nước từ hệ thống kho.' }, staff);
+      await expect(returns.finalize(request.id, staff, { accessRevoked: true })).rejects.toThrow('quản lý xác minh');
+      await expect(returns.reviewEarlyReturnFault(request.id, evidence, staff)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).resolves.toEqual({ decision: 'APPROVED' });
+    } else {
+      await returns.updateInspection(request.id, inspection.id, { result: 'PASS' }, staff);
+    }
+    await returns.finalize(request.id, staff, { accessRevoked: true });
+    expect(await returns.getCustomerReturn(customerId, request.id)).toMatchObject({ earlyReturnCloseout: {
+      facilityFaultCredit: verified ? 300000 : 0, refundAmount: verified ? 300000 : 0,
+    } });
+    expect(await prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } })).toMatchObject({ status: verified ? 'MAINTENANCE' : 'AVAILABLE' });
   });
 
   it('keeps future confirmed allocation unchanged and availability-aware after the current return', async () => {

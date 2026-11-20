@@ -122,6 +122,12 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   let actionLabel = '';
   let important = row.priority === 'HIGH' || status === 'ISSUE_FOUND';
   let version = '';
+  if (customer && source === 'returns' && get('earlyReturnCloseout.appliedAt')) {
+    const refundedAt = get('rentRefund.refundedAt');
+    const approvedAt = get('rentRefund.approvedAt');
+    title = refundedAt ? 'Đã hoàn tiền thuê trả trước' : approvedAt ? 'Đã duyệt quyết toán tiền thuê' : 'Đã bàn giao và tính quyết toán tiền thuê';
+    version = refundedAt || approvedAt || get('earlyReturnCloseout.appliedAt');
+  }
   if (source === 'damage-claims') {
     target = queryPath(root + '/damage-claims', { claim: id });
     const cash = get('compensation.status');

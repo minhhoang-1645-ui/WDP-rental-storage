@@ -14,7 +14,7 @@ function reviewAction(item: Row, approved: boolean): FormAction {
   return {
     title: approved ? 'Chấp thuận trả trước hạn' : 'Chưa chấp thuận trả sớm',
     path: `/manager/early-return-requests/${encodeURIComponent(idOf(item))}/decision`, method: 'POST', idempotent: true,
-    description: 'Trả trước hạn vẫn phải thanh toán đủ toàn bộ công nợ đã cam kết, kể cả kỳ chưa đến hạn. Chấp thuận đề nghị chỉ cho phép khách tiếp tục tất toán; khách chỉ được tạo yêu cầu trả kho sau khi đã thanh toán đủ.',
+    description: 'Tiền thuê và các khoản hoàn được tính khi nhân viên nhận lại kho.',
     fields: [
       { name: 'note', title: 'Điều kiện hoặc lý do trả sớm', multiline: true, required: true, minLength: 3, maxLength: 3000 },
       { name: 'financialReviewConfirmed', title: 'Tôi đã đối chiếu công nợ, cọc và điều kiện với hồ sơ hiện tại', checkbox: true, required: approved },
@@ -29,7 +29,7 @@ export function ManagerEarlyReturns() {
   const [history, setHistory] = useState(false), [action, setAction] = useState<FormAction>(), [notice, setNotice] = useState('');
   const items = rows(data.data?.items).filter(item => history || !item.decision);
   return <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
-    <PageHeader onRefresh={data.refresh} eyebrow="Quản lý" title="Đề nghị trả trước hạn" description="Trả sớm hoặc đúng hạn đều phải tất toán toàn bộ công nợ, kể cả các kỳ đã cam kết chưa đến hạn, trước khi được trả kho." />
+    <PageHeader onRefresh={data.refresh} eyebrow="Quản lý" title="Đề nghị trả trước hạn" description="Tiền thuê được tính theo ngày nhận lại kho. Tiền cọc được xử lý riêng." />
     <ManagerParentLink resource="early-returns" />
 
     <Button title={history ? 'Đang xem cả lịch sử · Chỉ xem chờ duyệt' : 'Xem cả đề nghị đã quyết định'} variant="secondary" onPress={() => setHistory(value => !value)} />
@@ -40,11 +40,9 @@ export function ManagerEarlyReturns() {
         ['Liên hệ', text(item, 'customer.phone', 'customer.email')], ['Yêu cầu thuê', text(item, 'reservation.reference')],
         ['Kho đang thuê', rows(item.contracts).map(contract => `${text(contract, 'unitCode')} (${text(contract, 'contractCode')})`).join(', ')],
         ['Hạn thuê hiện tại', formatDate(text(item, 'reservation.effectiveEndDate'))], ['Lý do', text(item, 'description')],
-        ['Công nợ hóa đơn hiện có', formatMoney(Number(text(item, 'financialSummary.outstandingAmount')))],
-        ['Đã thu theo hóa đơn', formatMoney(Number(text(item, 'financialSummary.paidAmount')))], ['Cọc đã lập hóa đơn', formatMoney(Number(text(item, 'financialSummary.invoicedDeposit')))],
+        ['Còn phải thu dự kiến', text(item, 'estimate.outstandingAmount') ? formatMoney(Number(text(item, 'estimate.outstandingAmount'))) : 'Chưa xác định'],
       ]} />
-      <Text style={styles.copy}>Khách phải thanh toán đầy đủ các hóa đơn còn hiệu lực trước khi gửi yêu cầu trả kho. Nhân viên chỉ được nhận trả kho khi đã tất toán; tiền cọc được quyết toán riêng.</Text>
-      {item.decision ? <Text style={styles.copy}>{item.decision === 'APPROVED' ? 'Đã chấp thuận đề nghị · Cần tất toán trước khi trả kho' : 'Chưa chấp thuận'} · {text(item, 'resolutionNote')}</Text> : <><Button title="Chấp thuận trả trước hạn" disabled={Boolean(action)} onPress={() => setAction(reviewAction(item, true))} /><Button title="Chưa chấp thuận" variant="secondary" disabled={Boolean(action)} onPress={() => setAction(reviewAction(item, false))} /></>}
+      {item.decision ? <Text style={styles.copy}>{item.decision === 'APPROVED' ? 'Đã chấp thuận đề nghị' : 'Chưa chấp thuận'} · {text(item, 'resolutionNote')}</Text> : <><Button title="Chấp thuận trả trước hạn" disabled={Boolean(action)} onPress={() => setAction(reviewAction(item, true))} /><Button title="Chưa chấp thuận" variant="secondary" disabled={Boolean(action)} onPress={() => setAction(reviewAction(item, false))} /></>}
     </Panel>)}
   </ScrollView>;
 }

@@ -44,12 +44,17 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
   const reservationId = idOf(rental);
   const contractId = idOf(contract);
   const query = 'rentalContractId=' + encodeURIComponent(contractId);
+  const sentReturns = rows(returns.data?.items);
+  const pendingReturn = sentReturns.find(item => item.status !== 'COMPLETED' && text(item, 'reservation.id') === reservationId &&
+    (text(item, 'rentalContractId') === contractId || rows(item.inspections).some(inspection => text(inspection, 'contract.id') === contractId)));
+  const returnInProgress = Boolean(pendingReturn || contract.returnInProgress);
+  const returnId = pendingReturn ? idOf(pendingReturn) : '';
   const ready = !returns.loading && !requests.loading && !returns.error && !requests.error;
-  const authorized = ready ? customerRentalActions(rental, rows(returns.data?.items), currentTimeMs(), rows(requests.data?.items), contractId) : [];
+  const authorized = ready && !returnInProgress ? customerRentalActions(rental, sentReturns, currentTimeMs(), rows(requests.data?.items), contractId) : [];
   const renewal = authorized.find(item => item.renewal);
   const returnAction = authorized.find(item => item.path === '/customer/returns');
   const unitCode = text(contract, 'unit.unitCode');
-  const actions = [
+  const actions = returnInProgress ? [] : [
     { title: 'Yêu cầu gia hạn', icon: CalendarDays, action: renewal, unavailable: rental.pendingRenewal || contract.pendingRenewal ? 'Đang có yêu cầu gia hạn' : 'Chưa đủ điều kiện gia hạn' },
     ...(returnAction ? [{ title: 'Yêu cầu trả kho', icon: RotateCcw, action: returnAction, unavailable: '' }] : []),
   ];
@@ -80,7 +85,10 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
       <CustomerActionRow title="Hợp đồng thuê" icon={FileText} path={'/customer/contracts/' + encodeURIComponent(contractId)} />
       {(text(contract, 'pendingRenewal.renewalCode') || text(rental, 'pendingRenewal.renewalCode')) ? <CustomerActionRow title="Xem gia hạn đang xử lý" icon={CalendarDays}
         path={'/customer/renewals/' + encodeURIComponent((text(contract, 'pendingRenewal.renewalCode') || text(rental, 'pendingRenewal.renewalCode')))} /> : null}
-      <CustomerActionRow title="Trả kho trước hạn" icon={RotateCcw} path={rentalChangePath('early-returns', contractId)} />
+      {returnInProgress ? <CustomerActionRow title="Theo dõi yêu cầu trả kho" icon={RotateCcw}
+        subtitle={pendingReturn ? text(pendingReturn, 'returnCode') : undefined}
+        path={returnId ? '/customer/returns/' + encodeURIComponent(returnId) : '/customer/returns?tab=sent'} /> :
+        <CustomerActionRow title="Trả kho trước hạn" icon={RotateCcw} path={rentalChangePath('early-returns', contractId)} />}
       <CustomerActionRow title="Yêu cầu chuyển kho" icon={ArrowDownUp} path={rentalChangePath('transfers', contractId)} />
       {actions.map(({ title, icon: Icon, action: entry, unavailable }) => <Pressable key={title}
         accessibilityRole="button" accessibilityState={{ disabled: !entry }} disabled={!entry}

@@ -6,7 +6,7 @@ export async function saveCsv(path: string, name: string) {
   if (!await Sharing.isAvailableAsync()) throw new Error('Thiết bị chưa hỗ trợ lưu/chia sẻ tệp. Hãy dùng bản web để tải CSV.');
   const bytes = await apiRequest<Uint8Array>(path, { responseType: 'bytes' });
   const file = new File(Paths.cache, `${Date.now()}-${name.replace(/[^A-Za-z0-9._-]/g, '_')}.csv`);
-  file.write(bytes);
+  await file.write(bytes);
   await Sharing.shareAsync(file.uri, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text', dialogTitle: 'Lưu hoặc chia sẻ báo cáo' });
   setTimeout(() => { try { if (file.exists) file.delete(); } catch { /* OS cache cleanup may have run. */ } }, 600_000);
 }
@@ -18,7 +18,7 @@ export async function downloadPdf(path: string, name: string) {
   const file = new File(Paths.cache, `${Date.now()}-${filename}.pdf`);
   try {
     file.create();
-    file.write(bytes);
+    await file.write(bytes);
     if (file.size !== bytes.byteLength) throw new Error('Không lưu được toàn bộ tệp PDF.');
     return file;
   } catch {

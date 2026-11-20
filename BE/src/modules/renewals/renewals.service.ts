@@ -79,7 +79,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       id: renewalId,
       status: 'COMPLETED',
       paymentPlan: 'PAY_MONTHLY',
-      OR: [{ previousEndDate: { lt: now } }, { reservation: { supportRequests: { some: closeoutReservationSelect.supportRequests.where } } }],
+      previousEndDate: { lt: now },
       reservation: { status: 'CONFIRMED', contracts: { some: { status: 'ACTIVE' } } },
     } satisfies Prisma.RenewalRequestWhereInput;
     try {
@@ -98,8 +98,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
             const snapshot = this.snapshot(renewal);
             this.assertSnapshot(renewal, snapshot);
             const contracts = this.targetContracts(renewal.reservation, renewal.rentalContractId);
-            const closeout = closeoutPaymentAllowed(renewal.reservation, renewal.rentalContractId);
-            await this.createInvoices(tx, renewal, snapshot, contracts, closeout ? renewal.requestedEndDate : businessToday(now), new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
+            await this.createInvoices(tx, renewal, snapshot, contracts, businessToday(now), new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
           }, { isolationLevel: 'Serializable' });
         } catch (error) {
           this.logger.warn(`Không thể phát hành hóa đơn gia hạn ${id}: ${String(error)}`);
@@ -109,6 +108,19 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`Không thể kiểm tra kỳ gia hạn đến hạn: ${String(error)}`);
     } finally {
       this.issuingInvoices = false;
+    }
+  }
+
+  async issueStartedPeriodsForReturn(tx: Prisma.TransactionClient, reservationId: string, contractId: string, cutoff: Date) {
+    const renewals = await tx.renewalRequest.findMany({ where: {
+      reservationId, status: 'COMPLETED', paymentPlan: 'PAY_MONTHLY', previousEndDate: { lt: cutoff },
+      OR: [{ rentalContractId: contractId }, { rentalContractId: null }],
+    }, include: { reservation: { include: renewalRentalInclude }, invoices: { select: { renewalCycle: true } } } });
+    for (const renewal of renewals) {
+      const snapshot = this.snapshot(renewal);
+      this.assertSnapshot(renewal, snapshot);
+      await this.createInvoices(tx, renewal, snapshot, this.targetContracts(renewal.reservation, renewal.rentalContractId),
+        new Date(+cutoff - 86400000), new Set(renewal.invoices.map(invoice => invoice.renewalCycle)));
     }
   }
 
@@ -436,7 +448,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       }
       const monthlyRate = BigInt(snapshot.monthlyUnitPrice);
       const billed = contracts.filter(contract => contract.status === 'ACTIVE'
-        || contract.status === 'COMPLETED' && contract.completedAt && businessToday(contract.completedAt) >= end);
+        || contract.status === 'COMPLETED' && contract.completedAt && businessToday(contract.completedAt) > start);
       if (contracts.some(contract => !billed.includes(contract) && !(contract.status === 'COMPLETED'
         && contract.completedAt && businessToday(contract.completedAt) <= start))) {
         throw new ConflictException('Thời điểm trả kho cắt ngang kỳ gia hạn. Cần đối soát trước khi lập hóa đơn.');

@@ -29,6 +29,7 @@ import {
   object,
   rows,
   resources,
+  transferHandoverSchedule,
   type Row,
 } from "../../components/manager/portal-data";
 import {
@@ -188,7 +189,13 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               )}
               {user?.role === 'MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
-              {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2><Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công']]} />{first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}</section>}
+              {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
+                <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
+                  ...(row.commercial ? [['Phụ lục đổi loại', first(row, 'commercial.acceptedAt') ? 'Đã ký' : 'Chờ khách ký']] as [string, string][] : [])]} />
+                {row.commercialPayment ? <p>{rows(object(row.commercialPayment).dueInvoices).length > 0 ? 'Khách còn hóa đơn đến hạn cần thanh toán trước khi nhân viên nhận việc.'
+                  : object(row.commercialPayment).pendingRenewalInvoice ? 'Kỳ gia hạn hiện tại đang chờ phát hành hoặc đối soát hóa đơn.' : 'Không có hóa đơn đến hạn chưa thanh toán.'}</p> : null}
+                {first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}
+              </section>}
               {service && <ServiceReferences row={row} staff={isStaff} />}
               </>}
               {staffOperation === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
@@ -673,6 +680,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
                   {first(row, "contract.contractCode")}
                 </Link>,
               ],
+              ...(resource === 'transfers' ? [['Lịch bàn giao khách đề xuất', transferHandoverSchedule(row)] as [string, string]] : []),
             ]}
           />
         </section>
@@ -774,7 +782,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Hoàn lại", money(row.refundAmount)],
               ["Thu thêm", money(row.outstandingAmount)],
               ["Phương thức hoàn", label(row.refundMethod)],
-              ["Tham chiếu hoàn", first(row, "refundReference") || "—"],
+              ...(first(row, "refundReference") ? [["Tham chiếu hoàn", first(row, "refundReference")] as [string, string]] : []),
             ]}
           />
           {Boolean(row.outstandingInvoice) && (

@@ -2,14 +2,17 @@ import { Optional } from '@nestjs/common';
 import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
-import { EARLY_RETURN_SUBJECT, earlyReturnScope } from './early-return-classification.js';
-import { businessDate } from '../../business-date.js';
+import { EARLY_RETURN_APPROVAL_MESSAGE, EARLY_RETURN_SUBJECT, earlyReturnApprovalNote, earlyReturnScope } from './early-return-classification.js';
+import { businessDate, businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertFullSettlementPolicyInput, assertReturnFullyPaid, returnReadiness } from './early-return-finance.js';
 import { contractDeposit, contractReturnReadiness, recordedContractDeposit, returnInvoiceFields } from './contract-return-finance.js';
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
+import { RenewalsService } from '../renewals/renewals.service.js';
+import { BillingService } from '../billing/billing.service.js';
+import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, summarizeEarlyReturn } from './return-period-closeout.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type ViewMode = 'CUSTOMER' | 'MANAGER' | 'STAFF';
@@ -29,10 +32,12 @@ type ReturnContract = {
   reservationUnit: { id: string; reservationId: string; storageUnitId: string; releasedAt: Date | null; storageUnit: { status: string; unitNumber: string } };
 };
 type ReturnRental = { id: string; quantity: number; status: string; contracts: ReturnContract[] };
+type ReturnApproval = { id: string; rentalContractId: string | null; status: string; lastAction: string | null; lastActionIdempotencyKey: string | null; earlyReturnFinancialReview?: Prisma.JsonValue; resolvedBy?: { role: string } | null };
+type CloseoutApproval = Prisma.JsonObject & { policy?: string; agreementReference?: string | null; reason?: string; facilityFaultReference?: string | null; facilityFaultDecision?: 'APPROVED' | 'REJECTED'; approvedEndDate?: string; supportRequestId?: string };
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService, @Optional() private readonly renewalBilling?: RenewalsService, @Optional() private readonly billing?: BillingService) {}
 
   async createCustomerReturn(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
     if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được gửi yêu cầu trả kho qua endpoint này.');
@@ -70,6 +75,7 @@ export class ReturnsService {
             note: parsed.note,
             idempotencyKey: parsed.idempotencyKey,
             activeKey: this.contractKey(rental.contractId),
+            ...(rental.closeout ? { earlyReturnCloseout: rental.closeout as Prisma.InputJsonValue } : {}),
             inspections: {
               create: { rentalContractId: rental.contractId, storageUnitId: rental.unitIds[0] },
             },
@@ -193,7 +199,7 @@ export class ReturnsService {
     }, 'Kết quả kiểm tra vừa được cập nhật bởi thao tác khác. Vui lòng tải lại.');
   }
 
-  async finalize(id: string, actor: PublicUser) {
+  async finalize(id: string, actor: PublicUser, input: Record<string, unknown> = {}) {
     this.assertOperational(actor);
     const identity = await this.identity(id);
     return this.serializable(async (tx) => {
@@ -218,8 +224,14 @@ export class ReturnsService {
       const targets = this.requestContracts(current);
       const legacy = current.activeKey === this.activeKey(current.reservationId);
       const allContractIds = current.reservation.contracts.map(contract => contract.id);
-      this.assertDebt(current.reservation.invoices, contractIds, allContractIds, false, legacy);
-      this.assertRenewalsSettled(current.reservation.renewals, contractIds);
+      const now = new Date();
+      const approval = this.closeoutForReturn(current);
+      const targetEnd = this.isoDate(targets[0].endDate)!;
+      const periodCloseout = !legacy && approval?.policy === PERIOD_CLOSEOUT;
+      if (periodCloseout && approval.approvedEndDate !== targetEnd) throw new ConflictException('Hạn thuê đã thay đổi. Cần quản lý duyệt lại đề nghị trả sớm.');
+      if (periodCloseout && input.accessRevoked !== true) throw new BadRequestException('Cần xác nhận đã thu hồi chìa khóa, thẻ hoặc quyền truy cập trước khi nhận kho.');
+      if (!periodCloseout) this.assertDebt(current.reservation.invoices, contractIds, allContractIds, false, legacy);
+      this.assertRenewalsSettled(current.reservation.renewals, contractIds, periodCloseout);
       await this.assertNoConflictingWork(tx, contractIds);
       const previousCredit = await tx.returnInspection.findFirst({ where: {
         rentalContractId: { in: contractIds }, returnRequestId: { not: current.id }, returnRequest: { depositSettlement: { isNot: null } },
@@ -229,7 +241,24 @@ export class ReturnsService {
       const remainingGoods = await tx.storedItem.count({ where: { rentalContractId: { in: contractIds }, balance: { gt: 0 } } });
       if (remainingGoods) throw new ConflictException({ code: 'RETURN_STORED_ITEMS_REMAIN', message: 'Còn hàng đang lưu trên hợp đồng. Khách cần tạo phiếu xuất, nhân viên kiểm đếm và hoàn tất lấy hàng trước khi trả kho.' });
 
-      const now = new Date();
+      let closeout: Prisma.InputJsonValue | undefined;
+      if (periodCloseout) {
+        const cutoff = businessToday(now);
+        const observedFault = current.inspections.some(inspection => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT');
+        if (approval.reason === 'FACILITY_ISSUE' && observedFault && !approval.facilityFaultReference && !approval.facilityFaultDecision) {
+          throw new ConflictException('Cần quản lý xác minh lỗi cơ sở và quyết định mức tính tiền trước khi hoàn tất trả kho.');
+        }
+        if (this.billing) await this.billing.ensureRecurringInvoices(tx, current.reservationId, cutoff);
+        if (this.renewalBilling) await this.renewalBilling.issueStartedPeriodsForReturn(tx, current.reservationId, contractIds[0], cutoff);
+        const invoices = await tx.invoice.findMany({ where: { reservationId: current.reservationId, status: { not: 'VOID' } }, select: returnInvoiceFields, orderBy: { id: 'asc' } });
+        const faultReference = observedFault ? approval.facilityFaultReference : null;
+        const services = await tx.reservationService.findMany({ where: { reservationId: current.reservationId }, select: { id: true, serviceStartDate: true, serviceEndDate: true } });
+        const plan = planEarlyReturn(invoices, contractIds[0], allContractIds, cutoff, Boolean(faultReference), services);
+        const summary = summarizeEarlyReturn(plan, businessDate(now));
+        const refundSources = await applyEarlyReturn(tx, plan, contractIds[0], current.returnCode, now);
+        closeout = { ...approval, ...summary, supportRequestId: approval.supportRequestId ?? null, depositAmount: Number(depositAmount), refundSources, agreementReference: approval.agreementReference ?? null,
+          facilityFaultReference: faultReference ?? null, accessRevoked: true, appliedAt: now.toISOString(), appliedBy: actor.id };
+      }
       const contracts = await tx.rentalContract.updateMany({
         where: { id: { in: current.inspections.map((inspection) => inspection.rentalContractId) }, reservationId: current.reservationId, status: 'ACTIVE' },
         data: { status: 'COMPLETED', completedAt: now },
@@ -284,6 +313,7 @@ export class ReturnsService {
 
       const allPass = issueUnitIds.length === 0;
       const autoSettled = allPass && depositAmount === 0n;
+      const returnComplete = autoSettled && !closeout;
       await tx.depositSettlement.create({
         data: {
           settlementCode: `${current.returnCode}-DS01`,
@@ -300,10 +330,11 @@ export class ReturnsService {
       const updated = await tx.returnRequest.update({
         where: { id: current.id },
         data: {
-          status: autoSettled ? 'COMPLETED' : 'PENDING_SETTLEMENT',
+          status: returnComplete ? 'COMPLETED' : 'PENDING_SETTLEMENT',
           physicallyReturnedAt: now,
           physicallyReturnedById: actor.id,
-          ...(autoSettled ? { completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
+          ...(closeout ? { earlyReturnCloseout: closeout } : {}),
+          ...(returnComplete ? { completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
         },
         include: this.include(),
       });
@@ -321,7 +352,63 @@ export class ReturnsService {
 
   async reviewEarlyReturnFinance(_id: string, _input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xem xét đề nghị trả trước hạn.');
-    throw new ConflictException({ code: 'RETURN_DEBT_WAIVER_DISABLED', message: 'Quy định hiện tại yêu cầu thanh toán đủ toàn bộ công nợ trước khi trả kho. Chức năng miễn công nợ khi trả trước hạn đã được ngừng.' });
+    throw new ConflictException({ code: 'RETURN_DEBT_WAIVER_DISABLED', message: 'Hóa đơn được điều chỉnh theo kỳ thuê khi nhân viên nhận lại kho.' });
+  }
+
+  async settleEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser, confirmTransfer = false) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết toán tiền thuê.');
+    const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
+    const transferredAt = typeof input.transferredAt === 'string' ? new Date(input.transferredAt) : null;
+    if (confirmTransfer && (!reference || reference.length > 160 || !transferredAt || !Number.isFinite(+transferredAt) || +transferredAt > Date.now())) {
+      throw new BadRequestException('Cần mã tham chiếu và thời điểm chuyển khoản thực tế.');
+    }
+    try {
+      return await this.serializable(async tx => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${id} FOR UPDATE`);
+        const current = await tx.returnRequest.findUnique({ where: { id }, include: { depositSettlement: { select: { status: true } } } });
+        if (!current) throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
+        const closeout = current.earlyReturnCloseout as { appliedAt?: string; refundAmount?: number } | null;
+        if (!current.physicallyReturnedAt || !closeout?.appliedAt || input.amount !== closeout.refundAmount) throw new ConflictException('Số tiền trong hồ sơ quyết toán đã thay đổi hoặc kho chưa được bàn giao.');
+        if (confirmTransfer) {
+          if (current.rentRefundedAt) {
+            if (current.rentRefundReference === reference && +current.rentRefundedAt === +transferredAt!) return this.rentRefundView(current);
+            throw new ConflictException('Khoản hoàn đã được ghi nhận chuyển khoản.');
+          }
+          if (!current.rentRefundApprovedAt || !closeout.refundAmount || Math.floor(+transferredAt! / 1000) < Math.floor(+current.rentRefundApprovedAt / 1000)) throw new ConflictException('Cần duyệt quyết toán trước khi chuyển tiền hoàn.');
+        } else if (current.rentRefundApprovedAt) return this.rentRefundView(current);
+        const now = new Date();
+        const complete = current.depositSettlement?.status === 'SETTLED' && (confirmTransfer || closeout.refundAmount === 0);
+        const updated = await tx.returnRequest.update({ where: { id }, data: {
+          ...(confirmTransfer ? { rentRefundedAt: transferredAt, rentRefundedById: actor.id, rentRefundReference: reference }
+            : { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id }),
+          ...(complete ? { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
+        } });
+        return this.rentRefundView(updated);
+      }, 'Quyết toán vừa thay đổi. Hãy tải lại hồ sơ.');
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Mã chuyển khoản đã được ghi nhận trong hồ sơ khác.');
+      throw error;
+    }
+  }
+
+  async reviewEarlyReturnFault(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xác minh trách nhiệm lỗi cơ sở.');
+    const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
+    if (typeof input.approved !== 'boolean' || !reference || reference.length > 200) throw new BadRequestException('Cần quyết định và căn cứ xác minh lỗi cơ sở.');
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${id} FOR UPDATE`);
+      const record = await tx.returnRequest.findUnique({ where: { id }, include: this.include() });
+      if (!record) throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
+      const review = this.closeoutForReturn(record);
+      if (review?.policy !== PERIOD_CLOSEOUT || record.physicallyReturnedAt || !record.inspections.some(inspection => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT')) {
+        throw new ConflictException('Cần kết quả kiểm tra lỗi cơ sở trước khi xác minh và trước khi bàn giao.');
+      }
+      const decision = input.approved ? 'APPROVED' : 'REJECTED';
+      const updated = { ...review, facilityFaultDecision: decision, facilityFaultReference: input.approved ? reference : null,
+        facilityFaultReviewNote: reference, facilityFaultReviewedBy: actor.id, facilityFaultReviewedAt: new Date().toISOString() };
+      await tx.returnRequest.update({ where: { id }, data: { earlyReturnCloseout: updated } });
+      return { decision };
+    }, 'Hồ sơ vừa thay đổi. Hãy tải lại trước khi xác minh lỗi cơ sở.');
   }
 
   async decideEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -338,20 +425,23 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const request = await tx.supportRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.earlyReturnInclude() });
       const action = decision === 'APPROVED' ? 'EARLY_RETURN_APPROVED' : 'EARLY_RETURN_REJECTED';
-      const resolutionNote = (decision === 'APPROVED' ? (request.rentalContractId
-        ? 'Đã chấp thuận trả trước hạn. Khách phải thanh toán đủ hóa đơn liên quan đến kho này, kể cả các kỳ chưa đến hạn, trước khi gửi yêu cầu và bàn giao lại kho. '
-        : 'Đã chấp thuận trả trước hạn. Khách phải thanh toán đủ toàn bộ công nợ, kể cả các kỳ chưa đến hạn, trước khi gửi yêu cầu trả kho và bàn giao lại kho. ')
-        : 'Chưa chấp thuận trả trước hạn. ') + note;
+      const resolutionNote = (decision === 'APPROVED' ? EARLY_RETURN_APPROVAL_MESSAGE : 'Chưa chấp thuận trả trước hạn.') + ' ' + note;
+      const previousReview = request.earlyReturnFinancialReview as Prisma.JsonObject | null;
       if (request.status === 'RESOLVED') {
-        if (request.lastAction === action && request.resolutionNote === resolutionNote) return this.toEarlyReturn(request);
+        const savedNote = decision === 'APPROVED' ? earlyReturnApprovalNote(request.resolutionNote) : request.resolutionNote;
+        if (request.lastAction === action && savedNote === resolutionNote) return this.toEarlyReturn(request);
         throw new ConflictException('Đề nghị đã được quyết định. Hãy gửi đề nghị mới nếu cần thay đổi điều kiện.');
       }
       const reservation = request.reservation;
       const targetIds = request.rentalContractId ? [request.rentalContractId] : reservation.contracts.map(contract => contract.id);
       const targets = reservation.contracts.filter(contract => targetIds.includes(contract.id));
       const endDate = targets.length ? this.isoDate(this.effectiveEndDate(targets)) : null;
+      const facilityFaultReference = typeof input.facilityFaultReference === 'string' ? input.facilityFaultReference.trim() : '';
+      const review = { ...previousReview, policy: PERIOD_CLOSEOUT, approvedEndDate: endDate, facilityFaultReference: facilityFaultReference || null };
+      if (facilityFaultReference.length > 200) throw new BadRequestException('Mã hồ sơ lỗi cơ sở tối đa 200 ký tự.');
       if (decision === 'APPROVED') {
         this.assertOperationalIntegrity(reservation, targetIds, !request.rentalContractId);
+        if (targetIds.length !== 1) throw new ConflictException('Cần chấp thuận riêng từng hợp đồng của kho trả trước hạn.');
         if (reservation.renewals.some(renewal => this.renewalIsOpen(renewal) && renewalAppliesTo(renewal, targetIds))) {
           throw new ConflictException('Cần xử lý xong gia hạn của kho trước khi chấp thuận trả sớm.');
         }
@@ -361,7 +451,9 @@ export class ReturnsService {
         const paid = reservation.invoices.reduce((sum, invoice) => sum + Number(invoice.amountPaid), 0);
         if (input.reviewedOutstandingAmount !== outstanding || input.reviewedPaidAmount !== paid) throw new ConflictException('Công nợ hoặc số đã thu vừa thay đổi. Tải lại để đối chiếu trước khi quyết định.');
       }
-      const updated = await tx.supportRequest.update({ where: { id: request.id }, data: { status: 'RESOLVED', resolutionType: 'MANAGER_RESOLVED', resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: action, lastActionIdempotencyKey: earlyReturnScope(request.id, endDate ?? 'no-active-contract') }, include: this.earlyReturnInclude() });
+      const updated = await tx.supportRequest.update({ where: { id: request.id }, data: { status: 'RESOLVED', resolutionType: 'MANAGER_RESOLVED', resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: action, lastActionIdempotencyKey: earlyReturnScope(request.id, endDate ?? 'no-active-contract'),
+        ...(decision === 'APPROVED' ? { earlyReturnFinancialReview: review } : {}),
+      }, include: this.earlyReturnInclude() });
       return this.toEarlyReturn(updated);
     }, 'Đề nghị vừa được cập nhật. Tải lại trước khi quyết định.');
   }
@@ -370,7 +462,19 @@ export class ReturnsService {
     return {
       customer: { select: { id: true, fullName: true, email: true, phone: true } },
       resolvedBy: { select: { id: true, fullName: true, role: true } },
-      reservation: { include: { ...this.eligibilityInclude(), storageType: true, returns: { where: { physicallyReturnedAt: { not: null } }, select: { physicallyReturnedAt: true, inspections: { select: { rentalContractId: true } } }, orderBy: { physicallyReturnedAt: 'desc' as const } } } },
+      reservation: { include: {
+        ...this.eligibilityInclude(), storageType: true,
+        services: { select: { id: true, serviceStartDate: true, serviceEndDate: true } },
+        returns: {
+          select: {
+            id: true, physicallyReturnedAt: true, earlyReturnCloseout: true,
+            rentRefundApprovedAt: true, rentRefundedAt: true, rentRefundReference: true,
+            depositSettlement: { select: { id: true, refundAmount: true, deductionAmount: true, outstandingAmount: true, refundedAt: true, status: true } },
+            inspections: { select: { rentalContractId: true, result: true, issueType: true } },
+          },
+          orderBy: { createdAt: 'desc' as const },
+        },
+      } },
     };
   }
 
@@ -378,11 +482,35 @@ export class ReturnsService {
     const reservation = request.reservation;
     const invoices = reservation.invoices ?? [];
     const targets: ReturnContract[] = request.rentalContractId ? reservation.contracts.filter((contract: ReturnContract) => contract.id === request.rentalContractId) : reservation.contracts;
-    const returned = reservation.returns?.find((item: { inspections: { rentalContractId: string }[] }) =>
-      !request.rentalContractId || item.inspections.some(inspection => inspection.rentalContractId === request.rentalContractId));
-    return { id: request.id, supportCode: request.supportCode, subject: request.subject, description: request.description, status: request.status, decision: request.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : request.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null, resolutionNote: request.resolutionNote, resolvedAt: request.resolvedAt?.toISOString() ?? null, resolvedBy: request.resolvedBy, createdAt: request.createdAt.toISOString(), customer: request.customer,
+    const contractIds = reservation.contracts.map((contract: ReturnContract) => contract.id);
+    const returned = request.lastAction === 'EARLY_RETURN_APPROVED' ? reservation.returns?.find((item: { earlyReturnCloseout?: { supportRequestId?: string }; inspections: { rentalContractId: string }[] }) =>
+      item.earlyReturnCloseout?.supportRequestId ? item.earlyReturnCloseout.supportRequestId === request.id :
+        !request.rentalContractId || item.inspections.some(inspection => inspection.rentalContractId === request.rentalContractId)) : null;
+    let estimate: ReturnType<typeof summarizeEarlyReturn> | null = null;
+    let estimateIssue: string | null = null;
+    const proposed = request.earlyReturnFinancialReview?.requestedDate;
+    const asOf = typeof proposed === 'string' && proposed >= businessDate(new Date()) ? new Date(`${proposed}T00:00:00Z`) : businessToday();
+    if (!returned?.physicallyReturnedAt && targets.length === 1 && hasStartedUnissuedRenewal(reservation.renewals ?? [], targets[0].id, asOf)) {
+      estimateIssue = 'Có kỳ gia hạn chưa lập hóa đơn tại ngày dự kiến. Số tiền sẽ được chốt khi nhận lại kho.';
+    } else if (!returned?.physicallyReturnedAt && targets.length === 1) {
+      try { estimate = summarizeEarlyReturn(planEarlyReturn(invoices, targets[0].id, contractIds, asOf, false, reservation.services), this.isoDate(asOf)!); }
+      catch (error) { if (!(error instanceof ConflictException)) throw error; estimateIssue = error.message; }
+    }
+    const resolutionNote = request.lastAction === 'EARLY_RETURN_APPROVED'
+      ? earlyReturnApprovalNote(request.resolutionNote)
+      : request.resolutionNote;
+    return { id: request.id, supportCode: request.supportCode, subject: request.subject, description: request.description, status: request.status, decision: request.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : request.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null, resolutionNote, resolvedAt: request.resolvedAt?.toISOString() ?? null, resolvedBy: request.resolvedBy, createdAt: request.createdAt.toISOString(), customer: request.customer,
       rentalContractId: request.rentalContractId ?? null,
       updatedAt: request.updatedAt?.toISOString() ?? null, financialReview: request.earlyReturnFinancialReview ?? null, physicallyReturnedAt: returned?.physicallyReturnedAt?.toISOString() ?? null,
+      estimate, estimateIssue,
+      currentDeposit: recordedContractDeposit(invoices, targets.map(contract => contract.id), contractIds, reservation.quoteSnapshot, false),
+      facilityFaultReviewAvailable: !returned?.physicallyReturnedAt && returned?.earlyReturnCloseout?.policy === PERIOD_CLOSEOUT && returned.inspections.some((inspection: { result: string; issueType: string | null }) => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT'),
+      facilityFaultDecision: returned?.earlyReturnCloseout?.facilityFaultDecision ?? null,
+      returnId: returned?.id ?? null, closeout: returned?.earlyReturnCloseout?.appliedAt ? returned.earlyReturnCloseout : null, rentRefund: returned ? this.rentRefundView(returned) : null,
+      depositSettlement: returned?.depositSettlement ? {
+        ...returned.depositSettlement, refundAmount: Number(returned.depositSettlement.refundAmount),
+        deductionAmount: Number(returned.depositSettlement.deductionAmount), outstandingAmount: Number(returned.depositSettlement.outstandingAmount),
+      } : null,
       returnReadiness: request.rentalContractId ? contractReturnReadiness(invoices, [request.rentalContractId], reservation.contracts.map((contract: ReturnContract) => contract.id)) : returnReadiness(invoices), eligibleUnusedInvoices: [],
       reservation: { id: reservation.id, reference: reservation.reservationCode, storageType: { id: reservation.storageType.id, name: reservation.storageType.name }, effectiveEndDate: targets.length ? this.isoDate(this.effectiveEndDateForRead(targets)) : this.isoDate(reservation.endDate) },
       contracts: targets.map(contract => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status, unitCode: contract.reservationUnit.storageUnit.unitNumber })),
@@ -390,9 +518,13 @@ export class ReturnsService {
       financialSummary: { outstandingAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.balanceDue), 0), paidAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0), invoicedDeposit: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.depositAmount), 0) } };
   }
 
+  private rentRefundView(record: { rentRefundApprovedAt?: Date | null; rentRefundedAt?: Date | null; rentRefundReference?: string | null }) {
+    return { approvedAt: record.rentRefundApprovedAt?.toISOString() ?? null, refundedAt: record.rentRefundedAt?.toISOString() ?? null, reference: record.rentRefundReference ?? null };
+  }
+
   private assertReturnEligible(reservation: (ReturnRental & {
     customerId: string; invoices: Prisma.InvoiceGetPayload<{ select: typeof returnInvoiceFields }>[];
-    supportRequests?: { id: string; rentalContractId: string | null; status: string; lastAction: string | null; lastActionIdempotencyKey: string | null; resolvedBy?: { role: string } | null }[];
+    supportRequests?: ReturnApproval[];
     renewals: Parameters<typeof hasUnissuedRenewalInstallments>[0];
   }) | null, customerId: string, now: Date, contractRef: string | null) {
     if (!reservation || reservation.customerId !== customerId) throw new NotFoundException('Không tìm thấy Active Rental thuộc khách hàng.');
@@ -401,15 +533,34 @@ export class ReturnsService {
     if (!target) throw new NotFoundException('Không tìm thấy hợp đồng thuộc đơn thuê này.');
     this.assertOperationalIntegrity(reservation, [target.id]);
     const endDate = target.endDate;
-    const earlyApproval = (reservation.supportRequests ?? []).some(request =>
-      (request.rentalContractId === target.id || (request.rentalContractId === null && reservation.contracts.every(contract => +contract.endDate === +endDate)))
-      && request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'MANAGER'
-      && request.lastActionIdempotencyKey === earlyReturnScope(request.id, this.isoDate(endDate)!));
-    if (businessDate(now) < this.isoDate(endDate)! && !earlyApproval) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Trả trước hạn cần quản lý chấp thuận đề nghị và điều kiện quyết toán trước.' });
-    this.assertRenewalsSettled(reservation.renewals, [target.id]);
+    const early = businessDate(now) < this.isoDate(endDate)!;
+    const closeout = early ? this.approvedCloseout(reservation, target) : null;
+    if (early && !closeout) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Quản lý cần chấp thuận đề nghị trả kho trước hạn.' });
+    this.assertRenewalsSettled(reservation.renewals, [target.id], Boolean(closeout));
     const allContractIds = reservation.contracts.map(contract => contract.id);
-    this.assertDebt(reservation.invoices, [target.id], allContractIds, true);
-    return { endDate, contractId: target.id, unitIds: [target.reservationUnit.storageUnitId] };
+    if (!closeout) this.assertDebt(reservation.invoices, [target.id], allContractIds, true);
+    return { endDate, contractId: target.id, unitIds: [target.reservationUnit.storageUnitId], closeout };
+  }
+
+  private approvedCloseout(reservation: { contracts: { endDate: Date }[]; supportRequests?: ReturnApproval[] }, target: { id: string; endDate: Date }): CloseoutApproval | null {
+    const endDate = this.isoDate(target.endDate)!;
+    const approval = reservation.supportRequests?.find(request =>
+      (request.rentalContractId === target.id || (request.rentalContractId === null && reservation.contracts.every(contract => +contract.endDate === +target.endDate)))
+      && request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'MANAGER'
+      && request.lastActionIdempotencyKey === earlyReturnScope(request.id, endDate));
+    if (!approval) return null;
+    return { ...(approval.earlyReturnFinancialReview as Prisma.JsonObject | null), policy: PERIOD_CLOSEOUT, approvedEndDate: endDate, supportRequestId: approval.id };
+  }
+
+  private closeoutForReturn(record: { earlyReturnCloseout?: Prisma.JsonValue; physicallyReturnedAt?: Date | null; activeKey: string | null; requestedAt?: Date;
+    inspections: { rentalContractId: string }[]; reservation: { contracts: { id: string; endDate: Date }[]; supportRequests?: ReturnApproval[] } }): CloseoutApproval | null {
+    const saved = record.earlyReturnCloseout as CloseoutApproval | null;
+    if (saved?.policy === PERIOD_CLOSEOUT) return saved;
+    if (record.physicallyReturnedAt || !record.activeKey || !record.requestedAt || record.inspections.length !== 1) return null;
+    const contractId = record.inspections[0].rentalContractId;
+    const target = record.reservation.contracts.find(contract => contract.id === contractId);
+    if (!target || record.activeKey !== this.contractKey(contractId) || businessDate(record.requestedAt) >= this.isoDate(target.endDate)!) return null;
+    return this.approvedCloseout(record.reservation, target);
   }
 
   private assertOperationalIntegrity(reservation: ReturnRental, ids: string[], legacy = false) {
@@ -452,10 +603,10 @@ export class ReturnsService {
       units: { where: { releasedAt: null }, include: { storageUnit: true } },
       contracts: { include: { reservationUnit: { include: { storageUnit: true } } }, orderBy: { contractCode: 'asc' as const } },
       renewals: { where: { status: { not: 'REJECTED' as const } }, select: {
-        rentalContractId: true, status: true, termMonths: true, paymentPlan: true,
+        rentalContractId: true, status: true, termMonths: true, paymentPlan: true, previousEndDate: true,
         invoices: { select: { renewalCycle: true, status: true } },
       } },
-      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, category: 'OTHER', lastAction: 'EARLY_RETURN_APPROVED', status: 'RESOLVED', resolvedBy: { role: 'MANAGER' } }, select: { id: true, rentalContractId: true, status: true, lastAction: true, lastActionIdempotencyKey: true, resolvedBy: { select: { role: true } } } },
+      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, category: 'OTHER', lastAction: 'EARLY_RETURN_APPROVED', status: 'RESOLVED', resolvedBy: { role: 'MANAGER' } }, select: { id: true, rentalContractId: true, status: true, lastAction: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true, resolvedBy: { select: { role: true } } } },
     } satisfies Prisma.ReservationInclude;
   }
 
@@ -484,6 +635,7 @@ export class ReturnsService {
         orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
       },
       reservation: { include: {
+        supportRequests: this.eligibilityInclude().supportRequests,
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
         units: { where: { releasedAt: null }, select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
@@ -564,14 +716,25 @@ export class ReturnsService {
     const debt = wholeOrder
       ? returnReadiness(record.reservation.invoices)
       : contractReturnReadiness(record.reservation.invoices, ids, allIds);
-    const awaitingRenewalInvoices = !record.physicallyReturnedAt && hasUnissuedRenewalInstallments(record.reservation.renewals, ids);
-    const readiness = { ...debt, awaitingRenewalInvoices, canReturn: debt.canReturn && !awaitingRenewalInvoices };
+    const closeout = this.closeoutForReturn(record);
+    const periodCloseout = closeout?.policy === PERIOD_CLOSEOUT;
+    const facilityFaultReviewRequired = periodCloseout && !record.physicallyReturnedAt && closeout.reason === 'FACILITY_ISSUE'
+      && !closeout.facilityFaultReference && !closeout.facilityFaultDecision
+      && record.inspections.some((inspection: { result: string; issueType?: string | null }) => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT');
+    const awaitingRenewalInvoices = !periodCloseout && !record.physicallyReturnedAt && hasUnissuedRenewalInstallments(record.reservation.renewals, ids);
+    const readiness = { ...debt, policy: periodCloseout ? PERIOD_CLOSEOUT : debt.policy, requiresFullSettlement: !periodCloseout, awaitingRenewalInvoices, canReturn: periodCloseout ? !facilityFaultReviewRequired : debt.canReturn && !awaitingRenewalInvoices };
     const base = {
       id: record.id,
       rentalContractId: ids.length === 1 ? ids[0] : null,
       timing: businessDate(record.requestedAt) < this.isoDate(effectiveEndDate)! ? 'EARLY' : 'ON_OR_AFTER_END',
       ...(mode === 'STAFF' ? {} : { remainingUnitCount: record.reservation.contracts.filter((contract: ReturnContract) => !ids.includes(contract.id) && contract.status === 'ACTIVE' && contract.reservationUnit.releasedAt === null).length }),
-      returnReadiness: mode === 'STAFF' ? { canReturn: readiness.canReturn } : readiness,
+      returnReadiness: mode === 'STAFF' ? { canReturn: readiness.canReturn, ...(periodCloseout ? { policy: PERIOD_CLOSEOUT, facilityFaultReviewRequired } : {}) } : readiness,
+      earlyReturnCloseout: !record.physicallyReturnedAt || !closeout?.appliedAt || mode === 'STAFF' ? null : mode === 'MANAGER' ? closeout : {
+        effectiveDate: closeout.effectiveDate, appliedAt: closeout.appliedAt, outstandingAmount: closeout.outstandingAmount,
+        waivedAmount: closeout.waivedAmount, refundAmount: closeout.refundAmount, facilityFaultCredit: closeout.facilityFaultCredit,
+        rentalAmount: closeout.rentalAmount, serviceAmount: closeout.serviceAmount, penaltyAmount: closeout.penaltyAmount,
+      },
+      rentRefund: mode === 'STAFF' || !record.physicallyReturnedAt ? null : this.rentRefundView(record),
       returnCode: record.returnCode, inventory: { remainingItemTypes: contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),
@@ -738,11 +901,11 @@ export class ReturnsService {
     return openRenewalStatuses.some(status => renewal.status === status);
   }
 
-  private assertRenewalsSettled(renewals: Parameters<typeof hasUnissuedRenewalInstallments>[0], ids: string[]) {
+  private assertRenewalsSettled(renewals: Parameters<typeof hasUnissuedRenewalInstallments>[0], ids: string[], periodCloseout = false) {
     if (renewals.some(renewal => this.renewalIsOpen(renewal) && renewalAppliesTo(renewal, ids))) {
       throw new ConflictException({ code: 'UNRESOLVED_RENEWAL_EXISTS', message: 'Cần xử lý yêu cầu gia hạn đang mở của kho trước khi trả.' });
     }
-    if (hasUnissuedRenewalInstallments(renewals, ids)) {
+    if (!periodCloseout && hasUnissuedRenewalInstallments(renewals, ids)) {
       throw new ConflictException({ code: 'RENEWAL_INSTALLMENTS_NOT_ISSUED', message: 'Các kỳ gia hạn đã cam kết đang chờ lập hóa đơn. Vui lòng kiểm tra lại hoặc liên hệ NestBox để đối soát.' });
     }
   }

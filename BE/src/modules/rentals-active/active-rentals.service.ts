@@ -6,6 +6,8 @@ import { deriveOverdueState } from './overdue-state.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import { returnReadiness } from '../returns/early-return-finance.js';
 import { contractReturnReadiness, recordedContractDeposit, returnInvoiceFields } from '../returns/contract-return-finance.js';
+import { hasStartedUnissuedRenewal, planEarlyReturn, summarizeEarlyReturn, PERIOD_CLOSEOUT } from '../returns/return-period-closeout.js';
+import { EARLY_RETURN_SUBJECT, earlyReturnScope } from '../returns/early-return-classification.js';
 import { businessToday } from '../../business-date.js';
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -154,6 +156,9 @@ export class ActiveRentalsService {
         } } } } },
         orderBy: { contractCode: 'asc' as const },
       },
+      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, status: 'RESOLVED' as const, lastAction: 'EARLY_RETURN_APPROVED', resolvedBy: { role: 'MANAGER' as const } },
+        select: { id: true, rentalContractId: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true } },
+      services: { select: { id: true, serviceStartDate: true, serviceEndDate: true } },
       invoices: { include: { depositSettlement: returnInvoiceFields.depositSettlement, renewalRequest: returnInvoiceFields.renewalRequest,
         payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } }, orderBy: { billingCycle: 'asc' as const } },
       renewals: { include: { invoices: { select: { status: true, totalAmount: true, amountPaid: true, balanceDue: true, renewalCycle: true }, orderBy: { renewalCycle: 'asc' as const } } }, orderBy: { createdAt: 'desc' as const } },
@@ -196,11 +201,23 @@ export class ActiveRentalsService {
         ...(mode === 'MANAGER' ? { customer: future.reservation.customer } : {}),
       } : null;
       const returnReadiness = contractReturnReadiness(record.invoices, [contract.id], allContractIds);
-      const awaitingRenewalInvoices = hasUnissuedRenewalInstallments(record.renewals, [contract.id]);
-      if (returnReadiness.canReturn && (allContractIds.length !== record.quantity
-          || recordedContractDeposit(record.invoices, [contract.id], allContractIds, record.quoteSnapshot, false) === null)) {
+      const cutoff = businessToday(now);
+      const endDate = this.isoDate(contract.endDate)!;
+      const approval = cutoff < contract.endDate ? record.supportRequests?.find((request: any) =>
+        (request.rentalContractId === contract.id || (!request.rentalContractId && record.contracts.every((item: { endDate: Date }) => +item.endDate === +contract.endDate)))
+        && request.lastActionIdempotencyKey === earlyReturnScope(request.id, endDate)) : null;
+      const earlyApproved = Boolean(approval);
+      const pendingRenewal = pending.find((renewal: { rentalContractId: string | null }) => renewalAppliesTo(renewal, [contract.id]));
+      const awaitingRenewalInvoices = !earlyApproved && hasUnissuedRenewalInstallments(record.renewals, [contract.id]);
+      const depositVerified = allContractIds.length === record.quantity && recordedContractDeposit(record.invoices, [contract.id], allContractIds, record.quoteSnapshot, false) !== null;
+      if (returnReadiness.canReturn && !depositVerified) {
         returnReadiness.canReturn = false;
         returnReadiness.requiresReconciliation = true;
+      }
+      let earlyReturnEstimate = null;
+      if (mode === 'CUSTOMER' && cutoff < contract.endDate && !hasStartedUnissuedRenewal(record.renewals, contract.id, cutoff)) {
+        try { earlyReturnEstimate = summarizeEarlyReturn(planEarlyReturn(record.invoices, contract.id, allContractIds, cutoff, false, record.services), this.isoDate(cutoff)!); }
+        catch (error) { if (!(error instanceof ConflictException)) throw error; }
       }
       return {
         id: contract.id, contractCode: contract.contractCode, status: contract.status,
@@ -208,12 +225,13 @@ export class ActiveRentalsService {
         returnReadiness: {
           ...returnReadiness,
           awaitingRenewalInvoices,
-          canReturn: returnReadiness.canReturn && !awaitingRenewalInvoices,
+          ...(earlyApproved ? { policy: PERIOD_CLOSEOUT, requiresFullSettlement: false, earlyReturnBlockReason: pendingRenewal ? 'RENEWAL_IN_PROGRESS' : !depositVerified ? 'DEPOSIT_RECONCILIATION_REQUIRED' : null } : {}),
+          canReturn: earlyApproved ? depositVerified && !pendingRenewal : returnReadiness.canReturn && !awaitingRenewalInvoices,
         },
-        pendingRenewal: pendingSummary(pending.find((renewal: { rentalContractId: string | null }) => renewalAppliesTo(renewal, [contract.id]))),
+        pendingRenewal: pendingSummary(pendingRenewal),
         returnInProgress: contract.returnInspections.length > 0,
         unit: mode === 'CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
-        ...(mode === 'CUSTOMER' ? { storedItems: contract.storedItems ?? [],
+        ...(mode === 'CUSTOMER' ? { storedItems: contract.storedItems ?? [], earlyReturnEstimate,
         transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
           code: transfer.transferCode, from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
         })) } : {}),

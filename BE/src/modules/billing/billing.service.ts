@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
+import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
 import { invoiceSigningRequirements } from './payment-eligibility.js';
 import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude, invoiceMoney, invoiceUnit, savedInvoiceBreakdown } from './invoice-breakdown.js';
 
@@ -100,7 +101,7 @@ export class BillingService {
     });
   }
 
-  async ensureRecurringInvoices(tx: Prisma.TransactionClient, reservationId: string) {
+  async ensureRecurringInvoices(tx: Prisma.TransactionClient, reservationId: string, startedBefore?: Date) {
     const reservation = await tx.reservation.findUnique({
       where: { id: reservationId },
       include: { contracts: { include: invoiceContractInclude, orderBy: { contractCode: 'asc' } }, services: true },
@@ -131,16 +132,17 @@ export class BillingService {
         continue;
       }
       const periodStart = this.addCalendarMonths(originalStart, cycle - 1);
+      if (startedBefore && periodStart >= startedBefore) break;
       const nominalEnd = this.addCalendarMonths(originalStart, cycle);
       const periodEnd = cycle === termMonths && originalEnd < nominalEnd ? originalEnd : nominalEnd;
       if (periodEnd > originalEnd || periodEnd <= periodStart) throw new ConflictException('Kỳ thu vượt quá thời hạn thuê gốc. Cần đối soát.');
       const billed = reservation.contracts.flatMap(contract => {
         const returnedOn = contract.status === 'COMPLETED' && contract.completedAt ? businessToday(contract.completedAt) : null;
         const billableEnd = returnedOn && returnedOn < contract.endDate ? returnedOn : contract.endDate;
-        return contract.startDate < periodEnd && billableEnd > periodStart ? [{ contract, billableEnd }] : [];
+        return contract.startDate < periodEnd && billableEnd > periodStart ? [{ contract }] : [];
       });
       if (!billed.length) continue;
-      if (billed.some(({ contract, billableEnd }) => contract.startDate > periodStart || billableEnd < periodEnd
+      if (billed.some(({ contract }) => contract.startDate > periodStart || contract.endDate < periodEnd
           || contract.reservationUnit.plannedStartDate > periodStart
           || (contract.status === 'COMPLETED' && !contract.completedAt)
           || (contract.rateEffectiveFrom && contract.rateEffectiveFrom > periodStart && contract.rateEffectiveFrom < periodEnd))) {
@@ -506,6 +508,8 @@ export class BillingService {
       if (!settlement || settlement.status !== 'AWAITING_OUTSTANDING_PAYMENT' || settlement.refundAmount !== 0n) throw new ConflictException('Settlement Invoice không khớp trạng thái quyết toán hiện tại.');
       const now = new Date();
       await tx.depositSettlement.update({ where: { id: settlement.id }, data: { status: 'SETTLED', settledByUserId: actorId, settledAt: now } });
+      const record = await tx.returnRequest.findUniqueOrThrow({ where: { id: settlement.returnRequestId }, select: { earlyReturnCloseout: true, rentRefundApprovedAt: true, rentRefundedAt: true } });
+      if (earlyReturnSettlementPending(record)) return;
       const completed = await tx.returnRequest.updateMany({ where: { id: settlement.returnRequestId, status: 'PENDING_SETTLEMENT', physicallyReturnedAt: { not: null } }, data: { status: 'COMPLETED', completedAt: now, completedByUserId: actorId, activeKey: null } });
       if (completed.count !== 1) throw new ConflictException('Không thể hoàn tất ReturnRequest sau khi thanh toán settlement.');
     }

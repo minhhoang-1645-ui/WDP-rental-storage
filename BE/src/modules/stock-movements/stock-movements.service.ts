@@ -259,6 +259,7 @@ export class StockMovementsService {
         return this.staffView(item, await this.currentStaffItems(tx, actor.id, [item]));
       }
       if (current.status !== 'ASSIGNED') throw new ConflictException('Chỉ phiếu ASSIGNED mới được hoàn tất.');
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RentalContract" WHERE "id" = ${current.rentalContractId} FOR UPDATE`);
       const contract = await tx.rentalContract.findUnique({ where: { id: current.rentalContractId }, select: { status: true, reservationUnit: { select: { storageUnit: { select: this.unitSelect() } } } } });
       if (contract?.status !== 'ACTIVE') throw new ConflictException('Hợp đồng đã kết thúc; không thể thay đổi tồn hàng sau trả kho.');
       const lines = await tx.stockMovementLine.findMany({ where: { stockMovementId: current.id }, include: { storedItem: true }, orderBy: { id: 'asc' } });

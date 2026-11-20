@@ -66,7 +66,7 @@ export class StaffReturnsController {
     mixed: { value: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspections: [{ result: 'PASS', unit: { status: 'AVAILABLE' } }, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', unit: { status: 'MAINTENANCE' } }] } },
   } } })
   @ApiConflictResponse({ description: 'RETURN_INSPECTIONS_INCOMPLETE, RETURN_ISSUE_TYPE_REQUIRED, deposit history mismatch, invalid contract/unit/allocation hoặc concurrency conflict.' })
-  finalize(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.returns.finalize(id, request.user!); }
+  finalize(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body?: Record<string, unknown>) { return this.returns.finalize(id, request.user!, body ?? {}); }
 
   private query(input: Record<string, unknown>): ReturnListQuery {
     const page = this.integer(input.page, 1, 100000, 'page');

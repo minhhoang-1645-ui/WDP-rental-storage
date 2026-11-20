@@ -17,7 +17,7 @@ function setup(balance = 0n, endDate = '2030-05-17') {
   };
   const row = { id: 'return', activeKey: 'RETURN:reservation', status: 'INSPECTION_IN_PROGRESS', assignedStaffUserId: staff.id, reservationId: reservation.id, returnCode: 'RETURN', reservation, inspections: [{ id: 'inspection', result: 'PASS', issueType: null, storageUnitId: 'unit', rentalContractId: 'contract' }] };
   const tx = { $queryRaw: vi.fn(), reservation: { findUnique: vi.fn().mockResolvedValue(reservation) },
-    returnRequest: { findUnique: vi.fn(async ({ where }) => where.id ? row : null), findUniqueOrThrow: vi.fn(async () => row), create: vi.fn(), count: vi.fn().mockResolvedValue(0), update: vi.fn(async ({ data }) => Object.assign(row, data)) },
+    returnRequest: { findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn(async ({ where }) => where.id ? row : null), findUniqueOrThrow: vi.fn(async () => row), create: vi.fn(async ({ data }) => data), count: vi.fn().mockResolvedValue(0), update: vi.fn(async ({ data }) => Object.assign(row, data)) },
     rentalContract: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), aggregate: vi.fn().mockResolvedValue({ _max: { endDate: null } }) }, reservationUnit: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     storageUnit: { updateMany: vi.fn(async ({ where }) => ({ count: where.id.in.length })) },
     stockMovement: { count: vi.fn().mockResolvedValue(0) }, storedItem: { count: vi.fn().mockResolvedValue(0) }, depositSettlement: { create: vi.fn() },
@@ -38,10 +38,18 @@ describe('Mandatory full settlement before warehouse return', () => {
   it('fails closed for missing or malformed ledger amounts', () => {
     for (const invoices of [undefined, [{ status: 'OPEN', balanceDue: NaN }], [{ status: 'OPEN', balanceDue: -1n }]]) expect(returnReadiness(invoices).canReturn).toBe(false);
   });
-  it.each(['2030-05-17', '2000-05-17'])('blocks customer creation with debt for end date %s', async end => {
-    const app = setup(1500000n, end);
+  it('blocks ordinary return creation with outstanding debt', async () => {
+    const app = setup(1500000n, '2000-05-17');
     await expect(app.service.createCustomerReturn(customer, { reservationId: 'reservation' }, 'return-request-key')).rejects.toMatchObject({ response: { code: 'RETURN_UNPAID_INVOICES', totalOutstanding: 1500000 } });
     expect(app.tx.returnRequest.create).not.toHaveBeenCalled(); expect(app.tx.rentalContract.updateMany).not.toHaveBeenCalled();
+  });
+  it('creates an early return from a valid legacy approval despite outstanding invoices', async () => {
+    const app = setup(1500000n);
+    await expect(app.service.createCustomerReturn(customer, { reservationId: 'reservation' }, 'return-request-key')).resolves.toMatchObject({
+      earlyReturnCloseout: { policy: 'PERIOD_CLOSEOUT_V1', approvedEndDate: '2030-05-17', supportRequestId: 'proposal' },
+    });
+    expect(app.reservation.invoices[1].balanceDue).toBe(1500000n);
+    expect(app.tx.rentalContract.updateMany).not.toHaveBeenCalled();
   });
   it('rechecks debt on staff finalize and never applies legacy pending waivers', async () => {
     const app = setup(1500000n);

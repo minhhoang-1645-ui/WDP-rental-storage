@@ -91,6 +91,7 @@ export function CustomerReturnsPage() {
   const selected = available.find(item => item.contract.id === contractId);
   const selectedDebt = selected?.contract.returnReadiness?.totalOutstanding ?? null;
   const canSubmitReturn = selected?.contract.returnReadiness?.canReturn === true;
+  const earlyCloseout = selected?.contract.returnReadiness?.policy === 'PERIOD_CLOSEOUT_V1';
   const otherUnits = selected?.rental.contracts.filter(contract => contract.id !== contractId).map(contract => contract.unit.unitCode) ?? [];
   const refresh = () => {
     setCheckedAt(Date.now());
@@ -222,9 +223,9 @@ export function CustomerReturnsPage() {
               </EntitySelect>
             </label>
             {selected && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
-              <strong>{canSubmitReturn ? 'Có thể gửi yêu cầu trả kho' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Đang chờ hóa đơn gia hạn' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối soát trước khi trả kho' : 'Cần thanh toán trước khi trả kho'}</strong>
-              <p>{canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho. Tiền cọc được quyết toán sau khi nhận kho.' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Làm mới để kiểm tra các kỳ gia hạn đã phát hành.' : selectedDebt === null || selectedDebt === 0 ? 'Hãy liên hệ NestBox để đối chiếu hóa đơn và tiền cọc của hợp đồng này.' : <>Số dư các hóa đơn liên quan, gồm cả hóa đơn chung nếu có: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
-              {!canSubmitReturn && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selected.rental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
+              <strong>{canSubmitReturn ? 'Có thể gửi yêu cầu trả kho' : earlyCloseout ? 'Cần kiểm tra điều kiện bàn giao' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Đang chờ hóa đơn gia hạn' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối soát trước khi trả kho' : 'Cần thanh toán trước khi trả kho'}</strong>
+              <p>{earlyCloseout ? (canSubmitReturn ? 'Tiền thuê được tính đến ngày nhân viên nhận lại kho. Tiền cọc được xử lý riêng.' : 'Hãy liên hệ NestBox để kiểm tra tiền cọc và các yêu cầu đang xử lý.') : canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho. Tiền cọc được quyết toán sau khi nhận kho.' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Làm mới để kiểm tra các kỳ gia hạn đã phát hành.' : selectedDebt === null || selectedDebt === 0 ? 'Hãy liên hệ NestBox để đối chiếu hóa đơn và tiền cọc của hợp đồng này.' : <>Số dư các hóa đơn liên quan, gồm cả hóa đơn chung nếu có: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
+              {!canSubmitReturn && !earlyCloseout && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selected.rental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
             </div>}
             <label className="field-label">
               Ghi chú
@@ -312,6 +313,12 @@ function ReturnList({ items, focused }: { items: CustomerReturnRequest[]; focuse
               <strong>Cần thanh toán đủ trước khi trả kho</strong>
               <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
               <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và thanh toán</Link>
+            </div>}
+            {item.earlyReturnCloseout && <div className="customer-inline-notice">
+              <strong>Quyết toán tiền thuê</strong>
+              <p>Ngày chấm dứt {formatPortalDate(item.earlyReturnCloseout.effectiveDate)} · {item.earlyReturnCloseout.outstandingAmount === null ? 'Cần đối soát số dư hóa đơn chung' : <>Còn phải trả khi bàn giao {moneyLabel(item.earlyReturnCloseout.outstandingAmount)}</>}.</p>
+              <p>Hóa đơn được giảm {moneyLabel(item.earlyReturnCloseout.waivedAmount)}.</p>
+              {item.earlyReturnCloseout.refundAmount > 0 && <p>{item.rentRefund?.refundedAt ? 'Đã chuyển tiền hoàn' : item.rentRefund?.approvedAt ? 'Đã duyệt, chờ chuyển tiền' : 'Tiền thuê dự kiến hoàn'} {moneyLabel(item.earlyReturnCloseout.refundAmount)}.</p>}
             </div>}
             <dl className="customer-record-facts">
               <div>

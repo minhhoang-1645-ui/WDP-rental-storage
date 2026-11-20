@@ -283,6 +283,13 @@
 .transfer-destination-search > svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--workspace-secondary); pointer-events: none; }
 .transfer-destination-picker .transfer-destination-search > input { padding-inline-start: 38px; }
 .transfer-destination-picker .transfer-destination-filters { grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.transfer-price-review { display: grid; gap: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.transfer-price-review p, .transfer-price-review dl { margin: 0; }
+.transfer-price-rates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 8px 16px; }
+.transfer-price-rates dt { font-size: .875rem; }
+.transfer-price-rates dd { margin: 0; font-weight: 700; }
+.transfer-price-review summary { cursor: pointer; font-weight: 600; }
+.transfer-price-review details[open] > :not(summary) { margin-block-start: 8px; }
 .transfer-destination-filters > label { min-width: 0; }
 .transfer-destination-picker .transfer-destination-options { display: grid; gap: 12px; padding: 12px 2px; border: 0; max-height: 480px; overflow-y: auto; }
 .portal-form .transfer-destination-options .transfer-destination-card { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 14px; align-items: start; border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 12px; padding: 16px; cursor: pointer; min-width: 0; }

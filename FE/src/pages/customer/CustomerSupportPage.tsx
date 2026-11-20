@@ -435,7 +435,7 @@ function TransferInventoryNotice({ contractId, unitCode }: { contractId: string;
 
   return <div className="customer-inline-notice">
     <strong>Còn {count} mặt hàng tại kho {unitCode}</strong>
-    <p>Phối hợp với nhân viên để chuyển hàng sang kho mới. Nếu muốn lấy hàng ra trước, hãy gửi phiếu xuất và chờ nhân viên hoàn tất phiếu.</p>
+    <p>Gửi phiếu xuất và phối hợp với nhân viên lấy hết hàng ra trước khi bàn giao kho cũ.</p>
     <div className="portal-actions">
       <Link className="button-secondary" to={'/customer/stored-items?' + query}>Xem hàng đang lưu</Link>
       <Link className="button-secondary" to={'/customer/stock-movements?' + new URLSearchParams({ rentalContractId: contractId, type: 'OUT', create: '1' })}>Tạo phiếu xuất hàng</Link>

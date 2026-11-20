@@ -61,6 +61,7 @@ export function ManagerActions({
   const [target, setTarget] = useState("");
   const [transferStaff, setTransferStaff] = useState('');
   const [transferDestinationReady, setTransferDestinationReady] = useState(false);
+  const [transferReviewHash, setTransferReviewHash] = useState('');
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
   const lock = useRef(false);
   const root = `/manager/${resource}/${encodeURIComponent(id)}`;
@@ -123,13 +124,12 @@ export function ManagerActions({
           <option value="CASH">Tiền mặt</option>
         </select>
       </label>
-      {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
-        {resource === "deposit-settlements" ? "Mã giao dịch hoàn tiền" : "Mã giao dịch ngân hàng đã kiểm tra"}
+      {resource !== "deposit-settlements" && method === "BANK_TRANSFER" && <label className="field-label">
+        Mã giao dịch ngân hàng đã kiểm tra
         <input
           value={reference}
           maxLength={200}
-          required={resource === "deposit-settlements" || method === "BANK_TRANSFER"}
-          minLength={resource === "deposit-settlements" ? 2 : undefined}
+          required
           onChange={(e) => setReference(e.target.value)}
         />
       </label>}
@@ -150,9 +150,7 @@ export function ManagerActions({
           onChange={(e) => setReceived(e.target.checked)}
           required
         />
-        {resource === "deposit-settlements"
-          ? "Tôi đã hoàn tiền thực tế cho khách."
-          : "Tôi đã nhận và đối chiếu khoản tiền này."}
+        Tôi đã hoàn tiền thực tế cho khách.
       </label>}
     </>
   );
@@ -500,7 +498,7 @@ export function ManagerActions({
                     "POST",
                     {
                       method,
-                      reference: reference.trim(),
+                      refundConfirmed: true,
                       note: note.trim() || undefined,
                     },
                     true,
@@ -514,7 +512,7 @@ export function ManagerActions({
               {paymentFields}
               <button
                 className="button-primary"
-                disabled={busy || !received || !reference.trim()}
+                disabled={busy || !received}
               >
                 Ghi nhận hoàn tiền
               </button>
@@ -650,6 +648,7 @@ export function ManagerActions({
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
                     staffUserId: transferStaff,
+                    ...(transferReviewHash ? { commercialReviewHash: transferReviewHash } : {}),
                   });
                 }}
               >
@@ -659,6 +658,7 @@ export function ManagerActions({
                   value={target}
                   onChange={setTarget}
                   onReady={setTransferDestinationReady}
+                  onReviewed={setTransferReviewHash}
                   disabled={busy}
                 />
                 <div className="staff-choice-summary">

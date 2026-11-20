@@ -1,5 +1,5 @@
 import { Optional } from '@nestjs/common';
-import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
+import { EARLY_RETURN_SUBJECT, earlyReturnApprovalNote } from '../returns/early-return-classification.js';
 import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -53,6 +53,7 @@ export class SupportService {
           if (reservation.status !== 'CONFIRMED' || !activeContracts.includes(contract)) throw new ConflictException('Chỉ đề nghị trả sớm đối với kho đang sử dụng.');
           const endDate = this.date(contract.endDate);
           if (endDate <= businessDate(new Date())) throw new ConflictException('Hợp đồng đã đến hạn. Bạn có thể gửi yêu cầu trả kho.');
+          if (parsed.earlyReturn?.requestedDate && (parsed.earlyReturn.requestedDate < businessDate(new Date()) || parsed.earlyReturn.requestedDate >= endDate)) throw new BadRequestException('Chọn ngày trả từ hôm nay đến trước ngày hết hạn thuê.');
           const previous = await tx.supportRequest.findFirst({ where: {
             reservationId: reservation.id, subject: parsed.subject, category: 'OTHER',
             AND: [
@@ -92,6 +93,7 @@ export class SupportService {
           rentalContractId: transferContract?.id ?? contract?.id, storageUnitId: transferContract?.reservationUnit.storageUnitId ?? unit?.id ?? (early ? contract?.reservationUnit.storageUnitId : undefined), invoiceId: invoice?.id,
           category: parsed.category, priority: 'MEDIUM', ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, status: 'ASSIGNED' as const } : { status: 'OPEN' as const }), subject: parsed.subject, description: parsed.description,
           idempotencyKey: parsed.idempotencyKey,
+          ...(parsed.earlyReturn ? { earlyReturnFinancialReview: parsed.earlyReturn } : {}),
           transferRequestedStartAt: parsed.proposal?.startAt,
           transferRequestedEndAt: parsed.proposal?.endAt,
         }, include: this.include('CUSTOMER') });
@@ -229,9 +231,15 @@ export class SupportService {
   } }
 
   private toView(record: any, mode: ViewMode) {
-    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote: record.resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision: record.subject === EARLY_RETURN_SUBJECT && record.resolvedBy?.role === 'MANAGER' ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null) : null, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).filter((transfer: { status: string; assignedStaffUserId: string | null }) =>
+    const earlyReturnDecision = record.subject === EARLY_RETURN_SUBJECT && record.resolvedBy?.role === 'MANAGER'
+      ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null)
+      : null;
+    const resolutionNote = earlyReturnDecision === 'APPROVED'
+      ? earlyReturnApprovalNote(record.resolutionNote)
+      : record.resolutionNote;
+    const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).filter((transfer: { status: string; assignedStaffUserId: string | null }) =>
       mode !== 'STAFF' || Boolean(record.assignedStaffUserId && transfer.assignedStaffUserId === record.assignedStaffUserId && ['APPROVED', 'COMPLETED'].includes(transfer.status)),
-    ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
+    ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, hasCommercialAppendix: Boolean(transfer.commercialSnapshot), requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     const view = { ...base, transferRequestedSchedule: transferProposalView(record) };
     if (mode === 'CUSTOMER') return view;
     const operational = { ...view, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
@@ -247,7 +255,16 @@ export class SupportService {
     const category = input.category;
     if (typeof category !== 'string' || ![...operationalCategories, 'PAYMENT_SUPPORT', 'OTHER'].includes(category as SupportCategory)) throw new BadRequestException('category không hợp lệ.');
     const subject = this.text(input.subject, 200, 'subject');
-    return { reservationId: this.id(input.reservationId, 'reservationId'), rentalContractId: this.optionalId(input.rentalContractId, 'rentalContractId'), storageUnitId: this.optionalId(input.storageUnitId, 'storageUnitId'), invoiceId: this.optionalId(input.invoiceId, 'invoiceId'), category: category as SupportCategory, subject, description: this.text(input.description, 4000, 'description'), idempotencyKey: this.key(key), proposal: parseTransferProposal(input, isTransferSubject(subject)) };
+    const requestedDate = input.earlyReturnRequestedDate;
+    const reason = input.earlyReturnReason;
+    let earlyReturn: { requestedDate: string | null; reason: string | null } | undefined;
+    if (subject === EARLY_RETURN_SUBJECT && (requestedDate !== undefined || reason !== undefined)) {
+      const parsedDate = typeof requestedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? new Date(`${requestedDate}T00:00:00Z`) : null;
+      if (requestedDate !== undefined && (!parsedDate || !Number.isFinite(+parsedDate) || this.date(parsedDate) !== requestedDate)) throw new BadRequestException('Ngày muốn trả kho không hợp lệ.');
+      if (reason !== undefined && (typeof reason !== 'string' || !['NO_LONGER_NEEDED', 'RELOCATION', 'PERSONAL', 'FACILITY_ISSUE', 'OTHER'].includes(reason))) throw new BadRequestException('Lý do trả kho không hợp lệ.');
+      earlyReturn = { requestedDate: typeof requestedDate === 'string' ? requestedDate : null, reason: typeof reason === 'string' ? reason : null };
+    }
+    return { reservationId: this.id(input.reservationId, 'reservationId'), rentalContractId: this.optionalId(input.rentalContractId, 'rentalContractId'), storageUnitId: this.optionalId(input.storageUnitId, 'storageUnitId'), invoiceId: this.optionalId(input.invoiceId, 'invoiceId'), category: category as SupportCategory, subject, description: this.text(input.description, 4000, 'description'), idempotencyKey: this.key(key), earlyReturn, proposal: parseTransferProposal(input, isTransferSubject(subject)) };
   }
   private resolutionInput(input: Record<string, unknown>, allowed: readonly string[]) { const type = input.resolutionType; if (typeof type !== 'string' || !allowed.includes(type)) throw new BadRequestException('resolutionType không được phép.'); return { resolutionType: type as any, resolutionNote: this.text(input.resolutionNote, 4000, 'resolutionNote') }; }
   private assertCreateRetry(record: any, parsed: ReturnType<SupportService['createInput']>, customerId: string) {
@@ -257,6 +274,8 @@ export class SupportService {
       : parsed.subject !== EARLY_RETURN_SUBJECT || !record.rentalContractId || record.reservation._count?.contracts === 1;
     if (record.customerUserId !== customerId || !reservationMatches || !contractMatches || record.category !== parsed.category
       || record.subject !== parsed.subject || record.description !== parsed.description
+      || (record.earlyReturnFinancialReview?.requestedDate ?? null) !== (parsed.earlyReturn?.requestedDate ?? null)
+      || (record.earlyReturnFinancialReview?.reason ?? null) !== (parsed.earlyReturn?.reason ?? null)
       || record.transferRequestedStartAt?.getTime() !== parsed.proposal?.startAt.getTime()
       || record.transferRequestedEndAt?.getTime() !== parsed.proposal?.endAt.getTime()
       || (parsed.storageUnitId && ![record.storageUnitId, record.storageUnit?.unitNumber].includes(parsed.storageUnitId))

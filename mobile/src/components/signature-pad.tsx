@@ -3,9 +3,10 @@ import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'reac
 import { PanResponder, PixelRatio, Platform, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
-import type { SignaturePadHandle } from './signature-pad.types';
+import type { SignaturePadHandle, SignaturePadProps } from './signature-pad.types';
 
-export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad(_, ref) {
+export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function SignaturePad({ compact, onValidityChange }, ref) {
+  const height = compact ? 120 : 180;
   const view = useRef<ComponentRef<typeof View>>(null);
   const drawing = useRef<string>('');
   const points = useRef(0);
@@ -23,13 +24,14 @@ export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad
       if (points.current >= 2400) return;
       const { locationX: x, locationY: y } = event.nativeEvent;
       points.current++;
+      if (points.current === 2) onValidityChange?.(true);
       drawing.current += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
       const next = drawing.current;
       setPaths(current => [...current.slice(0, -1), next]);
     },
-  }), []);
+  }), [onValidityChange]);
   useImperativeHandle(ref, () => ({
-    clear() { drawing.current = ''; points.current = 0; setPaths([]); },
+    clear() { drawing.current = ''; points.current = 0; setPaths([]); onValidityChange?.(false); },
     async capture() {
       if (points.current < 2) throw new Error('Vui lòng vẽ chữ ký trong khung.');
       // iOS ViewShot takes points and renders at device scale. Android takes pixels.
@@ -46,8 +48,8 @@ export const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad
       }
       throw new Error('Chưa thể lưu ảnh chữ ký. Vui lòng thử gửi lại mã.');
     },
-  }), []);
-  return <View ref={view} collapsable={false} accessible accessibilityLabel="Khung vẽ chữ ký" {...pan.panHandlers} style={{ height: 180, backgroundColor: '#fff', borderWidth: 1, borderColor: '#81929d', borderRadius: 8, overflow: 'hidden' }}>
-    <Svg width="100%" height="180">{paths.map((d, index) => <Path key={index} d={d} stroke="#213f53" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}</Svg>
+  }), [onValidityChange]);
+  return <View ref={view} collapsable={false} accessible accessibilityLabel="Khung vẽ chữ ký" {...pan.panHandlers} style={{ height, backgroundColor: '#fff', borderWidth: 1, borderColor: '#81929d', borderRadius: 8, overflow: 'hidden' }}>
+    <Svg width="100%" height={height} pointerEvents="none">{paths.map((d, index) => <Path key={index} d={d} stroke="#213f53" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}</Svg>
   </View>;
 });

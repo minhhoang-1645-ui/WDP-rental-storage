@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 
 interface InvoiceDebt { status: string; balanceDue: bigint | number; invoiceCode?: string }
 export const RETURN_SETTLEMENT_POLICY = 'FULL_SETTLEMENT_REQUIRED';
-export const RETURN_SETTLEMENT_MESSAGE = 'Trả trước hạn hoặc đúng hạn đều phải thanh toán đủ toàn bộ công nợ, gồm các kỳ thuê đã cam kết chưa đến hạn, trước khi gửi yêu cầu và hoàn tất trả kho.';
+export const RETURN_SETTLEMENT_MESSAGE = 'Hồ sơ này cần thanh toán đủ số dư hóa đơn còn hiệu lực trước khi trả kho.';
 
 /** Every effective invoice counts, regardless of due date or payment submission status. */
 export function returnReadiness(invoices?: InvoiceDebt[] | null) {

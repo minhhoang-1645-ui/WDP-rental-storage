@@ -20,6 +20,10 @@ import type { StoredItem } from '@/stock/types';
 type Kind = 'transfers' | 'early-returns';
 type TransferSlot = { start: string; end: string };
 const support = '/customer/support-requests';
+const earlyReturnReasons = [
+  ['NO_LONGER_NEEDED', 'Không còn nhu cầu'], ['RELOCATION', 'Chuyển địa điểm'],
+  ['PERSONAL', 'Lý do cá nhân'], ['FACILITY_ISSUE', 'Sự cố kho hoặc dịch vụ'], ['OTHER', 'Lý do khác'],
+];
 const slotStart = (day: string, time: string) => Date.parse(`${day}T${time}:00+07:00`);
 const vietnamTime = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 export function rentalChangePath(kind: Kind, contractId?: string) {
@@ -48,13 +52,14 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const base = rentalChangePath(kind);
   const title = early ? 'Trả kho trước hạn' : 'Chuyển kho';
   const matches = (row: Row) => early ? isEarlyReturnRequest(row) : !isEarlyReturnRequest(row) && isTransferRequest(row);
-  const rentals = useResource<Row>(creating ? '/customer/rentals' : null, true, true);
+  const rentals = useResource<Row>(creating || (early && id) ? '/customer/rentals' : null, true, true);
   const requests = useResource<Row>(!id || creating ? support : null, true, true);
-  const returns = useResource<Row>(creating ? '/customer/returns' : null, true, true);
+  const returns = useResource<Row>(creating || (early && id) ? '/customer/returns' : null, true, true);
   const detail = useResource<Row>(id && !creating ? support + '/' + encodeURIComponent(id) : null, false, true);
   const [selectedId, select] = useState(rentalContractId ?? '');
   const [form, showForm] = useState(false);
   const [reason, setReason] = useState('');
+  const [earlyReason, setEarlyReason] = useState('');
   const [notes, setNotes] = useState('');
   const [requestedDay, setRequestedDay] = useState('');
   const [requestedSlot, setRequestedSlot] = useState('');
@@ -98,7 +103,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         caption: [text(contract, 'unit.unitCode'), text(contract, 'unit.zone') && 'Khu ' + text(contract, 'unit.zone'), size].filter(Boolean).join(' · '),
         end: text(contract, 'endDate'),
         start: text(contract, 'startDate'),
-        debt: text(rental, 'returnReadiness.totalOutstanding'),
+        estimate: object(contract.earlyReturnEstimate),
         count: 1,
         blocked: early ? !earlyAction || Boolean(pending) : Boolean(pending || proposal || activeReturn),
         blockReason: activeReturn ? 'Đang xử lý yêu cầu trả kho' : rental.pendingRenewal && early ? 'Đang xử lý gia hạn' :
@@ -120,7 +125,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const hasValidDate = isCalendarDate(requestedDay) && requestedDay >= earliest && requestedDay < contractEnd;
   const availableSlots = hasValidDate ? slots.filter(slot => slotStart(requestedDay, slot.start) > clock) : [];
   const canRequestSchedule = availableSlots.some(slot => slot.start === requestedSlot);
-  const sources = creating ? [rentals, requests, returns] : id ? [detail] : [requests];
+  const sources = creating ? [rentals, requests, returns] : id ? early ? [detail, returns] : [detail] : [requests];
   const loading = sources.some(source => source.loading);
   const issue = sources.find(source => source.error)?.error;
   const refresh = () => sources.forEach(source => source.refresh());
@@ -131,7 +136,11 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   };
   async function submit() {
     if (sending.current || !selected || selected.blocked || loading || issue) return;
-    if (reason.trim().length < 3) {
+    if (early && (!hasValidDate || !earlyReason)) {
+      setError('Chọn ngày muốn trả kho và lý do trả trước hạn.');
+      return;
+    }
+    if (!early && reason.trim().length < 3) {
       setError('Nhập lý do ít nhất 3 ký tự.');
       return;
     }
@@ -148,9 +157,10 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         reservationId: selected.reservationId,
         category: early ? 'OTHER' : 'UNIT_ISSUE',
         subject: early ? EARLY_RETURN_SUBJECT : 'Yêu cầu chuyển kho',
-        description: [reason.trim(), !early && notes.trim()].filter(Boolean).join('\n\n'),
+        description: [early ? earlyReturnReasons.find(([code]) => code === earlyReason)?.[1] : reason.trim(), early ? reason.trim() : notes.trim()].filter(Boolean).join('\n\n'),
         rentalContractId: selected.contractId,
-        ...(!early ? { storageUnitId: selected.unitId, transferRequestedDate: requestedDay, transferRequestedSlot: requestedSlot } : {}),
+        ...(early ? { earlyReturnRequestedDate: requestedDay, earlyReturnReason: earlyReason }
+          : { storageUnitId: selected.unitId, transferRequestedDate: requestedDay, transferRequestedSlot: requestedSlot }),
       }, true);
       const requestId = idOf(result) || text(result, 'supportCode');
       if (requestId) open(requestId, true);
@@ -167,6 +177,10 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const validRecord = record && matches(record);
   const currentTransfer = !early && record && validRecord ? rows(record.transfers)[0] ?? {} : {};
   const transferContractId = text(currentTransfer, 'contractId') || text(record ?? {}, 'contract.id');
+  const linkedReturn = early && record?.earlyReturnDecision === 'APPROVED' ? rows(returns.data?.items).find(item =>
+    text(item, 'reservation.id') === text(record, 'reservation.id') &&
+    text(item, 'rentalContractId') === text(record, 'contract.id') && text(item, 'timing') === 'EARLY') : undefined;
+  const currentEstimate = object(choices.find(item => item.contractId === text(record ?? {}, 'contract.id'))?.estimate);
   const previous = tickets.filter(matches);
   return <>
     <Stack.Screen options={{ title: id && !creating ? 'Chi tiết yêu cầu' : form ? 'Yêu cầu chuyển kho' : title,
@@ -194,23 +208,34 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         {!showFields ? <Button title="Tiếp tục" disabled={!selected || selected.blocked} onPress={() => { setClock(currentTimeMs()); showForm(true); }} /> : selected && !selected.blocked ? <>
           {early && <>
             <View style={styles.card}><CalendarDays color={C.cobalt} size={19} /><Text style={[s.body, styles.grow]}>Hạn thuê hiện tại</Text><Text style={s.body}>{formatDate(selected.end)}</Text></View>
+            <DateField title="Ngày muốn trả kho *" value={requestedDay} min={earliest} before={contractEnd} disabled={busy}
+              onChange={day => { setRequestedDay(day); setError(''); }} />
+            <Text style={s.body}>Lý do trả trước hạn *</Text>
+            <View style={styles.slots}>{earlyReturnReasons.map(([code, label]) => <Pressable key={code} accessibilityRole="radio"
+              accessibilityState={{ checked: earlyReason === code, disabled: busy }} disabled={busy}
+              onPress={() => { setEarlyReason(code); setError(''); }} style={[styles.slot, earlyReason === code && styles.selected]}>
+              <Text style={earlyReason === code ? styles.status : s.body}>{label}</Text>
+            </Pressable>)}</View>
             <View style={styles.notice}><Info color={C.cobalt} size={18} /><View style={styles.grow}>
-              <Text style={s.secondary}>{selected.debt && Number.isFinite(Number(selected.debt)) ? 'Còn phải trả theo hợp đồng: ' + formatMoney(Number(selected.debt)) + '. ' : ''}
-                Cần thanh toán đủ các khoản đã cam kết, kể cả kỳ chưa đến hạn, trước khi gửi yêu cầu trả kho chính thức. Tiền cọc được quyết toán riêng.</Text>
-              <CustomerActionRow title="Xem công nợ" path="/customer/invoices" />
+              <Text style={s.secondary}>Bạn thanh toán các kỳ đã sử dụng và kỳ hiện tại. Các kỳ chưa bắt đầu sẽ được miễn sau khi hoàn tất trả kho.</Text>
+              <Text style={s.secondary}>Tiền trả trước và tiền cọc được quyết toán riêng.</Text>
+              {typeof selected.estimate.outstandingAmount === 'number' && typeof selected.estimate.waivedAmount === 'number' ?
+                <Text style={s.secondary}>Nếu trả hôm nay, còn phải trả {formatMoney(selected.estimate.outstandingAmount)} · Hóa đơn dự kiến giảm {formatMoney(selected.estimate.waivedAmount)}.</Text> : null}
+              <Text style={s.secondary}>Số tiền chính thức sẽ được xác định sau khi trả kho.</Text>
             </View></View>
           </>}
-          <Input label={early ? 'Lý do trả kho trước hạn *' : 'Lý do chuyển kho *'} value={reason}
+          <Input label={early ? 'Mô tả thêm' : 'Lý do chuyển kho *'} value={reason}
             onChange={value => { setReason(value); setError(''); }} maxLength={early ? 3000 : 200} disabled={busy} multiline={early} />
           {!early && <>
             <Input label="Mô tả thêm" value={notes} onChange={setNotes} maxLength={500} disabled={busy} multiline />
-            {schedule.error ? <ErrorState message="Chưa tải được khung giờ chuyển kho." onRetry={schedule.refresh} /> : schedule.loading ?
-              <Text style={s.secondary}>Đang tải khung giờ chuyển kho…</Text> : contractEnd <= earliest ?
+            {contractEnd <= earliest ?
               <Text style={s.secondary}>Hợp đồng không còn ngày phù hợp để đề xuất lịch chuyển kho.</Text> : <>
                 <DateField title="Ngày muốn chuyển *" value={requestedDay} min={earliest} before={contractEnd} disabled={busy}
                   onChange={day => { setRequestedDay(day); if (day !== requestedDay) setRequestedSlot(''); setError(''); }} />
                 <Text style={s.body}>Khung giờ mong muốn *</Text>
-                {!hasValidDate ? <Text style={s.secondary}>Chọn ngày để xem khung giờ.</Text> : !availableSlots.length ?
+                {schedule.error ? <ErrorState message="Chưa tải được khung giờ chuyển kho." onRetry={schedule.refresh} /> : schedule.loading ?
+                  <Text style={s.secondary}>Đang tải khung giờ chuyển kho…</Text> :
+                  !hasValidDate ? <Text style={s.secondary}>Chọn ngày để xem khung giờ.</Text> : !availableSlots.length ?
                   <Text style={s.secondary}>Ngày này đã hết khung giờ. Hãy chọn ngày khác.</Text> :
                   <View style={styles.slots}>{availableSlots.map(slot => <Pressable key={slot.start} accessibilityRole="radio"
                     accessibilityState={{ checked: requestedSlot === slot.start, disabled: busy }} disabled={busy}
@@ -225,7 +250,7 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Button title={busy ? 'Đang gửi…' : early ? 'Gửi đề nghị' : 'Gửi yêu cầu chuyển kho'}
-            disabled={busy || (!early && (reason.trim().length < 3 || !canRequestSchedule || Boolean(schedule.error || schedule.loading)))} onPress={() => void submit()} />
+            disabled={busy || (early ? !hasValidDate || !earlyReason : reason.trim().length < 3 || !canRequestSchedule || Boolean(schedule.error || schedule.loading))} onPress={() => void submit()} />
         </> : null}
         {early ? <CustomerActionRow title="Xem yêu cầu đã gửi" path={base} /> : null}
       </> : id ? validRecord && record ? <>
@@ -234,13 +259,18 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           <Text style={s.secondary}>{[text(currentTransfer, 'fromUnit.unitCode') || text(record, 'unit.unitCode', 'reservation.reference'), 'Đã gửi ' + formatDate(text(record, 'createdAt'))].filter(Boolean).join(' · ')}</Text>
         </View></View>
         {!early && <TransferScheduleNotice schedule={object(record.transferRequestedSchedule)} closed={['COMPLETED', 'REJECTED'].includes(text(currentTransfer, 'status')) || (!text(currentTransfer, 'status') && record.status === 'RESOLVED')} />}
+        {(currentTransfer.hasCommercialAppendix === true || currentTransfer.requiresAcceptance === true) && ['APPROVED', 'COMPLETED'].includes(text(currentTransfer, 'status')) && <CustomerActionRow
+          title={currentTransfer.requiresAcceptance === true ? 'Xem và ký phụ lục đổi loại kho' : 'Xem phụ lục và thanh toán'} path={'/customer/transfer-order?orderId=' + encodeURIComponent(idOf(currentTransfer))} />}
         <View style={styles.notice}><Info color={C.cobalt} size={18} /><View style={styles.grow}>
           <Text style={s.body}>{progress(record, early)}</Text>
           {text(currentTransfer, 'completedAt', 'approvedAt') || text(record, 'resolvedAt', 'startedAt') ? <Text style={s.secondary}>
             Cập nhật {formatDate(text(currentTransfer, 'completedAt', 'approvedAt') || text(record, 'resolvedAt', 'startedAt'), true)}
           </Text> : null}
           {text(currentTransfer, 'toUnit.unitCode') ? <Text style={s.secondary}>Kho mới · {text(currentTransfer, 'toUnit.unitCode')}</Text> : null}
-          {early && record.earlyReturnDecision === 'APPROVED' ? <Text style={s.secondary}>Bạn có thể gửi yêu cầu trả kho khi đã thanh toán đủ và đủ điều kiện giao lại kho.</Text> : null}
+          {early && text(record, 'earlyReturnFinancialReview.requestedDate') ? <Text style={s.secondary}>Ngày muốn trả · {formatDate(text(record, 'earlyReturnFinancialReview.requestedDate'))}</Text> : null}
+          {linkedReturn ? <Text style={s.secondary}>{text(linkedReturn, 'physicallyReturnedAt') ? 'Đã bàn giao kho' : 'Đang xử lý bàn giao'}</Text> : null}
+          {early && !text(linkedReturn ?? {}, 'physicallyReturnedAt') && typeof currentEstimate.outstandingAmount === 'number' ?
+            <Text style={s.secondary}>Nếu trả hôm nay, còn phải trả {formatMoney(currentEstimate.outstandingAmount)}.</Text> : null}
         </View></View>
         {currentTransfer.status === 'APPROVED' && transferContractId ? <TransferInventoryNotice
           contractId={transferContractId} unitCode={text(currentTransfer, 'fromUnit.unitCode')}
@@ -249,8 +279,9 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
         {text(record, 'resolutionNote') || text(currentTransfer, 'rejectionReason') ? <View style={styles.notice}><View style={styles.grow}>
           <Text style={s.body}>Phản hồi của NestBox</Text><Text style={s.secondary}>{text(currentTransfer, 'rejectionReason') || text(record, 'resolutionNote')}</Text>
         </View></View> : null}
-        {early && record.earlyReturnDecision === 'APPROVED' && text(record, 'reservation.id') ? <CustomerActionRow title="Xem điều kiện và gửi yêu cầu trả kho"
-          path={'/customer/returns/new?approvedEarlyReturn=1&reservationId=' + encodeURIComponent(text(record, 'reservation.id'))} /> : null}
+        {linkedReturn ? <CustomerActionRow title="Theo dõi bàn giao và quyết toán" path={'/customer/returns/' + encodeURIComponent(idOf(linkedReturn))} /> :
+          early && record.earlyReturnDecision === 'APPROVED' && text(record, 'reservation.id') ? <CustomerActionRow title="Gửi yêu cầu trả kho"
+            path={'/customer/returns/new?approvedEarlyReturn=1&reservationId=' + encodeURIComponent(text(record, 'reservation.id')) + '&rentalContractId=' + encodeURIComponent(text(record, 'contract.id'))} /> : null}
         <CustomerActionRow title="Cần hỗ trợ?" icon={Headphones} path={'/customer/support-requests/new?reservationId=' + encodeURIComponent(text(record, 'reservation.id'))} />
       </> : <EmptyState title="Không tìm thấy yêu cầu" message="Kiểm tra lại trong danh sách yêu cầu đã gửi." /> : <>
         <Button title={early ? 'Gửi đề nghị mới' : 'Chọn kho muốn chuyển'} onPress={() => router.push((base + '/new') as Href)} />
@@ -294,7 +325,7 @@ function TransferInventoryNotice({ contractId, unitCode }: { contractId: string;
     <Info color="#9A5108" size={18} />
     <View style={styles.grow}>
       <Text style={s.body}>Còn {count} mặt hàng tại {unitCode ? 'kho ' + unitCode : 'kho nguồn'}</Text>
-      <Text style={s.secondary}>Bạn tự chuyển hàng sang kho mới. Nhân viên sẽ hướng dẫn, kiểm đếm và bàn giao. Nếu muốn lấy hàng ra trước, hãy gửi phiếu xuất và chờ nhân viên hoàn tất phiếu.</Text>
+      <Text style={s.secondary}>Gửi phiếu xuất và phối hợp với nhân viên lấy hết hàng ra trước khi bàn giao kho cũ.</Text>
       <CustomerActionRow title="Xem hàng đang lưu" path={'/customer/stored-items?' + query + '&tab=inventory'} />
       <CustomerActionRow title="Tạo phiếu xuất hàng" path={'/customer/stored-items?' + query + '&tab=movements&create=1&type=OUT'} />
     </View>

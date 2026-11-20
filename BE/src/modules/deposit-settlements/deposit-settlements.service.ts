@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type SettlementStatus = 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED';
@@ -152,6 +153,8 @@ export class DepositSettlementsService {
   }
 
   private async completeReturn(tx: Prisma.TransactionClient, returnRequestId: string, actorId: string, now: Date) {
+    const record = await tx.returnRequest.findUniqueOrThrow({ where: { id: returnRequestId }, select: { earlyReturnCloseout: true, rentRefundApprovedAt: true, rentRefundedAt: true } });
+    if (earlyReturnSettlementPending(record)) return;
     const updated = await tx.returnRequest.updateMany({
       where: { id: returnRequestId, status: 'PENDING_SETTLEMENT', physicallyReturnedAt: { not: null } },
       data: { status: 'COMPLETED', completedAt: now, completedByUserId: actorId, activeKey: null },
@@ -244,11 +247,11 @@ export class DepositSettlementsService {
         physicallyReturnedAt: record.returnRequest.physicallyReturnedAt?.toISOString() ?? null,
         reviewedAt: record.reviewedAt?.toISOString() ?? null,
         unitCodes: record.returnRequest.inspections.map((inspection: any) => inspection.storageUnit.unitNumber),
-        refundRecord: record.refundedAt && reference && (method === 'BANK_TRANSFER' || method === 'CASH')
+        refundRecord: record.refundedAt && (method === 'BANK_TRANSFER' || method === 'CASH')
           ? {
             method,
             recordedAt: record.refundedAt.toISOString(),
-            referenceSuffix: /^[A-Za-z0-9._-]{8,200}$/.test(reference) && /^[A-Za-z0-9]{4}$/.test(reference.slice(-4))
+            referenceSuffix: reference && /^[A-Za-z0-9._-]{8,200}$/.test(reference) && /^[A-Za-z0-9]{4}$/.test(reference.slice(-4))
               ? reference.slice(-4) : null,
           }
           : null,
@@ -298,11 +301,15 @@ export class DepositSettlementsService {
     return { inspectionId, issueType: issueType as IssueType, approvedChargeAmount: BigInt(amount), reason };
   }
 
-  private refundInput(input: Record<string, unknown>, key: string | undefined): { method: 'BANK_TRANSFER' | 'CASH'; reference: string; note: string | null; idempotencyKey: string } {
+  private refundInput(input: Record<string, unknown>, key: string | undefined): { method: 'BANK_TRANSFER' | 'CASH'; reference: string | null; note: string | null; idempotencyKey: string } {
     const method = input.method;
     if (method !== 'BANK_TRANSFER' && method !== 'CASH') throw new BadRequestException('method phải là BANK_TRANSFER hoặc CASH.');
     const reference = this.optionalText(input.reference, 200, 'reference');
-    if (!reference || reference.length < 2) throw new BadRequestException('reference là bắt buộc khi ghi nhận refund.');
+    if (reference && reference.length < 2) throw new BadRequestException('Mã giao dịch hoàn tiền phải có ít nhất 2 ký tự.');
+    // Clients predating explicit confirmation sent a transaction reference after refunding.
+    if (input.refundConfirmed !== true && (input.refundConfirmed !== undefined || !reference)) {
+      throw new BadRequestException('Cần xác nhận đã hoàn tiền thực tế cho khách.');
+    }
     return { method, reference, note: this.optionalText(input.note, 2000, 'note'), idempotencyKey: this.idempotencyKey(key) };
   }
 
@@ -325,8 +332,8 @@ export class DepositSettlementsService {
     })) throw new ConflictException('Idempotency-Key đã dùng cho payload review khác.');
   }
 
-  private assertMatchingRefundRetry(current: any, parsed: { method: 'BANK_TRANSFER' | 'CASH'; reference: string; note: string | null; idempotencyKey: string }) {
-    if (current.refundIdempotencyKey !== parsed.idempotencyKey || current.refundMethod !== parsed.method || current.refundReference !== parsed.reference || (current.refundNote ?? null) !== parsed.note) {
+  private assertMatchingRefundRetry(current: any, parsed: ReturnType<DepositSettlementsService['refundInput']>) {
+    if (current.refundIdempotencyKey !== parsed.idempotencyKey || current.refundMethod !== parsed.method || (current.refundReference ?? null) !== parsed.reference || (current.refundNote ?? null) !== parsed.note) {
       throw new ConflictException('Idempotency-Key đã dùng cho refund khác.');
     }
   }

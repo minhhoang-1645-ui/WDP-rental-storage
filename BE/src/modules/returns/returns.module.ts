@@ -5,9 +5,11 @@ import { CustomerReturnsController } from './customer-returns.controller.js';
 import { ManagerReturnsController } from './manager-returns.controller.js';
 import { ReturnsService } from './returns.service.js';
 import { StaffReturnsController } from './staff-returns.controller.js';
+import { RenewalsModule } from '../renewals/renewals.module.js';
+import { BillingModule } from '../billing/billing.module.js';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, RenewalsModule, BillingModule],
   controllers: [EarlyReturnReviewController, CustomerReturnsController, ManagerReturnsController, StaffReturnsController],
   providers: [ReturnsService],
   exports: [ReturnsService],

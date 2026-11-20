@@ -25,7 +25,7 @@ export function EarlyReturnPanel({ rentals, activeReturnIds, requests, checkedAt
     .map(contract => ({ rental, contract })));
   const [contractId, setContractId] = useScopedSelection('contract', eligible.map(({ contract }) => ({ value: contract.id, aliases: [contract.contractCode] })));
   const selected = eligible.find(item => item.contract.id === contractId);
-  const selectedDebt = selected?.contract.returnReadiness?.totalOutstanding;
+  const estimate = selected?.contract.earlyReturnEstimate;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (lock.current || !selected) return;
@@ -64,8 +64,8 @@ export function EarlyReturnPanel({ rentals, activeReturnIds, requests, checkedAt
               {eligible.map(({ rental, contract }) => <option key={contract.id} value={contract.id}>{contract.unit.unitCode} · {contract.unit.storageType?.name ?? rental.storageType.name} · Hạn {formatPortalDate(contract.endDate)}</option>)}
             </EntitySelect>
           </label>
-          {typeof selectedDebt === 'number' && selectedDebt > 0 && <small>Số dư các hóa đơn liên quan: <strong>{moneyLabel(selectedDebt)}</strong>.</small>}
-          {selected?.contract.returnReadiness?.requiresReconciliation && <small>Cần NestBox đối soát hóa đơn hoặc tiền cọc trước khi trả kho.</small>}
+          {estimate && typeof estimate.outstandingAmount === 'number' && <small>Nếu trả hôm nay, còn phải thanh toán {moneyLabel(estimate.outstandingAmount)} và dự kiến giảm {moneyLabel(estimate.waivedAmount)} trên hóa đơn.</small>}
+          {selected && <small>Số tiền chính thức được tính khi bàn giao. Tiền cọc được xử lý riêng.</small>}
           <label className="field-label">Lý do trả trước hạn<textarea required minLength={3} maxLength={3000} rows={2} value={reason} onChange={event => setReason(event.target.value)} /></label>
           <button className="button-primary" disabled={!selected || busy}>{busy ? 'Đang gửi…' : 'Gửi đề nghị trả trước hạn'}</button>
           {!eligible.length && !requests.loading && <small>Không có kho phù hợp để gửi đề nghị mới.</small>}
@@ -87,7 +87,7 @@ export function EarlyReturnPanel({ rentals, activeReturnIds, requests, checkedAt
           {request.resolutionNote && <p><strong>Phản hồi: </strong>{request.resolutionNote}</p>}
           {approvedTargets.some(contract => !activeReturnIds.has(contract.id)) && <a href="#return-request-form">Chọn kho trong Gửi yêu cầu trả kho để tiếp tục</a>}
           {outdated && <p>Hạn thuê đã thay đổi. Gửi đề nghị mới để quản lý xét lại.</p>}
-          {request.earlyReturnFinancialReview?.appliedAt && request.earlyReturnFinancialReview.waivedAmount > 0 && <p>Điều chỉnh trước đây: đã miễn {moneyLabel(request.earlyReturnFinancialReview.waivedAmount)}. {request.earlyReturnFinancialReview.reason}</p>}
+          {request.earlyReturnFinancialReview?.appliedAt && Boolean(request.earlyReturnFinancialReview.waivedAmount) && <p>Đã miễn {moneyLabel(request.earlyReturnFinancialReview.waivedAmount!)}. {request.earlyReturnFinancialReview.reason}</p>}
         </div>
       </details>;
     })}</div>}

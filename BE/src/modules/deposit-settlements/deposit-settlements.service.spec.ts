@@ -173,6 +173,20 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
     expect((await prisma.returnRequest.findUniqueOrThrow({ where: { id: result.request.id } })).status).toBe('COMPLETED');
   });
 
+  it('records a confirmed refund without a transaction code and shows it to the customer', async () => {
+    const result = await physicalReturn({ deposit: 1500000 });
+    const key = `refund-${runId}-confirmed`;
+    const input = { method: 'BANK_TRANSFER', refundConfirmed: true };
+    await expect(settlements.refund(result.settlement.id, { ...input, refundConfirmed: false }, key, manager)).rejects.toThrow('Cần xác nhận');
+    const recorded = await settlements.refund(result.settlement.id, input, key, manager);
+    expect(recorded).toMatchObject({ status: 'SETTLED', refundReference: null, settledBy: { id: manager.id } });
+    await expect(settlements.refund(result.settlement.id, input, key, manager)).resolves.toEqual(recorded);
+    await expect(settlements.refund(result.settlement.id, input, `${key}-again`, manager)).rejects.toMatchObject({ status: 409 });
+    await expect(settlements.getCustomer(customerId, result.settlement.id)).resolves.toMatchObject({ refundRecord: {
+      method: 'BANK_TRANSFER', recordedAt: expect.any(String), referenceSuffix: null,
+    } });
+  });
+
   it('physically finalizes mixed quantity return and lets Manager approve customer damage with partial refund', async () => {
     const result = await physicalReturn({ quantity: 3, deposit: 1500000, issues: [{ index: 1 }] });
     expect(result.finalized).toMatchObject({ status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspectionSummary: { passed: 2, issues: 1 } });

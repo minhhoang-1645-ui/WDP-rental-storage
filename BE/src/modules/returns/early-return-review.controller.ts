@@ -18,7 +18,13 @@ export class EarlyReturnReviewController {
   @Post(':id/decision')
   @ApiOperation({ summary: 'Manager chấp thuận/từ chối trả sớm; không tự điều chỉnh tiền thuê hoặc tiền cọc' })
   decide(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.decideEarlyReturn(id, body, request.user!); }
+  @Post('returns/:id/settlement-approval')
+  approveSettlement(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.settleEarlyReturn(id, body ?? {}, request.user!); }
+  @Post('returns/:id/facility-review')
+  reviewFault(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.reviewEarlyReturnFault(id, body ?? {}, request.user!); }
+  @Post('returns/:id/refund-confirmation')
+  confirmRefund(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.settleEarlyReturn(id, body ?? {}, request.user!, true); }
   @Post(':id/financial-review')
-  @ApiOperation({ summary: 'Đã ngừng: phải thanh toán đủ toàn bộ công nợ trước khi trả kho' })
+  @ApiOperation({ summary: 'Đã ngừng: hóa đơn được quyết toán khi bàn giao' })
   financialReview(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.returns.reviewEarlyReturnFinance(id, body, request.user!); }
 }

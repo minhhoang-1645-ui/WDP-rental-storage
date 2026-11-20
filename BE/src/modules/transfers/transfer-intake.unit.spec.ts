@@ -3,6 +3,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { SupportService } from '../support/support.service.js';
 import { TransfersService } from './transfers.service.js';
 import { parseTransferProposal } from './transfer-schedule.js';
+import { snapshotHash } from '../contracts/signature.js';
 
 const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
 const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
@@ -90,7 +91,7 @@ describe('Manager approval with assignment', () => {
     const row = { id: 'transfer', status: 'REQUESTED', fromStorageUnitId: source.id, fromStorageUnit: source, fromReservationUnitId: 'old', rentalContract: contract, reservationId: reservation.id, reservation, createdAt: now, updatedAt: now,
       supportRequest: { transferRequestedStartAt: new Date('2099-09-30T01:00:00Z'), transferRequestedEndAt: new Date('2099-09-30T03:00:00Z') },
     };
-    const destination = { id: 'target', status: 'AVAILABLE', storageTypeId: 'type' };
+    const destination = { id: 'target', status: 'AVAILABLE', storageTypeId: 'type', storageType: { facilityId: 'facility' } };
     const tx = {
       $queryRaw: vi.fn(), user: { findFirst: vi.fn().mockResolvedValue(staff) },
       transferRequest: {
@@ -98,6 +99,7 @@ describe('Manager approval with assignment', () => {
         update: vi.fn(({ data }) => Promise.resolve(Object.assign(row, data, { assignedStaff: staff }))),
       },
       storageUnit: { findUnique: vi.fn().mockResolvedValue(destination), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      storageType: { findUniqueOrThrow: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
       reservationUnit: { count: vi.fn().mockResolvedValue(0), create: vi.fn().mockResolvedValue({ id: 'target-allocation' }) },
     };
     return { tx, service: new TransfersService({ ...tx, $transaction: (run: (client: unknown) => unknown) => run(tx) } as never) };
@@ -124,5 +126,19 @@ describe('Manager approval with assignment', () => {
     await expect(service.intakeLegacy('support', staff)).rejects.toThrow('Chỉ quản lý');
     await expect(service.create(input, 'legacy-key', staff)).rejects.toThrow('Chỉ khách hàng');
     expect(tx.reservationUnit.create).not.toHaveBeenCalled();
+  });
+  it('rejects a stale reviewed price before reserving a different type and stores one appendix on retry', async () => {
+    const { tx } = fixture();
+    tx.storageUnit.findUnique.mockResolvedValue({ id: 'target', status: 'AVAILABLE', storageTypeId: 'other-type', storageType: { facilityId: 'facility' } });
+    const terms = { newRate: 2000000, financialReview: { renewals: [{ code: 'RENEWAL' }] } };
+    const prepare = vi.fn().mockResolvedValue({ ...terms, generatedAt: '2099-01-01T00:00:00Z' });
+    const service = new TransfersService({ $transaction: (run: (client: unknown) => unknown) => run(tx) } as never, undefined, { prepare } as never);
+    await expect(service.approve('transfer', { ...input, commercialReviewHash: 'stale' }, manager)).rejects.toThrow('đã thay đổi');
+    expect(tx.reservationUnit.create).not.toHaveBeenCalled();
+    const reviewed = { ...input, commercialReviewHash: snapshotHash(terms) };
+    await service.approve('transfer', reviewed, manager);
+    await service.approve('transfer', reviewed, manager);
+    expect(tx.transferRequest.update).toHaveBeenCalledTimes(1);
+    expect(tx.transferRequest.update.mock.calls[0][0].data).toMatchObject({ commercialSnapshot: terms });
   });
 });

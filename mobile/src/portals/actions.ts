@@ -10,13 +10,14 @@ const confirmation = (title = 'Tôi xác nhận thông tin và thao tác này'):
 const note = (name = 'note', title = 'Ghi chú', required = false, limit = 2000): FormField => ({ name, title, required, multiline: true, maxLength: limit, ...(required ? { minLength: 3 } : {}) });
 const choice = (name: string, title: string, values: string[], initial?: string): FormField => ({ name, title, choices: options(values), required: true, initial });
 const issues = ['NORMAL_WEAR', 'FACILITY_FAULT', 'CUSTOMER_DAMAGE', 'CLEANING_REQUIRED', 'LOST_KEY_OR_ACCESS_ITEM', 'OTHER'];
-/** Full committed debt matters at return, including installments whose due date is still in the future. */
+/** Balance carried by the existing invoices. Early return closeout has its own estimate. */
 export function returnSettlementAmount(row: Row) {
   const value = text(row, 'returnReadiness.totalOutstanding', 'paymentDetails.totalOutstanding', 'billingSummary.totalOutstanding');
   const amount = value.trim() ? Number(value) : NaN;
   return Number.isFinite(amount) && amount >= 0 ? amount : NaN;
 }
 export function returnSettlementReady(row: Row) {
+  if (text(row, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1') return object(row.returnReadiness).canReturn === true;
   return object(row.returnReadiness).canReturn !== false && returnSettlementAmount(row) === 0;
 }
 export function handoverWindowIssue(row: Row, now: number) {
@@ -58,7 +59,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
     { name: 'recipientName', title: 'Người nhận kho mới', required: true, minLength: 2, maxLength: 120 },
     { name: 'returnedKeyCount', title: 'Số chìa khóa/thẻ kho cũ đã thu', required: true, numeric: true, minimum: 0, maximum: 50 },
     { name: 'deliveredKeyCount', title: 'Số chìa khóa/thẻ kho mới đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
-    { name: 'goodsMoved', title: 'Đã chuyển toàn bộ hàng sang kho mới', checkbox: true, required: true },
+    { name: 'goodsMoved', title: 'Đã kiểm tra kho cũ và xác nhận kho trống', checkbox: true, required: true },
     { name: 'oldKeysReturned', title: 'Đã thu chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ', checkbox: true, required: true },
     { name: 'newKeysDelivered', title: 'Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới', checkbox: true, required: true },
     note('note', 'Ghi chú bàn giao; nếu không có chìa khóa vật lý, ghi cách thu hồi/cấp mã truy cập'),
@@ -74,7 +75,10 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
         if (inspection.result !== 'ISSUE_FOUND') result.push({ title: `Ghi nhận kho ${unit} đạt`, path: base, method: 'PATCH', fields: [note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'PASS' }) });
         result.push({ title: `Ghi nhận vấn đề kho ${unit}`, path: base, method: 'PATCH', fields: [choice('issueType', 'Phân loại vấn đề', issues, text(inspection, 'issueType') || undefined), note('issueNote', 'Mô tả vấn đề', true), note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'ISSUE_FOUND' }), description: 'Chỉ ghi hiện trạng; quản lý xác định trách nhiệm và phí.' });
       }
-      if (object(row.returnReadiness).canReturn === true && Number(text(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(text(row, 'inventory.pendingMovements') || 0) === 0 && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) add('Hoàn tất nhận kho trả', '/finalize', [], false, 'Xác nhận đã nhận kho trong hồ sơ và ghi đủ kết quả kiểm tra. Tiền cọc được quyết toán riêng.');
+      if (object(row.returnReadiness).canReturn === true && Number(text(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(text(row, 'inventory.pendingMovements') || 0) === 0 && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) {
+        result.push({ title: 'Hoàn tất nhận kho trả', path: root + '/finalize', method: 'POST',
+          fields: [confirmation('Đã nhận kho, lưu kết quả kiểm tra và thu hồi quyền truy cập')], transform: input => ({ ...input, accessRevoked: true }) });
+      }
     }
   }
   return result;
@@ -93,13 +97,13 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
   const pendingReturns = returns.filter(item => text(item, 'reservation.id') === reservationId && item.status !== 'COMPLETED');
   for (const contract of contracts) {
     const rentalContractId = idOf(contract);
-    if (row.pendingRenewal || contract.pendingRenewal || contract.returnInProgress
+    if ((!('pendingRenewal' in contract) && row.pendingRenewal) || contract.pendingRenewal || contract.returnInProgress
       || selectedContractId && rentalContractId !== selectedContractId || text(contract, 'unit.status') !== 'OCCUPIED') continue;
     if (pendingReturns.some(item => rows(item.inspections).some(inspection => text(inspection, 'contract.id') === rentalContractId))) continue;
     const endDate = text(contract, 'endDate');
     const pendingOrApproved = requests.filter(item => isEarlyReturnRequest(item) && text(item, 'reservation.id') === reservationId
       && (!text(item, 'contract.id') || text(item, 'contract.id') === rentalContractId));
-    const approved = pendingOrApproved.some(item => isCurrentEarlyReturnApproval(item, endDate));
+    const approved = text(contract, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1' || pendingOrApproved.some(item => isCurrentEarlyReturnApproval(item, endDate));
     const unit = text(contract, 'unit.unitCode');
     if (text(row, 'historicalPricing.billingMode') === 'MONTHLY') {
       actions.push({ title: `Gia hạn kho ${unit}`, renewal: { name: text(contract, 'unit.storageType.name') || text(row, 'storageType.name'), endDate, quantity: '1' }, path: '/customer/renewals', method: 'POST', idempotent: true,
@@ -110,7 +114,9 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     const otherUnits = contracts.filter(item => idOf(item) !== rentalContractId).map(item => text(item, 'unit.unitCode')).filter(Boolean);
     const scope = `Kho ${unit} · Hợp đồng ${text(contract, 'contractCode')}.${otherUnits.length ? ` Kho tiếp tục thuê: ${otherUnits.join(', ')}.` : ''}`;
     const early = endDate > vietnamCalendarDate(now);
-    if (endDate && (!early || approved) && returnSettlementReady(contract)) {
+    const legacyApproval = early && approved && text(contract, 'returnReadiness.policy') !== 'PERIOD_CLOSEOUT_V1'
+      && !text(contract, 'returnReadiness.earlyReturnBlockReason');
+    if (endDate && (!early || approved) && (legacyApproval || returnSettlementReady(contract))) {
       actions.push({ title: `Trả kho ${unit}`, path: '/customer/returns', method: 'POST', idempotent: true,
         fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)], transform: input => ({ ...input, reservationId, rentalContractId }),
         description: scope + (early ? ' Quản lý đã chấp thuận trả trước hạn.' : '') });

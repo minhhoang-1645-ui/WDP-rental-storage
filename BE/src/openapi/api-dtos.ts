@@ -297,8 +297,11 @@ export class RefundDepositRequestDto {
   @ApiProperty({ enum: ['BANK_TRANSFER', 'CASH'], example: 'BANK_TRANSFER' })
   method!: 'BANK_TRANSFER' | 'CASH';
 
-  @ApiProperty({ example: 'REFUND-20261009-001', maxLength: 200, description: 'Business reference only; không chứa bank credentials.' })
-  reference!: string;
+  @ApiPropertyOptional({ example: true, description: 'Xác nhận tiền đã được hoàn thực tế. Bắt buộc khi không gửi mã giao dịch.' })
+  refundConfirmed?: boolean;
+
+  @ApiPropertyOptional({ example: 'REFUND-20261009-001', maxLength: 200, description: 'Mã giao dịch cũ nếu có.' })
+  reference?: string;
 
   @ApiPropertyOptional({ example: 'Deposit refund completed.', maxLength: 2000 })
   note?: string;
@@ -371,4 +374,5 @@ export class CreateTransferDto {
 export class ApproveTransferDto {
   @ApiProperty({ example: 'destination-storage-unit-id', description: 'Kho khả dụng trong toàn bộ kỳ thuê còn lại.' }) toStorageUnitId!: string;
   @ApiPropertyOptional({ example: 'active-staff-user-id', description: 'Bỏ trống để giao người phụ trách kho nguồn.' }) staffUserId?: string;
+  @ApiPropertyOptional({ description: 'Mã đối chiếu phương án tài chính đã xem khi chọn kho khác loại.' }) commercialReviewHash?: string;
 }

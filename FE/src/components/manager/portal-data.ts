@@ -82,6 +82,19 @@ export function date(value: unknown, withTime = false): string {
     ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
   }).format(new Date(value));
 }
+const transferTime = new Intl.DateTimeFormat('vi-VN', {
+  timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+export function transferHandoverSchedule(row: Row): string {
+  const start = first(row, 'transferRequestedSchedule.startAt');
+  const startTime = Date.parse(start);
+  const endTime = Date.parse(first(row, 'transferRequestedSchedule.endAt'));
+  return Number.isFinite(startTime) && endTime > startTime
+    ? `${date(start)} · ${transferTime.format(startTime)}–${transferTime.format(endTime)}`
+    : 'Chưa có lịch hẹn';
+}
+
 export const labels: Record<string, string> = {
   PENDING: "Chờ xử lý",
   PENDING_CONTACT: "Chờ liên hệ",

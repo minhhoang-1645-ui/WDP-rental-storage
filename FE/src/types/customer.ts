@@ -31,7 +31,9 @@ export interface CustomerContract {
 }
 
 export interface ReturnReadiness {
-  requiresFullSettlement: true
+  requiresFullSettlement: boolean
+  policy?: string
+  earlyReturnBlockReason?: 'RENEWAL_IN_PROGRESS' | 'DEPOSIT_RECONCILIATION_REQUIRED' | null
   totalOutstanding: number | null
   canReturn: boolean
   requiresReconciliation?: boolean
@@ -40,6 +42,7 @@ export interface ReturnReadiness {
 
 export interface RentalContractSummary {
   returnReadiness?: ReturnReadiness
+  earlyReturnEstimate?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
   returnInProgress?: boolean
   pendingRenewal?: CustomerRental['pendingRenewal']
   storedItems?: Array<{ id: string; itemCode: string; name: string; unit: string; balance: number }>
@@ -198,6 +201,8 @@ export interface CustomerSupportRequest {
 
 export interface CustomerReturnRequest {
   returnReadiness?: ReturnReadiness
+  earlyReturnCloseout?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
+  rentRefund?: { approvedAt: string | null; refundedAt: string | null; reference: string | null } | null
   rentalContractId?: string | null
   timing?: 'EARLY' | 'ON_OR_AFTER_END'
   remainingUnitCount?: number

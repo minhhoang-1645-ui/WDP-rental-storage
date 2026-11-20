@@ -1,7 +1,7 @@
 /* oxlint-disable react/jsx-key -- Facts renders each tuple inside a keyed field. */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { at, customer, date, first, label, object, rows, type Row } from '../../components/manager/portal-data';
+import { at, customer, date, first, label, object, rows, transferHandoverSchedule, type Row } from '../../components/manager/portal-data';
 import { Facts, Status } from '../../components/manager/PortalUi';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { RecordTimeline } from '../../components/workspace/RecordTimeline';
@@ -69,6 +69,8 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           ['Khách hàng', name], ['Hợp đồng', contract], ['Người phụ trách', !completed ? assigned : ''],
           ['Lý do chuyển', row.reason ? label(row.reason) : ''],
           ['Quản lý phê duyệt', first(row, 'approvedBy.fullName')],
+          ['Lịch bàn giao', transferHandoverSchedule(row)],
+          ['Phụ lục và thanh toán', first(row, 'commercial.acceptedAt') ? completed ? 'Đã đủ điều kiện khi bàn giao' : 'Đã ký · Không có hóa đơn đến hạn chưa thanh toán' : ''],
           ['Ngày hoàn tất', completed ? dateField('completedAt', true) : ''],
           ['Lý do từ chối', row.status === 'REJECTED' ? first(row, 'rejectionReason') : ''],
         ])} />

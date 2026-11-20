@@ -37,8 +37,14 @@ async function pageFor(role, actor, width) {
       }
       if (kind === 'transfers') {
         if (action === 'destinations') return page([destination, { ...destination, id: 'taken', unitCode: 'A103', eligible: false, unavailableReason: 'Kho có lịch trùng.' }]);
-        if (action === 'commercial-preview') return send({ sameType: false, snapshot: { currentRate: 1000000, newRate: 1200000, differencePerMonth: 200000, effectiveFrom: '2027-01-01' } });
-        const visible = transfer && (role === 'MANAGER' || role === 'STAFF' && transfer.assignedStaff?.id === actor.id && ['APPROVED', 'COMPLETED'].includes(transfer.status));
+        if (action === 'commercial-preview') return send({ sameType: false, reviewHash: 'reviewed-fixture', snapshot: {
+          currentRate: 1000000, newRate: 1200000, differencePerMonth: 200000, effectiveFrom: '2027-01-01', financialReview: {
+            leaseStart: '2026-10-01', leaseEnd: '2027-01-01', renewals: [{ code: 'RN', appendixCode: 'RN-PL01', start: '2026-12-01', end: '2027-01-01' }],
+            paidAmount: 2000000, outstandingAmount: 0, dueAmount: 0, depositAmount: 1000000, futureRentIncrease: 0, futureRentReduction: 0,
+          },
+        } });
+        const visible = transfer && (role === 'MANAGER' || role === 'STAFF' && transfer.assignedStaff?.id === actor.id
+          && (transfer.status === 'COMPLETED' || transfer.status === 'APPROVED' && !transfer.requiresAcceptance && !transfer.commercialPayment?.dueInvoices.length));
         return id ? visible ? send(transfer) : send({ message: 'Không tìm thấy lệnh chuyển kho dành cho Staff.' }, 404) : page(visible && (!url.searchParams.has('status') || transfer.status === url.searchParams.get('status')) ? [transfer] : []);
       }
       return page(Array.isArray(data[kind]) ? data[kind] : []);
@@ -50,12 +56,14 @@ async function pageFor(role, actor, width) {
       assert.equal(body.storageUnitId, unit.id);
       assert.equal(body.subject, 'Yêu cầu chuyển kho');
       support = { ...body, id: 'support-transfer', supportCode: 'SUP-TRANSFER', status: 'OPEN', customer, reservation, contract, unit, createdAt: when };
-      transfer = { id: 'transfer', transferCode: 'TRF-MVP', status: 'REQUESTED', reason: 'UNIT_ISSUE', requestDescription: body.description, reservation, contract, fromUnit: { ...unit, status: 'OCCUPIED' }, toUnit: null, customer, createdAt: when, updatedAt: when };
+      transfer = { id: 'transfer', transferCode: 'TRF-MVP', status: 'REQUESTED', reason: 'UNIT_ISSUE', requestDescription: body.description, reservation, contract, fromUnit: { ...unit, status: 'OCCUPIED' }, toUnit: null, customer, createdAt: when, updatedAt: when,
+        transferRequestedSchedule: width === 390 ? { startAt: '2026-11-20T01:00:00.000Z', endAt: '2026-11-20T03:00:00.000Z' } : null,
+      };
       return send({ ...support, transfers: [transfer] }, 201);
     }
     if (role === 'MANAGER' && action === 'approve') {
-      assert.deepEqual(body, { toStorageUnitId: destination.id, staffUserId: staff.id });
-      Object.assign(transfer, { status: 'APPROVED', toUnit: { ...destination, status: 'RESERVED' }, assignedStaff: staff, approvedBy: manager, approvedAt: when, updatedAt: '2026-11-20T00:00:00Z', ...(width === 390 ? { commercial: { acceptedAt: null }, requiresAcceptance: true } : {}) });
+      assert.deepEqual(body, { toStorageUnitId: destination.id, staffUserId: staff.id, ...(width === 390 ? { commercialReviewHash: 'reviewed-fixture' } : {}) });
+      Object.assign(transfer, { status: 'APPROVED', toUnit: { ...destination, status: 'RESERVED' }, assignedStaff: staff, approvedBy: manager, approvedAt: when, updatedAt: '2026-11-20T00:00:00Z', ...(width === 390 ? { commercial: { acceptedAt: null }, requiresAcceptance: true, commercialPayment: { dueInvoices: [{ id: 'due', code: 'INV-DUE', balanceDue: 1000000 }] } } : {}) });
       return send(transfer);
     }
     if (role === 'MANAGER' && action === 'reject') {
@@ -107,8 +115,17 @@ try {
     assert.equal(await reviews.locator('tbody tr').count(), 1);
     await reviews.getByRole('link', { name: 'Xem chi tiết hồ sơ TRF-MVP' }).press('Enter');
     const approve = page.getByRole('button', { name: 'Duyệt và phân công', exact: true });
+    const managerTransfer = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Điều chuyển', exact: true }) });
+    await managerTransfer.getByText(width === 390 ? '20/11/2026 · 08:00–10:00' : 'Chưa có lịch hẹn', { exact: true }).waitFor();
+    if (width === 390) await page.getByRole('combobox').filter({ has: page.getByRole('option', { name: 'Tất cả loại kho' }) }).selectOption('all');
     await page.getByRole('radio', { name: /A102/ }).check();
     assert(await approve.isDisabled());
+    if (width === 390) {
+      await page.getByText('Giá nếu gia hạn tiếp').waitFor();
+      assert.equal(await page.getByText(/RN-PL01/).isVisible(), false);
+      await page.getByText('Chi tiết thanh toán và gia hạn', { exact: true }).click();
+      await page.getByText(/RN-PL01/).waitFor();
+    }
     await page.getByRole('radio', { name: new RegExp(staff.fullName) }).check();
     await approve.click();
     await page.getByText('Đã duyệt kho đích.', { exact: false }).waitFor();
@@ -122,12 +139,28 @@ try {
     await operation.goto(base + '/staff/transfers/transfer');
     const complete = operation.getByRole('button', { name: 'Hoàn tất chuyển kho', exact: true });
     if (width === 390) {
-      await operation.getByText(/Khách cần ký phụ lục đổi loại kho trước khi hoàn tất/).waitFor();
-      assert(await complete.isDisabled());
+      await operation.getByRole('alert').filter({ hasText: 'Không tìm thấy lệnh chuyển kho' }).waitFor();
+      assert.equal(await complete.count(), 0);
       transfer.commercial.acceptedAt = when;
       transfer.requiresAcceptance = false;
       await operation.reload();
+      await operation.getByRole('alert').filter({ hasText: 'Không tìm thấy lệnh chuyển kho' }).waitFor();
+      assert.equal(await complete.count(), 0);
+      transfer.commercialPayment.dueInvoices = [];
+      await operation.reload();
     }
+    if (width === 390) {
+      await operation.getByText('20/11/2026 · 08:00–10:00', { exact: false }).waitFor();
+      assert.equal(await operation.getByText('Khách đề xuất · Chưa xác nhận', { exact: false }).count(), 0);
+    } else {
+      await operation.getByText('Chưa có lịch hẹn', { exact: true }).waitFor();
+    }
+    transfer.storedItemCount = 2;
+    await operation.reload();
+    await operation.getByText('2 mặt hàng', { exact: true }).waitFor();
+    assert(await complete.isDisabled());
+    transfer.storedItemCount = 0;
+    await operation.reload();
     await operation.getByLabel('Người nhận kho mới', { exact: true }).fill(customer.fullName);
     await operation.getByLabel(/Số chìa khóa\/thẻ kho cũ/).fill('1');
     await operation.getByLabel(/Số chìa khóa\/thẻ kho mới/).fill('1');

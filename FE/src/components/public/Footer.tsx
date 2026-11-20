@@ -1,8 +1,45 @@
 import { Mail, MapPin, Phone, Warehouse } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../auth/auth-context'
+import { portalDestination } from '../../auth/portal-routing'
+import { facility } from '../../config/facility'
 import { Container } from '../ui/Container'
 
 export function Footer() {
-  return <footer className="bg-ink py-14 text-white"><Container><div className="grid gap-10 border-b border-white/15 pb-12 md:grid-cols-2 lg:grid-cols-4"><div><div className="flex items-center gap-2 text-lg font-bold"><Warehouse size={22} /> WDP Storage</div><p className="mt-4 max-w-xs text-sm leading-6 text-slate-300">Nền tảng quản lý kho tự quản cho một cơ sở. Thông tin vận hành hiện là dữ liệu mẫu.</p></div><div><h2 className="footer-title">Chọn kho</h2><Link to="/storage">Kho đang nhận yêu cầu</Link><Link to="/size-guide">Hướng dẫn kích thước</Link><Link to="/storage?type=climate&size=all&duration=3">Kho điều hòa</Link></div><div><h2 className="footer-title">Hỗ trợ</h2><Link to="/#how-it-works">Cách thuê kho</Link><Link to="/#faq">Câu hỏi thường gặp</Link><Link to="/account/reservations">Khu vực khách hàng</Link><a href="#legal">Điều khoản & quyền riêng tư</a></div><div id="contact"><h2 className="footer-title">Liên hệ mẫu</h2><p><MapPin size={16} /> Một cơ sở tại TP. Hồ Chí Minh</p><p><Phone size={16} /> 1900 0000</p><p><Mail size={16} /> hello@wdp-storage.vn</p></div></div><div id="legal" className="flex flex-col justify-between gap-3 pt-6 text-xs text-slate-400 sm:flex-row"><p>© 2026 WDP Storage.</p><p>Địa chỉ, hotline, tình trạng kho và chi phí đều là placeholder cho đến khi WDP cung cấp dữ liệu thật.</p></div></Container></footer>
-}
+  const { user } = useAuth()
+  const supportPath = user
+    ? user.role === 'CUSTOMER' ? '/customer/support' : portalDestination(user.role)
+    : '/account/login?returnTo=%2Fcustomer%2Fsupport'
+  const supportLabel = !user || user.role === 'CUSTOMER' ? 'Gửi yêu cầu hỗ trợ' : 'Khu vực làm việc'
 
+  return <footer id="facility" className="public-footer landing-footer" aria-label="Thông tin NestBox">
+    <Container>
+      <div className="public-footer-grid">
+        <div>
+          <Link to="/" className="public-brand public-footer-brand" aria-label="NestBox Storage - Trang chủ">
+            <span><Warehouse size={18} aria-hidden="true" /></span>
+            <strong>NestBox <span>Storage</span></strong>
+          </Link>
+          <nav className="public-footer-links" aria-label="Liên kết cuối trang">
+            <Link to="/storage">Xem kho</Link>
+            <Link to="/size-guide">So sánh kho</Link>
+            <Link to="/#faq">Câu hỏi thường gặp</Link>
+            <Link to={supportPath}>{supportLabel}</Link>
+          </nav>
+        </div>
+        <div>
+          <h2>Cơ sở NestBox</h2>
+          <address>
+            <p><MapPin size={17} aria-hidden="true" /> {facility.address}{facility.addressIllustrative && ' (minh họa)'}</p>
+            <p>{facility.hours}{facility.hoursIllustrative && ' (minh họa)'}</p>
+            <div className="public-footer-links">
+              {facility.phoneHref && <a href={facility.phoneHref}><Phone size={17} aria-hidden="true" /> {facility.phone}</a>}
+              {facility.emailHref && <a href={facility.emailHref}><Mail size={17} aria-hidden="true" /> {facility.email}</a>}
+            </div>
+          </address>
+        </div>
+      </div>
+      <small className="public-footer-copyright">© 2026 NestBox Storage</small>
+    </Container>
+  </footer>
+}

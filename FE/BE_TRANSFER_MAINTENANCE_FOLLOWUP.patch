@@ -1,0 +1,36 @@
+--- a/BE/src/modules/transfers/transfers.service.ts
++++ b/BE/src/modules/transfers/transfers.service.ts
+@@ -133,6 +133,7 @@
+       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
+       if (current.status === 'COMPLETED') {
+         await this.resolveLinkedTransferSupport(tx, current, actor);
++        await this.ensureSourceMaintenance(tx, current, actor);
+         return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
+       }
+       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
+@@ -145,8 +146,25 @@
+       await tx.storageUnit.update({ where: { id: current.toStorageUnitId }, data: { status: 'OCCUPIED' } });
+       const completed = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now }, include: this.include() });
+       await this.resolveLinkedTransferSupport(tx, completed, actor);
++      await this.ensureSourceMaintenance(tx, completed, actor);
+       return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }));
+     }, 'Không thể hoàn tất Transfer do xung đột đồng thời.');
++  }
++
++  private async ensureSourceMaintenance(tx: Prisma.TransactionClient, transfer: any, actor: PublicUser) {
++    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${transfer.fromStorageUnitId} FOR UPDATE`);
++    const source = await tx.storageUnit.findUnique({ where: { id: transfer.fromStorageUnitId }, select: { id: true, status: true } });
++    if (source?.status !== 'MAINTENANCE') return;
++    const activeKey = `MAINTENANCE:${source.id}`;
++    const createIdempotencyKey = `TRANSFER:${transfer.id}`;
++    if (await tx.maintenanceRequest.findUnique({ where: { activeKey } })) return;
++    if (await tx.maintenanceRequest.findUnique({ where: { createIdempotencyKey } })) return;
++    await tx.maintenanceRequest.create({ data: {
++      maintenanceCode: `${transfer.transferCode}-MNT`, storageUnitId: source.id, source: 'MANUAL',
++      category: transfer.reason === 'FACILITY_EQUIPMENT_FAILURE' ? 'FACILITY_EQUIPMENT' : transfer.reason === 'OPERATIONAL_RELOCATION' ? 'CLEANING' : 'UNIT_DAMAGE',
++      priority: 'MEDIUM', status: 'OPEN', description: `Kiểm tra kho ${transfer.fromStorageUnit.unitNumber} sau lệnh chuyển ${transfer.transferCode}.`,
++      reportedByUserId: actor.id, activeKey, createIdempotencyKey,
++    } });
+   }
+ 
+   private async resolveLinkedTransferSupport(tx: Prisma.TransactionClient, transfer: any, actor: PublicUser) {

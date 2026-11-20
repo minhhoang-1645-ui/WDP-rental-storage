@@ -8,7 +8,6 @@ coverage/
 FE/src/generated/
 BE/src/generated/
 
-
 # Dependencies
 node_modules/
 
@@ -24,3 +23,6 @@ build/
 # Browser test data
 booking-layout-smoke-*/
 screenshots/
+artifacts/
+*.tsbuildinfo
+swagger-docs-site/

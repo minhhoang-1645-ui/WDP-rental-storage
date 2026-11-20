@@ -1,37 +1,249 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
-import { PortalPlaceholder } from '../components/layout/PortalPlaceholder'
-import { PublicLayout } from '../components/layout/PublicLayout'
-import { AuthPage } from '../pages/account/AuthPage'
-import { MyReservationsPage } from '../pages/account/MyReservationsPage'
-import { BookingConfirmationPage } from '../pages/public/BookingConfirmationPage'
-import { BookingWizardPage } from '../pages/public/BookingWizardPage'
-import { LandingPage } from '../pages/public/LandingPage'
-import { ReservationPage } from '../pages/public/ReservationPage'
-import { SizeGuidePage } from '../pages/public/SizeGuideExperiencePage'
-import { StorageDetailPage } from '../pages/public/StorageDetailPage'
-import { StoragePage } from '../pages/public/StoragePage'
+import { ManagerStoredItemsPage } from '../pages/manager/ManagerStoredItemsPage';
+import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
+import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
+import { OverstayPage } from '../pages/manager/OverstayPage';
+import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
+import { Navigate, Route, Routes } from "react-router-dom";
+import { RoleGuard } from "../components/layout/RoleGuard";
+import { CustomerBookingGuard } from "../components/layout/CustomerBookingGuard";
+import { PublicLayout } from "../components/layout/PublicLayout";
+import { CatalogRouteLayout } from "../components/layout/CatalogRouteLayout";
+import { AuthPage } from "../pages/account/AuthPage";
+import { ForgotPasswordPage, ResetPasswordPage } from '../pages/account/PasswordRecoveryPage';
+import { BookingConfirmationPage } from "../pages/public/BookingConfirmationPage";
+import { BookingWizardPage } from "../pages/public/BookingWizardPage";
+import { ClaimBookingPage } from '../pages/public/ClaimBookingPage';
+import { LandingPage } from "../pages/public/LandingPage";
+import { ReservationPage } from "../pages/public/ReservationPage";
+import { SizeGuidePage } from "../pages/public/SizeGuideExperiencePage";
+import { StorageDetailPage } from "../pages/public/StorageDetailPage";
+import { StoragePage } from "../pages/public/StoragePage";
+import { ManagerLayout } from "../pages/manager/ManagerLayout";
+import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
+import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
+import { ManagerCustomersPage } from "../pages/manager/ManagerCustomersPage";
+import { ManagerCustomerDetailPage } from "../pages/manager/ManagerCustomerDetailPage";
+import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservationDetailPage";
+import { ManagerReportsPage, ManagerReportsRedirect } from "../pages/manager/ManagerReportsPage";
+import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
+import { ManagerAssignmentsPage } from "../pages/manager/ManagerAssignmentsPage";
+import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPage';
+import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
+import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
+import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
+import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
+import { StaffListPage } from "../pages/staff/StaffListPage";
+import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
+import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
+import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffOverstayPage } from "../pages/staff/StaffOverstayPage";
+import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
+import { ManagerListPage } from "../pages/manager/ManagerListPage";
+import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
+import { staffWorkflows } from "../utils/operation-access";
+import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
+import { AdminLayout, adminSections } from "../pages/admin/AdminLayout";
+import { AdminAccountDetailPage } from "../pages/admin/AdminAccountDetailPage";
+import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
+import { AdminAccountsPage } from "../pages/admin/AdminAccountsPage";
+import { AdminAuditPage } from '../pages/admin/AdminAuditPage';
+import { ManagerCatalogPage } from "../pages/manager/ManagerCatalogPage";
+import { ManagerAdditionalServicesPage } from '../pages/manager/ManagerAdditionalServicesPage';
+import { CustomerLayout, customerSections } from "../components/customer/CustomerLayout";
+import { WorkspaceSectionPage } from "../components/workspace/WorkspaceSectionPage";
+import { CustomerDashboardPage } from "../pages/customer/CustomerDashboardPage";
+import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointmentsPage";
+import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
+import { CustomerPaymentsPage } from "../pages/customer/CustomerPaymentsPage";
+import { CustomerVnpayReturnPage } from "../pages/customer/CustomerVnpayReturnPage";
+import { MobileVnpayReturnPage } from "../pages/customer/MobileVnpayReturnPage";
+import { CustomerRenewalsPage } from "../pages/customer/CustomerRenewalsPage";
+import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
+import { CustomerReturnsPage } from "../pages/customer/CustomerReturnsPage";
+import { CustomerSupportPage } from "../pages/customer/CustomerSupportPage";
+import { CustomerTransfersPage } from "../pages/customer/CustomerTransfersPage";
+import { AccountSettingsPage } from "../pages/account/AccountSettingsPage";
+import { CustomerReservationDetailPage } from "../pages/customer/CustomerReservationDetailPage";
+import { CustomerReservationsPage } from "../pages/customer/CustomerReservationsPage";
+import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovementsPage';
+import { ActivityInboxPage } from '../activity/ActivityCenter';
+import { ManagerSectionPage } from '../pages/manager/ManagerSectionPage';
 
-export function AppRouter() {
-  return <Routes>
-    <Route element={<PublicLayout />}>
-      <Route index element={<LandingPage />} />
-      <Route path="size-guide" element={<SizeGuidePage />} />
-      <Route path="storage" element={<StoragePage />} />
-      <Route path="storage/:id" element={<StorageDetailPage />} />
-      <Route path="booking" element={<BookingWizardPage />} />
-      <Route path="booking/confirmation/:id" element={<BookingConfirmationPage />} />
-      <Route path="reservation/confirmation" element={<Navigate to="/booking" replace />} />
-      <Route path="reservation/:id" element={<ReservationPage />} />
-      <Route path="account/login" element={<AuthPage mode="login" />} />
-      <Route path="account/register" element={<AuthPage mode="register" />} />
-      <Route path="account/reservations" element={<MyReservationsPage />} />
-    </Route>
-    <Route path="customer" element={<Navigate to="/account/reservations" replace />} />
-    <Route path="customer/*" element={<Navigate to="/account/reservations" replace />} />
-    <Route path="staff/*" element={<PortalPlaceholder role="Nhân viên" />} />
-    <Route path="manager/*" element={<PortalPlaceholder role="Quản lý" />} />
-    <Route path="admin/*" element={<PortalPlaceholder role="Quản trị viên" />} />
-    <Route path="*" element={<Navigate to="/" replace />} />
-  </Routes>
+function operationalRoutes(base: string) {
+  return (
+    <>
+      <Route index element={<ManagerDashboardPage />} />
+      <Route path="reviews" element={<ManagerSectionPage section="reviews" />} />
+      <Route path="finance" element={<ManagerSectionPage section="finance" />} />
+      <Route path="rental-records" element={<ManagerSectionPage section="rental-records" />} />
+      <Route path="facility" element={<ManagerSectionPage section="facility" />} />
+      <Route path="notifications" element={<ActivityInboxPage />} />
+      <Route path="payment-submissions/*" element={<Navigate to={`${base}/finance`} replace />} />
+      <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
+      <Route path="online-payment-reconciliations/*" element={<Navigate to={`${base}/finance`} replace />} />
+      <Route path="units" element={<ManagerUnitsPage />} />
+      <Route path="catalog" element={<ManagerCatalogPage />} />
+      <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
+      <Route path="units/:id" element={<ManagerUnitDetailPage />} />
+      <Route
+        path="inventory"
+        element={<Navigate to={`${base}/units`} replace />}
+      />
+      <Route path="customers" element={<ManagerCustomersPage />} />
+      <Route path="customers/:id" element={<ManagerCustomerDetailPage />} />
+      <Route path="reports" element={<ManagerReportsPage />} />
+      <Route path="reports/details" element={<ManagerReportsRedirect />} />
+      <Route path="operations/:resource" element={<ManagerResourcePage />} />
+      <Route
+        path="operations/:resource/:id"
+        element={<ManagerResourceDetailPage />}
+      />
+      <Route path="*" element={<WorkspaceNotFound />} />
+    </>
+  );
 }
 
+export function AppRouter() {
+  return (
+    <Routes>
+      <Route path="/customer/payments/vnpay-return/mobile/:invoiceId" element={<MobileVnpayReturnPage />} />
+      <Route element={<PublicLayout />}>
+        <Route path="claim-booking" element={<ClaimBookingPage />} />
+        <Route path="forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
+        <Route element={<CatalogRouteLayout />}>
+          <Route index element={<LandingPage />} />
+          <Route path="size-guide" element={<SizeGuidePage />} />
+          <Route path="storage" element={<StoragePage />} />
+          <Route path="storage/:id" element={<StorageDetailPage />} />
+          <Route path="reservation/:id" element={<ReservationPage />} />
+        </Route>
+        <Route element={<CustomerBookingGuard />}>
+          <Route element={<CatalogRouteLayout />}>
+            <Route path="booking" element={<BookingWizardPage />} />
+          </Route>
+        </Route>
+        <Route
+          path="booking/confirmation/:id"
+          element={<BookingConfirmationPage />}
+        />
+        <Route
+          path="reservation/confirmation"
+          element={<Navigate to="/booking" replace />}
+        />
+        <Route path="account/login" element={<AuthPage mode="login" />} />
+        <Route path="account/register" element={<AuthPage mode="register" />} />
+        <Route path="portal/login" element={<PortalLoginPage />} />
+        <Route
+          path="login"
+          element={<Navigate to="/account/login" replace />}
+        />
+        <Route
+          path="register"
+          element={<Navigate to="/account/register" replace />}
+        />
+        <Route
+          path="account/reservations"
+          element={<Navigate to="/customer/reservations" replace />}
+        />
+      </Route>
+      <Route path="customer" element={<CustomerLayout />}>
+        <Route path="sections/:section" element={<WorkspaceSectionPage sections={customerSections} />} />
+        <Route index element={<CustomerDashboardPage />} />
+        <Route path="notifications" element={<ActivityInboxPage />} />
+        <Route path="reservations" element={<CustomerReservationsPage />} />
+        <Route
+          path="reservations/:id"
+          element={<CustomerReservationDetailPage />}
+        />
+        <Route path="rentals" element={<CustomerRentalsPage />} />
+        <Route path="damage-claims" element={<DamageClaimsPage />} />
+          <Route path="booking-history" element={<CustomerBookingHistoryPage />} />
+        <Route path="stock-movements" element={<StockMovementsPage role="CUSTOMER" />} />
+        <Route path="stock-movements/:id" element={<StockMovementsPage role="CUSTOMER" />} />
+        <Route path="stored-items" element={<StoredItemsPage />} />
+        <Route path="contracts" element={<CustomerContractsPage />} />
+        <Route path="payments" element={<CustomerPaymentsPage />} />
+        <Route path="payments/vnpay-return" element={<CustomerVnpayReturnPage />} />
+        <Route path="appointments" element={<CustomerAppointmentsPage />} />
+        <Route path="renewals" element={<CustomerRenewalsPage />} />
+        <Route path="returns" element={<CustomerReturnsPage />} />
+        <Route path="transfers" element={<CustomerTransfersPage />} />
+        <Route path="support" element={<CustomerSupportPage />} />
+        <Route path="profile" element={<AccountSettingsPage />} />
+        <Route path="settings/:section?" element={<AccountSettingsPage />} />
+        <Route path="*" element={<WorkspaceNotFound />} />
+      </Route>
+      <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
+        <Route path="staff" element={<StaffLayout />}>
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
+          <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
+          <Route index element={<StaffOperationsPage />} />
+          <Route path="tasks" element={<StaffTasksPage />} />
+          <Route path="notifications" element={<ActivityInboxPage />} />
+          <Route path="damage-claims" element={<DamageClaimsPage />} />
+          <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
+          <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
+          <Route path="overstays" element={<StaffOverstayPage />} />
+          <Route path="unit-checks" element={<Navigate to="/staff/tasks" replace />} />
+          <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations" element={<StaffOperationsPage />} />
+          <Route path="inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="operations/inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="reservations" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
+          {staffWorkflows.filter(resource => resource !== 'stock-movements').map(resource => <Route key={resource} path={resource}>
+            <Route index element={<ManagerListPage key={resource} resource={resource} />} />
+            <Route path=":id" element={<ManagerDetailPage key={resource} resource={resource} />} />
+          </Route>)}
+          <Route path="rentals" element={<StaffListPage />} />
+          <Route path="rentals/:id" element={<StaffRecordPage />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations/:resource" element={<ManagerResourcePage />} />
+          <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
+          <Route path="check-in" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="*" element={<WorkspaceNotFound />} />
+        </Route>
+      </Route>
+      <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
+        <Route path="manager" element={<ManagerLayout />}>
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
+          <Route path="damage-claims" element={<DamageClaimsPage />} />
+          <Route path="assignments" element={<ManagerAssignmentsPage />} />
+          <Route path="stored-items" element={<ManagerStoredItemsPage />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
+          <Route path="overstays" element={<OverstayPage />} />
+          <Route path="reservations" element={<Navigate to="/manager" replace />} />
+          <Route path="operations/reservations" element={<Navigate to="/manager" replace />} />
+          <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
+          {operationalRoutes("/manager")}
+        </Route>
+      </Route>
+      <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
+        <Route path="admin" element={<AdminLayout />}>
+          <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />
+          <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
+          <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="notifications" element={<ActivityInboxPage />} />
+          <Route path="users" element={<AdminAccountsPage />} />
+          <Route path="users/:id" element={<AdminAccountDetailPage />} />
+          <Route path="roles" element={<Navigate to="/admin/users" replace />} />
+          <Route path="assignments" element={<Navigate to="/admin" replace />} />
+          <Route
+            path="account-status"
+            element={<Navigate to="/admin/users" replace />}
+          />
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
+          <Route path="facility/assignments" element={<Navigate to="/admin" replace />} />
+          <Route path="facility/*" element={<Navigate to="/admin" replace />} />
+          <Route path="*" element={<WorkspaceNotFound />} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

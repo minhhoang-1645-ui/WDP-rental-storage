@@ -1,0 +1,85 @@
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { CreateRenewalRequestDto } from '../../openapi/api-dtos.js';
+import { AuthGuard } from '../auth/auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { RenewalsService } from './renewals.service.js';
+
+@Controller('customer/renewals')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('CUSTOMER')
+@ApiTags('Customer Renewal')
+@ApiBearerAuth('bearerAuth')
+export class CustomerRenewalsController {
+  constructor(private readonly renewals: RenewalsService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Tạo yêu cầu gia hạn một hợp đồng', description: 'Lưu báo giá của kho được chọn. Thời hạn được cập nhật khi đã ký phụ lục và thanh toán kỳ đầu.' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'renewal-customer-2027-001' })
+  @ApiBody({ type: CreateRenewalRequestDto, examples: {
+    prepaid: { summary: 'Trả trước 3 tháng', value: { reservationId: 'WDP-2026-AB12CD34', rentalContractId: 'WDP-2026-AB12CD34-C01', termMonths: 3, paymentPlan: 'PREPAID' } },
+    monthly: { summary: 'Trả hàng tháng', value: { reservationId: 'WDP-2026-AB12CD34', rentalContractId: 'WDP-2026-AB12CD34-C02', termMonths: 3, paymentPlan: 'PAY_MONTHLY' } },
+  } })
+  @ApiCreatedResponse({ description: 'Yêu cầu gia hạn đã lưu báo giá và đang chờ duyệt hoặc chờ ký phụ lục.' })
+  @ApiBadRequestResponse({ description: 'Term/payment plan/Idempotency-Key không hợp lệ.' })
+  @ApiConflictResponse({ description: 'Rental không ACTIVE, dữ liệu không đồng nhất, đã có renewal chưa xử lý hoặc có future allocation conflict.' })
+  @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
+  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER.' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy Active Rental thuộc Customer.' })
+  create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.renewals.createCustomerRenewal(request.user!.id, body, key);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Danh sách yêu cầu gia hạn của Customer' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiOkResponse({ description: 'Chỉ Renewal thuộc Customer.' })
+  list(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20') {
+    const pagination = this.pagination(page, limit);
+    return this.renewals.listCustomerRenewals(request.user!.id, pagination.page, pagination.limit);
+  }
+
+  @Get('quote')
+  @ApiOperation({ summary: 'Xem báo giá gia hạn một kho' })
+  @ApiQuery({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
+  @ApiQuery({ name: 'rentalContractId', example: 'WDP-2026-AB12CD34-C01' })
+  @ApiQuery({ name: 'termMonths', type: Number, example: 3 })
+  @ApiQuery({ name: 'paymentPlan', enum: ['PREPAID', 'PAY_MONTHLY'] })
+  quote(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    return this.renewals.quoteCustomerRenewal(request.user!.id, query);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Chi tiết yêu cầu gia hạn của Customer' })
+  @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
+  @ApiOkResponse({ description: 'Snapshot, invoice/payment summary và trạng thái xử lý.' })
+  @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
+  get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.renewals.getCustomerRenewal(request.user!.id, id); }
+
+  @Post(':id/cancel')
+  cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.renewals.cancelCustomerRenewal(request.user!.id, id);
+  }
+
+  @Post(':id/appendix/signature-otp')
+  requestOtp(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.renewals.requestSignatureOtp(request.user!, id, body);
+  }
+
+  @Post(':id/appendix/accept')
+  @ApiOperation({ summary: 'Customer xác nhận phụ lục gia hạn', description: 'Phụ lục được tạo khi yêu cầu gia hạn được duyệt; Customer đọc và xác nhận trước khi thanh toán.' })
+  @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
+  @ApiOkResponse({ description: 'Đã lưu thời điểm và tên xác nhận phụ lục.' })
+  @ApiConflictResponse({ description: 'Gia hạn chưa hoàn tất hoặc phụ lục đã được xác nhận bởi tài khoản khác.' })
+  acceptAppendix(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.renewals.acceptCustomerAppendix(request.user!, id, body);
+  }
+
+  private pagination(pageValue: string, limitValue: string) {
+    const page = Number(pageValue); const limit = Number(limitValue);
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Pagination không hợp lệ.');
+    return { page, limit };
+  }
+}

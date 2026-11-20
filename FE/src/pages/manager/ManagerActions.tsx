@@ -1,0 +1,721 @@
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
+import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
+import { useCallback, useRef, useState } from "react";
+import { OperationsLink as Link } from "../../components/manager/OperationsLink";
+import { useAuth } from "../../auth/auth-context";
+import { mutate } from "../../services/portal";
+import { useApiResource } from '../../services/useApiResource';
+import {
+  code,
+  first,
+  label,
+  money,
+  rows,
+  type Row,
+} from "../../components/manager/portal-data";
+import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
+import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
+import { StaffPicker } from '../../components/manager/StaffPicker';
+import { object } from '../../components/manager/portal-data';
+import { renewalReviewIssue } from '../../utils/renewal-review';
+import { isEarlyReturnRequest } from '../../utils/early-return';
+import { canAccessManagerReview } from '../../utils/manager-review-access';
+
+type UnitStaffAssignments = {
+  enabled: boolean;
+  items: { storageUnitId: string; staff: { id: string; fullName: string; email?: string; accountStatus: string } }[];
+};
+
+export function ManagerActions({
+  resource,
+  row,
+  id,
+  refresh,
+  onSuccess,
+}: {
+  resource: string;
+  row: Row;
+  id: string;
+  refresh: () => void;
+  onSuccess?: (message: string) => void;
+}) {
+  const { user } = useAuth();
+  const sourceUnitId = resource === 'transfers' && row.status === 'REQUESTED' ? first(row, 'fromUnit.id') : '';
+  const sourceAssignments = useApiResource<UnitStaffAssignments>(
+    user?.role === 'MANAGER' && sourceUnitId ? '/manager/unit-staff-assignments' : null, user?.id, true,
+  );
+  const sourceOwner = sourceAssignments.data?.items.find(item => item.storageUnitId === sourceUnitId)?.staff;
+  const responsibleStaff = sourceOwner?.accountStatus === 'ACTIVE' ? sourceOwner : undefined;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState(first(row, "status"));
+  const [note, setNote] = useState(first(row, "internalNotes"));
+  const [reason, setReason] = useState("");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("BANK_TRANSFER");
+  const [reference, setReference] = useState("");
+  const [received, setReceived] = useState(false);
+  const [renewalReviewed, setRenewalReviewed] = useState(false);
+  const [maintenancePassed, setMaintenancePassed] = useState(true);
+  const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
+  const [target, setTarget] = useState("");
+  const [transferStaff, setTransferStaff] = useState('');
+  const [transferDestinationReady, setTransferDestinationReady] = useState(false);
+  const [transferReviewHash, setTransferReviewHash] = useState('');
+  const [resolution, setResolution] = useState("MANAGER_RESOLVED");
+  const lock = useRef(false);
+  const root = `/manager/${resource}/${encodeURIComponent(id)}`;
+  const issueRows = rows(row.physicalInspections).filter(
+    (item) => item.result === "ISSUE_FOUND",
+  );
+  const [issues, setIssues] = useState(() =>
+    Object.fromEntries(
+      issueRows.map((item) => [
+        first(item, "id"),
+        {
+          issueType: first(item, "issueType"),
+          amount: ["NORMAL_WEAR", "FACILITY_FAULT"].includes(
+            first(item, "issueType"),
+          )
+            ? "0"
+            : first(item, "issueType") === "LOST_KEY_OR_ACCESS_ITEM"
+              ? "200000"
+              : "",
+          reason: "",
+        },
+      ]),
+    ),
+  );
+  const run = useCallback(
+    async (
+      path: string,
+      verb: "POST" | "PATCH",
+      body?: Row,
+      idempotent = false,
+    ) => {
+      if (lock.current) return;
+      if (resource === 'renewals' && path.endsWith('/approve') && (!renewalReviewed || renewalReviewIssue(row))) { setError(renewalReviewIssue(row) || 'Vui lòng đối chiếu hồ sơ trước khi duyệt.'); return; }
+      lock.current = true;
+      setBusy(true);
+      setError("");
+      try {
+        await mutate(path, verb, body, idempotent);
+        onSuccess?.("Đã lưu thao tác thành công.");
+        refresh();
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Không thể thực hiện thao tác.",
+        );
+      } finally {
+        lock.current = false;
+        setBusy(false);
+      }
+    },
+    [onSuccess, refresh, resource, row, renewalReviewed],
+  );
+  const paymentFields = (
+    <>
+      <label className="field-label">
+        Phương thức
+        <select value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option value="BANK_TRANSFER">Chuyển khoản</option>
+          <option value="CASH">Tiền mặt</option>
+        </select>
+      </label>
+      {resource !== "deposit-settlements" && method === "BANK_TRANSFER" && <label className="field-label">
+        Mã giao dịch ngân hàng đã kiểm tra
+        <input
+          value={reference}
+          maxLength={200}
+          required
+          onChange={(e) => setReference(e.target.value)}
+        />
+      </label>}
+      {resource === "invoices" && method === "CASH" && <p className="staff-muted">Hệ thống sẽ sinh mã phiếu thu duy nhất và lưu người ghi nhận từ tài khoản đang đăng nhập.</p>}
+      <label className="field-label">
+        Ghi chú
+        <textarea
+          rows={3}
+          maxLength={2000}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
+      {resource === "deposit-settlements" && <label className="portal-checkbox">
+        <input
+          type="checkbox"
+          checked={received}
+          onChange={(e) => setReceived(e.target.checked)}
+          required
+        />
+        Tôi đã hoàn tiền thực tế cho khách.
+      </label>}
+    </>
+  );
+  if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
+  if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Quản lý duyệt thời điểm trả sớm. Sau đó nhân viên xử lý yêu cầu trả kho khi khách đã thanh toán đủ.</p>;
+  if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
+  return (
+    <div className="portal-form">
+      {error && (
+        <div className="booking-alert is-error" role="alert">
+          {error}
+        </div>
+      )}
+      <fieldset disabled={busy}>
+        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
+        {resource === "reservations" && user?.role === 'MANAGER' &&
+          (row.status === "PENDING" ? (
+            <form
+              className="portal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run(`${root}/status`, "PATCH", { status });
+              }}
+            >
+              <p>
+                Khi thử phân bổ lại, hệ thống kiểm tra và cấp đủ{" "}
+                {first(row, "quantity")} kho cho toàn bộ kỳ thuê.
+              </p>
+              <label className="field-label">
+                Quyết định
+                <select
+                  required
+                  value={status === "PENDING" ? "" : status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="">Chọn quyết định</option>
+                  {["CONFIRMED", "REJECTED", "CANCELLED", "EXPIRED"].map(
+                    (v) => (
+                      <option key={v} value={v}>
+                        {v === 'CONFIRMED' ? 'Thử phân bổ lại' : label(v)}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <button
+                className="button-primary"
+                disabled={busy || status === "PENDING"}
+              >
+                Lưu quyết định
+              </button>
+            </form>
+          ) : (
+            <>
+              <p>Yêu cầu đã được xử lý.</p>
+              <Link
+                className="button-secondary"
+                to={`/manager/operations/invoices?search=${encodeURIComponent(code(row))}`}
+              >
+                Xem hóa đơn
+              </Link>
+              <Link
+                className="button-secondary"
+                to={`/manager/operations/contracts?search=${encodeURIComponent(code(row))}`}
+              >
+                Xem hợp đồng
+              </Link>
+              <Link
+                className="button-secondary"
+                to={`/manager/operations/appointments?search=${encodeURIComponent(code(row))}`}
+              >
+                Lịch bàn giao
+              </Link>
+            </>
+          ))}
+        {resource === "appointments" && first(row, "assignedStaff.id") === user?.id &&
+          (row.status === "REQUESTED" ? (
+            <>
+              <p>
+                Xác nhận lịch nhận kho của khách. Bàn giao thực tế sẽ do nhân
+                viên ghi nhận.
+              </p>
+              <button
+                className="button-primary"
+                disabled={busy}
+                onClick={() => run(`${root}/confirm`, "PATCH")}
+              >
+                Xác nhận lịch bàn giao
+              </button>
+            </>
+          ) : (
+            <p>Lịch hẹn {label(row.status).toLowerCase()}.</p>
+          ))}
+        {resource === "renewals" &&
+          (row.status === "PENDING" ? (
+            <>
+              <p>
+                Khi duyệt, hệ thống kiểm tra kho trống và lập hóa đơn gia hạn. Hạn thuê
+                chỉ được cập nhật khi hoàn tất thanh toán theo quy định.
+              </p>
+              <p className="manager-action-copy">Kiểm tra khách hàng, kho, thời gian và số tiền gia hạn trước khi duyệt.</p>
+              {renewalReviewIssue(row) && <p className="booking-alert is-error" role="alert">{renewalReviewIssue(row)}</p>}
+              <label className="portal-checkbox"><input type="checkbox" checked={renewalReviewed} onChange={event => setRenewalReviewed(event.target.checked)} />Tôi đã đối chiếu thông tin và báo giá gia hạn</label>
+              <button
+                className="button-primary"
+                disabled={busy || !renewalReviewed || Boolean(renewalReviewIssue(row))}
+                onClick={() => run(`${root}/approve`, "POST")}
+              >
+                Duyệt gia hạn
+              </button>
+              <form
+                className="portal-form portal-form-divider"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run(`${root}/reject`, "POST", { reason: reason.trim() });
+                }}
+              >
+                <label className="field-label">
+                  Lý do từ chối
+                  <textarea
+                    required
+                    maxLength={2000}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </label>
+                <button
+                  className="button-secondary"
+                  disabled={busy || !reason.trim()}
+                >
+                  Từ chối gia hạn
+                </button>
+              </form>
+            </>
+          ) : (
+            <p>
+              {label(row.status)}. Hóa đơn gia hạn được liệt kê trong hồ sơ.
+            </p>
+          ))}
+        {resource === "invoices" &&
+          (Number(row.balanceDue) > 0 && invoicePaymentBlockedBySchedule(row) ? <p>Hóa đơn gia hạn chưa đến kỳ thanh toán.</p> : row.status !== "PAID" && Number(row.balanceDue) > 0 ? (
+            <form
+              className="portal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const value = Number(amount);
+                if (
+                  !Number.isSafeInteger(value) ||
+                  value <= 0 ||
+                  value > Number(row.balanceDue)
+                ) {
+                  setError(
+                    "Số tiền phải là số nguyên VND dương và không vượt số còn thu.",
+                  );
+                  return;
+                }
+                run(
+                  `${root}/payments`,
+                  "POST",
+                  {
+                    amount: value,
+                    method,
+                    reference: method === "BANK_TRANSFER" ? reference.trim() : undefined,
+                    note: note.trim() || undefined,
+                  },
+                  true,
+                );
+              }}
+            >
+              <p>
+                Ghi nhận khoản thu đã nhận thực tế. Còn thu:{" "}
+                <strong>{money(row.balanceDue)}</strong>.
+              </p>
+              <label className="field-label">
+                Số tiền nhận (VND)
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={Number(row.balanceDue)}
+                  step={1}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="portal-text-button"
+                onClick={() => setAmount(String(row.balanceDue))}
+              >
+                Điền số còn thu
+              </button>
+              {paymentFields}
+              <button
+                className="button-primary"
+                disabled={busy || !amount || (method === "BANK_TRANSFER" && !reference.trim())}
+              >
+                Ghi nhận thanh toán
+              </button>
+            </form>
+          ) : (
+            <p>Hóa đơn đã được thanh toán đầy đủ.</p>
+          ))}
+        {resource === "deposit-settlements" &&
+          (row.status === "PENDING_REVIEW" ? (
+            <form
+              className="portal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const payload = issueRows.map((item) => {
+                  const draft = issues[first(item, "id")];
+                  return {
+                    inspectionId: item.id,
+                    issueType: draft.issueType,
+                    approvedChargeAmount: Number(draft.amount),
+                    reason: draft.reason.trim() || undefined,
+                  };
+                });
+                if (
+                  payload.some(
+                    (item) =>
+                      !Number.isSafeInteger(item.approvedChargeAmount) ||
+                      item.approvedChargeAmount < 0,
+                  ) ||
+                  issueRows.some(
+                    (item) => issues[first(item, "id")].amount === "",
+                  )
+                ) {
+                  setError("Vui lòng nhập số tiền được duyệt cho từng vấn đề.");
+                  return;
+                }
+                run(
+                  `${root}/review`,
+                  "POST",
+                  { issues: payload, note: note.trim() || undefined },
+                  true,
+                );
+              }}
+            >
+              <p>
+                Duyệt toàn bộ vấn đề kiểm tra. Hao mòn thông thường và lỗi cơ sở
+                không thu phí khách.
+              </p>
+              {issueRows.map((item) => {
+                const key = first(item, "id");
+                const draft = issues[key];
+                const noCharge = [
+                  "NORMAL_WEAR",
+                  "FACILITY_FAULT",
+                  "LOST_KEY_OR_ACCESS_ITEM",
+                ].includes(draft.issueType);
+                const update = (value: Partial<typeof draft>) =>
+                  setIssues((prev) => ({
+                    ...prev,
+                    [key]: { ...prev[key], ...value },
+                  }));
+                return (
+                  <div className="portal-issue" key={key}>
+                    <strong>{first(item, "unit.unitCode")}</strong>
+                    <p>{first(item, "issueNote")}</p>
+                    <label className="field-label">
+                      Phân loại trách nhiệm
+                      <select
+                        value={draft.issueType}
+                        onChange={(e) =>
+                          update({
+                            issueType: e.target.value,
+                            amount: ["NORMAL_WEAR", "FACILITY_FAULT"].includes(
+                              e.target.value,
+                            )
+                              ? "0"
+                              : e.target.value === "LOST_KEY_OR_ACCESS_ITEM"
+                                ? "200000"
+                                : "",
+                          })
+                        }
+                      >
+                        {[
+                          "NORMAL_WEAR",
+                          "FACILITY_FAULT",
+                          "CUSTOMER_DAMAGE",
+                          "CLEANING_REQUIRED",
+                          "LOST_KEY_OR_ACCESS_ITEM",
+                          "OTHER",
+                        ].map((v) => (
+                          <option key={v} value={v}>
+                            {label(v)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field-label">
+                      Phí được duyệt (VND)
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        required
+                        disabled={noCharge}
+                        value={draft.amount}
+                        onChange={(e) => update({ amount: e.target.value })}
+                      />
+                    </label>
+                    <label className="field-label">
+                      Căn cứ duyệt
+                      <input
+                        required={
+                          Number(draft.amount) > 0 ||
+                          draft.issueType === "OTHER"
+                        }
+                        minLength={3}
+                        maxLength={2000}
+                        value={draft.reason}
+                        onChange={(e) => update({ reason: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+              <label className="field-label">
+                Ghi chú duyệt
+                <textarea
+                  maxLength={2000}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </label>
+              <button
+                className="button-primary"
+                disabled={busy || !issueRows.length}
+              >
+                Duyệt quyết toán
+              </button>
+            </form>
+          ) : row.status === "APPROVED" &&
+            Number(row.refundAmount) > 0 &&
+            Number(row.outstandingAmount) === 0 ? (
+            <form
+              className="portal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (received)
+                  run(
+                    `${root}/refund`,
+                    "POST",
+                    {
+                      method,
+                      refundConfirmed: true,
+                      note: note.trim() || undefined,
+                    },
+                    true,
+                  );
+              }}
+            >
+              <p>
+                Khoản cần hoàn: <strong>{money(row.refundAmount)}</strong>. Ghi
+                nhận sau khi đã hoàn tiền cho khách.
+              </p>
+              {paymentFields}
+              <button
+                className="button-primary"
+                disabled={busy || !received}
+              >
+                Ghi nhận hoàn tiền
+              </button>
+            </form>
+          ) : (
+            <p>
+              {label(row.status)}.
+              {row.status === "AWAITING_OUTSTANDING_PAYMENT"
+                ? " Thu đủ hóa đơn bổ sung để hoàn tất quyết toán."
+                : ""}
+            </p>
+          ))}
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
+          <form className="portal-form" onSubmit={event => {
+            event.preventDefault();
+            if (maintenancePassed) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined }, true);
+            else if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+          }}>
+            <label className="field-label">Kết quả nghiệm thu
+              <select value={maintenancePassed ? 'pass' : 'rework'} onChange={event => setMaintenancePassed(event.target.value === 'pass')}>
+                <option value="pass">Đạt</option>
+                <option value="rework">Cần sửa lại</option>
+              </select>
+            </label>
+            <label className="field-label">
+              {maintenancePassed ? 'Ghi chú nghiệm thu' : 'Yêu cầu sửa lại'}
+              <textarea required={!maintenancePassed} rows={3} maxLength={4000}
+                value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
+            </label>
+            {maintenancePassed && <p className="record-attribution">Nghiệm thu sẽ đưa kho về trạng thái sẵn sàng.</p>}
+            <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
+              {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
+            </button>
+          </form>
+        )}
+        {resource === "support-requests" && row.status === "ESCALATED" && (
+          <form
+            className="portal-form portal-form-divider"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(
+                `${root}/resolve`,
+                "POST",
+                { resolutionType: resolution, resolutionNote: note.trim() },
+                true,
+              );
+            }}
+          >
+            <label className="field-label">
+              Kết quả xử lý
+              <select
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+              >
+                {[
+                  "MANAGER_RESOLVED",
+                  "TRANSFER_RECOMMENDED",
+                  "NO_ACTION_REQUIRED",
+                  "OTHER",
+                ].map((v) => (
+                  <option key={v} value={v}>
+                    {label(v)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label">
+              Nội dung giải quyết
+              <textarea
+                required
+                maxLength={4000}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </label>
+            <button className="button-primary" disabled={busy || !note.trim()}>
+              Hoàn tất hỗ trợ
+            </button>
+          </form>
+        )}
+        {resource === "support-requests" &&
+          !["RESOLVED", "ESCALATED"].includes(first(row, "status")) && (
+            <p>
+              Nhân viên phụ trách xử lý yêu cầu và xem xét khi yêu cầu
+              được chuyển lên.
+            </p>
+          )}
+        {resource === "support-requests" &&
+          row.resolutionType === "TRANSFER_RECOMMENDED" && (
+            <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
+          )}
+        {["maintenance", "support-requests"].includes(resource) &&
+          !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
+            <DetailDisclosure title="Đổi mức ưu tiên">
+
+              <form
+                className="portal-form portal-form-divider"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void run(`${root}/priority`, "PATCH", { priority }, true);
+                }}
+              >
+                <label className="field-label">
+                  Ưu tiên
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                  >
+                    {["LOW", "MEDIUM", "HIGH"].map((v) => (
+                      <option key={v} value={v}>
+                        {label(v)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="button-secondary"
+                  disabled={busy || priority === row.priority}
+                >
+                  Cập nhật ưu tiên
+                </button>
+              </form>
+            </DetailDisclosure>
+          )}
+        {resource === "transfers" && user?.role === 'MANAGER' &&
+          (row.status === "REQUESTED" ? (
+            <>
+              <form
+                className="portal-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!target || !transferDestinationReady || !transferStaff) return;
+                  void run(`${root}/approve`, "POST", {
+                    toStorageUnitId: target,
+                    staffUserId: transferStaff,
+                    ...(transferReviewHash ? { commercialReviewHash: transferReviewHash } : {}),
+                  });
+                }}
+              >
+                <TransferDestinationPicker
+                  transferId={id}
+                  source={object(row.fromUnit)}
+                  value={target}
+                  onChange={setTarget}
+                  onReady={setTransferDestinationReady}
+                  onReviewed={setTransferReviewHash}
+                  disabled={busy}
+                />
+                <div className="staff-choice-summary">
+                  <strong>Người phụ trách kho nguồn{first(row, 'fromUnit.unitCode') ? ' · ' + first(row, 'fromUnit.unitCode') : ''}</strong>
+                  {sourceAssignments.loading || sourceAssignments.refreshing ? <p role="status">Đang kiểm tra người phụ trách kho…</p>
+                    : sourceAssignments.error ? <p role="status">Chưa tải được người phụ trách. <button type="button" className="portal-text-button" disabled={busy} onClick={sourceAssignments.refresh}>Thử lại</button></p>
+                    : responsibleStaff ? <>
+                      <p>{responsibleStaff.fullName}{responsibleStaff.email ? ' · ' + responsibleStaff.email : ''}</p>
+                      <button type="button" className="button-secondary" disabled={busy || transferStaff === responsibleStaff.id} onClick={() => setTransferStaff(responsibleStaff.id)}>
+                        {transferStaff === responsibleStaff.id ? 'Đã chọn người phụ trách kho' : 'Chọn người phụ trách kho'}
+                      </button>
+                    </> : <p>Kho chưa có người phụ trách đang hoạt động. Hãy chọn một nhân viên bên dưới.</p>}
+                </div>
+                <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} currentStaff={responsibleStaff} />
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || !transferStaff}>
+                  {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
+                </button>
+              </form>
+              <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
+                <label className="field-label">Lý do từ chối chuyển kho<textarea required minLength={3} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="Ghi rõ nguyên nhân để khách hàng biết kết quả xem xét." /></label>
+                <button className="button-secondary" disabled={busy || reason.trim().length < 3}>Từ chối chuyển kho</button>
+              </form>
+            </>
+          ) : (
+            <p>
+              {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích.'}
+              {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>{first(row, 'assignedStaff.id') ? 'Đổi nhân viên' : 'Phân công hồ sơ cũ'}</Link></>}
+            </p>
+          ))}
+        {[
+          "contracts",
+          "rentals",
+          "payments",
+          "returns",
+          "customers",
+          "units",
+        ].includes(resource) && (
+          <>
+            <p>
+              {resource === "returns"
+                ? "Nhân viên tiếp nhận kho và ghi nhận kiểm tra thực tế. Quản lý theo dõi và duyệt quyết toán cọc."
+                : resource === "units"
+                  ? "Theo dõi tình trạng và lịch phân bổ kho. Trạng thái kho được cập nhật qua các nghiệp vụ bàn giao, trả kho và nghiệm thu."
+                  : "Thông tin được cập nhật theo nghiệp vụ liên quan."}
+            </p>
+            {resource === "units" && row.activeMaintenance && (
+              <Link
+                className="button-secondary"
+                to={`/manager/operations/maintenance/${encodeURIComponent(first(row, "activeMaintenance.id"))}`}
+              >
+                Mở hồ sơ bảo trì
+              </Link>
+            )}
+          </>
+        )}
+      </fieldset>
+      {busy && <p role="status">Đang lưu thao tác…</p>}
+    </div>
+  );
+}

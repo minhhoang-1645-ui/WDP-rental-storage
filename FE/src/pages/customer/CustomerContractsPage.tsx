@@ -1,0 +1,163 @@
+import { DetailRow } from '../../components/workspace/DetailRow';
+import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
+import { Modal } from '../../components/manager/PortalUi';
+import { CopyRecordCode, RecordIdentity } from '../../components/workspace/RecordIdentity';
+import { ContractRenewalHistory } from '../../components/customer/ContractRenewalHistory';
+import { ContractTransferHistory } from '../../components/customer/ContractTransferHistory';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useListPagination } from "../../components/workspace/useListPagination";
+import { usePaginatedResource } from "../../services/usePaginatedResource";
+import { FileText, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { useAuth } from "../../auth/auth-context";
+import { CustomerSessionExpired } from "../../components/customer/CustomerSessionExpired";
+import { formatPortalDate } from "../../components/customer/CustomerPortalHelpers";
+import {
+  CustomerStatus,
+  PortalEmpty,
+  PortalError,
+  PortalLoading,
+  PortalPageHeader,
+} from "../../components/customer/CustomerPortalUi";
+import type { CustomerContract } from "../../types/customer";
+import { mutate } from "../../services/portal";
+import { ApiError } from "../../services/api";
+import { SignatureAgreement } from '../../components/customer/SignatureAgreement';
+import { DocumentFile } from '../../components/customer/DocumentFile';
+import { apiRequest } from '../../services/api';
+import type { OtpProof, OtpReceipt } from '../../components/customer/SignatureAgreement';
+
+export function CustomerContractsPage() {
+  const { user } = useAuth();
+  const [params] = useSearchParams();
+  const reservationFilter = params.get('reservation');
+  const contractFilter = params.get('contract');
+  const { data, error, status, loading, refresh } =
+    usePaginatedResource<CustomerContract>(
+      "/customer/contracts?limit=100",
+      user?.id ?? "",
+      true,
+    );
+  const { items: contracts, pagination } = useListPagination(
+    (data?.items ?? []).filter(contract => (!contractFilter || contract.id === contractFilter) && (!reservationFilter || contract.reservation.reference === reservationFilter || contract.reservation.id === reservationFilter)),
+  );
+  const [acceptingId, setAcceptingId] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [selectedRecord, setSelected] = useState<CustomerContract | null>(null);
+  const selected = data?.items.find(item => item.id === selectedRecord?.id) ?? selectedRecord;
+  const accept = async (contract: CustomerContract, signatureImage: string, proof: OtpProof) => {
+    if (!user || acceptingId) return;
+    setAcceptingId(contract.id); setMessage(null);
+    try {
+      await mutate(`/customer/contracts/${encodeURIComponent(contract.id)}/accept`, "POST", { acceptanceName: user.fullName, agreed: true, ...proof, signatureImage, snapshotHash: contract.terms.snapshotHash });
+      setMessage(`Đã lưu xác nhận hợp đồng ${contract.contractCode}.`);
+      setSelected(null);
+      refresh();
+    } catch (caught) { setMessage(caught instanceof ApiError || caught instanceof Error ? caught.message : "Không thể xác nhận hợp đồng."); throw caught; }
+    finally { setAcceptingId(""); }
+  };
+  return (
+    <section className="customer-page">
+      <PortalPageHeader
+        eyebrow="Hợp đồng"
+        title="Hợp đồng của tôi"
+        action={
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+          >
+            <RefreshCw size={16} /> Làm mới
+          </button>
+        }
+      />
+      {reservationFilter && <p>Hợp đồng của đơn {reservationFilter} · <Link to="/customer/contracts">Xem tất cả hợp đồng</Link></p>}
+      {contractFilter && <p>Hợp đồng được chọn · <Link to="/customer/contracts">Xem tất cả hợp đồng</Link></p>}
+      {status === 401 ? (
+        <CustomerSessionExpired />
+      ) : loading ? (
+        <PortalLoading label="Đang tải hợp đồng…" />
+      ) : error ? (
+        <PortalError message={error} onRetry={refresh} />
+      ) : contracts.length === 0 ? (
+        <PortalEmpty icon={<FileText size={30} />} title="Chưa có hợp đồng">
+          <span>
+            Hợp đồng sẽ xuất hiện sau khi yêu cầu đặt kho được NestBox xác nhận và cấp
+            kho.
+          </span>
+        </PortalEmpty>
+      ) : (
+        <>
+        {message && <p className="customer-form-message" role="status">{message}</p>}
+        <div className="customer-table-wrap customer-responsive-table">
+          <table className="customer-table customer-contracts-table">
+            <thead>
+              <tr>
+                <th>Hợp đồng</th>
+                <th>Loại kho</th>
+                <th>Kho được cấp</th>
+                <th>Thời hạn</th>
+                <th>Trạng thái</th>
+                <th>Xác nhận</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contracts.map((contract) => (
+                <DetailRow key={contract.id} detail={{ open: () => setSelected(contract), label: `Mở hợp đồng ${contract.contractCode}` }}>
+                  <td data-label="Mã hợp đồng">
+                    <RecordIdentity row={contract} resource="contracts" />
+                    <small>Đơn: {contract.reservation.reference}</small>
+                  </td>
+                  <td data-label="Loại kho">{contract.storageType.name}</td>
+                  <td data-label="Kho được cấp">
+                    <strong>{contract.storageUnit.unitCode}</strong>{Boolean(contract.transfers?.length) && <small>{contract.transfers?.filter(item => item.status === 'COMPLETED').length} lần chuyển hoàn tất · Xem trong hồ sơ hợp đồng</small>}
+                    <small>
+                      {[contract.storageUnit.floor, contract.storageUnit.zone]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  </td>
+                  <td data-label="Thời hạn">
+                    {formatPortalDate(contract.startDate)} –{" "}
+                    {formatPortalDate(contract.endDate)}
+                  </td>
+                  <td data-label="Trạng thái">
+                    <CustomerStatus status={contract.status} />
+                  </td>
+                  <td data-label="Xác nhận">
+                    {contract.terms.acceptedAt ? <div className="customer-contract-confirmation"><small>Đã xác nhận<br />{formatPortalDate(contract.terms.acceptedAt, true)}</small><button type="button" className="button-secondary" onClick={() => setSelected(contract)}>Xem bản đã xác nhận</button>{contract.status === "PENDING_PAYMENT" && <Link className="button-secondary" to={`/customer/payments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Thanh toán</Link>}{contract.status === "READY_FOR_HANDOVER" && <Link className="button-secondary" to={`/customer/appointments?reservation=${encodeURIComponent(contract.reservation.id)}`}>Đặt lịch bàn giao</Link>}</div> :
+                      <button type="button" className="button-secondary payment-table-action" onClick={() => setSelected(contract)}>Xem và xác nhận</button>}
+                  </td>
+                </DetailRow>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {selected && <Modal title="Chi tiết hợp đồng" className="customer-contract-dialog" busy={Boolean(acceptingId)}
+          onClose={() => setSelected(null)} footer={<button type="button" className="button-secondary" disabled={Boolean(acceptingId)} onClick={() => setSelected(null)}>Đóng</button>}>
+          <div className="record-page-title"><h3>Kho {selected.storageUnit.unitCode}</h3><CustomerStatus status={selected.status} /></div>
+          <CopyRecordCode value={selected.contractCode} label="Mã hợp đồng" />
+          <p>{formatPortalDate(selected.startDate)} – {formatPortalDate(selected.endDate)}</p>
+          <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />
+          {selected.terms.acceptedAt ? <DetailDisclosure title="Thông tin ký hợp đồng">
+            <p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>
+            {selected.terms.signatureImage && <img src={selected.terms.signatureImage} alt="Chữ ký đã xác nhận" style={{ maxWidth: '100%', width: 300 }} />}
+          </DetailDisclosure> : <SignatureAgreement key={`${selected.id}:${selected.terms.snapshotHash}`}
+            label="Xác thực và ký hợp đồng" busy={Boolean(acceptingId)} otpConfigured={selected.terms.otp?.emailConfigured}
+            onRequestOtp={signatureImage => apiRequest<OtpReceipt>(`/customer/contracts/${encodeURIComponent(selected.id)}/signature-otp`, {
+              method: 'POST',
+              body: JSON.stringify({ acceptanceName: user?.fullName, agreed: true, signatureImage, snapshotHash: selected.terms.snapshotHash }),
+            })}
+            onSubmit={(signature, proof) => accept(selected, signature, proof)} />}
+          {(Boolean(selected.transfers?.length) || Boolean(selected.renewals?.length)) && <DetailDisclosure title="Lịch sử hợp đồng">
+            <ContractTransferHistory contract={selected} scope="customer" />
+            <ContractRenewalHistory contract={selected} scope="customer" />
+          </DetailDisclosure>}
+        </Modal>}
+        </>
+      )}
+      {pagination}
+    </section>
+  );
+}

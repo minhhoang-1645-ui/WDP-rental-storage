@@ -1,0 +1,21 @@
+.detail-row, .detail-card { cursor: pointer; }
+.detail-row > :first-child, .detail-card { position: relative; }
+:is(.detail-row, .detail-card) .record-code-value { user-select: text; }
+.detail-row:hover > :is(td, th), .detail-row:has(.detail-row-control:focus-visible) > :is(td, th) {
+  background-color: color-mix(in srgb, var(--workspace-primary) 8%, transparent);
+}
+.detail-card:hover { border-color: color-mix(in srgb, var(--workspace-primary) 36%, var(--workspace-border)); }
+:is(.detail-row, .detail-card):has(.detail-row-control:focus-visible) { outline: 2px solid var(--workspace-primary); outline-offset: -2px; }
+.detail-row-control {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  inset-inline-start: 0;
+  inset-block-start: 50%;
+}

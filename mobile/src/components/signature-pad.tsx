@@ -1,0 +1,55 @@
+import type { ComponentRef } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { PanResponder, PixelRatio, Platform, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
+import type { SignaturePadHandle, SignaturePadProps } from './signature-pad.types';
+
+export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function SignaturePad({ compact, onValidityChange }, ref) {
+  const height = compact ? 120 : 180;
+  const view = useRef<ComponentRef<typeof View>>(null);
+  const drawing = useRef<string>('');
+  const points = useRef(0);
+  const [paths, setPaths] = useState<string[]>([]);
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: event => {
+      const { locationX: x, locationY: y } = event.nativeEvent;
+      drawing.current = `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+      setPaths(current => [...current, drawing.current]);
+    },
+    onPanResponderMove: event => {
+      if (points.current >= 2400) return;
+      const { locationX: x, locationY: y } = event.nativeEvent;
+      points.current++;
+      if (points.current === 2) onValidityChange?.(true);
+      drawing.current += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+      const next = drawing.current;
+      setPaths(current => [...current.slice(0, -1), next]);
+    },
+  }), [onValidityChange]);
+  useImperativeHandle(ref, () => ({
+    clear() { drawing.current = ''; points.current = 0; setPaths([]); onValidityChange?.(false); },
+    async capture() {
+      if (points.current < 2) throw new Error('Vui lòng vẽ chữ ký trong khung.');
+      // iOS ViewShot takes points and renders at device scale. Android takes pixels.
+      const scale = Platform.OS === 'ios' ? PixelRatio.get() : 1;
+      for (const width of [600, 400, 280, 200]) {
+        const base64 = await captureRef(view, {
+          result: 'base64',
+          format: 'png',
+          width: Math.round(width / scale),
+          height: Math.round(width * 0.3 / scale),
+        });
+        const image = `data:image/png;base64,${base64}`;
+        if (image.length <= 90_000) return image;
+      }
+      throw new Error('Chưa thể lưu ảnh chữ ký. Vui lòng thử gửi lại mã.');
+    },
+  }), [onValidityChange]);
+  return <View ref={view} collapsable={false} accessible accessibilityLabel="Khung vẽ chữ ký" {...pan.panHandlers} style={{ height, backgroundColor: '#fff', borderWidth: 1, borderColor: '#81929d', borderRadius: 8, overflow: 'hidden' }}>
+    <Svg width="100%" height={height} pointerEvents="none">{paths.map((d, index) => <Path key={index} d={d} stroke="#213f53" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}</Svg>
+  </View>;
+});

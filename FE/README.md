@@ -1,32 +1,75 @@
-# React + TypeScript + Vite
+> Hướng dẫn review mới nhất: [NestBox Storage — checklist test](../HUONG_DAN_TEST_NESTBOX.md).
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+# Frontend WDP
 
-Currently, two official plugins are available:
+Giao diện React/TypeScript/Vite dùng API NestJS. Cần chạy cả BE và FE để xem danh mục và đặt kho.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Chạy local
 
-## React Compiler
+Terminal 1, chạy backend theo cấu hình hiện có trong BE/README.md. Portal manager/admin cần backend và PostgreSQL hoạt động. Không chạy seed hoặc migration chỉ để xem giao diện.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm run start:dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Terminal 2, trong FE:
+
+```powershell
+npm ci
+npm run dev
+```
+
+Mở địa chỉ mà Vite hiển thị. Có thể chạy trực tiếp để cố định địa chỉ:
+
+```powershell
+node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort
+```
+
+FE mặc định gọi `http://localhost:3000/api`. Nếu cần đổi, tạo `.env.local` theo `.env.example` rồi khởi động lại Vite. Nếu chạy khác port, cấu hình FRONTEND_URL của BE tương ứng.
+
+## Dữ liệu đã nối
+
+- Trang chủ, hướng dẫn kích thước, chi tiết kho và wizard dùng GET /booking/catalog.
+- Trang tìm kho gọi GET /storage theo kích thước, loại, ngày và thời hạn; backend loại các kho trùng lịch.
+- Wizard gọi /booking/availability, /inquiries hoặc /reservations. Khách đã đăng nhập dùng thông tin tài khoản đã xác thực.
+- Trang xác nhận đọc lại bản ghi từ backend; hỗ trợ refresh và trạng thái đăng nhập thay đổi.
+- Trang tài khoản đọc danh sách yêu cầu của chủ tài khoản; có trạng thái tải/lỗi/rỗng và nút làm mới.
+- Không tự thay dữ liệu API lỗi bằng danh sách mẫu. Nút thử lại dùng để phục hồi khi backend hoạt động lại.
+
+## Portal manager và admin
+
+Đăng nhập tại `/account/login` hoặc `/portal/login`; đăng xuất luôn về `/account/login`. Manager dùng `/manager`; Admin dùng `/admin`. Mở URL khác vai trò sẽ về trang chủ của vai trò đang đăng nhập.
+
+Manager đã nối các API kho, khách hàng, tư vấn, đặt kho, bàn giao, hợp đồng, hóa đơn, khoản thu, gia hạn, kho đang thuê, trả kho, hỗ trợ, chuyển kho, bảo trì và quyết toán cọc. Phân công nhân viên ở `/manager/assignments`, dùng nhiệm vụ hỗ trợ và bảo trì hiện có.
+
+Admin có đúng hai mục: Tổng quan và Quản lý tài khoản. Tạo STAFF/MANAGER, xem hồ sơ và kích hoạt/vô hiệu hóa nằm trong quản lý tài khoản. URL cũ `/admin/facility/*` về `/admin`; không mở menu vận hành Manager trong Admin.
+
+## Kiểm tra
+
+Staff sử dụng API `/staff/*` cho bàn giao, trả/kiểm tra, hỗ trợ, bảo trì và hoàn tất chuyển kho; Customer giữ `/customer/*`. Không coi guard giao diện là thay thế phân quyền backend.
+
+```powershell
+npm run build
+npm run lint
+```
+
+Kiểm thử browser cho portal (API được chặn và trả fixture, không ghi database thật):
+
+```powershell
+$env:WDP_PLAYWRIGHT_MODULE='<đường dẫn module playwright nếu không cài trong FE>'
+$env:WDP_BROWSER_PATH='<đường dẫn chrome.exe hoặc msedge.exe nếu không dùng browser của Playwright>'
+npm run test:portal
+npm run test:roles
+```
+
+Cần chạy FE trước khi kiểm thử. Có thể đổi URL bằng `WDP_FE_URL`; mặc định `http://127.0.0.1:5173`. Nếu npm shim trên máy bị lỗi, chạy trực tiếp:
+
+```powershell
+node node_modules/typescript/bin/tsc -b
+node node_modules/vite/bin/vite.js build
+node node_modules/oxlint/bin/oxlint
+node scripts/portal-smoke.mjs
+node scripts/roles-smoke.mjs
+```
+
+Ngày 14/10/2026 đã kiểm tra đăng nhập/API đọc thật và đăng xuất của hai tài khoản Admin/Manager mới do người dùng yêu cầu, trên FE, mobile web và Android. Các script, ảnh và dữ liệu UI tạo thêm để kiểm thử đã được dọn theo yêu cầu; giữ các bài kiểm thử portal/roles có sẵn trong repo. Mật khẩu không lưu vào mã nguồn.

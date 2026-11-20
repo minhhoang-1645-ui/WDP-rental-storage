@@ -25,10 +25,15 @@ export interface StorageListing {
   status: 'available' | 'limited'
   floor: string
   access: string
-  monthlyPrice: null
+  monthlyPrice: number | null
   depositMonths: number | null
+  minRentalDays: number | null
+  allowDailyRental: boolean
   features: string[]
   image: string
+  dimensions?: string
+  floorArea?: string
+  volume?: string
 }
 
 export interface SearchCriteria {

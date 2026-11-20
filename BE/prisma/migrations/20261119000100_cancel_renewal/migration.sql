@@ -1,0 +1,1 @@
+ALTER TYPE "RenewalStatus" ADD VALUE 'CANCELLED';

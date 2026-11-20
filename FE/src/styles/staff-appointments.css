@@ -1,0 +1,107 @@
+.staff-appointment-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+
+.staff-appointment-views [aria-pressed="true"] {
+  background: var(--workspace-selected);
+  border-color: var(--workspace-primary);
+  color: var(--workspace-primary);
+}
+
+.staff-appointment-list .staff-appointment-empty {
+  margin-block: 1rem;
+}
+
+.staff-appointment-detail .manager-section > h2 {
+  margin-bottom: .65rem;
+}
+
+.staff-appointment-detail .record-page-meta {
+  gap: .5rem 1rem;
+}
+
+.staff-appointment-detail .manager-facts {
+  margin-block: .75rem 0;
+}
+
+.staff-appointment-detail .record-disclosure + .record-disclosure {
+  margin-top: .65rem;
+}
+
+.staff-handover-units,
+.staff-handover-steps,
+.staff-handover-history {
+  display: grid;
+  gap: .4rem 1.25rem;
+  margin: .65rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-handover-units li,
+.staff-handover-history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .25rem 1rem;
+  padding-block: .5rem;
+}
+
+.staff-handover-units li + li,
+.staff-handover-history li + li {
+  border-top: 1px solid var(--workspace-border);
+}
+
+.staff-handover-units span,
+.staff-handover-history small {
+  color: var(--workspace-secondary);
+  overflow-wrap: anywhere;
+}
+
+.staff-handover-history small {
+  display: block;
+}
+
+.staff-handover-steps {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+}
+
+.staff-handover-steps li,
+.staff-handover-done {
+  display: flex;
+  align-items: baseline;
+  gap: .45rem;
+}
+
+.staff-handover-steps svg,
+.staff-handover-done svg {
+  flex: none;
+  color: var(--workspace-primary);
+  align-self: center;
+}
+
+.staff-handover-done {
+  font-weight: 600;
+}
+
+.staff-handover-unit-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: .85rem;
+}
+
+.staff-appointment-detail .portal-form .staff-handover-unit-check {
+  min-width: 0;
+  padding: .85rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: .65rem;
+}
+
+.staff-handover-unit-check legend {
+  padding-inline: .3rem;
+  font-weight: 600;
+}

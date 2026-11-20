@@ -1,0 +1,188 @@
+.workspace-notifications { flex: none; }
+.workspace-notification-trigger {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+.workspace-notification-trigger:is(:hover, [aria-expanded='true']) {
+  background: var(--workspace-hover);
+  color: var(--workspace-primary);
+}
+.workspace-notification-badge {
+  position: absolute;
+  inset: -5px -6px auto auto;
+  display: grid;
+  place-items: center;
+  min-inline-size: 20px;
+  min-block-size: 20px;
+  padding-inline: 4px;
+  border-radius: 999px;
+  background: var(--workspace-error);
+  color: var(--workspace-surface);
+  font-size: var(--type-badge);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.workspace-notification-panel {
+  position: fixed;
+  inset: var(--notice-top, auto) auto var(--notice-bottom, auto) var(--notice-left, auto);
+  box-sizing: border-box;
+  inline-size: var(--notice-width, min(420px, calc(100vw - 24px)));
+  max-block-size: var(--notice-height, calc(100dvh - 84px));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-popover);
+  color: var(--workspace-text);
+  box-shadow: 0 12px 28px #10151d30;
+  font-size: 14px;
+}
+.workspace-notification-panel:popover-open { display: flex; flex-direction: column; }
+.workspace-notification-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+.workspace-notification-heading h2 { margin: 0 auto 0 0; font-size: var(--type-section); }
+.workspace-notification-heading > span { color: var(--workspace-secondary); white-space: nowrap; }
+.workspace-notification-close { display: grid; place-items: center; inline-size: 36px; block-size: 36px; border-radius: 7px; }
+.workspace-notification-close:hover { background: var(--workspace-hover); }
+.workspace-notification-content { min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; }
+.workspace-notification-list { margin: 0; padding: 0; list-style: none; }
+.workspace-notification-list li + li { border-top: 1px solid var(--workspace-border); }
+.workspace-notification-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-block-size: 62px;
+  padding: 10px 16px;
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+.workspace-notification-row:hover { background: var(--workspace-hover); }
+.workspace-notification-icon { align-self: start; margin-top: 3px; color: var(--workspace-muted); }
+.workspace-notification-row[data-important='true'] .workspace-notification-icon { color: var(--workspace-warning); }
+.workspace-notification-copy { min-width: 0; overflow-wrap: anywhere; }
+.workspace-notification-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; }
+.workspace-notification-title :is(strong, .workspace-notification-open) {
+  min-width: 0;
+  color: var(--workspace-text);
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 580;
+  white-space: normal;
+}
+.workspace-notification-row[data-unread='true'] .workspace-notification-title :is(strong, .workspace-notification-open) { font-weight: 720; }
+.workspace-notification-copy p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 3px 0 0;
+  color: var(--workspace-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.workspace-notification-title time { color: var(--workspace-muted); font-size: 14px; white-space: nowrap; }
+.workspace-notification-dot { flex: 0 0 7px; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--workspace-primary); }
+.workspace-notification-row-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.workspace-notification-row-actions .button-secondary { min-block-size: 34px; padding: 6px 10px; }
+.workspace-notification-row-actions .workspace-notification-mark { inline-size: 36px; padding-inline: 0; }
+.workspace-notification-action-label {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: var(--workspace-warning-bg);
+  color: var(--workspace-warning);
+  font-size: 13px;
+}
+.workspace-notification-panel .workspace-notification-row { grid-template-columns: 18px minmax(0, 1fr); gap: 10px; }
+.workspace-notification-open { text-align: start; padding: 0; }
+.workspace-notification-open:hover { color: var(--workspace-primary); text-decoration: underline; }
+.workspace-notification-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  min-block-size: 44px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--workspace-border);
+  color: var(--workspace-primary);
+  font-weight: 650;
+}
+.workspace-notification-footer:hover { background: var(--workspace-hover); }
+.workspace-notification-empty { padding: 22px 16px; margin: 0; color: var(--workspace-secondary); }
+.workspace-notification-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--workspace-error-bg);
+  color: var(--workspace-error);
+  font-size: 14px;
+}
+.workspace-notification-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-block-end: 12px;
+  color: var(--workspace-primary);
+  font-size: 14px;
+}
+.workspace-notification-back:hover { text-decoration: underline; }
+.workspace-notification-trigger:focus-visible,
+.workspace-notification-panel:focus-visible,
+.workspace-notification-panel :is(button, a):focus-visible,
+.workspace-notification-inbox :is(button, a):focus-visible { outline: 2px solid var(--workspace-primary); outline-offset: 2px; }
+.workspace-notification-panel:focus-visible { outline-offset: -2px; }
+.workspace-notification-inbox { max-inline-size: 70rem; margin-inline: auto; min-inline-size: 0; }
+.workspace-notification-inbox h1 { margin: 0; font-size: var(--type-title); }
+.workspace-notification-surface {
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-surface);
+  overflow: hidden;
+}
+.workspace-notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+.workspace-notification-tabs, .workspace-notification-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-inline-size: 0; }
+.workspace-notification-tabs button { padding: 7px 10px; border-radius: 7px; color: var(--workspace-secondary); font-weight: 650; min-block-size: 36px; }
+.workspace-notification-tabs button:hover { background: var(--workspace-hover); }
+.workspace-notification-tabs button[aria-pressed='true'] { background: var(--workspace-selected); color: var(--workspace-primary); }
+.workspace-notification-filters .field-label { margin: 0; }
+.workspace-notification-filters :is(input, select) { min-block-size: 36px; inline-size: 100%; }
+.workspace-notification-inbox .portal-pagination > div { flex-wrap: wrap; row-gap: 6px; }
+@media (max-width: 650px) {
+  .workspace-notification-inbox-header { display: grid; align-items: start; gap: 10px; }
+  .workspace-notification-filters { inline-size: 100%; }
+  .workspace-notification-filters .field-label:first-child { flex: 1 1 150px; }
+  .workspace-notification-filters .field-label:last-child { flex: 1 1 125px; }
+  .workspace-notification-inbox .workspace-notification-row { grid-template-columns: 18px minmax(0, 1fr); gap: 6px 10px; padding: 10px 12px; }
+  .workspace-notification-row-actions { grid-column: 2; justify-content: start; }
+  .workspace-notification-inbox .portal-pagination button:is([aria-label="Trang trước"], [aria-label="Trang sau"]) > span { display: none; }
+  .workspace-notification-inbox .portal-pagination button:is([aria-label="Trang trước"], [aria-label="Trang sau"]) { min-width: 36px; padding-inline: 6px; }
+}

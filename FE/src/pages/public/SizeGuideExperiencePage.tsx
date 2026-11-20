@@ -1,119 +1,118 @@
-import { lazy, Suspense } from 'react'
-import { ArrowRight, Box, Boxes, Check, Cuboid, Info, Ruler, ScanLine } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
-import { ButtonLink } from '../../components/ui/ButtonLink'
+import { useEffect, useRef } from 'react'
+import { ArrowRight, X } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useCatalog } from '../../catalog/catalog-context'
+import { ComparisonChoice } from '../../components/public/StorageComparison'
+import { comparisonHref, useStorageComparison } from '../../components/public/comparison-context'
+import { StorageImage } from '../../components/public/StorageImage'
 import { Container } from '../../components/ui/Container'
-import { getStorageSize, storageSizes } from '../../data/storage'
-import type { StorageSizeId } from '../../types/storage'
-
-const Storage3DViewer = lazy(() => import('../../components/public/StorageArchitecturalViewer'))
-
-const categoryNumbers: Record<StorageSizeId, string> = {
-  locker: '01',
-  small: '02',
-  medium: '03',
-  large: '04',
-}
-
-function ViewerPlaceholder({ image, name }: { image: string, name: string }) {
-  return <div className="viewer-module-placeholder" aria-label={`Đang tải mô phỏng ${name}`}>
-    <img src={image} alt="" />
-    <div><span />Đang tải mô phỏng 3D...</div>
-  </div>
-}
+import { storageBookingHref, storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
+import type { StorageListing } from '../../types/storage'
 
 export function SizeGuidePage() {
+  const { storageSizes, storageListings, getStorageSize } = useCatalog()
+  const selection = useStorageComparison()
   const [params, setParams] = useSearchParams()
-  const selected = getStorageSize(params.get('size')) ?? storageSizes[1]
-  const choose = (id: StorageSizeId) => setParams({ size: id }, { replace: true })
-
-  return <>
-    <section className="size-guide-intro">
-      <Container>
-        <div className="max-w-3xl">
-          <p className="eyebrow">Hướng dẫn kích thước</p>
-          <h1>Tìm kích thước kho phù hợp.</h1>
-          <p>So sánh bốn lựa chọn bằng không gian thật và những món đồ quen thuộc. Chọn một kích thước để xem cách sắp xếp, sức chứa ước tính và kho đang phù hợp với nhu cầu của bạn.</p>
+  const requested = params.get('size') || 'all'
+  const selected = storageSizes.some(size => size.id === requested) ? requested : 'all'
+  const products = storageListings.filter(product => selected === 'all' || product.sizeId === selected)
+  const compareIds = [...new Set((params.get('compare') ?? '').split(','))].filter(id => storageListings.some(product => product.id === id)).slice(0, 3)
+  const comparing = params.has('compare') && compareIds.length >= 2
+  const compared = compareIds.map(id => storageListings.find(product => product.id === id)!)
+  const comparisonHeading = useRef<HTMLHeadingElement>(null)
+  const comparisonKey = compareIds.join(',')
+  useEffect(() => {
+    if (comparing) {
+      comparisonHeading.current?.scrollIntoView({ block: 'start' })
+      comparisonHeading.current?.focus({ preventScroll: true })
+    }
+  }, [comparing, comparisonKey])
+  const choose = (size: string) => setParams(current => { const next = new URLSearchParams(current); next.set('size', size); next.delete('product'); next.delete('compare'); return next }, { replace: true })
+  const edit = () => setParams(current => { const next = new URLSearchParams(current); next.delete('compare'); return next })
+  const remove = (id: string) => { if (selection.ids.includes(id)) selection.toggle(id); setParams(current => { const next = new URLSearchParams(current); const ids = compareIds.filter(value => value !== id); if (ids.length >= 2) next.set('compare', ids.join(',')); else next.delete('compare'); return next }) }
+  const specs = (product: StorageListing) => storageSpecifications(product, getStorageSize(product.sizeId)!)
+  const facts: Array<[string, (product: StorageListing) => string]> = [
+    ['Diện tích sàn', product => specs(product).floorArea],
+    ['Rộng × dài × cao', product => specs(product).dimensions],
+    ['Thể tích', product => specs(product).volume],
+    ['Bảo quản', product => product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'],
+    ['Vị trí', product => product.floor || 'Xem khi xác nhận'],
+    ['Truy cập kho', product => product.access || 'Theo thỏa thuận khi bàn giao'],
+    ['Tiện ích', product => product.features.join(' · ') || 'Chưa công bố'],
+    ['Giá thuê cơ bản', product => storageMonthlyPrice(product.monthlyPrice) + (product.monthlyPrice !== null ? ' / tháng / kho' : '')],
+    ['Tiền đặt cọc', product => typeof product.depositMonths === 'number' ? `${product.depositMonths} tháng tiền thuê` : 'Xem báo giá theo kỳ thuê'],
+    ['Thuê ngắn ngày', product => product.allowDailyRental ? `Có, tối thiểu ${product.minRentalDays ?? 1} ngày` : 'Thuê theo tháng'],
+    ['Tình trạng', product => product.status === 'limited' ? 'Số lượng hạn chế' : 'Đang nhận yêu cầu'],
+  ]
+  return <div className="storage-comparison-page">
+    <header className="public-page-intro"><Container>
+      <h1>So sánh kho</h1>
+      {!comparing && <p>Chọn 2–3 loại kho để xem kích thước, giá thuê và tiền cọc.</p>}
+    </Container></header>
+    <section className="public-page-content"><Container>
+      {comparing ? <>
+        <div className="catalog-comparison-heading">
+          <div>
+            <h2 ref={comparisonHeading} tabIndex={-1} className="comparison-result-heading">{compared.length} loại kho đã chọn</h2>
+            <p>Giá thuê chưa gồm tiền cọc và dịch vụ.</p>
+          </div>
+          <button type="button" className="button-secondary" onClick={edit}>Đổi lựa chọn</button>
         </div>
-      </Container>
-    </section>
-
-    <section className="size-guide-main">
-      <Container>
-        <div className="size-guide-workspace">
-          <aside className="size-guide-selector" aria-label="Chọn kích thước kho">
-            <div className="selector-heading">
-              <span>4 lựa chọn</span>
-              <h2>Chọn không gian</h2>
-              <p>Mỗi mô phỏng dùng đúng kích thước đang hiển thị trên danh sách kho.</p>
-            </div>
-            <div className="size-guide-tabs" role="tablist" aria-label="Nhóm kích thước kho">
-              {storageSizes.map(size => <button
-                key={size.id}
-                type="button"
-                role="tab"
-                aria-selected={selected.id === size.id}
-                aria-controls="size-visualisation"
-                tabIndex={selected.id === size.id ? 0 : -1}
-                className={selected.id === size.id ? 'is-active' : ''}
-                onClick={() => choose(size.id)}
-              >
-                <span className="selector-number">{categoryNumbers[size.id]}</span>
-                <span className="selector-copy"><strong>{size.name}</strong><small>{size.dimensions}</small></span>
-                <span className="selector-measure">{size.floorArea}</span>
-              </button>)}
-            </div>
-            <div className="selector-note"><Info size={17} /><p>Cần lấy đồ thường xuyên? Hãy chừa lối đi và cân nhắc tăng một cỡ.</p></div>
-          </aside>
-
-          <div className="size-guide-stage">
-            <div className="stage-heading">
-              <div>
-                <p>{selected.kicker}</p>
-                <h2>{selected.name}</h2>
+        <p className="comparison-swipe-hint">Vuốt ngang để xem thêm.</p>
+        <div className="storage-side-comparison" tabIndex={0} role="region" aria-label="Bảng so sánh kho đã chọn">
+          <table style={{ minWidth: 170 + compared.length * 245 }}>
+            <thead><tr>
+              <th scope="col">Thông tin</th>
+              {compared.map(product => <th scope="col" key={product.id} data-product-id={product.id}>
+                <button className="comparison-remove" type="button" aria-label={`Bỏ so sánh ${product.name}`} onClick={() => remove(product.id)}><X size={17} /></button>
+                <StorageImage src={product.image} alt="" />
+                <small>{product.code}</small>
+                <h3>{product.name}</h3>
+                <Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link>
+              </th>)}
+            </tr></thead>
+            <tbody>
+              {facts.map(([title, value]) => <tr key={title} className={new Set(compared.map(value)).size > 1 ? 'is-different' : ''}>
+                <th scope="row">{title}</th>
+                {compared.map(product => <td key={product.id}>{value(product)}</td>)}
+              </tr>)}
+              <tr><th scope="row">Đặt kho</th>{compared.map(product => <td key={product.id}>
+                <Link className="button-primary" to={storageBookingHref(product, params.toString())} aria-label={`Chọn kho ${product.name}`}>Chọn kho này <ArrowRight size={15} /></Link>
+              </td>)}</tr>
+            </tbody>
+          </table>
+        </div>
+      </> : <>
+        {params.has('compare') && <p className="booking-alert" role="status">Chọn ít nhất 2 loại kho đang được cung cấp.</p>}
+        <div className="comparison-toolbar">
+          <div className="catalog-size-filters" role="group" aria-label="Lọc theo kích thước">
+            <button type="button" aria-pressed={selected === 'all'} onClick={() => choose('all')}>Tất cả loại kho</button>
+            {storageSizes.map(size => <button key={size.id} type="button" aria-pressed={selected === size.id} onClick={() => choose(size.id)}>{size.name}</button>)}
+          </div>
+          <div className="comparison-submit">
+            <span aria-live="polite">Đã chọn {selection.ids.length}/3</span>
+            {selection.ids.length >= 2
+              ? <Link className="button-primary" to={comparisonHref(selection.ids, params.toString())}>So sánh</Link>
+              : <button type="button" className="button-primary" disabled>So sánh</button>}
+          </div>
+        </div>
+        <div className="comparison-candidates">
+          {products.map(product => <article className="comparison-candidate" key={product.id} data-candidate-id={product.id}>
+            <StorageImage src={product.image} alt="" loading="lazy" />
+            <div>
+              <small>{product.code}</small>
+              <h2>{product.name}</h2>
+              <p>{specs(product).floorArea} · {product.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</p>
+              <strong>{storageMonthlyPrice(product.monthlyPrice)}{product.monthlyPrice !== null && ' / tháng'}</strong>
+              <div className="comparison-card-actions">
+                <ComparisonChoice product={product} />
+                <Link className="comparison-detail" to={`/storage/${encodeURIComponent(product.id)}`}>Xem chi tiết</Link>
               </div>
-              <div className="stage-dimension"><Ruler size={18} /><span>Kích thước phủ bì</span><strong>{selected.dimensions}</strong></div>
             </div>
-            <Suspense fallback={<ViewerPlaceholder image={selected.image} name={selected.name} />}>
-              <Storage3DViewer key={selected.id} size={selected} />
-            </Suspense>
-          </div>
+          </article>)}
         </div>
-
-        <div className="size-guide-details" aria-live="polite">
-          <div className="size-metrics">
-            <div><Ruler size={21} /><span>Kích thước</span><strong>{selected.dimensions}</strong></div>
-            <div><ScanLine size={21} /><span>Diện tích sàn</span><strong>{selected.floorArea}</strong></div>
-            <div><Cuboid size={21} /><span>Thể tích</span><strong>{selected.volume}</strong></div>
-            <div><Boxes size={21} /><span>Sức chứa thùng</span><strong>{selected.boxCount}</strong></div>
-          </div>
-
-          <div className="capacity-layout">
-            <div className="capacity-summary">
-              <p className="eyebrow">Khả năng lưu trữ</p>
-              <h2>{selected.roomEquivalent}</h2>
-              <p>{selected.capacity}. Mô phỏng thể hiện một cách sắp xếp tham khảo; sức chứa thực tế phụ thuộc vào hình dáng đồ đạc và khoảng trống bạn dành cho lối đi.</p>
-            </div>
-            <div className="suitable-items">
-              <h3><Box size={20} /> Phù hợp để lưu trữ</h3>
-              <ul>{selected.suitableItems.map(item => <li key={item}><Check size={17} />{item}</li>)}</ul>
-              <ButtonLink to={`/storage?size=${selected.id}&type=all&duration=3`}>Xem kho phù hợp <ArrowRight size={17} /></ButtonLink>
-            </div>
-          </div>
-        </div>
-      </Container>
-    </section>
-
-    <section className="size-guide-advice">
-      <Container className="advice-layout">
-        <div><p className="eyebrow">Trước khi quyết định</p><h2>Đo món đồ lớn nhất, rồi tính chỗ cho lối đi.</h2></div>
-        <div className="advice-points">
-          <p><strong>Ưu tiên chiều dài.</strong><span>Nệm, sofa và kệ dài thường quyết định kích thước kho trước số lượng thùng.</span></p>
-          <p><strong>Đừng xếp kín 100%.</strong><span>Chừa khoảng trống giúp bạn lấy đồ mà không phải dỡ toàn bộ kho.</span></p>
-          <p><strong>Thể tích là ước tính.</strong><span>Các số m³ được tính trực tiếp từ ba chiều đã công bố của từng loại kho.</span></p>
-        </div>
-      </Container>
-    </section>
-  </>
+      </>}
+      <p className="comparison-note">Số kho trống phụ thuộc vào thời gian thuê.</p>
+    </Container></section>
+  </div>
 }
-

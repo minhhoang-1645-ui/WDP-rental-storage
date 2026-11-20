@@ -1,0 +1,102 @@
+// GETs use in-memory fixtures; every business write is rejected. Shared database remains untouched.
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { launchTestBrowser } from './browser-test.mjs';
+import { fixture, customer, staff, reservation } from './fixtures/workspace.mjs';
+
+const browser = await launchTestBrowser(), errors = [], writes = [], checks = [];
+const artifacts = 'artifacts/ux-notifications-20261029'; await mkdir(artifacts, {recursive:true});
+async function setup(role = 'CUSTOMER', width = 1440) {
+  const context = await browser.newContext({viewport:{width,height:1000}}), data = structuredClone(fixture);
+  const actor = {...(role === 'CUSTOMER' ? customer : staff), id: role === 'CUSTOMER' ? customer.id : role === 'STAFF' ? staff.id : role.toLowerCase() + '-id', role, accountStatus:'ACTIVE'};
+  const own = { ...reservation, id:'PRIVATE-ID', reference:'NB-JOURNEY', status:'CONFIRMED', quantity:1, expiresAt:'2099-12-01T00:00:00Z', startDate:'2026-10-29', endDate:'2099-01-01' };
+  data.reservations = [{...own, id:own.reference, product:{name:'Kho nhỏ A'}, createdAt:'2026-10-29T00:00:00Z'}];
+  data.contracts = [{...fixture.contracts[0], id:'journey-contract', reservation:own, status:'PENDING_PAYMENT', startDate:own.startDate, endDate:own.endDate, terms:{acceptedAt:null}}];
+  data.invoices = [{...fixture.invoices[0], id:'journey-invoice', invoiceCode:'INV-JOURNEY', reservation:own, signing:{complete:false, contracts:[{id:'journey-contract',code:'CON-JOURNEY'}]}}];
+  data.appointments = []; data.returns = []; data.renewals = []; data['payment-submissions'] = []; data['deposit-settlements'] = [];
+  data['transfer-orders'] = []; data['damage-claims'] = [];
+  data['support-requests'] = Array.from({length:121}, (_,i) => ({...fixture['support-requests'][0], id:`notice-${i}`, supportCode:`SUP-${String(i).padStart(3,'0')}`, subject:'Cần hỗ trợ bảo quản đồ', status:'ASSIGNED', category:'OTHER', reservation:own, assignedStaff:staff, createdAt:'2026-10-29T00:00:00Z'}));
+  data.users = [actor];
+  await context.addInitScript(() => localStorage.setItem('wdp-auth-token-v1','fixture-session'));
+  await context.route(/\/api\//, async route => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname.replace(/^\/api\//,''), method = req.method();
+    if (method === 'OPTIONS') return route.fulfill({status:204});
+    const send = json => route.fulfill({status:200,json});
+    if (method !== 'GET') { writes.push(path); return route.fulfill({status:500,json:{message:'No real or mocked business writes allowed in this suite'}}); }
+    if (path === 'auth/me') return send(actor);
+    if (path === 'notifications') return send({ page: 1, limit: 5, total: 0, unreadTotal: 0, kinds: [], recent: [], items: [] });
+    if (path === 'reservations') return send(data.reservations);
+    if (path === 'customer/payment-config') return send({configured:false,vnpayConfigured:false});
+    if (path === 'manager/dashboard/summary') return send({availableUnits:1,activeRentals:1});
+    if (path === 'manager/staff') return send({page:1,limit:100,total:2,items:[{...staff,id:'busy-staff',fullName:'Nhân viên đang bận'},{...staff,id:'free-staff',fullName:'Nhân viên còn trống'}]});
+    if (path === 'manager/unit-staff-assignments') return send({enabled:false,items:[]});
+    const parts = path.split('/'), offset = parts[1] === 'management' ? 2 : 1, kind = parts[offset], id = parts[offset+1];
+    if (kind === 'stored-items') return send([]);
+    const items = data[kind]; if (!items) throw new Error('Unexpected fixture GET: ' + path);
+    if (id) return send(items.find(item => item.id === id || item.reference === id) ?? {});
+    const limit = Number(url.searchParams.get('limit') || 20), page = Number(url.searchParams.get('page') || 1);
+    return send({page,limit,total:items.length,items:items.slice((page-1)*limit,page*limit)});
+  });
+  const page = await context.newPage(); page.setDefaultTimeout(25000); page.on('pageerror',error=>errors.push(error.message));
+  const goto = path => page.goto((process.env.WDP_FE_URL || 'http://localhost:5173')+path,{waitUntil:'domcontentloaded'});
+  const pulse = () => page.evaluate(() => window.dispatchEvent(new StorageEvent('storage',{key:'nestbox-data-updated-v1',newValue:JSON.stringify({at:Date.now()})})));
+  return {context,page,goto,pulse,data,own};
+}
+try {
+  for (const width of [1440,390]) {
+    const app = await setup('CUSTOMER',width);
+    await app.goto('/customer');
+    await app.page.getByRole('heading',{name:'Đơn gần đây',exact:true}).waitFor();
+    assert.equal(await app.page.getByText('Tiến độ đơn thuê & hướng dẫn',{exact:true}).count(),0);
+    assert.equal(await app.page.locator('[aria-label="Tiến độ thuê kho"]').count(),0);
+    await app.page.screenshot({path:artifacts + '/customer-dashboard-' + width + '.png',fullPage:true});
+    assert(await app.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    app.data.contracts[0].terms.acceptedAt = new Date().toISOString();
+    app.data.contracts[0].status='READY_FOR_HANDOVER';
+    await app.goto('/customer/appointments?reservation='+app.own.reference);
+    await app.page.waitForFunction(()=>document.querySelector('[role=combobox][aria-label="Yêu cầu đặt kho"]')?.getAttribute('data-value')==='PRIVATE-ID');
+    await app.context.close(); checks.push(width + 'px: compact dashboard without removed guide, alias-safe appointment prefill and no horizontal overflow');
+  }
+  const app = await setup();
+  await app.goto('/customer/support?reservation=NB-JOURNEY');
+  await app.page.getByRole('button', { name: 'Thông báo, 0 chưa đọc', exact: true }).waitFor();
+  await app.page.getByLabel('Chi tiết', { exact: true }).fill('Nội dung đang nhập cần giữ nguyên');
+  app.data['support-requests'][1].status = 'RESOLVED';
+  const refresh = app.page.waitForResponse(response => new URL(response.url()).pathname === '/api/notifications');
+  await app.pulse();
+  await refresh;
+  assert.equal(await app.page.getByLabel('Chi tiết', { exact: true }).inputValue(), 'Nội dung đang nhập cần giữ nguyên');
+  await app.goto('/customer/support?request=notice-1');
+  const support = app.page.locator('article.customer-request-card');
+  await support.getByRole('heading', {name:'Cần hỗ trợ bảo quản đồ'}).waitFor();
+  assert.equal(await support.count(), 1);
+  assert.equal(await app.page.getByRole('button', {name:'Gửi yêu cầu', exact:true}).count(), 0);
+  assert(await support.locator('details').evaluate(node => node.open));
+  await app.page.getByRole('link', {name:'Xem tất cả yêu cầu', exact:true}).click();
+  await app.page.waitForURL('**/customer/support');
+  await app.page.getByLabel('Chi tiết', { exact:true }).waitFor();
+  app.data.appointments = fixture.appointments;
+  await app.goto('/customer/appointments?appointment=' + fixture.appointments[0].id);
+  const appointment = app.page.locator('article.appointment-request-card');
+  await appointment.waitFor();
+  assert(await appointment.locator('details').evaluate(node => node.open));
+  assert.equal(await app.page.getByRole('button', {name:'Gửi yêu cầu', exact:true}).count(), 0);
+  await app.context.close();
+  checks.push('Customer detail deep links isolate support and handover records and return to the request list');
+  const assignment = await setup('MANAGER');
+  for (const task of assignment.data['support-requests']) task.assignedStaff = {...staff,id:'busy-staff'};
+  await assignment.goto('/manager/assignments?kind=support-requests');
+  const assignmentRow = assignment.page.getByRole('row').filter({hasText:'SUP-000'});
+  await assignmentRow.getByRole('button',{name:'Thao tác SUP-000',exact:true}).click();
+  await assignmentRow.getByRole('button',{name:'Xem / Đổi nhân viên',exact:true}).click();
+  const choice = assignment.page.getByRole('radio',{name:/Nhân viên còn trống/});
+  await choice.check();
+  assert(await choice.isChecked());
+  assert(await assignment.page.locator('form[data-wdp-dirty="true"]').count());
+  await assignment.context.close(); checks.push('Manager selects an active staff member; the choice is saved as a draft until confirmation');
+  assert.deepEqual(errors,[]); assert.deepEqual(writes,[]);
+  console.log(JSON.stringify({checks,browserErrors:errors.length,realDatabaseWrites:0},null,2));
+} catch(error) {
+  for(const ctx of browser.contexts()) for(const page of ctx.pages()) console.error(page.url(),(await page.locator('body').innerText()).slice(-4500));
+  throw error;
+} finally { await browser.close(); }

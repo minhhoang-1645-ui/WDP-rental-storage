@@ -1,0 +1,244 @@
+export interface Paginated<T> {
+  page: number
+  limit: number
+  total: number
+  items: T[]
+}
+
+export interface CustomerStorageType {
+  id: string
+  code: string
+  name: string
+  sizeId?: string
+  sizeName?: string
+  condition?: string
+}
+
+export interface CustomerContract {
+  renewals?: Array<{ id: string; status: string }>
+  transfers?: Array<{ id: string; transferCode: string; status: string; reason: string; fromUnit: { unitCode: string }; toUnit: { unitCode: string } | null; createdAt: string; completedAt: string | null; completedBy: { fullName: string } | null }>
+  id: string
+  contractCode: string
+  status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+  startDate: string
+  endDate: string
+  reservation: { id: string; reference: string; status: string; quantity: number }
+  storageType: CustomerStorageType
+  storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string }
+  activatedAt: string | null
+  completedAt: string | null
+  terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null; document: Record<string, unknown>; snapshotHash: string; signatureImage: string | null; otp?: { required: boolean; emailConfigured: boolean }; verification?: { method: string; verifiedAt: string; recipient: string } | null }
+}
+
+export interface ReturnReadiness {
+  requiresFullSettlement: boolean
+  policy?: string
+  earlyReturnBlockReason?: 'RENEWAL_IN_PROGRESS' | 'DEPOSIT_RECONCILIATION_REQUIRED' | null
+  totalOutstanding: number | null
+  canReturn: boolean
+  requiresReconciliation?: boolean
+  awaitingRenewalInvoices?: boolean
+}
+
+export interface RentalContractSummary {
+  returnReadiness?: ReturnReadiness
+  earlyReturnEstimate?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
+  returnInProgress?: boolean
+  pendingRenewal?: CustomerRental['pendingRenewal']
+  storedItems?: Array<{ id: string; itemCode: string; name: string; unit: string; balance: number }>
+  transfers?: Array<{ code: string; from: string; to: string; completedAt: string | null }>
+  id: string
+  contractCode: string
+  status: string
+  startDate: string
+  endDate: string
+  activatedAt: string | null
+  unit: { id: string; unitCode: string; status: string; storageType?: { id: string; name: string }; floor: string | null; zone: string | null; row: string | null; position: string | null }
+}
+
+export interface CustomerRental {
+  returnReadiness?: ReturnReadiness
+  canRenewTogether?: boolean
+  rentalPeriod?: import('./rental-account').RentalPeriodSummary
+  paymentDetails?: import('./rental-account').RentalPaymentDetails
+  reservationId: string
+  reservationReference: string
+  storageType: CustomerStorageType
+  quantity: number
+  startDate: string
+  endDate: string
+  effectiveEndDate: string
+  isOverdue: boolean
+  overdueSince: string | null
+  rentalState: 'ACTIVE' | 'OVERDUE'
+  contractCount: number
+  unitCount: number
+  contracts: RentalContractSummary[]
+  pendingRenewal: { id: string; renewalCode: string; status: string; requestedEndDate: string } | null
+  historicalPricing?: { billingMode?: 'DAILY' | 'MONTHLY' }
+  billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number; payableBalance?: number; scheduledBalance?: number; nextInvoice: CustomerInvoice | null }
+}
+
+export interface CustomerInvoice {
+  closeoutPaymentAllowed?: boolean
+  voidReason?: string | null
+  voidedAt?: string | null
+  breakdown?: {
+    periodStart: string; periodEnd: string; adjustmentAmount: number;
+    units: Array<{ contractId: string; contractCode: string; unitCode: string; storageTypeName: string; monthlyRate: number; rentalAmount: number; depositAmount: number; discountAmount?: number }>;
+    sharedServices: Array<{ id: string; name: string; quantity: number; billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH'; unitPrice: number; physicalUnit?: string; billablePeriods?: number; amount: number }>;
+  } | null
+  replacesInvoice?: { id: string; invoiceCode: string } | null
+  replacementInvoice?: { id: string; invoiceCode: string } | null
+  signing?: { required: boolean; complete: boolean; contracts: { id: string; code: string }[]; renewalId: string | null }
+  id: string
+  invoiceCode: string
+  type: 'INITIAL' | 'RECURRING' | 'RENEWAL' | 'SETTLEMENT'
+  billingCycle: number | null
+  renewalCycle: number | null
+  billingPeriodStart: string | null
+  billingPeriodEnd: string | null
+  dueAt: string | null
+  isPastDue: boolean
+  status: 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
+  reservation: { id: string; reference: string; status: string; expiresAt: string | null; quantity: number; storageType: CustomerStorageType }
+  rentalAmount: number
+  depositAmount: number
+  serviceAmount?: number
+  chargeAmount?: number
+  totalAmount: number
+  amountPaid: number
+  balanceDue: number
+  currency: string
+  issuedAt: string
+  paidAt: string | null
+}
+
+export interface CustomerPayment {
+  id: string
+  paymentCode: string
+  amount: number
+  method: string
+  reference: string | null
+  note: string | null
+  receivedAt: string
+  invoice: { id: string; invoiceCode: string; status: string; totalAmount: number; amountPaid: number; balanceDue: number; reservation: { id: string; reference: string } }
+}
+
+export interface CustomerAppointment {
+  assignedStaff?: { id: string; fullName: string } | null;
+  assignmentStatus?: 'UNASSIGNED' | 'ASSIGNED' | 'NEEDS_REASSIGNMENT';
+  assignedAt?: string | null;
+  handoverReport?: Record<string, unknown> | null;
+  usageStatus?: 'WAITING_FOR_RENTAL_START' | 'ACTIVE' | null;
+  id: string
+  appointmentCode: string
+  status: 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED'
+  scheduledAt: string
+  reservation: { id: string; reference: string; status: string; quantity: number; contractCount: number }
+  allocatedUnits: Array<{ contractCode: string; contractStatus: string; unitCode: string; unitStatus: string; floor: string | null; zone: string | null }>
+  note: string | null
+  handoverNote: string | null
+  confirmedAt: string | null
+  completedAt: string | null
+  cancelledAt: string | null
+  createdAt: string
+}
+
+export interface RenewalQuote {
+  currency: string
+  previousEndDate: string
+  requestedEndDate: string
+  totalAmount: number
+  discountAmount: number
+  monthlyUnitPrice: number
+}
+
+export interface CustomerRenewal {
+  id: string
+  renewalCode: string
+  rentalContractId?: string | null
+  contracts?: Array<{ id: string; contractCode: string; unitCode: string; endDate: string; status: string }>
+  status: 'PENDING' | 'APPROVED_PENDING_PAYMENT' | 'COMPLETED' | 'REJECTED'
+  reservation: { id: string; reference: string; quantity: number; currentEndDate: string; storageType: Pick<CustomerStorageType, 'id' | 'code' | 'name'> }
+  previousEndDate: string
+  requestedEndDate: string
+  termMonths: number
+  paymentPlan: 'PAY_MONTHLY' | 'PREPAID'
+  quoteSnapshot: { currency: string; totalAmount: number; discountAmount: number }
+  billingSummary: { totalInvoiced: number; totalPaid: number; totalOutstanding: number }
+  invoices?: Array<{ id: string; invoiceCode: string; renewalCycle: number; status: string; balanceDue: number }>
+  rejectionReason: string | null
+  requestedAt: string
+  appendix: { code: string; version: string | null; snapshot: unknown; snapshotHash: string; acceptedAt: string | null; acceptanceName: string | null; signatureImage: string | null; otp?: { required: boolean; emailConfigured: boolean }; verification?: { method: string; verifiedAt: string; recipient: string } | null } | null
+}
+
+export type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER'
+
+export interface CustomerSupportRequest {
+  earlyReturnFinancialReview?: import('../components/customer/EarlyReturnFinancialNotice').EarlyReturnFinancialDecision | null
+  earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
+  earlyReturnForEndDate?: string | null
+  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
+  id: string
+  supportCode: string
+  category: SupportCategory
+  priority: 'LOW' | 'MEDIUM' | 'HIGH'
+  status: 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED' | 'RESOLVED'
+  subject: string
+  description: string
+  reservation: { id: string; reference: string; status: string }
+  contract: { id: string; contractCode: string; status: string; startDate: string; endDate: string } | null
+  unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null; storageType: CustomerStorageType } | null
+  invoice: { id: string; invoiceCode: string; status: string } | null
+  startedAt: string | null
+  resolvedAt: string | null
+  resolutionType: string | null
+  resolutionNote: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerReturnRequest {
+  returnReadiness?: ReturnReadiness
+  earlyReturnCloseout?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
+  rentRefund?: { approvedAt: string | null; refundedAt: string | null; reference: string | null } | null
+  rentalContractId?: string | null
+  timing?: 'EARLY' | 'ON_OR_AFTER_END'
+  remainingUnitCount?: number
+  inventory?: { remainingItemTypes: number; pendingMovements: number }
+  id: string
+  returnCode: string
+  status: 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED'
+  requestedAt: string
+  inspectionStartedAt: string | null
+  physicallyReturnedAt: string | null
+  completedAt: string | null
+  note: string | null
+  reservation: { id: string; reference: string; status: string; quantity: number; startDate: string; endDate: string; effectiveEndDate: string; storageType: CustomerStorageType }
+  inspections: Array<{ id: string; result: 'PENDING' | 'PASS' | 'ISSUE_FOUND'; issueType: string | null; hasIssue: boolean; contract: { id: string; contractCode: string; status: string; endDate: string; completedAt: string | null }; unit: { id: string; unitCode: string; status: string; floor: string | null; zone: string | null; row: string | null; position: string | null } }>
+  inspectionSummary: { total: number; pending: number; passed: number; issues: number }
+  settlementStatus: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerDepositSettlement {
+  id: string
+  settlementCode: string
+  returnCode: string
+  returnedUnits?: Array<{ unitCode: string; contractCode: string }>
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED'
+  depositAmount: number
+  totalApprovedCharges: number
+  deductionAmount: number
+  refundAmount: number
+  outstandingAmount: number
+  reservation: { id: string; reference: string; storageType: CustomerStorageType }
+  issues: Array<{ inspectionId: string; unit: { id: string; unitCode: string; status: string }; contract: { id: string; contractCode: string; status: string }; observedIssueType: string | null; approvedIssueType: string; approvedChargeAmount: number; reason: string | null }>
+  refundedAt: string | null
+  settledAt: string | null
+  outstandingInvoice: { id: string; invoiceCode: string; status: string; chargeAmount: number; totalAmount: number; amountPaid: number; balanceDue: number } | null
+  createdAt: string
+  updatedAt: string
+}

@@ -1,4 +1,5 @@
 import type { PublicUser } from '../auth/auth.types.js';
+import type { PaymentPlan, PricingQuote } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 
 export const approvedDurations = [1, 3, 6, 12] as const;
@@ -20,54 +21,48 @@ export interface ReservationDraft {
   durationMonths?: number;
   quantity: number;
   adjacencyPreference: boolean;
+  /** Customer's optional, same-product physical-unit preference. Revalidated while confirming. */
+  selectedUnitIds?: string[];
   addonIds: string[];
+  serviceSelections?: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>;
   note?: string;
   paymentChoice: PaymentChoice;
+  paymentPlan: PaymentPlan;
 }
 
-export interface QuoteLineItem {
-  code: string;
-  label: string;
-  basis: string;
-  amount: number | null;
-  status: 'QUOTE_REQUIRED' | 'INCLUDED';
-}
-
-export interface QuoteSnapshot {
-  status: 'QUOTE_REQUIRED';
-  periodStatus: 'APPROVED_DURATION' | 'SHORT_DURATION_UNDECIDED' | 'DATE_RANGE_QUOTE_REQUIRED';
-  lineItems: QuoteLineItem[];
-  rentalSubtotal: null;
-  deposit: null;
-  applicableFees: null;
-  taxes: null;
-  discounts: null;
-  grandTotal: null;
-  amountPayableNow: null;
-  message: string;
-}
+export type QuoteSnapshot = PricingQuote;
 
 export interface AvailabilityResult {
   available: boolean;
+  availableQuantity: number;
   startDate: string;
   endDateExclusive: string;
   periodStatus: QuoteSnapshot['periodStatus'];
-  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'DEMO_INVENTORY_UNCONFIGURED';
+  reasonCode: 'AVAILABLE' | 'CONFLICT' | 'OCCUPIED' | 'INSUFFICIENT_INVENTORY';
   message: string;
   quote: QuoteSnapshot;
 }
 
 export interface PendingReservation extends ReservationDraft {
+  rentalSummary?: {
+    rentalPeriod: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['rentalPeriod'];
+    paymentDetails: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['paymentDetails'];
+    currentUnits: Array<{ contractId: string; contractCode: string; unitCode: string; floor: string | null; zone: string | null }>;
+    totalInvoiced: number; totalPaid: number; renewalPaid: number;
+    renewals: Array<{ id: string; code: string; status: string; months: number; previousEndDate: string; endDate: string; amount: number; discount: number; paid: number }>;
+    transfers: Array<{ id: string; code: string; from: string; to: string; completedAt: string | null; handoverReport: unknown }>;
+  };
   id: string;
-  status: 'PENDING';
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
   createdAt: string;
+  expiresAt: string | null;
   endDateExclusive: string;
   customer: PublicUser;
   product: BookingProduct;
   quote: QuoteSnapshot;
   unitAssignment: null;
   paymentStatus: 'NOT_STARTED';
-  persistence: 'DEMO_VOLATILE';
+  persistence: 'DATABASE';
 }
 
 export interface GuestInquiry extends ReservationDraft {
@@ -79,5 +74,6 @@ export interface GuestInquiry extends ReservationDraft {
   product: BookingProduct;
   quote: QuoteSnapshot;
   inventoryGuarantee: false;
-  persistence: 'DEMO_VOLATILE';
+  persistence: 'DATABASE';
+  accessToken?: string;
 }

@@ -1,0 +1,86 @@
+import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { AuthenticatedRequest } from './auth.types.js';
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { CreateAdminUserDto, UpdateAccountProfileDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
+import { UserRepository, userSorts, type UserListFilters } from '../users/user.repository.js';
+import { AuthGuard } from './auth.guard.js';
+import { AuthService } from './auth.service.js';
+import { Roles, RolesGuard } from './roles.guard.js';
+
+@Controller(['admin/users', 'users'])
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('ADMIN')
+@ApiTags('Admin User Management')
+@ApiBearerAuth('bearerAuth')
+export class AdminUsersController {
+  constructor(@Inject(UserRepository) private readonly users: UserRepository, private readonly auth: AuthService) {}
+  @Get()
+  @ApiOperation({ summary: 'Liệt kê tài khoản', description: 'ADMIN only. /api/users được giữ như alias tương thích.' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'search', required: false, example: 'staff@test.com', description: 'Tìm tên, email hoặc số điện thoại.' })
+  @ApiQuery({ name: 'role', required: false, enum: ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] })
+  @ApiQuery({ name: 'sort', required: false, enum: [...userSorts] })
+  @ApiQuery({ name: 'accountStatus', required: false, enum: ['ACTIVE', 'DISABLED'] })
+  @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER', accountStatus: 'ACTIVE', createdAt: '2026-10-14T00:00:00.000Z' }] } } })
+  @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
+  @ApiForbiddenResponse({ description: 'Chỉ ADMIN được phép.' })
+  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string, @Query('sort') sortInput?: string) {
+    const page = Number(pageInput);
+    const limit = Number(limitInput);
+    if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new BadRequestException('page phải từ 1–100000, limit phải từ 1–100.');
+    }
+    const search = searchInput?.trim();
+    if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
+    if (roleInput && !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(roleInput)) throw new BadRequestException('role không hợp lệ.');
+    if (statusInput && !['ACTIVE', 'DISABLED'].includes(statusInput)) throw new BadRequestException('accountStatus không hợp lệ.');
+    const sort = userSorts.find(value => value === sortInput);
+    if (sortInput && !sort) throw new BadRequestException('sort không hợp lệ.');
+    const filters: UserListFilters = { ...(sort ? { sort } : {}), ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
+    const [total, users] = await Promise.all([this.users.count(filters), this.users.list((page - 1) * limit, limit, filters)]);
+    return { page, limit, total, items: users.map(user => this.publicUser(user)) };
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Xem chi tiết tài khoản', description: 'ADMIN only.' })
+  @ApiOkResponse({ description: 'Thông tin tài khoản không chứa passwordHash.' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy tài khoản.' })
+  async get(@Param('id') id: string) {
+    const user = await this.users.findById(id);
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
+    return this.publicUser(user);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Tạo STAFF hoặc MANAGER', description: 'Không cho phép tạo ADMIN qua API này.' })
+  @ApiBody({ type: CreateAdminUserDto })
+  @ApiCreatedResponse({ description: 'Tài khoản nội bộ ACTIVE đã được tạo; passwordHash không được trả về.' })
+  create(@Body() body: Record<string, unknown>) { return this.auth.createInternalUser(body); }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Cập nhật họ tên và số điện thoại tài khoản' })
+  @ApiBody({ type: UpdateAccountProfileDto, description: 'Cần ít nhất một trường. Chỉ chấp nhận fullName và phone.' })
+  @ApiOkResponse({ description: 'Thông tin tài khoản đã cập nhật.' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy tài khoản.' })
+  async updateProfile(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    const user = await this.auth.updateAdminProfile(request.user!, id, body);
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
+    return this.publicUser(user);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Bật hoặc vô hiệu hóa tài khoản', description: 'Dữ liệu lịch sử vẫn được giữ nguyên.' })
+  @ApiBody({ type: UpdateAccountStatusDto })
+  @ApiOkResponse({ description: 'Trạng thái tài khoản đã cập nhật.' })
+  async updateStatus(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    if (body.accountStatus !== 'ACTIVE' && body.accountStatus !== 'DISABLED') throw new BadRequestException('accountStatus phải là ACTIVE hoặc DISABLED.');
+    const user = await this.users.updateStatus(id, body.accountStatus, request.user!.id);
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
+    return { ...this.publicUser(user), statusChanged: user.statusChanged };
+  }
+
+  private publicUser(user: { id: string; fullName: string; email: string; phone: string; role: string; accountStatus: string; createdAt?: Date; updatedAt?: Date }) {
+    return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, accountStatus: user.accountStatus, createdAt: user.createdAt?.toISOString() ?? null, updatedAt: user.updatedAt?.toISOString() ?? user.createdAt?.toISOString() ?? null };
+  }
+}

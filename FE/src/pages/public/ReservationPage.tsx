@@ -1,7 +1,8 @@
 import { Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { getStorageListing } from '../../data/storage'
+import { useCatalog } from '../../catalog/catalog-context'
 
 export function ReservationPage() {
+  const { getStorageListing } = useCatalog()
   const { id } = useParams()
   const [params] = useSearchParams()
   if (!id || !getStorageListing(id)) return <Navigate to="/storage" replace />

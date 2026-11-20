@@ -1,20 +1,80 @@
-import { ArrowLeft, CalendarDays, Check, Info, PackageCheck, ReceiptText, ShieldCheck, Snowflake, Warehouse } from 'lucide-react'
+import { ArrowLeft, Check, ReceiptText, ShieldCheck, Warehouse } from 'lucide-react'
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { useCatalog } from '../../catalog/catalog-context'
+import { ComparisonChoice } from '../../components/public/StorageComparison'
+import { StorageImage } from '../../components/public/StorageImage'
 import { ButtonLink } from '../../components/ui/ButtonLink'
 import { Container } from '../../components/ui/Container'
-import { getStorageListing, getStorageSize, imageCredits } from '../../data/storage'
+import { storageBookingHref, storageMonthlyPrice, storageSpecifications } from '../../utils/storage-selection'
+
+const rentalCosts = [
+  { icon: Warehouse, title: 'Tiền thuê', description: 'Theo loại kho, số lượng và thời gian thuê.' },
+  { icon: ShieldCheck, title: 'Tiền đặt cọc', description: 'Tùy loại kho và kỳ thuê.' },
+  { icon: ReceiptText, title: 'Dịch vụ bổ sung', description: 'Chỉ tính dịch vụ và vật tư bạn chọn.' },
+]
 
 export function StorageDetailPage() {
+  const { getStorageListing, getStorageSize } = useCatalog()
   const { id } = useParams()
-  const location = useLocation()
+  const { search } = useLocation()
   const unit = getStorageListing(id)
   if (!unit) return <Navigate to="/storage" replace />
-  const size = getStorageSize(unit.sizeId)!
-  const credit = Object.values(imageCredits).find(item => item.src === unit.image)
-  return <>
-    <section className="border-b border-border bg-white py-10"><Container><Link to={`/storage${location.search}`} className="inline-flex items-center gap-2 text-sm font-semibold text-navy"><ArrowLeft size={17} /> Quay lại danh sách</Link></Container></section>
-    <section className="section-space pt-10"><Container><div className="grid gap-10 lg:grid-cols-[1.1fr_.9fr]"><figure className="relative min-h-[430px] overflow-hidden bg-slate-100"><img src={unit.image} alt={`Ảnh minh họa cho ${unit.name}`} className="absolute inset-0 h-full w-full object-cover" /><span className="illustration-label">Ảnh minh họa, không phải kho WDP thực tế</span>{credit && <a href={credit.href} target="_blank" rel="noreferrer" className="image-credit">{credit.label}</a>}</figure><div><div className="flex items-center gap-3"><span className={unit.status === 'limited' ? 'status-warning' : 'status-success'}>{unit.status === 'limited' ? 'Sắp hết' : 'Đang nhận yêu cầu'}</span><span className="text-sm text-slate">Mã {unit.code}</span></div><h1 className="mt-5 text-4xl font-bold tracking-tight sm:text-5xl">{unit.name}</h1><p className="mt-4 text-lg text-slate">{size.roomEquivalent}. {size.capacity}.</p><div className="mt-8 grid grid-cols-2 gap-4"><div className="data-block"><span><Warehouse size={18} /> Kích thước</span><strong>{size.dimensions}</strong></div><div className="data-block"><span><PackageCheck size={18} /> Thể tích</span><strong>{size.volume}</strong></div><div className="data-block"><span>{unit.condition === 'climate' ? <Snowflake size={18} /> : <Warehouse size={18} />} Loại kho</span><strong>{unit.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'}</strong></div><div className="data-block"><span><CalendarDays size={18} /> Vị trí</span><strong>{unit.floor}</strong></div></div><ul className="mt-7 space-y-3 text-slate">{unit.features.map(feature => <li key={feature}><Check size={17} /> {feature}</li>)}</ul><div className="mt-8 border-t border-border pt-6"><p className="text-sm font-bold uppercase tracking-wide text-slate">Chi phí thuê</p><p className="mt-1 text-2xl font-semibold">Liên hệ để nhận báo giá chính xác</p><p className="mt-2 text-sm leading-6 text-slate">Không có giá giả lập. WDP sẽ xác nhận chi phí thuê, tiền cọc và phí tùy chọn trước khi bạn quyết định.</p></div><ButtonLink className="mt-7 w-full justify-center" to={`/booking?product=${unit.id}`}>Bắt đầu đặt kho</ButtonLink><p className="mt-3 text-center text-xs text-slate">Gửi yêu cầu chưa phải là ký hợp đồng hoặc thanh toán.</p></div></div></Container></section>
-    <section className="border-y border-border bg-white py-14"><Container><div className="section-heading"><div><p className="eyebrow">Cấu trúc báo giá</p><h2>Ba khoản cần được xác nhận riêng</h2></div><p>Mọi khoản phải được trình bày trước khi khách ký hợp đồng.</p></div><div className="mt-9 grid gap-6 md:grid-cols-3">{[[Warehouse,'Tiền thuê','Theo kích thước, loại kho và thời gian thuê.'],[ShieldCheck,'Tiền đặt cọc','Mức cọc và điều kiện hoàn cọc được ghi trong báo giá.'],[ReceiptText,'Phí tùy chọn','Khóa, kệ, pallet, vật tư hoặc vận chuyển nếu khách chọn.']].map(([Icon,title,copy]) => { const I = Icon as typeof Warehouse; return <article key={String(title)} className="border-t-2 border-navy pt-5"><I className="text-navy" /><h3 className="mt-4 font-semibold">{String(title)}</h3><p className="mt-2 text-sm leading-6 text-slate">{String(copy)}</p></article>})}</div><div className="mt-8 flex gap-3 border border-border bg-canvas p-5 text-sm text-slate"><Info className="shrink-0 text-navy" size={19} /><p>Thông tin trên trang là dữ liệu sản phẩm mẫu. Kho thực tế, điều kiện truy cập và chi phí chỉ có hiệu lực sau khi WDP xác nhận.</p></div></Container></section>
-  </>
-}
 
+  const size = storageSpecifications(unit, getStorageSize(unit.sizeId)!)
+  const hasPrice = typeof unit.monthlyPrice === 'number' && Number.isFinite(unit.monthlyPrice)
+  const facts = [
+    ['Kích thước', size.dimensions],
+    ['Thể tích', size.volume],
+    ['Loại kho', unit.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'],
+    ['Vị trí', unit.floor || 'Xem khi xác nhận'],
+    ['Truy cập kho', unit.access || 'Theo thỏa thuận khi bàn giao'],
+    ['Kỳ thuê tối thiểu', unit.minRentalDays ? unit.minRentalDays + ' ngày' : 'Xem trong báo giá'],
+    ['Tiền đặt cọc', typeof unit.depositMonths === 'number' ? unit.depositMonths + ' tháng tiền thuê' : 'Xem trong báo giá'],
+    ['Thời hạn thuê', unit.allowDailyRental ? 'Theo tháng hoặc ngày' : 'Theo tháng'],
+  ]
+
+  return <div className="public-storage-detail">
+    <header className="public-page-intro"><Container>
+      <Link to={'/storage' + search} className="booking-back"><ArrowLeft size={17} aria-hidden="true" /> Danh sách kho</Link>
+      <h1>{unit.name}</h1>
+    </Container></header>
+
+    <section className="public-page-content"><Container>
+      <div className="storage-detail-layout">
+        <figure className="storage-detail-figure">
+          <StorageImage src={unit.image} alt={unit.name} />
+        </figure>
+        <div className="storage-detail-panel">
+          <header className="storage-detail-summary">
+            <span className={unit.status === 'limited' ? 'status-warning' : 'status-success'}>{unit.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span>
+            <small>{unit.code}</small>
+          </header>
+          <dl className="storage-detail-facts">
+            {facts.map(([label, value]) => <div key={label} className="data-block"><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+          {unit.features.length > 0 && <ul className="storage-detail-features" aria-label="Tiện ích">
+            {unit.features.map(feature => <li key={feature}><Check size={16} aria-hidden="true" /> {feature}</li>)}
+          </ul>}
+          <div className="storage-detail-action">
+            <div>
+              <strong>{hasPrice ? storageMonthlyPrice(unit.monthlyPrice) + ' / tháng' : 'Xem báo giá'}</strong>
+              {hasPrice && <p>Chưa gồm tiền cọc và dịch vụ.</p>}
+            </div>
+            <ButtonLink to={storageBookingHref(unit, search)}>Bắt đầu đặt kho</ButtonLink>
+          </div>
+          <ComparisonChoice product={unit} />
+        </div>
+      </div>
+    </Container></section>
+
+    <section className="storage-cost-section" aria-labelledby="storage-cost-title"><Container>
+      <h2 id="storage-cost-title">Chi phí thuê kho</h2>
+      <div className="storage-cost-grid">
+        {rentalCosts.map(({ icon: Icon, title, description }) => <article className="storage-cost-card" key={title}>
+          <span><Icon size={18} aria-hidden="true" /></span>
+          <div><h3>{title}</h3><p>{description}</p></div>
+        </article>)}
+      </div>
+    </Container></section>
+  </div>
+}

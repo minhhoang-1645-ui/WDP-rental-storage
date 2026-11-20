@@ -1,0 +1,171 @@
+.public-themed .public-page-intro {
+  padding-block: clamp(20px, 3vw, 36px);
+  border-bottom: 1px solid var(--workspace-border);
+  background: var(--workspace-surface);
+}
+.public-themed .public-page-intro h1 {
+  margin: 0;
+  color: var(--workspace-text);
+  font-size: var(--type-title);
+  font-weight: 760;
+  letter-spacing: -.035em;
+  line-height: 1.12;
+}
+.public-page-intro p { margin-top: 9px; color: var(--workspace-secondary); font-size: 16px; }
+.public-themed .public-page-content { padding-block: clamp(20px, 3vw, 34px) clamp(36px, 5vw, 64px); }
+
+.public-themed :is(.comparison-toolbar, .comparison-submit, .comparison-card-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.public-themed .comparison-toolbar { justify-content: space-between; margin-bottom: 20px; }
+.public-themed .comparison-submit { color: var(--workspace-secondary); font-size: 14px; }
+.public-themed .catalog-size-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.public-themed .catalog-size-filters > button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  font-weight: 650;
+}
+.public-themed .catalog-comparison-heading { margin: 0 0 16px; }
+.public-themed .catalog-comparison-heading h2 { color: var(--workspace-text); }
+.public-themed .catalog-comparison-heading p { margin-top: 4px; font-size: 15px; }
+.public-themed .comparison-candidates { gap: 16px; }
+.public-themed .comparison-candidate > img { height: auto; aspect-ratio: 16 / 7; }
+.public-themed .comparison-candidate > div { padding: 16px; }
+.public-themed .comparison-candidate h2 {
+  margin-block: 3px;
+  font-size: 21px;
+  font-weight: 730;
+  line-height: 1.25;
+}
+.public-themed .comparison-candidate :is(small, p) { font-size: 14px; }
+.public-themed .comparison-candidate > div > strong { margin-block: 10px 14px; }
+.public-themed .comparison-card-actions {
+  justify-content: space-between;
+  border-top: 1px solid var(--workspace-border);
+  padding-top: 5px;
+}
+.public-themed .comparison-card-actions .storage-compare-choice {
+  border: 0;
+  min-height: 44px;
+  padding: 0;
+  font-size: 14px;
+}
+.public-themed .comparison-detail { margin: 0; font-size: 14px; color: var(--workspace-primary); }
+.public-themed .comparison-note { margin-top: 16px; color: var(--workspace-secondary); font-size: 14px; }
+.public-themed .comparison-swipe-hint { margin-bottom: 8px; font-size: 14px; }
+.public-themed .storage-side-comparison :is(th, td) { font-size: 14px; line-height: 1.55; }
+.public-themed .storage-side-comparison thead img { height: 116px; }
+.public-themed .storage-side-comparison tr > :first-child { background: var(--workspace-table); }
+.public-themed .storage-side-comparison .is-different td { background: var(--workspace-selected); }
+.public-themed .comparison-result-heading { scroll-margin-top: 84px; }
+
+.public-themed .booking-page { background: var(--workspace-background); }
+.public-themed .booking-intro .booking-back { margin-bottom: 12px; }
+.public-themed .booking-back { min-height: 32px; font-size: 15px; }
+.public-themed .booking-progress { margin-top: 18px; }
+.public-themed .booking-progress li { gap: 8px; padding-top: 12px; color: var(--workspace-secondary); font-size: 15px; }
+.public-themed .booking-progress li > span { border-color: var(--workspace-border); font-size: 13px; }
+.public-themed .booking-progress li:is(.is-active, .is-complete) { color: var(--workspace-primary); }
+.public-themed .booking-progress li:is(.is-active, .is-complete) > span {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-primary);
+  color: var(--workspace-on-primary);
+}
+.public-themed .booking-page :is(.booking-step-grid, .checkout-layout) { gap: clamp(22px, 4vw, 36px); }
+.public-themed .booking-page .booking-title {
+  margin-top: 0;
+  color: var(--workspace-text);
+  font-size: clamp(23px, 2.4vw, 30px);
+}
+.public-themed .booking-back + .booking-title { margin-top: 9px; }
+.public-themed .booking-size-list { margin-top: 18px; }
+.public-themed .booking-size-card { min-height: 74px; }
+.public-themed .booking-page :is(.booking-category-icon, .booking-preview-visual, .addon-service-group-heading > span) { background: var(--workspace-selected); }
+.public-themed .booking-size-card[aria-pressed="true"] .booking-radio { border: 5px solid var(--workspace-primary); }
+.public-themed .booking-page :is(.period-mode-tabs > button, .duration-grid > button) { min-height: 46px; }
+.public-themed .booking-page .period-mode-tabs > button { align-items: center; font-size: 15px; }
+.public-themed .booking-page :is(.booking-option-block h3, .addon-heading h3, .booking-pricing h3, .booking-form-panel legend) {
+  color: var(--workspace-text);
+  font-size: 17px;
+}
+.public-themed .booking-page :is(.booking-size-card-copy strong, .booking-product-options strong, .payment-option strong, .field-label) {
+  color: var(--workspace-text);
+  font-size: 16px;
+}
+.public-themed .booking-page :is(.booking-size-card-copy small, .booking-product-options small, .booking-checkbox small, .field-help, .payment-option small, .booking-option-block p, .addon-service-tab small, .addon-service-group-heading p, .quote-breakdown-lines small) {
+  font-size: 14px;
+}
+.public-themed .booking-page :is(.booking-specs dt, .booking-summary-details dt, .booking-summary-product small, .booking-listed-price, .booking-checkbox strong, .booking-pricing > p, .quote-breakdown-note, .quote-initial-payment > p, .booking-pricing > div, .availability-badge) {
+  font-size: 14px;
+  text-transform: none;
+}
+.public-themed .booking-page :is(.booking-specs dd, .booking-summary-details dd, .quote-breakdown-lines > div, .quote-breakdown-total) { font-size: 15px; }
+.public-themed .booking-preview-visual { height: clamp(145px, 18vw, 210px); }
+.public-themed .booking-preview-heading h2 { margin: 0; color: var(--workspace-text); }
+.public-themed .booking-preview-heading { flex-wrap: wrap; }
+.public-themed .booking-preview-content .booking-listed-price { margin-bottom: 0; border-top: 0; }
+.public-themed .booking-listed-price small { display: block; font-size: 13px; }
+.public-themed .booking-page :is(.booking-preview, .booking-summary, .checkout-form, .checkout-quote) { border-radius: 14px; }
+.public-themed .booking-page :is(.booking-summary, .checkout-quote, .checkout-form, .booking-preview-content) { padding: clamp(16px, 2.2vw, 24px); }
+.public-themed .booking-page :is(.field-label input, .field-label textarea, .field-label select, .availability-toast-action, .button-secondary) {
+  background: var(--workspace-input);
+  border-color: var(--workspace-border);
+  color: var(--workspace-text);
+}
+.public-themed :is(.comparison-candidate, .storage-side-comparison, .storage-comparison-tray, .catalog-size-filters > button),
+.public-themed .booking-page :is(.booking-size-card, .booking-product-options > button, .booking-preview, .booking-summary, .checkout-form, .checkout-quote, .quantity-stepper, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab, .addon-service-group) {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+}
+.public-themed :is(.catalog-size-filters > button, .booking-size-card, .booking-product-options > button, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab):not(:disabled):hover {
+  background: var(--workspace-hover);
+}
+.public-themed :is(.catalog-size-filters > button, .booking-size-card, .booking-product-options > button, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab):is([aria-pressed="true"], .is-selected) {
+  background: var(--workspace-selected);
+  border-color: var(--workspace-primary);
+  color: var(--workspace-primary);
+}
+.public-themed .booking-page .duration-grid button small { color: var(--workspace-secondary); }
+.public-themed .booking-page :is(.addon-service-group-heading, .addon-empty, .availability-badge.is-idle) { background: var(--workspace-table); border-color: var(--workspace-border); }
+.public-themed .booking-page .quote-initial-payment {
+  background: var(--workspace-primary);
+  color: var(--workspace-on-primary);
+}
+.public-themed .booking-page .quote-initial-payment :is(h4, .quote-first-heading > span, p, .quote-first-amount, .quote-initial-lines span, .quote-initial-lines b) { color: inherit; }
+.public-themed .booking-page .quote-first-heading > span { border-color: currentColor; font-size: 12px; }
+.public-themed .booking-page :is(.quote-initial-lines, .quote-initial-lines > div) {
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+}
+.public-themed .booking-page .quote-later-payment { background: var(--workspace-selected); }
+.public-themed .booking-page :is(.quote-initial-lines > div, .quote-later-payment p, .quote-total-explanation) { font-size: 14px; }
+.public-themed .booking-page .quote-breakdown-lines .is-discount { color: var(--workspace-success); }
+.public-themed :is(.booking-alert, .availability-badge.is-checking) { background: var(--workspace-info-bg); border-color: var(--workspace-border); color: var(--workspace-info); }
+.public-themed :is(.status-success, .booking-alert.is-success, .availability-badge.is-available, .availability-toast.is-available) { background: var(--workspace-success-bg); border-color: var(--workspace-border); color: var(--workspace-success); }
+.public-themed :is(.booking-alert.is-error, .availability-badge.is-error, .availability-badge.is-unavailable, .availability-toast.is-unavailable) { background: var(--workspace-error-bg); border-color: var(--workspace-border); color: var(--workspace-error); }
+.public-themed :is(.status-warning, .availability-toast.is-error) { background: var(--workspace-warning-bg); border-color: var(--workspace-border); color: var(--workspace-warning); }
+.public-themed .booking-page .availability-toast .availability-toast-inner > svg { color: inherit; }
+.public-themed .booking-page .availability-toast :is(.availability-toast-text strong, .availability-toast-close) { color: inherit; }
+.public-themed .button-primary:disabled { background: var(--workspace-disabled-bg); color: var(--workspace-muted); opacity: 1; }
+
+@media (max-width: 639px) {
+  .public-themed .booking-progress li { font-size: 13px; }
+  .public-themed .booking-page .booking-product-options { grid-template-columns: 1fr; }
+  .public-themed .comparison-card-actions { gap: 4px 12px; }
+  .public-themed .storage-side-comparison tr > :first-child { width: 108px; }
+}
+@media (min-width: 360px) and (max-width: 639px) {
+  .public-themed .booking-size-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-themed .booking-size-card { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .public-themed .booking-category-icon { display: none; }
+  .public-themed .booking-radio { margin: 0; }
+}

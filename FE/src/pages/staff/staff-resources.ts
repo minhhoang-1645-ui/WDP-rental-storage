@@ -1,0 +1,65 @@
+export const staffResources = {
+  appointments: {
+    title: "Lịch bàn giao",
+    description: "Xem lịch được phân công và ghi nhận việc bàn giao kho.",
+    statuses: ["REQUESTED", "CONFIRMED", "COMPLETED", "CANCELLED"],
+  },
+  rentals: {
+    title: "Kho đang thuê",
+    description: "Xem kho đang thuê và các kho quá hạn.",
+    statuses: ["ACTIVE", "OVERDUE"],
+  },
+  returns: {
+    title: "Yêu cầu trả kho",
+    description: "Kiểm tra từng kho và hoàn tất việc nhận kho trả.",
+    statuses: [
+      "REQUESTED",
+      "INSPECTION_IN_PROGRESS",
+      "ISSUE_FOUND",
+      "PENDING_SETTLEMENT",
+      "COMPLETED",
+    ],
+  },
+  maintenance: {
+    title: "Bảo trì kho",
+    description: "Xử lý công việc bảo trì được phân công.",
+    statuses: ["OPEN", "IN_PROGRESS", "AWAITING_VERIFICATION", "COMPLETED"],
+  },
+  "support-requests": {
+    title: "Hỗ trợ khách hàng",
+    description:
+      "Xử lý yêu cầu được quản lý phân công.",
+    statuses: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ESCALATED", "RESOLVED"],
+  },
+} as const;
+export type StaffResource = keyof typeof staffResources;
+
+const staffTableWorkflows = ['appointments', 'support-requests', 'maintenance', 'returns', 'transfers'] as const;
+export type StaffTableWorkflow = (typeof staffTableWorkflows)[number];
+export function isStaffTableWorkflow(resource: string): resource is StaffTableWorkflow {
+  return (staffTableWorkflows as readonly string[]).includes(resource);
+}
+
+const staffOperationDetails = ['transfers', 'returns', 'support-requests', 'maintenance'] as const;
+export type StaffOperation = typeof staffOperationDetails[number];
+export function isStaffOperationDetail(resource: string): resource is StaffOperation {
+  return (staffOperationDetails as readonly string[]).includes(resource);
+}
+
+const staffDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+export function staffDay(value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime())
+    ? ""
+    : staffDayFormatter.format(instant);
+}
+
+export function staffDayAfter(day: string, days: number) {
+  const date = new Date(day + 'T00:00:00Z');
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}

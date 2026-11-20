@@ -54,7 +54,6 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
   const [decision, setDecision] = useState('APPROVED');
   const [note, setNote] = useState('');
   const [reviewed, setReviewed] = useState(false);
-  const [facilityFaultReference, setFacilityFaultReference] = useState('');
   const [faultEvidence, setFaultEvidence] = useState('');
   const [reference, setReference] = useState('');
   const [transferredAt, setTransferredAt] = useState('');
@@ -85,7 +84,7 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void run(encodeURIComponent(first(item, 'id')) + '/decision', {
-      decision, note: note.trim(), financialReviewConfirmed: reviewed, facilityFaultReference,
+      decision, note: note.trim(), financialReviewConfirmed: reviewed,
       reviewedEndDate: first(item, 'reservation.effectiveEndDate'),
       reviewedOutstandingAmount: Number(first(item, 'financialSummary.outstandingAmount')),
       reviewedPaidAmount: Number(first(item, 'financialSummary.paidAmount')),
@@ -113,12 +112,6 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
       <label className="field-label">Quyết định trả sớm<select value={decision} onChange={event => setDecision(event.target.value)}>
         <option value="APPROVED">Cho phép trả kho trước hạn</option><option value="REJECTED">Từ chối đề nghị</option>
       </select></label>
-      {decision === 'APPROVED' && <>
-        <label className="field-label">Mã hồ sơ lỗi cơ sở đã xác minh (nếu áp dụng)
-          <input maxLength={200} value={facilityFaultReference} onChange={event => setFacilityFaultReference(event.target.value)} />
-          <small>Giảm tiền kỳ hiện tại khi nhân viên cũng xác nhận lỗi cơ sở lúc nhận kho.</small>
-        </label>
-      </>}
       <label className="field-label">Ghi chú quyết định<textarea required minLength={3} maxLength={3000} rows={3}
         value={note} onChange={event => setNote(event.target.value)} /></label>
       {decision === 'APPROVED' && <label className="portal-checkbox"><input type="checkbox" checked={reviewed}

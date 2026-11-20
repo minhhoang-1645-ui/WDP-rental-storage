@@ -9,6 +9,7 @@ import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { formatDate, formatMoney } from '@/utils/format';
 import { isScheduledRenewalInvoice, paymentWindowClosed } from '@/utils/payment-state';
+import { quotePaymentSummary } from '@/utils/quote-payment-summary';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { CustomerActionRow, customerStyles as s } from './customer-premium';
 import { StatusBadge } from './customer-ui';
@@ -59,7 +60,12 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const description=status==='PENDING'?'NestBox đang kiểm tra yêu cầu. Bạn chưa cần thao tác thêm.':status==='CONFIRMED'?expired?'Đã đến hạn giữ kho. Kiểm tra hóa đơn hoặc gửi hỗ trợ nếu bạn đã chuyển tiền.':unsigned?'Đơn đã được xác nhận. Bạn cần xem và ký hợp đồng.':payable?'Hợp đồng đã ký. Bạn có thể thanh toán hóa đơn.':bills.some(item=>pendingIds.has(idOf(item)))?'NestBox đang đối chiếu khoản chuyển của bạn.':documents.some(item=>item.status==='ACTIVE')?'Kho đã được kích hoạt. Bạn có thể sử dụng theo hợp đồng.':visits.some(item=>item.status==='CONFIRMED')?'Lịch nhận kho đã xác nhận. Xem ngày giờ bên dưới.':'Đơn đã được xác nhận. Xem các tài liệu và cập nhật bên dưới.':status==='REJECTED'?'Yêu cầu chưa được chấp thuận. Bạn có thể gửi hỗ trợ về đơn này.':status==='EXPIRED'?'Đơn đã hết hạn giữ kho. Bạn có thể tìm kho và đặt lại.':status==='CANCELLED'?'Đơn đã hủy. Bạn có thể gửi hỗ trợ nếu cần.':'Xem thông tin đơn đặt kho của bạn.';
   const start=text(row??{},'startDate'),end=text(row??{},'endDateExclusive','endDate');
   const days=start&&end?Math.round((Date.parse(end)-Date.parse(start))/86400000):0;
-  const quote=object(row?.quote),amount=quote.quotedTotalAmount??quote.totalAmount;
+  const quote=object(row?.quote);
+  const paymentSummary = quotePaymentSummary(quote);
+  const totalQuote = paymentSummary.total ?? (typeof quote.totalAmount === 'number' && Number.isSafeInteger(quote.totalAmount) ? quote.totalAmount : null);
+  const initialInvoiceTotal = flow.initial?.totalAmount;
+  const hasInvoiceTotal = typeof initialInvoiceTotal === 'number' && Number.isSafeInteger(initialInvoiceTotal) && initialInvoiceTotal >= 0;
+  const firstPayment = hasInvoiceTotal ? initialInvoiceTotal : paymentSummary.first;
   const months=Number(row?.durationMonths??(quote.billingMode==='MONTHLY'?quote.termMonths:undefined)),duration=Number.isInteger(months)&&months>0?months+' tháng':days>0?days+' ngày':'';
   const refresh=()=>{sources.forEach(item=>item.refresh());};
   return <View style={{flex:1,backgroundColor:C.surface}}><Stack.Screen options={{title:'Chi tiết đơn đặt kho',headerTitleStyle:{fontSize:20,fontWeight:'600'},headerBackButtonDisplayMode:'minimal'}}/>
@@ -67,7 +73,14 @@ export function CustomerBookingDetail({id}:{id:string}) {
       {source.loading?<LoadingState layout="detail"/>:source.error?<ErrorState message={source.error} onRetry={source.refresh}/>:row?<>
         <View style={{gap:10}}><Text accessibilityRole="header" style={{fontSize:22,lineHeight:30,fontWeight:'700',color:C.text}}>{text(row,'product.name')||'Đơn đặt kho'}</Text><StatusBadge status={status} displayLabel={status==='PENDING'?'Chờ duyệt':undefined}/><Text style={s.secondary}>{cancelled ? "Đã hủy đơn đặt kho." : description}</Text>{text(row,'rejectionReason')?<Text style={s.secondary}>{text(row,'rejectionReason')}</Text>:null}</View>
         <View style={{gap:8,padding:12,borderWidth:1,borderColor:C.divider,borderRadius:12}}><View style={{flexDirection:'row',alignItems:'center',gap:10}}><CalendarDays size={20} color={C.navy}/><Text style={[s.body,{fontWeight:'600',flex:1}]}>{[start?formatDate(start):'',end?formatDate(end):''].filter(Boolean).join(' → ')}</Text></View><Text style={s.secondary}>{[duration,text(row,'product.dimensions'),Number(row.quantity)>1?row.quantity+' kho':''].filter(Boolean).join(' · ')}</Text></View>
-        {typeof amount==='number'&&amount>0&&<View style={{gap:4}}><Text style={s.secondary}>Giá trị đơn đặt kho</Text><Text style={{fontSize:24,lineHeight:32,fontWeight:'700',color:C.deepNavy}}>{formatMoney(amount)}</Text><Text style={s.secondary}>Theo báo giá khi gửi yêu cầu</Text></View>}
+        {firstPayment !== null && <View style={{gap:4}}>
+          <Text style={s.secondary}>{hasInvoiceTotal ? 'Hóa đơn ban đầu' : 'Dự kiến thanh toán lần đầu'}</Text>
+          <Text style={{fontSize:24,lineHeight:32,fontWeight:'700',color:C.deepNavy}}>{formatMoney(firstPayment)}</Text>
+        </View>}
+        {totalQuote !== null && totalQuote >= 0 && <View style={{gap:4}}>
+          <Text style={s.secondary}>Tổng báo giá cả kỳ thuê (gồm cọc)</Text>
+          <Text style={[s.body,{fontWeight:'700'}]}>{formatMoney(totalQuote)}</Text>
+        </View>}
         {confirmed&&sources.slice(1).some(item=>item.loading)&&<LoadingState layout="compact"/>}
         {sources.slice(1).filter(item=>item.error).map((item,index)=><ErrorState key={index} message={item.error!} onRetry={item.refresh}/>)}
         {confirmed && status==='CONFIRMED' ? <Text style={s.section}>Các bước cần hoàn tất</Text> : null}

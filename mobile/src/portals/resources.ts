@@ -9,10 +9,19 @@ const staffKeys = ['appointments', 'rentals', 'returns', 'maintenance', 'support
 export function portalResource(role: PortalRole, key: string): ResourceDefinition | undefined {
   if (role === 'CUSTOMER' && key === 'reservations') return { title: 'Đơn đặt kho', path: '/reservations', shape: 'array', statuses: resources.reservations.statuses };
   if (role === 'CUSTOMER' && key === 'payment-history') return { title: 'Lịch sử thanh toán', path: '/customer/payments' };
-  if (role === 'CUSTOMER' && key === 'transfers') return { title: 'Yêu cầu chuyển kho', path: '/customer/support-requests' };
+  if (role === 'CUSTOMER' && key === 'transfers') return { title: 'Chuyển kho', path: '/customer/support-requests' };
   if (!(role === 'CUSTOMER' ? customerKeys : staffKeys).includes(key)) return;
   const config = resources[key];
-  const titles: Record<string, string> = {'support-requests': 'Hỗ trợ', rentals: 'Kho của tôi', invoices: 'Hóa đơn', contracts: 'Hợp đồng của tôi', appointments: 'Lịch nhận kho', renewals: 'Gia hạn kho', returns: 'Trả kho'};
+  const titles: Record<string, string> = {
+    'support-requests': 'Hỗ trợ',
+    'payment-submissions': 'Thông báo chuyển khoản',
+    rentals: 'Kho đang thuê',
+    invoices: 'Hóa đơn',
+    contracts: 'Hợp đồng',
+    appointments: 'Lịch nhận kho',
+    renewals: 'Gia hạn',
+    returns: 'Trả kho',
+  };
   return config ? { ...config, ...(role === 'CUSTOMER' ? {title: titles[key] ?? config.title} : {}), path: `/${role.toLowerCase()}/${key}`, shape: undefined } : undefined;
 }
 

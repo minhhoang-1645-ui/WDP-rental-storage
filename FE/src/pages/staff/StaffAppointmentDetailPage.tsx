@@ -13,7 +13,7 @@ import { hasDraft } from '../../services/live-events';
 import { handoverReportView } from '../../utils/handover-report';
 import { ManagerActions } from '../manager/ManagerActions';
 import { StaffActions } from './StaffActions';
-import { handoverCondition, handoverCustomer, handoverRecipient, handoverTime, handoverUnits } from './staff-appointment';
+import { handoverCondition, handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
 import { useStaffProcessingTarget } from './useStaffProcessingTarget';
 import '../../styles/staff-appointments.css';
 
@@ -68,9 +68,11 @@ export function StaffAppointmentDetailPage() {
 function AppointmentHeader({ row, refresh, refreshing }: { row: Row; refresh: () => void; refreshing: boolean }) {
   const units = handoverUnits(row);
   const title = units.length ? `Bàn giao · ${units[0].code}${units.length > 1 ? ` và ${units.length - 1} kho khác` : ''}` : 'Lịch bàn giao';
-  return <PageHeader title={title} status={<Status value={row.status} text={row.status === 'REQUESTED' ? 'Chờ xác nhận' : undefined} />}
+  const scheduled = handoverTime(row.scheduledAt);
+  return <PageHeader title={title} status={<Status value={row.status} text={handoverStatusText(row.status)} />}
     meta={<>{handoverCustomer(row) && <span>{handoverCustomer(row)}</span>}
-      <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" /></>}>
+      <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" />
+      {scheduled && <time dateTime={first(row, 'scheduledAt')}>{scheduled}</time>}</>}>
     <button className="button-secondary" type="button" onClick={() => window.print()}><Printer size={16} />In hồ sơ</button>
     <button className="button-secondary" type="button" onClick={() => { if (!hasDraft() || window.confirm('Làm mới hồ sơ đang nhập?')) refresh(); }} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
   </PageHeader>;
@@ -81,20 +83,20 @@ function AppointmentSummary({ row }: { row: Row }) {
   const recipient = handoverRecipient(row);
   const staff = first(row, 'assignedStaff.fullName');
   const actualStaff = first(row, 'completedBy.fullName');
-  const scheduled = handoverTime(row.scheduledAt);
-  const separateRecipient = row.status !== 'COMPLETED' && recipient.name
-    && (recipient.authorized || recipient.name !== handoverCustomer(row));
+  const recipientName = recipient.name || handoverCustomer(row);
   const facts: Array<[string, string]> = [];
-  if (scheduled) facts.push(['Ngày giờ hẹn', scheduled]);
-  if (separateRecipient) facts.push(['Người nhận', recipient.authorized ? `${recipient.name} · Được ủy quyền` : recipient.name]);
+  if (row.status !== 'COMPLETED' && recipientName) facts.push(['Người nhận', recipient.authorized ? `${recipientName} · Được ủy quyền` : recipientName]);
   if (staff && (row.status !== 'COMPLETED' || staff !== actualStaff)) facts.push(['Nhân viên bàn giao', staff]);
   return <section className="manager-section staff-handover-summary">
     <h2>Tóm tắt lịch bàn giao</h2>
     {units.length > 0 && <ul className="staff-handover-units" aria-label="Kho và vị trí">
-      {units.map(unit => <li key={unit.id || unit.code}><strong>{unit.code}</strong>{unit.location && <span>{unit.location}</span>}</li>)}
+      {units.map(unit => <li key={unit.id || unit.code}><strong>{unit.code}</strong>
+        {unit.contract && <span>Hợp đồng · {unit.contract}</span>}
+        {unit.location && <span>{unit.location}</span>}
+      </li>)}
     </ul>}
     {facts.length > 0 && <Facts items={facts} />}
-    {!facts.length && !units.length && <p>Chưa có thông tin kho và giờ hẹn.</p>}
+    {!facts.length && !units.length && <p>Chưa có thông tin kho.</p>}
   </section>;
 }
 

@@ -322,6 +322,7 @@ function ServiceReferences({ row, staff }: { row: Row; staff: boolean }) {
 function DetailContent({ row, resource, staff }: { row: Row; resource: string; staff: boolean }) {
   const staffBooking = staff && resource === 'reservations';
   const rental = resource === 'rentals';
+  const managerContract = !staff && resource === 'contracts';
   const returning = resource === 'returns';
   const inspectionRecords = rows(row.inspections);
   const settlement = object(row.settlement);
@@ -720,11 +721,11 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
       {resource === "invoices" && (
         <section className="manager-section">
           <h2>Chi tiết hóa đơn</h2>
-          <p>Đơn {first(row, 'reservation.reference')} · {(row.breakdown as CustomerInvoice['breakdown'])?.units.length ?? first(row, 'reservation.quantity')} kho</p>
+          <p>Đơn {first(row, 'reservation.reference')} · {(row.breakdown as CustomerInvoice['breakdown'])?.units?.length ?? first(row, 'reservation.quantity')} kho</p>
           <InvoiceBreakdown details={row.breakdown as CustomerInvoice['breakdown']} currency={first(row, 'currency')} />
           {first(row, 'replacesInvoice.id') && <p>Thay hóa đơn <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacesInvoice.id'))}`}>{first(row, 'replacesInvoice.invoiceCode')}</Link></p>}
           {first(row, 'replacementInvoice.id') && <p>Được thay bằng <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacementInvoice.id'))}`}>{first(row, 'replacementInvoice.invoiceCode')}</Link></p>}
-          <h3>Tổng thanh toán</h3>
+          <h3>{staff ? 'Tổng thanh toán' : 'Số tiền và kỳ thanh toán'}</h3>
           <Facts
             items={[
               ["Loại hóa đơn", label(row.type)],
@@ -796,7 +797,10 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
           )}
         </section>
       )}
-      {Object.keys(quote).length > 0 && resource !== "renewals" && <ManagerPricingExplanation quote={quote} />}
+      {Object.keys(quote).length > 0 && resource !== "renewals" && <ManagerPricingExplanation quote={quote} emphasizeInstallments={managerContract} />}
+      {managerContract && reference && !invoices.length && <DetailDisclosure title="Hóa đơn theo kỳ">
+        <Link to={`/manager/operations/invoices?${new URLSearchParams({ search: reference })}`}>Xem hóa đơn của đơn {reference}</Link>
+      </DetailDisclosure>}
       <RelatedTable
         title="Kho được phân bổ"
         items={rows(row.allocatedUnits)}
@@ -847,13 +851,16 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
         title="Hóa đơn liên quan"
         items={invoices}
         compact={rental}
-        headers={["Hóa đơn", "Tổng / Còn thu", "Trạng thái"]}
+        collapsible={managerContract}
+        headers={managerContract ? ["Hóa đơn", "Kỳ thu", "Tổng / Còn thu", "Trạng thái"] : ["Hóa đơn", "Tổng / Còn thu", "Trạng thái"]}
         render={(item) => [
           <Link
             to={`/manager/operations/invoices/${encodeURIComponent(first(item, "id", "invoiceCode"))}`}
           >
             {rental ? <>{label(item.type)}{item.billingCycle != null ? ` · Kỳ ${item.billingCycle}` : ''}<small>{first(item, 'invoiceCode')}</small></> : first(item, "invoiceCode")}
           </Link>,
+          ...(managerContract ? [item.billingPeriodStart && item.billingPeriodEnd
+            ? `${date(item.billingPeriodStart)} → ${date(item.billingPeriodEnd)}` : '—'] : []),
           <>
             {money(item.totalAmount)}
             <small>Còn: {money(item.balanceDue)}</small>
@@ -862,8 +869,9 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
         ]}
       />
       <RelatedTable
-        title="Lịch sử thanh toán"
+        title={!staff ? "Khoản thu đã ghi nhận" : "Lịch sử thanh toán"}
         items={rows(row.payments)}
+        collapsible={!staff}
         headers={["Khoản thu", "Số tiền", "Tiếp nhận"]}
         render={(item) => [
           <Link
@@ -1003,12 +1011,14 @@ function RelatedTable({
   headers,
   render,
   compact = false,
+  collapsible = false,
 }: {
   title: string;
   items: Row[];
   headers: string[];
   render: (item: Row) => React.ReactNode[];
   compact?: boolean;
+  collapsible?: boolean;
 }) {
   if (!items.length) return null;
   if (compact) return <DetailDisclosure title={`${title} (${items.length})`} open>
@@ -1018,9 +1028,7 @@ function RelatedTable({
       </li>)}
     </ul>
   </DetailDisclosure>;
-  return (
-    <section className="manager-section">
-      <h2>{title}</h2>
+  const table = (
       <div className="manager-table-wrap">
         <table className="manager-table">
           <thead>
@@ -1052,6 +1060,7 @@ function RelatedTable({
           </tbody>
         </table>
       </div>
-    </section>
   );
+  return collapsible ? <DetailDisclosure title={`${title} (${items.length})`}>{table}</DetailDisclosure>
+    : <section className="manager-section"><h2>{title}</h2>{table}</section>;
 }

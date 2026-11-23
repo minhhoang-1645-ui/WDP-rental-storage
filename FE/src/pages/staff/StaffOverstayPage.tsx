@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { date } from '../../components/manager/portal-data';
 import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
@@ -11,12 +11,11 @@ export function StaffOverstayStatus({ row }: { row: Overstay }) {
 }
 
 const columns: StaffColumn<Overstay>[] = [
-  { key: 'unit', label: 'Kho', cell: row => <strong>{row.storageUnit.unitNumber}</strong> },
+  { key: 'unit', label: 'Kho / Hợp đồng', cell: row => <><strong>{row.storageUnit.unitNumber}</strong>{row.contractCode && <small>{row.contractCode}</small>}</> },
   { key: 'customer', label: 'Khách hàng', cell: row => row.customer.fullName },
   { key: 'end', label: 'Ngày hết hạn', cell: row => date(row.endDate) },
   { key: 'days', label: 'Quá hạn', cell: row => `${row.overdueDays} ngày` },
   { key: 'status', label: 'Trạng thái', cell: row => <StaffOverstayStatus row={row} /> },
-  { key: 'action', label: 'Thao tác', cell: row => <Link className="button-secondary" to={staffOverstayTarget(row)}>Xem chi tiết</Link> },
 ];
 
 export function StaffOverstayPage() {

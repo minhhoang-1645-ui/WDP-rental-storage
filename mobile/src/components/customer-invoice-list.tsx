@@ -41,11 +41,11 @@ function needsRenewalPayment(invoice: Row) {
 }
 
 export function invoiceBadge(invoice: Row) {
-  if (invoice.status === 'PAID') return { label: 'Đã thanh toán', style: s.greenBadge };
+  if (invoice.status === 'PAID') return { label: 'Đã thanh toán đủ', style: s.greenBadge };
   if (invoice.status === 'VOID') return { label: 'Đã hủy', style: s.grayBadge };
+  if (invoice.status === 'PARTIALLY_PAID') return { label: 'Đã trả một phần', style: s.yellowBadge };
   if (paymentWindowClosed(invoice)) return { label: 'Hết hạn giữ kho', style: s.grayBadge };
   if (invoice.isPastDue === true || (text(invoice, 'dueAt') && text(invoice, 'dueAt').slice(0, 10) < vietnamCalendarDate())) return { label: 'Quá hạn', style: s.redBadge };
-  if (invoice.status === 'PARTIALLY_PAID') return { label: 'Đã trả một phần', style: s.yellowBadge };
   if (needsRenewalPayment(invoice)) return { label: 'Cần thanh toán', style: s.yellowBadge };
   if (text(invoice, 'dueAt').slice(0, 10) > vietnamCalendarDate() && invoice.type !== 'INITIAL') return { label: 'Chưa đến hạn', style: s.blueBadge };
   return { label: invoice.status === 'OPEN' ? 'Chưa thanh toán' : 'Đang cập nhật', style: s.yellowBadge };
@@ -77,7 +77,6 @@ export function InvoiceList() {
   }, [user?.id, source.loading]);
 
   const invoices = [...new Map(rows(source.data?.items).filter(item => idOf(item)).map(item => [idOf(item), item])).values()];
-  const renewalPayments = invoices.filter(needsRenewalPayment);
   const today = vietnamCalendarDate();
   const due = invoices.filter(invoice => outstanding(invoice) && !paymentWindowClosed(invoice) &&
     (invoice.type === 'INITIAL' || needsRenewalPayment(invoice) || invoice.isPastDue === true || (text(invoice, 'dueAt') && text(invoice, 'dueAt').slice(0, 10) <= today)))
@@ -97,18 +96,14 @@ export function InvoiceList() {
       refreshing={refreshing && source.loading} onRefresh={() => { setRefreshing(true); source.refresh(); }}
       data={filtered.slice(0, limit)} keyExtractor={idOf}
       ListHeaderComponent={<View style={s.section}>
-        {renewalPayments.map(invoice => <Pressable key={idOf(invoice)} accessibilityRole="link"
-          style={[s.card, s.row, { backgroundColor: C.warningBackground }]} onPress={() => go(idOf(invoice))}>
-          <CreditCard size={20} color={C.warning} />
-          <View style={s.grow}>
-            <Text style={s.heading}>Cần thanh toán gia hạn</Text>
-            <Text style={s.muted}>{[invoiceContext(invoice), formatMoney(Number(invoice.balanceDue))].filter(Boolean).join(' · ')}</Text>
-          </View>
-          <ChevronRight size={16} color={C.muted} />
-        </Pressable>)}
-        <Pressable accessibilityRole="link" style={[s.row, s.history]} onPress={() => router.push('/customer/payment-history')}>
-          <History size={17} color={C.navy} /><Text style={s.link}>Lịch sử thanh toán</Text>
-        </Pressable>
+        <View style={s.filters}>
+          <Pressable accessibilityRole="link" style={[s.row, s.chip]} onPress={() => router.push('/customer/payment-history')}>
+            <History size={16} color={C.navy} /><Text style={s.link}>Lịch sử thanh toán</Text>
+          </Pressable>
+          <Pressable accessibilityRole="link" style={[s.row, s.chip]} onPress={() => router.push('/customer/payment-submissions')}>
+            <CreditCard size={16} color={C.navy} /><Text style={s.link}>Thông báo chuyển khoản</Text>
+          </Pressable>
+        </View>
         {source.data ? <View style={[s.row, s.overview]}>
           <View style={[s.row, s.grow]}><View style={s.iconSmall}><CreditCard size={17} color={C.navy} /></View><View style={s.grow}>
             <Text style={s.muted}>Cần thanh toán hiện tại</Text><Text style={s.heading}>{formatMoney(due)}</Text>
@@ -125,7 +120,7 @@ export function InvoiceList() {
           <TextInput accessibilityLabel="Tìm hóa đơn" style={[s.body, s.grow]} placeholderTextColor={C.muted}
             maxLength={120} placeholder="Tìm tên hoặc mã hóa đơn…" value={search} onChangeText={value => { setSearch(value); setLimit(15); }} />
         </View>
-        <View style={s.filters}>{['Tất cả', 'Cần thanh toán', 'Đã trả', 'Đã hủy'].map((label, index) =>
+        <View style={s.filters}>{['Tất cả', 'Còn phải trả', 'Đã trả đủ', 'Đã hủy'].map((label, index) =>
           <Pressable key={label} accessibilityRole="tab" accessibilityState={{ selected: filter === index }}
             style={[s.chip, filter === index && s.activeChip]} onPress={() => { setFilter(index); setLimit(15); }}>
             <Text style={[s.chipText, filter === index && s.white]}>{label}</Text>
@@ -138,12 +133,14 @@ export function InvoiceList() {
       renderItem={({ item }) => {
         const badge = invoiceBadge(item);
         const date = text(item, item.status === 'PAID' ? 'paidAt' : 'dueAt');
-        const amount = Number(item.status === 'PAID' ? item.amountPaid : item.status === 'VOID' ? item.totalAmount : item.balanceDue);
+        const amount = item.status === 'PAID' ? item.amountPaid : item.status === 'VOID' ? item.totalAmount : item.balanceDue;
+        const amountLabel = item.status === 'PAID' ? 'Đã thanh toán' : item.status === 'VOID' ? 'Tổng hóa đơn' : 'Còn phải trả';
         return <Pressable accessibilityRole="button" onPress={() => go(idOf(item))} style={[s.card, s.row]}>
           <View style={s.icon}><FileText size={22} color={C.navy} /></View>
           <View style={s.grow}>
             <View style={s.row}><Text style={[s.heading, s.grow]}>{invoiceTitle(item)}</Text><Text style={[s.badge, badge.style]}>{badge.label}</Text></View>
-            <Text style={s.heading}>{formatMoney(amount)}</Text>
+            {typeof amount === 'number' && Number.isFinite(amount) ? <Text style={s.heading}>{amountLabel} · {formatMoney(amount)}</Text> : null}
+            {item.status === 'PARTIALLY_PAID' && typeof item.amountPaid === 'number' ? <Text style={s.muted}>Đã thanh toán · {formatMoney(item.amountPaid)}</Text> : null}
             {invoiceContext(item) ? <Text style={s.muted}>{invoiceContext(item)}</Text> : null}
             {date && item.status !== 'VOID' ? <View style={s.row}><Calendar size={13} color={C.muted} />
               <Text style={s.muted}>{item.status === 'PAID' ? 'Đã trả ' : 'Đến hạn '}{formatDate(date)}</Text></View> : null}

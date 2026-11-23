@@ -74,7 +74,7 @@ const unitAssignment = { id: 'assignment-1', assignedBy: { fullName: 'Quản lý
   storageUnit: { ...unit, unitNumber: unit.unitCode, status: 'OCCUPIED' } };
 const firstContract = { ...fixture.contracts[0], startDate: '2026-10-09', endDate: '2026-11-09', unit };
 const rental = { ...fixture.rentals[0], contracts: [firstContract] };
-const overdueUnit = { id: firstContract.id, reservationId: rental.reservationId, endDate: '2026-11-09', overdueDays: 10,
+const overdueUnit = { id: firstContract.id, contractCode: firstContract.contractCode, reservationId: rental.reservationId, endDate: '2026-11-09', overdueDays: 10,
   customer, storageUnit: unitAssignment.storageUnit, returnRequest: null };
 const datasets = { ...fixture, appointments, maintenance: repairs, reservations, rentals: [rental],
   'support-requests': [], 'stock-movements': [{ ...fixture['stock-movements'][0], status: 'ASSIGNED', assignedStaff: staff }],
@@ -276,9 +276,8 @@ try {
   const handoverLink = handoverRow.getByRole('link', { name: /Xem chi tiết.*LONG-HANDOVER-LATE/ });
   const handoverPath = await handoverLink.getAttribute('href');
   const handoverList = page.url();
-  await work.getByRole('button', { name: /Thao tác LONG-HANDOVER-LATE/ }).click();
   assert.equal(new URL(page.url()).pathname, '/staff/tasks');
-  await page.getByRole('link', { name: 'Bắt đầu xử lý', exact: true }).click();
+  await handoverRow.getByRole('link', { name: 'Bắt đầu xử lý', exact: true }).click();
   await page.locator('#staff-processing').waitFor();
   await page.waitForFunction(() => document.activeElement?.id === 'staff-processing');
   const handover = page.getByRole('button', { name: 'Xác nhận đã bàn giao giấy tờ và chìa khóa', exact: true });
@@ -691,6 +690,12 @@ try {
     await page.locator('main').getByRole('heading', { name: title, exact: true }).waitFor();
     assert(!await overflow(), `${path} overflows mobile`);
   }
+  await open('/overstays');
+  const overstayTable = page.getByRole('table', { name: 'Kho quá hạn chưa trả' });
+  await overstayTable.getByText(firstContract.contractCode, { exact: true }).waitFor();
+  assert.equal(await overstayTable.getByRole('columnheader', { name: 'Thao tác' }).count(), 0);
+  await overstayTable.getByRole('link', { name: /Xem hồ sơ kho quá hạn/ }).press('Enter');
+  await page.waitForURL(url => url.pathname.startsWith('/staff/rentals/') && url.searchParams.get('contract') === firstContract.id);
   datasets['support-requests'] = [{
     ...fixture['support-requests'][0], subject: 'Yêu cầu chuyển kho', assignedStaff: staff,
     contract: { id: 'transfer-support-contract', contractCode: 'CON-FROM-SUPPORT', status: 'ACTIVE' },
@@ -927,8 +932,12 @@ try {
   const agenda = page.getByRole('group', { name: 'Xem lịch bàn giao' });
   await handovers.getByText('LONG-HANDOVER-TODAY', { exact: true }).waitFor();
   assert.deepEqual(await handovers.getByRole('columnheader').allTextContents(), [
-    'Khách hàng / Kho', 'Ngày giờ hẹn', 'Người nhận', 'Trạng thái', 'Thao tác',
+    'Khách hàng / Kho', 'Ngày giờ hẹn', 'Người nhận', 'Trạng thái',
   ]);
+  const todayRow = handovers.getByRole('row').filter({ hasText: 'LONG-HANDOVER-TODAY' });
+  await todayRow.getByText('Đã xác nhận lịch', { exact: true }).waitFor();
+  await todayRow.getByRole('button', { name: /Sao chép/ }).click();
+  assert.equal(new URL(page.url()).pathname, '/staff/appointments');
   assert.equal(await handovers.locator('tbody tr').count(), 5);
   const searchAppointments = page.getByPlaceholder('Mã lịch, mã đặt kho, khách hàng…');
   await searchAppointments.fill('LONG-HANDOVER-LATE');
@@ -946,14 +955,15 @@ try {
   await agenda.getByRole('button', { name: 'Hôm nay', exact: true }).click();
   await handovers.getByText('cancelled', { exact: true }).waitFor();
   assert.equal(await handovers.locator('tbody tr').count(), 2);
-  await handovers.getByRole('row').filter({ hasText: 'cancelled' }).getByRole('link', { name: 'Xem chi tiết', exact: true }).click();
+  await handovers.getByRole('row').filter({ hasText: 'cancelled' }).getByRole('link', { name: /Xem chi tiết hồ sơ/ }).press('Enter');
   await page.waitForURL('**/staff/appointments/cancelled');
   await page.locator('.staff-appointment-detail header').getByText('Đã hủy', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: /Xác nhận đã bàn giao/ }).count(), 0);
   await page.getByRole('link', { name: 'Về danh sách' }).click();
   await agenda.getByRole('button', { name: 'Đã hoàn tất', exact: true }).click();
   await handovers.getByText('LONG-HANDOVER-COMPLETED', { exact: true }).waitFor();
-  await handovers.getByRole('link', { name: 'Xem chi tiết', exact: true }).click();
+  await handovers.getByText('Đã bàn giao', { exact: true }).waitFor();
+  await handovers.getByRole('link', { name: /Xem chi tiết hồ sơ/ }).press('Space');
   await heading('Kết quả bàn giao').waitFor();
   for (const time of ['11:08 13/11/2026', '10:09 13/11/2026']) await page.getByText(time, { exact: true }).first().waitFor();
   assert.equal(await page.getByRole('button', { name: /Xác nhận đã bàn giao/ }).count(), 0);
@@ -1016,7 +1026,7 @@ try {
   assert(!await overflow());
   await page.evaluate(() => window.scrollTo(0, 0));
   await shot('handover-multi-mobile');
-  await finishHandover.click();
+  await finishHandover.evaluate(button => { button.click(); button.click(); });
   await heading('Kết quả bàn giao').waitFor();
   await page.getByText('Đại diện nhận kho · Được ủy quyền', { exact: true }).waitFor();
   await page.getByRole('list', { name: 'Kết quả kiểm tra từng kho' }).getByText('Có vết xước nhẹ').waitFor();
@@ -1193,7 +1203,7 @@ try {
   datasets.maintenance = [];
   await open('');
   await page.getByText('Không có việc cần xử lý.', { exact: true }).waitFor();
-  await page.getByText('Không có lịch bàn giao trong khoảng này.', { exact: true }).waitFor();
+  await page.getByText('Không có lịch bàn giao sắp tới.', { exact: true }).waitFor();
   assert.deepEqual(await kpis.locator('strong').allTextContents(), ['0', '0', '0', '0']);
   await open('/appointments?agenda=today');
   await page.getByText('Không có lịch bàn giao hôm nay.', { exact: true }).waitFor();

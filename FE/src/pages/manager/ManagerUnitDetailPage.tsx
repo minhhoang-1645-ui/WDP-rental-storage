@@ -55,12 +55,12 @@ export function ManagerUnitDetailPage() {
           ['Kích thước', first(unit, 'dimensions.display') || '—'],
           ['Điều kiện bảo quản', unit.condition ? label(unit.condition) : '—'],
         ]} />
-        {unitBookingSummary(unit) && <p className="record-text"><strong>{unitBookingSummary(unit)}.</strong> Kiểm tra khả dụng theo kỳ thuê.</p>}
         {unit.status === 'OCCUPIED' && !unit.currentAllocation && !first(unit, 'allocationSummary.current.id') &&
           <p className="record-text">Đang sử dụng. Chưa xác định được phân bổ hiện tại.</p>}
       </section>
       <section className="manager-section">
         <h2>Lịch phân bổ & lịch sử</h2>
+        {unitBookingSummary(unit) && <p className="record-text"><strong>{unitBookingSummary(unit)}.</strong> Kiểm tra khả dụng theo kỳ thuê.</p>}
         {allocations.length ? <div className="manager-table-wrap" role="region" tabIndex={0} aria-label="Lịch phân bổ">
           <table className="manager-table">
             <thead><tr><th scope="col">Đặt kho / Hợp đồng</th><th scope="col">Kỳ phân bổ</th><th scope="col">Khách hàng</th><th scope="col">Tình trạng</th></tr></thead>

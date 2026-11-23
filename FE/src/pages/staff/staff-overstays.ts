@@ -6,6 +6,7 @@ import { staffRentalTarget } from './staff-rentals';
 export type Overstay = {
   id: string;
   reservationId: string;
+  contractCode?: string;
   endDate: string;
   overdueDays: number;
   customer: { fullName: string };

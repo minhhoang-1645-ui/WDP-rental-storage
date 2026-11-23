@@ -99,7 +99,7 @@ export function AdminAccountDetailPage() {
             ] as [string, string][]),
             ['Ngày tạo', date(row.createdAt, true)],
           ]} />
-          {first(row, 'updatedAt') && <DetailDisclosure title="Lịch sử cập nhật"><Facts items={[[ 'Cập nhật gần nhất', date(row.updatedAt, true) ]]} /></DetailDisclosure>}
+          {first(row, 'updatedAt') && <DetailDisclosure title="Thông tin cập nhật"><Facts items={[[ 'Cập nhật gần nhất', date(row.updatedAt, true) ]]} /></DetailDisclosure>}
         </section>
       </div>
 
@@ -107,7 +107,7 @@ export function AdminAccountDetailPage() {
         <section className="manager-section admin-detail-panel">
           <AccountRoleAccess value={row.role} />
           <div className="admin-access-status">
-            <h3>Trạng thái truy cập</h3><Status value={row.accountStatus} />
+            <h3>Khóa và mở khóa tài khoản</h3>
             {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>
               <p>{next === 'DISABLED'
                 ? 'Tài khoản sẽ bị chặn đăng nhập và các yêu cầu từ phiên đang mở.'

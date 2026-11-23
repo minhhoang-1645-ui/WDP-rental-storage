@@ -110,7 +110,7 @@ try {
   await blocked.getByText('Đăng nhập thất bại do tài khoản đã khóa', { exact: true }).waitFor();
   await blocked.getByText('Fixture Disabled', { exact: true }).waitFor();
   await blocked.getByText('Khách hàng', { exact: true }).waitFor();
-  await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Chưa xác thực', { exact: true }).waitFor();
+  await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Không ghi nhận', { exact: true }).waitFor();
   await auditTable.getByRole('row').filter({ hasText: 'attempt@example.test' }).getByText('Fixture Attempt', { exact: true }).waitFor();
   assert.deepEqual(await auditTable.getByRole('columnheader').allTextContents(), ['Thời gian', 'Tài khoản', 'Vai trò', 'Sự kiện']);
   const auditSearch = page.getByRole('searchbox', { name: 'Tìm nhật ký', exact: true });
@@ -155,9 +155,9 @@ try {
   await page.getByRole('link', { name: 'Về nhật ký hoạt động' }).click();
   await auditTable.getByText('Hoạt động chưa có nhãn', { exact: true }).waitFor();
   await auditTable.getByText('Thất bại', { exact: true }).waitFor();
-  const disabledAccount = auditTable.getByRole('row').filter({ hasText: 'Khóa tài khoản' });
+  const disabledAccount = auditTable.getByRole('row').filter({ has: page.getByText('Khóa tài khoản', { exact: true }) });
   assert.equal(await disabledAccount.getByRole('link', { name: 'Fixture Affected Account' }).getAttribute('href'), '/admin/users/admin');
-  assert.equal(await auditTable.getByText('Thành công', { exact: true }).count(), 0);
+  await disabledAccount.getByText('Thành công', { exact: true }).waitFor();
   assert.equal(await auditTable.getByText('Đăng nhập', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Đăng xuất', { exact: true }).count(), 0);
   assert.equal(await auditTable.getByText('Xem chi tiết', { exact: true }).count(), 0);
@@ -303,8 +303,14 @@ try {
   await dialog.locator('[name=password]').fill('fixture-password');
   await dialog.locator('[name=confirmPassword]').fill('fixture-password');
   const create = dialog.getByRole('button', { name: 'Tạo tài khoản', exact: true });
+  await dialog.locator('[name=confirmPassword]').fill('fixture-mismatch');
+  await create.click();
+  await dialog.getByRole('alert').getByText('Mật khẩu xác nhận không khớp.', { exact: true }).waitFor();
+  assert.equal(await dialog.locator('[name=confirmPassword]').getAttribute('aria-invalid'), 'true');
+  await dialog.locator('[name=confirmPassword]').fill('fixture-password');
   await create.click();
   await dialog.getByText('Email đã được sử dụng.', { exact: true }).waitFor();
+  assert.equal(await dialog.locator('[name=email]').getAttribute('aria-invalid'), 'true');
   await dialog.locator('[name=email]').fill('fixture-new@example.test');
   await create.click();
   await page.getByText('Đã tạo tài khoản Fixture New Manager.', { exact: true }).waitFor();
@@ -321,6 +327,21 @@ try {
   await page.goto(`${base}/staff/reservations`);
   await page.waitForURL(url => url.pathname === '/admin');
   assert.deepEqual(mutations, ['admin/users/user-23/status', 'admin/users/user-23/status', 'admin/users/user-23', 'admin/users/user-23', 'admin/users', 'admin/users', 'admin/users']);
+
+  await page.goto(`${base}/admin/users`);
+  await page.getByRole('button', { name: 'Sao chép mã tài khoản user-1', exact: true }).click();
+  assert.equal(new URL(page.url()).pathname, '/admin/users');
+  await page.getByRole('checkbox', { name: 'Chọn user-1@example.test', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'Chọn user-2@example.test', exact: true }).check();
+  const bulk = page.getByRole('group', { name: 'Thao tác tài khoản đã chọn' });
+  await bulk.getByText('Đã chọn 2 trên trang này', { exact: true }).waitFor();
+  await bulk.getByRole('button', { name: 'Khóa tài khoản', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Xác nhận', exact: true }).click();
+  await page.getByText('Đã cập nhật 1 · Bỏ qua 0 · Chưa xác nhận 1', { exact: true }).waitFor();
+  await page.getByText('user-2@example.test — Tài khoản được bảo vệ.', { exact: true }).waitFor();
+  assert.equal(users.find(user => user.id === 'user-1').accountStatus, 'DISABLED');
+  assert.equal(users.find(user => user.id === 'user-2').accountStatus, 'ACTIVE');
+  assert.deepEqual(mutations.slice(-2), ['admin/users/user-1/status', 'admin/users/user-2/status']);
 
   await page.goto(`${base}/admin/notifications`);
   await page.getByRole('heading', { name: 'Thông báo', exact: true }).waitFor();
@@ -358,7 +379,7 @@ try {
         await page.getByRole('button', { name: theme === 'light' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối' }).click();
         await page.keyboard.press('Escape');
       }
-      for (const route of ['', '/login-history', '/activity']) {
+      for (const route of ['', '/login-history', '/activity', '/users']) {
         await page.goto(base + '/admin' + route);
         await page.locator(route ? 'tbody tr' : '.admin-preview li').first().waitFor();
         for (const width of [1440, 1024, 768, 390]) {

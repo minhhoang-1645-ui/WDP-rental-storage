@@ -69,7 +69,7 @@ function StoragePanel({ report, loading, error }: { report?: ManagerReport | nul
       : !units || !statuses ? <p className="manager-panel-caption" role="status">Số liệu trạng thái kho chưa khớp với tổng kho.</p>
       : units.total === 0 ? <p className="manager-panel-caption">Chưa có kho vật lý trong hệ thống.</p>
       : <>
-        <p className="manager-storage-total">Tổng cộng <strong>{count(units.total)} kho</strong></p>
+        <p className="manager-storage-total">Trạng thái hiện tại · <strong>{count(units.total)} kho</strong></p>
         <div className="manager-storage-bar" aria-hidden="true">
           {statuses.filter(status => status.value > 0).map(({ key, color, value }) =>
             <span key={key} className={`manager-storage-segment is-${color}`} style={{ flex: `${value} 0 0%` }} />)}
@@ -163,7 +163,8 @@ export function ManagerOverviewPage() {
               <span className="manager-work-icon"><ClipboardList size={17} aria-hidden="true" /></span>
               <span className="manager-work-copy">
                 <strong>{title}</strong>
-                <small>{[person, unit, entry.at ? date(entry.at, true) : ''].filter(Boolean).join(' · ') || entry.code}</small>
+                <small>{[entry.code, person, unit].filter(Boolean).join(' · ')}</small>
+                {entry.at && <small>{date(entry.at, true)}</small>}
               </span>
               {status && <Status value={status} text={statusText} />}
               <ArrowRight className="manager-work-arrow" size={16} aria-hidden="true" />

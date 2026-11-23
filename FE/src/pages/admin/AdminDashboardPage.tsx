@@ -7,6 +7,7 @@ import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import { date, label, type Page } from '../../components/manager/portal-data';
 import { LoadState, PageHeader, RefreshStatus } from '../../components/manager/PortalUi';
+import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { auditActor, auditRecordPath, auditResource, auditTitle, type AuditPage } from './audit-labels';
 
 export function AdminDashboardPage() {
@@ -40,9 +41,10 @@ export function AdminDashboardPage() {
       </button>
       <RefreshStatus active={login.refreshing || activity.refreshing} />
     </PageHeader>
-    <LoadState loading={!current} error={current?.error ?? ''} retry={refresh} />
+    <LoadState loading={false} error={current?.error ?? ''} retry={refresh} />
     <div className="internal-kpis admin-kpis" aria-busy={!current}>{metrics.map(({ title, value, to, icon: Icon, hint }) =>
-      <Link className="internal-kpi" key={title} to={to}><span>{title}<Icon size={18} aria-hidden="true" /></span><strong>{value?.toLocaleString('vi-VN') ?? '—'}</strong><small>{hint}</small></Link>
+      !current ? <DashboardSkeleton key={title} variant="metric" cardClass="internal-kpi" /> :
+        <Link className="internal-kpi" key={title} to={to}><span>{title}<Icon size={18} aria-hidden="true" /></span><strong>{value?.toLocaleString('vi-VN') ?? '—'}</strong><small>{hint}</small></Link>
     )}</div>
     <div className="admin-dashboard-panels">
       <AuditPreview id="admin-recent-login" title="Đăng nhập gần đây" to="/admin/login-history" data={login} session />
@@ -72,7 +74,7 @@ function AuditPreview({ id, title, to, data, session = false }: {
           <div className="admin-preview-copy">
             <strong>{session ? auditActor(event) : auditTitle(event)}</strong>
             {session && event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}
-            {session ? <small>{event.actorRole ? label(event.actorRole) : 'Chưa xác thực'} · <span className={event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</span></small>
+            {session ? <small>{event.actorRole ? label(event.actorRole) : 'Không ghi nhận vai trò'} · <span className={event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</span></small>
               : <small>{event.actorName || event.actorEmail || auditActor(event)} · {recordPath ? <Link className="audit-record-link" to={recordPath}>{auditResource(event.resource)}</Link> : auditResource(event.resource)}{event.outcome === 'FAILURE' && <span className="audit-failure"> · Thất bại</span>}</small>}
             <small><time dateTime={event.createdAt}>{date(event.createdAt, true)}</time></small>
           </div>

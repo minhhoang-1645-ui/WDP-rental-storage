@@ -75,7 +75,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
     : scheduled ? 'Hóa đơn gia hạn chưa đến kỳ thanh toán.'
     : unsigned ? 'Bạn cần ký ' + (renewalId ? 'phụ lục gia hạn' : 'hợp đồng') + ' trước khi thanh toán.'
     : !supported ? 'Loại hóa đơn này chưa hỗ trợ thanh toán qua VNPay.'
-    : pendingTransfer ? 'Có khoản chuyển trước đây đang chờ xác nhận.'
+    : pendingTransfer ? ''
     : !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true ? 'VNPay hiện chưa khả dụng.' : '';
 
   return <View style={s.screen}>
@@ -118,8 +118,8 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
           <Text accessibilityRole="header" style={s.title}>Chi tiết các khoản thu</Text>
           {([['Tiền thuê', invoice.rentalAmount], ['Tiền cọc', invoice.depositAmount], ['Dịch vụ', invoice.serviceAmount], ['Phí đã duyệt', invoice.chargeAmount]] as const)
             .filter(([, value]) => typeof value === 'number' && value !== 0).map(([title, value]) => <Fact key={title} title={title} value={amount(value)} />)}
-          <Fact title="Tổng" value={amount(invoice.totalAmount)} total />
-          {!paid && !voided && Number(invoice.amountPaid) > 0 ? <><Fact title="Đã trả" value={amount(invoice.amountPaid)} /><Fact title="Còn lại" value={amount(invoice.balanceDue)} /></> : null}
+          {!voided && typeof invoice.totalAmount === 'number' ? <Fact title="Tổng hóa đơn" value={amount(invoice.totalAmount)} total /> : null}
+          {!paid && !voided && typeof invoice.amountPaid === 'number' ? <Fact title="Đã thanh toán" value={amount(invoice.amountPaid)} /> : null}
         </View>
         {payments.length ? <View style={s.card}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPayments }} style={[s.row, { minHeight: 44 }]} onPress={() => setShowPayments(value => !value)}>
@@ -133,6 +133,10 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         </View> : null}
       </>}
 
+      {pendingTransfer && !paid && !voided ? <View style={s.hero}>
+        <Text style={s.heading}>Thông báo chuyển khoản đang chờ xác minh</Text>
+        <Text style={s.muted}>Số dư sẽ cập nhật sau khi NestBox đối chiếu khoản chuyển.</Text>
+      </View> : null}
       {reason ? <Text accessibilityRole="alert" style={s.muted}>{reason}</Text> : null}
       {!paymentScreen && text(invoice, 'renewalRequest.id') ? <Pressable accessibilityRole="button" style={[s.card, s.row]}
         onPress={() => router.push(('/customer/renewals/' + encodeURIComponent(text(invoice, 'renewalRequest.id'))) as Href)}>

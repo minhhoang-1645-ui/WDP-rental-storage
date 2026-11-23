@@ -38,7 +38,8 @@ export function AccountRoleAccess({ value }: { value: unknown }) {
   const role = roleInfo(value);
   if (!role) return <p>Chưa xác định vai trò của tài khoản.</p>;
   return <div className="admin-role-access">
-    <h2><AccountRole value={value} /></h2>
+    <h2>Quyền truy cập hiện tại</h2>
+    <p>Mục này dùng để xem quyền theo vai trò hiện tại của tài khoản.</p>
     <p>{role.description}</p>
     <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
   </div>;

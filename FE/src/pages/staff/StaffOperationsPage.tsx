@@ -8,6 +8,7 @@ import { LoadState, PageHeader, RefreshStatus, Status } from '../../components/m
 import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { staffDay, staffDayAfter } from './staff-resources';
 import { staffActivityReady, staffActivitySources, staffWorkItems } from './staff-work';
+import { handoverStatusText } from './staff-appointment';
 
 const taskPath = '/staff/tasks';
 const overdueHandoverPath = taskPath + '?type=appointments&status=CONFIRMED&timing=overdue';
@@ -57,9 +58,10 @@ export function StaffOperationsPage() {
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
   const todayAppointments = upcomingAppointments.filter(task => staffDay(task.scheduledAt) === today);
   const lateAppointments = appointments.filter(task => task.overdue);
+  const upcomingPreview = upcomingAppointments.filter(task => !task.overdue).slice(0, previewSize);
   const todayPath = `/staff/appointments?status=CONFIRMED&date=${today}`;
   const upcomingPath = '/staff/appointments?' + new URLSearchParams({ status: 'CONFIRMED', from: today, through });
-  const shownElsewhere = new Set(upcomingAppointments.slice(0, previewSize).map(task => task.entry.web));
+  const shownElsewhere = new Set(upcomingPreview.map(task => task.entry.web));
   const priority = tasks.filter(task => !shownElsewhere.has(task.entry.web))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.entry.priority - b.entry.priority);
   const metrics = [
@@ -90,13 +92,15 @@ export function StaffOperationsPage() {
         {priority.slice(0, previewSize).map(task => <WorkRow key={task.entry.id} to={task.entry.web}
           title={[task.customer, task.unit].filter(Boolean).join(' · ') || task.title}
           details={task.customer || task.unit ? task.title : ''} time={task.timestamp ? date(task.timestamp, true) : undefined}
-          status={task.overdue ? <Status value="OVERDUE" text="Đã quá giờ" /> : <Status value={task.status} />} action="Xem chi tiết" onOpen={() => activity.markRead([task.entry.token])} />)}
+          status={task.overdue ? <Status value="OVERDUE" text="Đã quá giờ" /> :
+            <Status value={task.status} text={task.entry.kind === 'appointments' ? handoverStatusText(task.status) : undefined} />}
+          action="Xem công việc" onOpen={() => activity.markRead([task.entry.token])} />)}
       </WorkPanel>
-      <WorkPanel title="Lịch sắp tới" to={upcomingPath} empty={handoversReady ? 'Không có lịch bàn giao trong khoảng này.' : 'Chưa tải được lịch bàn giao.'} loading={loading} count={upcomingAppointments.length}>
-        {upcomingAppointments.slice(0, previewSize).map(task => <WorkRow key={task.entry.id} to={task.entry.web}
+      <WorkPanel title="Lịch sắp tới" to={upcomingPath} empty={handoversReady ? 'Không có lịch bàn giao sắp tới.' : 'Chưa tải được lịch bàn giao.'} loading={loading} count={upcomingPreview.length}>
+        {upcomingPreview.map(task => <WorkRow key={task.entry.id} to={task.entry.web}
           title={task.customer || task.unit || 'Lịch bàn giao'}
           details={task.customer ? task.unit : ''} time={date(task.scheduledAt, true)}
-          status={task.overdue ? <Status value="OVERDUE" text="Đã quá giờ" /> : <Status value={task.status} />} action="Xem lịch" onOpen={() => activity.markRead([task.entry.token])} />)}
+          status={<Status value={task.status} text={handoverStatusText(task.status)} />} action="Xem lịch" onOpen={() => activity.markRead([task.entry.token])} />)}
       </WorkPanel>
     </div>
   </section>;

@@ -16,12 +16,13 @@ import { vietnamCalendarDate } from '@/utils/calendar-date';
 import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { customerAppointmentAction } from '@/portals/actions';
 import { customerAppointmentBookingPath } from '@/utils/handover';
+import { bookingStatusText } from '@/utils/customer-booking-display';
 
 type Task = { key: string; title: string; context: string; date: string; rank: number; path: string; icon: LucideIcon };
 const shortcuts = [
-  { title: 'Đơn đặt', path: '/customer/reservations', icon: ClipboardList },
-  { title: 'Lịch nhận', path: '/customer/appointments', icon: CalendarDays },
-  { title: 'Tài liệu', path: '/customer/contracts', icon: FileText },
+  { title: 'Đơn đặt kho', path: '/customer/reservations', icon: ClipboardList },
+  { title: 'Lịch nhận kho', path: '/customer/appointments', icon: CalendarDays },
+  { title: 'Hợp đồng', path: '/customer/contracts', icon: FileText },
   { title: 'Hỗ trợ', path: '/customer/support-requests', icon: Headphones },
 ];
 const go = (path: string) => router.push(path as Href);
@@ -35,15 +36,19 @@ function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submis
   const initialByReservation = new Map(invoices.filter(row => row.type === 'INITIAL' && row.status !== 'VOID').map(row => [reservationId(row), row]));
   const pending = new Set(submissions.filter(row => row.status === 'PENDING_VERIFICATION').map(row => text(row, 'invoice.id')));
   const tasks: Task[] = [];
+  const signTasks = new Map<string, Task[]>();
   const considered = new Set<string>();
   for (const contract of contracts) {
     const id = reservationId(contract);
     const initial = initialByReservation.get(id);
     if (closedBooking(contract) || (initial && Number(initial.balanceDue) > 0 && paymentWindowClosed(initial, now))) continue;
     if (['PENDING_PAYMENT', 'READY_FOR_HANDOVER'].includes(String(contract.status)) && text(contract, 'terms.snapshotHash') && !text(contract, 'terms.acceptedAt')) {
-      tasks.push({ key: 'sign:' + idOf(contract), title: 'Ký hợp đồng thuê kho', context: storageName(contract),
+      const key = id || idOf(contract);
+      const group = signTasks.get(key) ?? [];
+      group.push({ key: 'sign:' + idOf(contract), title: 'Ký hợp đồng thuê kho', context: storageName(contract),
         date: initial ? text(initial, 'reservation.expiresAt', 'dueAt') : '', rank: 0,
         path: '/customer/contract-document?id=' + encodeURIComponent(idOf(contract)), icon: FileText });
+      signTasks.set(key, group);
     }
     if (!id || considered.has(id)) continue;
     considered.add(id);
@@ -54,6 +59,11 @@ function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submis
       tasks.push({ key: 'visit:' + id, title: 'Đặt lịch nhận kho', context: storageName(contract), date: text(contract, 'startDate'), rank: 2,
         path: customerAppointmentBookingPath(id), icon: CalendarDays });
     }
+  }
+  for (const [key, group] of signTasks) {
+    const task = group[0];
+    tasks.push(group.length === 1 ? task : { ...task, key: 'sign:' + key, title: `Ký ${group.length} hợp đồng`,
+      path: '/customer/contracts?reservationId=' + encodeURIComponent(key) });
   }
   for (const invoice of invoices) {
     const due = text(invoice, 'dueAt');
@@ -76,7 +86,7 @@ function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submis
     const due = Date.parse(task.date) || Infinity;
     return task.path.endsWith('?renewalPayment=1') ? Math.min(due, now) : due;
   };
-  return tasks.sort((a, b) => deadline(a) - deadline(b) || a.rank - b.rank);
+  return tasks.sort((a, b) => Number(deadline(a) > now) - Number(deadline(b) > now) || a.rank - b.rank || deadline(a) - deadline(b));
 }
 
 function SmallIcon({ icon: Icon, warm = false }: { icon: LucideIcon; warm?: boolean }) {
@@ -130,7 +140,11 @@ export default function CustomerHomeScreen() {
   const stride = cardWidth + 10;
   const tasks = !taskError && !taskLoading ? taskList(unique(rows(contracts.data?.items)), unique(rows(invoices.data?.items)),
     rows(appointments.data?.items), rows(submissions.data?.items), config.data?.vnpayConfigured === true, now) : [];
-  const recent = unique(reservations.data ?? []).sort((a, b) => (Date.parse(text(b, 'createdAt')) || 0) - (Date.parse(text(a, 'createdAt')) || 0)).slice(0, 2);
+  const nextVisit = rows(appointments.data?.items)
+    .filter(item => idOf(item) && ['REQUESTED', 'CONFIRMED'].includes(String(item.status)) && Date.parse(text(item, 'scheduledAt')) >= now)
+    .sort((a, b) => Date.parse(text(a, 'scheduledAt')) - Date.parse(text(b, 'scheduledAt')))[0];
+  const recent = unique(rows(reservations.data)).sort((a, b) => Number(a.status !== 'PENDING') - Number(b.status !== 'PENDING') ||
+    (Date.parse(text(b, 'createdAt')) || 0) - (Date.parse(text(a, 'createdAt')) || 0)).slice(0, 2);
 
   return <ScrollView style={s.screen} contentInsetAdjustmentBehavior="never" contentContainerStyle={s.page}
     refreshControl={<RefreshControl refreshing={refreshing && loading} onRefresh={() => { setRefreshing(true); setNow(Date.now()); sources.forEach(source => source.refresh()); }} />}>
@@ -207,10 +221,18 @@ export default function CustomerHomeScreen() {
         : taskError ? <ErrorState message={taskError.error || 'Chưa tải được việc cần làm.'} onRetry={() => taskSources.forEach(source => source.refresh())} />
         : tasks.length ? <View style={s.tasks}>
           <View style={s.spread}><Text accessibilityRole="header" style={[s.sectionTitle, s.grow]}>Việc cần làm · {tasks.length}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Xem tất cả việc cần làm" style={s.linkButton} onPress={() => setShowTasks(true)}><Text style={s.link}>Xem tất cả</Text><ChevronRight size={14} color={C.navy} /></Pressable>
+            {tasks.length > 3 ? <Pressable accessibilityRole="button" accessibilityLabel="Xem tất cả việc cần làm" style={s.linkButton} onPress={() => setShowTasks(true)}><Text style={s.link}>Xem tất cả</Text><ChevronRight size={14} color={C.navy} /></Pressable> : null}
           </View>
           {tasks.slice(0, 3).map(task => <TaskRow key={task.key} task={task} onPress={() => go(task.path)} />)}
-        </View> : null}
+        </View> : <Text style={s.secondary}>Bạn chưa có việc cần làm.</Text>}
+
+      {nextVisit ? <Pressable accessibilityRole="link" style={s.booking} onPress={() => go('/customer/appointments/' + encodeURIComponent(idOf(nextVisit)))}>
+        <SmallIcon icon={CalendarDays} /><View style={s.grow}>
+          <Text style={s.heading}>Lịch nhận kho sắp tới</Text>
+          <Text style={s.secondary}>{formatDate(text(nextVisit, 'scheduledAt'), true)} · {nextVisit.status === 'CONFIRMED' ? 'Đã xác nhận lịch' : 'Chờ xác nhận lịch'}</Text>
+          {text(nextVisit, 'reservation.reference') ? <Text style={s.secondary}>{text(nextVisit, 'reservation.reference')}</Text> : null}
+        </View><ChevronRight size={17} color={C.muted} />
+      </Pressable> : null}
 
       <View style={s.recent}>
         <View style={s.spread}><Text accessibilityRole="header" style={[s.sectionTitle, s.grow]}>Đơn đặt gần đây</Text>
@@ -219,7 +241,8 @@ export default function CustomerHomeScreen() {
         {reservations.loading ? <LoadingState layout="compact" /> : reservations.error ? <ErrorState message={reservations.error} onRetry={reservations.refresh} />
           : recent.length ? recent.map(row => <Pressable key={idOf(row)} accessibilityRole="button" onPress={() => go('/customer/reservations/' + encodeURIComponent(idOf(row)))} style={s.booking}>
             <SmallIcon icon={Box} /><View style={s.grow}><Text style={s.heading}>{storageName(row) || 'Đơn đặt kho'}</Text>
-              <View style={s.bookingMeta}><StatusBadge status={String(row.status)} displayLabel={row.status === 'PENDING' ? 'Chờ xác nhận' : undefined} />
+              <Text style={s.secondary}>{text(row, 'reference', 'id')}</Text>
+              <View style={s.bookingMeta}><StatusBadge status={String(row.status)} displayLabel={bookingStatusText[String(row.status)]} />
                 {text(row, 'createdAt') ? <Text style={s.secondary}>Đặt {formatDate(text(row, 'createdAt'))}</Text> : null}</View>
             </View><ChevronRight size={17} color={C.muted} />
           </Pressable>) : <Text style={s.secondary}>Bạn chưa có đơn đặt kho.</Text>}

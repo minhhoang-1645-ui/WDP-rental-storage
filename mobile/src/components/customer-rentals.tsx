@@ -17,7 +17,7 @@ import { customerRentalActions } from '@/portals/actions';
 import { supportPath } from '@/components/customer-support';
 import type { FormAction } from '@/operations/form';
 import { formatDate } from '@/utils/format';
-import { currentTimeMs } from '@/utils/calendar-date';
+import { currentTimeMs, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
 
 type Selection = { rental: Row; contract: Row };
 
@@ -32,8 +32,10 @@ function rentalName(rental: Row) {
   return text(rental, 'storageType.name') || 'Kho của bạn';
 }
 
-function RentalStatus({ rental }: { rental: Row }) {
-  return <StatusBadge status={rental.isOverdue || rental.rentalState === 'OVERDUE' ? 'OVERDUE' : 'ACTIVE'} />;
+function RentalStatus({ rental, contract }: Selection) {
+  const end = text(contract, 'endDate');
+  const overdue = isCalendarDate(end) ? vietnamCalendarDate() >= end : rental.isOverdue || rental.rentalState === 'OVERDUE';
+  return <StatusBadge status={overdue ? 'OVERDUE' : 'ACTIVE'} />;
 }
 
 function RentalDetail({ rental, contract, product, onRefresh }: Selection & { product: Row; onRefresh: () => void }) {
@@ -64,12 +66,12 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
   ];
   return <>
     <View style={styles.summary}>
-      <View style={styles.titleRow}><Text style={[s.section, styles.grow]}>{rentalName(rental)}</Text><RentalStatus rental={rental} /></View>
+      <View style={styles.titleRow}><Text style={[s.section, styles.grow]}>{rentalName(rental)}</Text><RentalStatus rental={rental} contract={contract} /></View>
       {unitCode ? <Text style={s.secondary}>{unitCode}</Text> : null}
       <CustomerInfoGrid values={[
-        ['Kích thước', text(product, 'dimensions')], ['Diện tích', text(product, 'floorArea')],
-        ['Vị trí', locationOf(contract)], ['Bắt đầu thuê', formatDate(text(contract, 'startDate'))],
+        ['Mã hợp đồng', text(contract, 'contractCode')], ['Bắt đầu thuê', formatDate(text(contract, 'startDate'))],
         ['Hạn thuê đến', formatDate(text(contract, 'endDate') || text(rental, 'effectiveEndDate'))],
+        ['Vị trí', locationOf(contract)], ['Kích thước', text(product, 'dimensions')], ['Diện tích', text(product, 'floorArea')],
       ]} />
     </View>
     <View style={styles.shortcuts}>
@@ -125,7 +127,7 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
   const refresh = () => { rentals.refresh(); catalog.refresh(); };
   const unavailable = Boolean(initialRentalId && (rentalContractId ? !selection : !group.length));
   return <>
-    <Stack.Screen options={{ title: selection || rentalContractId ? 'Chi tiết kho' : 'Kho thuê',
+    <Stack.Screen options={{ title: selection || rentalContractId ? 'Chi tiết kho' : 'Kho đang thuê',
       headerTitleAlign: 'center', headerTitleStyle: { fontSize: 20, fontWeight: '700', color: C.navy },
       headerBackVisible: Boolean(initialRentalId) }} />
     <ScrollView style={styles.screen} contentContainerStyle={s.page} contentInsetAdjustmentBehavior="automatic"
@@ -135,21 +137,22 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
         : selection ? <RentalDetail key={idOf(selection.contract)} {...selection} product={findProduct(selection.rental)} onRefresh={rentals.refresh} />
         : unavailable ? <>
           <EmptyState title="Kho này không còn trong danh sách đang thuê" message="Về danh sách để chọn kho khác." />
-          <CustomerActionRow title="Về Kho thuê" path="/customer/rentals" />
+          <CustomerActionRow title="Về danh sách kho đang thuê" path="/customer/rentals" />
         </> : group.length ? <>
           <View style={styles.titleRow}><Text accessibilityRole="header" style={[s.section, styles.grow]}>Kho đang thuê</Text><Text style={s.secondary}>{group.length} kho</Text></View>
           {group.map(({ rental, contract }) => {
-            const dimensions = text(findProduct(rental), 'dimensions', 'floorArea');
-            const metadata = [text(rental, 'facility.name'), locationOf(contract), dimensions].filter(Boolean).join(' · ');
+            const contractCode = text(contract, 'contractCode');
+            const dates = [text(contract, 'startDate'), text(contract, 'endDate') || text(rental, 'effectiveEndDate')]
+              .filter(Boolean).map(value => formatDate(value)).join(' – ');
             return <Pressable key={idOf(contract)} accessibilityRole="button"
               onPress={() => router.push(('/customer/rentals/' + encodeURIComponent(idOf(rental)) + '?rentalContractId=' + encodeURIComponent(idOf(contract))) as Href)}
               style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
               <View style={styles.icon}><Warehouse size={20} color={C.navy} /></View>
               <View style={styles.grow}>
-                <View style={styles.titleRow}><Text style={[s.section, styles.grow]}>{rentalName(rental)}</Text><RentalStatus rental={rental} /></View>
-                {text(contract, 'unit.unitCode') ? <Text style={s.secondary}>{text(contract, 'unit.unitCode')}</Text> : null}
-                {metadata ? <Text style={s.secondary}>{metadata}</Text> : null}
-                <Text style={styles.endDate}>Hạn thuê {formatDate(text(contract, 'endDate') || text(rental, 'effectiveEndDate'))}</Text>
+                <View style={styles.titleRow}><Text style={[s.section, styles.grow]}>{rentalName(rental)}</Text><RentalStatus rental={rental} contract={contract} /></View>
+                {text(contract, 'unit.unitCode') ? <Text style={styles.endDate}>{text(contract, 'unit.unitCode')}</Text> : null}
+                {contractCode ? <Text style={s.secondary}>Hợp đồng · {contractCode}</Text> : null}
+                {dates ? <Text style={s.secondary}>{dates}</Text> : null}
               </View>
               <ChevronRight size={17} color={C.muted} />
             </Pressable>;

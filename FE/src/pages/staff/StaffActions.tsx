@@ -29,8 +29,9 @@ export function StaffActions({
   onSuccess: (message: string, result?: Row) => void;
 }) {
   const { user } = useAuth();
-  const [busy, setBusy] = useState(false),
+  const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
+  const busy = pendingAction !== undefined;
   const lock = useRef(false);
   const returnRequirementsId = useId();
   const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
@@ -60,7 +61,7 @@ export function StaffActions({
       return;
     }
     lock.current = true;
-    setBusy(true);
+    setPendingAction(unitId);
     setError('');
     try {
       const result = await mutate(`${root}/units/${encodeURIComponent(unitId)}/handover`, 'PATCH', {
@@ -72,7 +73,7 @@ export function StaffActions({
       setError(caught instanceof Error ? caught.message : 'Không thể lưu kết quả bàn giao kho.');
     } finally {
       lock.current = false;
-      setBusy(false);
+      setPendingAction(undefined);
     }
   }
   const run = async (
@@ -87,7 +88,7 @@ export function StaffActions({
       if (issue) { setError(issue); return; }
     }
     lock.current = true;
-    setBusy(true);
+    setPendingAction(suffix);
     setError("");
     try {
       const result = await mutate(root + suffix, method, input, idempotent);
@@ -105,7 +106,7 @@ export function StaffActions({
       );
     } finally {
       lock.current = false;
-      setBusy(false);
+      setPendingAction(undefined);
     }
   };
   const submit = (
@@ -205,7 +206,9 @@ export function StaffActions({
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
               {tracksUnits && !allUnitsRecorded && <p role="status">Đã ghi nhận {physicalUnits.filter(unit => progress.has(unit.id)).length}/{physicalUnits.length} kho.</p>}
-              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
+              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded} aria-busy={pendingAction === '/complete-handover'}>
+                {pendingAction === '/complete-handover' ? 'Đang ghi nhận bàn giao…' : 'Xác nhận đã bàn giao giấy tờ và chìa khóa'}
+              </button>
             </form>
           ))}
         {resource === "returns" && (

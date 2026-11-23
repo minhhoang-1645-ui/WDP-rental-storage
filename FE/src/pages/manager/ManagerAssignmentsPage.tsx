@@ -178,7 +178,7 @@ export function ManagerAssignmentsPage() {
   const columns: StaffColumn<Task>[] = [
     { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
     { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}</> },
-    { key: 'staff', label: 'Nhân viên', cell: task => {
+    { key: 'staff', label: 'Nhân viên phụ trách', cell: task => {
       const assigned = first(task.row, 'assignedStaff.fullName');
       return <><strong>{assigned || 'Chưa phân công'}</strong>
         {assigned && assignmentNeedsAttention(task.kind, task.row) && <small>Cần đổi nhân viên</small>}
@@ -215,9 +215,9 @@ export function ManagerAssignmentsPage() {
           <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
             options={[[ '', 'Tất cả' ], ...knownStaff]} />
           <details className="manager-assignment-filter-more" open={kind !== 'all' || assignment !== 'all' || undefined}>
-            <summary>Bộ lọc nâng cao</summary>
+            <summary>Loại công việc và phân công</summary>
             <div>
-              <ManagerTableFilter label="Nhóm" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
+              <ManagerTableFilter label="Loại công việc" value={kind} onChange={value => update('kind', value === 'all' ? '' : value)}
                 options={[[ 'all', 'Tất cả' ], ...workKinds.map(value => [value, workName(value)] as [string, string])]} />
               <ManagerTableFilter label="Phân công" value={assignment} onChange={value => update('assignment', value === 'all' ? '' : value)}
                 options={[[ 'all', 'Tất cả' ], ['unassigned', 'Chưa phân công'], ['attention', 'Cần giao / đổi người'], ['assigned', 'Đã phân công']]} />

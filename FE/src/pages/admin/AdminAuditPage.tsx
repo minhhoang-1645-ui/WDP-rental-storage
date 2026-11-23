@@ -6,9 +6,10 @@ import { useAuth } from '../../auth/auth-context';
 import { useInternalListResource } from '../../components/workspace/useInternalListResource';
 import { date, label } from '../../components/manager/portal-data';
 import { Empty, Facts, LoadState, PageHeader, Pagination, RefreshStatus, Status } from '../../components/manager/PortalUi';
-import { auditActor, auditTitle, type AuditEvent } from './audit-labels';
+import { auditActor, auditResource, auditTitle, type AuditEvent } from './audit-labels';
 
 const auditFilterKeys = ['search', 'role', 'from', 'to'] as const;
+const outcomeText = (outcome: unknown) => outcome === 'SUCCESS' ? 'Thành công' : outcome === 'FAILURE' ? 'Thất bại' : '';
 
 export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' }) {
   const { user } = useAuth();
@@ -75,7 +76,9 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
           ['Thời gian (UTC+7)', <time key="time" dateTime={event.createdAt}>{date(event.createdAt, true)}</time>],
           ['Người thực hiện', auditActor(event)],
           ...(login && event.actorEmail && event.actorEmail !== auditActor(event) ? [['Email', event.actorEmail]] as [string, string][] : []),
-          ['Vai trò', event.actorRole ? label(event.actorRole) : 'Chưa xác thực'],
+          ['Vai trò', event.actorRole ? label(event.actorRole) : 'Không ghi nhận'],
+          ...(outcomeText(event.outcome) ? [['Kết quả', outcomeText(event.outcome)] as [string, string]] : []),
+          ...(!login && !event.targetAccount ? [['Đối tượng', auditResource(event.resource)] as [string, string]] : []),
           ...(event.targetAccount && event.resourceId ? [['Tài khoản liên quan', <Link key="account" to={`/admin/users/${encodeURIComponent(event.resourceId)}`}>{event.targetAccount.fullName}</Link>]] as [string, React.ReactNode][] : []),
         ]} />
       </section> : data.data && <Empty title={login ? 'Không tìm thấy sự kiện đăng nhập' : 'Không tìm thấy hoạt động'} description="Mở nhật ký để xem các sự kiện hiện có." />}
@@ -103,13 +106,13 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
           <DetailRow key={event.id} detail={{ to: eventPath(event.id), label: `Xem sự kiện ${auditTitle(event)} · ${auditActor(event)} · ${date(event.createdAt, true)}` }}>
             <td><time dateTime={event.createdAt}>{date(event.createdAt, true)}</time></td>
             <td><strong>{auditActor(event)}</strong>{event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}</td>
-            <td>{event.actorRole ? label(event.actorRole) : 'Chưa xác thực'}</td>
+            <td>{event.actorRole ? label(event.actorRole) : 'Không ghi nhận'}</td>
             <td>
               <strong className={login && event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{auditTitle(event)}</strong>
               {!login && event.targetAccount && event.resourceId && <small>
                 Tài khoản <Link className="audit-target-link" to={`/admin/users/${encodeURIComponent(event.resourceId)}`}>{event.targetAccount.fullName}</Link>
               </small>}
-              {!login && event.outcome === 'FAILURE' && <small className="audit-failure">Thất bại</small>}
+              {!login && outcomeText(event.outcome) && <small className={event.outcome === 'FAILURE' ? 'audit-failure' : undefined}>{outcomeText(event.outcome)}</small>}
             </td>
           </DetailRow>
         ))}

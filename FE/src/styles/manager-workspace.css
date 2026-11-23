@@ -28,7 +28,7 @@
   align-items: stretch;
   gap: var(--space-8);
   min-width: 0;
-  min-height: 142px;
+  min-height: 124px;
   padding: var(--panel-padding);
   border-radius: 12px;
 }
@@ -307,7 +307,7 @@
 .inventory-unit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .inventory-type-preview { margin: 0; color: var(--workspace-secondary); font-size: .875rem; }
 .assignment-dialog .staff-assignee-picker { min-height: 0; }
-.assignment-dialog .assignment-staff-list { max-height: min(32dvh, 19rem); overflow: auto; overscroll-behavior: contain; padding: 4px; }
+.assignment-dialog .assignment-staff-list { padding: 4px; }
 .assignment-dialog .assignment-staff-option { grid-template-columns: auto minmax(0, 1fr) auto; padding: 6px 8px; }
 .assignment-dialog .assignment-staff-option > small { grid-column: auto; text-align: end; }
 @media (max-width: 650px) {
@@ -315,12 +315,6 @@
   .manager-assignment-filters > .portal-search { grid-column: 1 / -1; }
   .inventory-unit-fields { grid-template-columns: minmax(0, 1fr); }
   .workspace-themed[data-workspace-role="manager"] .manager-unit-list .staff-table-options > .portal-search { flex-basis: 100%; }
-}
-@media (min-height: 580px) {
-  .assignment-dialog :is(.portal-dialog-body, .portal-form, .staff-assignee-picker) { display: flex; flex-direction: column; min-height: 0; }
-  .assignment-dialog .portal-dialog-body { overflow: hidden; }
-  .assignment-dialog .portal-dialog-body > :not(.portal-form), .assignment-dialog .staff-assignee-picker > :not(fieldset) { flex-shrink: 0; }
-  .assignment-dialog .assignment-staff-list { min-height: 0; }
 }
 @media print {
   .manager-unit-detail .record-disclosure::details-content { content-visibility: visible; }

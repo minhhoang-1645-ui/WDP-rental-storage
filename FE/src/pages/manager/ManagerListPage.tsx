@@ -215,6 +215,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;
+  if (managerTable === 'payments') description = 'Các khoản đã thu và ghi nhận vào hệ thống. Thông báo chuyển khoản đang chờ xác minh chưa được tính tại đây.';
   const toolbar = <>
         <label className="field-label portal-search">
           Tìm kiếm
@@ -409,9 +410,9 @@ export function ManagerListPage({ resource }: { resource: string }) {
                         : "Thời gian / Chi tiết"}
                     </th>
                     <th>Trạng thái</th>
-                    <th>
+                    {user?.role !== 'MANAGER' && <th>
                       <span className="sr-only">Mở chi tiết</span>
-                    </th>
+                    </th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -650,7 +651,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         <Status value={row.status ?? row.rentalState ?? row.accountStatus} />
         {needsStaff && <small className="record-attention">Nhân viên kiểm tra ngoại lệ</small>}
       </td>
-      <td>
+      {user?.role !== 'MANAGER' && <td>
         <Link
           className="manager-open"
           aria-label={`Mở ${code(row)}`}
@@ -658,7 +659,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         >
           <span>Xem chi tiết</span><ArrowRight size={17} />
         </Link>
-      </td>
+      </td>}
     </DetailRow>
   );
 }

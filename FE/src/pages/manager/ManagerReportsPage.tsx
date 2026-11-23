@@ -184,7 +184,7 @@ export function ManagerReportsPage() {
           onClick={refresh}><RefreshCw size={16} aria-hidden="true" />Làm mới</button>
       </div>
     </header>
-    <p className="manager-report-range">{rangeLabel} <small>Giờ Việt Nam</small></p>
+    <p className="manager-report-range" aria-live="polite">{rangeLabel} <small>Giờ Việt Nam (UTC+7)</small></p>
     {period === 'custom' && <form className="manager-report-custom" data-wdp-draft="ignore" onSubmit={event => {
       event.preventDefault();
       if (!invalidDraft) {

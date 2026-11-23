@@ -51,6 +51,7 @@ const pendingSettlement = { ...refund, id: 'pending-deposit', settlementCode: 'D
 const depositHistory = Array.from({ length: 21 }, (_, index) => ({ ...refund, id: `deposit-${index}`, settlementCode: `DEP-HISTORY-${String(index).padStart(2, '0')}`, status: 'SETTLED' }));
 
 const quote = { paymentPlan: 'PAY_MONTHLY', billingMode: 'MONTHLY', termMonths: 3, monthlyUnitPrice: 1500000, baseRentalAmount: 4500000, discountPercent: 0, discountAmount: 0, rentalAmount: 4500000, depositAmount: 1500000, purchaseAddOnAmount: 0, rentalAddOnAmount: 0, quotedTotalAmount: 6000000, initialPaymentBreakdown: { rentalAmount: 1500000, depositAmount: 1500000, purchaseAddOnAmount: 0, rentalAddOnAmount: 0, totalAmount: 3000000, remainingAmount: 3000000 } };
+const contract = { ...invoice.contracts[0], status: 'ACTIVE', reservation: invoice.reservation, storageUnit: physicalUnit, reservationPricing: quote };
 await context.addInitScript(() => localStorage.setItem('wdp-auth-token-v1', 'fixture-MANAGER'));
 await context.route('**/*', async route => {
   const request = route.request();
@@ -135,6 +136,8 @@ await context.route('**/*', async route => {
   }] : []);
   if (path === 'manager/early-return-requests') return sendPage([earlyReturn, earlyReturnHistory]);
   if (path === 'manager/invoices') return sendPage([invoice]);
+  if (path === 'manager/contracts') return sendPage([contract]);
+  if (path === 'manager/contracts/contract') return route.fulfill({ json: contract });
   if (path === 'manager/payments') return sendPage([payment]);
   if (path === 'manager/units') return sendPage([physicalUnit]);
   if (path === 'manager/additional-services/inventory') return route.fulfill({ json: [{ serviceId: 'addon', rentalCapacity: 5 }] });
@@ -623,6 +626,19 @@ async function verifyManagerWorkspace() {
   await page.getByText('Dự kiến các kỳ tiếp theo', { exact: true }).waitFor();
   await page.getByText('Xem chi tiết báo giá', { exact: true }).click();
   assert.equal(await quoteDetails.getAttribute('open'), null);
+  await page.goto(`${base}/manager/operations/contracts`);
+  const contractRow = page.getByRole('row').filter({ hasText: contract.contractCode });
+  await contractRow.getByText(contract.contractCode, { exact: true }).waitFor();
+  assert.equal(await contractRow.getByText('Xem chi tiết', { exact: true }).count(), 0);
+  await contractRow.getByRole('button', { name: /Sao chép/ }).click();
+  assert.equal(new URL(page.url()).pathname, '/manager/operations/contracts');
+  await contractRow.getByRole('link', { name: /Xem chi tiết hồ sơ/ }).press('Enter');
+  await page.waitForURL('**/manager/operations/contracts/contract');
+  await page.getByText('Dự kiến thanh toán lần đầu', { exact: true }).waitFor();
+  await page.getByText('Hóa đơn theo kỳ', { exact: true }).click();
+  await page.getByRole('link', { name: /Xem hóa đơn của đơn R-TEST/ }).click();
+  await page.waitForURL(url => url.pathname === '/manager/operations/invoices' && url.searchParams.get('search') === 'R-TEST');
+  await invoiceRow.waitFor();
   assert(listQueries.some(query => query.path === 'manager/deposit-settlements' && query.page === 2 && query.limit === 10 && query.status === 'SETTLED'));
   assert.deepEqual(retiredRequests, []);
   assert.deepEqual(errors, []);

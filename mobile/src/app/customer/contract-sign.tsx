@@ -26,7 +26,8 @@ export default function ContractSign() {
   const pad = useRef<SignaturePadHandle>(null);
   const lock = useRef(false);
   const [agreed, setAgreed] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<'send' | 'verify' | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState('');
   const [image, setImage] = useState('');
   const [receipt, setReceipt] = useState<Receipt>();
@@ -51,7 +52,7 @@ export default function ContractSign() {
     if (lock.current || !agreed || !user || !path || !row || !reviewed || !canSignContract(row)) return;
     if (verify ? !receipt || otp.length !== otpLength : !emailReady || currentTimeMs() < resendAt) return;
     lock.current = true;
-    setBusy(true);
+    setOperation(verify ? 'verify' : 'send');
     setError('');
     try {
       const signatureImage = image || await pad.current?.capture();
@@ -73,7 +74,7 @@ export default function ContractSign() {
       setError(caught instanceof Error ? caught.message : 'Chưa xác nhận được chữ ký.');
     } finally {
       lock.current = false;
-      setBusy(false);
+      setOperation(null);
     }
   }
 
@@ -102,13 +103,13 @@ export default function ContractSign() {
             </View>
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <Pressable accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void submit(false)} style={styles.center}>
-            <Text style={remaining > 0 ? s.secondary : s.link}>{remaining > 0 ? 'Gửi lại sau ' + remaining + ' giây' : 'Không nhận được mã? Gửi lại mã'}</Text>
+          <Pressable accessibilityRole="button" disabled={busy || remaining > 0 || !emailReady} onPress={() => void submit(false)} style={styles.center}>
+            <Text style={remaining > 0 || busy || !emailReady ? s.secondary : s.link}>{operation === 'send' ? 'Đang gửi lại mã…' : remaining > 0 ? 'Gửi lại sau ' + remaining + ' giây' : emailReady ? 'Gửi lại mã qua email' : 'Chưa thể gửi lại mã qua email'}</Text>
           </Pressable>
           <View style={styles.notice}><Info size={20} color="#0758DC" />
             <Text style={[s.secondary, { flex: 1 }]}>Hợp đồng được ký sau khi hệ thống xác nhận mã hợp lệ.</Text>
           </View>
-          <Button title={busy ? 'Đang xử lý…' : 'Xác nhận ký'} disabled={busy || otp.length !== otpLength} onPress={() => void submit(true)} />
+          <Button title={operation === 'verify' ? 'Đang xác nhận chữ ký…' : 'Xác nhận ký'} disabled={busy || otp.length !== otpLength} onPress={() => void submit(true)} />
           <Pressable accessibilityRole="button" disabled={busy} style={styles.center} onPress={() => {
             setReceipt(undefined); setImage(''); setOtp(''); setAgreed(false); setError('');
           }}><Text style={s.link}>Vẽ lại chữ ký</Text></Pressable>

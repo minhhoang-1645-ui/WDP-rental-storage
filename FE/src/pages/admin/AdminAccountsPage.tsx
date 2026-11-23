@@ -1,5 +1,5 @@
-import { Ellipsis, Eye, EyeOff, Plus, RefreshCw, UserRoundCheck, UserRoundX, X } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { Ellipsis, Eye, EyeOff, ListFilter, Plus, RefreshCw, UserRoundCheck, UserRoundX, X } from 'lucide-react';
+import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { AccountRole } from './AccountRole';
 import { apiRequest } from '../../services/api';
@@ -10,6 +10,7 @@ import { mutate } from '../../services/portal';
 import { useInternalListResource } from '../../components/workspace/useInternalListResource';
 import { InternalPagination } from '../../components/workspace/InternalPagination';
 import { StaffTaskTable, TablePopover, type StaffColumn } from '../../components/workspace/StaffTaskTable';
+import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { date, first, label, type Row } from '../../components/manager/portal-data';
 import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 
@@ -108,13 +109,14 @@ export function AdminAccountsPage() {
       const name = first(row, 'fullName', 'email');
       return <>
         <strong>{name}</strong>
-        <small>{first(row, 'email')}</small>
+        {first(row, 'email') !== name && <small>{first(row, 'email')}</small>}
         {id === user?.id && <small>Tài khoản của bạn</small>}
       </>;
     } },
     { key: 'role', label: 'Vai trò', cell: row => <AccountRole value={row.role} /> },
     { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.accountStatus} /> },
     { key: 'date', label: 'Ngày tạo', optional: true, sort: { direction: sort === 'oldest' ? 'ascending' : sort === 'newest' ? 'descending' : 'none', toggle: () => change('sort', sort === 'oldest' ? 'newest' : 'oldest') }, cell: row => date(row.createdAt, true) },
+    { key: 'code', label: 'Mã tài khoản', optional: true, cell: row => <CopyRecordCode value={first(row, 'id')} label="Mã tài khoản" showLabel={false} /> },
     { key: 'actions', label: 'Thao tác', cell: row => {
       if (!eligible.includes(row)) return null;
       const path = accountDetailPath(first(row, 'id'));
@@ -149,7 +151,7 @@ export function AdminAccountsPage() {
       <label><span className="admin-filter-label">Trạng thái</span><select aria-label="Trạng thái" value={status} onChange={event => change('status', event.target.value)}>
         <option value="">Tất cả</option>{Object.entries(statuses).map(([value, name]) => <option key={value} value={value}>{name}</option>)}
       </select></label>
-      <TablePopover name="Lọc theo vai trò" trigger={<><Plus size={15} aria-hidden="true" />{roles.includes(role) ? label(role) : 'Vai trò'}</>}>
+      <TablePopover name="Lọc theo vai trò" trigger={<><ListFilter size={15} aria-hidden="true" />{roles.includes(role) ? label(role) : 'Vai trò'}</>}>
         {['', ...roles].map(value =>
           <button type="button" key={value} aria-pressed={role === value} onClick={event => {
             event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
@@ -167,7 +169,7 @@ export function AdminAccountsPage() {
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
     {data.data && <>
       {data.data.items.length ? <StaffTaskTable title="Danh sách tài khoản" items={data.data.items} columns={columns} rowKey={row => first(row, 'id')} rowDetail={row => ({ to: accountDetailPath(first(row, 'id')), label: `Xem chi tiết tài khoản ${first(row, 'fullName', 'email')}` })} selected={row => selectedIds.has(first(row, 'id'))} />
-        : <Empty title="Không tìm thấy tài khoản" />}
+        : <Empty title="Không tìm thấy tài khoản" description={search || role || status ? 'Thử đổi từ khóa hoặc xóa bộ lọc.' : undefined} />}
       <InternalPagination page={page} limit={limit} total={data.data.total} showBoundaryControls
         onChange={value => change('page', String(value))} onLimitChange={value => change('limit', String(value))} />
     </>}
@@ -204,13 +206,19 @@ function CreateUser({
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [fieldError, setFieldError] = useState<{ field: 'email' | 'confirmPassword'; message: string }>();
+  const errorId = useId();
   const lock = useRef(false);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current) return;
     const data = new FormData(event.currentTarget);
+    setError('');
+    setFieldError(undefined);
     if (data.get('password') !== data.get('confirmPassword')) {
-      setError('Mật khẩu xác nhận không khớp.');
+      setFieldError({ field: 'confirmPassword', message: 'Mật khẩu xác nhận không khớp.' });
+      const confirmation = event.currentTarget.elements.namedItem('confirmPassword');
+      if (confirmation instanceof HTMLInputElement) confirmation.focus();
       return;
     }
     lock.current = true;
@@ -227,18 +235,21 @@ function CreateUser({
         }),
       );
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Không thể tạo tài khoản.",
-      );
+      const message = caught instanceof Error ? caught.message : 'Không thể tạo tài khoản.';
+      if (/^email\b/i.test(message)) setFieldError({ field: 'email', message });
+      else setError(message);
     } finally {
       lock.current = false;
       setBusy(false);
     }
   };
+  const clearFieldError = (field: 'email' | 'confirmPassword') => {
+    if (fieldError?.field === field) setFieldError(undefined);
+  };
   return (
     <Modal title="Tạo tài khoản" onClose={onClose} busy={busy}>
       <form className="portal-form" onSubmit={submit}>
-
+        <p>Tất cả các trường đều bắt buộc.</p>
         {error && (
           <div className="booking-alert is-error" role="alert">
             {error}
@@ -263,7 +274,11 @@ function CreateUser({
               required
               maxLength={254}
               autoComplete="off"
+              aria-invalid={fieldError?.field === 'email' || undefined}
+              aria-describedby={fieldError?.field === 'email' ? errorId : undefined}
+              onChange={() => clearFieldError('email')}
             />
+            {fieldError?.field === 'email' && <small id={errorId} className="admin-field-error" role="alert">{fieldError.message}</small>}
           </label>
           <label className="field-label">
             Số điện thoại
@@ -293,6 +308,7 @@ function CreateUser({
                 minLength={8}
                 maxLength={200}
                 autoComplete="new-password"
+                onChange={() => clearFieldError('confirmPassword')}
               />
               <button
                 type="button"
@@ -307,7 +323,10 @@ function CreateUser({
           <label className="field-label">
             Xác nhận mật khẩu
             <input name="confirmPassword" type={showPassword ? 'text' : 'password'} required
-              autoComplete="new-password" maxLength={200} />
+              autoComplete="new-password" maxLength={200} aria-invalid={fieldError?.field === 'confirmPassword' || undefined}
+              aria-describedby={fieldError?.field === 'confirmPassword' ? errorId : undefined}
+              onChange={() => clearFieldError('confirmPassword')} />
+            {fieldError?.field === 'confirmPassword' && <small id={errorId} className="admin-field-error" role="alert">{fieldError.message}</small>}
           </label>
         </fieldset>
         <div className="portal-actions">

@@ -16,10 +16,17 @@ export function handoverCustomer(row: Row) {
   return first(row, 'reservation.customer.fullName', 'customer.fullName');
 }
 
+export function handoverStatusText(status: unknown) {
+  if (status === 'REQUESTED') return 'Chờ xác nhận lịch';
+  if (status === 'CONFIRMED') return 'Đã xác nhận lịch';
+  if (status === 'COMPLETED') return 'Đã bàn giao';
+}
+
 export function handoverUnits(row: Row) {
   return rows(row.allocatedUnits).flatMap(unit => {
     const code = first(unit, 'unitCode', 'unitNumber');
-    return code ? [{ id: first(unit, 'unitId'), code, location: [first(unit, 'floor'), first(unit, 'zone')].filter(Boolean).join(' · ') }] : [];
+    return code ? [{ id: first(unit, 'unitId'), code, contract: first(unit, 'contractCode'),
+      location: [first(unit, 'floor'), first(unit, 'zone')].filter(Boolean).join(' · ') }] : [];
   });
 }
 

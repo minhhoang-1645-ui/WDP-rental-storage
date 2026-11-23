@@ -6,7 +6,7 @@
 .workspace-themed[data-workspace-role="admin"] .admin-kpis .internal-kpi {
   gap: var(--space-8);
   padding: var(--panel-padding);
-  min-height: 132px;
+  min-height: 116px;
 }
 .admin-kpis .internal-kpi > strong { margin-block-start: auto; }
 .admin-kpis .internal-kpi svg { flex: none; color: var(--workspace-primary); }
@@ -231,11 +231,17 @@
   align-items: center;
   gap: 8px;
 }
+.admin-field-error {
+  grid-column: 2;
+  color: var(--workspace-error);
+}
+.admin-accounts .record-code-value { overflow-wrap: anywhere; }
 
 @media (max-width: 580px) {
   .admin-create-fields > .field-label {
     grid-template-columns: minmax(0, 1fr);
   }
+  .admin-field-error { grid-column: 1; }
 }
 
 .admin-accounts .staff-table-popover > button {

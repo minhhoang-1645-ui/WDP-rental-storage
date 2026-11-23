@@ -27,7 +27,7 @@ export default function CustomerLayout() {
       <Stack.Screen name="booking" options={{ title: 'Đặt kho' }} />
       <Stack.Screen name="size-finder" options={{ title: 'Ước tính diện tích kho' }} />
       <Stack.Screen name="floor-plan" options={{ title: 'Sơ đồ mặt bằng' }} />
-      <Stack.Screen name="rentals" options={{ title: 'Kho thuê', headerBackVisible: false, headerTitleStyle: {fontSize:22,fontWeight:'700'} }} />
+      <Stack.Screen name="rentals" options={{ title: 'Kho đang thuê', headerBackVisible: false, headerTitleStyle: {fontSize:22,fontWeight:'700'} }} />
       <Stack.Screen name="payments" options={{ title: 'Thanh toán' }} />
       <Stack.Screen name="payment-result" options={{ title: 'Thanh toán hóa đơn' }} />
       <Stack.Screen name="account" options={{ title: 'Tài khoản' }} />

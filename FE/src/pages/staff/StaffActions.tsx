@@ -82,7 +82,7 @@ export function StaffActions({
     input?: Row,
     idempotent = false,
   ) => {
-    if (lock.current || user?.role !== "STAFF") return;
+    if (lock.current || user?.role !== "FACILITY_STAFF") return;
     if (resource === 'appointments' && suffix === '/complete-handover') {
       const issue = handoverCompletionIssue(row.scheduledAt, undefined, handoverContracts, typeof handoverReadiness.leadDays === 'number' ? handoverReadiness.leadDays : undefined);
       if (issue) { setError(issue); return; }
@@ -156,7 +156,7 @@ export function StaffActions({
     );
   const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
   const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
-  const canFinalize = returnPaid && allInspected && remainingItems === 0 && pendingMovements === 0;
+  const canFinalize = returnPaid && allInspected;
   const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
   const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
   const stockMovementsPath = contractId
@@ -257,8 +257,8 @@ export function StaffActions({
                       <ul>
                         {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.' : 'Cần kiểm tra các hóa đơn liên quan đến kho trả.'}</li>}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
-                        {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
-                        {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
+                        {remainingItems > 0 && <li>Thông tin hàng hóa đã ghi nhận chỉ để tham khảo; đối chiếu hiện trạng kho khi nhận trả.</li>}
+                        {pendingMovements > 0 && <li>Có {pendingMovements} phiếu nhập/xuất để tham khảo, không chặn nhận trả kho.</li>}
                       </ul>
                       {(remainingItems > 0 || pendingMovements > 0) && <div className="portal-actions">
                         {remainingItems > 0 && <Link className="button-secondary" to={storedItemsPath}>Xem hàng đang lưu</Link>}

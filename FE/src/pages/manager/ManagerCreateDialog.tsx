@@ -15,7 +15,7 @@ export function ManagerCreateDialog({ onClose, onSuccess }: { onClose: () => voi
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (lock.current || !target || user?.role !== 'STAFF') return;
+    if (lock.current || !target || user?.role !== 'FACILITY_STAFF') return;
     lock.current = true;
     setBusy(true);
     setError('');

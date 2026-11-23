@@ -25,7 +25,8 @@ export function AdditionalServicePicker({ services: rawServices, selections, sta
     if (!validSelections.length) return;
     const controller = new AbortController();
     Promise.all(validSelections.map(selection => {
-      const query = new URLSearchParams({ quantity: String(selection.quantity) });
+      const service=services.find(item=>item.id===selection.serviceId);
+      const query = new URLSearchParams({ quantity: String(selection.quantity),...(service?.facilityId?{facilityId:service.facilityId}:{}) });
       if (selection.serviceStartDate) query.set('startDate', selection.serviceStartDate);
       if (selection.serviceEndDate) query.set('endDate', selection.serviceEndDate);
       return apiRequest<ServiceInventory>(`/additional-services/${encodeURIComponent(selection.serviceId)}/availability?${query}`, { signal: controller.signal, authenticated: false });

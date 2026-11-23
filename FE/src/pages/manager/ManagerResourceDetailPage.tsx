@@ -10,6 +10,6 @@ export function ManagerResourceDetailPage() {
   const { user } = useAuth();
   if (!canAccessManagerReview(user?.role ?? '', resource)) return <WorkspaceNotFound />;
   if (!Object.hasOwn(resources, resource)) return <WorkspaceNotFound />;
-  if (resource === 'units' && user?.role === 'MANAGER') return <ManagerUnitDetailPage key={id} />;
+  if (resource === 'units' && user?.role === 'FACILITY_MANAGER') return <ManagerUnitDetailPage key={id} />;
   return <ManagerDetailPage key={resource + id} resource={resource} />;
 }

@@ -15,7 +15,7 @@ async function verifiedRole(token: string) {
   let lookup = roleLookups.get(token);
   if (!lookup) {
     lookup = apiRequest<{ role: string }>('/auth/me', { expectedToken: token }).then(user => {
-      if (!['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) throw new ApiError('Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.', 502);
+      if (!['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role)) throw new ApiError('Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.', 502);
       return user.role;
     }).finally(() => roleLookups.delete(token));
     roleLookups.set(token, lookup);

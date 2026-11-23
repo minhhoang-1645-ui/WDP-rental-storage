@@ -31,8 +31,8 @@ export function ManagerAdditionalServicesPage() {
       placeholder={<TableSkeleton columns={['service', 'type', 'price', 'status', 'stock', 'actions']} />} />
     {resource.data && !resource.data.length && <Empty title="Chưa có dịch vụ bổ sung" />}
     {resource.data && <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Dịch vụ</th><th>Loại</th><th>Giá</th><th>Trạng thái</th><th>Tồn kho / Công suất</th><th>Thao tác</th></tr></thead><tbody>{items.map(item => {
-      const state = inventory.data?.find(entry => entry.serviceId === item.id);
-      return <DetailRow key={item.id} detail={{ open: () => setSelected(item), label: `Xem dịch vụ ${item.name}` }}>
+      const state = inventory.data?.find(entry => entry.serviceId === item.id && entry.facilityId===item.facilityId);
+      return <DetailRow key={item.id+item.facilityId} detail={{ open: () => setSelected(item), label: `Xem dịch vụ ${item.name}` }}>
         <td><strong>{item.name}</strong><small>{item.code}</small></td>
         <td>{item.kind === 'PURCHASE' ? 'Mua' : 'Thuê'} / {item.billingUnit === 'ONE_TIME' ? 'Một lần' : item.billingUnit === 'DAY' ? 'Ngày' : 'Tháng'}</td>
         <td>{money(item.unitPrice)}<small>{servicePriceBasis(item)}</small></td>
@@ -50,11 +50,17 @@ export function ManagerAdditionalServicesPage() {
       ['Mô tả', selected.description],
     ]} />}
     {active && <ServiceForm key={active === 'new' ? 'new' : active.id} item={active === 'new' ? null : active} onClose={() => setActive(null)} onSuccess={() => { setActive(null); setNotice('Đã lưu dịch vụ. Báo giá lịch sử được giữ nguyên.'); refresh(); }} />}
-    {stock && <InventoryForm key={stock.id} item={stock} state={inventory.data?.find(item => item.serviceId === stock.id)} onClose={() => setStock(null)} onSuccess={() => { setStock(null); setNotice('Đã cập nhật tồn kho qua hệ thống.'); refresh(); }} />}
+    {stock && <InventoryForm key={stock.id} item={stock} state={inventory.data?.find(item => item.serviceId === stock.id && item.facilityId===stock.facilityId)} onClose={() => setStock(null)} onSuccess={() => { setStock(null); setNotice('Đã cập nhật tồn kho qua hệ thống.'); refresh(); }} />}
   </section>;
 }
 
 function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | null; onClose: () => void; onSuccess: () => void }) {
+  const { user } = useAuth();
+  const facilities = useApiResource<{ facilities: Array<{ id: string; name: string }> }>(item ? null : '/manager/storage-types', user?.id);
+  const choices = facilities.data?.facilities ?? [];
+  const catalog=useApiResource<AdditionalService[]>(item?null:'/manager/additional-services/catalog',user?.id);
+  const [catalogId,setCatalogId]=useState('');
+  const catalogItem=catalog.data?.find(row=>row.id===catalogId);
   const [kind, setKind] = useState(item?.kind ?? 'PURCHASE');
   const [physicalUnit, setPhysicalUnit] = useState(item?.physicalUnit ?? '');
   const [billingUnit, setBillingUnit] = useState(item?.billingUnit ?? 'ONE_TIME');
@@ -64,22 +70,33 @@ function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | n
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (lock.current) return;
     const data = new FormData(event.currentTarget);
+    const fieldText = (name: string) => { const value = data.get(name); return typeof value === 'string' ? value.trim() : ''; };
     lock.current = true; setBusy(true); setError('');
     try {
-      await mutate(`/manager/additional-services${item ? '/' + encodeURIComponent(item.id) : ''}`, item ? 'PATCH' : 'POST', { code: String(data.get('code')).trim(), name: String(data.get('name')).trim(), description: String(data.get('description')).trim() || null, kind, billingUnit, ...(physicalUnit ? { physicalUnit } : {}), unitPrice: Number(data.get('unitPrice')), isActive: data.has('isActive') });
+      const target=item??catalogItem;
+      await mutate(`/manager/additional-services${target?'/'+encodeURIComponent(target.id)+(item?'':'/offerings'):''}`,item?'PATCH':'POST',
+        target?{facilityId:item?.facilityId??fieldText('facilityId'),unitPrice:Number(data.get('unitPrice')),isActive:data.get('isActive')==='on'}
+        :{facilityId:fieldText('facilityId'),code:fieldText('code'),name:fieldText('name'),description:fieldText('description'),kind,billingUnit,physicalUnit:physicalUnit||undefined,unitPrice:Number(data.get('unitPrice')),isActive:data.get('isActive')==='on'}); onSuccess();
       onSuccess();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được dịch vụ.'); }
     finally { lock.current = false; setBusy(false); }
   };
   return <Modal title={item ? 'Chỉnh sửa dịch vụ' : 'Tạo dịch vụ'} onClose={onClose} busy={busy}><form className="portal-form" onSubmit={submit}>
-    {error && <div className="booking-alert is-error" role="alert">{error}</div>}<fieldset disabled={busy}>
-      <label className="field-label">Mã dịch vụ<input name="code" required minLength={2} maxLength={50} pattern="[A-Za-z0-9_]{2,50}" defaultValue={item?.code} /></label>
-      <label className="field-label">Tên dịch vụ<input name="name" required minLength={2} maxLength={120} defaultValue={item?.name} /></label>
-      <label className="field-label">Mô tả<textarea name="description" maxLength={1000} defaultValue={item?.description ?? ''} /></label>
+    {error && <div className="booking-alert is-error" role="alert">{error}</div>}
+    {!item && <LoadState loading={facilities.loading} error={facilities.error} retry={facilities.refresh} />}
+    <fieldset disabled={busy || (!item && (!facilities.data || choices.length === 0))}>
+      {!item && facilities.data && <label className="field-label">Cơ sở<select name="facilityId" required defaultValue={choices.length === 1 ? choices[0].id : ''}><option value="">Chọn cơ sở được cấp quyền</option>{choices.map(facility => <option key={facility.id} value={facility.id}>{facility.name}</option>)}</select>{choices.length === 0 && <small>Chưa có quyền tại cơ sở. Liên hệ quản trị viên để được cấp quyền.</small>}</label>}
+      {!item && <label className="field-label">Danh mục chung<select value={catalogId} onChange={event=>setCatalogId(event.target.value)}><option value="">Tạo mặt hàng mới</option>{catalog.data?.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>}
+      {catalogItem&&<p>{catalogItem.name} · {catalogItem.code}. Giá và tồn chỉ áp dụng tại cơ sở đã chọn.</p>}
+      {!item&&!catalogItem&&<fieldset>
+      <label className="field-label">Mã dịch vụ<input name="code" required minLength={2} maxLength={50} pattern="[A-Za-z0-9_\-]{2,50}" defaultValue="" /></label>
+      <label className="field-label">Tên dịch vụ<input name="name" required minLength={2} maxLength={120} defaultValue="" /></label>
+      <label className="field-label">Mô tả<textarea name="description" maxLength={1000} defaultValue="" /></label>
       <label className="field-label">Loại<select value={kind} disabled={Boolean(item)} onChange={event => { const value = event.target.value as AdditionalService['kind']; setKind(value); setBillingUnit(value === 'PURCHASE' ? 'ONE_TIME' : 'DAY'); }}><option value="PURCHASE">Mua</option><option value="RENTAL">Thuê</option></select></label>
-      <label className="field-label">Đơn vị vật lý<select aria-label="Đơn vị vật lý" required={!item} value={physicalUnit} disabled={Boolean(item?.physicalUnit)} onChange={event => setPhysicalUnit(event.target.value)}><option value="">Chưa thiết lập</option>{serviceUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
+      <label className="field-label">Đơn vị vật lý<select aria-label="Đơn vị vật lý" required={!item} value={physicalUnit} disabled={false} onChange={event => setPhysicalUnit(event.target.value)}><option value="">Chưa thiết lập</option>{serviceUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
       <small>Đơn vị đã thiết lập được giữ cố định để không đổi nghĩa số lượng tồn. Dịch vụ cũ chưa có đơn vị cần được đối chiếu thực tế trước khi chọn.</small>
       <label className="field-label">Chu kỳ tính tiền<select value={billingUnit} onChange={event => setBillingUnit(event.target.value as AdditionalService['billingUnit'])}>{kind === 'PURCHASE' ? <option value="ONE_TIME">Một lần</option> : <><option value="DAY">Ngày</option><option value="MONTH">Tháng</option></>}</select></label>
+      </fieldset>}
       <label className="field-label">Giá đã duyệt (VND)<input name="unitPrice" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required defaultValue={item?.unitPrice ?? ''} /></label>
       <label className="portal-checkbox"><input type="checkbox" name="isActive" defaultChecked={item?.isActive ?? true} />Đang hoạt động</label>
       <button type="submit" className="button-primary">{busy ? 'Đang lưu…' : 'Lưu dịch vụ'}</button>
@@ -95,7 +112,7 @@ function InventoryForm({ item, state, onClose, onSuccess }: { item: AdditionalSe
     event.preventDefault(); if (lock.current) return;
     const value = Number(new FormData(event.currentTarget).get('quantity'));
     lock.current = true; setBusy(true); setError('');
-    try { await mutate(`/manager/additional-services/${encodeURIComponent(item.id)}/inventory`, 'PATCH', purchase ? { stockOnHand: value } : { rentalCapacity: value }); onSuccess(); }
+    try { await mutate(`/manager/additional-services/${encodeURIComponent(item.id)}/inventory`, 'PATCH', purchase ? { facilityId:item.facilityId, stockOnHand: value } : { facilityId:item.facilityId,rentalCapacity: value }); onSuccess(); }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không cập nhật được tồn kho.'); }
     finally { lock.current = false; setBusy(false); }
   };

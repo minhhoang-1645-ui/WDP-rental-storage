@@ -1,3 +1,4 @@
+import { AccountRoleEditor } from './AccountRoleEditor';
 import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -106,6 +107,7 @@ export function AdminAccountDetailPage() {
       <div role="tabpanel" id="admin-panel-permissions" aria-labelledby="admin-tab-permissions" hidden={tab !== 'permissions'}>
         <section className="manager-section admin-detail-panel">
           <AccountRoleAccess value={row.role} />
+          {id!==user?.id?<AccountRoleEditor id={id} currentRole={String(row.role)} onSaved={detail.refresh}/>:null}
           <div className="admin-access-status">
             <h3>Khóa và mở khóa tài khoản</h3>
             {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>

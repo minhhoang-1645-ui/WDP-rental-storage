@@ -17,6 +17,7 @@ export interface StorageSize {
 }
 
 export interface StorageListing {
+  facilityId?: string
   id: string
   code: string
   name: string

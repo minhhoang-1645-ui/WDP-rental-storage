@@ -15,7 +15,7 @@ import { date, first, label, type Row } from '../../components/manager/portal-da
 import { Empty, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 
 import { internalPageSize } from '../../utils/internal-pagination';
-const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
+const roles = ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'];
 const statuses = { ACTIVE: 'Đang hoạt động', DISABLED: 'Đã khóa' };
 type AccountStatus = keyof typeof statuses;
 type BulkResult = { changed: number; skipped: number; failures: { id: string; name: string; reason: string }[] };
@@ -202,7 +202,7 @@ function CreateUser({
   onClose: () => void;
   onSuccess: (row: Row) => void;
 }) {
-  const [role, setRole] = useState("STAFF");
+  const [role, setRole] = useState("FACILITY_STAFF");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -294,8 +294,8 @@ function CreateUser({
           <label className="field-label">
             Vai trò
             <select aria-label="Vai trò" value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="STAFF">Nhân viên</option>
-              <option value="MANAGER">Quản lý</option>
+              <option value="FACILITY_STAFF">Nhân viên</option>
+              <option value="FACILITY_MANAGER">Quản lý</option><option value="BUSINESS_OPERATIONS_MANAGER">Điều hành kinh doanh</option>
             </select>
           </label>
           <label className="field-label">

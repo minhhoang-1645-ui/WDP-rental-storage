@@ -1,4 +1,5 @@
 export interface AdditionalService {
+  facilityId?:string|null;
   id: string;
   code: string;
   name: string;

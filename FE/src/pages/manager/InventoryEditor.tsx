@@ -27,7 +27,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const locations = useApiResource<{ floors: string[]; zones: string[] }>(!type && !locked ? '/manager/unit-locations' : null, user?.id ?? '');
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || locked || user?.role !== 'MANAGER' || !type && !storageTypeId) return;
+    if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || !type && !storageTypeId) return;
     const fields = new FormData(event.currentTarget);
     const input: Row = Object.fromEntries(fields.entries());
     for (const key of type ? ['widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;

@@ -18,7 +18,7 @@ const number = new Intl.NumberFormat('vi-VN');
 const percent = new Intl.NumberFormat('vi-VN', { style: 'percent', maximumFractionDigits: 1 });
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const count = (value?: number) => isCount(value) ? number.format(value) : '—';
-const workTitles = new Map(activitySources('MANAGER').map(source => [source.kind, source.title]));
+const workTitles = new Map(activitySources('FACILITY_MANAGER').map(source => [source.kind, source.title]));
 const storageStatuses = [
   { key: 'occupied', label: 'Đang sử dụng', color: 'occupied' },
   { key: 'available', label: 'Sẵn sàng', color: 'available' },

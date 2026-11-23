@@ -1,6 +1,6 @@
 import { date } from '../../components/manager/portal-data';
 
-export type ClaimRole = 'CUSTOMER' | 'STAFF' | 'MANAGER';
+export type ClaimRole = 'STORAGE_CUSTOMER' | 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 export type CashCompensation = {
   status: 'NONE' | 'PENDING_REVIEW' | 'AWAITING_HANDOVER' | 'HANDED_OVER';
   approvedCompensationAmount: number | null;
@@ -49,14 +49,14 @@ export function claimTitle(description: string) {
 
 export function claimStatus(claim: Claim, role: ClaimRole) {
   if (claim.status === 'RESOLVED') return 'Hoàn tất';
-  if (role === 'MANAGER') {
+  if (role === 'FACILITY_MANAGER') {
     if (['REPORTED', 'INVESTIGATING'].includes(claim.status) && !claim.assignedStaff) return 'Chờ phân công';
     if (claim.status === 'INVESTIGATING') return claim.staffFacts ? 'Chờ quyết định' : 'Chờ kiểm tra';
   }
   if (claim.compensation?.status === 'AWAITING_HANDOVER') return 'Chờ giao tiền';
   if (claim.compensation?.status === 'HANDED_OVER') return 'Đã giao tiền';
   return {
-    REPORTED: role === 'CUSTOMER' ? 'Đã tiếp nhận' : 'Chờ kiểm tra',
+    REPORTED: role === 'STORAGE_CUSTOMER' ? 'Đã tiếp nhận' : 'Chờ kiểm tra',
     INVESTIGATING: 'Đang xử lý',
     APPROVED: 'Đã chấp thuận',
     REJECTED: 'Đã từ chối',
@@ -68,7 +68,7 @@ export function claimDate(value: string | undefined | null, includeTime = false)
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('/') : date(value, includeTime);
 }
 
-export const claimRoleLabels: Record<string, string> = { CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý' };
+export const claimRoleLabels: Record<string, string> = { STORAGE_CUSTOMER: 'Khách hàng', FACILITY_STAFF: 'Nhân viên', FACILITY_MANAGER: 'Quản lý' };
 export const claimEventLabels: Record<string, string> = {
   ASSIGNED: 'Phân công nhân viên', INSPECTED: 'Lưu kết quả kiểm tra', DECIDED: 'Lưu quyết định',
   'amend-decision': 'Sửa lý do quyết định', 'amend-resolution': 'Sửa kết quả đã thông báo',

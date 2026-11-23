@@ -62,17 +62,17 @@ export function ManagerListPage({ resource }: { resource: string }) {
     // A delayed render can still have the preceding query during rapid filter changes.
     if (params.toString() === new URLSearchParams(window.location.search).toString()) pendingParams.current = params;
   }, [params]);
-  const staffTable = user?.role === 'STAFF' && isStaffTableWorkflow(resource) ? resource : null;
+  const staffTable = user?.role === 'FACILITY_STAFF' && isStaffTableWorkflow(resource) ? resource : null;
   const staffAppointments = staffTable === 'appointments';
   const requestedView = params.get('agenda');
   const appointmentView = appointmentViews.find(([value]) => value === requestedView)?.[0];
   const [today, setToday] = useState(() => staffDay(Date.now()));
   const filterDate = staffAppointments && appointmentView === 'today' ? today : params.get('date') ?? '';
-  const managerTable = user?.role === 'MANAGER' && isManagerTaskResource(resource) ? resource : null;
+  const managerTable = user?.role === 'FACILITY_MANAGER' && isManagerTaskResource(resource) ? resource : null;
   const limit = internalPageSize(params);
   const search = params.get("search") ?? "";
-  const reviewOnly = user?.role === 'MANAGER' && isManagerReviewWorkflow(resource);
-  const staffTransferList = user?.role === 'STAFF' && resource === 'transfers';
+  const reviewOnly = user?.role === 'FACILITY_MANAGER' && isManagerReviewWorkflow(resource);
+  const staffTransferList = user?.role === 'FACILITY_STAFF' && resource === 'transfers';
   const statuses = staffTransferList ? ['APPROVED', 'COMPLETED'] : config?.statuses ?? [];
   const suppliedStatus = staffAppointments && appointmentView === 'completed' ? 'COMPLETED' : params.get('status') ?? '';
   const status = reviewOnly ? managerReviewStatus(resource) : staffTransferList && !statuses.includes(suppliedStatus) ? '' : suppliedStatus;
@@ -212,7 +212,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   }
   if (!config) return <Empty title="Không tìm thấy trang" />;
   const listTitle = staffTable === 'returns' ? 'Trả kho' : config.title;
-  let description = !managerTable && user?.role !== 'STAFF' ? config.description : undefined;
+  let description = !managerTable && user?.role !== 'FACILITY_STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;
   if (managerTable === 'payments') description = 'Các khoản đã thu và ghi nhận vào hệ thống. Thông báo chuyển khoản đang chờ xác minh chưa được tính tại đây.';
@@ -330,8 +330,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
     <section className={managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
       {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
-        {resource === 'units' && user?.role === 'MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
-        {user?.role === 'STAFF' && resource === 'maintenance' && (
+        {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
+        {user?.role === 'FACILITY_STAFF' && resource === 'maintenance' && (
           <button type="button" className="button-primary" onClick={() => setCreating(true)}>
             <Plus size={17} /> Báo vấn đề bảo trì
           </button>
@@ -410,7 +410,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
                         : "Thời gian / Chi tiết"}
                     </th>
                     <th>Trạng thái</th>
-                    {user?.role !== 'MANAGER' && <th>
+                    {user?.role !== 'FACILITY_MANAGER' && <th>
                       <span className="sr-only">Mở chi tiết</span>
                     </th>}
                   </tr>
@@ -481,10 +481,10 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
   const person = customer(row);
   const { user } = useAuth();
   const id = recordId(row);
-  const to = user?.role === 'STAFF' ? `/staff/${resource}/${encodeURIComponent(id)}` : detailPath(resource, row);
+  const to = user?.role === 'FACILITY_STAFF' ? `/staff/${resource}/${encodeURIComponent(id)}` : detailPath(resource, row);
   const identity = recordIdentity(row, resource);
   const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'stock-movements', 'rentals'].includes(resource);
-  const needsStaff = resource === 'reservations' && user?.role === 'STAFF' && row.status === 'PENDING';
+  const needsStaff = resource === 'reservations' && user?.role === 'FACILITY_STAFF' && row.status === 'PENDING';
   const information =
     resource === "units"
       ? first(row, "storageType.name")
@@ -651,7 +651,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
         <Status value={row.status ?? row.rentalState ?? row.accountStatus} />
         {needsStaff && <small className="record-attention">Nhân viên kiểm tra ngoại lệ</small>}
       </td>
-      {user?.role !== 'MANAGER' && <td>
+      {user?.role !== 'FACILITY_MANAGER' && <td>
         <Link
           className="manager-open"
           aria-label={`Mở ${code(row)}`}

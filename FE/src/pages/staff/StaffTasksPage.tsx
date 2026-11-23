@@ -1,9 +1,9 @@
 import { RefreshCw } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useActivity } from '../../activity/context';
 import { useAuth } from '../../auth/auth-context';
-import { date, first, label, type Row } from '../../components/manager/portal-data';
+import { useActivity } from '../../activity/context';
+import { date, label } from '../../components/manager/portal-data';
 import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffTaskPagination, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
@@ -11,13 +11,10 @@ import { handoverStatusText } from './staff-appointment';
 import { staffSourceNames, staffWorkItems } from './staff-work';
 import { DEFAULT_PAGE_SIZE, internalPageSize } from '../../utils/internal-pagination';
 import { normalizeSearch } from '../../utils/notification-tools';
-import { useApiResource } from '../../services/useApiResource';
 
 export function StaffTasksPage() {
-  const { user } = useAuth();
+  const {user}=useAuth();
   const activity = useActivity();
-  const responsibility = useApiResource<{ enabled: boolean; items: Row[] }>('/staff/assigned-units', user?.id, true);
-  const units = responsibility.data?.items.map(row => ({ id: first(row, 'storageUnit.id'), number: first(row, 'storageUnit.unitNumber') })) ?? [];
   const loading = activity.loading && activity.checking;
   const [params, setParams] = useSearchParams();
   const pendingParams = useRef(params);
@@ -67,7 +64,7 @@ export function StaffTasksPage() {
   const page = Math.min(Math.max(1, Math.floor(Number(params.get('page')) || 1)), Math.max(1, Math.ceil(filtered.length / limit)));
   const columns: StaffColumn<(typeof tasks)[number]>[] = [
     { key: 'task', label: 'Công việc', cell: task => <><strong>{task.title}</strong><CopyRecordCode value={task.entry.code} />
-      <small>{units.some(task.matchesUnit) ? 'Liên quan kho phụ trách' : 'Theo phân công nhiệm vụ'}</small></> },
+      <small>Theo nhiệm vụ được giao</small></> },
     { key: 'identity', label: 'Khách hàng / Kho', cell: task => <><strong>{task.customer || task.unit || '—'}</strong>{task.customer && task.unit && <small>Kho {task.unit}</small>}</> },
     { key: 'date', label: 'Lịch / cập nhật', sort: { direction: sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'asc' ? 'desc' : 'asc') },
       cell: task => <><span>{date(task.timestamp, true)}</span>{task.overdue && <small className="staff-table-overdue">Đã qua giờ</small>}</> },
@@ -82,7 +79,7 @@ export function StaffTasksPage() {
   ];
   return <section>
     <PageHeader title="Công việc của tôi">
-      <button type="button" className="button-secondary" disabled={activity.checking} onClick={() => { activity.refresh(); responsibility.refresh(); }}><RefreshCw size={16} />Làm mới</button>
+      <button type="button" className="button-secondary" disabled={activity.checking} onClick={() => { activity.refresh(); }}><RefreshCw size={16} />Làm mới</button>
       <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>
     <div className="portal-toolbar staff-table-toolbar">

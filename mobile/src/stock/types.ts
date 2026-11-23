@@ -1,4 +1,4 @@
-export type StockRole = 'CUSTOMER' | 'MANAGER' | 'STAFF';
+export type StockRole = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER' | 'FACILITY_STAFF';
 export interface StoredItem {
   photos?: string[];
   photoSource?: 'CUSTOMER_PROVIDED';

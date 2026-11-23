@@ -64,7 +64,9 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
         }
         const returnHome = expoGoCheckout.current === session.transactionId &&
           status.status === 'SUCCESS' && status.payment && !status.reconciliation;
-        if (returnHome && AppState.currentState === 'background') {
+        // AppState can change while the polling request is awaiting the server.
+        const isBackground = () => AppState.currentState === 'background';
+        if (returnHome && isBackground()) {
           scheduleNext();
           return;
         }

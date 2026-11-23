@@ -8,7 +8,7 @@ import { InternalPagination } from '../../components/workspace/InternalPaginatio
 
 type Overstay = { id: string; reservationId: string; contractCode: string; reference: string; overdueDays: number; endDate: string; customer: { fullName: string; phone: string }; storageUnit: { unitNumber: string; floor: string | null; zone: string | null }; storedItems: { id: string; name: string; balance: number; unit: string }[]; returnRequest: { id: string; status: string } | null };
 export function OverstayPage() {
-  const { user } = useAuth(), staff = user?.role === 'STAFF';
+  const { user } = useAuth(), staff = user?.role === 'FACILITY_STAFF';
   const [params, setParams] = useSearchParams();
   const page = Math.max(1, Math.floor(Number(params.get('page')) || 1));
   const setPage = (nextPage: number) => setParams({ page: String(nextPage) }, { replace: true });

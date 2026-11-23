@@ -1,3 +1,4 @@
+import { roleNamespace } from '../../role-names';
 import '../../styles/internal-web.css';
 import { listMemoryKey, useInternalListReturn } from '../workspace/internal-list-memory';
 import { safeLocalStorage, safeSessionStorage } from '../../services/browser-storage';
@@ -53,8 +54,8 @@ export function InternalPortalLayout({
   const notificationBack = useInternalListReturn(notificationInbox ?? '');
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
-  const profileMenu = themed && user && ['STAFF', 'MANAGER', 'ADMIN'].includes(user.role) ? user : null;
-  const sidebarKey = user?.role === 'ADMIN' ? 'nestbox-admin-sidebar' : user?.role === 'MANAGER' ? 'nestbox-manager-sidebar' : 'nestbox-staff-sidebar';
+  const profileMenu = themed && user && ['FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role) ? user : null;
+  const sidebarKey = user?.role === 'SYSTEM_ADMINISTRATOR' ? 'nestbox-admin-sidebar' : user?.role === 'FACILITY_MANAGER' ? 'nestbox-manager-sidebar' : 'nestbox-staff-sidebar';
   const [collapsed, setCollapsed] = useState(() => themed && safeLocalStorage.getItem(sidebarKey) === 'collapsed');
   function toggleSidebar() {
     safeLocalStorage.setItem(sidebarKey, collapsed ? 'expanded' : 'collapsed');
@@ -68,7 +69,7 @@ export function InternalPortalLayout({
     });
   };
   const mobile = useRef<HTMLDialogElement>(null);
-  const settingsPath = `/${user?.role.toLowerCase()}/settings`;
+  const settingsPath = `/${roleNamespace(user?.role ?? '')}/settings`;
   const openSettings = (section: 'profile' | 'security' | 'appearance') => {
     mobile.current?.close();
     navigate(`${settingsPath}/${section}`);
@@ -92,7 +93,7 @@ export function InternalPortalLayout({
     )
     .sort((a, b) => b.to.length - a.to.length)[0];
   const parent = navigation.find(item => item.to !== active?.to && matchesAlias(item, location.pathname));
-  const staff = user?.role === 'STAFF';
+  const staff = user?.role === 'FACILITY_STAFF';
   const staffSection = staff ? active ?? parent : undefined;
   const isStaffDetail = staffSection && staffSection.to !== '/staff' && (
     [staffSection.to, ...(parent?.match ?? [])].some(path => location.pathname.startsWith(path + '/'))
@@ -107,11 +108,11 @@ export function InternalPortalLayout({
   const brand: ReactNode = (
     <Link
       className="portal-brand"
-      aria-label={themed ? `NestBox Storage · ${user?.role === 'STAFF' ? 'Bàn làm việc' : 'Tổng quan'}` : undefined}
+      aria-label={themed ? `NestBox Storage · ${user?.role === 'FACILITY_STAFF' ? 'Bàn làm việc' : 'Tổng quan'}` : undefined}
       to={
-        user?.role === "ADMIN"
+        user?.role === "SYSTEM_ADMINISTRATOR"
           ? "/admin"
-          : user?.role === "STAFF"
+          : user?.role === "FACILITY_STAFF"
             ? "/staff"
             : "/manager"
       }
@@ -140,13 +141,13 @@ export function InternalPortalLayout({
       {groups.map(({ group, items }, index) => {
         const active = items.some(item => (item.end ? location.pathname === item.to : matchesPath(location.pathname, item.to))
           || matchesAlias(item, location.pathname));
-        const count = staff || user?.role === 'MANAGER' && group === 'Quản lý' ? 0
+        const count = staff || user?.role === 'FACILITY_MANAGER' && group === 'Quản lý' ? 0
           : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
         return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
           {items.map(item => {
             const { to, label: itemLabel, icon: Icon, end, match } = item;
             const aliasActive = matchesAlias(item, location.pathname);
-            const count = staff ? countFor(item) : user?.role === 'MANAGER' && group === 'Quản lý' ? 0
+            const count = staff ? countFor(item) : user?.role === 'FACILITY_MANAGER' && group === 'Quản lý' ? 0
               : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
             return <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined}
               aria-label={iconOnly ? itemLabel : undefined}
@@ -179,7 +180,7 @@ export function InternalPortalLayout({
     </div>
   );
   return (
-    <div className={`manager-shell portal-enhanced internal-web${themed ? ' workspace-themed' : ''}${collapsed ? ' is-sidebar-collapsed' : ''}`} data-workspace-theme={themed ? theme : undefined} data-workspace-role={themed ? user?.role.toLowerCase() : undefined}>
+    <div className={`manager-shell portal-enhanced internal-web${themed ? ' workspace-themed' : ''}${collapsed ? ' is-sidebar-collapsed' : ''}`} data-workspace-theme={themed ? theme : undefined} data-workspace-role={themed ? roleNamespace(user?.role ?? '') : undefined}>
       <a className="internal-skip" href="#portal-main">Đến nội dung chính</a>
       <aside className="manager-sidebar">
         {brand}

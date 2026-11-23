@@ -18,7 +18,7 @@ import { ErrorState, LoadingState } from './screen-state';
 type Props={services:AdditionalService[];selections:ServiceSelection[];start:string;end:string;loading:boolean;error?:string;continueError?:string;retry:()=>void;onChange:(value:ServiceSelection[])=>void;quoteInput:Row;onContinue:(skip?:boolean)=>void;busy:boolean};
 function inventoryPath(service:AdditionalService,choice:ServiceSelection|null) {
   if(!choice||service.isActive===false)return null;
-  const query=new URLSearchParams({quantity:String(choice.quantity),...(choice.serviceStartDate?{startDate:choice.serviceStartDate}:{}),...(choice.serviceEndDate?{endDate:choice.serviceEndDate}:{})});
+  const query=new URLSearchParams({...(service.facilityId?{facilityId:service.facilityId}:{}),quantity:String(choice.quantity),...(choice.serviceStartDate?{startDate:choice.serviceStartDate}:{}),...(choice.serviceEndDate?{endDate:choice.serviceEndDate}:{})});
   return '/additional-services/'+encodeURIComponent(service.id)+'/availability?'+query;
 }
 function durationLabel(service:AdditionalService,choice:ServiceSelection) {

@@ -11,6 +11,7 @@ import { StatusBadge } from './customer-ui';
 import { useCustomerPresentation } from './customer-presentation';
 
 function customerStatusLabel(resource:string,row:Row) {
+  if(resource==='payment-submissions' && text(row,'reconciliation.status')) return text(row,'reconciliation.status')==='RECONCILED'?'Đã xử lý đối soát':text(row,'reconciliation.status')==='REFUND_REQUIRED'?'Đang chờ hoàn tiền':'Khoản tiền cần đối soát';
   if(row.status==='OPEN') return resource==='invoices'?'Chưa thanh toán':resource==='support-requests'?'Chờ tiếp nhận':undefined;
   if(resource==='contracts'&&row.status==='PENDING_PAYMENT') return text(row,'terms.acceptedAt')?'Chờ thanh toán':'Chờ ký hợp đồng';
   return undefined;

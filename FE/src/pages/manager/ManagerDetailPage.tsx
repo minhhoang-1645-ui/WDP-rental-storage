@@ -60,8 +60,8 @@ import { staffRecordIdentity } from '../staff/staff-work';
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
   const { id } = useParams();
-  if (resource === 'reservations' && user?.role === 'STAFF') return <StaffReservationDetailPage key={id} />;
-  if (resource === 'appointments' && user?.role === 'STAFF') return <StaffAppointmentDetailPage key={`${user.id}:${id}`} />;
+  if (resource === 'reservations' && user?.role === 'FACILITY_STAFF') return <StaffReservationDetailPage key={id} />;
+  if (resource === 'appointments' && user?.role === 'FACILITY_STAFF') return <StaffAppointmentDetailPage key={`${user.id}:${id}`} />;
   return <ManagerOperationalDetail key={`${resource}:${id}`} resource={resource} />;
 }
 
@@ -77,14 +77,14 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
     false,
     true,
   );
-  const isStaff = user?.role === 'STAFF';
+  const isStaff = user?.role === 'FACILITY_STAFF';
   const listPath = isStaff ? `/staff/${resource}` : resource === 'reservations' ? '/manager' : ["units", "customers", "inquiries"].includes(
     resource,
   )
     ? `/manager/${resource}`
     : `/manager/operations/${resource}`;
   const [params] = useSearchParams();
-  const reviewReturn = user?.role === 'MANAGER' ? managerReviewReturn(params) : null;
+  const reviewReturn = user?.role === 'FACILITY_MANAGER' ? managerReviewReturn(params) : null;
   const returnPath = useInternalListReturn(reviewReturn ?? listPath);
   useStaffProcessingTarget(isStaff && Boolean(data.data));
   if (!config) return <Empty title="Không tìm thấy trang" />;
@@ -153,7 +153,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             ? status === 'REQUESTED' ? 'Chờ duyệt' : status === 'APPROVED' && row.commercial && !first(row, 'commercial.acceptedAt') ? 'Chờ ký phụ lục' : status === 'APPROVED' && isStaff ? 'Chờ bàn giao' : undefined
             : undefined} /> : undefined}
             meta={resource !== 'customers' && reference ? <CopyRecordCode value={reference} /> : undefined}>
-            {resource === 'units' && user?.role === 'MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
+            {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <button className="button-secondary" onClick={() => window.print()}>
               <Printer size={16} />
               In hồ sơ
@@ -176,10 +176,10 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
                   : staffCanWork && <StaffActions key={`${resource}:${id}`} resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />
               } /> : <>
               {resource === 'renewals' && <RenewalReview row={row} />}
-              {user?.role !== 'STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
+              {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
-              {user?.role === 'STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
+              {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
                   key={`${user?.id}:${id}:${row.updatedAt ?? ""}`}
@@ -187,7 +187,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
                   identity={user?.id ?? ""}
                 />
               )}
-              {user?.role === 'MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
+              {user?.role === 'FACILITY_MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],

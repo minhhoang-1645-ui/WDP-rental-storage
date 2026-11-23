@@ -47,7 +47,7 @@ const labels: Record<string, string> = {
   PENDING_PAYMENT: 'Chờ thanh toán', READY_FOR_HANDOVER: 'Sẵn sàng bàn giao', OPEN: 'Đang mở', PARTIALLY_PAID: 'Đã trả một phần', PAID: 'Đã thanh toán', APPROVED: 'Đã duyệt', APPROVED_PENDING_PAYMENT: 'Đã duyệt, chờ thanh toán',
   PENDING_VERIFICATION: 'Chờ xác nhận', VERIFIED: 'Đã xác nhận', INSPECTION_IN_PROGRESS: 'Đang kiểm tra', ISSUE_FOUND: 'Có vấn đề', PASS: 'Đạt', PENDING_SETTLEMENT: 'Chờ quyết toán', PENDING_REVIEW: 'Chờ duyệt', AWAITING_OUTSTANDING_PAYMENT: 'Chờ thu bổ sung', SETTLED: 'Đã quyết toán',
   IN_PROGRESS: 'Đang xử lý', AWAITING_VERIFICATION: 'Chờ nghiệm thu', ASSIGNED: 'Đã phân công', ESCALATED: 'Chờ xem xét', RESOLVED: 'Đã giải quyết', LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao',
-  CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', VNPAY: 'VNPay', PURCHASE: 'Mua', RENTAL: 'Thuê', ONE_TIME: 'Một lần', DAY: 'Ngày', MONTH: 'Tháng',
+  STORAGE_CUSTOMER: 'Khách hàng', FACILITY_STAFF: 'Nhân viên', FACILITY_MANAGER: 'Quản lý', SYSTEM_ADMINISTRATOR: 'Quản trị viên', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', VNPAY: 'VNPay', PURCHASE: 'Mua', RENTAL: 'Thuê', ONE_TIME: 'Một lần', DAY: 'Ngày', MONTH: 'Tháng',
   STANDARD: 'Tiêu chuẩn', AIR_CONDITIONED: 'Điều hòa', standard: 'Tiêu chuẩn', climate: 'Điều hòa', PAY_MONTHLY: 'Hàng tháng', PREPAID: 'Trả trước',
   UNIT_ISSUE: 'Vấn đề kho', FACILITY_EQUIPMENT_FAILURE: 'Lỗi thiết bị cơ sở', OPERATIONAL_RELOCATION: 'Điều chuyển vận hành', OTHER: 'Khác', UNIT_DAMAGE: 'Hư hỏng kho', CLEANING: 'Vệ sinh', LOCK_OR_ACCESS: 'Khóa hoặc truy cập', FACILITY_EQUIPMENT: 'Thiết bị cơ sở',
   NORMAL_WEAR: 'Hao mòn thông thường', FACILITY_FAULT: 'Lỗi cơ sở', CUSTOMER_DAMAGE: 'Hư hỏng do khách', CLEANING_REQUIRED: 'Cần vệ sinh', LOST_KEY_OR_ACCESS_ITEM: 'Mất khóa/vật phẩm truy cập',
@@ -55,4 +55,4 @@ const labels: Record<string, string> = {
 };
 export const label = (value: unknown) => typeof value === 'string' ? labels[value] ?? value : '—';
 export const options = (values: string[]) => values.map(value => ({ value, label: label(value) }));
-export const operationRoot = (role: string) => role === 'ADMIN' ? '/admin' : role === 'STAFF' ? '/staff' : '/manager';
+export const operationRoot = (role: string) => role === 'SYSTEM_ADMINISTRATOR' ? '/admin' : role === 'FACILITY_STAFF' ? '/staff' : '/manager';

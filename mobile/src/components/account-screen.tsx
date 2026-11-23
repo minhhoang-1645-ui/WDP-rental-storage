@@ -6,10 +6,11 @@ import { PageHeader } from '@/components/page-header';
 import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
 
 const roleLabels = {
-  CUSTOMER: 'Khách hàng',
-  STAFF: 'Nhân viên',
-  MANAGER: 'Quản lý',
-  ADMIN: 'Quản trị viên',
+  STORAGE_CUSTOMER: 'Khách hàng',
+  FACILITY_STAFF: 'Nhân viên',
+  FACILITY_MANAGER: 'Quản lý',
+  BUSINESS_OPERATIONS_MANAGER: 'Điều hành kinh doanh',
+  SYSTEM_ADMINISTRATOR: 'Quản trị viên',
 };
 
 export function AccountScreen() {

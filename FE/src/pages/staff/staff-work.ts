@@ -4,7 +4,7 @@ import { activitySources, staffPriorityActivities } from '../../utils/activity';
 import { recordIdentity } from '../../utils/record-identity';
 import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
 
-export const staffActivitySources = activitySources('STAFF').filter(source => needsStaffAssignment(source.kind));
+export const staffActivitySources = activitySources('FACILITY_STAFF').filter(source => needsStaffAssignment(source.kind));
 export const staffSourceNames = new Map(staffActivitySources.map(source => [source.kind, source.title]));
 
 export function staffActivityReady(activity: ActivityState, kind: string) {
@@ -63,7 +63,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     if (!entry.action) return includeHistory && (assigned || first(row, 'completedBy.id', 'resolvedBy.id') === userId);
     if (!assigned || first(row, 'assignedStaff.accountStatus') === 'DISABLED') return false;
     const role = first(row, 'assignedStaff.role');
-    return (!role || role === 'STAFF') &&
+    return (!role || role === 'FACILITY_STAFF') &&
       (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId)) &&
       (entry.kind !== 'support-requests' || !entry.web.startsWith('/staff/transfers/'));
   });

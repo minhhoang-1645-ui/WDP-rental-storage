@@ -27,14 +27,14 @@ export function ClaimActions({ claim, role, path, saved, reload, refreshing }: R
   const inspecting = ['REPORTED', 'INVESTIGATING'].includes(claim.status);
   const decided = ['APPROVED', 'REJECTED'].includes(claim.status);
   const awaitingCash = claim.compensation?.status === 'AWAITING_HANDOVER';
-  if (role === 'CUSTOMER') return null;
-  const assign = role === 'MANAGER' && inspecting;
-  const inspect = role === 'STAFF' && inspecting;
-  const decide = role === 'MANAGER' && claim.status === 'INVESTIGATING' && Boolean(claim.staffFacts);
-  const notify = role === 'MANAGER' && decided && awaitingCash && !claim.resolutionNote;
-  const resolve = role === 'MANAGER' && decided && !awaitingCash;
-  const amendDecision = role === 'MANAGER' && (decided || claim.status === 'RESOLVED') && Boolean(claim.decision);
-  const amendResolution = role === 'MANAGER' && claim.status === 'RESOLVED';
+  if (role === 'STORAGE_CUSTOMER') return null;
+  const assign = role === 'FACILITY_MANAGER' && inspecting;
+  const inspect = role === 'FACILITY_STAFF' && inspecting;
+  const decide = role === 'FACILITY_MANAGER' && claim.status === 'INVESTIGATING' && Boolean(claim.staffFacts);
+  const notify = role === 'FACILITY_MANAGER' && decided && awaitingCash && !claim.resolutionNote;
+  const resolve = role === 'FACILITY_MANAGER' && decided && !awaitingCash;
+  const amendDecision = role === 'FACILITY_MANAGER' && (decided || claim.status === 'RESOLVED') && Boolean(claim.decision);
+  const amendResolution = role === 'FACILITY_MANAGER' && claim.status === 'RESOLVED';
   if (!(assign || inspect || decide || notify || resolve || amendDecision || amendResolution)) return null;
   return <div className="portal-actions">
     {assign && <button disabled={refreshing} className={decide ? 'button-secondary' : 'button-primary'} onClick={() => setAction('assign')}><UserRoundPlus size={17} aria-hidden="true" />{claim.assignedStaff ? 'Đổi người kiểm tra' : 'Phân công kiểm tra'}</button>}
@@ -51,21 +51,21 @@ export function ClaimActions({ claim, role, path, saved, reload, refreshing }: R
 export function ClaimCompensation({ claim, role, path, saved, reload, refreshing }: RoleActionProps) {
   const [open, setOpen] = useState(false);
   const payment = claim.compensation;
-  if (role === 'STAFF' || !payment || payment.approvedCompensationAmount == null) return null;
+  if (role === 'FACILITY_STAFF' || !payment || payment.approvedCompensationAmount == null) return null;
   const paid = payment.status === 'HANDED_OVER';
   const facts: [string, string | undefined][] = [];
-  if (role === 'MANAGER') facts.push(['Khách hàng', claim.customer?.fullName],
+  if (role === 'FACILITY_MANAGER') facts.push(['Khách hàng', claim.customer?.fullName],
     ['Kho và hợp đồng', [claim.unitCodeSnapshot, claim.rentalContract?.contractCode].filter(Boolean).join(' · ')]);
   facts.push(['Số tiền được duyệt', money(payment.approvedCompensationAmount)], ['Phương thức', 'Tiền mặt']);
   if (paid) facts.push(['Số tiền đã giao', money(payment.paidCompensationAmount)], ['Ngày giờ bàn giao', claimDate(payment.handedOverAt, true)]);
-  if (role === 'MANAGER' && paid) facts.push(['Người giao', payment.deliveredBy], ['Người nhận', payment.receivedBy],
+  if (role === 'FACILITY_MANAGER' && paid) facts.push(['Người giao', payment.deliveredBy], ['Người nhận', payment.receivedBy],
     ['Người ghi nhận', payment.recordedBy], ['Thời điểm ghi nhận', claimDate(payment.recordedAt, true)]);
   return <section className="manager-section claims-card claims-cash" aria-labelledby="claim-cash-title">
     <h2 id="claim-cash-title"><Banknote size={20} aria-hidden="true" />Bồi thường tiền mặt</h2>
     <Status value={paid ? 'COMPLETED' : 'PENDING'} text={paid ? 'Đã bàn giao tiền bồi thường' : 'Đã duyệt bồi thường — Chờ giao tiền'} />
     <Facts items={facts} />
-    {role === 'MANAGER' && payment.handoverNote && <p className="claims-text">{payment.handoverNote}</p>}
-    {role === 'MANAGER' && !paid && <button className="button-primary" disabled={refreshing} onClick={() => setOpen(true)}>Ghi nhận đã giao tiền</button>}
+    {role === 'FACILITY_MANAGER' && payment.handoverNote && <p className="claims-text">{payment.handoverNote}</p>}
+    {role === 'FACILITY_MANAGER' && !paid && <button className="button-primary" disabled={refreshing} onClick={() => setOpen(true)}>Ghi nhận đã giao tiền</button>}
     {open && <ClaimActionDialog action="handover" claim={claim} path={path} close={() => setOpen(false)} saved={saved} reload={reload} />}
   </section>;
 }
@@ -136,7 +136,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
       <fieldset disabled={busy}>
         {action === 'assign' && <>
           {claim.assignedStaff && <p>Nhân viên hiện tại <strong>{claim.assignedStaff.fullName}</strong></p>}
-          <StaffPicker list value={staff} onChange={setStaff} disabled={busy} />
+          <StaffPicker task={{kind:"damage-claims",id:claim.id}} list value={staff} onChange={setStaff} disabled={busy} />
         </>}
         {action === 'inspect' && <label className="field-label">Tình trạng thực tế và nhận xét<textarea required minLength={10} maxLength={3000} rows={4} value={note} onChange={event => setNote(event.target.value)} /></label>}
         {action === 'decide' && <>

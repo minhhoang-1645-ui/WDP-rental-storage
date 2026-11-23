@@ -141,7 +141,7 @@ export function CustomerLayout() {
         replace
       />
     );
-  if (user.role !== "CUSTOMER")
+  if (user.role !== "STORAGE_CUSTOMER")
     return <Navigate to={portalDestination(user.role)} replace />;
 
   const signOut = () => {

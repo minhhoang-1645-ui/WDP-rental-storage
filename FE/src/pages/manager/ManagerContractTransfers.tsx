@@ -5,6 +5,6 @@ import type { Row } from '../../components/manager/portal-data';
 
 export function ManagerContractTransfers({ contract }: { contract: Row; identity: string }) {
   const { user } = useAuth();
-  const scope = user?.role === 'STAFF' ? 'staff/management' : 'manager';
+  const scope = user?.role === 'FACILITY_STAFF' ? 'staff/management' : 'manager';
   return <><ContractTransferHistory contract={contract} scope={scope} /><ContractRenewalHistory contract={contract} scope={scope} /></>;
 }

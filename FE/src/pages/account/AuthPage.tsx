@@ -13,7 +13,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const [submitError, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
-  const returnTo = roleReturnPath("CUSTOMER", params.get("returnTo"));
+  const returnTo = roleReturnPath("STORAGE_CUSTOMER", params.get("returnTo"));
   if (loading)
     return (
       <section className="auth-page" role="status">

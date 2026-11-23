@@ -1,4 +1,4 @@
-export type UserRole = 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN';
+export type UserRole = 'STORAGE_CUSTOMER' | 'FACILITY_STAFF' | 'FACILITY_MANAGER' | 'BUSINESS_OPERATIONS_MANAGER' | 'SYSTEM_ADMINISTRATOR';
 
 export interface PublicUser {
   id: string;

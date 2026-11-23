@@ -106,7 +106,7 @@ function CheckoutStep({ draft, summary, user, onUpdate, onBack, profileReturnPat
 
 export function BookingWizardPage() {
   const catalog = useCatalog()
-  const { getStorageListing, getStorageSize, bookingSizes, approvedDurations, approvedAddons } = catalog
+  const { getStorageListing, getStorageSize, bookingSizes, approvedDurations } = catalog
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -153,6 +153,7 @@ export function BookingWizardPage() {
   useEffect(() => saveBookingStep(step), [step])
 
   const product = getStorageListing(draft.productId) ?? catalog.products[0]
+  const approvedAddons=catalog.approvedAddons.filter(item=>item.facilityId===product.facilityId)
   const size = storageSpecifications(product, getStorageSize(product.sizeId)!)
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
   const canCheckAvailability = product.id === draft.productId && hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))

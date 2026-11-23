@@ -1,3 +1,4 @@
+import { roleNamespace } from '../role-names';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
@@ -20,7 +21,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 function NotificationSession({ children, userId, role }: { children: ReactNode; userId: string; role: NotificationRole }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
-  const root = '/' + role.toLowerCase();
+  const root = '/' + roleNamespace(role);
   const inbox = workspaceInboxPath(role);
   const query = pathname === inbox ? noticeQuery(search) : { view: 'all', page: 1, limit: DEFAULT_PAGE_SIZE, kind: '', search: '' };
   const isPreviewPage = query.view === 'all' && query.page === 1 && query.limit === DEFAULT_PAGE_SIZE && !query.kind && !query.search;

@@ -1,7 +1,8 @@
+import { roleNamespace } from '../role-names';
 import { createContext, useContext } from 'react';
 import { internalPageSize } from '../utils/internal-pagination';
 
-export type NotificationRole = 'STAFF' | 'MANAGER' | 'ADMIN' | 'CUSTOMER';
+export type NotificationRole = 'FACILITY_STAFF' | 'FACILITY_MANAGER' | 'SYSTEM_ADMINISTRATOR' | 'STORAGE_CUSTOMER' | 'BUSINESS_OPERATIONS_MANAGER';
 export type NoticeView = 'all' | 'unread' | 'action';
 export type Notice = {
   token: string;
@@ -38,7 +39,7 @@ type NotificationState = {
 };
 export const NotificationContext = createContext<NotificationState | null>(null);
 export const useNotifications = () => useContext(NotificationContext);
-export const workspaceInboxPath = (role: NotificationRole) => `/${role.toLowerCase()}/notifications`;
+export const workspaceInboxPath = (role: NotificationRole) => `/${roleNamespace(role)}/notifications`;
 
 export function noticeQuery(search: string) {
   const params = new URLSearchParams(search);

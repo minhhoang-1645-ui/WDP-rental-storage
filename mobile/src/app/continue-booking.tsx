@@ -34,7 +34,7 @@ export default function ContinueBooking() {
     boot.current.catch(caught => setError(caught.message));
   }, [params.token, params.continuationToken, params.bookingCode]);
   const claim = async () => {
-    if (!code || auth.user?.role !== 'CUSTOMER' || lock.current) return;
+    if (!code || auth.user?.role !== 'STORAGE_CUSTOMER' || lock.current) return;
     lock.current = true; setBusy(true); setError('');
     try {
       const result = await apiRequest<{ reservationCode: string }>(`/customer/booking-requests/${encodeURIComponent(code)}/claim`, { method: 'POST', body: '{}' });
@@ -43,7 +43,7 @@ export default function ContinueBooking() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Chưa nhận được yêu cầu.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  useEffect(() => { if (ready && !busy && !auth.loading && auth.user?.role === 'CUSTOMER' && code && attempted.current !== code) { attempted.current = code; void claim(); } }, [ready, busy, auth.loading, auth.user, code]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ready && !busy && !auth.loading && auth.user?.role === 'STORAGE_CUSTOMER' && code && attempted.current !== code) { attempted.current = code; void claim(); } }, [ready, busy, auth.loading, auth.user, code]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = async () => {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError('');
@@ -63,7 +63,7 @@ export default function ContinueBooking() {
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}><PageHeader eyebrow="Đặt kho" title={params.resetToken ? 'Đặt lại mật khẩu' : 'Tiếp tục đặt kho'} description="Xác minh email, tạo mật khẩu hoặc đăng nhập để nhận yêu cầu. Chưa giữ kho trước khi hệ thống xác nhận." />
     {context && <Panel title={context.storage}><Text style={styles.copy}>{context.quantity} kho · {context.startDate} – {context.endDate}</Text><Text style={styles.copy}>Chưa giữ kho. Hệ thống kiểm tra lại giá và khả dụng.</Text></Panel>}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{message ? <Text style={styles.success}>{message}</Text> : null}
-    {auth.user && !params.resetToken ? <><Text style={styles.copy}>{auth.user.email}</Text><Button title="Tiếp tục nhận yêu cầu" disabled={busy || auth.user.role !== 'CUSTOMER'} onPress={() => void claim()} /><Button title="Dùng tài khoản khác" variant="secondary" onPress={() => void auth.logout()} /></> : context || params.resetToken ? <Panel title={params.resetToken ? 'Mật khẩu mới' : context?.existingAccount ? 'Đăng nhập' : 'Tạo mật khẩu'}>
+    {auth.user && !params.resetToken ? <><Text style={styles.copy}>{auth.user.email}</Text><Button title="Tiếp tục nhận yêu cầu" disabled={busy || auth.user.role !== 'STORAGE_CUSTOMER'} onPress={() => void claim()} /><Button title="Dùng tài khoản khác" variant="secondary" onPress={() => void auth.logout()} /></> : context || params.resetToken ? <Panel title={params.resetToken ? 'Mật khẩu mới' : context?.existingAccount ? 'Đăng nhập' : 'Tạo mật khẩu'}>
       {context && <Field title="Email đã xác minh" value={context.email} disabled onChange={() => undefined} />}
       <Field title="Mật khẩu" secure value={password} onChange={setPassword} maxLength={128} />
       {(!context?.existingAccount || params.resetToken) && <Field title="Xác nhận mật khẩu" secure value={confirm} onChange={setConfirm} maxLength={128} />}

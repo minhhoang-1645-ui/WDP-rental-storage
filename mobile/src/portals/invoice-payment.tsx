@@ -24,7 +24,7 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, 
   try {
     if (Number(qrAmount) <= balance) qrPayload = buildVietQrPayload({ configured: bank.data?.configured === true, bankCode: text(bank.data ?? {}, 'bankCode'), accountNumber: text(bank.data ?? {}, 'accountNumber') }, Number(qrAmount), String(invoice.invoiceCode));
   } catch { /* Invalid configuration or amount is shown below without rendering an unusable QR. */ }
-  const pending = rows(submissions.data?.items).some(item => text(item, 'invoice.id') === invoiceId && item.status === 'PENDING_VERIFICATION');
+  const pending = rows(submissions.data?.items).some(item => text(item, 'invoice.id') === invoiceId && (item.status === 'PENDING_VERIFICATION' || Boolean(text(item,'reconciliation.status') && text(item,'reconciliation.status') !== 'RECONCILED')));
   const holdExpired = paymentWindowClosed(invoice, now);
   const signing = invoice.signing as Row | undefined;
   const unsigned = signing?.complete === false;
@@ -46,7 +46,7 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, 
     <OnlinePayment paid={invoice.status === 'PAID'} invoiceType={String(invoice.type)} invoiceId={invoiceId} eligible={bank.data?.vnpayConfigured === true && payable && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type))} disabled={pending || submissions.loading || Boolean(submissions.error) || Boolean(form)} refresh={refresh} onWaitingChange={setOnlinePending} />
     {payable && !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true && <Text accessibilityRole="alert" style={styles.copy}>VNPay hiện chưa khả dụng. Vui lòng thử lại hoặc gửi hỗ trợ về hóa đơn.</Text>}
     {payable && !onlineOnly && bank.data?.vnpayConfigured === true && !pending && !onlinePending && <Button title={showTransfer ? 'Ẩn hướng dẫn chuyển khoản' : 'Chuyển khoản ngân hàng'} variant="secondary" disabled={Boolean(form)} onPress={() => setShowTransfer(value => !value)}/>}
-    {submissions.loading ? <LoadingState layout="compact" /> : submissions.error ? <ErrorState message={submissions.error} onRetry={submissions.refresh} /> : pending ? <Text style={styles.copy}>Đang xác nhận tiền chuyển khoản. Hóa đơn sẽ cập nhật sau khi NestBox xác nhận.</Text> : onlinePending ? <Text style={styles.copy}>Đang theo dõi phiên VNPay. Vui lòng không chuyển khoản thêm cho cùng hóa đơn.</Text> : payable && !onlineOnly && (showTransfer || bank.data?.vnpayConfigured !== true) && <>
+    {submissions.loading ? <LoadingState layout="compact" /> : submissions.error ? <ErrorState message={submissions.error} onRetry={submissions.refresh} /> : pending ? <Text style={styles.copy}>Khoản chuyển khoản đang được kiểm tra hoặc đối soát. Không chuyển thêm tiền cho cùng khoản này.</Text> : onlinePending ? <Text style={styles.copy}>Đang theo dõi phiên VNPay. Vui lòng không chuyển khoản thêm cho cùng hóa đơn.</Text> : payable && !onlineOnly && (showTransfer || bank.data?.vnpayConfigured !== true) && <>
       {bank.loading ? <LoadingState layout="compact" /> : bank.error ? <ErrorState message={bank.error} onRetry={bank.refresh} /> : bank.data?.configured ? <>
         <Facts values={[["Ngân hàng", bank.data.bankName], ["Chủ tài khoản", bank.data.accountName], ["Số tài khoản", bank.data.accountNumber], ["Nội dung chuyển khoản", invoice.invoiceCode]]} />
         <Field title="Số tiền chuyển khoản (đ)" numeric value={qrAmount} onChange={setQrAmount} maxLength={13} disabled={busy || Boolean(form)} />

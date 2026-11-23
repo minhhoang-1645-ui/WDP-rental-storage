@@ -14,7 +14,7 @@ async function verifiedRole(token: string) {
   if (!lookup) {
     // Fast Refresh can retain the signed-in UI while reloading this module's cache.
     lookup = apiRequest<{ role: string }>('/auth/me', { expectedToken: token }).then(user => {
-      if (!['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) throw new ApiError(502, 'Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
+      if (!['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role)) throw new ApiError(502, 'Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
       return user.role;
     }).finally(() => roleLookups.delete(token));
     roleLookups.set(token, lookup);

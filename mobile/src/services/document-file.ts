@@ -35,7 +35,9 @@ export async function openDocument(path: string, name: string) {
   const file = await downloadPdf(path, name);
   try {
     try {
-      await file.preview({ mimeType: 'application/pdf' });
+      const preview = (file as File & { preview?: (options: { mimeType: string }) => Promise<void> }).preview;
+      if (typeof preview !== 'function') throw new Error('Native preview is unavailable in this installed runtime.');
+      await preview.call(file, { mimeType: 'application/pdf' });
     } catch {
       if (!await Sharing.isAvailableAsync()) throw new Error('Thiết bị chưa hỗ trợ mở PDF.');
       await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Mở, lưu hoặc in tài liệu PDF' });

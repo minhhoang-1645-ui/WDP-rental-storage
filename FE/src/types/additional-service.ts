@@ -1,4 +1,5 @@
 export interface AdditionalService {
+  facilityId?: string | null;
   id: string;
   code: string;
   name: string;
@@ -20,6 +21,7 @@ export interface ServiceSelection {
 }
 
 export interface ServiceInventory {
+  facilityId?:string;
   serviceId: string;
   kind: 'PURCHASE' | 'RENTAL';
   stockOnHand?: number;

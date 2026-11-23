@@ -28,7 +28,6 @@ import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
 import { assignmentNeedsAttention, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
 import { isEarlyReturnRequest } from '../../utils/early-return';
-import { UnitStaffAssignments } from '../../components/manager/UnitStaffAssignments';
 import { normalizeSearch } from '../../utils/notification-tools';
 
 const workNames = {
@@ -70,7 +69,6 @@ export function ManagerAssignmentsPage() {
   useLiveRefresh('/manager/*', refresh);
   const [manualSelection, setSelected] = useState<Task>();
   const [, setParams] = useSearchParams();
-  const unitsTab = params.get('tab') === 'units' && !params.has('record');
   const [notice, setNotice] = useState("");
   const [state, setState] = useState<{
     key: string;
@@ -81,7 +79,6 @@ export function ManagerAssignmentsPage() {
   const key = user?.id ?? '';
 
   useEffect(() => {
-    if (unitsTab) return;
     const controller = new AbortController();
     Promise.all(workKinds.map(async kind => {
       const { items } = await allPages(`/manager/${kind}`, controller.signal);
@@ -110,7 +107,7 @@ export function ManagerAssignmentsPage() {
           });
       });
     return () => controller.abort();
-  }, [key, revision, unitsTab]);
+  }, [key, revision]);
 
   const current = state?.key === key ? state : undefined;
   const refreshing = Boolean(current && current.revision !== revision);
@@ -166,14 +163,6 @@ export function ManagerAssignmentsPage() {
       return next;
     }, { replace: true });
   };
-  function changeTab(units: boolean) {
-    setParams(previous => {
-      const next = new URLSearchParams(previous);
-      if (units) next.set('tab', 'units');
-      else next.delete('tab');
-      return next;
-    });
-  }
   const statuses = [...new Set(allTasks.map(task => first(task.row, 'status')).filter(Boolean))];
   const columns: StaffColumn<Task>[] = [
     { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
@@ -192,13 +181,9 @@ export function ManagerAssignmentsPage() {
   return (
     <section className="manager-assignments">
       <PageHeader title="Phân công nhân viên">
-        {!unitsTab && <button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>}
+        {<button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>}
       </PageHeader>
-      <div className="manager-assignment-tabs" role="group" aria-label="Phạm vi phân công">
-        <button className="button-secondary" type="button" aria-pressed={!unitsTab} onClick={() => changeTab(false)}>Công việc</button>
-        <button className="button-secondary" type="button" aria-pressed={unitsTab} onClick={() => changeTab(true)}>Phụ trách kho</button>
-      </div>
-      {unitsTab ? <UnitStaffAssignments onSaved={refresh} /> : <>
+      <>
       {notice && (
         <div className="portal-success" role="status">
           {notice}
@@ -237,7 +222,7 @@ export function ManagerAssignmentsPage() {
           }}
         />
       )}
-      </>}
+      </>
     </section>
   );
 }
@@ -313,7 +298,7 @@ function AssignmentDetail({
       </div>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
-        <StaffPicker list value={staffId} onChange={value => { setStaffId(value); setError(''); }} workloads={workloads} disabled={busy} />
+        <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); setError(''); }} workloads={workloads} disabled={busy} />
       </form>}
     </Modal>
   );

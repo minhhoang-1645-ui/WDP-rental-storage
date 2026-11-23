@@ -1,3 +1,4 @@
+import { roleNamespace } from '../../role-names';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { safeSessionStorage } from '../../services/browser-storage';
@@ -5,12 +6,12 @@ export const listMemoryKey = (userId: string, pathname: string) => `nestbox-inte
 export function useInternalListReturn(fallback: string) {
   const { user } = useAuth();
   const location = useLocation();
-  if (!user || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) return fallback;
+  if (!user || !['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role)) return fallback;
   const returnTo: unknown = location.state?.returnTo;
   if (typeof returnTo === 'string' && returnTo.startsWith('/')) {
     try {
       const url = new URL(returnTo, 'https://internal.invalid');
-      if (url.origin === 'https://internal.invalid' && url.pathname.split('/')[1] === user.role.toLowerCase()
+      if (url.origin === 'https://internal.invalid' && url.pathname.split('/')[1] === roleNamespace(user.role)
         && url.pathname + url.search !== location.pathname + location.search) return url.pathname + url.search + url.hash;
     } catch { /* Fall back to the last list URL. */ }
   }

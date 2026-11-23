@@ -70,12 +70,12 @@ export function StaffReservationDetailPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const data = useApiResource<ReservationDetail>(
-    user?.role === 'STAFF' && id ? `/staff/management/reservations/${encodeURIComponent(id)}` : null, user?.id, true, true,
+    user?.role === 'FACILITY_STAFF' && id ? `/staff/management/reservations/${encodeURIComponent(id)}` : null, user?.id, true, true,
   );
   const row = data.data;
   const back = useInternalListReturn('/staff/appointments');
   const { pathname } = useLocation();
-  if (user?.role !== 'STAFF') return null;
+  if (user?.role !== 'FACILITY_STAFF') return null;
 
   const backLink = <Link className="booking-back" to={back}><ArrowLeft size={16} aria-hidden="true" />Về danh sách</Link>;
   const load = <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton single />} />;

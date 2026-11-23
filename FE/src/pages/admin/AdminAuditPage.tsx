@@ -28,7 +28,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
     const value = params.get(key)?.trim();
     if (value) query.set(key, value);
   }
-  const data = useInternalListResource<AuditEvent>(user?.role === 'ADMIN' && !invalidRange ? `/admin/audit-events?${query}` : null, user?.id ?? '', true, true);
+  const data = useInternalListResource<AuditEvent>(user?.role === 'SYSTEM_ADMINISTRATOR' && !invalidRange ? `/admin/audit-events?${query}` : null, user?.id ?? '', true, true);
   const login = category === 'LOGIN';
   const listPath = login ? '/admin/login-history' : '/admin/activity';
   const listParams = new URLSearchParams(params);
@@ -93,7 +93,7 @@ export function AdminAuditPage({ category }: { category: 'LOGIN' | 'ACTIVITY' })
     <nav className="portal-actions" aria-label="Nhóm nhật ký"><Link className={login ? 'button-primary' : 'button-secondary'} to="/admin/login-history">Đăng nhập / đăng xuất</Link><Link className={!login ? 'button-primary' : 'button-secondary'} to="/admin/activity">Hoạt động</Link></nav>
     <div className="portal-toolbar admin-toolbar" role="search" aria-label="Bộ lọc nhật ký">
       <label className="field-label portal-search">Tìm nhật ký<input name="search" type="search" maxLength={100} value={params.get('search') ?? ''} onChange={event => changeFilter('search', event.target.value)} placeholder={login ? 'Tên hoặc email' : 'Tên, email hoặc mã hồ sơ'} /></label>
-      <label className="field-label">Vai trò<select aria-label="Vai trò" name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].map(role => <option key={role} value={role}>{label(role)}</option>)}</select></label>
+      <label className="field-label">Vai trò<select aria-label="Vai trò" name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].map(role => <option key={role} value={role}>{label(role)}</option>)}</select></label>
       <label className="field-label">Từ ngày<input type="date" name="from" value={from} onChange={event => changeFilter('from', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
       <label className="field-label">Đến ngày<input type="date" name="to" value={to} onChange={event => changeFilter('to', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
       <button type="button" className="button-secondary" onClick={clearFilters}>Xóa bộ lọc</button>

@@ -22,7 +22,7 @@ export function AdminDashboardPage() {
   const [state, setState] = useState<{ key: string; pages?: Page[]; error?: string }>();
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all(['/admin/users?page=1&limit=1', '/admin/users?page=1&limit=1&role=STAFF', '/admin/users?page=1&limit=1&role=MANAGER', '/admin/users?page=1&limit=1&accountStatus=DISABLED'].map(path => apiRequest<Page>(path, { signal: controller.signal })))
+    Promise.all(['/admin/users?page=1&limit=1', '/admin/users?page=1&limit=1&role=FACILITY_STAFF', '/admin/users?page=1&limit=1&role=FACILITY_MANAGER', '/admin/users?page=1&limit=1&accountStatus=DISABLED'].map(path => apiRequest<Page>(path, { signal: controller.signal })))
       .then(pages => { if (!controller.signal.aborted) setState({ key, pages }); })
       .catch(error => { if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : 'Không thể tải tài khoản.' }); });
     return () => controller.abort();
@@ -30,8 +30,8 @@ export function AdminDashboardPage() {
   const current = state?.key === key ? state : undefined;
   const metrics = [
     { title: 'Tổng tài khoản', value: current?.pages?.[0].total, to: '/admin/users', icon: Users, hint: 'Tất cả vai trò' },
-    { title: 'Nhân viên', value: current?.pages?.[1].total, to: '/admin/users?role=STAFF', icon: UserRound, hint: 'Xử lý công việc tại kho' },
-    { title: 'Quản lý', value: current?.pages?.[2].total, to: '/admin/users?role=MANAGER', icon: ShieldCheck, hint: 'Quản lý hoạt động kho' },
+    { title: 'Nhân viên', value: current?.pages?.[1].total, to: '/admin/users?role=FACILITY_STAFF', icon: UserRound, hint: 'Xử lý công việc tại kho' },
+    { title: 'Quản lý', value: current?.pages?.[2].total, to: '/admin/users?role=FACILITY_MANAGER', icon: ShieldCheck, hint: 'Quản lý hoạt động kho' },
     { title: 'Đã khóa', value: current?.pages?.[3].total, to: '/admin/users?status=DISABLED', icon: UserRoundX, hint: 'Tài khoản bị chặn đăng nhập' },
   ];
   return <section className="admin-dashboard">

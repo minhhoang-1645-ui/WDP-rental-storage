@@ -25,9 +25,9 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
   const { user } = useAuth();
   const location = useLocation();
   const isInternalUser =
-    user?.role === "MANAGER" ||
-    user?.role === "STAFF" ||
-    user?.role === "ADMIN";
+    user?.role === "FACILITY_MANAGER" ||
+    user?.role === "FACILITY_STAFF" ||
+    user?.role === "SYSTEM_ADMINISTRATOR";
   const accountPath = !user
     ? "/account/login"
     : isInternalUser
@@ -36,10 +36,11 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
   const accountLabel = !user
     ? "Đăng nhập"
     : {
-        STAFF: "Khu nhân viên",
-        MANAGER: "Khu quản lý",
-        ADMIN: "Khu quản trị",
-        CUSTOMER: "Khu vực của tôi",
+        FACILITY_STAFF: "Khu nhân viên",
+        FACILITY_MANAGER: "Khu quản lý",
+        BUSINESS_OPERATIONS_MANAGER: "Điều hành kinh doanh",
+        SYSTEM_ADMINISTRATOR: "Khu quản trị",
+        STORAGE_CUSTOMER: "Khu vực của tôi",
       }[user.role];
   const actionPath = isInternalUser ? accountPath : "/booking?mode=quick";
   const actionLabel = isInternalUser ? "Mở khu vực làm việc" : "Đặt kho nhanh";

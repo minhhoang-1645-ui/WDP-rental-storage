@@ -49,7 +49,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
   const payableBalance = outstanding(invoice);
   const bank = useResource<Row>(payableBalance ? '/customer/payment-config' : null);
   const submissions = useResource<Row>(payableBalance ? '/customer/payment-submissions' : null, true);
-  const pendingTransfer = rows(submissions.data?.items).some(row => text(row, 'invoice.id') === id && row.status === 'PENDING_VERIFICATION');
+  const pendingTransfer = rows(submissions.data?.items).some(row => text(row, 'invoice.id') === id && (row.status === 'PENDING_VERIFICATION' || Boolean(text(row,'reconciliation.status') && text(row,'reconciliation.status') !== 'RECONCILED')));
   const unsigned = object(invoice.signing).complete === false;
   const holdExpired = paymentWindowClosed(invoice, now);
   const scheduled = invoicePaymentBlockedBySchedule(invoice, now);

@@ -14,6 +14,7 @@ export const adminSections: WorkspaceSection[] = [{ key: 'audit', title: 'Nhật
 const navigation: InternalNavItem[] = [
   { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, end: true, group: 'Quản trị' },
   { to: '/admin/users', label: 'Quản lý tài khoản', icon: Users, group: 'Quản trị' },
+  { to: '/admin/facility-access', label: 'Quyền cơ sở', icon: Users, group: 'Quản trị' },
   ...auditItems.map(item => ({ ...item, group: 'Nhật ký' })),
 ];
 

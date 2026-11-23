@@ -8,9 +8,9 @@ import { Container } from '../ui/Container'
 export function Footer() {
   const { user } = useAuth()
   const supportPath = user
-    ? user.role === 'CUSTOMER' ? '/customer/support' : portalDestination(user.role)
+    ? user.role === 'STORAGE_CUSTOMER' ? '/customer/support' : portalDestination(user.role)
     : '/account/login?returnTo=%2Fcustomer%2Fsupport'
-  const supportLabel = !user || user.role === 'CUSTOMER' ? 'Gửi yêu cầu hỗ trợ' : 'Khu vực làm việc'
+  const supportLabel = !user || user.role === 'STORAGE_CUSTOMER' ? 'Gửi yêu cầu hỗ trợ' : 'Khu vực làm việc'
 
   return <footer id="facility" className="public-footer landing-footer" aria-label="Thông tin NestBox">
     <Container>

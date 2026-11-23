@@ -1,3 +1,6 @@
+import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
+import { OperationsLayout } from '../pages/operations/OperationsLayout';
+import { OperationsFacilities, OperationsPolicies, OperationsPricing, OperationsReports } from '../pages/operations/OperationsPages';
 import { ManagerStoredItemsPage } from '../pages/manager/ManagerStoredItemsPage';
 import { OperationalStoredItemsPage } from '../pages/stock/OperationalStoredItemsPage';
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
@@ -37,7 +40,6 @@ import { StaffRecordPage } from "../pages/staff/StaffRecordPage";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
 import { StaffOverstayPage } from "../pages/staff/StaffOverstayPage";
-import { StaffAssignedUnitsPage } from "../pages/staff/StaffAssignedUnitsPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
@@ -159,8 +161,8 @@ export function AppRouter() {
         <Route path="rentals" element={<CustomerRentalsPage />} />
         <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="booking-history" element={<CustomerBookingHistoryPage />} />
-        <Route path="stock-movements" element={<StockMovementsPage role="CUSTOMER" />} />
-        <Route path="stock-movements/:id" element={<StockMovementsPage role="CUSTOMER" />} />
+        <Route path="stock-movements" element={<StockMovementsPage role="STORAGE_CUSTOMER" />} />
+        <Route path="stock-movements/:id" element={<StockMovementsPage role="STORAGE_CUSTOMER" />} />
         <Route path="stored-items" element={<StoredItemsPage />} />
         <Route path="contracts" element={<CustomerContractsPage />} />
         <Route path="payments" element={<CustomerPaymentsPage />} />
@@ -174,7 +176,7 @@ export function AppRouter() {
         <Route path="settings/:section?" element={<AccountSettingsPage />} />
         <Route path="*" element={<WorkspaceNotFound />} />
       </Route>
-      <Route element={<RoleGuard allowedRoles={["STAFF"]} />}>
+      <Route element={<RoleGuard allowedRoles={["FACILITY_STAFF"]} />}>
         <Route path="staff" element={<StaffLayout />}>
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
@@ -182,12 +184,11 @@ export function AppRouter() {
           <Route path="tasks" element={<StaffTasksPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
-          <Route path="assigned-units" element={<StaffAssignedUnitsPage />} />
-          <Route path="stored-items" element={<OperationalStoredItemsPage role="STAFF" />} />
+          <Route path="stored-items" element={<OperationalStoredItemsPage role="FACILITY_STAFF" />} />
           <Route path="overstays" element={<StaffOverstayPage />} />
           <Route path="unit-checks" element={<Navigate to="/staff/tasks" replace />} />
-          <Route path="stock-movements" element={<StockMovementsPage role="STAFF" />} />
-          <Route path="stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="stock-movements" element={<StockMovementsPage role="FACILITY_STAFF" />} />
+          <Route path="stock-movements/:id" element={<StockMovementsPage role="FACILITY_STAFF" />} />
           <Route path="operations" element={<StaffOperationsPage />} />
           <Route path="inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
           <Route path="operations/inquiries/*" element={<Navigate to="/staff/appointments" replace />} />
@@ -199,22 +200,22 @@ export function AppRouter() {
           </Route>)}
           <Route path="rentals" element={<StaffListPage />} />
           <Route path="rentals/:id" element={<StaffRecordPage />} />
-          <Route path="operations/stock-movements" element={<StockMovementsPage role="STAFF" />} />
-          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="STAFF" />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="FACILITY_STAFF" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="FACILITY_STAFF" />} />
           <Route path="operations/:resource" element={<ManagerResourcePage />} />
           <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
           <Route path="check-in" element={<Navigate to="/staff/appointments" replace />} />
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>
-      <Route element={<RoleGuard allowedRoles={["MANAGER"]} />}>
+      <Route element={<RoleGuard allowedRoles={["FACILITY_MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
           <Route path="stored-items" element={<ManagerStoredItemsPage />} />
-          <Route path="operations/stock-movements" element={<StockMovementsPage role="MANAGER" />} />
-          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="MANAGER" />} />
+          <Route path="operations/stock-movements" element={<StockMovementsPage role="FACILITY_MANAGER" />} />
+          <Route path="operations/stock-movements/:id" element={<StockMovementsPage role="FACILITY_MANAGER" />} />
           <Route path="overstays" element={<OverstayPage />} />
           <Route path="reservations" element={<Navigate to="/manager" replace />} />
           <Route path="operations/reservations" element={<Navigate to="/manager" replace />} />
@@ -222,14 +223,15 @@ export function AppRouter() {
           {operationalRoutes("/manager")}
         </Route>
       </Route>
-      <Route element={<RoleGuard allowedRoles={["ADMIN"]} />}>
+      <Route element={<RoleGuard allowedRoles={["BUSINESS_OPERATIONS_MANAGER"]} />}><Route path="operations" element={<OperationsLayout />}><Route index element={<Navigate to="/operations/facilities" replace />} /><Route path="facilities" element={<OperationsFacilities/>}/><Route path="policies" element={<OperationsPolicies/>}/><Route path="pricing" element={<OperationsPricing/>}/><Route path="reports" element={<OperationsReports/>}/><Route path="settings/:section?" element={<AccountSettingsPage/>}/></Route></Route>
+      <Route element={<RoleGuard allowedRoles={["SYSTEM_ADMINISTRATOR"]} />}>
         <Route path="admin" element={<AdminLayout />}>
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />
           <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
           <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
           <Route index element={<AdminDashboardPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
-          <Route path="users" element={<AdminAccountsPage />} />
+          <Route path="users" element={<AdminAccountsPage />} /><Route path="facility-access" element={<AdminFacilityAccessPage/>}/>
           <Route path="users/:id" element={<AdminAccountDetailPage />} />
           <Route path="roles" element={<Navigate to="/admin/users" replace />} />
           <Route path="assignments" element={<Navigate to="/admin" replace />} />

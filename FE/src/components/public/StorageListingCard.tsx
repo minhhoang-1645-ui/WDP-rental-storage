@@ -31,6 +31,6 @@ export function StorageListingCard({ unit }: { unit: StorageListing }) {
       </div>
       {monthlyPrice && <p className="storage-card-price-note">Chưa gồm cọc và dịch vụ.</p>}
     </div>
-    <div className="storage-card-actions"><Link to={path} className="button-secondary">Xem chi tiết</Link>{(!user || user.role === 'CUSTOMER') && <Link to={storageBookingHref(unit, location.search)} className="button-primary" aria-label={`Chọn kho ${unit.name}`}>Chọn kho này</Link>}</div><ComparisonChoice product={unit} />
+    <div className="storage-card-actions"><Link to={path} className="button-secondary">Xem chi tiết</Link>{(!user || user.role === 'STORAGE_CUSTOMER') && <Link to={storageBookingHref(unit, location.search)} className="button-primary" aria-label={`Chọn kho ${unit.name}`}>Chọn kho này</Link>}</div><ComparisonChoice product={unit} />
   </article>
 }

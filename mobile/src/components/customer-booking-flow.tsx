@@ -41,10 +41,10 @@ export function CustomerBookingFlow() {
   const filtered = Number.isFinite(minimumArea) && minimumArea > 0;
   const allProducts = rows(catalog.data?.products);
   const products = filtered ? matchingStorage(allProducts, sizes, minimumArea).map(item => item.product) : allProducts;
-  const addons = useResource<AdditionalService[]>('/additional-services');
   const [step,setStep] = useState(1), [productChoice,setProduct] = useState(params.product ?? '');
   const product = products.find(row => text(row,'id') === productChoice) ?? products.find(row => row.sizeId === params.size) ?? products[0];
   const productId = text(product ?? {},'id'), size = sizes.find(row => row.id === product?.sizeId);
+  const addons = useResource<AdditionalService[]>(product?.facilityId?'/additional-services?facilityId='+encodeURIComponent(String(product.facilityId)):null);
   const supported = Array.isArray(catalog.data?.approvedDurations) ? (catalog.data.approvedDurations as unknown[]).map(Number).filter(n => [1,3,6,12].includes(n)) : [1,3,6,12];
   const durations = Array.from({length: Math.max(...(supported.length?supported:[12]))},(_,index)=>index+1);
   const [mode,setMode] = useState<'duration'|'dates'>(params.periodMode === 'dates' ? 'dates' : 'duration');
@@ -82,7 +82,7 @@ export function CustomerBookingFlow() {
     request.current=controller; setBusy(true); setError(''); setSoldOut(false);
     try {
       for(const selection of requestedServices) {
-        const query = new URLSearchParams({quantity:String(selection.quantity), ...(selection.serviceStartDate ? {startDate:selection.serviceStartDate} : {}), ...(selection.serviceEndDate ? {endDate:selection.serviceEndDate} : {})});
+        const query = new URLSearchParams({facilityId:String(product?.facilityId??''),quantity:String(selection.quantity), ...(selection.serviceStartDate ? {startDate:selection.serviceStartDate} : {}), ...(selection.serviceEndDate ? {endDate:selection.serviceEndDate} : {})});
         const inventory = await apiRequest<ServiceInventory>('/additional-services/'+encodeURIComponent(selection.serviceId)+'/availability?'+query,{signal:controller.signal});
         if(!inventory.available) throw new Error('Dịch vụ thêm không còn đủ số lượng. Hãy sửa lựa chọn dịch vụ.');
       }

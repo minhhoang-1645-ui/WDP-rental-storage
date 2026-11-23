@@ -12,6 +12,7 @@ export interface BankTransferConfig {
 }
 
 export interface PaymentSubmission {
+  reconciliation?: { id: string; reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; reason: string; resolutionNote: string | null; reviewedAt: string | null } | null
   id: string
   isDemo?: boolean
   submissionCode: string

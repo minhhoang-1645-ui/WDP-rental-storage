@@ -112,7 +112,7 @@ export function assignmentNeedsAttention(resource: string, row: WorkRow) {
     || resource === 'damage-claims' && Boolean(row.staffFacts)) return false;
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
-  const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'STAFF'));
+  const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'FACILITY_STAFF'));
   return Boolean(disabled && canAssignWork(resource, row));
 }
 

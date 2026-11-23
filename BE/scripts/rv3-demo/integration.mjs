@@ -81,9 +81,9 @@ try {
   const loggedIn = {};
   for (const [role, email] of Object.entries(accounts)) { const session = await auth.login({ email, password: userPassword }); assert.equal(session.user.role, role); assert.equal((await auth.getUserByToken(session.token)).email, email); loggedIn[role] = session.user; }
   const stock = new StockMovementsService(db);
-  assert.equal((await stock.listCustomer(loggedIn.CUSTOMER.id, { page: 1, limit: 10 })).total, 3);
-  assert.equal((await stock.listStaff(loggedIn.STAFF, { page: 1, limit: 10 })).total, 3);
-  assert.equal((await stock.listStoredItems(loggedIn.CUSTOMER.id))[0].balance, 8);
+  assert.equal((await stock.listCustomer(loggedIn.STORAGE_CUSTOMER.id, { page: 1, limit: 10 })).total, 3);
+  assert.equal((await stock.listStaff(loggedIn.FACILITY_STAFF, { page: 1, limit: 10 })).total, 3);
+  assert.equal((await stock.listStoredItems(loggedIn.STORAGE_CUSTOMER.id))[0].balance, 8);
   const dashboard = await new ManagerService(db).dashboardSummary();
   assert.equal(dashboard.pendingReservations, 1); assert.equal(dashboard.activeRentals, 2); assert.equal(dashboard.availableUnits, 7); assert.equal(dashboard.occupiedUnits, 2); assert.equal(dashboard.maintenanceUnits, 1);
   const report = await new ReportingService(db).summary({});

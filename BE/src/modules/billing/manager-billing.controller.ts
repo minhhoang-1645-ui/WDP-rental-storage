@@ -12,30 +12,30 @@ const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
 
 @Controller('manager')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 @ApiTags('Manager Billing')
 @ApiBearerAuth('bearerAuth')
 export class ManagerBillingController {
   constructor(private readonly billing: BillingService, private readonly onlinePayments: OnlinePaymentService) {}
 
-  @Get('online-payment-reconciliations')
-  @ApiOperation({ summary: 'Danh sách VNPay thành công cần đối soát', description: 'Chỉ xuất hiện khi VNPay trả thành công nhưng hóa đơn/reservation đã hết hiệu lực. Không tự ghi nhận Payment hoặc kích hoạt lại kho.' })
-  listOnlinePaymentReconciliations(@Query() query: Record<string, unknown>) {
+  @Get(['online-payment-reconciliations','payment-reconciliations'])
+  @ApiOperation({ summary: 'Danh sách thanh toán cần đối soát', description: 'Tiền VNPay hoặc chuyển khoản đã xác minh nhưng chưa thể áp dụng vào hóa đơn. Không tự ghi nhận Payment hoặc kích hoạt lại kho.' })
+  listOnlinePaymentReconciliations(@Query() query: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) {
     const page = this.integer(query.page, 1, 100000, 'page');
     const limit = this.integer(query.limit, 20, 100, 'limit');
     const status = this.optional(query.status, 'status');
     if (status && !['PENDING_REVIEW', 'REFUND_REQUIRED', 'RECONCILED'].includes(status)) throw new BadRequestException('Trạng thái đối soát không hợp lệ.');
-    return this.onlinePayments.listManagerReconciliations(page, limit, status as 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED' | undefined);
+    return this.onlinePayments.listManagerReconciliations(page, limit, status as 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED' | undefined, foundationRequest.user!);
   }
 
-  @Post('online-payment-reconciliations/:id/resolve')
-  @ApiOperation({ summary: 'Kết thúc đối soát VNPay trễ', description: 'REFUND_REQUIRED yêu cầu hoàn tiền ngoài cổng thanh toán; RECONCILED chỉ dùng khi đã xử lý nghiệp vụ ngoài hệ thống. Endpoint này không tự hoàn tiền và không kích hoạt lại reservation.' })
+  @Post(['online-payment-reconciliations/:id/resolve','payment-reconciliations/:id/resolve'])
+  @ApiOperation({ summary: 'Kết thúc đối soát thanh toán', description: 'REFUND_REQUIRED yêu cầu hoàn tiền ngoài cổng thanh toán; RECONCILED chỉ dùng khi đã xử lý nghiệp vụ ngoài hệ thống. Endpoint này không tự hoàn tiền và không kích hoạt lại reservation.' })
   resolveOnlinePaymentReconciliation(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.onlinePayments.resolveReconciliation(id, body, request.user!);
   }
 
   @Get('invoices')
-  @ApiOperation({ summary: 'Danh sách Invoice', description: 'MANAGER. INITIAL và RECURRING đều ở cấp Reservation, kể cả quantity > 1. PAY_MONTHLY 6 tháng có I01 + 5 kỳ recurring; PREPAID, DAILY và PAY_MONTHLY 1 tháng không có recurring.' })
+  @ApiOperation({ summary: 'Danh sách Invoice', description: 'FACILITY_MANAGER. INITIAL và RECURRING đều ở cấp Reservation, kể cả quantity > 1. PAY_MONTHLY 6 tháng có I01 + 5 kỳ recurring; PREPAID, DAILY và PAY_MONTHLY 1 tháng không có recurring.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
@@ -46,9 +46,9 @@ export class ManagerBillingController {
   @ApiOkResponse({ description: 'Danh sách Invoice và số dư.', schema: { example: { page: 1, limit: 20, total: 1, items: [{ invoiceCode: 'WDP-2026-AB12CD34-I01', type: 'INITIAL', status: 'PARTIALLY_PAID', totalAmount: 5800000, amountPaid: 3000000, balanceDue: 2800000 }] } } })
   @ApiBadRequestResponse({ description: 'Pagination hoặc filter không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
-  listInvoices(@Query() query: Record<string, unknown>) {
-    return this.billing.listManagerInvoices(this.invoiceQuery(query));
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
+  listInvoices(@Query() query: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.billing.listManagerInvoices(this.invoiceQuery(query), foundationRequest.user!);
   }
 
   @Get('invoices/:id')
@@ -62,14 +62,14 @@ export class ManagerBillingController {
     pastDue: { summary: 'Quá hạn nhưng vẫn OPEN, không phí/phạt tự động', value: { invoiceCode: 'WDP-2026-MONTH001-I02', type: 'RECURRING', billingCycle: 2, dueAt: '2026-09-10', isPastDue: true, status: 'OPEN', rentalAmount: 2900000, depositAmount: 0, totalAmount: 2900000, amountPaid: 0, balanceDue: 2900000 } },
   } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Invoice.' })
-  getInvoice(@Param('id') id: string) {
-    return this.billing.getManagerInvoice(id);
+  getInvoice(@Param('id') id: string, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.billing.getManagerInvoice(id, foundationRequest.user!);
   }
 
   @Post('invoices/:invoiceId/payments')
-  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'MANAGER. Payment append-only. INITIAL paid mở handover; RENEWAL paid hoàn tất gia hạn; SETTLEMENT paid đủ tự đóng DepositSettlement khi không có refund.' })
+  @ApiOperation({ summary: 'Ghi nhận Payment', description: 'FACILITY_MANAGER. Payment append-only. INITIAL paid mở handover; RENEWAL paid hoàn tất gia hạn; SETTLEMENT paid đủ tự đóng DepositSettlement khi không có refund.' })
   @ApiParam({ name: 'invoiceId', example: 'WDP-2026-AB12CD34-I01' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'payment-bank-ref-123', description: 'Khóa duy nhất 8–200 ký tự cho lần ghi nhận thanh toán.' })
   @ApiBody({ type: RecordPaymentRequestDto, examples: {
@@ -77,18 +77,18 @@ export class ManagerBillingController {
     final: { summary: 'Thanh toán phần còn lại', value: { amount: 2800000, method: 'BANK_TRANSFER', reference: 'BANK-REF-124', note: 'Thanh toán đủ' } },
     recurringEarly: { summary: 'Thanh toán sớm hóa đơn recurring tương lai', value: { amount: 2900000, method: 'BANK_TRANSFER', reference: 'BANK-RECURRING-EARLY', note: 'Thanh toán kỳ tháng tiếp theo trước hạn' } },
   } })
-  @ApiCreatedResponse({ description: 'Payment đã ghi nhận; response cho biết Invoice và trạng thái contracts mới nhất.', schema: { example: { payment: { paymentCode: 'WDP-2026-AB12CD34-I01-P01', amount: 3000000, method: 'BANK_TRANSFER', recordedBy: { fullName: 'WDP Demo Manager', role: 'MANAGER' } }, invoice: { invoiceCode: 'WDP-2026-AB12CD34-I01', status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 2800000 }, contracts: [{ contractCode: 'WDP-2026-AB12CD34-C01', status: 'PENDING_PAYMENT' }] } } })
+  @ApiCreatedResponse({ description: 'Payment đã ghi nhận; response cho biết Invoice và trạng thái contracts mới nhất.', schema: { example: { payment: { paymentCode: 'WDP-2026-AB12CD34-I01-P01', amount: 3000000, method: 'BANK_TRANSFER', recordedBy: { fullName: 'WDP Demo Manager', role: 'FACILITY_MANAGER' } }, invoice: { invoiceCode: 'WDP-2026-AB12CD34-I01', status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 2800000 }, contracts: [{ contractCode: 'WDP-2026-AB12CD34-C01', status: 'PENDING_PAYMENT' }] } } })
   @ApiBadRequestResponse({ description: 'amount/method/Idempotency-Key không hợp lệ hoặc amount vượt balanceDue.' })
   @ApiConflictResponse({ description: 'Invoice đã PAID, Idempotency-Key xung đột hoặc cập nhật đồng thời.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được ghi nhận Payment.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được ghi nhận Payment.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Invoice.' })
   recordPayment(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
     return this.billing.recordPayment(invoiceId, body, idempotencyKey, request.user!);
   }
 
   @Get('payments')
-  @ApiOperation({ summary: 'Danh sách Payment', description: 'MANAGER; stable sorting theo receivedAt.' })
+  @ApiOperation({ summary: 'Danh sách Payment', description: 'FACILITY_MANAGER; stable sorting theo receivedAt.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'BANK-REF-123' })
@@ -96,9 +96,9 @@ export class ManagerBillingController {
   @ApiOkResponse({ description: 'Danh sách Payment.' })
   @ApiBadRequestResponse({ description: 'Pagination hoặc filter không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
-  listPayments(@Query() query: Record<string, unknown>) {
-    return this.billing.listManagerPayments(this.paymentQuery(query));
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
+  listPayments(@Query() query: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.billing.listManagerPayments(this.paymentQuery(query), foundationRequest.user!);
   }
 
   @Get('payments/:id')
@@ -106,10 +106,10 @@ export class ManagerBillingController {
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-P01' })
   @ApiOkResponse({ description: 'Payment, Invoice, Reservation và người ghi nhận.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Payment.' })
-  getPayment(@Param('id') id: string) {
-    return this.billing.getManagerPayment(id);
+  getPayment(@Param('id') id: string, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.billing.getManagerPayment(id, foundationRequest.user!);
   }
 
   @Get('payment-submissions')
@@ -120,20 +120,20 @@ export class ManagerBillingController {
   @ApiQuery({ name: 'search', required: false, example: 'WDP-2026-AB12CD34' })
   @ApiQuery({ name: 'invoiceCode', required: false, example: 'WDP-2026-AB12CD34-I01' })
   @ApiOkResponse({ description: 'Thông tin thông báo, hóa đơn hiện tại và khách hàng.' })
-  listPaymentSubmissions(@Query() query: Record<string, unknown>) {
+  listPaymentSubmissions(@Query() query: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) {
     const common = this.commonQuery(query);
     const status = this.optional(query.status, 'status');
     if (status && !['PENDING_VERIFICATION', 'VERIFIED', 'REJECTED'].includes(status)) throw new BadRequestException('PaymentSubmission status không hợp lệ.');
     const invoiceCode = this.optional(query.invoiceCode, 'invoiceCode');
-    return this.billing.listManagerPaymentSubmissions({ ...common, ...(status ? { status: status as 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED' } : {}), ...(invoiceCode ? { invoiceCode } : {}) });
+    return this.billing.listManagerPaymentSubmissions({ ...common, ...(status ? { status: status as 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED' } : {}), ...(invoiceCode ? { invoiceCode } : {}) }, foundationRequest.user!);
   }
 
   @Get('payment-submissions/:id')
   @ApiOperation({ summary: 'Chi tiết thông báo chuyển khoản cần xác minh' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-I01-S01' })
   @ApiOkResponse({ description: 'Submission, hóa đơn/số dư, khách hàng và chi tiết chuyển khoản.' })
-  getPaymentSubmission(@Param('id') id: string) {
-    return this.billing.getManagerPaymentSubmission(id);
+  getPaymentSubmission(@Param('id') id: string, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.billing.getManagerPaymentSubmission(id, foundationRequest.user!);
   }
 
   @Post('payment-submissions/:id/verify')

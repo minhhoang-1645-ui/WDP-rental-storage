@@ -1,6 +1,8 @@
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskExecution, facilityScope, reservationScope, staffUnitScope } from '../facility-access/task-access.js';
+import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 import { customerPhotos } from '../../customer-photos.js';
-import { Optional } from '@nestjs/common';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
+
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { isItemUnit } from './item-units.js';
 import { randomBytes } from 'node:crypto';
@@ -15,22 +17,22 @@ type MovementRecord = Prisma.StockMovementGetPayload<{ include: ReturnType<Stock
 
 @Injectable()
 export class StockMovementsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   listCustomer(customerId: string, query: ListQuery) { return this.page({ customerUserId: customerId }, query); }
-  async listManager(query: ListQuery, actor?: PublicUser) {
-    return actor?.role === 'STAFF' ? this.listStaff(actor, query) : this.page({}, query);
+  async listManager(query: ListQuery, actor: PublicUser) {
+    return actor?.role === 'FACILITY_STAFF' ? this.listStaff(actor, query) : this.page({rentalContract:{reservation:reservationScope(actor)}}, query);
   }
   async listStaff(actor: PublicUser, query: ListQuery) {
-    return this.page({ assignedStaffUserId: actor.id }, query, actor);
+    return this.page({ assignedStaffUserId: actor.id,rentalContract:{reservation:reservationScope(actor)} }, query, actor);
   }
 
   async getCustomer(customerId: string, id: string) { return this.find(id, { customerUserId: customerId }); }
-  async getManager(id: string, actor?: PublicUser) {
-    return actor?.role === 'STAFF' ? this.getStaff(actor, id) : this.find(id, {});
+  async getManager(id: string, actor: PublicUser) {
+    return actor?.role === 'FACILITY_STAFF' ? this.getStaff(actor, id) : this.find(id, {rentalContract:{reservation:reservationScope(actor)}});
   }
   async getStaff(actor: PublicUser, id: string) {
-    const item = await this.findRecord(id, { assignedStaffUserId: actor.id });
+    const item = await this.findRecord(id, { assignedStaffUserId: actor.id,rentalContract:{reservation:reservationScope(actor)} });
     const [visible, previousAssignments] = await Promise.all([
       this.currentStaffItems(this.prisma, actor.id, [item]),
       item.assignedAt ? this.prisma.auditEvent.findMany({
@@ -64,22 +66,22 @@ export class StockMovementsService {
   }
 
   async listOperationalStoredItems(actor: PublicUser, query: ItemQuery) {
-    if (!['STAFF', 'MANAGER'].includes(actor.role)) throw new ForbiddenException('Chỉ nhân viên và quản lý được tra cứu hàng.');
-    const scope = actor.role === 'STAFF' ? await this.staffInventoryScope(this.prisma, actor.id, { storageUnitId: query.storageUnitId }) : {};
+    if (!['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(actor.role)) throw new ForbiddenException('Chỉ nhân viên và quản lý được tra cứu hàng.');
+    const scope = actor.role === 'FACILITY_STAFF' ? await this.staffInventoryScope(this.prisma, actor.id, { storageUnitId: query.storageUnitId }) : {rentalContract:{reservation:reservationScope(actor)}};
     if (!scope) {
       if (query.storageUnitId) throw new ForbiddenException('Bạn không có quyền xem hàng tại kho này.');
       return { page: query.page, limit: query.limit, total: 0, items: [], selectedStorageUnit: undefined };
     }
-    const selectedStorageUnit = actor.role === 'STAFF' && query.storageUnitId
+    const selectedStorageUnit = actor.role === 'FACILITY_STAFF' && query.storageUnitId
       ? await this.prisma.storageUnit.findFirst({
-        where: { id: query.storageUnitId, OR: [
-          ...(this.unitStaff?.enabled() ? [{ staffAssignments: { some: { staffUserId: actor.id, endedAt: null } } }] : []),
+        where: { id: query.storageUnitId, AND:[staffUnitScope(actor)], OR: [
+
           { reservationUnits: { some: { contract: { storedItems: { some: scope } } } } },
         ] },
         select: this.unitSelect(),
       })
       : null;
-    if (actor.role === 'STAFF' && query.storageUnitId && !selectedStorageUnit) {
+    if (actor.role === 'FACILITY_STAFF' && query.storageUnitId && !selectedStorageUnit) {
       throw new ForbiddenException('Bạn không có quyền xem hàng tại kho này.');
     }
     const match = query.search ? { contains: query.search, mode: 'insensitive' as const } : undefined;
@@ -88,7 +90,7 @@ export class StockMovementsService {
       AND: [scope],
       ...(query.storageUnitId ? { rentalContract: { reservationUnit: { storageUnitId: query.storageUnitId } } } : {}),
       ...(match ? { OR: [
-        { name: match }, ...(actor.role === 'STAFF' ? [{ itemCode: match }] : []),
+        { name: match }, ...(actor.role === 'FACILITY_STAFF' ? [{ itemCode: match }] : []),
         { customer: { fullName: match } },
         { rentalContract: { reservationUnit: { storageUnit: { unitNumber: match } } } },
       ] } : {}),
@@ -111,7 +113,7 @@ export class StockMovementsService {
   }
 
   async listStaffStoredItemHistory(actor: PublicUser, id: string, { page, limit }: ItemQuery) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được tra cứu lịch sử mặt hàng.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được tra cứu lịch sử mặt hàng.');
     const scope = await this.staffInventoryScope(this.prisma, actor.id, { itemIds: [id] });
     if (!scope) throw new NotFoundException('Không tìm thấy mặt hàng.');
     const item = await this.prisma.storedItem.findFirst({
@@ -149,7 +151,7 @@ export class StockMovementsService {
   }
 
   private async staffInventoryScope(db: Prisma.TransactionClient, staffUserId: string, filter: { storageUnitId?: string; itemIds?: string[] } = {}): Promise<Prisma.StoredItemWhereInput | null> {
-    // Task assignments cover their own item lines and physical location, even outside the Staff member's usual units.
+    // Task assignments grant access only to their own item lines at the current location; facility access remains mandatory.
     const grants = await db.$queryRaw<{ itemId: string; unitId: string }[]>(Prisma.sql`
       SELECT DISTINCT i."id" AS "itemId", ru."storageUnitId" AS "unitId"
       FROM "StockMovement" m
@@ -177,10 +179,7 @@ export class StockMovementsService {
     const scope: Prisma.StoredItemWhereInput[] = Array.from(byUnit, ([unitId, ids]) => ({
       id: { in: ids }, rentalContract: { reservationUnit: { storageUnitId: unitId } },
     }));
-    if (this.unitStaff?.enabled()) scope.push({
-      rentalContract: { reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId, endedAt: null } } } } },
-    });
-    return scope.length ? { OR: scope } : null;
+    return scope.length ? { AND:[{OR:scope},{rentalContract:{reservation:{facility:facilityScope({id:staffUserId,role:'FACILITY_STAFF'})}}}] } : null;
   }
 
   async create(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
@@ -208,12 +207,10 @@ export class StockMovementsService {
         const end = Date.parse(`${activeContract.endDate.toISOString().slice(0, 10)}T00:00:00+07:00`);
         if (time < start || parsed.type === 'IN' && time >= end) throw new BadRequestException('Lịch nhập phải trong kỳ thuê. Lịch xuất có thể sau hạn để lấy hết hàng và trả kho.');
       }
-      const responsibility = await this.unitStaff?.resolveStaff(tx, [activeContract.reservationUnit.storageUnitId]);
       const movement = await tx.stockMovement.create({
         data: {
           movementCode: this.code(), type: parsed.type, customerUserId: customer.id, rentalContractId: contract.id,
           storageUnitId: activeContract.reservationUnit.storageUnitId,
-          ...(responsibility ? { status: 'ASSIGNED', assignedStaffUserId: responsibility.staffUserId, assignedByUserId: responsibility.assignedByUserId, assignedAt: new Date() } : {}),
           unitCodeSnapshot: activeContract.reservationUnit.storageUnit.unitNumber,
           floorSnapshot: activeContract.reservationUnit.storageUnit.floor,
           zoneSnapshot: activeContract.reservationUnit.storageUnit.zone,
@@ -238,22 +235,24 @@ export class StockMovementsService {
   }
 
   async assign(id: string, staffUserId: string, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được phân công nhân viên.');
-    const staff = await this.prisma.user.findFirst({ where: { id: staffUserId, role: 'STAFF', accountStatus: 'ACTIVE' }, select: { id: true } });
-    if (!staff) throw new BadRequestException('Nhân viên được giao phải là STAFF đang hoạt động.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được phân công nhân viên.');
+    const staff = await this.prisma.user.findFirst({ where: { id: staffUserId, role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' }, select: { id: true } });
+    if (!staff) throw new BadRequestException('Nhân viên được giao phải là FACILITY_STAFF đang hoạt động.');
     return this.serializable(async (tx) => {
       const current = await this.lock(tx, id);
       if (!['REQUESTED', 'ASSIGNED'].includes(current.status)) throw new ConflictException('Chỉ phiếu đang chờ mới được phân công.');
+      const staff=await assertAssignmentAccess(tx,actor,staffUserId,{rentalContractId:current.rentalContractId});
+      await recordAssignment(tx,actor,"stock-movements",current.id,current.assignedStaffUserId,staff.id);
       return this.view(await tx.stockMovement.update({ where: { id: current.id }, data: { status: 'ASSIGNED', assignedStaffUserId: staff.id, assignedByUserId: actor.id, assignedAt: new Date() }, include: this.include() }));
     });
   }
 
   async complete(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được giao mới được hoàn tất phiếu.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được giao mới được hoàn tất phiếu.');
     const completionNote = this.optionalText(input.note, 2000, 'note');
     return this.serializable(async (tx) => {
       const current = await this.lock(tx, id);
-      if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới được hoàn tất phiếu.');
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{rentalContractId:current.rentalContractId});
       if (current.status === 'COMPLETED') {
         const item = await tx.stockMovement.findUniqueOrThrow({ where: { id: current.id }, include: this.include() });
         return this.staffView(item, await this.currentStaffItems(tx, actor.id, [item]));

@@ -101,7 +101,7 @@ describe('PricingService V1', () => {
     [6, 'PREPAID', 10],
     [12, 'PREPAID', 15],
     [2, 'PREPAID', 0],
-  ] as const)('applies the approved discount for %i months with %s', async (months, paymentPlan, discountPercent) => {
+  ] as const)('applies the approved discount for %i months with %s', async (months: any, paymentPlan: any, discountPercent: any) => {
     const result = await quote('sm-b12', addMonths(startDate, months), paymentPlan);
     expect(result.discountPercent).toBe(discountPercent);
     expect(result.discountAmount).toBe(Math.round(result.baseRentalAmount * discountPercent / 100));

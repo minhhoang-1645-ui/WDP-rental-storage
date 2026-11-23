@@ -8,7 +8,7 @@ import { InventoryManagementController } from './inventory-management.controller
 import { RolesGuard } from '../auth/roles.guard.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const actor = { id: 'manager', role: 'MANAGER' } as PublicUser;
+const actor = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 const version = '2026-11-03T00:00:00.000Z';
 const type = { id: 'type', facilityId: 'facility', code: 'SM-A', name: 'Kho nhỏ', sizeId: 'small', condition: 'STANDARD', widthCm: 100, lengthCm: 200, heightCm: 240, monthlyRate: new Prisma.Decimal(1500000), allowDailyRental: false, minRentalDays: null, image: '', imageAlt: '', updatedAt: new Date(version) };
 const unit = { id: 'unit', unitNumber: 'SM-A-001', storageTypeId: 'type', floor: 'Trệt', zone: 'A', row: 1, position: 1, status: 'AVAILABLE', updatedAt: new Date(version), _count: { reservationUnits: 0, maintenanceRequests: 0, supportRequests: 0, outgoingTransfers: 0, incomingTransfers: 0, returnInspections: 0, staffAssignments: 0 } };
@@ -27,7 +27,7 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
   it('merges equivalent ground labels and lists locations independently of pagination', async () => {
     const { service, tx } = fixture();
     tx.storageUnit.groupBy.mockResolvedValue([{ floor: 'Ground', zone: 'a' }, { floor: 'Tầng trệt', zone: 'A' }, { floor: 'Tầng 1', zone: 'B' }]);
-    expect(await service.listUnitLocations()).toEqual({ floors: ['Tầng 1', 'Tầng trệt'], zones: ['A', 'B'] });
+    expect(await service.listUnitLocations({id:"manager",role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''})).toEqual({ floors: ['Tầng 1', 'Tầng trệt'], zones: ['A', 'B'] });
   });
   it('prevents duplicate full coordinates but preserves partial and unchanged legacy positions', async () => {
     const { service, tx } = fixture();
@@ -43,9 +43,9 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
   });
   it('returns real prices and preserves unavailable prices', async () => {
     const { service } = fixture();
-    expect(await service.listTypes()).toMatchObject({ total: 2, items: [{ monthlyRate: 1500000 }, { monthlyRate: null }] });
+    expect(await service.listTypes({id:"manager",role:'FACILITY_MANAGER',fullName:'Test actor',email:'test@example.test',phone:''})).toMatchObject({ total: 2, items: [{ monthlyRate: 1500000 }, { monthlyRate: null }] });
   });
-  it.each(['CUSTOMER', 'STAFF', 'ADMIN'] as const)('rejects %s before any database write', async role => {
+  it.each(['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'SYSTEM_ADMINISTRATOR'] as const)('rejects %s before any database write', async role => {
     const { service, prisma } = fixture();
     await expect(service.saveUnit(undefined, {}, { ...actor, role })).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.saveType(undefined, {}, { ...actor, role })).rejects.toBeInstanceOf(ForbiddenException);
@@ -118,9 +118,9 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
   it('route guard grants configuration only to Manager, including GET list', () => {
     const guard = new RolesGuard(new Reflector());
     for (const name of ['list', 'unitLocations', 'createType', 'updateType', 'createUnit', 'updateUnit'] as const) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN']) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR']) {
         const context = { getClass: () => InventoryManagementController, getHandler: () => InventoryManagementController.prototype[name], switchToHttp: () => ({ getRequest: () => ({ method: ['list', 'unitLocations'].includes(name) ? 'GET' : 'POST', originalUrl: '/api/manager/storage-types', user: { role } }) }) } as unknown as ExecutionContext;
-        if (role === 'MANAGER') expect(guard.canActivate(context)).toBe(true);
+        if (role === 'FACILITY_MANAGER') expect(guard.canActivate(context)).toBe(true);
         else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
       }
     }

@@ -15,7 +15,7 @@ export class StaffMaintenanceController {
   constructor(private readonly maintenance: MaintenanceService) {}
 
   @Post()
-  @Roles('STAFF')
+  @Roles('FACILITY_STAFF')
   @ApiOperation({ summary: 'Staff báo maintenance thủ công cho unit AVAILABLE', description: 'Không hỗ trợ unit OCCUPIED; trường hợp đó phải dùng Incident/Transfer ở milestone sau.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-report-20261009-001' })
   @ApiBody({ type: CreateMaintenanceRequestDto })
@@ -23,14 +23,14 @@ export class StaffMaintenanceController {
   @ApiConflictResponse({ description: 'Unit OCCUPIED, không AVAILABLE hoặc đã có active maintenance.' })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ STAFF được dùng endpoint báo cáo này.' })
+  @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được dùng endpoint báo cáo này.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
     return this.maintenance.createManual(body, key, request.user!);
   }
 
   @Get()
-  @Roles('STAFF')
-  @ApiOperation({ summary: 'Danh sách maintenance vận hành', description: 'STAFF, MANAGER hoặc ADMIN. Không chứa dữ liệu tài chính.' })
+  @Roles('FACILITY_STAFF')
+  @ApiOperation({ summary: 'Danh sách maintenance vận hành', description: 'FACILITY_STAFF, FACILITY_MANAGER hoặc SYSTEM_ADMINISTRATOR. Không chứa dữ liệu tài chính.' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION', 'COMPLETED'] })
   @ApiQuery({ name: 'priority', required: false, enum: ['LOW', 'MEDIUM', 'HIGH'] })
@@ -40,13 +40,13 @@ export class StaffMaintenanceController {
   list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.maintenance.listStaff(parseMaintenanceQuery(query), request.user!); }
 
   @Get(':id')
-  @Roles('STAFF')
+  @Roles('FACILITY_STAFF')
   @ApiOperation({ summary: 'Chi tiết maintenance vận hành cho Staff' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiOkResponse({ description: 'Unit, assignment và work fields; không chứa financial history.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
   get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.maintenance.getStaff(id, req.user!); }
 
   @Post(':id/start')
-  @Roles('STAFF')
+  @Roles('FACILITY_STAFF')
   @ApiOperation({ summary: 'Staff được giao bắt đầu công việc' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-start-20261009-001' })
   @ApiCreatedResponse({ description: 'OPEN → IN_PROGRESS; unit vẫn MAINTENANCE.' })
@@ -54,7 +54,7 @@ export class StaffMaintenanceController {
   start(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined) { return this.maintenance.start(id, key, request.user!); }
 
   @Post(':id/complete-work')
-  @Roles('STAFF')
+  @Roles('FACILITY_STAFF')
   @ApiOperation({ summary: 'Staff gửi công việc đã hoàn tất để Manager xác minh' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-complete-20261009-001' }) @ApiBody({ type: CompleteMaintenanceWorkDto })
   @ApiCreatedResponse({ description: 'IN_PROGRESS → AWAITING_VERIFICATION; unit vẫn MAINTENANCE.' })

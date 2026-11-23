@@ -1,3 +1,4 @@
+import { assertActiveRole } from '../facility-access/record-access.js';
 import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { isIP } from 'node:net';
 import { Prisma, type UserRole } from '../../generated/prisma/client.js';
@@ -10,7 +11,7 @@ export type AuditInput = {
 };
 export const disabledLoginAction = 'AUTH_LOGIN_ACCOUNT_DISABLED';
 const accountNoticeActions = ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
-const roles = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
+const roles = ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'];
 // oxlint-disable-next-line no-control-regex -- Strip control characters from untrusted display fields.
 const clean = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || null : null;
 
@@ -40,7 +41,8 @@ export class AuditService {
     }
   }
 
-  async list(query: Record<string, unknown>) {
+  async list(query: Record<string, unknown>,actor:PublicUser) {
+    await assertActiveRole(this.prisma,actor,'SYSTEM_ADMINISTRATOR');
     const scalar = (name: string, max = 100) => {
       const value = query[name];
       if (value === undefined || value === '') return undefined;

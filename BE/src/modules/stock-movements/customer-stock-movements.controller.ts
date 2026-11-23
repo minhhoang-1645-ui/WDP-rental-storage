@@ -6,7 +6,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseStockMovementQuery } from './stock-movement-query.js';
 import { StockMovementsService } from './stock-movements.service.js';
 
-@Controller('customer') @UseGuards(AuthGuard, RolesGuard) @Roles('CUSTOMER') @ApiBearerAuth('bearerAuth') @ApiTags('Customer Stored Items')
+@Controller('customer') @UseGuards(AuthGuard, RolesGuard) @Roles('STORAGE_CUSTOMER') @ApiBearerAuth('bearerAuth') @ApiTags('Customer Stored Items')
 export class CustomerStockMovementsController {
   constructor(private readonly service: StockMovementsService) {}
   @Get('stored-items') @ApiOperation({ summary: 'Hàng khách đang lưu theo hợp đồng' }) @ApiQuery({ name: 'rentalContractId', required: false })

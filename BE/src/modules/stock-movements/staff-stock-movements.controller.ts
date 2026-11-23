@@ -6,7 +6,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseStockMovementQuery } from './stock-movement-query.js';
 import { StockMovementsService } from './stock-movements.service.js';
 
-@Controller('staff/stock-movements') @UseGuards(AuthGuard, RolesGuard) @Roles('STAFF') @ApiBearerAuth('bearerAuth') @ApiTags('Staff Stock Movements')
+@Controller('staff/stock-movements') @UseGuards(AuthGuard, RolesGuard) @Roles('FACILITY_STAFF') @ApiBearerAuth('bearerAuth') @ApiTags('Staff Stock Movements')
 export class StaffStockMovementsController {
   constructor(private readonly service: StockMovementsService) {}
   @Get() @ApiOperation({ summary: 'Phiếu nhập/xuất được giao cho Staff hiện tại' }) @ApiQuery({ name: 'page', required: false }) @ApiQuery({ name: 'limit', required: false }) @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'type', required: false })

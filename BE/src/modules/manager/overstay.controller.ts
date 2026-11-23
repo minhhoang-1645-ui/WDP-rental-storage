@@ -1,3 +1,4 @@
+import { staffContractScope, reservationScope } from '../facility-access/task-access.js';
 import { Controller, Get, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -5,25 +6,20 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessToday } from '../../business-date.js';
-import { ConfigService } from '@nestjs/config';
-import { responsibleUnit } from '../unit-staff/operational-assignment.js';
 
 @Controller(['manager/overstays', 'staff/management/overstays'])
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER', 'STAFF')
+@Roles('FACILITY_MANAGER', 'FACILITY_STAFF')
 export class OverstayController {
-  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
+  constructor(private readonly prisma: PrismaService) {}
   @Get() async list(@Req() request: AuthenticatedRequest, @Query('page') pageText?: string) {
     const page = Number(pageText ?? 1), limit = 25;
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new BadRequestException('Trang không hợp lệ.');
     const today = businessToday();
-    const staffId = request.user!.role === 'STAFF' ? request.user!.id : undefined;
+    const staffId = request.user!.role === 'FACILITY_STAFF' ? request.user!.id : undefined;
     const activeReturn: Prisma.ReturnRequestWhereInput = { assignedStaffUserId: staffId, physicallyReturnedAt: null, status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] } };
     const where: Prisma.RentalContractWhereInput = { status: 'ACTIVE', endDate: { lte: today }, reservationUnit: { releasedAt: null } };
-    if (staffId) {
-      if ((this.config.get<string>('UNIT_STAFF_ASSIGNMENTS_ENABLED') ?? 'true') !== 'true') return { page, limit, total: 0, items: [] };
-      where.reservationUnit = { releasedAt: null, storageUnit: responsibleUnit(staffId) };
-    }
+    if (staffId) where.AND = [staffContractScope(request.user!)]; else where.reservation = reservationScope(request.user!);
     const [total, rows] = await Promise.all([
       this.prisma.rentalContract.count({ where }),
       this.prisma.rentalContract.findMany({ where, orderBy: [{ endDate: 'asc' }, { id: 'asc' }], skip: (page - 1) * limit, take: limit, include: {

@@ -7,7 +7,7 @@ import { ActiveRentalsService } from './active-rentals.service.js';
 
 @Controller('customer/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 @ApiTags('Customer Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class CustomerActiveRentalsController {
@@ -23,7 +23,7 @@ export class CustomerActiveRentalsController {
     overdue: { summary: 'OVERDUE nhưng Contract ACTIVE và Unit OCCUPIED', value: { page: 1, limit: 20, total: 1, items: [{ reservationReference: 'WDP-2026-AB12CD34', effectiveEndDate: '2026-10-01', isOverdue: true, overdueSince: '2026-10-01', rentalState: 'OVERDUE', contracts: [{ status: 'ACTIVE', unit: { unitCode: 'MD-E06-001', status: 'OCCUPIED' } }] }] } },
   } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   list(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20', @Query('overdue') overdue?: string) {
     return this.rentals.listCustomerRentals(request.user!.id, { ...this.pagination(page, limit), ...this.overdue(overdue) });
   }
@@ -33,7 +33,7 @@ export class CustomerActiveRentalsController {
   @ApiParam({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Active Rental thuộc Customer.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   @ApiNotFoundResponse({ description: 'Không tồn tại, không ACTIVE hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('reservationId') id: string) {
     return this.rentals.getCustomerRental(request.user!.id, id);

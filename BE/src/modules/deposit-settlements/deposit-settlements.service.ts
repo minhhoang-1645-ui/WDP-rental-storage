@@ -1,3 +1,4 @@
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -41,8 +42,8 @@ export class DepositSettlementsService {
     return this.toSettlement(record, false);
   }
 
-  listManager(query: SettlementListQuery) {
-    const filters: Prisma.DepositSettlementWhereInput[] = [];
+  listManager(query: SettlementListQuery, actor: PublicUser) {
+    const filters: Prisma.DepositSettlementWhereInput[] = [{returnRequest:{reservation:managerReservationScope(actor)}}];
     if (query.status) filters.push({ status: query.status });
     if (query.search) filters.push({ OR: [
       { settlementCode: { contains: query.search, mode: 'insensitive' } },
@@ -55,8 +56,10 @@ export class DepositSettlementsService {
     return this.page(filters.length ? { AND: filters } : {}, query, true);
   }
 
-  async getManager(id: string) {
-    return this.managerView(await this.find(id, this.prisma));
+  async getManager(id: string, actor: PublicUser) {
+    const record=await this.find(id,this.prisma);
+    await assertManagerRecordAccess(this.prisma,actor,{returnRequestId:record.returnRequestId});
+    return this.managerView(record);
   }
 
   private managerView(record: Awaited<ReturnType<DepositSettlementsService['find']>>) {
@@ -80,6 +83,7 @@ export class DepositSettlementsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.depositSettlement.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy quyết toán deposit.');
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
       if (current.reviewIdempotencyKey !== null) {
         this.assertMatchingReviewRetry(current, parsed);
         return this.toSettlement(current, true);
@@ -149,6 +153,7 @@ export class DepositSettlementsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.depositSettlement.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy quyết toán deposit.');
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
       if (current.refundIdempotencyKey !== null) {
         this.assertMatchingRefundRetry(current, parsed);
         return this.toSettlement(current, true);
@@ -164,7 +169,7 @@ export class DepositSettlementsService {
   }
 
   async confirmReturnRefund(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xác nhận hoàn tiền trả kho.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xác nhận hoàn tiền trả kho.');
     const idempotencyKey = this.idempotencyKey(key);
     const { depositAmount, rentAmount } = input;
     if (typeof depositAmount !== 'number' || !Number.isSafeInteger(depositAmount) || depositAmount < 0 ||
@@ -178,6 +183,7 @@ export class DepositSettlementsService {
     return this.serializable(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await this.find(identity.id, tx);
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
       const returned = current.returnRequest;
       const closeout = returned.physicallyReturnedAt ? appliedCloseout(returned.earlyReturnCloseout) : null;
       if (!closeout) throw new ConflictException('Chưa có quyết toán trả kho trước hạn.');
@@ -402,7 +408,7 @@ export class DepositSettlementsService {
   }
 
   private assertManager(actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý quyết toán deposit.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý quyết toán deposit.');
   }
 
   private idempotencyKey(value: string | undefined) {

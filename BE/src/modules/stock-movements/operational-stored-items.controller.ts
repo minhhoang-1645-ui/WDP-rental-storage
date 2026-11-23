@@ -7,7 +7,7 @@ import { parseStoredItemQuery } from './stock-movement-query.js';
 import { StockMovementsService } from './stock-movements.service.js';
 
 @Controller(['staff/stored-items', 'manager/stored-items'])
-@UseGuards(AuthGuard, RolesGuard) @Roles('STAFF', 'MANAGER')
+@UseGuards(AuthGuard, RolesGuard) @Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiBearerAuth('bearerAuth') @ApiTags('Stored Items')
 export class OperationalStoredItemsController {
   constructor(private readonly service: StockMovementsService) {}
@@ -17,7 +17,7 @@ export class OperationalStoredItemsController {
     return this.service.listOperationalStoredItems(req.user!, parseStoredItemQuery(query));
   }
 
-  @Get(':id/history') @Roles('STAFF')
+  @Get(':id/history') @Roles('FACILITY_STAFF')
   history(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) {
     return this.service.listStaffStoredItemHistory(req.user!, id, parseStoredItemQuery(query));
   }

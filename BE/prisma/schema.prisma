@@ -8,10 +8,11 @@ datasource db {
 }
 
 enum UserRole {
-  CUSTOMER
-  STAFF
-  MANAGER
-  ADMIN
+  STORAGE_CUSTOMER
+  FACILITY_STAFF
+  FACILITY_MANAGER
+  BUSINESS_OPERATIONS_MANAGER
+  SYSTEM_ADMINISTRATOR
 }
 
 enum AccountStatus {
@@ -49,6 +50,8 @@ enum AuditOutcome {
 
 // Immutable snapshots: deleting/changing an account must not erase its audit evidence.
 model AuditEvent {
+  metadata Json?
+
   id           String        @id @default(cuid())
   category     AuditCategory
   action       String        @db.VarChar(80)
@@ -56,7 +59,7 @@ model AuditEvent {
   actorId      String?       @db.VarChar(120)
   actorName    String?       @db.VarChar(120)
   actorEmail   String?       @db.VarChar(254)
-  actorRole    UserRole?
+  actorRole    String?
   resource     String        @db.VarChar(60)
   resourceId   String?       @db.VarChar(120)
   method       String        @db.VarChar(10)
@@ -327,6 +330,8 @@ enum StockMovementStatus {
 }
 
 model AdditionalService {
+  facilityId String?
+  facility Facility? @relation(fields:[facilityId],references:[id],onDelete:Restrict)
   id            String                       @id @default(cuid())
   code          String                       @unique
   name          String
@@ -340,11 +345,28 @@ model AdditionalService {
   isActive      Boolean                      @default(true)
   reservations  ReservationService[]
   guestBookings GuestBookingService[]
-  inventory     AdditionalServiceInventory?
+  inventory     AdditionalServiceInventory? // Legacy unallocated stock; retained as historical evidence.
+  offerings     FacilityServiceOffering[]
   createdAt     DateTime                     @default(now())
   updatedAt     DateTime                     @updatedAt
 
   @@index([isActive, name])
+}
+
+model FacilityServiceOffering {
+  id String @id @default(cuid())
+  additionalServiceId String
+  additionalService AdditionalService @relation(fields:[additionalServiceId],references:[id],onDelete:Restrict)
+  facilityId String
+  facility Facility @relation(fields:[facilityId],references:[id],onDelete:Restrict)
+  unitPrice BigInt?
+  isActive Boolean @default(false)
+  stockOnHand Int?
+  rentalCapacity Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([additionalServiceId,facilityId])
+  @@index([facilityId,isActive])
 }
 
 model AdditionalServiceInventory {
@@ -358,6 +380,7 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  facilityAccess FacilityAccess[]
   notificationReceipts NotificationReceipt[]
   assignedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssignee")
   delegatedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssigner")
@@ -372,7 +395,7 @@ model User {
   passwordHash                String
   fullName                    String
   phone                       String?
-  role                        UserRole                   @default(CUSTOMER)
+  role                        UserRole                   @default(STORAGE_CUSTOMER)
   accountStatus               AccountStatus              @default(ACTIVE)
   inquiries                   ContactInquiry[]           @relation("InquiryCustomer")
   processedInquiries          ContactInquiry[]           @relation("InquiryProcessor")
@@ -429,6 +452,14 @@ model AuthSession {
 }
 
 model Facility {
+  additionalServices AdditionalService[] // Legacy ownership only; new availability uses offerings.
+  serviceOfferings FacilityServiceOffering[]
+  businessRules BusinessRule[]
+  facilityAccess FacilityAccess[]
+  bookingEnabled Boolean @default(true)
+  operationalStatus String @default("OPEN")
+  officeHours String @default("")
+  accessHours String @default("")
   id                   String                @id @default(cuid())
   code                 String                @unique
   name                 String
@@ -442,6 +473,7 @@ model Facility {
 }
 
 model StorageType {
+  businessRules BusinessRule[]
   id                   String                @id
   facilityId           String
   facility             Facility              @relation(fields: [facilityId], references: [id])
@@ -502,6 +534,7 @@ model StorageUnit {
   @@index([storageTypeId, row, position])
 }
 
+/// Historical archive only. Application authorization and new assignments never use this table.
 model UnitStaffAssignment {
   id               String      @id @default(cuid())
   storageUnitId    String
@@ -1250,6 +1283,7 @@ model Payment {
 }
 
 model PaymentSubmission {
+  reconciliation OnlinePaymentReconciliation?
   id                String                  @id @default(cuid())
   submissionCode    String                  @unique
   invoiceId         String
@@ -1303,10 +1337,13 @@ model OnlinePaymentTransaction {
 }
 
 model OnlinePaymentReconciliation {
+  paymentSubmissionId String? @unique
+  paymentSubmission PaymentSubmission? @relation(fields:[paymentSubmissionId],references:[id],onDelete:Restrict)
+  externalReferenceKey String? @unique
   id                        String                          @id @default(cuid())
   reconciliationCode        String                          @unique
-  onlinePaymentTransactionId String                         @unique
-  onlinePaymentTransaction  OnlinePaymentTransaction        @relation(fields: [onlinePaymentTransactionId], references: [id], onDelete: Restrict)
+  onlinePaymentTransactionId String?                        @unique
+  onlinePaymentTransaction  OnlinePaymentTransaction?       @relation(fields: [onlinePaymentTransactionId], references: [id], onDelete: Restrict)
   status                    OnlinePaymentReconciliationStatus @default(PENDING_REVIEW)
   reason                    String
   providerTransactionId     String?
@@ -1323,6 +1360,8 @@ model OnlinePaymentReconciliation {
 }
 
 model HandoverAppointment {
+  handoverLeadDays Int?
+
   assignedStaffUserId String?
   assignedStaff User? @relation("AppointmentAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
   assignedByUserId String?
@@ -1365,4 +1404,33 @@ model NotificationReceipt {
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([userId, token])
+}
+
+model FacilityAccess {
+  id String @id @default(cuid())
+  userId String
+  facilityId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  activeKey String? @unique
+  grantedById String
+  grantedAt DateTime @default(now())
+  revokedById String?
+  revokedAt DateTime?
+  @@index([userId, revokedAt])
+}
+model BusinessRule {
+  facility Facility? @relation(fields:[facilityId],references:[id],onDelete:Restrict)
+  storageType StorageType? @relation(fields:[storageTypeId],references:[id],onDelete:Restrict)
+  id String @id @default(cuid())
+  key String
+  facilityId String?
+  storageTypeId String?
+  version Int
+  value Json
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  createdById String
+  createdAt DateTime @default(now())
+  @@index([key, facilityId, storageTypeId, effectiveFrom])
 }

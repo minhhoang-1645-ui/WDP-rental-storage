@@ -16,7 +16,7 @@ describe('Physical unit occupancy survives planned expiry', () => {
   it('keeps the actual overdue customer visible in list and detail, before a waiting booking', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-06T02:00:00Z'));
     const app = setup();
-    const list = await app.service.listUnits({ page: 1, limit: 20 }), detail = await app.service.getUnit('unit');
+    const list = await app.service.listUnits({ page: 1, limit: 20 },{id:'manager',role:'FACILITY_MANAGER'} as never), detail = await app.service.getUnit('unit',{id:'manager',role:'FACILITY_MANAGER'} as never);
     expect(list.items[0].allocationSummary.current?.customer.id).toBe('physical-customer');
     expect(detail.currentAllocation?.customer.id).toBe('physical-customer');
     expect(detail.allocationSummary.current?.customer.id).toBe('physical-customer');
@@ -26,7 +26,7 @@ describe('Physical unit occupancy survives planned expiry', () => {
   it('stops showing the previous customer only after the allocation is actually released', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-06T02:00:00Z'));
     const app = setup(); app.old.releasedAt = new Date();
-    const detail = await app.service.getUnit('unit');
+    const detail = await app.service.getUnit('unit',{id:'manager',role:'FACILITY_MANAGER'} as never);
     expect(detail.currentAllocation?.customer.id).toBe('waiting-customer');
     expect(detail.allocations).toHaveLength(2);
   });
@@ -38,8 +38,8 @@ describe('Physical unit occupancy survives planned expiry', () => {
     const later = app.allocation('later', '2027-02-02', '2027-05-02', 'READY_FOR_HANDOVER');
     const completed = app.allocation('finished', '2026-11-07', '2026-11-10', 'COMPLETED');
     app.unit.reservationUnits = [later, completed, app.next, app.old];
-    const detail = await app.service.getUnit('unit');
-    const { items: [list] } = await app.service.listUnits({ page: 1, limit: 10 });
+    const detail = await app.service.getUnit('unit',{id:'manager',role:'FACILITY_MANAGER'} as never);
+    const { items: [list] } = await app.service.listUnits({ page: 1, limit: 10 },{id:'manager',role:'FACILITY_MANAGER'} as never);
     expect(detail.currentAllocation).toMatchObject({ id: app.old.id, endDate: '2027-02-01' });
     expect(detail.futureAllocations.map(row => row.id)).toEqual([app.next.id, later.id]);
     expect(list.allocationSummary).toEqual(detail.allocationSummary);

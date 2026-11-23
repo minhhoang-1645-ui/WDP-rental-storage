@@ -4,10 +4,10 @@ import { CreateSupportRequestDto } from '../../openapi/api-dtos.js';
 import { transferProposalSlots } from '../transfers/transfer-schedule.js';
 import { AuthGuard } from '../auth/auth.guard.js'; import type { AuthenticatedRequest } from '../auth/auth.types.js'; import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseSupportQuery } from './support-query.js'; import { SupportService } from './support.service.js';
-@Controller('customer/support-requests') @UseGuards(AuthGuard, RolesGuard) @Roles('CUSTOMER') @ApiTags('Customer Support') @ApiBearerAuth('bearerAuth')
+@Controller('customer/support-requests') @UseGuards(AuthGuard, RolesGuard) @Roles('STORAGE_CUSTOMER') @ApiTags('Customer Support') @ApiBearerAuth('bearerAuth')
 export class CustomerSupportController {
   constructor(private readonly support: SupportService) {}
-  @Post() @ApiOperation({ summary: 'Tạo Support Request cho rental/invoice thuộc Customer' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'support-create-20261010-001' }) @ApiBody({ type: CreateSupportRequestDto }) @ApiCreatedResponse({ description: 'Tạo OPEN request với priority MEDIUM.' }) @ApiConflictResponse({ description: 'Operational category không có active rental.' }) @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER.' })
+  @Post() @ApiOperation({ summary: 'Tạo Support Request cho rental/invoice thuộc Customer' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'support-create-20261010-001' }) @ApiBody({ type: CreateSupportRequestDto }) @ApiCreatedResponse({ description: 'Tạo OPEN request với priority MEDIUM.' }) @ApiConflictResponse({ description: 'Operational category không có active rental.' }) @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER.' })
   create(@Req() req: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.support.createCustomer(req.user!, body, key); }
   @Get('transfer-schedule') @ApiOperation({ summary: 'Các khung giờ đề xuất chuyển kho theo giờ Việt Nam' })
   transferSchedule() { return { slots: transferProposalSlots }; }

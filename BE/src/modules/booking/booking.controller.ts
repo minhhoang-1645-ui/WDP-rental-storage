@@ -38,10 +38,10 @@ export class BookingController {
 
   @Post('reservations')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Tạo Reservation', description: 'CUSTOMER tạo đơn; hệ thống kiểm tra lại khả dụng rồi thử xác nhận tự động để tạo phân bổ, hợp đồng và hóa đơn. Khách cần ký đủ hợp đồng và thanh toán trước khi nhận kho. Ngoại lệ có thể còn PENDING. Yêu cầu lặp cùng dữ liệu được khử trùng trên server.' })
+  @ApiOperation({ summary: 'Tạo Reservation', description: 'STORAGE_CUSTOMER tạo đơn; hệ thống kiểm tra lại khả dụng rồi thử xác nhận tự động để tạo phân bổ, hợp đồng và hóa đơn. Khách cần ký đủ hợp đồng và thanh toán trước khi nhận kho. Ngoại lệ có thể còn PENDING. Yêu cầu lặp cùng dữ liệu được khử trùng trên server.' })
   @ApiBody({ type: BookingAvailabilityRequestDto, examples: { payLater: { summary: 'Reservation chờ xử lý', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], note: 'Liên hệ vào buổi sáng.', paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' } } } })
   @ApiCreatedResponse({ description: 'Đơn hiện hữu hoặc đơn mới sau khi thử xác nhận tự động. Đọc status, hạn giữ và hóa đơn từ phản hồi; CONFIRMED chưa đồng nghĩa đã thanh toán hay đã bàn giao.' })
   @ApiBadRequestResponse({ description: 'Payload không hợp lệ hoặc pay-now chưa được hỗ trợ.' })
@@ -64,10 +64,10 @@ export class BookingController {
 
   @Get('reservations')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Danh sách Reservation của khách hàng', description: 'Bearer required. CUSTOMER chỉ nhận Reservation thuộc về chính mình.' })
+  @ApiOperation({ summary: 'Danh sách Reservation của khách hàng', description: 'Bearer required. STORAGE_CUSTOMER chỉ nhận Reservation thuộc về chính mình.' })
   @ApiOkResponse({ description: 'Danh sách Reservation của user đã đăng nhập.', schema: { example: [{ id: 'WDP-2026-AB12CD34', status: 'PENDING', productId: 'sm-b12', quantity: 1, persistence: 'DATABASE' }] } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   list(@Req() request: AuthenticatedRequest) {
@@ -76,14 +76,14 @@ export class BookingController {
 
   @Get('reservations/:id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER', 'MANAGER')
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
   @ApiOperation({ summary: 'Chi tiết Reservation của khách thuê hoặc quản lý' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34', description: 'Reservation reference hoặc database id.' })
   @ApiOkResponse({ description: 'Reservation chi tiết.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER cố xem Reservation của khách khác.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER cố xem Reservation của khách khác.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Reservation.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.bookingService.getReservation(request.user!, id);
@@ -91,7 +91,7 @@ export class BookingController {
 
   @Post('reservations/:id/cancel')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.bookingService.cancelCustomerReservation(request.user!, id);
   }

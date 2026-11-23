@@ -1,3 +1,4 @@
+import { assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -17,6 +18,8 @@ type SessionAccount = PublicUser & {
 const disabledSessionPrefix = 'disabled:';
 export type UserProfileChanges = Partial<Pick<PublicUser, 'fullName' | 'phone'>>;
 export abstract class UserRepository {
+  async authorizeAdministrator(actorId:string) { assertActiveAdmin(await this.findById(actorId)); }
+
   abstract saveSession(session: StoredSession, passwordHash: string): Promise<boolean>;
   abstract findSessionAccount(tokenHash: string): Promise<SessionAccount | null>;
   abstract deleteSession(tokenHash: string): Promise<void>;
@@ -33,7 +36,7 @@ export abstract class UserRepository {
 }
 
 function assertActiveAdmin(actor: Pick<StoredUser, 'role' | 'accountStatus'> | null | undefined) {
-  if (!actor || actor.role !== 'ADMIN' || actor.accountStatus !== 'ACTIVE') throw new ForbiddenException('Phiên quản trị không còn quyền thay đổi tài khoản.');
+  if (!actor || actor.role !== 'SYSTEM_ADMINISTRATOR' || actor.accountStatus !== 'ACTIVE') throw new ForbiddenException('Phiên quản trị không còn quyền thay đổi tài khoản.');
 }
 
 function assertCanDisableAccount(actorId: string, targetId: string) {
@@ -202,6 +205,8 @@ export class PrismaUserRepository extends UserRepository {
       const target = await tx.user.findUnique({ where: { id } });
       if (!target) return null;
       if (target.accountStatus === accountStatus) return { ...target, phone: target.phone ?? '', statusChanged: false };
+      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', id);
+      if(accountStatus==='DISABLED')await assertNoOpenAssignments(tx,id);
       const updated = await tx.user.update({ where: { id }, data: { accountStatus } });
       // Keep a revoked hash to explain the logout even if the account is reactivated first.
       // Also revoke any legacy sessions that predate marking on disable.
@@ -214,7 +219,7 @@ export class PrismaUserRepository extends UserRepository {
   private async lockAdminChanges(tx: Prisma.TransactionClient, actorId?: string) {
     // Serialize administrative writes and then verify the actor is still active.
     // Two administrators cannot disable one another concurrently.
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "role" = 'ADMIN' ORDER BY "id" FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "role" = 'SYSTEM_ADMINISTRATOR' ORDER BY "id" FOR UPDATE`;
     if (actorId) assertActiveAdmin(await tx.user.findUnique({ where: { id: actorId }, select: { role: true, accountStatus: true } }));
   }
   async findByEmail(email: string) {

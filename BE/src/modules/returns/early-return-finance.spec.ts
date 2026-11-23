@@ -5,14 +5,14 @@ import { contractDeposit, contractReturnReadiness } from './contract-return-fina
 import { invoiceBreakdown } from '../billing/invoice-breakdown.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 function setup(balance = 0n, endDate = '2030-05-17') {
   const unit = { id: 'unit', status: 'OCCUPIED' }, allocation = { id: 'allocation', reservationId: 'reservation', storageUnitId: 'unit', releasedAt: null, storageUnit: unit };
   const reservation = { id: 'reservation', customerId: customer.id, reservationCode: 'RES', status: 'CONFIRMED', quantity: 1, endDate: new Date(endDate), units: [allocation],
     quoteSnapshot: { depositAmount: 1500000 },
     contracts: [{ id: 'contract', status: 'ACTIVE', endDate: new Date(endDate), reservationUnitId: allocation.id, reservationUnit: allocation }], renewals: [],
-    supportRequests: [{ id: 'proposal', rentalContractId: null, status: 'RESOLVED', lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: `early-return:proposal:${endDate}`, resolvedBy: { role: 'MANAGER' }, earlyReturnFinancialReview: { disposition: 'WAIVE_UNUSED' } }],
+    supportRequests: [{ id: 'proposal', rentalContractId: null, status: 'RESOLVED', lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: `early-return:proposal:${endDate}`, resolvedBy: { role: 'FACILITY_MANAGER' }, earlyReturnFinancialReview: { disposition: 'WAIVE_UNUSED' } }],
     invoices: [{ id: 'initial', type: 'INITIAL', status: 'PAID', invoiceCode: 'I01', totalAmount: 3000000n, amountPaid: 3000000n, balanceDue: 0n, depositAmount: 1500000n }, { id: 'future', type: 'RENEWAL', status: balance ? 'OPEN' : 'PAID', invoiceCode: 'FUTURE', totalAmount: 1500000n, amountPaid: 1500000n - balance, balanceDue: balance, depositAmount: 0n }],
   };
   const row = { id: 'return', activeKey: 'RETURN:reservation', status: 'INSPECTION_IN_PROGRESS', assignedStaffUserId: staff.id, reservationId: reservation.id, returnCode: 'RETURN', reservation, inspections: [{ id: 'inspection', result: 'PASS', issueType: null, storageUnitId: 'unit', rentalContractId: 'contract' }] };
@@ -69,7 +69,7 @@ describe('Mandatory full settlement before warehouse return', () => {
   });
   it('rejects stale waiver payloads and the retired finance endpoint without writes', async () => {
     expect(() => assertFullSettlementPolicyInput({ financialDisposition: 'WAIVE_UNUSED' })).toThrow('thanh toán đủ');
-    const app = setup(), manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
+    const app = setup(), manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
     await expect(app.service.reviewEarlyReturnFinance('proposal', { financialDisposition: 'WAIVE_UNUSED' }, manager)).rejects.toMatchObject({ response: { code: 'RETURN_DEBT_WAIVER_DISABLED' } });
     await expect(app.service.decideEarlyReturn('proposal', { decision: 'APPROVED', note: 'Miễn kỳ chưa dùng', financialDisposition: 'WAIVE_UNUSED', financialReviewConfirmed: true }, manager)).rejects.toMatchObject({ response: { code: 'RETURN_DEBT_WAIVER_DISABLED' } });
     expect(app.db.$transaction).not.toHaveBeenCalled();

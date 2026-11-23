@@ -39,7 +39,7 @@ describe('Vietnam facility calendar boundaries, without a live database', () => 
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-05T17:00:00Z'));
     const count = vi.fn(async () => 0), findMany = vi.fn(async () => []);
     const prisma = { rentalContract: { findMany }, reservation: { count }, handoverAppointment: { count }, renewalRequest: { count }, supportRequest: { count }, storageUnit: { count }, depositSettlement: { count } };
-    await new ManagerService(prisma as never).dashboardSummary();
+    await new ManagerService(prisma as never).dashboardSummary({id:"manager",role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(findMany.mock.calls).toHaveLength(2);
     expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', endDate: { lte: new Date('2026-11-06T00:00:00Z') } } }));
   });

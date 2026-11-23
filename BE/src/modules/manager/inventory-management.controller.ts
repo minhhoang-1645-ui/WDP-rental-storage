@@ -8,15 +8,15 @@ import { InventoryManagementService } from './inventory-management.service.js';
 // Separate from the read-only StaffLookup controller: Staff never gains these writes.
 @Controller('manager')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 @ApiBearerAuth('bearerAuth')
 @ApiTags('Manager Inventory Configuration')
 export class InventoryManagementController {
   constructor(private readonly inventory: InventoryManagementService) {}
   @Get('storage-types') @ApiOperation({ summary: 'Loại kho và cơ sở để quản lý bảng giá' })
-  list() { return this.inventory.listTypes(); }
+  list(@Req() req: AuthenticatedRequest) { return this.inventory.listTypes(req.user!); }
   @Get('unit-locations') @ApiOperation({ summary: 'Danh sách tầng và khu từ toàn bộ kho vật lý' })
-  unitLocations() { return this.inventory.listUnitLocations(); }
+  unitLocations(@Req() req: AuthenticatedRequest) { return this.inventory.listUnitLocations(req.user!); }
   @Post('storage-types') @ApiOperation({ summary: 'Tạo loại kho, kích thước và giá tháng' })
   createType(@Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return this.inventory.saveType(undefined, body, req.user!); }
   @Patch('storage-types/:id') @ApiOperation({ summary: 'Sửa danh mục, không thay snapshot lịch sử; yêu cầu expectedUpdatedAt' })

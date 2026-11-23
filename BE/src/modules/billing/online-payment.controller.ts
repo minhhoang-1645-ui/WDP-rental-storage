@@ -14,26 +14,26 @@ export class OnlinePaymentController {
 
   @Post('customer/invoices/:invoiceId/online-payment')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiOperation({ summary: 'Tạo giao dịch VNPay cho toàn bộ số dư hóa đơn', description: 'Không cho client tự chọn amount. Payment chỉ được tạo sau IPN hợp lệ.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'vnpay-invoice-20261012-001' })
   @ApiBody({ type: CreateOnlinePaymentDto })
   @ApiCreatedResponse({ schema: { example: { transactionId: 'transaction-id', merchantOrderRef: 'WDP...', status: 'PENDING', amount: 3000000, expiresAt: '2026-10-26T13:15:00.000Z', paymentUrl: 'https://sandbox.vnpayment.vn/...' } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu/sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Không phải CUSTOMER.' })
+  @ApiForbiddenResponse({ description: 'Không phải STORAGE_CUSTOMER.' })
   @ApiNotFoundResponse({ description: 'Invoice không thuộc Customer.' })
   @ApiConflictResponse({ description: 'Invoice đã PAID hoặc không hỗ trợ thanh toán online.' })
   create(@Param('invoiceId') invoiceId: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest & Request) { return this.service.create(invoiceId, body, key, request.user!, request.ip ?? request.socket.remoteAddress ?? '127.0.0.1'); }
 
   @Get('customer/online-payments/:transactionId')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiOperation({ summary: 'Trạng thái giao dịch VNPay của Customer', description: 'Read-only polling endpoint. Chỉ trả giao dịch thuộc Customer đang đăng nhập; không xác nhận hoặc ghi nhận thanh toán.' })
   @ApiOkResponse({ schema: { example: { transactionId: 'transaction-id', merchantOrderRef: 'WDP...', status: 'PENDING', providerStatus: 'PENDING', amount: 3000000, expiresAt: '2026-10-26T13:15:00.000Z', paidAt: null, updatedAt: '2026-10-26T13:00:00.000Z', invoice: { id: 'invoice-id', invoiceCode: 'WDP-2026-AB12-I01', type: 'INITIAL', status: 'OPEN', amountPaid: 0, balanceDue: 3000000, paidAt: null }, payment: null } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu/sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Không phải CUSTOMER.' })
+  @ApiForbiddenResponse({ description: 'Không phải STORAGE_CUSTOMER.' })
   @ApiNotFoundResponse({ description: 'Giao dịch không tồn tại hoặc không thuộc Customer.' })
   status(@Param('transactionId') transactionId: string, @Req() request: AuthenticatedRequest) { return this.service.getCustomerStatus(transactionId, request.user!); }
 

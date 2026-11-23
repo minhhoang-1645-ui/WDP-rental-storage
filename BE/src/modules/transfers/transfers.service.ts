@@ -1,7 +1,9 @@
-import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskFacility, assertTaskExecution, reservationScope } from '../facility-access/task-access.js';
+import { assertActiveAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { assertTransferIntakeAvailable, createLinkedTransfer, isTransferSubject } from './transfer-intake.js';
 import { Optional } from '@nestjs/common';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -28,7 +30,7 @@ const staffTransferReady = (): Prisma.TransferRequestWhereInput => ({ OR: [
 
 @Injectable()
 export class TransfersService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService, @Optional() private readonly commercial?: TransferCommercialService, @Optional() private readonly signing?: SigningOtpService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly commercial?: TransferCommercialService, @Optional() private readonly signing?: SigningOtpService) {}
 
   async listCustomer(customer: PublicUser) {
     const rows = await this.prisma.transferRequest.findMany({ where: { reservation: { customerId: customer.id }, commercialSnapshot: { not: Prisma.DbNull } }, omit: { assignedStaffUserId: true }, include: this.include(false), orderBy: { createdAt: 'desc' } });
@@ -39,11 +41,13 @@ export class TransfersService {
     if (!row?.commercialSnapshot) throw new NotFoundException('Không tìm thấy phụ lục thuộc tài khoản này.');
     return { ...this.toTransfer(row, { customer: true }), addendumContent: transferAddendumContent(row.commercialSnapshot, row.transferCode) };
   }
-  async previewCommercial(id: string, destinationId: string) {
+  async previewCommercial(id: string, destinationId: string,actor:PublicUser) {
     const transfer = await this.prisma.transferRequest.findFirst({ where: { id }, include: this.include() });
     if (!transfer || transfer.status !== 'REQUESTED') throw new NotFoundException('Không có lệnh chuyển đang chọn kho đích.');
+    await assertTaskFacility(this.prisma,actor,{reservationId:transfer.reservationId});
     const destination = await this.prisma.storageUnit.findUnique({ where: { id: destinationId } });
     if (!destination) throw new NotFoundException('Không tìm thấy kho đích.');
+    await assertTaskFacility(this.prisma, actor, { storageUnitId: destination.id });
     if (destination.storageTypeId === transfer.fromStorageUnit.storageTypeId) return { sameType: true, message: 'Cùng loại, giữ giá và thời hạn.' };
     if (!this.commercial) throw new ConflictException('Chưa lập được phụ lục đổi loại.');
     const snapshot = await this.prisma.$transaction(tx => this.commercial!.prepare(tx, transfer, destination), { isolationLevel: 'RepeatableRead' });
@@ -83,11 +87,12 @@ export class TransfersService {
   }
 
   async intakeLegacy(id: string, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý tiếp nhận yêu cầu chuyển kho cũ.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý tiếp nhận yêu cầu chuyển kho cũ.');
     return this.serializable(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${id} FOR UPDATE`);
       const support = await tx.supportRequest.findUnique({ where: { id }, include: { transferRequests: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } } } });
       if (!support || !isTransferSubject(support.subject)) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho của khách.');
+      await assertTaskFacility(tx,actor,{reservationId:support.reservationId});
       if (support.transferRequests[0]) return support.transferRequests[0];
       if (support.status === 'RESOLVED') throw new ConflictException('Yêu cầu đã được xử lý.');
       const contracts = await tx.rentalContract.findMany({
@@ -102,11 +107,13 @@ export class TransfersService {
     }, 'Yêu cầu vừa thay đổi. Tải lại trước khi tiếp nhận.');
   }
 
-  async list(query: Record<string, unknown>) {
-    return this.listFiltered(query);
+  async list(query: Record<string, unknown>,actor:PublicUser) {
+    managerReservationScope(actor);
+
+    return this.listFiltered(query,[],undefined,actor);
   }
 
-  private async listFiltered(query: Record<string, unknown>, allowedStatuses: readonly (typeof statuses)[number][] = [], assignedStaffUserId?: string) {
+  private async listFiltered(query: Record<string, unknown>, allowedStatuses: readonly (typeof statuses)[number][] = [], assignedStaffUserId:string|undefined, actor:PublicUser) {
     const page = this.integer(query.page, 1, 100000, 'page'); const limit = this.integer(query.limit, 20, 100, 'limit');
     const status = typeof query.status === 'string' && query.status ? query.status : undefined;
     if (status && !statuses.includes(status as never)) throw new BadRequestException('Transfer status không hợp lệ.');
@@ -114,6 +121,7 @@ export class TransfersService {
     const search = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : undefined;
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
     const where: Prisma.TransferRequestWhereInput = {
+      reservation:reservationScope(actor),
       ...(assignedStaffUserId ? { assignedStaffUserId, AND: [staffTransferReady()] } : {}),
       ...(status ? { status: status as (typeof statuses)[number] } : allowedStatuses.length ? { status: { in: [...allowedStatuses] } } : {}),
       ...(search ? { OR: [
@@ -132,13 +140,15 @@ export class TransfersService {
     return { page, limit, total, items: records.map(record => this.toTransfer(record, { staffId: assignedStaffUserId })) };
   }
 
-  async get(id: string) {
-    const record = await this.prisma.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
+  async get(id: string,actor:PublicUser) {
+    managerReservationScope(actor);
+
+    const record = await this.prisma.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }],reservation:reservationScope(actor) }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy TransferRequest.');
     return this.toTransfer(record);
   }
 
-  async destinations(id: string, query: Record<string, unknown>) {
+  async destinations(id: string, query: Record<string, unknown>,actor:PublicUser) {
     const page = this.integer(query.page, 1, 100000, 'page');
     const limit = this.integer(query.limit, 20, 100, 'limit');
     const transfer = await this.prisma.transferRequest.findFirst({
@@ -146,6 +156,7 @@ export class TransfersService {
       include: { fromStorageUnit: true, rentalContract: true },
     });
     if (!transfer) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho.');
+    await assertTaskFacility(this.prisma,actor,{reservationId:transfer.reservationId});
     const start = this.today(), end = transfer.rentalContract.endDate;
     const sourceType = query.includeOtherTypes === 'true' ? await this.prisma.storageType.findUniqueOrThrow({ where: { id: transfer.fromStorageUnit.storageTypeId }, select: { facilityId: true } }) : null;
     const where = { ...(query.includeOtherTypes === 'true' ? { storageType: { facilityId: sourceType!.facilityId } } : { storageTypeId: transfer.fromStorageUnit.storageTypeId }), id: { not: transfer.fromStorageUnitId } };
@@ -153,7 +164,7 @@ export class TransfersService {
     const units = await this.prisma.storageUnit.findMany({
       where, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
       include: { storageType: true, reservationUnits: {
-        where: { releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' } },
+        where: { releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start } },
         select: { plannedStartDate: true, plannedEndDate: true }, orderBy: { plannedStartDate: 'asc' },
       } },
     });
@@ -176,12 +187,12 @@ export class TransfersService {
   }
 
   async listForStaff(query: Record<string, unknown>, actor: PublicUser) {
-    return this.listFiltered(query, ['APPROVED', 'COMPLETED'], actor.id);
+    return this.listFiltered(query, ['APPROVED', 'COMPLETED'], actor.id,actor);
   }
 
   async getForStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.transferRequest.findFirst({
-      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id, AND: [staffTransferReady()] },
+      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id,reservation:reservationScope(actor), AND: [staffTransferReady()] },
       include: {
         ...this.include(),
         rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true,
@@ -200,15 +211,17 @@ export class TransfersService {
       if (!identity) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
+      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
       if (current.status !== 'APPROVED') throw new ConflictException('Chỉ phân công lệnh chuyển kho đã duyệt.');
-      await assertActiveAssignee(tx, staffId);
+      await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
       if (current.assignedStaffUserId === staffId) return this.toTransfer(current);
+      await recordAssignment(tx,actor,"transfers",current.id,current.assignedStaffUserId,staffId);
       return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }));
     }, 'Phân công vừa thay đổi. Vui lòng tải lại.');
   }
 
   async approve(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được duyệt chuyển kho.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được duyệt chuyển kho.');
     const toStorageUnitId = this.text(input.toStorageUnitId, 'toStorageUnitId');
     const requestedStaffId = input.staffUserId === undefined || input.staffUserId === ''
       ? undefined : managerAssignmentInput(actor, input);
@@ -218,13 +231,13 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
+      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
       if (['APPROVED', 'COMPLETED'].includes(current.status) && current.approvedByUserId === actor.id
         && current.toStorageUnitId === toStorageUnitId && (!requestedStaffId || current.assignedStaffUserId === requestedStaffId)) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
       if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromReservationUnit?.releasedAt || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
-      const staffId = requestedStaffId ?? (await this.unitStaff?.resolveStaff(tx, [current.fromStorageUnitId]))?.staffUserId;
-      if (!staffId) throw new BadRequestException('Kho nguồn chưa có người phụ trách đang hoạt động. Hãy chọn nhân viên thực hiện.');
-      await assertActiveAssignee(tx, staffId);
+      const staffId = requestedStaffId ?? current.assignedStaffUserId ?? undefined;
+      if(staffId) await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
@@ -243,7 +256,7 @@ export class TransfersService {
       }
       const start = this.today(); const end = current.rentalContract.endDate;
       if (end <= start) throw new ConflictException('Contract không còn khoảng thuê tương lai để chuyển unit.');
-      const conflicting = await tx.reservationUnit.count({ where: { storageUnitId: destination.id, releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' } } });
+      const conflicting = await tx.reservationUnit.count({ where: { storageUnitId: destination.id, releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start } } });
       if (conflicting) throw new ConflictException('Unit đích có confirmed allocation trùng khoảng thuê còn lại.');
       const targetAllocation = await tx.reservationUnit.create({ data: { reservationId: current.reservationId, storageUnitId: destination.id, plannedStartDate: start, plannedEndDate: end } });
       const reserved = await tx.storageUnit.updateMany({ where: { id: destination.id, status: 'AVAILABLE' }, data: { status: 'RESERVED' } });
@@ -254,13 +267,14 @@ export class TransfersService {
   }
 
   async reject(id: string, actor: PublicUser, input: Record<string, unknown> = {}) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được từ chối chuyển kho.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được từ chối chuyển kho.');
     const rejectionReason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (rejectionReason.length < 3 || rejectionReason.length > 2000) throw new BadRequestException('Ghi rõ lý do từ chối chuyển kho từ 3–2000 ký tự.');
     return this.serializable(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${id} OR "transferCode" = ${id} FOR UPDATE`);
       const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy TransferRequest.');
+      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
       if (current.status === 'REJECTED' && current.rejectionReason === rejectionReason && current.approvedByUserId === actor.id) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được từ chối.');
       const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'REJECTED', rejectionReason, approvedByUserId: actor.id, approvedAt: new Date() }, include: this.include() });
@@ -275,7 +289,9 @@ export class TransfersService {
       if (!identity) throw new NotFoundException('Không tìm thấy TransferRequest.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
-      assertTaskAssignee(actor, current.assignedStaffUserId);
+      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+      if(current.toStorageUnitId) await assertTaskFacility(tx,actor,{storageUnitId:current.toStorageUnitId});
       if (current.status === 'COMPLETED') {
         await this.resolveLinkedTransferSupport(tx, current, actor);
         await this.ensureSourceMaintenance(tx, current, actor);
@@ -284,8 +300,8 @@ export class TransfersService {
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
       const handover = transferHandover(input);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RentalContract" WHERE "id" = ${current.rentalContractId} FOR UPDATE`);
-      const storedItemCount = await tx.storedItem.count({ where: { rentalContractId: current.rentalContractId, ...positiveStoredBalance } });
-      if (storedItemCount) throw new ConflictException(`Kho nguồn còn ${storedItemCount} mặt hàng đang lưu. Xuất hết hàng trước khi hoàn tất chuyển kho.`);
+
+      // Personal-item records remain historical and do not gate a physical unit transfer.
       if (current.commercialSnapshot) {
         if (!this.commercial) throw new ConflictException('Chưa sẵn sàng áp dụng phụ lục.');
         await this.commercial.apply(tx, current);
@@ -312,12 +328,11 @@ export class TransfersService {
     const createIdempotencyKey = `TRANSFER:${transfer.id}`;
     if (await tx.maintenanceRequest.findUnique({ where: { activeKey } })) return;
     if (await tx.maintenanceRequest.findUnique({ where: { createIdempotencyKey } })) return;
-    const responsibility = await this.unitStaff?.resolveStaff(tx, [source.id]);
     await tx.maintenanceRequest.create({ data: {
       maintenanceCode: `${transfer.transferCode}-MNT`, storageUnitId: source.id, source: 'MANUAL',
       category: transfer.reason === 'FACILITY_EQUIPMENT_FAILURE' ? 'FACILITY_EQUIPMENT' : transfer.reason === 'OPERATIONAL_RELOCATION' ? 'CLEANING' : 'UNIT_DAMAGE',
       priority: 'MEDIUM', status: 'OPEN', description: `Kiểm tra kho ${transfer.fromStorageUnit.unitNumber} sau lệnh chuyển ${transfer.transferCode}.`,
-      assignedStaffUserId: responsibility?.staffUserId, reportedByUserId: actor.id, activeKey, createIdempotencyKey,
+      reportedByUserId: actor.id, activeKey, createIdempotencyKey,
     } });
   }
 

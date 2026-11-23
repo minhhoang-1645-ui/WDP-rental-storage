@@ -1,12 +1,13 @@
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
 import { customerPhotos } from '../../customer-photos.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { Prisma, type DamageClaim, type DamageClaimCompensation } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
+import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { businessDate } from '../../business-date.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 
 type ClaimRow = DamageClaim & {
   compensation?: (DamageClaimCompensation & { approvedBy?: { fullName: string }; recordedBy?: { fullName: string } | null }) | null;
@@ -18,10 +19,10 @@ export function claimEvidence(value: unknown): string[] {
 }
 @Injectable()
 export class DamageClaimsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
   private text(value: unknown, name: string, min = 3, max = 3000) { if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max) throw new BadRequestException(`${name}: nhập ${min}–${max} ký tự.`); return value.trim(); }
   async create(actor: PublicUser, input: Record<string, unknown>, key?: string) {
-    if (actor.role !== 'CUSTOMER') throw new ForbiddenException();
+    if (actor.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException();
     const contractId = this.text(input.rentalContractId, 'Kho đang thuê', 1, 200), description = this.text(input.description, 'Mô tả', 10);
     const date = this.text(input.discoveredOn, 'Ngày phát hiện', 10, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date || date > businessDate()) throw new BadRequestException('Ngày phát hiện không được ở tương lai và phải hợp lệ.');
@@ -34,8 +35,8 @@ export class DamageClaimsService {
     if (!key || !/^[A-Za-z0-9._:-]{8,200}$/.test(key)) throw new BadRequestException('Cần khóa gửi yêu cầu hợp lệ.');
     const idempotencyKey = createHash('sha256').update(`${actor.id}:${key}`).digest('hex');
     const inputHash = createHash('sha256').update(JSON.stringify([contractId, description, date, estimated, links, [...ids].sort((a: string, b: string) => a < b ? -1 : a > b ? 1 : 0), ...(photos.length ? [photos] : [])])).digest('hex');
-    const duplicate = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('CUSTOMER') });
-    if (duplicate) { if (duplicate.inputHash !== inputHash) throw new ConflictException('Khóa gửi đã dùng cho nội dung khác.'); return this.view(duplicate, 'CUSTOMER'); }
+    const duplicate = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('STORAGE_CUSTOMER') });
+    if (duplicate) { if (duplicate.inputHash !== inputHash) throw new ConflictException('Khóa gửi đã dùng cho nội dung khác.'); return this.view(duplicate, 'STORAGE_CUSTOMER'); }
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "RentalContract" WHERE id = ${contractId} FOR UPDATE`);
       const contract = await tx.rentalContract.findFirst({
@@ -48,30 +49,29 @@ export class DamageClaimsService {
         select: { id: true, name: true, unit: true, itemCode: true },
       });
       if (affected.length !== ids.length) throw new BadRequestException('Có mặt hàng không thuộc hợp đồng đã chọn.');
-      const responsibility = await this.unitStaff?.resolveStaff(tx, [contract.reservationUnit.storageUnit.id]);
-      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, ...(photos.length ? { evidencePhotos: photos } : {}), estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash, ...(responsibility ? { assignedStaffId: responsibility.staffUserId } : {}) } });
-      return this.view(row, 'CUSTOMER');
+      const row = await tx.damageClaim.create({ data: { claimCode: `NB-SC-${randomBytes(5).toString('hex').toUpperCase()}`, customerId: actor.id, rentalContractId: contract.id, unitCodeSnapshot: contract.reservationUnit.storageUnit.unitNumber, discoveredOn: new Date(date), description, affectedItems: affected, evidenceLinks: links, ...(photos.length ? { evidencePhotos: photos } : {}), estimatedValue: estimated === null ? null : BigInt(estimated as number), idempotencyKey, inputHash } });
+      return this.view(row, 'STORAGE_CUSTOMER');
     }).catch(async error => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const retry = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('CUSTOMER') });
-        if (retry?.inputHash === inputHash) return this.view(retry, 'CUSTOMER');
+        const retry = await this.prisma.damageClaim.findUnique({ where: { idempotencyKey }, include: this.include('STORAGE_CUSTOMER') });
+        if (retry?.inputHash === inputHash) return this.view(retry, 'STORAGE_CUSTOMER');
         throw new ConflictException('Yêu cầu trùng hoặc nội dung đã thay đổi.');
       }
       throw error;
     });
   }
   private scope(actor: PublicUser): Prisma.DamageClaimWhereInput {
-    if (actor.role === 'CUSTOMER') return { customerId: actor.id };
-    if (actor.role === 'STAFF') return { assignedStaffId: actor.id };
-    if (actor.role === 'MANAGER') return {};
+    if (actor.role === 'STORAGE_CUSTOMER') return { customerId: actor.id };
+    if (actor.role === 'FACILITY_STAFF') return { assignedStaffId: actor.id,rentalContract:{reservation:reservationScope(actor)} };
+    if (actor.role === 'FACILITY_MANAGER') return {rentalContract:{reservation:reservationScope(actor)}};
     throw new ForbiddenException();
   }
 
   private include(role: PublicUser['role']) {
     return {
-      ...(role === 'CUSTOMER' ? {} : { customer: { select: { fullName: true, phone: true } } }),
+      ...(role === 'STORAGE_CUSTOMER' ? {} : { customer: { select: { fullName: true, phone: true } } }),
       rentalContract: { select: { contractCode: true } },
-      ...(role === 'CUSTOMER' ? { compensation: true } : role === 'STAFF' ? {} : { compensation: { include: {
+      ...(role === 'STORAGE_CUSTOMER' ? { compensation: true } : role === 'FACILITY_STAFF' ? {} : { compensation: { include: {
         approvedBy: { select: { fullName: true } },
         recordedBy: { select: { fullName: true } },
       } } }),
@@ -89,12 +89,12 @@ export class DamageClaimsService {
       if (search) {
         const match = { contains: search, mode: 'insensitive' as const };
         where.OR = [{ description: match }, { unitCodeSnapshot: match }, { claimCode: match },
-          ...(actor.role === 'CUSTOMER' ? [] : [{ customer: { fullName: match } }])];
+          ...(actor.role === 'STORAGE_CUSTOMER' ? [] : [{ customer: { fullName: match } }])];
       }
     }
     if (query.stage) where.AND = [this.stage(actor.role, query.stage)];
     const orderBy: Prisma.DamageClaimOrderByWithRelationInput[] = [{ createdAt: 'desc' }, { id: 'asc' }];
-    if (actor.role === 'STAFF') orderBy.unshift({ status: 'asc' });
+    if (actor.role === 'FACILITY_STAFF') orderBy.unshift({ status: 'asc' });
     const [total, rows] = await Promise.all([
       this.prisma.damageClaim.count({ where }),
       this.prisma.damageClaim.findMany({ where, include: this.include(actor.role), orderBy, skip: (page - 1) * limit, take: limit }),
@@ -115,11 +115,11 @@ export class DamageClaimsService {
       case 'investigating': return { status: 'INVESTIGATING' };
       case 'decided': return { status: { in: ['APPROVED', 'REJECTED'] } };
       case 'resolved': return { status: 'RESOLVED' };
-      case 'unassigned': if (role === 'MANAGER') return { status: { in: ['REPORTED', 'INVESTIGATING'] }, assignedStaffId: null }; break;
-      case 'inspection': if (role === 'MANAGER') return { status: { in: ['REPORTED', 'INVESTIGATING'] }, assignedStaffId: { not: null }, staffFacts: null }; break;
-      case 'decision': if (role === 'MANAGER') return { status: 'INVESTIGATING', staffFacts: { not: null } }; break;
-      case 'notification': if (role === 'MANAGER') return { status: { in: ['APPROVED', 'REJECTED'] }, OR: [{ compensation: null }, { compensation: { is: { paidCompensationAmount: { not: null } } } }] }; break;
-      case 'handover': if (role !== 'STAFF') return { compensation: { is: { paidCompensationAmount: null } } }; break;
+      case 'unassigned': if (role === 'FACILITY_MANAGER') return { status: { in: ['REPORTED', 'INVESTIGATING'] }, assignedStaffId: null }; break;
+      case 'inspection': if (role === 'FACILITY_MANAGER') return { status: { in: ['REPORTED', 'INVESTIGATING'] }, assignedStaffId: { not: null }, staffFacts: null }; break;
+      case 'decision': if (role === 'FACILITY_MANAGER') return { status: 'INVESTIGATING', staffFacts: { not: null } }; break;
+      case 'notification': if (role === 'FACILITY_MANAGER') return { status: { in: ['APPROVED', 'REJECTED'] }, OR: [{ compensation: null }, { compensation: { is: { paidCompensationAmount: { not: null } } } }] }; break;
+      case 'handover': if (role !== 'FACILITY_STAFF') return { compensation: { is: { paidCompensationAmount: null } } }; break;
     }
     throw new BadRequestException('Trạng thái lọc không hợp lệ.');
   }
@@ -128,25 +128,28 @@ export class DamageClaimsService {
     const staffId = managerAssignmentInput(actor, input);
     return this.prisma.$transaction(async tx => {
       const row = await this.lockClaim(tx, id);
+      await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
       if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ConflictException('Hồ sơ sự cố đã có quyết định.');
-      await assertActiveAssignee(tx, staffId);
-      if (row.assignedStaffId === staffId) return this.view(row, 'MANAGER');
+      await assertActiveAssignee(tx, staffId, actor, {rentalContractId:row.rentalContractId});
+      if (row.assignedStaffId === staffId) return this.view(row, 'FACILITY_MANAGER');
+      await recordAssignment(tx,actor,"damage-claims",row.id,row.assignedStaffId,staffId);
       const updated = await tx.damageClaim.update({ where: { id }, data: {
         assignedStaffId: staffId, history: this.history(row, actor, 'ASSIGNED', new Date(), row.status),
       } });
-      return this.view(updated, 'MANAGER');
+      return this.view(updated, 'FACILITY_MANAGER');
     });
   }
 
   async action(actor: PublicUser, id: string, input: Record<string, unknown>) {
-    if (actor.role !== 'STAFF' && actor.role !== 'MANAGER') throw new ForbiddenException();
+    if (actor.role !== 'FACILITY_STAFF' && actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();
     return this.prisma.$transaction(async tx => {
       const row = await this.lockClaim(tx, id);
-      if (actor.role === 'STAFF') assertTaskAssignee(actor, row.assignedStaffId);
+      await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
+      if (actor.role === 'FACILITY_STAFF') assertTaskAssignee(actor, row.assignedStaffId);
       this.assertVersion(row, input.expectedUpdatedAt);
 
       const now = new Date();
-      if (actor.role === 'STAFF') {
+      if (actor.role === 'FACILITY_STAFF') {
         if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ForbiddenException('Hồ sơ đã được quản lý quyết định.');
         const staffFacts = this.text(input.staffFacts, 'Ghi nhận thực tế', 10);
         return this.view(await tx.damageClaim.update({ where: { id }, data: {
@@ -187,14 +190,15 @@ export class DamageClaimsService {
         data = { resolutionNote, ...(closed ? { status: 'RESOLVED', resolvedAt: now } : {}),
           history: this.history(row, actor, closed ? 'RESOLVED' : 'NOTIFIED', now, closed ? 'RESOLVED' : row.status) };
       } else throw new ForbiddenException('Bạn không được thực hiện bước này ở trạng thái hiện tại.');
-      return this.view(await tx.damageClaim.update({ where: { id }, data, include: this.include('MANAGER') }), 'MANAGER');
+      return this.view(await tx.damageClaim.update({ where: { id }, data, include: this.include('FACILITY_MANAGER') }), 'FACILITY_MANAGER');
     });
   }
 
   async recordHandover(actor: PublicUser, id: string, input: Record<string, unknown>) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được ghi nhận giao tiền mặt.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được ghi nhận giao tiền mặt.');
     return this.prisma.$transaction(async tx => {
       const row = await this.lockClaim(tx, id);
+      await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
       const compensation = await tx.damageClaimCompensation.findUnique({ where: { damageClaimId: id } });
       if (compensation?.handedOverAt) throw new ConflictException('Khoản bồi thường đã được bàn giao.');
       if (row.status !== 'APPROVED' || !compensation) throw new ConflictException('Hồ sơ chưa có khoản bồi thường được duyệt.');
@@ -220,8 +224,8 @@ export class DamageClaimsService {
       } });
       const updated = await tx.damageClaim.update({ where: { id }, data: {
         history: this.history(row, actor, 'CASH_HANDED_OVER', now, row.status),
-      }, include: this.include('MANAGER') });
-      return this.view(updated, 'MANAGER');
+      }, include: this.include('FACILITY_MANAGER') });
+      return this.view(updated, 'FACILITY_MANAGER');
     });
   }
 
@@ -248,7 +252,7 @@ export class DamageClaimsService {
 
   private async views(actor: PublicUser, rows: ClaimRow[], detail = false) {
     const ids = new Set<string>();
-    if (actor.role !== 'CUSTOMER') for (const row of rows) {
+    if (actor.role !== 'STORAGE_CUSTOMER') for (const row of rows) {
       if (row.assignedStaffId) ids.add(row.assignedStaffId);
       if (detail) for (const event of this.events(row.history, actor.role)) if (typeof event.actorId === 'string') ids.add(event.actorId);
     }
@@ -256,16 +260,16 @@ export class DamageClaimsService {
     const byId = new Map(users.map(user => [user.id, user]));
     return rows.map(row => ({
       ...this.view(row, actor.role),
-      ...(actor.role === 'CUSTOMER' ? {} : { assignedStaff: byId.get(row.assignedStaffId ?? '') ?? null }),
+      ...(actor.role === 'STORAGE_CUSTOMER' ? {} : { assignedStaff: byId.get(row.assignedStaffId ?? '') ?? null }),
       ...(detail ? { history: this.events(row.history, actor.role).map(event => ({
         ...this.publicEvent(event),
-        ...(actor.role !== 'CUSTOMER' && typeof event.actorId === 'string' ? { actorName: byId.get(event.actorId)?.fullName } : {}),
+        ...(actor.role !== 'STORAGE_CUSTOMER' && typeof event.actorId === 'string' ? { actorName: byId.get(event.actorId)?.fullName } : {}),
       })) } : {}),
     }));
   }
 
   private events(history: Prisma.JsonValue, role: PublicUser['role']) {
-    return Array.isArray(history) ? history.filter((event): event is Prisma.JsonObject => Boolean(event && typeof event === 'object' && !Array.isArray(event) && (role !== 'STAFF' || event.action !== 'CASH_HANDED_OVER'))) : [];
+    return Array.isArray(history) ? history.filter((event): event is Prisma.JsonObject => Boolean(event && typeof event === 'object' && !Array.isArray(event) && (role !== 'FACILITY_STAFF' || event.action !== 'CASH_HANDED_OVER'))) : [];
   }
 
   private publicEvent(event: Prisma.JsonObject) {
@@ -277,19 +281,19 @@ export class DamageClaimsService {
     const { idempotencyKey: _key, inputHash: _hash, compensation, history, assignedStaffId, reviewedById, ...data } = row;
     return {
       ...data,
-      ...(role === 'CUSTOMER' ? {} : { assignedStaffId, reviewedById }),
+      ...(role === 'STORAGE_CUSTOMER' ? {} : { assignedStaffId, reviewedById }),
       estimatedValue: row.estimatedValue === null ? null : Number(row.estimatedValue),
       discoveredOn: row.discoveredOn.toISOString().slice(0, 10),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       history: this.events(history, role).map(event => this.publicEvent(event)),
-      ...(role === 'STAFF' ? {} : { compensation: {
+      ...(role === 'FACILITY_STAFF' ? {} : { compensation: {
         status: compensation ? compensation.handedOverAt ? 'HANDED_OVER' : 'AWAITING_HANDOVER' : ['REPORTED', 'INVESTIGATING'].includes(row.status) ? 'PENDING_REVIEW' : 'NONE',
         approvedCompensationAmount: compensation ? Number(compensation.approvedCompensationAmount) : null,
         paidCompensationAmount: compensation?.paidCompensationAmount != null ? Number(compensation.paidCompensationAmount) : null,
         method: compensation?.method ?? null,
         handedOverAt: compensation?.handedOverAt?.toISOString() ?? null,
-        ...(role === 'MANAGER' && compensation ? {
+        ...(role === 'FACILITY_MANAGER' && compensation ? {
           approvalReason: compensation.approvalReason, approvedAt: compensation.approvedAt.toISOString(), approvedBy: compensation.approvedBy?.fullName,
           deliveredBy: compensation.deliveredBy, receivedBy: compensation.receivedBy, handoverNote: compensation.handoverNote,
           recordedBy: compensation.recordedBy?.fullName, recordedAt: compensation.recordedAt?.toISOString(),

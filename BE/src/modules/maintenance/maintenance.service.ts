@@ -1,5 +1,8 @@
-import { Optional } from '@nestjs/common';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
+import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
+
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -9,7 +12,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 type MaintenanceStatus = 'OPEN' | 'IN_PROGRESS' | 'AWAITING_VERIFICATION' | 'COMPLETED';
 type MaintenancePriority = 'LOW' | 'MEDIUM' | 'HIGH';
 type MaintenanceCategory = 'UNIT_DAMAGE' | 'CLEANING' | 'LOCK_OR_ACCESS' | 'FACILITY_EQUIPMENT' | 'OTHER';
-type ViewMode = 'STAFF' | 'MANAGER';
+type ViewMode = 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 
 export interface MaintenanceListQuery {
   page: number;
@@ -25,44 +28,49 @@ const unresolvedStatuses: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'AWAITIN
 
 @Injectable()
 export class MaintenanceService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   createManual(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
     const parsed = this.manualInput(input, key);
     return this.createManualTransaction(parsed, actor);
   }
 
   listStaff(query: MaintenanceListQuery, actor: PublicUser) {
-    return this.list(query, 'STAFF', actor.id);
+    return this.list(query, 'FACILITY_STAFF', actor.id,actor);
   }
 
-  listManager(query: MaintenanceListQuery, assignedStaffUserId?: string) {
-    return this.list(query, 'MANAGER', assignedStaffUserId);
+  listManager(query: MaintenanceListQuery, actor:PublicUser, assignedStaffUserId?: string) {
+    managerReservationScope(actor);
+
+    return this.list(query, 'FACILITY_MANAGER', assignedStaffUserId,actor);
   }
 
   async getStaff(id: string, actor: PublicUser) {
-    const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }], assignedStaffUserId: actor.id }, include: this.include() });
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }], assignedStaffUserId: actor.id, storageUnit:{storageType:{facility:facilityScope(actor)}} }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return this.toMaintenance(record, 'STAFF', actor.id);
+    return this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
   }
 
-  async getManager(id: string) {
-    return this.toMaintenance(await this.find(id, this.prisma), 'MANAGER');
+  async getManager(id: string, actor:PublicUser) {
+    managerReservationScope(actor);
+
+ const row=await this.find(id,this.prisma);await assertTaskFacility(this.prisma,actor,{storageUnitId:row.storageUnitId});return this.toMaintenance(row,'FACILITY_MANAGER');
   }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.requiredText(input.staffUserId, 100, 'staffUserId');
     return this.transition(id, key, 'ASSIGN', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true, accountStatus: true } });
-      if (!staff || staff.role !== 'STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
+      const staff = await assertAssignmentAccess(tx,actor,staffUserId,{storageUnitId:current.storageUnitId});
+      if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
+      await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id);
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { assignedStaffUserId: staff.id, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'MANAGER');
+    }, actor, 'FACILITY_MANAGER');
   }
 
   updatePriority(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
@@ -75,12 +83,12 @@ export class MaintenanceService {
         data: { priority: priority as MaintenancePriority, lastAction: 'PRIORITY', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'MANAGER');
+    }, actor, 'FACILITY_MANAGER');
   }
 
   start(id: string, key: string | undefined, actor: PublicUser) {
     return this.transition(id, key, 'START', async (tx, current, safeKey) => {
-      if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ Staff được bắt đầu công việc được giao.');
+      if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được bắt đầu công việc được giao.');
       if (current.status !== 'OPEN') throw new ConflictException(`Chỉ maintenance OPEN mới có thể bắt đầu; trạng thái hiện tại là ${current.status}.`);
       if (!current.assignedStaffUserId) throw new ConflictException({ code: 'MAINTENANCE_ASSIGNMENT_REQUIRED', message: 'Manager phải giao Staff trước khi bắt đầu.' });
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể bắt đầu công việc này.');
@@ -90,13 +98,13 @@ export class MaintenanceService {
         data: { status: 'IN_PROGRESS', startedAt: new Date(), lastAction: 'START', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'STAFF');
+    }, actor, 'FACILITY_STAFF');
   }
 
   completeWork(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const workNote = this.requiredText(input.workNote, 4000, 'workNote');
     return this.transition(id, key, 'COMPLETE_WORK', async (tx, current, safeKey) => {
-      if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
+      if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể hoàn tất công việc này.');
       this.assertUnitMaintenance(current);
@@ -105,7 +113,7 @@ export class MaintenanceService {
         data: { status: 'AWAITING_VERIFICATION', workCompletedAt: new Date(), workNote, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'STAFF');
+    }, actor, 'FACILITY_STAFF');
   }
 
   verify(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
@@ -125,7 +133,7 @@ export class MaintenanceService {
         },
         include: this.include(),
       });
-    }, actor, 'MANAGER');
+    }, actor, 'FACILITY_MANAGER');
   }
 
   rejectVerification(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
@@ -138,36 +146,36 @@ export class MaintenanceService {
         data: { status: 'IN_PROGRESS', verificationNote: note, lastAction: 'REJECT_VERIFICATION', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'MANAGER');
+    }, actor, 'FACILITY_MANAGER');
   }
 
   private async createManualTransaction(parsed: ReturnType<MaintenanceService['manualInput']>, actor: PublicUser) {
     const existing = await this.prisma.maintenanceRequest.findUnique({ where: { createIdempotencyKey: parsed.idempotencyKey }, include: this.include() });
-    if (existing) return this.assertCreateRetry(existing, parsed, actor);
+    if (existing) { await assertTaskFacility(this.prisma, actor, { storageUnitId: existing.storageUnitId }); return this.assertCreateRetry(existing, parsed, actor); }
     try {
       return await this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${parsed.storageUnitId} FOR UPDATE`);
         const unit = await tx.storageUnit.findUnique({ where: { id: parsed.storageUnitId } });
         if (!unit) throw new NotFoundException('Không tìm thấy StorageUnit.');
+        await assertTaskFacility(tx,actor,{storageUnitId:unit.id});
         if (unit.status === 'OCCUPIED') throw new ConflictException({ code: 'OCCUPIED_UNIT_MAINTENANCE_REQUIRES_INCIDENT_FLOW', message: 'Kho đang được thuê phải đi qua Support / Incident / Transfer workflow.' });
         if (unit.status !== 'AVAILABLE') throw new ConflictException({ code: 'UNIT_NOT_AVAILABLE_FOR_MANUAL_MAINTENANCE', message: `Chỉ unit AVAILABLE mới được tạo manual maintenance; trạng thái hiện tại là ${unit.status}.` });
         if (await tx.maintenanceRequest.findUnique({ where: { activeKey: this.activeKey(unit.id) } })) throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
         const changed = await tx.storageUnit.updateMany({ where: { id: unit.id, status: 'AVAILABLE' }, data: { status: 'MAINTENANCE' } });
         if (changed.count !== 1) throw new ConflictException('StorageUnit vừa được thay đổi bởi thao tác khác.');
-        const responsibility = await this.unitStaff?.resolveStaff(tx, [unit.id]);
         const created = await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: this.code(), storageUnitId: unit.id, source: 'MANUAL', category: parsed.category, priority: parsed.priority,
-            assignedStaffUserId: responsibility?.staffUserId, description: parsed.description, reportedByUserId: actor.id, activeKey: this.activeKey(unit.id), createIdempotencyKey: parsed.idempotencyKey,
+            description: parsed.description, reportedByUserId: actor.id, activeKey: this.activeKey(unit.id), createIdempotencyKey: parsed.idempotencyKey,
           },
           include: this.include(),
         });
-        return this.toMaintenance(created, actor.role === 'STAFF' ? 'STAFF' : 'MANAGER');
+        return this.toMaintenance(created, actor.role === 'FACILITY_STAFF' ? 'FACILITY_STAFF' : 'FACILITY_MANAGER');
       }, 'StorageUnit vừa được đưa vào maintenance bởi thao tác khác.');
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const retry = await this.prisma.maintenanceRequest.findUnique({ where: { createIdempotencyKey: parsed.idempotencyKey }, include: this.include() });
-        if (retry) return this.assertCreateRetry(retry, parsed, actor);
+        if (retry) { await assertTaskFacility(this.prisma, actor, { storageUnitId: retry.storageUnitId }); return this.assertCreateRetry(retry, parsed, actor); }
         throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
       }
       throw error;
@@ -180,19 +188,20 @@ export class MaintenanceService {
     action: string,
     operation: (tx: Prisma.TransactionClient, current: any, safeKey: string) => Promise<any>,
     actor: PublicUser,
-    role: 'STAFF' | 'MANAGER',
+    role: 'FACILITY_STAFF' | 'FACILITY_MANAGER',
   ) {
-    const managerAction = role === 'MANAGER';
-    const permitted = managerAction ? ['MANAGER', 'ADMIN'].includes(actor.role) : actor.role === 'STAFF';
-    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ Manager hoặc Admin được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
+    const managerAction = role === 'FACILITY_MANAGER';
+    const permitted = managerAction ? actor.role === 'FACILITY_MANAGER' : actor.role === 'FACILITY_STAFF';
+    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ quản lý cơ sở được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
     const safeKey = this.idempotencyKey(key);
     const identity = await this.identity(id);
     return this.serializable(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "MaintenanceRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.maintenanceRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy maintenance case.');
+      await assertTaskFacility(tx,actor,{storageUnitId:current.storageUnitId});
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${current.storageUnitId} FOR UPDATE`);
-      if (role === 'STAFF' && current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý bảo trì.');
+      if (role === 'FACILITY_STAFF' && current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý bảo trì.');
       if (current.lastAction === action && current.lastActionIdempotencyKey === safeKey) return this.toMaintenance(current, role);
       const reused = await tx.maintenanceRequest.findUnique({ where: { lastActionIdempotencyKey: safeKey }, select: { id: true } });
       if (reused) throw new ConflictException('Idempotency-Key đã được dùng cho thao tác maintenance khác.');
@@ -201,8 +210,9 @@ export class MaintenanceService {
     }, 'Maintenance case vừa được cập nhật bởi thao tác khác. Vui lòng tải lại.');
   }
 
-  private async list(query: MaintenanceListQuery, mode: ViewMode, assignedStaffUserId?: string) {
+  private async list(query: MaintenanceListQuery, mode: ViewMode, assignedStaffUserId: string|undefined, actor:PublicUser) {
     const where: Prisma.MaintenanceRequestWhereInput = {
+      storageUnit:{storageType:{facility:facilityScope(actor)}},
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.category ? { category: query.category } : {}),
@@ -263,7 +273,7 @@ export class MaintenanceService {
       createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
     };
     const relatedReturn = record.returnInspection?.returnRequest;
-    if (mode === 'STAFF') return staffDetailId ? {
+    if (mode === 'FACILITY_STAFF') return staffDetailId ? {
       ...base, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
       verifiedAt: record.verifiedAt?.toISOString() ?? null,
       ...(relatedReturn?.assignedStaffUserId === staffDetailId
@@ -295,7 +305,7 @@ export class MaintenanceService {
     if (record.source !== 'MANUAL' || record.storageUnitId !== parsed.storageUnitId || record.category !== parsed.category || record.priority !== parsed.priority || record.description !== parsed.description || record.reportedByUserId !== actor.id) {
       throw new ConflictException('Idempotency-Key đã được dùng cho maintenance request khác.');
     }
-    return this.toMaintenance(record, actor.role === 'STAFF' ? 'STAFF' : 'MANAGER');
+    return this.toMaintenance(record, actor.role === 'FACILITY_STAFF' ? 'FACILITY_STAFF' : 'FACILITY_MANAGER');
   }
 
   private assertUnresolved(record: any) {

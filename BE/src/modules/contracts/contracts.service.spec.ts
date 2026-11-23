@@ -29,7 +29,7 @@ describe('ContractsService with PostgreSQL persistence', () => {
     fullName: 'Contract Manager',
     email: `contract-manager-${runId}@example.test`,
     phone: '0900000100',
-    role: 'MANAGER',
+    role: 'FACILITY_MANAGER',
   };
 
   const draft = (quantity = 1) => ({
@@ -65,8 +65,8 @@ describe('ContractsService with PostgreSQL persistence', () => {
       },
     });
     await prisma.storageUnit.createMany({ data: unitNumbers.map((unitNumber, index) => ({ storageTypeId: productId, unitNumber, row: 1, position: index + 1 })) });
-    const stored = await prisma.user.create({ data: { id: customerId, fullName: 'Contract Customer', email: `contract-customer-${runId}@example.test`, phone: '0900000101', role: 'CUSTOMER', passwordHash: 'hash-never-returned' } });
-    await prisma.user.create({ data: { id: otherCustomerId, fullName: 'Other Customer', email: `contract-other-${runId}@example.test`, role: 'CUSTOMER', passwordHash: 'hash-never-returned' } });
+    const stored = await prisma.user.create({ data: { id: customerId, fullName: 'Contract Customer', email: `contract-customer-${runId}@example.test`, phone: '0900000101', role: 'STORAGE_CUSTOMER', passwordHash: 'hash-never-returned' } });
+    await prisma.user.create({ data: { id: otherCustomerId, fullName: 'Other Customer', email: `contract-other-${runId}@example.test`, role: 'STORAGE_CUSTOMER', passwordHash: 'hash-never-returned' } });
     customer = { id: stored.id, fullName: stored.fullName, email: stored.email, phone: stored.phone ?? '', role: stored.role };
   });
 
@@ -109,12 +109,12 @@ describe('ContractsService with PostgreSQL persistence', () => {
 
   it('allows Manager contract lookup and returns historical reservation pricing without password hashes', async () => {
     const reservation = await confirmedReservation();
-    const list = await contracts.listManagerContracts({ page: 1, limit: 20, search: reservation.reservationCode });
+    const list = await contracts.listManagerContracts({ page: 1, limit: 20, search: reservation.reservationCode }, manager);
     expect(list.total).toBe(1);
     expect(list.items[0].reservation.customer).toMatchObject({ id: customer.id, fullName: 'Contract Customer' });
     expect(JSON.stringify(list.items[0])).not.toContain('hash-never-returned');
     expect(list.items[0].reservationPricing).toMatchObject({ paymentPlan: 'PAY_MONTHLY' });
-    const detail = await contracts.getManagerContract(list.items[0].contractCode);
+    const detail = await contracts.getManagerContract(list.items[0].contractCode, manager);
     expect(detail.storageUnit.unitCode).toBe(unitNumbers[0]);
     expect(detail.startDate).toBe(reservation.startDate.toISOString().slice(0, 10));
     expect(detail.endDate).toBe(reservation.endDate.toISOString().slice(0, 10));

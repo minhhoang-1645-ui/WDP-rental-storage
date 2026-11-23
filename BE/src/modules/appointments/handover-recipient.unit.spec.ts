@@ -3,7 +3,7 @@ import { businessToday } from '../../business-date.js';
 import { AppointmentsService } from './appointments.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 const report = { condition: 'Kho sạch, cửa và khóa bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true };
 
 function setup(status = 'CONFIRMED') {
@@ -86,7 +86,7 @@ describe('RV3 handover completion service', () => {
   });
   it('keeps role and contract readiness checks before confirming a handover', async () => {
     const state = setup();
-    await expect(state.service.completeHandover('appointment', { handoverReport: report }, { ...staff, role: 'MANAGER' })).rejects.toThrow('nhân viên');
+    await expect(state.service.completeHandover('appointment', { handoverReport: report }, { ...staff, role: 'FACILITY_MANAGER' })).rejects.toThrow('nhân viên');
     state.row.reservation.invoices[0].status = 'OPEN';
     await expect(state.service.completeHandover('appointment', { handoverReport: report }, staff)).rejects.toThrow('thanh toán');
     expect(state.update).not.toHaveBeenCalled();

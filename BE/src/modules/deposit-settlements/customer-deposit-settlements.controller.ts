@@ -7,7 +7,7 @@ import { DepositSettlementsService } from './deposit-settlements.service.js';
 
 @Controller('customer/deposit-settlements')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 @ApiTags('Customer Deposit Settlement')
 @ApiBearerAuth('bearerAuth')
 export class CustomerDepositSettlementsController {
@@ -19,7 +19,7 @@ export class CustomerDepositSettlementsController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiOkResponse({ description: 'Deposit, approved charges, deduction, refund và outstanding thuộc Customer.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   list(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20') {
     const parsedPage = Number(page); const parsedLimit = Number(limit);
     if (!Number.isSafeInteger(parsedPage) || parsedPage < 1 || parsedPage > 100000 || !Number.isSafeInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) throw new BadRequestException('Pagination không hợp lệ.');

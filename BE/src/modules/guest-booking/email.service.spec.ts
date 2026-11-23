@@ -36,7 +36,7 @@ describe('EmailService SMTP', () => {
   it('sends the booking link to the guest using the configured sender', async () => {
     const sendMail = vi.fn().mockResolvedValue({ messageId: 'message-id' });
     const service = new EmailService(new ConfigService(smtpEnvironment));
-    vi.spyOn(service as never, 'createSmtpTransport' as never).mockReturnValue({ sendMail, verify: vi.fn() } as never);
+    vi.spyOn(service as any, 'createSmtpTransport').mockReturnValue({ sendMail, verify: vi.fn() } as never);
 
     const result = await service.sendBookingClaim(booking);
 
@@ -58,17 +58,17 @@ describe('EmailService SMTP', () => {
 
   it('does not report a successful delivery when SMTP send fails', async () => {
     const service = new EmailService(new ConfigService(smtpEnvironment));
-    vi.spyOn(service as never, 'createSmtpTransport' as never).mockReturnValue({ sendMail: vi.fn().mockRejectedValue({ code: 'EAUTH' }), verify: vi.fn() } as never);
+    vi.spyOn(service as any, 'createSmtpTransport').mockReturnValue({ sendMail: vi.fn().mockRejectedValue({ code: 'EAUTH' }), verify: vi.fn() } as never);
 
     await expect(service.sendBookingClaim(booking)).rejects.toMatchObject({
       response: { code: 'EMAIL_DELIVERY_FAILED', message: 'SMTP authentication failed.' },
-    } satisfies Partial<ServiceUnavailableException>);
+    } satisfies {response: {code:string;message:string}});
   });
 
   it('verifies a configured SMTP transport without sending a message', async () => {
     const verify = vi.fn().mockResolvedValue(true);
     const service = new EmailService(new ConfigService(smtpEnvironment));
-    vi.spyOn(service as never, 'createSmtpTransport' as never).mockReturnValue({ sendMail: vi.fn(), verify } as never);
+    vi.spyOn(service as any, 'createSmtpTransport').mockReturnValue({ sendMail: vi.fn(), verify } as never);
 
     await expect(service.verifySmtpConnection()).resolves.toBeUndefined();
     expect(verify).toHaveBeenCalledOnce();
@@ -77,7 +77,7 @@ describe('EmailService SMTP', () => {
   it('sends a recovery-only link from the configured frontend and reports an unavailable SMTP provider', async () => {
     const sendMail = vi.fn().mockResolvedValue({}), verify = vi.fn().mockResolvedValue(true);
     const service = new EmailService(new ConfigService(smtpEnvironment));
-    vi.spyOn(service as never, 'createSmtpTransport' as never).mockReturnValue({ sendMail, verify } as never);
+    vi.spyOn(service as any, 'createSmtpTransport').mockReturnValue({ sendMail, verify } as never);
     await service.assertPasswordResetAvailable();
     await service.sendPasswordReset('customer@example.test', 'recovery-proof');
     const message = sendMail.mock.calls[0][0];
@@ -90,7 +90,7 @@ describe('EmailService SMTP', () => {
   it('routes through the official Resend SDK with the configured sender and guest recipient', async () => {
     const service = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_key', EMAIL_TEST_RECIPIENT: 'development-sink@example.test', EMAIL_FROM_NAME: 'WDP Storage', EMAIL_FROM_ADDRESS: 'onboarding@example.com', FRONTEND_URL: 'http://localhost:5173' }));
     const send = vi.fn().mockResolvedValue({ data: { id: 'resend-message-id' }, error: null });
-    vi.spyOn(service as never, 'createResendClient' as never).mockReturnValue({ emails: { send } } as never);
+    vi.spyOn(service as any, 'createResendClient').mockReturnValue({ emails: { send } } as never);
 
     const result = await service.sendBookingClaim(booking);
 
@@ -106,8 +106,8 @@ describe('EmailService SMTP', () => {
 
   it('does not report success when Resend rejects the request', async () => {
     const service = new EmailService(new ConfigService({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_key', EMAIL_FROM_ADDRESS: 'onboarding@example.com', FRONTEND_URL: 'http://localhost:5173' }));
-    vi.spyOn(service as never, 'createResendClient' as never).mockReturnValue({ emails: { send: vi.fn().mockResolvedValue({ data: null, error: { message: 'rejected' } }) } } as never);
+    vi.spyOn(service as any, 'createResendClient').mockReturnValue({ emails: { send: vi.fn().mockResolvedValue({ data: null, error: { message: 'rejected' } }) } } as never);
 
-    await expect(service.sendBookingClaim(booking)).rejects.toMatchObject({ response: { code: 'EMAIL_DELIVERY_FAILED' } } satisfies Partial<ServiceUnavailableException>);
+    await expect(service.sendBookingClaim(booking)).rejects.toMatchObject({ response: { code: 'EMAIL_DELIVERY_FAILED' } } satisfies { response: { code: string } });
   });
 });

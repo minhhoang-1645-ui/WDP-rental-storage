@@ -1,3 +1,4 @@
+import { roleNamespace } from '../../role-names.js';
 import { CanActivate, ExecutionContext, Injectable, SetMetadata, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest, PublicUser } from './auth.types.js';
@@ -11,11 +12,11 @@ export class RolesGuard implements CanActivate {
     const roles = this.reflector.getAllAndOverride<PublicUser['role'][]>('allowedRoles', [context.getHandler(), context.getClass()]);
     const request = context.switchToHttp().getRequest<AuthenticatedRequest & { originalUrl?: string; method?: string }>();
     const user = request.user;
-    const scope = /^\/(?:api\/)?(customer|staff|manager|admin)(?:\/|$)/.exec(request.originalUrl ?? '')?.[1];
-    if (scope && user && user.role !== scope.toUpperCase()) throw new ForbiddenException('Chức năng này thuộc khu vực của vai trò khác. Vui lòng sử dụng đúng khu vực tài khoản của bạn.');
+    const scope = /^\/(?:api\/)?(customer|staff|manager|admin|operations)(?:\/|$)/.exec(request.originalUrl ?? '')?.[1];
+    if (scope && user && roleNamespace(user.role) !== scope) throw new ForbiddenException('Chức năng này thuộc khu vực của vai trò khác. Vui lòng sử dụng đúng khu vực tài khoản của bạn.');
     const targets = [context.getHandler(), context.getClass()];
     if (this.reflector.getAllAndOverride<boolean>('managerAssignment', targets)) {
-      const permitted = ['PATCH', 'POST'].includes(request.method ?? '') && user?.role === 'MANAGER' && /^\/(?:api\/)?manager\//.test(request.originalUrl ?? '');
+      const permitted = ['PATCH', 'POST'].includes(request.method ?? '') && user?.role === 'FACILITY_MANAGER' && /^\/(?:api\/)?manager\//.test(request.originalUrl ?? '');
       if (!permitted) throw new ForbiddenException('Chỉ quản lý được phân công nhân viên.');
       return true;
     }
@@ -24,8 +25,8 @@ export class RolesGuard implements CanActivate {
     if (workflow || lookup) {
       const staffNamespace = /^\/(?:api\/)?staff\/management(?:\/|$)/.test(request.originalUrl ?? '');
       const permitted = staffNamespace
-        ? user?.role === 'STAFF' && (!lookup || request.method === 'GET')
-        : user?.role === 'MANAGER' && request.method === 'GET';
+        ? user?.role === 'FACILITY_STAFF' && (!lookup || request.method === 'GET')
+        : user?.role === 'FACILITY_MANAGER' && request.method === 'GET';
       if (!permitted) throw new ForbiddenException('Chức năng vận hành này do nhân viên kho xử lý.');
       return true;
     }

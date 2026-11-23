@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../auth/auth.types.js';
+import { BadRequestException, Controller, Get, Param, Query, UseGuards , Req} from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -6,7 +7,7 @@ import { ActiveRentalsService, type ActiveRentalListQuery } from './active-renta
 
 @Controller('manager/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 @ApiTags('Manager Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class ManagerActiveRentalsController {
@@ -24,9 +25,9 @@ export class ManagerActiveRentalsController {
   @ApiOkResponse({ description: 'Reservation-level rentals với overdue state, customer, contracts, units và billing summary.', schema: { example: { reservationReference: 'WDP-2026-AB12CD34', rentalState: 'OVERDUE', effectiveEndDate: '2026-10-01', isOverdue: true, futureAllocationRisk: { hasFutureAllocation: true, hasCurrentAllocationConflict: true }, contracts: [{ status: 'ACTIVE', unit: { status: 'OCCUPIED', nextConfirmedAllocation: { reservationReference: 'WDP-2026-FUTURE01', startDate: '2026-10-01', endDate: '2026-11-01', customer: { fullName: 'Future Customer', email: 'future@example.test' } } } }] } } })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
-  list(@Query() query: Record<string, unknown>) {
-    return this.rentals.listManagerRentals(this.query(query));
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
+  list(@Query() query: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.rentals.listManagerRentals(this.query(query), foundationRequest.user!);
   }
 
   @Get(':reservationId')
@@ -34,10 +35,10 @@ export class ManagerActiveRentalsController {
   @ApiParam({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Customer, contracts, units, historical pricing, invoices và payment summary.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Active Rental.' })
-  get(@Param('reservationId') id: string) {
-    return this.rentals.getManagerRental(id);
+  get(@Param('reservationId') id: string, @Req() foundationRequest: AuthenticatedRequest) {
+    return this.rentals.getManagerRental(id, foundationRequest.user!);
   }
 
   private query(input: Record<string, unknown>): ActiveRentalListQuery {

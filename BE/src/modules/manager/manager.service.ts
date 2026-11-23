@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import type { PublicUser } from '../auth/auth.types.js';
+import { facilityScope } from '../facility-access/task-access.js';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessToday } from '../../business-date.js';
-import { responsibleUnit } from '../unit-staff/operational-assignment.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { unitHistoryCounts, unitMetadataLocked } from './unit-edit-policy.js';
 import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-location.js';
 
@@ -44,22 +45,23 @@ export interface CustomerListQuery {
 
 @Injectable()
 export class ManagerService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async dashboardSummary() {
+  async dashboardSummary(actor: PublicUser) {
+    const scope=managerReservationScope(actor);
     const now = new Date();
     const today = businessToday(now);
     const [pendingReservations, activeRentalRows, overdueRows, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits] = await Promise.all([
-      this.prisma.reservation.count({ where: { status: 'PENDING' } }),
-      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
-      this.prisma.rentalContract.findMany({ where: { status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
-      this.prisma.handoverAppointment.count({ where: { status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
-      this.prisma.renewalRequest.count({ where: { status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
-      this.prisma.supportRequest.count({ where: { status: { not: 'RESOLVED' } } }),
-      this.prisma.storageUnit.count({ where: { status: 'MAINTENANCE' } }),
-      this.prisma.depositSettlement.count({ where: { status: { not: 'SETTLED' } } }),
-      this.prisma.storageUnit.count({ where: { status: 'AVAILABLE' } }),
-      this.prisma.storageUnit.count({ where: { status: 'OCCUPIED' } }),
+      this.prisma.reservation.count({ where: { AND:[scope], status: 'PENDING' } }),
+      this.prisma.rentalContract.findMany({ where: { reservation:scope, status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { reservation:scope, status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.handoverAppointment.count({ where: { reservation:scope, status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
+      this.prisma.renewalRequest.count({ where: { reservation:scope, status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
+      this.prisma.supportRequest.count({ where: { reservation:scope, status: { not: 'RESOLVED' } } }),
+      this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'MAINTENANCE' } }),
+      this.prisma.depositSettlement.count({ where: { returnRequest:{reservation:scope}, status: { not: 'SETTLED' } } }),
+      this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'AVAILABLE' } }),
+      this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'OCCUPIED' } }),
     ]);
     return { pendingReservations, activeRentals: activeRentalRows.length, overdueRentals: overdueRows.length, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits };
   }
@@ -85,8 +87,7 @@ export class ManagerService {
 
   async listStaffUnits(query: UnitListQuery, staffId: string) {
     const { page, limit } = query;
-    if (!this.unitStaff?.enabled()) return { page, limit, total: 0, items: [] };
-    const where = { ...this.unitFilters(query), ...responsibleUnit(staffId) };
+    const where = { AND: [this.unitFilters(query), { storageType: { facility: facilityScope({id:staffId,role:'FACILITY_STAFF'}) } }] };
     const [total, units] = await Promise.all([
       this.prisma.storageUnit.count({ where }),
       this.prisma.storageUnit.findMany({ where, select: staffUnitSelect, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }] }),
@@ -94,8 +95,9 @@ export class ManagerService {
     return { page, limit, total, items: units.map(staffUnit) };
   }
 
-  async listUnits(query: UnitListQuery) {
-    const where = this.unitFilters(query, true);
+  async listUnits(query: UnitListQuery, actor: PublicUser) {
+    managerReservationScope(actor);
+    const where = { AND: [this.unitFilters(query, true), { storageType: { facility: facilityScope(actor) } }] };
     const today = this.today();
     const total = await this.prisma.storageUnit.count({ where });
     const units = await this.prisma.storageUnit.findMany({
@@ -131,19 +133,19 @@ export class ManagerService {
   }
 
   async getStaffUnit(id: string, staffId: string) {
-    const notFound = () => new NotFoundException('Không tìm thấy kho vật lý thuộc phạm vi phụ trách.');
-    if (!this.unitStaff?.enabled()) throw notFound();
+    const notFound = () => new NotFoundException('Không tìm thấy kho vật lý tại cơ sở được cấp quyền.');
     const unit = await this.prisma.storageUnit.findFirst({
-      where: { ...responsibleUnit(staffId), OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
+      where: { storageType: { facility: facilityScope({id:staffId,role:'FACILITY_STAFF'}) }, OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
       select: staffUnitSelect,
     });
     if (!unit) throw notFound();
     return staffUnit(unit);
   }
 
-  async getUnit(id: string) {
+  async getUnit(id: string, actor: PublicUser) {
+    managerReservationScope(actor);
     const unit = await this.prisma.storageUnit.findFirst({
-      where: { OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
+      where: { storageType: { facility: facilityScope(actor) }, OR: [{ id }, { unitNumber: { equals: id, mode: 'insensitive' } }] },
       include: {
         _count: { select: unitHistoryCounts },
         storageType: true,
@@ -179,9 +181,10 @@ export class ManagerService {
     };
   }
 
-  async listCustomers(query: CustomerListQuery) {
-    const where: Prisma.UserWhereInput = {
-      role: 'CUSTOMER',
+  async listCustomers(query: CustomerListQuery, actor: PublicUser) {
+    const scope=managerReservationScope(actor);
+    const where: Prisma.UserWhereInput = { reservations:{some:scope},
+      role: 'STORAGE_CUSTOMER',
       ...(query.search ? {
         OR: [
           { fullName: { contains: query.search, mode: 'insensitive' } },
@@ -203,8 +206,8 @@ export class ManagerService {
         phone: true,
         accountStatus: true,
         createdAt: true,
-        _count: { select: { reservations: true } },
-        reservations: {
+        _count: { select: { reservations: {where:scope} } },
+        reservations: { where:scope,
           take: 1,
           orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           include: { storageType: true },
@@ -228,9 +231,10 @@ export class ManagerService {
     };
   }
 
-  async getCustomer(id: string) {
+  async getCustomer(id: string, actor: PublicUser) {
+    const scope=managerReservationScope(actor);
     const customer = await this.prisma.user.findFirst({
-      where: { id, role: 'CUSTOMER' },
+      where: { id, role: 'STORAGE_CUSTOMER', reservations:{some:scope} },
       select: {
         id: true,
         fullName: true,
@@ -239,7 +243,7 @@ export class ManagerService {
         accountStatus: true,
         createdAt: true,
         updatedAt: true,
-        reservations: {
+        reservations: { where:scope,
           orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           include: {
             storageType: true,

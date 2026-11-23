@@ -110,8 +110,8 @@ async function main() {
     const hash = await passwordHash(password);
     await prisma.user.upsert({
       where: { email },
-      update: { fullName, phone, role: 'MANAGER', passwordHash: hash },
-      create: { email, fullName, phone, role: 'MANAGER', passwordHash: hash },
+      update: { fullName, phone, role: 'FACILITY_MANAGER', passwordHash: hash },
+      create: { email, fullName, phone, role: 'FACILITY_MANAGER', passwordHash: hash },
     });
     console.log('Seed complete: 1 facility, 6 storage products, 30 demo units and 1 development manager.');
   } finally {

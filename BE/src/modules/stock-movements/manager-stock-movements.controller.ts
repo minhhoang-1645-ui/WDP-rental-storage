@@ -8,12 +8,12 @@ import { parseStockMovementQuery } from './stock-movement-query.js';
 import { StockMovementsService } from './stock-movements.service.js';
 
 @Controller(['manager/stock-movements', 'staff/management/stock-movements'])
-@StaffWorkflow() @UseGuards(AuthGuard, RolesGuard) @Roles('STAFF', 'MANAGER') @ApiBearerAuth('bearerAuth') @ApiTags('Manager Stock Movements')
+@StaffWorkflow() @UseGuards(AuthGuard, RolesGuard) @Roles('FACILITY_STAFF', 'FACILITY_MANAGER') @ApiBearerAuth('bearerAuth') @ApiTags('Manager Stock Movements')
 export class ManagerStockMovementsController {
   constructor(private readonly service: StockMovementsService) {}
   @Get() @ApiOperation({ summary: 'Danh sách phiếu nhập/xuất hàng khách' }) @ApiQuery({ name: 'page', required: false }) @ApiQuery({ name: 'limit', required: false }) @ApiQuery({ name: 'status', required: false }) @ApiQuery({ name: 'type', required: false }) @ApiQuery({ name: 'search', required: false })
-  list(@Req() req: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.service.listManager(parseStockMovementQuery(query), req.user); }
-  @Get(':id') @ApiOperation({ summary: 'Chi tiết phiếu nhập/xuất' }) get(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.service.getManager(id, req.user); }
-  @ManagerAssignment() @Patch(':id/assign') @ApiOperation({ summary: 'Phân công Staff xử lý phiếu' }) @ApiBody({ schema: { example: { staffUserId: 'staff-user-id' } } }) @ApiOkResponse({ description: 'Phiếu chuyển ASSIGNED.' }) @ApiForbiddenResponse({ description: 'Chỉ STAFF.' })
+  list(@Req() req: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.service.listManager(parseStockMovementQuery(query), req.user!); }
+  @Get(':id') @ApiOperation({ summary: 'Chi tiết phiếu nhập/xuất' }) get(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.service.getManager(id, req.user!); }
+  @ManagerAssignment() @Patch(':id/assign') @ApiOperation({ summary: 'Phân công Staff xử lý phiếu' }) @ApiBody({ schema: { example: { staffUserId: 'staff-user-id' } } }) @ApiOkResponse({ description: 'Phiếu chuyển ASSIGNED.' }) @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF.' })
   assign(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.assign(id, typeof body.staffUserId === 'string' ? body.staffUserId.trim() : '', req.user!); }
 }

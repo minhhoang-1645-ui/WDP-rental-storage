@@ -52,7 +52,7 @@ export class GuestBookingService {
   }
 
   async claim(bookingCode: string, customer: PublicUser) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ tài khoản CUSTOMER được nhận booking.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ tài khoản STORAGE_CUSTOMER được nhận booking.');
     try {
       return await this.prisma.$transaction(async (tx) => {
         const identity = await tx.guestBookingRequest.findUnique({ where: { bookingCode }, select: { id: true } });

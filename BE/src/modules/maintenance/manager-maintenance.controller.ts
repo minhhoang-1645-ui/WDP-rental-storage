@@ -11,14 +11,14 @@ import { MaintenanceService } from './maintenance.service.js';
 @Controller(['manager/maintenance', 'staff/management/maintenance'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Maintenance')
 @ApiBearerAuth('bearerAuth')
 export class ManagerMaintenanceController {
   constructor(private readonly maintenance: MaintenanceService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Manager tạo manual maintenance cho unit AVAILABLE' })
+  @ApiOperation({ summary: 'Staff báo sự cố bảo trì tại cơ sở cho unit AVAILABLE' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-manager-report-001' }) @ApiBody({ type: CreateMaintenanceRequestDto })
   @ApiCreatedResponse({ description: 'Tạo OPEN case và chuyển unit sang MAINTENANCE.' }) @ApiConflictResponse({ description: 'Unit OCCUPIED, không AVAILABLE hoặc có active case.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.createManual(body, key, request.user!); }
@@ -32,16 +32,16 @@ export class ManagerMaintenanceController {
   @ApiQuery({ name: 'search', required: false, example: 'WDP-MNT' })
   @ApiQuery({ name: 'assignedToMe', required: false, type: Boolean })
   @ApiOkResponse({ description: 'Danh sách maintenance phân trang.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ nhân viên được xử lý; quản lý chỉ đọc báo cáo.' })
-  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = parseMaintenanceQuery(input); return req.user!.role === 'STAFF' ? this.maintenance.listStaff(query, req.user!) : this.maintenance.listManager(query, query.assignedToMe ? req.user!.id : undefined); }
+  list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { const query = parseMaintenanceQuery(input); return req.user!.role === 'FACILITY_STAFF' ? this.maintenance.listStaff(query, req.user!) : this.maintenance.listManager(query, req.user!, query.assignedToMe ? req.user!.id : undefined); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết maintenance và future allocation risk' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiOkResponse({ description: 'Bao gồm ReturnInspection context và next confirmed allocation; không thay đổi allocation.' }) @ApiNotFoundResponse({ description: 'Không tìm thấy case.' })
-  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'STAFF' ? this.maintenance.getStaff(id, req.user!) : this.maintenance.getManager(id); }
+  get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'FACILITY_STAFF' ? this.maintenance.getStaff(id, req.user!) : this.maintenance.getManager(id, req.user!); }
 
   @ManagerAssignment() @Patch(':id/assign')
-  @ApiOperation({ summary: 'Giao/reassign case chưa hoàn tất cho STAFF' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-assign-001' }) @ApiBody({ type: AssignMaintenanceRequestDto })
-  @ApiCreatedResponse({ description: 'Assignment được cập nhật; status/unit không đổi.' }) @ApiBadRequestResponse({ description: 'Target không phải STAFF.' }) @ApiConflictResponse({ description: 'Case đã hoàn tất/concurrent update.' })
+  @ApiOperation({ summary: 'Giao/reassign case chưa hoàn tất cho FACILITY_STAFF' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-assign-001' }) @ApiBody({ type: AssignMaintenanceRequestDto })
+  @ApiCreatedResponse({ description: 'Assignment được cập nhật; status/unit không đổi.' }) @ApiBadRequestResponse({ description: 'Target không phải FACILITY_STAFF.' }) @ApiConflictResponse({ description: 'Case đã hoàn tất/concurrent update.' })
   assign(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.assign(id, body, key, request.user!); }
 
   @ManagerAssignment() @Patch(':id/priority')

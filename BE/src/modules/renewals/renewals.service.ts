@@ -1,3 +1,4 @@
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { ONLINE_PAYMENT_TTL_MS } from '../billing/online-payment-policy.js';
@@ -224,7 +225,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async acceptCustomerAppendix(customer: PublicUser, id: string, input: Record<string, unknown>) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận phụ lục của mình.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận phụ lục của mình.');
     const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
     if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
     const identity = await this.prisma.renewalRequest.findFirst({ where: { OR: [{ id }, { renewalCode: id }], reservation: { customerId: customer.id } }, select: { id: true } });
@@ -276,8 +277,8 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  listManagerRenewals(query: RenewalListQuery) {
-    const filters: Prisma.RenewalRequestWhereInput[] = [];
+  listManagerRenewals(query: RenewalListQuery, actor: PublicUser) {
+    const filters: Prisma.RenewalRequestWhereInput[] = [{reservation:managerReservationScope(actor)}];
     if (query.status) filters.push({ status: query.status });
     if (query.search) filters.push({ OR: [
       { renewalCode: { contains: query.search, mode: 'insensitive' } },
@@ -291,8 +292,9 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     return this.page(filters.length ? { AND: filters } : {}, query, true);
   }
 
-  async getManagerRenewal(id: string) {
+  async getManagerRenewal(id: string, actor: PublicUser) {
     const record = await this.find(id, this.prisma);
+    await assertManagerRecordAccess(this.prisma,actor,{reservationId:record.reservationId});
     return this.toRenewal(record, true);
   }
 
@@ -305,6 +307,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
         const current = await tx.renewalRequest.findUnique({ where: { id: identity.id }, include: this.include() });
         if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+      await assertManagerRecordAccess(tx,actor,{reservationId:current.reservationId});
         if (['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(current.status)) return this.toRenewal(current, true);
         if (current.status !== 'PENDING') throw new ConflictException('Chỉ Renewal PENDING mới được duyệt.');
         await this.lockReservation(tx, current.reservationId);
@@ -339,6 +342,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.renewalRequest.findUnique({ where: { id: identity.id } });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+      await assertManagerRecordAccess(tx,actor,{reservationId:current.reservationId});
       if (current.status === 'REJECTED') return this.toRenewal(await this.find(current.id, tx), true);
       if (current.status !== 'PENDING') throw new ConflictException('Chỉ Renewal PENDING mới được từ chối.');
       const updated = await tx.renewalRequest.update({
@@ -570,7 +574,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     const unitIds = contracts.map(contract => contract.reservationUnit.storageUnitId);
     const allocation = await db.reservationUnit.findFirst({ where: {
       id: { notIn: contracts.map(contract => contract.reservationUnitId) }, storageUnitId: { in: unitIds }, releasedAt: null,
-      plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' },
+      plannedStartDate: { lt: end }, plannedEndDate: { gt: start },
     }, select: { id: true } });
     const approved = await db.renewalRequest.findFirst({ where: {
       id: { not: renewalId }, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: { lt: end }, requestedEndDate: { gt: start },
@@ -700,7 +704,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertManager(actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định yêu cầu gia hạn chờ xử lý.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định yêu cầu gia hạn chờ xử lý.');
   }
 
   private lockUnits(tx: Prisma.TransactionClient, unitIds: string[]) {

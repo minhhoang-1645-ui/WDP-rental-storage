@@ -4,7 +4,7 @@ import { AuditService, disabledLoginAction, type AuditInput } from './audit.serv
 import { AccountDisabledException } from '../auth/auth.errors.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const resources = new Set(['damage-claims', 'business-policies', 'users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
+const resources = new Set(['facilities', 'facility-access', 'business-rules', 'damage-claims', 'business-policies', 'users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
 type AuditRequest = { method: string; route?: { path?: unknown }; params?: Record<string, string>; body?: Record<string, unknown>; user?: PublicUser; ip?: string; socket?: { remoteAddress?: string } };
 
 /** Server-owned route templates + explicit fields only; never serialize request/result bodies. */
@@ -22,7 +22,7 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   if (request.method === 'POST' && route === '/customer/transfer-orders/:id/accept') {
     return { category: 'ACTIVITY', action: 'ACCEPT', resource: 'transfer-orders', route };
   }
-  const segments = route.replace(/^\/(?:customer|manager|admin|staff)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
+  const segments = route.replace(/^\/(?:customer|manager|admin|staff|operations)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
   const resource = segments[0];
   if (!resources.has(resource)) return;
   const suffix = segments.at(-1)!;

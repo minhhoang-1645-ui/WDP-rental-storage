@@ -1,7 +1,5 @@
 import 'dotenv/config';
-import { ConfigService } from '@nestjs/config';
 import { businessDate } from '../../business-date.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { SupportService } from '../support/support.service.js';
 import { EARLY_RETURN_SUBJECT } from './early-return-classification.js';
 import { ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
@@ -39,24 +37,22 @@ const day = (offset: number) => {
   return value;
 };
 const dateText = (value: Date) => value.toISOString().slice(0, 10);
-
-describe('Return and Inspection V1', () => {
+describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:\/\/[^@]+@(?:localhost|127\.0\.0\.1):55439\//.test(process.env.DATABASE_URL ?? ''))('Return and Inspection V1', () => {
   let prisma: PrismaService;
   let returns: ReturnsService;
   let support: SupportService;
   let rentals: ActiveRentalsService;
   let booking: BookingService;
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
-  const customer = actor(customerId, 'CUSTOMER');
-  const staff = actor(staffId, 'STAFF');
-  const manager = actor(managerId, 'MANAGER');
+  const customer = actor(customerId, 'STORAGE_CUSTOMER');
+  const staff = actor(staffId, 'FACILITY_STAFF');
+  const manager = actor(managerId, 'FACILITY_MANAGER');
 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    const unitStaff = new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
-    returns = new ReturnsService(prisma, unitStaff);
-    support = new SupportService(prisma, unitStaff);
+    returns = new ReturnsService(prisma);
+    support = new SupportService(prisma);
     rentals = new ActiveRentalsService(prisma);
     booking = new BookingService(prisma);
     await prisma.facility.create({ data: { id: facilityId, code: `RETURN-${runId}`, name: 'Return test', address: 'Test only' } });
@@ -67,13 +63,14 @@ describe('Return and Inspection V1', () => {
     } });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, floor: 'Ground', zone: 'R', row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Return Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Return Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Return Staff', role: 'STAFF', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Return Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Return Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Return Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Return Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Return Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
     ] });
-  });
+  await prisma.facilityAccess.createMany({data:[managerId,staffId].map(userId=>({userId,facilityId,grantedById:adminId}))});
+});
 
   afterEach(async () => {
     await prisma.stockMovement.deleteMany({ where: { rentalContract: { reservation: { storageTypeId } } } });
@@ -86,14 +83,13 @@ describe('Return and Inspection V1', () => {
     await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.supportRequest.deleteMany({ where: { reservation: { storageTypeId } } });
-    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
+
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.updateMany({ where: { storageTypeId }, data: { status: 'AVAILABLE' } });
   });
-
-  afterAll(async () => {
+afterAll(async () => {
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.depositSettlement.deleteMany({ where: { returnRequest: { reservation: { storageTypeId } } } });
@@ -101,13 +97,14 @@ describe('Return and Inspection V1', () => {
     await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.supportRequest.deleteMany({ where: { reservation: { storageTypeId } } });
-    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
+
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
+await prisma.facilityAccess.deleteMany({where:{facilityId}});
+await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
   });
@@ -131,11 +128,7 @@ describe('Return and Inspection V1', () => {
         status: 'ACTIVE', startDate, endDate: options.inconsistent && index === quantity - 1 ? day(1) : endDate, activatedAt: day(-40),
       } });
       await prisma.storageUnit.update({ where: { id: unit.id }, data: { status: 'OCCUPIED' } });
-      await prisma.unitStaffAssignment.upsert({
-        where: { id: `test-assignee-${unit.id}` },
-        create: { id: `test-assignee-${unit.id}`, storageUnitId: unit.id, staffUserId: staff.id, assignedByUserId: manager.id },
-        update: {},
-      });
+
     }
     const contracts = await prisma.rentalContract.findMany({ where: { reservationId: reservation.id }, include: invoiceContractInclude, orderBy: { contractCode: 'asc' } });
     const rentalAmount = 1500000n * BigInt(quantity);
@@ -151,10 +144,14 @@ describe('Return and Inspection V1', () => {
     return { reservation, units, quote, contracts, initial };
   }
 
-  const requestReturn = (reservationId: string, key = `return-key-${randomUUID()}`) =>
-    returns.createCustomerReturn(customer, { reservationId, note: 'Ready to inspect' }, key);
-  const requestContract = (reservationId: string, rentalContractId: string, key = `return-key-${randomUUID()}`) =>
-    returns.createCustomerReturn(customer, { reservationId, rentalContractId }, key);
+  const requestReturn = async (reservationId: string, key = `return-key-${randomUUID()}`) => {
+ const row=await returns.createCustomerReturn(customer,{reservationId,note:'Ready to inspect'},key);
+ return returns.assign(row.id,{staffUserId:staff.id},manager);
+};
+  const requestContract = async (reservationId: string, rentalContractId: string, key = `return-key-${randomUUID()}`) => {
+ const row=await returns.createCustomerReturn(customer,{reservationId,rentalContractId},key);
+ return returns.assign(row.id,{staffUserId:staff.id},manager);
+};
 
   async function historicalReturn(rental: Awaited<ReturnType<typeof activeRental>>) {
     const { reservation, contracts, initial } = rental;
@@ -173,14 +170,14 @@ describe('Return and Inspection V1', () => {
     return returns.getStaffReturn(returnId, staff);
   }
 
-  it.each(['APPROVED', 'REJECTED'] as const)('keeps the early return %s decision with Manager and assigns eligible physical intake to the unit owner', async (decision) => {
+  it.each(['APPROVED', 'REJECTED'] as const)('keeps the early return %s decision with Manager and assigns eligible physical intake to the unit owner', async (decision: any) => {
     const { reservation } = await activeRental({ end: day(2) });
     const proposal = await support.createCustomer(customer, {
       reservationId: reservation.id, category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Tôi muốn trả kho trước hạn.',
     }, `return-proposal-${randomUUID()}`);
     await expect(support.getStaff(proposal.id, staff)).rejects.toBeInstanceOf(NotFoundException);
     await expect(requestReturn(reservation.id)).rejects.toMatchObject({ response: { code: 'EARLY_RETURN_APPROVAL_REQUIRED' } });
-    const pending = (await returns.listEarlyReturnRequests(1, 20)).items.find(item => item.id === proposal.id)!;
+    const pending = (await returns.listEarlyReturnRequests(1, 20,manager)).items.find(item => item.id === proposal.id)!;
     expect(pending.decision).toBeNull();
     await expect(returns.decideEarlyReturn(proposal.id, {
       decision, note: 'Đã đối chiếu hợp đồng và tiền cọc.', financialReviewConfirmed: true,
@@ -241,10 +238,10 @@ describe('Return and Inspection V1', () => {
     const { reservation } = rental;
     const requested = await historicalReturn(rental);
     const started = await returns.startInspection(requested.id, staff);
-    expect(started).toMatchObject({ status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { id: staffId, role: 'STAFF' } });
+    expect(started).toMatchObject({ status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { id: staffId, role: 'FACILITY_STAFF' } });
     const issue = await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', conditionNote: 'Door dented', issueNote: 'Manager review required' }, staff);
     expect(issue).toMatchObject({ status: 'ISSUE_FOUND', inspectionSummary: { issues: 1 } });
-    expect(issue.inspections.find((inspection) => inspection.id === started.inspections[0].id)).toMatchObject({ result: 'ISSUE_FOUND', inspectedBy: { id: staffId } });
+    expect(issue.inspections.find((inspection: any) => inspection.id === started.inspections[0].id)).toMatchObject({ result: 'ISSUE_FOUND', inspectedBy: { id: staffId } });
     const customerView = await returns.getCustomerReturn(customerId, requested.id);
     expect(JSON.stringify(customerView)).not.toContain('Manager review required');
     expect(JSON.stringify(customerView)).not.toContain('Door dented');
@@ -283,7 +280,7 @@ describe('Return and Inspection V1', () => {
     await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ status: 409 });
     await passAll(requested.id);
     const completed = await returns.finalize(requested.id, staff);
-    expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
+    expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'FACILITY_STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED', completedAt: { not: null } } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null }, actualVacatedAt: { not: null } } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'AVAILABLE' } })).toBe(2);
@@ -354,7 +351,7 @@ describe('Return and Inspection V1', () => {
     await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ response: { code: 'RETURN_PENDING_STOCK_MOVEMENTS' } });
     await prisma.stockMovement.update({ where: { id: outbound.id }, data: { status: 'COMPLETED' } });
     const first = await requestContract(reservation.id, a.id);
-    const overdue = new OverstayController(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
+    const overdue = new OverstayController(prisma);
     for (const user of [manager, staff]) {
       const list = await overdue.list({ headers: {}, user });
       expect(list.items.find(item => item.id === a.id)?.returnRequest?.id).toBe(first.id);
@@ -364,7 +361,7 @@ describe('Return and Inspection V1', () => {
     await expect(returns.finalize(first.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_STORED_ITEMS_REMAIN' } });
     await prisma.storedItem.update({ where: { id: boxA.id }, data: { balance: 0 } });
     await expect(returns.finalize(first.id, staff)).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
-    await expect(returns.getManagerReturn(first.id)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
+    await expect(returns.getManagerReturn(first.id,manager)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
     const firstDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: first.id } });
     await expect(deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, staff)).rejects.toBeInstanceOf(ForbiddenException);
     await deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, manager);
@@ -375,8 +372,8 @@ describe('Return and Inspection V1', () => {
     await expect(prisma.reservationUnit.findUnique({ where: { id: b.reservationUnit.id } })).resolves.toMatchObject({ releasedAt: null });
     await expect(prisma.storedItem.findUnique({ where: { id: boxB.id } })).resolves.toMatchObject({ balance: 3 });
     await expect(rentals.getCustomerRental(customerId, reservation.id)).resolves.toMatchObject({ unitCount: 1, quantity: 1, contracts: [{ id: b.id, status: 'ACTIVE' }] });
-    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[0].unitNumber })).resolves.toMatchObject({ total: 0 });
-    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[1].unitNumber })).resolves.toMatchObject({ total: 1, items: [{ unitCount: 1 }] });
+    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[0].unitNumber }, manager)).resolves.toMatchObject({ total: 0 });
+    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[1].unitNumber }, manager)).resolves.toMatchObject({ total: 1, items: [{ unitCount: 1 }] });
     await expect(prisma.reservation.findUnique({ where: { id: reservation.id } })).resolves.toMatchObject({ status: 'CONFIRMED' });
 
     await prisma.storedItem.update({ where: { id: boxB.id }, data: { balance: 0 } });
@@ -440,13 +437,13 @@ describe('Return and Inspection V1', () => {
     await expect(prisma.invoice.findUnique({ where: { id: initial.id } })).resolves.toEqual(initial);
   });
 
-  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async scenario => {
+  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async (scenario: any) => {
     const start = day(-40);
     const end = monthlyBoundary(start, 6);
     const { reservation, contracts: [contract], initial, quote } = await activeRental({ end });
     const isPrepaid = scenario === 'prepaid' || scenario === 'prepaid-combined';
     const billing = new BillingService(prisma);
-    const service = new ReturnsService(prisma, undefined, undefined, billing);
+    const service = new ReturnsService(prisma, undefined, billing);
     const terms = { ...quote, termMonths: 6, paymentPlan: isPrepaid ? 'PREPAID' : 'PAY_MONTHLY' };
     await prisma.reservation.update({ where: { id: reservation.id }, data: { quoteSnapshot: terms } });
     const initialTotal = isPrepaid ? 10500000n : 3000000n;
@@ -502,7 +499,7 @@ describe('Return and Inspection V1', () => {
     const deposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: requested.id } });
     expect(deposit).toMatchObject({ refundAmount: 1500000n, status: 'APPROVED' });
     const settlements = new DepositSettlementsService(prisma);
-    expect(await settlements.getManager(deposit.id)).toMatchObject({ refundAmount: 1500000, earlyReturnSettlement: {
+    expect(await settlements.getManager(deposit.id, manager)).toMatchObject({ refundAmount: 1500000, earlyReturnSettlement: {
       returnId: requested.id, closeout: { appliedAt: expect.any(String), refundAmount }, rentRefund: { approvedAt: null, refundedAt: null },
     } });
     expect(await settlements.getCustomer(customerId, deposit.id)).not.toHaveProperty('earlyReturnSettlement');
@@ -526,7 +523,7 @@ describe('Return and Inspection V1', () => {
       const transfer = { amount: refundAmount, reference: 'rent-' + initial.id, transferredAt: new Date().toISOString() };
       expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
       const confirmed = await service.settleEarlyReturn(requested.id, transfer, manager, true);
-      expect(await settlements.getManager(deposit.id)).toMatchObject({ status: 'SETTLED', earlyReturnSettlement: { rentRefund: confirmed } });
+      expect(await settlements.getManager(deposit.id, manager)).toMatchObject({ status: 'SETTLED', earlyReturnSettlement: { rentRefund: confirmed } });
       expect(await service.settleEarlyReturn(requested.id, transfer, manager, true)).toEqual(confirmed);
       await expect(service.settleEarlyReturn(requested.id, { ...transfer, reference: 'another' }, manager, true)).rejects.toThrow('đã được ghi nhận');
     }
@@ -545,7 +542,7 @@ describe('Return and Inspection V1', () => {
     });
   });
 
-  it.each([true, false])('applies facility relief only with evidence and review (%s)', async verified => {
+  it.each([true, false])('applies facility relief only with evidence and review (%s)', async (verified: any) => {
     const { reservation, contracts: [contract], initial } = await activeRental({ end: day(10) });
     await prisma.payment.create({ data: { idempotencyKey: 'fault-' + initial.id, paymentCode: initial.invoiceCode + '-P', invoiceId: initial.id,
       amount: initial.totalAmount, method: 'CASH' } });
@@ -602,11 +599,11 @@ describe('Return and Inspection V1', () => {
     expect((await returns.listCustomerReturns(customerId, { page: 1, limit: 20 })).total).toBe(1);
     expect((await returns.listCustomerReturns(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(returns.getCustomerReturn(otherCustomerId, requested.id)).rejects.toBeInstanceOf(NotFoundException);
-    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: customerId, status: 'REQUESTED', date: businessDate() });
+    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: customerId, status: 'REQUESTED', date: businessDate() },manager);
     const staffList = await returns.listStaffReturns({ page: 1, limit: 20, search: unitCodes[0] }, staff);
     expect(managerList.total).toBe(1);
     expect(staffList.total).toBe(1);
-    expect(JSON.stringify(await returns.getManagerReturn(requested.id))).not.toContain('secret-hash');
+    expect(JSON.stringify(await returns.getManagerReturn(requested.id,manager))).not.toContain('secret-hash');
     expect(JSON.stringify(await returns.getStaffReturn(requested.id, staff))).not.toContain('billingSummary');
   });
 
@@ -622,12 +619,12 @@ describe('Return and Inspection V1', () => {
     await expect(authGuard.canActivate(unauthenticated)).rejects.toBeInstanceOf(UnauthorizedException);
     const rolesGuard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerReturnsController | typeof ManagerReturnsController | typeof StaffReturnsController, PublicUser['role'][]]> = [
-      [CustomerReturnsController, ['CUSTOMER']],
-      [ManagerReturnsController, ['MANAGER']],
-      [StaffReturnsController, ['STAFF']],
+      [CustomerReturnsController, ['STORAGE_CUSTOMER']],
+      [ManagerReturnsController, ['FACILITY_MANAGER']],
+      [StaffReturnsController, ['FACILITY_STAFF']],
     ];
     for (const [controller, roles] of allowed) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
         const context = { getHandler: () => function returnOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role }, method: 'GET' }) }) } as unknown as ExecutionContext;
         if (roles.includes(role)) expect(rolesGuard.canActivate(context)).toBe(true);
         else expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);

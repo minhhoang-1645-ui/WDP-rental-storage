@@ -3,7 +3,7 @@ export interface PublicUser {
   fullName: string;
   email: string;
   phone: string;
-  role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN';
+  role: 'STORAGE_CUSTOMER' | 'FACILITY_STAFF' | 'FACILITY_MANAGER' | 'BUSINESS_OPERATIONS_MANAGER' | 'SYSTEM_ADMINISTRATOR';
 }
 
 export interface AuthSession {

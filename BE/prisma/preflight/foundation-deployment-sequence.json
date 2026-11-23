@@ -1,0 +1,115 @@
+{
+  "target": "Use the verified direct Neon target from BE/.env without editing that file.",
+  "requiresApprovalBeforeProductionMigration": true,
+  "blockers": [
+    {
+      "migration": "20261118000100_notification_receipts",
+      "reason": "Stored checksum differs; 49 Git migration blobs, LF/CRLF variants and the only file revision did not recover the original. Applied logs are empty and pg_stat_statements is unavailable. Do not alter applied history."
+    },
+    {
+      "component": "Running Backend",
+      "reason": "User confirmed dev@2388bc5 (four roles). Stop the old service and all writers before migration; require explicit synchronized-cutover approval and verify its configured database identity."
+    }
+  ],
+  "sequence": [
+    "Local release branch packages the completed Backend foundation from dev@2388bc5. Publish only this branch after authorization; never push dev during cutover.",
+    "Confirm compatibility of the exact active Render release. If not demonstrable, approve a brief write freeze for the synchronized migration/release. Stop initiating new payments and drain existing gateway attempts; never acknowledge unrecorded payments as received.",
+    "Create a fresh full custom-format database backup with an exported snapshot and verify restoration.",
+    "Run npm run release:check and read-only preflight. Historical checksum divergence remains explicit and requires approval; do not mutate migration history.",
+    "Use the guarded npm run release:migrate command with an exact-commit/target approval record and verified full backup. Pending 00300–00500 plus 20261124000100/00200 run in order with in-transaction timeouts.",
+    "Verify all original rows/IDs/financial records, old migration checksums and unchanged service references; confirm TAPE ownership and leave unsupported owners NULL.",
+    "Deploy the reviewed five-role Backend as a separately authorized action; this task does not deploy Render.",
+    "Perform scoped authenticated smoke checks, confirm released Backend commit and database target before reopening writes. The nine catalog-only services need explicit real facility supply configuration, not an arbitrary catalog owner."
+  ],
+  "confirmedService": {
+    "code": "TAPE",
+    "facilityCode": "NESTBOX-DEMO",
+    "evidence": "One confirmed reservation service, three invoice pricing snapshots and a signed contract; no cross-facility reference."
+  },
+  "pendingMigration003Preparation": "While still unapplied on Neon, make its VOID balance check identical to the intended final 00500 rule. This avoids an incompatible intermediate constraint. Never edit it once applied to a persistent database.",
+  "checksumEvidence": {
+    "gitFetched": true,
+    "migrationBlobsChecked": 49,
+    "successfulApplyLogs": false,
+    "pgStatStatementsAvailable": false,
+    "sqlTextDifference": "Cannot establish original bytes or exact textual difference from a checksum and live catalogs alone.",
+    "liveReceiptSchemaMatchesRepository": true
+  },
+  "catalogOnlyServices": [
+    "BOX-L",
+    "BOX-M",
+    "BOX-S",
+    "HAND-TRUCK",
+    "LOCK",
+    "PALLET",
+    "SHELF",
+    "TROLLEY",
+    "WRAP"
+  ],
+  "catalogModel": {
+    "catalog": "AdditionalService: common identity and descriptive fields; historical IDs/prices/stock retained",
+    "supply": "FacilityServiceOffering: unique service + facility, explicit price, activation, stock/capacity",
+    "legacyStock": "Unallocated legacy inventory retained unchanged; not treated as zero or multiplied into facilities",
+    "confirmedBackfill": "TAPE only; no other offerings inferred"
+  },
+  "rollback": "Preserve additive schema and financial history. Prefer forward repair after new writes; a full backup restore discards later writes and requires a separate coordinated recovery decision. Do not downgrade to the four-role Backend against the five-role database.",
+  "checksumReconciliation": {
+    "status": "Original bytes unavailable. No migration-history mutation permitted.",
+    "migration": "20261118000100_notification_receipts",
+    "appliedSha256": "bd47770f8a09e54942ec8e161f2c804630c434980e4ca5d6dd2673a2a0eb7b55",
+    "repositorySha256": "cf582dfb4af72f8d7bc25739bf51a84b9fc6493a883ec69c0011f7ea75cbe4ec",
+    "preferred": "Obtain original SQL from deployment artifact/author and restore only if SHA256 matches applied checksum exactly.",
+    "alternativeApprovalRequired": "Explicitly accept a documented, permanent historical checksum divergence after verifying live NotificationReceipt columns, PK and FK against the current SQL. Retain both hashes and source evidence. Use forward-only migrate deploy; do not overwrite the checksum or mark the migration as reapplied. migrate dev/reset/db push/resolve remain prohibited on production.",
+    "consequence": "This exception does not repair or hide the historical checksum mismatch; future audits must continue reporting it separately. If acceptance is declined, keep production cutover blocked.",
+    "command": "npm run release:migrate -- --approve-production-cutover --all-writers-stopped --accept-documented-checksum-divergence --approval-record=/absolute/private/approval.json",
+    "verification": "Check old migration rows and checksums unchanged, receipt constraints unchanged, pending migrations finished, all business IDs/records preserved."
+  },
+  "renderIdentity": {
+    "verified": false,
+    "missing": [
+      "Confirm exact DATABASE_URL/DIRECT_URL host and database in the existing Render service; credentials remain private."
+    ],
+    "publicEvidence": {
+      "roles": [
+        "CUSTOMER",
+        "STAFF",
+        "MANAGER",
+        "ADMIN"
+      ],
+      "paths": 256,
+      "legacyUnitStaffEndpoints": true
+    },
+    "localEnvDoesNotProveRenderTarget": true,
+    "reported": {
+      "branch": "dev",
+      "commit": "2388bc5",
+      "databaseUrlsUpdated": true,
+      "source": "User confirmation for this release task"
+    }
+  },
+  "verification": {
+    "schema": "Prisma validate passed",
+    "typechecks": [
+      "Backend",
+      "Web app",
+      "Mobile"
+    ],
+    "focusedTests": {
+      "offline": 2,
+      "postgresqlRecovery": 2,
+      "postgresqlCases": [
+        "shared catalog with two facility offerings",
+        "cross-facility write denial",
+        "separate prices and unconfigured stock",
+        "purchase reservations and idempotent fulfillment",
+        "rental overlap and capacity reduction",
+        "stale quote price rejection",
+        "rollback of all isolated fixtures"
+      ]
+    },
+    "recoveryManifest": "BE/artifacts/foundation-db-finalize-2026-11-23T19-58-16-490Z/manifest.json",
+    "releaseBuild": "npm run build passed; dist/main.js is the verified start entrypoint",
+    "releaseSafetyTests": 4,
+    "startupGuard": "Passed before/after migration on restored database; no Nest app or schedulers started."
+  }
+}

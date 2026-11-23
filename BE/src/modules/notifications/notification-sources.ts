@@ -51,9 +51,10 @@ export class NotificationSources {
 
   private sources(actor: PublicUser): Record<string, Source> {
     const { id, role } = actor;
-    if (role === 'ADMIN') return { users: q => this.audit.list({ page: String(q.page), limit: String(q.limit), category: 'ACCOUNT_NOTICES' }) };
+    if (role === "BUSINESS_OPERATIONS_MANAGER") return {};
+    if (role === 'SYSTEM_ADMINISTRATOR') return { users: q => this.audit.list({ page: String(q.page), limit: String(q.limit), category: 'ACCOUNT_NOTICES' },actor) };
     const common: Record<string, Source> = { 'damage-claims': q => this.claims.list(actor, q) };
-    if (role === 'CUSTOMER') return {
+    if (role === 'STORAGE_CUSTOMER') return {
       ...common,
       reservations: () => this.booking.listReservations(id),
       'transfer-orders': () => this.transfers.listCustomer(actor),
@@ -68,7 +69,7 @@ export class NotificationSources {
       contracts: q => this.contracts.listCustomerContracts(id, q),
     };
     const operational = { ...common, appointments: (q: Query) => this.appointments.listOperationalAppointments(q, actor) };
-    if (role === 'STAFF') return {
+    if (role === 'FACILITY_STAFF') return {
       ...operational,
       'stock-movements': q => this.stock.listStaff(actor, q),
       returns: q => this.returns.listStaffReturns(q, actor),
@@ -79,13 +80,13 @@ export class NotificationSources {
     return {
       ...operational,
       'stock-movements': q => this.stock.listManager(q, actor),
-      returns: q => this.returns.listManagerReturns(q),
-      maintenance: q => this.maintenance.listManager(q),
-      'support-requests': q => this.support.listManager(q),
-      transfers: q => this.transfers.list(q),
-      renewals: q => this.renewals.listManagerRenewals(q),
-      invoices: q => this.billing.listManagerInvoices(q),
-      'deposit-settlements': q => this.deposits.listManager(q),
+      returns: q => this.returns.listManagerReturns(q,actor),
+      maintenance: q => this.maintenance.listManager(q,actor),
+      'support-requests': q => this.support.listManager(q,actor),
+      transfers: q => this.transfers.list(q,actor),
+      renewals: q => this.renewals.listManagerRenewals(q, actor),
+      invoices: q => this.billing.listManagerInvoices(q, actor),
+      'deposit-settlements': q => this.deposits.listManager(q, actor),
     };
   }
 

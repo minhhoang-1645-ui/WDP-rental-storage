@@ -1,4 +1,6 @@
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskExecution, assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
+import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 import { Optional } from '@nestjs/common';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { parseHandoverReport, readUnitHandoverDraft, type UnitHandover } from './handover-report.js';
@@ -65,11 +67,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     private readonly billing: BillingService = new BillingService(prisma),
     private readonly inventory: AdditionalServiceInventoryService = new AdditionalServiceInventoryService(prisma),
     @Optional() private readonly policies?: BusinessPolicyService,
-    @Optional() private readonly unitStaff?: UnitStaffService,
   ) {}
 
   async createCustomerAppointment(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được yêu cầu lịch bàn giao qua endpoint này.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được yêu cầu lịch bàn giao qua endpoint này.');
     const parsed = this.createInput(input, idempotencyKey);
     const reservationIdentity = await this.prisma.reservation.findFirst({ where: { OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }], customerId: customer.id }, select: { id: true } });
     if (!reservationIdentity) throw new NotFoundException('Không tìm thấy Reservation.');
@@ -85,19 +86,19 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         const reservation = await tx.reservation.findUnique({ where: { id: reservationIdentity.id }, include: this.reservationReadinessInclude() });
         if (!reservation) throw new NotFoundException('Không tìm thấy Reservation.');
         this.assertHandoverReady(reservation);
-        await this.assertAppointmentDate(reservation, parsed.scheduledAt);
+        const handoverLeadDays = this.policies ? await this.policies.value('handoverLeadDays',tx) : 3;
+        await this.assertAppointmentDate(reservation, parsed.scheduledAt,handoverLeadDays);
         if (await tx.handoverAppointment.findFirst({ where: { reservationId: reservation.id, status: 'COMPLETED' }, select: { id: true } })) throw new ConflictException('Đã hoàn tất bàn giao chìa khóa cho đơn này. Hệ thống sẽ kích hoạt khi đến ngày thuê.');
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
         const sequence = await tx.handoverAppointment.count({ where: { reservationId: reservation.id } }) + 1;
-        const responsibility = await this.unitStaff?.resolveStaff(tx, reservation.contracts.map(contract => contract.reservationUnit.storageUnit.id));
         const created = await tx.handoverAppointment.create({
           data: {
             appointmentCode: `${reservation.reservationCode}-A${String(sequence).padStart(2, '0')}`,
             reservationId: reservation.id,
             scheduledAt: parsed.scheduledAt,
+            handoverLeadDays,
             requestedByUserId: customer.id,
-            ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, assignedByUserId: responsibility.assignedByUserId, assignedAt: new Date() } : {}),
             status: 'CONFIRMED',
             confirmedAt: new Date(),
             note: parsed.note,
@@ -137,16 +138,16 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listOperationalAppointments(query: AppointmentListQuery, actor: PublicUser) {
-    const staff = actor.role === 'STAFF';
-    return this.appointmentPage(staff ? this.staffScope(actor.id) : {}, staff ? query : { ...query, agenda: undefined }, true, staff);
+    const staff = actor.role === 'FACILITY_STAFF';
+    return this.appointmentPage({reservation:reservationScope(actor),...(staff ? this.staffScope(actor.id) : {})}, staff ? query : { ...query, agenda: undefined }, true, staff);
   }
 
   async getOperationalAppointment(id: string, actor: PublicUser) {
-    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{ OR: [{ id }, { appointmentCode: id }] }, actor.role === 'STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
+    const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{reservation:reservationScope(actor)}, { OR: [{ id }, { appointmentCode: id }] }, actor.role === 'FACILITY_STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
-    const view = this.toAppointment(appointment, true, actor.role === 'STAFF');
-    if (actor.role !== 'STAFF' || !['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
-    const leadDays = await this.handoverLeadDays();
+    const view = this.toAppointment(appointment, true, actor.role === 'FACILITY_STAFF');
+    if (actor.role !== 'FACILITY_STAFF' || !['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
+    const leadDays = await this.appointmentLeadDays(appointment);
     try {
       this.assertAssigned(appointment, actor);
       this.assertHandoverReady(appointment.reservation);
@@ -167,7 +168,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async assignAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được phân công nhân viên bàn giao.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được phân công nhân viên bàn giao.');
     const staffUserId = typeof input.staffUserId === 'string' ? input.staffUserId.trim() : '';
     if (!staffUserId || !Object.hasOwn(input, 'expectedAssignedStaffUserId') || input.expectedAssignedStaffUserId !== null && typeof input.expectedAssignedStaffUserId !== 'string') throw new BadRequestException('Cần chọn nhân viên và gửi phiên bản phân công hiện tại.');
     const identity = await this.appointmentIdentity(id);
@@ -175,10 +176,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.handoverAppointment.findUniqueOrThrow({ where: { id: identity.id }, include: this.appointmentInclude() });
       if (!['REQUESTED', 'CONFIRMED'].includes(current.status)) throw new ConflictException('Chỉ phân công lịch đang chờ bàn giao, chưa hoàn tất hoặc hủy.');
-      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true, accountStatus: true } });
-      if (!staff || staff.role !== 'STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Nhân viên phải là STAFF đang hoạt động.');
+      const staff = await assertAssignmentAccess(tx,actor,staffUserId,{reservationId:current.reservationId});
+      if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Nhân viên phải là FACILITY_STAFF đang hoạt động.');
       if (current.assignedStaffUserId === staff.id) return this.toAppointment(current, true);
       if ((current.assignedStaffUserId ?? null) !== input.expectedAssignedStaffUserId) throw new ConflictException('Phân công vừa thay đổi. Tải lại trước khi giao lịch.');
+      await recordAssignment(tx,actor,"appointments",current.id,current.assignedStaffUserId,staff.id);
       return this.toAppointment(await tx.handoverAppointment.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, assignedByUserId: actor.id, assignedAt: new Date() }, include: this.appointmentInclude() }), true);
     }, 'Lịch bàn giao vừa được phân công bởi yêu cầu khác. Vui lòng tải lại.');
   }
@@ -190,17 +192,19 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async confirmAppointment(id: string, actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xác nhận lịch bàn giao.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được xác nhận lịch bàn giao.');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
         const current = await tx.handoverAppointment.findUnique({ where: { id: identity.id }, include: this.appointmentInclude() });
         if (!current) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
-        this.assertAssigned(current, actor);
+        if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
+          await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+        } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
         if (current.status === 'CONFIRMED') return this.toAppointment(current, true);
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
-        await this.assertAppointmentDate(current.reservation, current.scheduledAt);
+        await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
           data: { status: 'CONFIRMED', confirmedByUserId: actor.id, confirmedAt: new Date() },
@@ -211,7 +215,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async recordUnitHandover(id: string, unitId: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được giao mới được bàn giao kho.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được giao mới được bàn giao kho.');
     const condition = typeof input?.condition === 'string' ? input.condition.trim() : '';
     if (condition.length < 3 || condition.length > 500 || input.inspected !== true ||
         input.identityVerified !== true || input.accessDelivered !== true) {
@@ -222,7 +226,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.handoverAppointment.findUnique({ where: { id: identity.id }, include: this.appointmentInclude() });
       if (!current) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
-      this.assertAssigned(current, actor);
+      if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
+          await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+        } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
       if (current.status === 'COMPLETED' && current.handoverReport && typeof current.handoverReport === 'object' && !Array.isArray(current.handoverReport)) {
         const checks = current.handoverReport.unitChecks;
         if (Array.isArray(checks) && checks.some(check => check && typeof check === 'object' && !Array.isArray(check)
@@ -234,9 +240,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       if (previous) throw new ConflictException('Kho này đã được ghi nhận. Hãy tải lại biên bản bàn giao.');
       if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ ghi nhận từng kho khi lịch đã xác nhận và đang chờ bàn giao.');
       this.assertHandoverReady(current.reservation);
-      await this.assertAppointmentDate(current.reservation, current.scheduledAt);
+      await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
       const now = new Date();
-      await this.assertHandoverExecutionTime(current.reservation, now);
+      await this.assertHandoverExecutionTime(current.reservation, now,await this.appointmentLeadDays(current,tx));
       const target = current.reservation.contracts.find(contract => contract.reservationUnit.storageUnit.id === unitId)?.reservationUnit.storageUnit;
       if (!target) throw new NotFoundException('Kho không thuộc lịch bàn giao này.');
       await this.assertPhysicalUnitsAvailable(tx, current.reservation.id, [target]);
@@ -251,18 +257,20 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async completeHandover(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được hoàn tất bàn giao.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được hoàn tất bàn giao.');
     const identity = await this.appointmentIdentity(id);
     return this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
         const current = await tx.handoverAppointment.findUnique({ where: { id: identity.id }, include: this.appointmentInclude() });
         if (!current) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
-        this.assertAssigned(current, actor);
+        if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
+          await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+        } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
         if (current.status === 'COMPLETED') return this.toAppointment(current, true, true);
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
-        await this.assertAppointmentDate(current.reservation, current.scheduledAt);
-        await this.assertHandoverExecutionTime(current.reservation, new Date());
+        await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
+        await this.assertHandoverExecutionTime(current.reservation, new Date(),await this.appointmentLeadDays(current,tx));
         const contracts = current.reservation.contracts;
         const units = contracts.map(contract => contract.reservationUnit.storageUnit);
         const { unitProgress } = readUnitHandoverDraft(current.handoverReport);
@@ -349,6 +357,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       if (error instanceof ConflictException) return false;
       throw error;
     }
+  }
+
+  private async appointmentLeadDays(record:any,db:Prisma.TransactionClient=this.prisma) {
+    if(Number.isInteger(record.handoverLeadDays))return record.handoverLeadDays;
+    const prior=record.createdAt && this.policies?await this.policies.value('handoverLeadDays',db,record.createdAt):3;
+    const scheduled=this.vietnamDate(record.scheduledAt);
+    const scheduledDays=(record.reservation?.contracts??[]).map((c:any)=>Math.ceil((Date.parse(this.isoDate(c.startDate))-Date.parse(scheduled))/86400000));
+    return Math.max(prior,0,...scheduledDays);
   }
 
   private async handoverLeadDays() {

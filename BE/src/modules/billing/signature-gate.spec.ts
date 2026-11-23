@@ -6,7 +6,7 @@ describe('payment signature prerequisites', () => {
   const service = new BillingService({} as never, {} as never);
   const invoice = { type: 'INITIAL', reservationId: 'reservation', renewalRequestId: null };
   it('requires every contract in an initial reservation to be accepted', async () => {
-    const db = { rentalContract: { findMany: vi.fn().mockResolvedValue([{ termsAcceptedAt: new Date() }, { termsAcceptedAt: null }]) } };
+    const db = { reservation: { findUnique: vi.fn().mockResolvedValue({ quantity: 1 }) }, rentalContract: { findMany: vi.fn().mockResolvedValue([{ termsAcceptedAt: new Date() }, { termsAcceptedAt: null }]) } };
     await expect(service.assertSignedBeforePayment(db as never, invoice)).rejects.toBeInstanceOf(ConflictException);
     db.rentalContract.findMany.mockResolvedValue([{ termsAcceptedAt: new Date() }]);
     await expect(service.assertSignedBeforePayment(db as never, invoice)).resolves.toBeUndefined();

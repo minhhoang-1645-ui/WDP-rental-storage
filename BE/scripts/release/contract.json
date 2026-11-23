@@ -1,0 +1,394 @@
+{
+  "release": "nestbox-five-role-foundation-20261124",
+  "previousBackend": {
+    "branch": "dev",
+    "commit": "2388bc5",
+    "roleModel": 4,
+    "source": "User-confirmed Render release"
+  },
+  "roles": [
+    "STORAGE_CUSTOMER",
+    "FACILITY_STAFF",
+    "FACILITY_MANAGER",
+    "BUSINESS_OPERATIONS_MANAGER",
+    "SYSTEM_ADMINISTRATOR"
+  ],
+  "requiredMigrations": [
+    "20261123000100_five_role_codes",
+    "20261123000200_facility_access_foundation",
+    "20261123000300_core_foundation_integrity",
+    "20261123000400_bank_reconciliation_foundation",
+    "20261123000500_void_invoice_balance_integrity",
+    "20261124000100_legacy_service_facility_evidence",
+    "20261124000200_shared_service_catalog"
+  ],
+  "migrations": [
+    {
+      "name": "20261003000100_init_persistence",
+      "checksums": [
+        "fe9978eba601421011821151c10dfe14e0c4e5f9ee8ae376b14c45c0762de7f6",
+        "36a534ffb6cac412532f028898a83ea8c2f400581d775bc12635acd2667a08d6"
+      ]
+    },
+    {
+      "name": "20261005000100_reservation_lifecycle",
+      "checksums": [
+        "f1912db68ff1a13139d7004b6143124c35dc79640614ae66d546e2a64d43c949",
+        "df66e584e9c8f9adf3cc8d6e68a3c79688f44e88ecded1e34a4fff14071e14ef"
+      ]
+    },
+    {
+      "name": "20261005000200_pricing_v1",
+      "checksums": [
+        "67880bcd5fe72c8266702e739e2344e3a2dba8cb014c445fc06adda64b117173",
+        "0d3c79d9163f14498c8cbff7dab0b886684677320398f9b3b2b105f30159ac99"
+      ]
+    },
+    {
+      "name": "20261008000100_rental_contract_v1",
+      "checksums": [
+        "b7e1c11df1048cdca088a5913609ecd3160f2744f5e13c11f352c345829832cb",
+        "5383a223be9710c974e84a124ab6308af9e8e3e36279fc3f162f969a412ad892"
+      ]
+    },
+    {
+      "name": "20261008000200_invoice_payment_v1",
+      "checksums": [
+        "ac3713ccacfe62e0afcca938d74dfcfbae7c11c8e52428d3f16494ffbaef5622",
+        "bb64ba379570bdc43e248c50b6cec6ca6c5e71bb05dbeb3ec1f2ec8db3ab519b"
+      ]
+    },
+    {
+      "name": "20261008000300_appointment_handover_v1",
+      "checksums": [
+        "4477ef1b2cbc14f62348596aca8b1ec76bee3c1304fcee8a918046613db84da6",
+        "61025e534c060e5cad683f87c62fb0cf50baca10cbb4599295105c2803eb99da"
+      ]
+    },
+    {
+      "name": "20261008000400_active_rental_recurring_billing_v1",
+      "checksums": [
+        "3fdd790e3331ba6a0eb6f9827db81dd0bd0d7efd9cded92e5d186c518c3f6fd3",
+        "7c095ca80dcccc914aa44e7ad300af4c03a873b857779e598e1957fe02cb5e0b"
+      ]
+    },
+    {
+      "name": "20261008000500_renewal_v1",
+      "checksums": [
+        "4fcec4314e63e74efb22f17c4f4570a43248f8be457e93b94330adbf2f556a44",
+        "5e3a24ea3479ab4cf1017ab4a00e3a0eb78266707fdb633b34a5aab31a448e72"
+      ]
+    },
+    {
+      "name": "20261008000600_return_inspection_v1",
+      "checksums": [
+        "f116437e8183955e33190969c5dd8fe36e7f39ce364f78078b709e80cd89a85d",
+        "77646cd4ff370fb88c6a71aa0b79f50059dfef7b9287af98f58258b7e3fbdb54"
+      ]
+    },
+    {
+      "name": "20261009000100_return_issue_deposit_settlement_v1",
+      "checksums": [
+        "468b1fda6346f9643776cbf39c2e99024f84e52ea8ba7f15c4f7260f51b80a9d",
+        "2082be7e873bac58ae795694fbf334040e4d8f1d8c92e1bed6928bf2d8b6c1fc"
+      ]
+    },
+    {
+      "name": "20261009000200_maintenance_v1",
+      "checksums": [
+        "b186da3eb02f5d6191e492f09dde356373b8a33db2da329fbe63f1d24edb6670",
+        "f21595046ff6bb1a06a02caa9d603620d33a0b22ea3c158bb4a59bc3d59d5aec"
+      ]
+    },
+    {
+      "name": "20261010000100_support_incident_v1",
+      "checksums": [
+        "a905195fbc7a697d7d588045dcd0f6facb0c9abeb813864aae0280c8cfc36aea",
+        "7570857374765982430957a57502201b55dc5fe37473160f8d73a2609f5d7a2f"
+      ]
+    },
+    {
+      "name": "20261010000200_demo_completion_pack",
+      "checksums": [
+        "cb4a272de8732cded803e4592aff86d958e82dc1f3bdad1d817eba666337c534",
+        "1a17641beada2c172777b58300e482fc1d5e661192339ce6bbf5ef0c6d19e56f"
+      ]
+    },
+    {
+      "name": "20261010000300_payment_submission_v1",
+      "checksums": [
+        "9e2202b9868f2710a27e5ed5ca584dca3b638b204e384b17067fd38b6a2eb42d",
+        "e9bf16c4e3e53dff38bd4c501e2a3d76b82559fc22d11de4085dbe5f00b6a21a"
+      ]
+    },
+    {
+      "name": "20261012000100_guest_booking_online_payment_v1",
+      "checksums": [
+        "a6208bdb4edcee9ee5c49e77723836d196bb979e53efdabf4e21e7484a8f18c9",
+        "4a0fe188b2c48602af452d7d28da34826ef07dec4c2cb6b937461ff6befa27cd"
+      ]
+    },
+    {
+      "name": "20261012000200_additional_services_v1",
+      "checksums": [
+        "4943e7e5d9df815c77b5a954f3307df2fa1369c6c9e1ec3262c112af0e25004f",
+        "38e41cc74acae63c576e7313aac3c67df9250ef5ee27a5e58aeb6dcd453c7e21"
+      ]
+    },
+    {
+      "name": "20261012000300_additional_service_catalog_media",
+      "checksums": [
+        "f9f72967efc572c2fb57af32c19ad716f843119784c1c13aef94e7be501ab4d8",
+        "c62f980338081fb55598ce903c28e3e38a508f7b6a0fe853c26140cdd5ef2b6b"
+      ]
+    },
+    {
+      "name": "20261012000400_additional_service_billing_units",
+      "checksums": [
+        "166c2da86fa1b32f7064f4e0c9916d85ee0e61dc19de945dfc053a69f22d7e42",
+        "fba95f77050b722267679424aea9d42fd1efd86760fc6a29bad9b90ed61ee1c7"
+      ]
+    },
+    {
+      "name": "20261012000500_additional_service_inventory_v1",
+      "checksums": [
+        "9a4b992aaa10f936e325568753800b36d8a752c499b61589a13c64cd45d8af24",
+        "5407841f34b75d57da2002d6bca452f407a6e012aef9e44eb256bc2ef635cb0c"
+      ]
+    },
+    {
+      "name": "20261021000100_customer_stock_movements_v1",
+      "checksums": [
+        "03a17e6dbc6b36107565d3d2b46c11bc7bb4dc47fdedd8ff66c86f67cfe63d32",
+        "7dfbcc62c6f543e557d1fa34f86e3f40b04d6245613ac61f1383f304d2583db4"
+      ]
+    },
+    {
+      "name": "20261027000100_expiration_lifecycle_statuses",
+      "checksums": [
+        "84ea6064045cffa9fb0b75fd86535e31d44bab9deb0a9cff89f6b68fc1933493",
+        "d7a021148c2bf3e8744ce4eaa6c5fd90d001be3aa7f146c23228ed26ac27a10b"
+      ]
+    },
+    {
+      "name": "20261027000200_contract_acceptance_appendix_reconciliation",
+      "checksums": [
+        "11d47d9f8f36d195d2f4de56fa535c21eae75529bfa89e804afe0199f77beeb4",
+        "dc8b940a7e754460418b8d2cd48f32e5851f3e893bab552ba7a0cca3d29e9d82"
+      ]
+    },
+    {
+      "name": "20261028000100_drawn_signature_snapshots",
+      "checksums": [
+        "c7862f8a2fe181a04ae81901abd3f15796bdffb22ca13120f0c722727ee4a9fc",
+        "ceed26f3696eb44ad43816600cb2b04e4fd0b28d0b5237493d7467360465acff"
+      ]
+    },
+    {
+      "name": "20261028000200_unit_staff_assignments",
+      "checksums": [
+        "4f603d345f7f1f9faf4ced112d4ba46cc3eca02d0275e40d2eeda6f858efb01e",
+        "3df5e39cc78be3aa6caf0c6090c34fcbdeb5e9f8faae7996ff453b5f8d6ef3aa"
+      ]
+    },
+    {
+      "name": "20261030000100_payment_bank_transfer_dedup",
+      "checksums": [
+        "3672aa0bc8a59725289b592a5c76040e5414b18595da1606e2fb42222c4e332a",
+        "cc82b36b6400aec1481a4b41615fc59ad657491d12eb76ba7707146749b5ab3d"
+      ]
+    },
+    {
+      "name": "20261103000100_admin_audit_events",
+      "checksums": [
+        "ddd84c52d97bbd9a902adb3f8e9d8ef3db4a7e8e8f21c3c94e8320fecc004d4e",
+        "7d732fca532721e625895b3c96ceda28ceab3f17bce815c559488625a0e61dd8"
+      ]
+    },
+    {
+      "name": "20261105000100_guest_account_onboarding",
+      "checksums": [
+        "64b6762516ef3da58392e99332b7aed0a06741a987f2cdd507dcf1b962215d3b",
+        "a8d8175112723a822a78039bae0d9881f2f2d6148bce325a5649558851525e3e"
+      ]
+    },
+    {
+      "name": "20261106000100_persist_auth_sessions",
+      "checksums": [
+        "f9d2925da08237b52c7ac958d2569c8ebc4fcd459282748824607dfd14041139",
+        "8a804628b273140374edaa74b3a011d56b5f4dd745586e8c0a70918423c426d8"
+      ]
+    },
+    {
+      "name": "20261110000100_release_integrity",
+      "checksums": [
+        "9f523b30e289b4f378d3b35d9af1bcc62a1b81da84833bf5beab49cfd475f2ed",
+        "72ad3490923c2d29c86a261d208bcd54e0ab154bf456aac8fe893a53bae08c3e"
+      ]
+    },
+    {
+      "name": "20261110000200_transfer_commercial_addendum",
+      "checksums": [
+        "02a827ba8f3a38a5b2afc06cd27fcaf15314da29160eecc9a1f20f26a3587abe",
+        "ea4354732ea9e421120b08fbf13e0370c46d11921e7ce98d56539e0abf2f49a6"
+      ]
+    },
+    {
+      "name": "20261110090000_stock_movement_location_snapshot",
+      "checksums": [
+        "f81766fc8ecde80bb57339d0156a9400ce46c682023c5dc823261c91e46547f5",
+        "4eac49a901e2491a882df9a19f9b158f6c52af6dca10d4f27631082ad9535771"
+      ]
+    },
+    {
+      "name": "20261110100000_additional_service_physical_unit",
+      "checksums": [
+        "31d1d5743096203cabf0f05641ec800e13e7e00ccdddaa9fee7ac03d5813e866",
+        "a885d43e8940e6d617e3291f769137f2c4474ba22329cce23ead52d052c56e34"
+      ]
+    },
+    {
+      "name": "20261114000100_stock_item_customer_photos",
+      "checksums": [
+        "7249389f579442a6219b926ed4a58294bb0d81aff57a093462e7e3dc67f30842",
+        "50c8037eb3dd5ddd86fef2aa383d65f49e31ef5558d41d28b6d172bf62bf75b8"
+      ]
+    },
+    {
+      "name": "20261116000100_operational_task_assignees",
+      "checksums": [
+        "663913cee029a5e1292e31a89cb0b52cf2db24fbbf5d5f398dd98fb2e069b288",
+        "797488e0188883120415223fdc2b62fb4d4075f9ef3634f337f52ffb77d622c9"
+      ]
+    },
+    {
+      "name": "20261117000100_damage_claim_cash_compensation",
+      "checksums": [
+        "21f5ba263ae3c7b9841bdeaa3af90f15876f1c39ee6a6ccc982c97fdfd452482",
+        "b287eee60a17289c7145591894bcbefc7e854ad478a24b40fdbec49a946d417b"
+      ]
+    },
+    {
+      "name": "20261117000300_transfer_key_handover",
+      "checksums": [
+        "a555a0803b73a8098ec0104cd6ab12bf69bfc885330bf51c04dafd8644f5082c",
+        "baf20c2b06475a0d43afc3fcbb529d50c4ca2e8d9b8562305dcd540c4ee74820"
+      ]
+    },
+    {
+      "name": "20261117000400_handover_staff_assignment",
+      "checksums": [
+        "9d97985a049564b1cc32d80c685f9b7f6f9725b4189883500c0b8179dcbf5784",
+        "394272a93f4fac0af28cd317b2b6bd0d39596d642dc0a777d7102c46837ae4b2"
+      ]
+    },
+    {
+      "name": "20261117000500_operational_review_finance",
+      "checksums": [
+        "40760deb5fadec29896041163fac4edf931e28d278bdb37152d68eaef519f2b3",
+        "cc6435c52cdca3c92d3ec1283ed912e8f4172c9dc6f9ac3725c90f430ffa7621"
+      ]
+    },
+    {
+      "name": "20261118000100_notification_receipts",
+      "checksums": [
+        "03700f7a28cab408a91f8873855edadfbff7553bba54f98a2091f7643932a5ef",
+        "cf582dfb4af72f8d7bc25739bf51a84b9fc6493a883ec69c0011f7ea75cbe4ec"
+      ]
+    },
+    {
+      "name": "20261119000100_cancel_renewal",
+      "checksums": [
+        "303866310644fea98121fe254f4141c53fc789be628cb26e2ed4251c08bdbeac",
+        "4446c34f37159672eed411851b09df49610fdf75a31a2e0e032a29f79377aaf7"
+      ]
+    },
+    {
+      "name": "20261119000100_contract_scoped_renewals",
+      "checksums": [
+        "4b5a008065496b18a127d83341fd1ad5e43de021bd0022595e7ab58e2b5aa9bb",
+        "ec889529834678ed231c40f78cdca661daa55b703fd3f27e8148c779be4a7fe5"
+      ]
+    },
+    {
+      "name": "20261119000100_customer_evidence_photos",
+      "checksums": [
+        "0047c685cac6d13f4c53b64ca4eb264111019f4812552b6819931579df525156",
+        "5a5329061c373bfb447590153edf1134fbe1f68017b13ba06dd73014245d8860"
+      ]
+    },
+    {
+      "name": "20261120000100_transfer_requested_schedule",
+      "checksums": [
+        "a751336b470dd8bb77a623c99925e9aec8bbab574804844d3d9862df6dcabd36",
+        "639494b61ba6081c9b3b56c8476a1580286e30114a3f56aafd2846e28b82d239"
+      ]
+    },
+    {
+      "name": "20261120000200_early_return_closeout",
+      "checksums": [
+        "231bb6780fae790743c0becdbb8fe93794f76e8263acae5e084e1aad6e036a66",
+        "52226e080aa11ea9f28e9763cb7da0c24d283d337c32d6ef4faf375edf0e0f4d"
+      ]
+    },
+    {
+      "name": "20261123000100_five_role_codes",
+      "checksums": [
+        "d5535eee22b61e77ed518b69c6e7afa239eda6491585492768db3f4bed8cb673",
+        "6b4730e88b34b54cb113f03d9eb2bd2144b05c9f930f8ae10c64c79ddc63248a"
+      ]
+    },
+    {
+      "name": "20261123000200_facility_access_foundation",
+      "checksums": [
+        "6b5cb1abdac1dac323eee5749a949dcdabe417519e800389dd6cd9fd268448d9",
+        "6b127f727f03e9da91086fe15a0b989b16a00439ca23aa04579b0d7e83aac3dd"
+      ]
+    },
+    {
+      "name": "20261123000300_core_foundation_integrity",
+      "checksums": [
+        "92b9f067921e164c442179548562687673a5cb8d5e04f49c830a62b62897a90d",
+        "939143b03d5b9505f331fb4ac53ac93b917fa9cc795b33a33ae58af82b84dd33"
+      ]
+    },
+    {
+      "name": "20261123000400_bank_reconciliation_foundation",
+      "checksums": [
+        "750397fba0e1a4798dcde2f4cb710a72153f2f5635116abe609dbd8743e75321",
+        "f72a08661b056ee976313c36336eb514f249fee889f9df349c8e67d607c6085e"
+      ]
+    },
+    {
+      "name": "20261123000500_void_invoice_balance_integrity",
+      "checksums": [
+        "5ae3c0971b28731e54509e4ea8eb0ef4e69735137c75c54af03ff5f743272072",
+        "7a2229514b4621a7ad9be91a21a7fbf0ccdc6065fe4183d8ea546592e8b6a0ce"
+      ]
+    },
+    {
+      "name": "20261124000100_legacy_service_facility_evidence",
+      "checksums": [
+        "c90e37506d516ccffe3228abcc22ed7a3e344212775758e778835e99e7b282ad",
+        "edc6c6fbea907c0583d5a4f3d89440d881d55bfdead8d33ecaafe40cc6bd1bf6"
+      ]
+    },
+    {
+      "name": "20261124000200_shared_service_catalog",
+      "checksums": [
+        "8351e5580f86732ae9ee96cb17dcef7f2de99e4049dcc7f789c913f355b29a49",
+        "1749bec2830b5ee15520cde0b1a96ccdaf917556318ac0205077b05e6ddc22fd"
+      ]
+    }
+  ],
+  "historicalException": {
+    "migration": "20261118000100_notification_receipts",
+    "appliedChecksum": "bd47770f8a09e54942ec8e161f2c804630c434980e4ca5d6dd2673a2a0eb7b55",
+    "repositoryChecksums": [
+      "03700f7a28cab408a91f8873855edadfbff7553bba54f98a2091f7643932a5ef",
+      "cf582dfb4af72f8d7bc25739bf51a84b9fc6493a883ec69c0011f7ea75cbe4ec"
+    ],
+    "requiresExplicitCutoverAcceptance": true,
+    "reason": "Original SQL artifact unavailable. Live columns, primary key and foreign key verified equivalent. Preserve the applied checksum; this divergence remains visible."
+  }
+}

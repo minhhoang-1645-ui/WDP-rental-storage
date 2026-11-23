@@ -1,21 +1,19 @@
-import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRequest, PublicUser } from '../auth/auth.types.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import { OverstayController } from './overstay.controller.js';
 
-function setup(role: PublicUser['role'], unitAssignmentsEnabled: boolean) {
+function setup(role: PublicUser['role'], _unusedLegacyFlag: boolean) {
   const count = vi.fn().mockResolvedValue(0);
   const findMany = vi.fn().mockResolvedValue([]);
   const prisma = { rentalContract: { count, findMany } } as unknown as PrismaService;
-  const config = { get: vi.fn().mockReturnValue(String(unitAssignmentsEnabled)) } as unknown as ConfigService;
   const request: AuthenticatedRequest = { headers: {}, user: { role, id: 'staff-1' } as PublicUser };
-  return { count, findMany, controller: new OverstayController(prisma, config), request };
+  return { count, findMany, controller: new OverstayController(prisma), request };
 }
 
 describe('overdue physical storage scope', () => {
   it('uses the same physical and Staff assignment filters for rows and totals', async () => {
-    const { count, findMany, controller, request } = setup('STAFF', true);
+    const { count, findMany, controller, request } = setup('FACILITY_STAFF', true);
     await controller.list(request, '2');
     const activeReturn = {
       assignedStaffUserId: 'staff-1', physicallyReturnedAt: null,
@@ -23,21 +21,21 @@ describe('overdue physical storage scope', () => {
     };
     const where = {
       status: 'ACTIVE', endDate: { lte: expect.any(Date) },
-      reservationUnit: { releasedAt: null, storageUnit: { staffAssignments: { some: { staffUserId: 'staff-1', endedAt: null } } } },
+      reservationUnit: { releasedAt: null }, AND: [expect.objectContaining({reservation:expect.objectContaining({facility:expect.any(Object)})})],
     };
     expect(count).toHaveBeenCalledWith({ where });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 25, take: 25 }));
     expect(findMany.mock.calls[0][0].include.returnInspections.where).toEqual({ returnRequest: activeReturn });
   });
 
-  it('does not query rental contracts when assignment by storage unit is disabled', async () => {
-    const { count, controller, request } = setup('STAFF', false);
+  it('uses task access regardless of the removed unit-assignment flag', async () => {
+    const { count, controller, request } = setup('FACILITY_STAFF', false);
     await expect(controller.list(request)).resolves.toMatchObject({ total: 0, items: [] });
-    expect(count).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalled();
   });
 
   it('looks up open returns of each contract for Manager without a Staff assignee filter', async () => {
-    const { count, findMany, controller, request } = setup('MANAGER', true);
+    const { count, findMany, controller, request } = setup('FACILITY_MANAGER', true);
     await controller.list(request);
     expect(count.mock.calls[0][0].where).not.toHaveProperty('OR');
     expect(findMany.mock.calls[0][0].include.returnInspections.where.returnRequest).toMatchObject({

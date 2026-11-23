@@ -6,7 +6,7 @@ import { NotificationsService } from './notifications.service.js';
 
 @Controller('notifications')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN')
+@Roles('STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR')
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
 

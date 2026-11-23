@@ -1,0 +1,306 @@
+import { AuthService } from '../src/modules/auth/auth.service.js';
+import { PrismaUserRepository } from '../src/modules/users/user.repository.js';
+import { MaintenanceService } from '../src/modules/maintenance/maintenance.service.js';
+import { DamageClaimsService } from '../src/modules/claims/damage-claims.service.js';
+import { ReportingService } from '../src/modules/manager/reporting.service.js';
+import {RenewalsService} from '../src/modules/renewals/renewals.service.js';
+import {VnpayService} from '../src/modules/billing/vnpay.service.js';
+import {OnlinePaymentService} from '../src/modules/billing/online-payment.service.js';
+import {AdditionalServicesService} from '../src/modules/additional-services/additional-services.service.js';
+import {AdditionalServiceInventoryService} from '../src/modules/additional-services/additional-service-inventory.service.js';
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import {randomUUID,createHmac} from 'node:crypto';
+import {signature} from './foundation-fixtures.js';
+import {ConfigService} from '@nestjs/config';
+import {ForbiddenException} from '@nestjs/common';
+import {PrismaService} from '../src/prisma/prisma.service.js';
+import type {PublicUser} from '../src/modules/auth/auth.types.js';
+import {FacilityAccessService} from '../src/modules/facility-access/facility-access.service.js';
+import {BookingService} from '../src/modules/booking/booking.service.js';
+import {ContractsService} from '../src/modules/contracts/contracts.service.js';
+import {BillingService} from '../src/modules/billing/billing.service.js';
+import {AppointmentsService} from '../src/modules/appointments/appointments.service.js';
+import {SupportService} from '../src/modules/support/support.service.js';
+import {TransfersService} from '../src/modules/transfers/transfers.service.js';
+import {ReturnsService} from '../src/modules/returns/returns.service.js';
+import {DepositSettlementsService} from '../src/modules/deposit-settlements/deposit-settlements.service.js';
+import {ManagerService} from '../src/modules/manager/manager.service.js';
+import {OperationsService,assertMonthlyRange} from '../src/modules/operations/operations.service.js';
+import {BusinessPolicyService} from '../src/modules/policies/business-policy.service.js';
+import {SigningOtpService} from '../src/modules/signing/signing-otp.service.js';
+import type {EmailService} from '../src/modules/guest-booking/email.service.js';
+import {DocumentPolicy} from '../src/modules/documents/document-policy.js';
+import {businessToday} from '../src/business-date.js';
+
+const isolatedUrl='postgresql://nestbox_test@127.0.0.1:55439/nestbox_foundation_test';
+if(process.env.NESTBOX_ISOLATED_TEST!=='1'||process.env.DATABASE_URL!==isolatedUrl||process.env.NESTBOX_TEST_DATABASE_URL!==isolatedUrl||process.env.DIRECT_URL!==isolatedUrl)throw Error('Never run foundation checks against shared data.');
+const db=new PrismaService(), access=new FacilityAccessService(db),policies=new BusinessPolicyService(db),ops=new OperationsService(db),managerService=new ManagerService(db);
+const users:Record<string,PublicUser>={};
+let otp='';
+const signing=new SigningOtpService({signatureDeliveryConfigured:()=>true,sendSignatureOtp:async(input:{code:string})=>{otp=input.code;}} as unknown as EmailService,db);
+const contracts=new ContractsService(db,signing,new DocumentPolicy(new ConfigService({})));
+const billing=new BillingService(db), booking=new BookingService(db,undefined,contracts,billing,undefined,policies),appointments=new AppointmentsService(db,undefined,undefined,policies),support=new SupportService(db),transfers=new TransfersService(db),returns=new ReturnsService(db),deposits=new DepositSettlementsService(db);
+const key=()=>randomUUID(), date=(n=0)=>new Date(businessToday().getTime()+n*86400000).toISOString().slice(0,10);
+async function reserve(facility='A',quantity=1,start=date(),selected?:string){
+ const created=await booking.createReservation(users.customer,{productId:'type-'+facility,startDate:start,periodMode:'duration',durationMonths:1,quantity,adjacencyPreference:false,addonIds:[],paymentChoice:'pay-later',paymentPlan:'PAY_MONTHLY',note:key(),...(selected?{selectedUnitIds:[selected]}:{})});
+ if(created.status!=='CONFIRMED') { await booking.updateManagerReservationStatus(created.id,{status:'CONFIRMED'},users['manager'+facility]); throw new Error('Valid reservation required manual confirmation.'); }
+ return db.reservation.findUniqueOrThrow({where:{reservationCode:created.id}});
+}
+async function signAll(reservationId:string){
+ const records=await db.rentalContract.findMany({where:{reservationId}});
+ for(const record of records){
+  const view=await contracts.getCustomerContract(users.customer.id,record.id);
+  const body={agreed:true,acceptanceName:users.customer.fullName,signatureImage:signature(),snapshotHash:view.terms.snapshotHash};
+  const challenge=await contracts.requestSignatureOtp(users.customer,record.id,body);
+  await contracts.acceptCustomerContract(users.customer,record.id,{...body,challengeId:challenge.challengeId,otp,accepted:true});
+ }
+}
+beforeAll(async()=>{
+ await db.$connect();
+ for(const[id,role]of [['customer','STORAGE_CUSTOMER'],['other','STORAGE_CUSTOMER'],['staffA','FACILITY_STAFF'],['staffA2','FACILITY_STAFF'],['staffB','FACILITY_STAFF'],['managerA','FACILITY_MANAGER'],['managerB','FACILITY_MANAGER'],['bom','BUSINESS_OPERATIONS_MANAGER'],['admin','SYSTEM_ADMINISTRATOR']] as const){
+  const u=await db.user.create({data:{id,role,email:id+'@foundation.test',fullName:'Test '+id,passwordHash:'isolated-only',phone:''}});users[id]={id:u.id,role:u.role,email:u.email,fullName:u.fullName,phone:''};
+ }
+ for(const id of ['A','B']){
+  await db.facility.create({data:{id,code:id,name:'Facility '+id,address:'Isolated test'}});
+  await db.storageType.create({data:{id:'type-'+id,facilityId:id,code:'TYPE-'+id,name:'Kho '+id,sizeId:'small',sizeName:'Kho nhỏ',kicker:'Test',condition:'STANDARD',widthCm:150,lengthCm:200,heightCm:240,roomEquivalent:'Test',capacity:'Test',boxCount:'Test',suitableItems:[],image:'https://example.test/unit.jpg',imageAlt:'Test',floor:'Ground',access:'Test',features:[],monthlyRate:1500000,minRentalDays:1,allowDailyRental:true}});
+  await db.storageUnit.createMany({data:Array.from({length:16},(_,i)=>({id:id+'-'+i,storageTypeId:'type-'+id,unitNumber:id+'-'+i,floor:'Ground',zone:id,row:1,position:i+1}))});
+  for(const who of ['manager'+id,'staff'+id,...(id==='A'?['staffA2']:[])])await access.grant(users.admin,{userId:who,facilityId:id});
+ }
+});
+afterAll(async()=>{await db.$disconnect();});
+it('enforces real two-facility list/detail, customer ownership and five-role boundaries',async()=>{
+ const a=await reserve(),b=await reserve('B');
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:b.id}});
+ expect((await billing.listManagerInvoices({page:1,limit:100},users.managerA)).items.every((i:any)=>i.reservation.id===a.id)).toBe(true);
+ await expect(billing.getManagerInvoice(invoice.id,users.managerA)).rejects.toThrow();
+ await expect(contracts.getManagerContract((await db.rentalContract.findFirstOrThrow({where:{reservationId:b.id}})).id,users.managerA)).rejects.toThrow();
+ await expect(booking.getReservation(users.other,a.id)).rejects.toThrow();
+ await expect(booking.getReservation(users.admin,a.id)).rejects.toBeInstanceOf(ForbiddenException);
+ await expect(managerService.dashboardSummary(users.bom)).rejects.toBeInstanceOf(ForbiddenException);
+ await expect(access.grant(users.managerA,{userId:'staffB',facilityId:'A'})).rejects.toBeInstanceOf(ForbiddenException);
+ await expect(ops.list(users.admin)).rejects.toBeInstanceOf(ForbiddenException);
+ expect((await ops.list(users.bom)).length).toBe(await db.facility.count());
+ await expect(billing.recordPayment(invoice.id,{amount:1,method:'CASH'},key(),users.managerA)).rejects.toBeInstanceOf(ForbiddenException);
+ expect(()=>deposits.listManager({page:1,limit:10},users.admin)).toThrow(ForbiddenException);
+});
+it('preserves two contracts / one initial invoice; OTP, submission, partial payment and future activation are distinct',async()=>{
+ const r=await reserve('A',2,date(2));
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ expect(await db.rentalContract.count({where:{reservationId:r.id}})).toBe(2);
+ expect(await db.invoice.count({where:{reservationId:r.id,type:'INITIAL'}})).toBe(1);
+ await expect(billing.recordPayment(invoice.id,{amount:Number(invoice.totalAmount),method:'CASH'},key(),users.managerA)).rejects.toThrow('hợp đồng');
+ await signAll(r.id);
+ const notice=await billing.createCustomerPaymentSubmission(users.customer.id,invoice.id,{amount:Number(invoice.totalAmount),reference:'test-bank'},key());
+ expect((await db.invoice.findUniqueOrThrow({where:{id:invoice.id}})).amountPaid).toBe(0n);
+ await billing.recordPayment(invoice.id,{amount:100000,method:'CASH'},'partial-'+r.id,users.managerA);
+ await db.reservation.update({where:{id:r.id},data:{expiresAt:new Date(Date.now()-60000)}});
+ await billing.recordPayment(invoice.id,{amount:100000,method:'CASH'},'partial-'+r.id,users.managerA);
+ expect(await db.payment.count({where:{invoiceId:invoice.id}})).toBe(1);
+ const rest=await db.invoice.findUniqueOrThrow({where:{id:invoice.id}});
+ await billing.recordPayment(invoice.id,{amount:Number(rest.balanceDue),method:'CASH'},key(),users.managerA);
+ expect(notice.status).toBe('PENDING_VERIFICATION');
+ const a=await appointments.createCustomerAppointment(users.customer,{reservationId:r.id,scheduledAt:new Date(Date.now()+60000).toISOString()},key());
+ await expect(appointments.assignAppointment(a.id,{staffUserId:'staffB',expectedAssignedStaffUserId:null},users.managerA)).rejects.toThrow();
+ await appointments.assignAppointment(a.id,{staffUserId:'staffA',expectedAssignedStaffUserId:null},users.managerA);
+ await appointments.assignAppointment(a.id,{staffUserId:'staffA2',expectedAssignedStaffUserId:'staffA'},users.managerA);
+ expect(await db.auditEvent.count({where:{resourceId:a.id,action:'TASK_ASSIGNMENT'}})).toBe(2);
+ await expect(appointments.completeHandover(a.id,{},users.staffA)).rejects.toThrow();
+ const before=(await policies.list(users.bom)).items.find(x=>x.key==='handoverLeadDays')!;
+ await policies.save('handoverLeadDays',{value:0,expectedUpdatedAt:before.updatedAt},users.bom);
+ await appointments.completeHandover(a.id,{handoverReport:{condition:'Kho trống, sử dụng tốt',accessItemCount:2,identityVerified:true,unitInspected:true,accessDelivered:true,unitChecks:(await db.reservationUnit.findMany({where:{reservationId:r.id}})).map(u=>({unitId:u.storageUnitId,condition:'Kho sạch',inspected:true}))}},users.staffA2);
+ expect(await db.rentalContract.count({where:{reservationId:r.id,status:'ACTIVE'}})).toBe(0);
+ expect(await db.rentalContract.count({where:{reservationId:r.id,status:'READY_FOR_HANDOVER'}})).toBe(2);
+});
+it('protects allocation overlap at the database boundary and rejects concurrent double booking',async()=>{
+ const unit='B-15';const results=await Promise.allSettled([reserve('B',1,date(3),unit),reserve('B',1,date(3),unit)]);
+ expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+ const first=await db.reservationUnit.findFirstOrThrow({where:{storageUnitId:unit,releasedAt:null}});
+ await expect(db.reservationUnit.create({data:{reservationId:(await reserve('B',1,date(40))).id,storageUnitId:unit,plannedStartDate:first.plannedStartDate,plannedEndDate:first.plannedEndDate}})).rejects.toThrow();
+});
+it('blocks stale initial payments, keeps signed snapshots stable and enforces effective pricing ranges',async()=>{
+ const r=await reserve('B');await signAll(r.id);
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ await db.reservation.update({where:{id:r.id},data:{status:'EXPIRED',expiresAt:new Date(Date.now()-60000)}});
+ await db.reservationUnit.updateMany({where:{reservationId:r.id,releasedAt:null},data:{releasedAt:new Date()}});
+ await expect(billing.recordPayment(invoice.id,{amount:Number(invoice.totalAmount),method:'CASH'},key(),users.managerB)).rejects.toThrow();
+ expect(await db.payment.count({where:{invoiceId:invoice.id}})).toBe(0);
+ const contract=await db.rentalContract.findFirstOrThrow({where:{reservationId:r.id}});
+ await ops.saveRange({facilityId:'B',min:1000000,max:2000000,effectiveFrom:new Date().toISOString(),expectedVersion:0},users.bom);
+ await expect(assertMonthlyRange(db,'B','type-B',2500000)).rejects.toThrow();
+ expect((await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}})).signedSnapshot).toEqual(contract.signedSnapshot);
+});
+
+async function activateRental(){
+ const r=await reserve('A');await signAll(r.id);
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ await billing.recordPayment(invoice.id,{amount:Number(invoice.balanceDue),method:'CASH'},key(),users.managerA);
+ const ap=await appointments.createCustomerAppointment(users.customer,{reservationId:r.id,scheduledAt:new Date(Date.now()+60000).toISOString()},key());
+ await appointments.assignAppointment(ap.id,{staffUserId:'staffA',expectedAssignedStaffUserId:null},users.managerA);
+ await appointments.completeHandover(ap.id,{handoverReport:{condition:'Kho sạch và trống',accessItemCount:1,identityVerified:true,unitInspected:true,accessDelivered:true}},users.staffA);
+ return {r,contract:await db.rentalContract.findFirstOrThrow({where:{reservationId:r.id}})};
+}
+it('extends a real active rental only after appendix OTP and activation payment',async()=>{
+ const {r,contract}=await activateRental(),service=new RenewalsService(db,undefined,signing,new DocumentPolicy(new ConfigService({})));
+ const created=await service.createCustomerRenewal(users.customer.id,{reservationId:r.id,rentalContractId:contract.id,termMonths:1,paymentPlan:'PAY_MONTHLY'},key());
+ const renewal=await db.renewalRequest.findUniqueOrThrow({where:{id:created.id}});
+ expect(renewal.status).toBe('APPROVED_PENDING_PAYMENT');
+ expect((await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}})).endDate).toEqual(contract.endDate);
+ const invoice=await db.invoice.findFirstOrThrow({where:{renewalRequestId:renewal.id,renewalCycle:1}});
+ await expect(billing.recordPayment(invoice.id,{amount:Number(invoice.balanceDue),method:'CASH'},key(),users.managerA)).rejects.toThrow('phụ lục');
+ const view=await service.getCustomerRenewal(users.customer.id,renewal.id);
+ const input={agreed:true,acceptanceName:users.customer.fullName,signatureImage:signature(),snapshotHash:view.appendix!.snapshotHash};
+ const challenge=await service.requestSignatureOtp(users.customer,renewal.id,input);
+ await service.acceptCustomerAppendix(users.customer,renewal.id,{...input,challengeId:challenge.challengeId,otp});
+ await billing.recordPayment(invoice.id,{amount:Number(invoice.balanceDue),method:'CASH'},key(),users.managerA);
+ expect((await db.renewalRequest.findUniqueOrThrow({where:{id:renewal.id}})).status).toBe('COMPLETED');
+ expect((await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}})).endDate.getTime()).toBeGreaterThan(contract.endDate.getTime());
+ expect((await db.reservationUnit.findUniqueOrThrow({where:{id:contract.reservationUnitId}})).plannedEndDate).toEqual(renewal.requestedEndDate);
+});
+it('transfers and physically returns a unit without forcing personal-goods stock counting; financial closure stays separate',async()=>{
+ const {r,contract}=await activateRental();
+ const item=await db.storedItem.create({data:{itemCode:'HIST-'+key(),customerUserId:users.customer.id,rentalContractId:contract.id,name:'Hàng khách tự quản',unit:'thùng',balance:6}});
+ const original=await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}});
+ const proposal=await support.createCustomer(users.customer,{reservationId:r.id,rentalContractId:contract.id,category:'UNIT_ISSUE',subject:'Yêu cầu chuyển kho',description:'Kho cũ cần kiểm tra khóa.'},key());
+ const transfer=await db.transferRequest.findFirstOrThrow({where:{supportRequestId:proposal.id}});
+ const destination=(await transfers.destinations(transfer.id,{},users.managerA)).items.find(x=>x.eligible)!;
+ await transfers.approve(transfer.id,{toStorageUnitId:destination.id},users.managerA);
+ expect((await db.transferRequest.findUniqueOrThrow({where:{id:transfer.id}})).assignedStaffUserId).toBeNull();
+ await transfers.assign(transfer.id,{staffUserId:'staffA'},users.managerA);
+ await transfers.complete(transfer.id,users.staffA,{oldKeysReturned:true,newKeysDelivered:true,goodsMoved:true,recipientName:users.customer.fullName,returnedKeyCount:1,deliveredKeyCount:1});
+ const moved=await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}});
+ expect(moved.signedSnapshot).toEqual(original.signedSnapshot);
+ expect(moved.endDate).toEqual(original.endDate);
+ expect(moved.reservationUnitId).not.toBe(original.reservationUnitId);
+ expect((await db.storedItem.findUniqueOrThrow({where:{id:item.id}})).balance).toBe(6);
+ expect((await db.maintenanceRequest.findFirstOrThrow({where:{storageUnitId:transfer.fromStorageUnitId}})).assignedStaffUserId).toBeNull();
+ const request=await support.createCustomer(users.customer,{reservationId:r.id,rentalContractId:contract.id,category:'OTHER',subject:'Đề nghị trả kho trước hạn',description:'Tôi đã dọn đồ và muốn bàn giao kho.'},key());
+ const review=(await returns.listEarlyReturnRequests(1,100,users.managerA)).items.find(x=>x.id===request.id)!;
+ await returns.decideEarlyReturn(request.id,{decision:'APPROVED',note:'Đã đối chiếu kỳ thuê, công nợ và cọc.',financialReviewConfirmed:true,reviewedEndDate:review.reservation.effectiveEndDate,reviewedPaidAmount:review.financialSummary.paidAmount,reviewedOutstandingAmount:review.financialSummary.outstandingAmount},users.managerA);
+ const returned=await returns.createCustomerReturn(users.customer,{reservationId:r.id,rentalContractId:contract.id},key());
+ await returns.assign(returned.id,{staffUserId:'staffA'},users.managerA);
+ await returns.startInspection(returned.id,users.staffA);
+ const detail=await returns.getStaffReturn(returned.id,users.staffA);
+ for(const inspection of detail.inspections)await returns.updateInspection(returned.id,inspection.id,{result:'PASS',conditionNote:'Khách đã dọn hết đồ; kho sạch, khóa tốt.'},users.staffA);
+ await returns.finalize(returned.id,users.staffA,{accessRevoked:true});
+ const actual=await db.returnRequest.findUniqueOrThrow({where:{id:returned.id}});
+ expect(actual.physicallyReturnedAt).not.toBeNull();
+ expect(actual.status).toBe('PENDING_SETTLEMENT');
+ expect((await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}})).status).toBe('COMPLETED');
+ const settlement=await db.depositSettlement.findUniqueOrThrow({where:{returnRequestId:returned.id}});
+ await expect(deposits.refund(settlement.id,{method:'BANK_TRANSFER'},key(),users.managerA)).rejects.toThrow();
+ expect((await db.depositSettlement.findUniqueOrThrow({where:{id:settlement.id}})).refundedAt).toBeNull();
+});
+it('VNPay signed callbacks reconcile expired orders without reactivation or duplicate accounting',async()=>{
+ const r=await reserve('B');await signAll(r.id);
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ const secret='isolated-foundation-gateway-secret';
+ const gateway=new VnpayService(new ConfigService({VNPAY_TMN_CODE:'FOUNDATION',VNPAY_HASH_SECRET:secret,VNPAY_PAYMENT_URL:'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',VNPAY_RETURN_URL:'http://127.0.0.1/customer/payments/vnpay-return'}));
+ const online=new OnlinePaymentService(db,billing,gateway);
+ const session=await online.create(invoice.id,{},key(),users.customer,'127.0.0.1');
+ const transaction=await db.onlinePaymentTransaction.findUniqueOrThrow({where:{id:session.transactionId}});
+ await db.reservation.update({where:{id:r.id},data:{status:'EXPIRED',expiresAt:new Date(Date.now()-60000)}});
+ const callback:Record<string,string>={vnp_TmnCode:'FOUNDATION',vnp_TxnRef:transaction.merchantOrderRef,vnp_Amount:String(transaction.amount*100n),vnp_ResponseCode:'00',vnp_TransactionStatus:'00',vnp_TransactionNo:'ISOLATED-'+key()};
+ callback.vnp_SecureHash=createHmac('sha512',secret).update(Object.keys(callback).sort().map(k=>encodeURIComponent(k)+'='+encodeURIComponent(callback[k]).replace(/%20/g,'+')).join('&')).digest('hex');
+ expect((await online.processIpn({...callback,vnp_Amount:'1'})).RspCode).toBe('97');
+ expect((await online.processIpn(callback)).RspCode).toBe('00');
+ expect((await online.processIpn(callback)).RspCode).toBe('02');
+ expect(await db.payment.count({where:{invoiceId:invoice.id}})).toBe(0);
+ expect(await db.onlinePaymentReconciliation.count({where:{onlinePaymentTransactionId:transaction.id}})).toBe(1);
+ expect((await db.reservation.findUniqueOrThrow({where:{id:r.id}})).status).toBe('EXPIRED');
+ const reconciliation=await db.onlinePaymentReconciliation.findUniqueOrThrow({where:{onlinePaymentTransactionId:transaction.id}});
+ await expect(online.resolveReconciliation(reconciliation.id,{resolution:'REFUND_REQUIRED',resolutionNote:'Cần hoàn tiền theo giao dịch cổng.'},users.managerA)).rejects.toThrow();
+ await online.resolveReconciliation(reconciliation.id,{resolution:'REFUND_REQUIRED',resolutionNote:'Cần hoàn tiền theo giao dịch cổng.'},users.managerB);
+ await expect(online.resolveReconciliation(reconciliation.id,{resolution:'RECONCILED',resolutionNote:'Đã xử lý.'},users.managerB)).rejects.toThrow();
+});
+it('scopes facility offerings without assigning legacy global stock',async()=>{
+ const service=new AdditionalServicesService(db),inventory=new AdditionalServiceInventoryService(db);
+ const addon=await service.create({code:'FOUNDATION_BOX',name:'Thùng thử nghiệm',kind:'PURCHASE',billingUnit:'ONE_TIME',unitPrice:10000,physicalUnit:'thùng'},users.managerA);
+ await inventory.update(addon.id,{stockOnHand:10},users.managerA);
+ await expect(inventory.update(addon.id,{stockOnHand:999},users.managerB)).rejects.toThrow();
+ expect((await inventory.managerList(users.managerB)).some(x=>x.serviceId===addon.id)).toBe(false);
+ const legacy=await db.additionalService.create({data:{code:'LEGACY_BOX',name:'Legacy stock',kind:'PURCHASE',billingUnit:'ONE_TIME',unitPrice:10000}});
+ await expect(service.managerGet(legacy.id,users.managerA)).rejects.toThrow();
+ await service.configure(legacy.id,{facilityId:'B',unitPrice:10000,isActive:true},users.managerB);
+ expect((await service.managerGet(legacy.id,users.managerB)).id).toBe(legacy.id);
+});
+
+it('keeps verified late bank receipts in the shared reconciliation ledger without duplicate rental payments',async()=>{
+ const r=await reserve('B');await signAll(r.id);
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ const notice=await billing.createCustomerPaymentSubmission(users.customer.id,invoice.id,{amount:Number(invoice.balanceDue),reference:'CUSTOMER-TEST'},key());
+ await db.reservation.update({where:{id:r.id},data:{status:'EXPIRED',expiresAt:new Date(Date.now()-60000)}});
+ await db.reservationUnit.updateMany({where:{reservationId:r.id,releasedAt:null},data:{releasedAt:new Date()}});
+ await db.invoice.update({where:{id:invoice.id},data:{status:'VOID',balanceDue:0n,voidReason:'Expired test hold',voidedAt:new Date()}});
+ const proof={reference:'VERIFIED-BANK-'+key()};
+ await expect(billing.verifyPaymentSubmission(notice.id,proof,users.managerA)).rejects.toThrow();
+ const verified=await billing.verifyPaymentSubmission(notice.id,proof,users.managerB);
+ expect(verified.reconciliation).toMatchObject({status:'PENDING_REVIEW'});
+ const next=await reserve('B');await signAll(next.id);
+ const nextInvoice=await db.invoice.findFirstOrThrow({where:{reservationId:next.id}});
+ await expect(billing.recordPayment(nextInvoice.id,{amount:100,method:'BANK_TRANSFER',reference:proof.reference.toLowerCase()},key(),users.managerB)).rejects.toThrow('Không ghi nhận lại');
+ const freshProof='BANK-UNIQUE-'+key();
+ await billing.recordPayment(nextInvoice.id,{amount:100,method:'BANK_TRANSFER',reference:freshProof},key(),users.managerB);
+ await expect(billing.recordPayment(nextInvoice.id,{amount:100,method:'BANK_TRANSFER',reference:freshProof.toLowerCase()},key(),users.managerB)).rejects.toThrow('Không ghi nhận lại');
+ await billing.verifyPaymentSubmission(notice.id,proof,users.managerB);
+ expect(await db.payment.count({where:{invoiceId:invoice.id}})).toBe(0);
+ expect(await db.onlinePaymentReconciliation.count({where:{paymentSubmissionId:notice.id}})).toBe(1);
+ expect((await db.reservation.findUniqueOrThrow({where:{id:r.id}})).status).toBe('EXPIRED');
+ expect((await billing.getCustomerPaymentSubmission(users.customer.id,notice.id)).reconciliation).not.toBeNull();
+ await expect(billing.getCustomerPaymentSubmission(users.other.id,notice.id)).rejects.toThrow();
+});
+
+it('enforces identity-only Admin, BOM-only policies and facility-scoped operational queues on persisted records',async()=>{
+ const auth=new AuthService(new PrismaUserRepository(db));
+ const input={fullName:'Isolated Staff',email:'created-by-admin@foundation.test',phone:'0900000011',password:'isolated-test-password',role:'FACILITY_STAFF'};
+ await expect(auth.createInternalUser(input,users.bom)).rejects.toBeInstanceOf(ForbiddenException);
+ const created=await auth.createInternalUser(input,users.admin);
+ expect(created.role).toBe('FACILITY_STAFF');
+ expect(await db.facilityAccess.count({where:{userId:created.id}})).toBe(0);
+ const reporting=new ReportingService(db);
+ await expect(reporting.csv({},users.staffA2)).rejects.toBeInstanceOf(ForbiddenException);
+ await expect(reporting.csv({},users.admin)).rejects.toBeInstanceOf(ForbiddenException);
+ const maintenance=new MaintenanceService(db);
+ const vacant=await db.storageUnit.findFirstOrThrow({where:{storageType:{facilityId:'B'},status:'AVAILABLE',reservationUnits:{none:{releasedAt:null}}}});
+ const report={storageUnitId:vacant.id,category:'LOCK_OR_ACCESS',description:'Khóa cửa bị kẹt, cần kiểm tra an toàn.'};
+ await expect(maintenance.createManual(report,key(),users.staffA2)).rejects.toThrow();
+ const issue=await maintenance.createManual(report,key(),users.staffB);
+ expect((await db.maintenanceRequest.findUniqueOrThrow({where:{id:issue.id}})).assignedStaffUserId).toBeNull();
+ expect((await db.storageUnit.findUniqueOrThrow({where:{id:vacant.id}})).status).toBe('MAINTENANCE');
+ await expect(maintenance.getManager(issue.id,users.managerA)).rejects.toThrow();
+ expect((await maintenance.listManager({page:1,limit:100},users.managerB)).items.some(row=>row.id===issue.id)).toBe(true);
+ const claims=new DamageClaimsService(db);
+ const active=await db.rentalContract.findFirstOrThrow({where:{status:'ACTIVE',reservation:{facilityId:'A',customerId:users.customer.id}}});
+ const claim=await claims.create(users.customer,{rentalContractId:active.id,description:'Cần kiểm tra dấu hiệu ẩm trong kho đang thuê.',discoveredOn:date(),storedItemIds:[],evidenceLinks:[]},key());
+ await expect(claims.get(users.managerB,claim.id)).rejects.toThrow();
+ await expect(claims.assign(users.managerA,claim.id,{staffUserId:'staffB'})).rejects.toThrow();
+ await claims.assign(users.managerA,claim.id,{staffUserId:'staffA2'});
+ expect((await claims.get(users.staffA2,claim.id)).id).toBe(claim.id);
+ await expect(claims.get(users.staffB,claim.id)).rejects.toThrow();
+ await expect(async()=>support.listManager({page:1,limit:20},users.bom)).rejects.toThrow();
+ await expect(async()=>transfers.list({page:1,limit:20},users.admin)).rejects.toThrow();
+});
+
+it('expires unpaid holds through the real sweep without erasing original invoice amounts',async()=>{
+ const r=await reserve('B');
+ const before=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ await db.reservation.update({where:{id:r.id},data:{expiresAt:new Date(Date.now()-60000)}});
+ await db.$transaction(tx=>Reflect.get(booking,'expireUnpaidAutomaticReservations').call(booking,tx));
+ expect((await db.reservation.findUniqueOrThrow({where:{id:r.id}})).status).toBe('EXPIRED');
+ const invoice=await db.invoice.findUniqueOrThrow({where:{id:before.id}});
+ expect(invoice.status).toBe('VOID');expect(invoice.balanceDue).toBe(0n);expect(invoice.totalAmount).toBe(before.totalAmount);
+ expect(await db.reservationUnit.count({where:{reservationId:r.id,releasedAt:null}})).toBe(0);
+ expect(await db.rentalContract.count({where:{reservationId:r.id,status:{not:'CANCELLED'}}})).toBe(0);
+});
+it('preserves received funds and receipt history on a VOID invoice, without implying a refund',async()=>{
+ const r=await reserve('B');await signAll(r.id);
+ const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
+ await billing.recordPayment(invoice.id,{amount:100000,method:'CASH'},key(),users.managerB);
+ const receipts=await db.payment.findMany({where:{invoiceId:invoice.id}});
+ // A historical VOID does not reverse a receipt: any actual refund needs its own evidence and workflow.
+ await db.invoice.update({where:{id:invoice.id},data:{status:'VOID',balanceDue:0n,voidedAt:new Date(),voidReason:'Isolated historical receipt preservation check'}});
+ const after=await db.invoice.findUniqueOrThrow({where:{id:invoice.id}});
+ expect(after.totalAmount).toBe(invoice.totalAmount);expect(after.amountPaid).toBe(100000n);
+ expect(await db.payment.findMany({where:{invoiceId:invoice.id}})).toEqual(receipts);
+ await expect(billing.recordPayment(invoice.id,{amount:100,method:'CASH'},key(),users.managerB)).rejects.toThrow();
+ expect((await billing.getManagerInvoice(invoice.id,users.managerB)).amountPaid).toBe(100000);
+});

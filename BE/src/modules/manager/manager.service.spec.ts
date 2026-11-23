@@ -17,7 +17,7 @@ const unitCodes = [`MGR-${runId}-02`, `MGR-${runId}-01`];
 const customerId = `manager-customer-${runId}`;
 const staffId = `manager-staff-${runId}`;
 const managerId = `manager-user-${runId}`;
-const reservationCode = `WDP-MANAGER-${runId}`;
+const reservationCode = `WDP-FACILITY_MANAGER-${runId}`;
 
 const dateOffset = (days: number) => {
   const value = new Date();
@@ -25,7 +25,7 @@ const dateOffset = (days: number) => {
   return new Date(`${value.toISOString().slice(0, 10)}T00:00:00.000Z`);
 };
 
-describe('Manager inventory and customer APIs', () => {
+describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:\/\/[^@]+@(?:localhost|127\.0\.0\.1):55439\//.test(process.env.DATABASE_URL ?? ''))('Manager inventory and customer APIs', () => {
   let prisma: PrismaService;
   let service: ManagerService;
 
@@ -66,9 +66,9 @@ describe('Manager inventory and customer APIs', () => {
     });
     await prisma.user.createMany({
       data: [
-        { id: customerId, fullName: `Customer ${runId}`, email: `customer-${runId}@example.test`, phone: `09${runId}`, role: 'CUSTOMER', passwordHash: 'secret-customer-hash' },
-        { id: staffId, fullName: `Staff ${runId}`, email: `staff-${runId}@example.test`, phone: '0900000011', role: 'STAFF', passwordHash: 'secret-staff-hash' },
-        { id: managerId, fullName: `Manager ${runId}`, email: `manager-${runId}@example.test`, phone: '0900000012', role: 'MANAGER', passwordHash: 'secret-manager-hash' },
+        { id: customerId, fullName: `Customer ${runId}`, email: `customer-${runId}@example.test`, phone: `09${runId}`, role: 'STORAGE_CUSTOMER', passwordHash: 'secret-customer-hash' },
+        { id: staffId, fullName: `Staff ${runId}`, email: `staff-${runId}@example.test`, phone: '0900000011', role: 'FACILITY_STAFF', passwordHash: 'secret-staff-hash' },
+        { id: managerId, fullName: `Manager ${runId}`, email: `manager-${runId}@example.test`, phone: '0900000012', role: 'FACILITY_MANAGER', passwordHash: 'secret-manager-hash' },
       ],
     });
     const reservation = await prisma.reservation.create({
@@ -99,20 +99,23 @@ describe('Manager inventory and customer APIs', () => {
         plannedEndDate: dateOffset(30),
       },
     });
-  });
+  
+ await prisma.facilityAccess.createMany({data:[managerId,staffId].map(userId=>({userId,facilityId,grantedById:managerId}))});
+});
 
   afterAll(async () => {
     await prisma.reservationUnit.deleteMany({ where: { reservation: { reservationCode } } });
     await prisma.reservation.deleteMany({ where: { reservationCode } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.deleteMany({ where: { id: storageTypeId } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerId, staffId, managerId] } } });
+    await prisma.facilityAccess.deleteMany({where:{facilityId}});
+ await prisma.user.deleteMany({ where: { id: { in: [customerId, staffId, managerId] } } });
     await prisma.facility.deleteMany({ where: { id: facilityId } });
     await prisma.$disconnect();
   });
 
   it('lists units with stable unit-code ordering', async () => {
-    const result = await service.listUnits({ page: 1, limit: 100, storageType: storageTypeId });
+    const result = await service.listUnits({ page: 1, limit: 100, storageType: storageTypeId },{id:managerId,role:'FACILITY_MANAGER'} as never);
     const testUnits = result.items.filter((unit) => unit.storageType.id === storageTypeId);
     expect(testUnits.map((unit) => unit.unitCode)).toEqual([unitCodes[1], unitCodes[0]]);
   });
@@ -126,13 +129,13 @@ describe('Manager inventory and customer APIs', () => {
       storageType: `mt-${runId}`,
       floor: 'tầng 9',
       zone: 'z',
-    });
+    },{id:managerId,role:'FACILITY_MANAGER'} as never);
     expect(result.total).toBe(1);
     expect(result.items[0].unitCode).toBe(unitCodes[1]);
   });
 
   it('returns unit storage data and the current confirmed allocation', async () => {
-    const detail = await service.getUnit(unitCodes[1].toLowerCase());
+    const detail = await service.getUnit(unitCodes[1].toLowerCase(),{id:managerId,role:'FACILITY_MANAGER'} as never);
     expect(detail.storageType.id).toBe(storageTypeId);
     expect(detail.condition).toBe('AIR_CONDITIONED');
     expect(detail.dimensions).toMatchObject({ widthCm: 150, lengthCm: 200, heightCm: 240 });
@@ -142,33 +145,33 @@ describe('Manager inventory and customer APIs', () => {
   });
 
   it('returns 404 for an unknown physical unit', async () => {
-    await expect(service.getUnit(`missing-${runId}`)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getUnit(`missing-${runId}`,{id:managerId,role:'FACILITY_MANAGER'} as never)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('lists only CUSTOMER users and supports name, email and phone search', async () => {
-    for (const search of [`customer ${runId}`, `CUSTOMER-${runId}@EXAMPLE.TEST`, `09${runId}`]) {
-      const result = await service.listCustomers({ page: 1, limit: 20, search });
+  it('lists only STORAGE_CUSTOMER users and supports name, email and phone search', async () => {
+    for (const search of [`customer ${runId}`, `STORAGE_CUSTOMER-${runId}@EXAMPLE.TEST`, `09${runId}`]) {
+      const result = await service.listCustomers({ page: 1, limit: 20, search }, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
       expect(result.items.some((customer) => customer.id === customerId)).toBe(true);
       expect(result.items.some((customer) => [staffId, managerId].includes(customer.id))).toBe(false);
     }
   });
 
   it('returns customer reservation history without passwordHash', async () => {
-    const detail = await service.getCustomer(customerId);
+    const detail = await service.getCustomer(customerId, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(detail.reservationCount).toBe(1);
     expect(detail.reservations[0]).toMatchObject({ reference: reservationCode, storageType: { id: storageTypeId }, quantity: 1, status: 'CONFIRMED' });
     expect(JSON.stringify(detail)).not.toContain('passwordHash');
     expect(JSON.stringify(detail)).not.toContain('secret-customer-hash');
-    const list = await service.listCustomers({ page: 1, limit: 20, search: `customer-${runId}@example.test` });
+    const list = await service.listCustomers({ page: 1, limit: 20, search: `customer-${runId}@example.test` }, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(list.items[0].latestReservation?.reference).toBe(reservationCode);
     expect(JSON.stringify(list)).not.toContain('passwordHash');
   });
 
-  it('returns 404 when a requested user is not a CUSTOMER', async () => {
-    await expect(service.getCustomer(staffId)).rejects.toBeInstanceOf(NotFoundException);
+  it('returns 404 when a requested user is not a STORAGE_CUSTOMER', async () => {
+    await expect(service.getCustomer(staffId, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''})).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('enforces 401 without auth and 403 for CUSTOMER or STAFF on both controllers', async () => {
+  it('enforces 401 without auth and 403 for STORAGE_CUSTOMER or FACILITY_STAFF on both controllers', async () => {
     const authGuard = new AuthGuard({ getUserByToken: async () => { throw new Error('not called'); } } as never);
     const unauthenticated = {
       switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }),
@@ -177,7 +180,7 @@ describe('Manager inventory and customer APIs', () => {
 
     const rolesGuard = new RolesGuard(new Reflector());
     for (const controller of [ManagerUnitsController, ManagerCustomersController]) {
-      for (const role of ['CUSTOMER', 'STAFF']) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF']) {
         const context = {
           getHandler: () => function managerRead() {},
           getClass: () => controller,
@@ -185,7 +188,7 @@ describe('Manager inventory and customer APIs', () => {
         } as unknown as ExecutionContext;
         expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);
       }
-      for (const role of ['MANAGER', 'ADMIN']) {
+      for (const role of ['FACILITY_MANAGER', 'SYSTEM_ADMINISTRATOR']) {
         const context = {
           getHandler: () => function managerRead() {},
           getClass: () => controller,

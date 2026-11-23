@@ -13,15 +13,15 @@ import { NotificationSources } from './notification-sources.js';
 import { buildNotices, type NotificationData } from './notification-content.js';
 
 const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: id, email: id + '@example.test', phone: '' });
-const staff = actor('staff-a', 'STAFF');
-const customer = actor('customer-a', 'CUSTOMER');
-const other = actor('customer-b', 'CUSTOMER');
-const manager = actor('manager', 'MANAGER');
-const admin = actor('admin', 'ADMIN');
+const staff = actor('staff-a', 'FACILITY_STAFF');
+const customer = actor('customer-a', 'STORAGE_CUSTOMER');
+const other = actor('customer-b', 'STORAGE_CUSTOMER');
+const manager = actor('manager', 'FACILITY_MANAGER');
+const admin = actor('admin', 'SYSTEM_ADMINISTRATOR');
 const accounts = [staff, customer, other, manager, admin];
 const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
-const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'CUSTOMER' }, createdAt: at };
+const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
 
 it('does not surface bookings to Staff or reset a handover receipt on per-unit progress', () => {
   const baseline = buildNotices(staff, { appointments: [work] });

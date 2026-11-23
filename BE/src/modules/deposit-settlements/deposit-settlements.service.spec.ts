@@ -33,9 +33,9 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   let rentals: ActiveRentalsService;
   let maintenance: MaintenanceService;
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Settlement`, email: `${id}@example.test`, phone: '' });
-  const customer = actor(customerId, 'CUSTOMER');
-  const staff = actor(staffId, 'STAFF');
-  const manager = actor(managerId, 'MANAGER');
+  const customer = actor(customerId, 'STORAGE_CUSTOMER');
+  const staff = actor(staffId, 'FACILITY_STAFF');
+  const manager = actor(managerId, 'FACILITY_MANAGER');
 
   beforeAll(async () => {
     process.env.WDP_BANK_CODE = '970436';
@@ -50,11 +50,11 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
     } });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, floor: 'Ground', zone: 'S', row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Settlement Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Settlement Staff', role: 'STAFF', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Settlement Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Settlement Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Settlement Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Settlement Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Settlement Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Settlement Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
     ] });
   });
 
@@ -255,7 +255,7 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
     await expect(settlements.getCustomer(otherCustomerId, result.settlement.id)).rejects.toBeInstanceOf(NotFoundException);
     await expect(settlements.review(result.settlement.id, {}, 'staff-review-key', staff)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(settlements.refund(result.settlement.id, {}, 'customer-refund-key', customer)).rejects.toBeInstanceOf(ForbiddenException);
-    const managerView = await settlements.getManager(result.settlement.id);
+    const managerView = await settlements.getManager(result.settlement.id, manager);
     const customerView = await settlements.getCustomer(customerId, result.settlement.id);
     expect(JSON.stringify(managerView)).not.toContain('secret-hash');
     expect(JSON.stringify(customerView)).not.toContain('reviewNote');
@@ -265,9 +265,9 @@ describe('Return Issue Resolution and Deposit Settlement V1', () => {
   it('enforces controller roles for Customer and Manager settlement APIs', () => {
     const guard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerDepositSettlementsController | typeof ManagerDepositSettlementsController, PublicUser['role'][]]> = [
-      [CustomerDepositSettlementsController, ['CUSTOMER']], [ManagerDepositSettlementsController, ['MANAGER']],
+      [CustomerDepositSettlementsController, ['STORAGE_CUSTOMER']], [ManagerDepositSettlementsController, ['FACILITY_MANAGER']],
     ];
-    for (const [controller, roles] of allowed) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+    for (const [controller, roles] of allowed) for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
       const context = { getHandler: () => function settlementOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
       if (roles.includes(role)) expect(guard.canActivate(context)).toBe(true); else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
     }

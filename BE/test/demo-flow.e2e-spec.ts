@@ -2,12 +2,11 @@ import 'dotenv/config';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
 describe('Demo Customer -> Manager -> Staff -> Customer flow', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
   let prisma: PrismaService;
   let supportId: string | undefined;
   const password = process.env.SEED_TEST_USERS_PASSWORD ?? process.env.SEED_MANAGER_PASSWORD;

@@ -22,7 +22,7 @@ function completedTransfer(record: { transfers: Array<{ id: string; status: stri
 
 @Controller('customer/documents')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 export class CustomerDocumentsController {
   @Get('transfer-addenda/:id')
   async transferAddendum(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Res() response: Response) { const record = await this.transfers.getCustomerOrder(request.user!, id); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
@@ -55,40 +55,40 @@ export class CustomerDocumentsController {
 
 @Controller('manager/documents')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 export class ManagerDocumentsController {
   @Get('transfer-addenda/:id')
-  async transferAddendum(@Param('id') id: string, @Res() response: Response) { const record = await this.transfers.get(id); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
+  async transferAddendum(@Req() req:AuthenticatedRequest,@Param('id') id: string, @Res() response: Response) { const record = await this.transfers.get(id,req.user!); if (!record.commercial) throw new NotFoundException(); send(response, await this.pdf.transferAddendum(record), record.transferCode + '-phu-luc'); }
   constructor(private readonly contracts: ContractsService, private readonly renewals: RenewalsService, private readonly billing: BillingService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
-  async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
-    const record = await this.contracts.getManagerContract(id);
+  async transfer(@Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response, @Req() foundationRequest: AuthenticatedRequest) {
+    const record = await this.contracts.getManagerContract(id, foundationRequest.user!);
     const transfer = completedTransfer(record, transferId);
     send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${transferId}-chuyen-kho`);
   }
   @Get('contracts/:id')
-  async contract(@Param('id') id: string, @Res() response: Response) { const record = await this.contracts.getManagerContract(id); send(response, await this.pdf.contract(record), record.contractCode); }
+  async contract(@Param('id') id: string, @Res() response: Response, @Req() foundationRequest: AuthenticatedRequest) { const record = await this.contracts.getManagerContract(id, foundationRequest.user!); send(response, await this.pdf.contract(record), record.contractCode); }
   @Get('renewals/:id')
-  async appendix(@Param('id') id: string, @Res() response: Response) { const record = await this.renewals.getManagerRenewal(id); if (!record.appendix?.snapshot) throw new NotFoundException('Phụ lục chưa được lập hoặc thiếu bản nội dung gốc.'); send(response, await this.pdf.appendix(record, record.customer), record.appendix.code); }
+  async appendix(@Param('id') id: string, @Res() response: Response, @Req() foundationRequest: AuthenticatedRequest) { const record = await this.renewals.getManagerRenewal(id, foundationRequest.user!); if (!record.appendix?.snapshot) throw new NotFoundException('Phụ lục chưa được lập hoặc thiếu bản nội dung gốc.'); send(response, await this.pdf.appendix(record, record.customer), record.appendix.code); }
   @Get('invoices/:id')
-  async invoice(@Param('id') id: string, @Res() response: Response) {
-    const record = await this.billing.getManagerInvoice(id);
-    const contracts = await Promise.all(record.contracts.map((item: any) => this.contracts.getManagerContract(item.id)));
-    const renewal = record.renewalRequest?.id ? await this.renewals.getManagerRenewal(record.renewalRequest.id) : undefined;
+  async invoice(@Param('id') id: string, @Res() response: Response, @Req() foundationRequest: AuthenticatedRequest) {
+    const record = await this.billing.getManagerInvoice(id, foundationRequest.user!);
+    const contracts = await Promise.all(record.contracts.map((item: any) => this.contracts.getManagerContract(item.id, foundationRequest.user!)));
+    const renewal = record.renewalRequest?.id ? await this.renewals.getManagerRenewal(record.renewalRequest.id, foundationRequest.user!) : undefined;
     send(response, await this.pdf.invoice(record, record.reservation.customer, contracts, renewal), record.invoiceCode);
   }
 }
 
 @Controller('staff/management/documents')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF')
+@Roles('FACILITY_STAFF')
 export class StaffDocumentsController {
   constructor(private readonly contracts: ContractsService, private readonly pdf: PdfDocumentService, private readonly transfers: TransfersService) {}
   @Get('contracts/:id/transfers/:transferId')
   async transfer(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('transferId') transferId: string, @Res() response: Response) {
     const task = await this.transfers.getForStaff(transferId, request.user!);
     if (task.status !== 'COMPLETED' || (task.contract.id !== id && task.contract.contractCode !== id)) throw new NotFoundException('Không tìm thấy biên bản chuyển kho thuộc nhiệm vụ này.');
-    const record = await this.contracts.getManagerContract(task.contract.id);
+    const record = await this.contracts.getStaffTransferDocument(task.contract.id,task.id,request.user!);
     const transfer = completedTransfer(record, task.id);
     send(response, await this.pdf.transferRecord(record, transfer), `${record.contractCode}-${task.id}-chuyen-kho`);
   }

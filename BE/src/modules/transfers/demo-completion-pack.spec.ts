@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { Prisma } from '../../generated/prisma/client.js';
 import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -20,8 +21,8 @@ describe('Demo Completion Pack smoke', () => {
   const booking = new BookingService(prisma);
   const runId = randomUUID().slice(0, 8);
   const prefix = `DEMO-${runId}`;
-  const manager = { id: '', role: 'MANAGER', fullName: 'Demo Manager', email: `${prefix}-manager@example.test`, phone: '' } satisfies PublicUser;
-  const staff = { id: '', role: 'STAFF', fullName: 'Demo Staff', email: `${prefix}-staff@example.test`, phone: '' } satisfies PublicUser;
+  const manager = { id: '', role: 'FACILITY_MANAGER', fullName: 'Demo Manager', email: `${prefix}-manager@example.test`, phone: '' } satisfies PublicUser;
+  const staff = { id: '', role: 'FACILITY_STAFF', fullName: 'Demo Staff', email: `${prefix}-staff@example.test`, phone: '' } satisfies PublicUser;
   let storageTypeId: string;
   let otherStorageTypeId: string;
   let reservedStorageTypeId: string;
@@ -34,10 +35,10 @@ describe('Demo Completion Pack smoke', () => {
     storageTypeId = types[0].id; otherStorageTypeId = types[1].id;
     reservedStorageTypeId = `${prefix.toLowerCase()}-reserved-type`;
     const { id: _id, code: _code, createdAt: _createdAt, updatedAt: _updatedAt, ...template } = types[0];
-    await prisma.storageType.create({ data: { ...template, id: reservedStorageTypeId, code: `${prefix}-RSV` } });
+    await prisma.storageType.create({ data: { ...template, suitableItems: template.suitableItems === null ? Prisma.JsonNull : template.suitableItems as Prisma.InputJsonValue, features: template.features === null ? Prisma.JsonNull : template.features as Prisma.InputJsonValue, id: reservedStorageTypeId, code: `${prefix}-RSV` } });
     const users = await Promise.all([
-      prisma.user.create({ data: { email: manager.email, fullName: manager.fullName, role: 'MANAGER', passwordHash: 'test-only' } }),
-      prisma.user.create({ data: { email: staff.email, fullName: staff.fullName, role: 'STAFF', passwordHash: 'test-only' } }),
+      prisma.user.create({ data: { email: manager.email, fullName: manager.fullName, role: 'FACILITY_MANAGER', passwordHash: 'test-only' } }),
+      prisma.user.create({ data: { email: staff.email, fullName: staff.fullName, role: 'FACILITY_STAFF', passwordHash: 'test-only' } }),
     ]);
     manager.id = users[0].id; staff.id = users[1].id;
   });
@@ -61,7 +62,7 @@ describe('Demo Completion Pack smoke', () => {
   async function activeRental(options: { contractStatus?: 'ACTIVE' | 'READY_FOR_HANDOVER'; storageTypeId?: string; destinationTypeId?: string } = {}) {
     sequence += 1; const marker = `${prefix}-${sequence}`;
     const sourceTypeId = options.storageTypeId ?? storageTypeId;
-    const customer = await prisma.user.create({ data: { email: `${marker.toLowerCase()}@example.test`, fullName: marker, role: 'CUSTOMER', passwordHash: 'test-only' } });
+    const customer = await prisma.user.create({ data: { email: `${marker.toLowerCase()}@example.test`, fullName: marker, role: 'STORAGE_CUSTOMER', passwordHash: 'test-only' } });
     const startDate = new Date('2026-10-01T00:00:00.000Z'); const endDate = new Date('2027-10-01T00:00:00.000Z');
     const reservation = await prisma.reservation.create({ data: { reservationCode: marker, customerId: customer.id, facilityId: (await prisma.storageType.findUniqueOrThrow({ where: { id: sourceTypeId } })).facilityId, storageTypeId: sourceTypeId, quantity: 1, startDate, endDate, periodMode: 'DURATION', durationMonths: 12, availabilitySnapshot: {}, quoteSnapshot: { historicalAmount: 1234567 }, status: 'CONFIRMED', idempotencyKey: `${marker}-reservation` } });
     const source = await prisma.storageUnit.create({ data: { storageTypeId: sourceTypeId, unitNumber: `${marker}-SRC`, status: 'OCCUPIED' } });
@@ -84,7 +85,7 @@ describe('Demo Completion Pack smoke', () => {
 
   it('supports stable paginated status/search listing', async () => {
     const fixture = await activeRental(); const transfer = await requested(fixture);
-    const result = await transfers.list({ page: '1', limit: '10', status: 'REQUESTED', search: transfer.transferCode });
+    const result = await transfers.list({ page: '1', limit: '10', status: 'REQUESTED', search: transfer.transferCode },manager);
     expect(result).toMatchObject({ page: 1, limit: 10, total: 1 });
     expect(result.items[0]).toMatchObject({ id: transfer.id, status: 'REQUESTED' });
     expect(await transfers.listForStaff({ search: transfer.transferCode }, staff)).toMatchObject({ total: 0, items: [] });
@@ -124,25 +125,27 @@ describe('Demo Completion Pack smoke', () => {
     expect(afterReservation.quoteSnapshot).toEqual(beforeReservation.quoteSnapshot); expect(afterReservation.startDate).toEqual(beforeReservation.startDate); expect(afterReservation.endDate).toEqual(beforeReservation.endDate); expect(afterInvoice).toMatchObject({ rentalAmount: beforeInvoice.rentalAmount, depositAmount: beforeInvoice.depositAmount, totalAmount: beforeInvoice.totalAmount, status: beforeInvoice.status });
   });
 
-  it('creates STAFF through Admin service and never returns passwordHash', async () => {
+  it('creates FACILITY_STAFF through Admin service and never returns passwordHash', async () => {
     const repository = new MemoryUserRepository(); const auth = new AuthService(repository);
-    const user = await auth.createInternalUser({ fullName: 'Demo Staff', email: 'internal@example.test', phone: '0900000011', password: 'strong-password', role: 'STAFF' });
-    expect(user).toMatchObject({ role: 'STAFF', email: 'internal@example.test' }); expect(user).not.toHaveProperty('passwordHash');
+    const administrator = await repository.create({fullName:'Test Admin',email:'admin@example.test',phone:'',passwordHash:'test-only',role:'SYSTEM_ADMINISTRATOR'});
+    const user = await auth.createInternalUser({ fullName: 'Demo Staff', email: 'internal@example.test', phone: '0900000011', password: 'strong-password', role: 'FACILITY_STAFF' }, administrator);
+    expect(user).toMatchObject({ role: 'FACILITY_STAFF', email: 'internal@example.test' }); expect(user).not.toHaveProperty('passwordHash');
   });
 
-  it('marks Admin controller as ADMIN-only', () => {
-    expect(Reflect.getMetadata('allowedRoles', AdminUsersController)).toEqual(['ADMIN']);
+  it('marks Admin controller as SYSTEM_ADMINISTRATOR-only', () => {
+    expect(Reflect.getMetadata('allowedRoles', AdminUsersController)).toEqual(['SYSTEM_ADMINISTRATOR']);
   });
 
   it('prevents a disabled user from authenticating', async () => {
     const repository = new MemoryUserRepository(); const auth = new AuthService(repository);
-    const created = await auth.createInternalUser({ fullName: 'Demo Staff', email: 'disabled@example.test', phone: '0900000012', password: 'strong-password', role: 'STAFF' });
+    const administrator = await repository.create({fullName:'Test Admin',email:'admin@example.test',phone:'',passwordHash:'test-only',role:'SYSTEM_ADMINISTRATOR'});
+    const created = await auth.createInternalUser({ fullName: 'Demo Staff', email: 'disabled@example.test', phone: '0900000012', password: 'strong-password', role: 'FACILITY_STAFF' }, administrator);
     await repository.updateStatus(created.id, 'DISABLED');
     await expect(auth.login({ email: 'disabled@example.test', password: 'strong-password' })).rejects.toThrow('vô hiệu hóa');
   });
 
   it('returns numeric dashboard counts', async () => {
-    const summary = await managerService.dashboardSummary();
+    const summary = await managerService.dashboardSummary(manager);
     expect(Object.values(summary)).toHaveLength(10); expect(Object.values(summary).every((value) => Number.isInteger(value) && value >= 0)).toBe(true);
   });
 });

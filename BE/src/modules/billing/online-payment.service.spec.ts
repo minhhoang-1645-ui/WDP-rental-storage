@@ -2,7 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { OnlinePaymentService } from './online-payment.service.js';
 
-const customer = { id: 'customer-1', role: 'CUSTOMER' } as never;
+const customer = { id: 'customer-1', role: 'STORAGE_CUSTOMER' } as never;
 
 function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' | 'CANCELLED' = 'PENDING') {
   const transaction = { id: 'transaction-1', invoiceId: 'invoice-1', amount: 650000n, status: transactionStatus };
@@ -23,6 +23,7 @@ function fixture(transactionStatus: 'PENDING' | 'SUCCESS' | 'EXPIRED' | 'CANCELL
     },
   };
   const prisma = {
+    invoice: { findFirst: vi.fn() },
     onlinePaymentTransaction: {
       findFirst: vi.fn(),
       findUnique: vi.fn().mockResolvedValue({ id: 'transaction-1' }),
@@ -131,7 +132,7 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
 
   it('rejects non-customer access at the service boundary', async () => {
     const { service } = fixture();
-    await expect(service.getCustomerStatus('transaction-1', { id: 'manager-1', role: 'MANAGER' } as never)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.getCustomerStatus('transaction-1', { id: 'manager-1', role: 'FACILITY_MANAGER' } as never)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('records a successful signed IPN once', async () => {

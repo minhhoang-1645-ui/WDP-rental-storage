@@ -4,9 +4,9 @@ import { ManagerAppointmentsController } from './manager-appointments.controller
 import { StaffAppointmentsController } from './staff-appointments.controller.js';
 import type { PublicUser, AuthenticatedRequest } from '../auth/auth.types.js';
 
-const staff = { id: 'staff-a', role: 'STAFF', fullName: 'Nhân viên A' } as PublicUser;
+const staff = { id: 'staff-a', role: 'FACILITY_STAFF', fullName: 'Nhân viên A' } as PublicUser;
 const other = { ...staff, id: 'staff-b', fullName: 'Nhân viên B' };
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 const query = { page: 1, limit: 20 };
 
 function setup() {
@@ -31,7 +31,7 @@ function setup() {
       return Object.assign(row, data, { assignedStaff: { id: data.assignedStaffUserId, fullName: data.assignedStaffUserId, accountStatus: 'ACTIVE' } });
     }),
   };
-  const tx = { handoverAppointment: model, $queryRaw: vi.fn(), user: { findUnique: vi.fn(async ({ where }) => ({ id: where.id, role: 'STAFF', accountStatus: 'ACTIVE' })) } };
+  const tx = { handoverAppointment: model, $queryRaw: vi.fn(), user: { findUnique: vi.fn(async ({ where }) => ({ id: where.id, role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' })) } };
   const db = { ...tx, $transaction: vi.fn(operation => operation(tx)) };
   return { service: new AppointmentsService(db as never, {} as never, {} as never), records, model, tx };
 }
@@ -100,10 +100,10 @@ describe('Handover staff assignment', () => {
     const { service, model, tx } = setup();
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id, expectedAssignedStaffUserId: null }, staff)).rejects.toThrow('quản lý');
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id }, manager)).rejects.toThrow('phiên bản');
-    tx.user.findUnique.mockResolvedValueOnce({ id: staff.id, role: 'STAFF', accountStatus: 'DISABLED' });
+    tx.user.findUnique.mockResolvedValueOnce({ id: staff.id, role: 'FACILITY_STAFF', accountStatus: 'DISABLED' });
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('hoạt động');
-    tx.user.findUnique.mockResolvedValueOnce({ id: manager.id, role: 'MANAGER', accountStatus: 'ACTIVE' });
-    await expect(service.assignAppointment('unassigned', { staffUserId: manager.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('STAFF');
+    tx.user.findUnique.mockResolvedValueOnce({ id: manager.id, role: 'FACILITY_MANAGER', accountStatus: 'ACTIVE' });
+    await expect(service.assignAppointment('unassigned', { staffUserId: manager.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('FACILITY_STAFF');
     expect(model.update).not.toHaveBeenCalled();
   });
 

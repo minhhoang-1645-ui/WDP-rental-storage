@@ -1,3 +1,4 @@
+import { roleNamespace } from '../../role-names.js';
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { BadRequestException, Controller, Logger, Post, ServiceUnavailableException, UseGuards, type ExecutionContext, type INestApplication } from '@nestjs/common';
@@ -16,7 +17,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const admin = { id: 'admin', fullName: 'Admin', email: 'admin@example.test', role: 'ADMIN', phone: '' } as PublicUser;
+const admin = { id: 'admin', fullName: 'Admin', email: 'admin@example.test', role: 'SYSTEM_ADMINISTRATOR', phone: '' } as PublicUser;
 function database() {
   return { auditEvent: { create: vi.fn().mockResolvedValue({ id: 'event' }), count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ id: 'event', action: 'AUTH_LOGIN' }]) } };
 }
@@ -25,9 +26,9 @@ describe('audit persistence and filters (mock DB)', () => {
     const db = database();
     const item = { id: 'notice', resource: 'users', resourceId: 'target', action: 'UPDATE', outcome: 'SUCCESS' };
     db.auditEvent.findMany.mockResolvedValue([item]);
-    const findMany = vi.fn().mockResolvedValue([{ id: 'target', fullName: 'Fixture Staff', role: 'STAFF' }]);
+    const findMany = vi.fn().mockResolvedValue([{ id: 'target', fullName: 'Fixture Staff', role: 'FACILITY_STAFF' }]);
     const service = new AuditService({ ...db, user: { findMany } } as never);
-    const page = await service.list({ category: 'ACCOUNT_NOTICES' });
+    const page = await service.list({ category: 'ACCOUNT_NOTICES' }, admin);
     const where = { category: 'ACTIVITY', resource: 'users', resourceId: { not: null }, outcome: 'SUCCESS',
       action: { in: ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'] } };
     expect(db.auditEvent.count).toHaveBeenCalledWith({ where });
@@ -35,8 +36,8 @@ describe('audit persistence and filters (mock DB)', () => {
       where, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true },
     }));
     expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['target'] } }, select: { id: true, fullName: true, role: true } });
-    expect(page.items).toEqual([{ ...item, targetAccount: { fullName: 'Fixture Staff', role: 'STAFF' } }]);
-    await service.list({ category: 'ACTIVITY', event: 'notice' });
+    expect(page.items).toEqual([{ ...item, targetAccount: { fullName: 'Fixture Staff', role: 'FACILITY_STAFF' } }]);
+    await service.list({ category: 'ACTIVITY', event: 'notice' }, admin);
     expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where: expect.objectContaining({ category: 'ACTIVITY', id: 'notice' }) });
   });
   it('looks up the account name for old failed login rows without changing their unauthenticated attribution', async () => {
@@ -45,7 +46,7 @@ describe('audit persistence and filters (mock DB)', () => {
     const unmatched = { ...matched, id: 'unmatched', actorEmail: 'unknown@example.test' };
     db.auditEvent.findMany.mockResolvedValue([matched, unmatched]);
     const findMany = vi.fn().mockResolvedValue([{ email: matched.actorEmail, fullName: 'Known Account' }]);
-    const page = await new AuditService({ ...db, user: { findMany } } as never).list({ category: 'LOGIN' });
+    const page = await new AuditService({ ...db, user: { findMany } } as never).list({ category: 'LOGIN' }, admin);
     expect(page.items).toEqual([{ ...matched, attemptAccountName: 'Known Account' }, unmatched]);
     expect(findMany).toHaveBeenCalledWith({ where: { email: { in: [matched.actorEmail, unmatched.actorEmail] } }, select: { email: true, fullName: true } });
     expect(db.auditEvent.create).not.toHaveBeenCalled();
@@ -54,7 +55,7 @@ describe('audit persistence and filters (mock DB)', () => {
     const db = database(), service = new AuditService(db as never);
     await service.record({ category: 'ACTIVITY', action: 'CREATE', resource: 'users', resourceId: 'new-user', method: 'POST', route: '/admin/users', httpStatus: 201, actor: admin, ipAddress: '127.0.0.1', password: 'NEVER_STORE', token: 'NEVER_STORE', otp: 'NEVER_STORE', body: { signature: 'NEVER_STORE' } } as never);
     const data = db.auditEvent.create.mock.calls[0][0].data;
-    expect(data).toMatchObject({ actorId: 'admin', actorRole: 'ADMIN', resourceId: 'new-user', outcome: 'SUCCESS' });
+    expect(data).toMatchObject({ actorId: 'admin', actorRole: 'SYSTEM_ADMINISTRATOR', resourceId: 'new-user', outcome: 'SUCCESS' });
     expect(JSON.stringify(data)).not.toContain('NEVER_STORE');
   });
   it('records failed attempts with an email, without inventing an authenticated identity', async () => {
@@ -72,9 +73,9 @@ describe('audit persistence and filters (mock DB)', () => {
   });
   it('applies validated date boundaries in UTC+7 with stable ordering and pagination', async () => {
     const db = database();
-    await new AuditService(db as never).list({ category: 'LOGIN', outcome: 'FAILURE', role: 'ADMIN', search: 'manager', from: '2026-11-03', to: '2026-11-03', page: '2', limit: '20' });
+    await new AuditService(db as never).list({ category: 'LOGIN', outcome: 'FAILURE', role: 'SYSTEM_ADMINISTRATOR', search: 'manager', from: '2026-11-03', to: '2026-11-03', page: '2', limit: '20' }, admin);
     const args = db.auditEvent.findMany.mock.calls[0][0];
-    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { outcome: 'FAILURE', actorRole: 'ADMIN' } });
+    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { outcome: 'FAILURE', actorRole: 'SYSTEM_ADMINISTRATOR' } });
     expect(args.where.createdAt.gte.toISOString()).toBe('2026-11-02T17:00:00.000Z');
     expect(args.where.createdAt.lt.toISOString()).toBe('2026-11-03T17:00:00.000Z');
     expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(args.where);
@@ -82,7 +83,7 @@ describe('audit persistence and filters (mock DB)', () => {
   it('includes historical logouts in session history and excludes session events from activity before counting and paging', async () => {
     const db = database(), service = new AuditService(db as never);
 
-    await service.list({ category: 'LOGIN', search: 'staff', page: '2', limit: '5' });
+    await service.list({ category: 'LOGIN', search: 'staff', page: '2', limit: '5' }, admin);
     const history = db.auditEvent.findMany.mock.calls[0][0];
     expect(history).toMatchObject({ skip: 5, take: 5, where: { AND: [{ OR: [
       { category: 'LOGIN', action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } },
@@ -91,17 +92,17 @@ describe('audit persistence and filters (mock DB)', () => {
     expect(history.where.OR).toContainEqual({ actorEmail: { contains: 'staff', mode: 'insensitive' } });
     expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(history.where);
 
-    await service.list({ category: 'ACTIVITY' });
+    await service.list({ category: 'ACTIVITY' }, admin);
     const activity = db.auditEvent.findMany.mock.calls[1][0];
     expect(activity.where).toEqual({ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } });
     expect(db.auditEvent.count.mock.calls[1][0].where).toEqual(activity.where);
   });
   it.each([{ page: '0' }, { limit: '101' }, { page: '1.5' }, { from: '2026-02-30' }, { from: '2026-11-04', to: '2026-11-03' }, { category: 'OTHER' }, { outcome: 'OTHER' }, { role: 'OTHER' }, { search: ['a', 'b'] }])('rejects invalid query %j', async query => {
-    const db = database(); await expect(new AuditService(db as never).list(query)).rejects.toBeInstanceOf(BadRequestException); expect(db.auditEvent.findMany).not.toHaveBeenCalled();
+    const db = database(); await expect(new AuditService(db as never).list(query, admin)).rejects.toBeInstanceOf(BadRequestException); expect(db.auditEvent.findMany).not.toHaveBeenCalled();
   });
   it('returns a clear 503 when the migration/storage is unavailable, not fake empty history', async () => {
     const db = database(); db.auditEvent.count.mockRejectedValue(new Error('P2021'));
-    await expect(new AuditService(db as never).list({})).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(new AuditService(db as never).list({}, admin)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
 
@@ -111,7 +112,7 @@ describe('safe audit interception', () => {
   });
   it('does not log anonymous callbacks, OTP routes, or complete raw URLs', () => {
     for (const path of ['/api/payments/vnpay/ipn', '/api/signing/:token/verify', '/api/auth/password-reset']) expect(auditTarget({ method: 'POST', route: { path } })).toBeUndefined();
-    expect(auditTarget({ method: 'PATCH', route: { path: '/api/staff/management/support-requests/:id/resolve' }, user: { ...admin, role: 'STAFF' } })).toMatchObject({ action: 'RESOLVE', resource: 'support-requests', route: '/staff/management/support-requests/:id/resolve' });
+    expect(auditTarget({ method: 'PATCH', route: { path: '/api/staff/management/support-requests/:id/resolve' }, user: { ...admin, role: 'FACILITY_STAFF' } })).toMatchObject({ action: 'RESOLVE', resource: 'support-requests', route: '/staff/management/support-requests/:id/resolve' });
   });
   it.each([
     ['login', 'LOGIN', 'AUTH_LOGIN'],
@@ -134,7 +135,7 @@ describe('safe audit interception', () => {
   });
   it('records the invoice ID when opening a VNPay session, without storing the signed URL', async () => {
     const record = vi.fn().mockResolvedValue(undefined);
-    const req = { method: 'POST', route: { path: '/api/customer/invoices/:invoiceId/online-payment' }, params: { invoiceId: 'invoice-1' }, user: { ...admin, role: 'CUSTOMER' }, body: { token: 'DO_NOT_LOG' } };
+    const req = { method: 'POST', route: { path: '/api/customer/invoices/:invoiceId/online-payment' }, params: { invoiceId: 'invoice-1' }, user: { ...admin, role: 'STORAGE_CUSTOMER' }, body: { token: 'DO_NOT_LOG' } };
     const context = { switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({ statusCode: 201 }) }) } as unknown as ExecutionContext;
     await lastValueFrom(new AuditInterceptor({ record } as never).intercept(context, { handle: () => of({ transactionId: 'transaction-1', paymentUrl: 'https://provider.test/?vnp_SecureHash=DO_NOT_LOG' }) }));
     expect(record.mock.calls[0][0]).toMatchObject({ action: 'ONLINE_PAYMENT', resource: 'invoices', resourceId: 'invoice-1' });
@@ -145,7 +146,7 @@ describe('safe audit interception', () => {
     ['/api/customer/transfer-orders/:id/accept', { id: 'transfer-1' }, 'ACCEPT', 'transfer-orders', 'transfer-1'],
   ])('records the authenticated business action and safe resource identifier for %s', async (path, params, action, resource, resourceId) => {
     const record = vi.fn().mockResolvedValue(undefined);
-    const actor: PublicUser = { ...admin, role: 'CUSTOMER' };
+    const actor: PublicUser = { ...admin, role: 'STORAGE_CUSTOMER' };
     const req = { method: 'POST', route: { path }, params, user: actor, body: { otp: 'DO_NOT_LOG' } };
     const context = { switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({ statusCode: 201 }) }) } as unknown as ExecutionContext;
     const result = { status: 'SUCCESS', signatureImage: 'DO_NOT_LOG' };
@@ -158,7 +159,7 @@ describe('safe audit interception', () => {
 });
 
 // Real HTTP/guards/auth sessions with isolated in-memory users and a mock audit DB only.
-@Controller('admin/users') @UseGuards(AuthGuard, RolesGuard) @Roles('ADMIN')
+@Controller('admin/users') @UseGuards(AuthGuard, RolesGuard) @Roles('SYSTEM_ADMINISTRATOR')
 class MutationFixtureController {
   @Post() create() { return { id: 'new-user', passwordHash: 'DO_NOT_LOG_HASH', token: 'DO_NOT_LOG_TOKEN' }; }
 }
@@ -167,11 +168,11 @@ describe('audit HTTP registration, authenticated actor and four-role access', ()
   const db = database(), users = new MemoryUserRepository(), auth = new AuthService(users), tokens: Record<string, string> = {};
   beforeAll(async () => {
     const customer = await auth.register({ fullName: 'Fixture customer', email: 'customer@example.test', phone: '0900000000', password: 'fixture-password' });
-    tokens.CUSTOMER = customer.token;
+    tokens.STORAGE_CUSTOMER = customer.token;
     const source = (await users.findById(customer.user.id))!;
-    for (const role of ['STAFF', 'MANAGER', 'ADMIN'] as const) {
-      await users.create({ fullName: `Fixture ${role}`, email: `${role.toLowerCase()}@example.test`, phone: '', passwordHash: source.passwordHash, role });
-      tokens[role] = (await auth.login({ email: `${role.toLowerCase()}@example.test`, password: 'fixture-password' })).token;
+    for (const role of ['FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
+      await users.create({ fullName: `Fixture ${role}`, email: `${roleNamespace(role)}@example.test`, phone: '', passwordHash: source.passwordHash, role });
+      tokens[role] = (await auth.login({ email: `${roleNamespace(role)}@example.test`, password: 'fixture-password' })).token;
     }
     const module = await Test.createTestingModule({ controllers: [AdminAuditController, AuthController, MutationFixtureController], providers: [AuditService, { provide: PrismaService, useValue: db }, { provide: AuthService, useValue: auth }] })
       .overrideGuard(AuthGuard).useValue(new AuthGuard(auth)).overrideGuard(RolesGuard).useValue(new RolesGuard(new Reflector())).compile();
@@ -183,14 +184,14 @@ describe('audit HTTP registration, authenticated actor and four-role access', ()
     const success = await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'admin@example.test', password: 'fixture-password' }).expect(200);
     await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'admin@example.test', password: 'wrong-password' }).expect(401);
     expect(db.auditEvent.create.mock.calls).toHaveLength(2);
-    expect(db.auditEvent.create.mock.calls[0][0].data).toMatchObject({ category: 'LOGIN', actorRole: 'ADMIN', outcome: 'SUCCESS' });
+    expect(db.auditEvent.create.mock.calls[0][0].data).toMatchObject({ category: 'LOGIN', actorRole: 'SYSTEM_ADMINISTRATOR', outcome: 'SUCCESS' });
     expect(db.auditEvent.create.mock.calls[1][0].data).toMatchObject({ category: 'LOGIN', actorRole: null, outcome: 'FAILURE', httpStatus: 401 });
     const serialized = JSON.stringify(db.auditEvent.create.mock.calls);
     expect(serialized).not.toContain(success.body.token); expect(serialized).not.toContain('fixture-password'); expect(serialized).not.toContain('wrong-password');
   });
   it('records the verified account on disabled-login failures without revealing it in the public response', async () => {
     const source = (await users.findByEmail('customer@example.test'))!;
-    const target = await users.create({ fullName: 'Fixture disabled', role: 'CUSTOMER', email: 'disabled@example.test', phone: source.phone, passwordHash: source.passwordHash, accountStatus: 'DISABLED' });
+    const target = await users.create({ fullName: 'Fixture disabled', role: 'STORAGE_CUSTOMER', email: 'disabled@example.test', phone: source.phone, passwordHash: source.passwordHash, accountStatus: 'DISABLED' });
     db.auditEvent.create.mockClear();
     await request(app.getHttpServer()).post('/api/auth/login').send({ email: target.email, password: 'fixture-password' })
       .expect(401, { statusCode: 401, code: 'ACCOUNT_DISABLED', message: 'Tài khoản đã bị vô hiệu hóa.' });
@@ -204,17 +205,17 @@ describe('audit HTTP registration, authenticated actor and four-role access', ()
   });
   it('records the authenticated Admin on mutations instead of user-supplied actor/body secrets', async () => {
     db.auditEvent.create.mockClear();
-    await request(app.getHttpServer()).post('/api/admin/users').set('Authorization', `Bearer ${tokens.ADMIN}`).send({ actorId: 'spoofed', password: 'secret', role: 'ADMIN' }).expect(201);
+    await request(app.getHttpServer()).post('/api/admin/users').set('Authorization', `Bearer ${tokens.SYSTEM_ADMINISTRATOR}`).send({ actorId: 'spoofed', password: 'secret', role: 'SYSTEM_ADMINISTRATOR' }).expect(201);
     const data = db.auditEvent.create.mock.calls[0][0].data;
-    expect(data).toMatchObject({ category: 'ACTIVITY', actorRole: 'ADMIN', resource: 'users', resourceId: 'new-user' });
+    expect(data).toMatchObject({ category: 'ACTIVITY', actorRole: 'SYSTEM_ADMINISTRATOR', resource: 'users', resourceId: 'new-user' });
     expect(JSON.stringify(data)).not.toMatch(/spoofed|secret|DO_NOT_LOG/);
   });
-  it.each(['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'])('enforces %s read access', async role => {
-    await request(app.getHttpServer()).get('/api/admin/audit-events?category=LOGIN').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'ADMIN' ? 200 : 403);
-    await request(app.getHttpServer()).get('/api/admin/audit-events?category=ACCOUNT_NOTICES').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'ADMIN' ? 200 : 403);
+  it.each(['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'])('enforces %s read access', async role => {
+    await request(app.getHttpServer()).get('/api/admin/audit-events?category=LOGIN').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'SYSTEM_ADMINISTRATOR' ? 200 : 403);
+    await request(app.getHttpServer()).get('/api/admin/audit-events?category=ACCOUNT_NOTICES').set('Authorization', `Bearer ${tokens[role]}`).expect(role === 'SYSTEM_ADMINISTRATOR' ? 200 : 403);
   });
   it('requires authentication and exposes no edit/delete audit endpoint', async () => {
     await request(app.getHttpServer()).get('/api/admin/audit-events').expect(401);
-    await request(app.getHttpServer()).delete('/api/admin/audit-events/event').set('Authorization', `Bearer ${tokens.ADMIN}`).expect(404);
+    await request(app.getHttpServer()).delete('/api/admin/audit-events/event').set('Authorization', `Bearer ${tokens.SYSTEM_ADMINISTRATOR}`).expect(404);
   });
 });

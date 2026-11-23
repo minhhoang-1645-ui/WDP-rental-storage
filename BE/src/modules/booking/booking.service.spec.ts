@@ -36,7 +36,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     fullName: 'Test Manager',
     email: `manager-${runId}@example.test`,
     phone: '0900000099',
-    role: 'MANAGER',
+    role: 'FACILITY_MANAGER',
   };
 
   beforeAll(async () => {
@@ -72,7 +72,7 @@ describe('BookingService with PostgreSQL persistence', () => {
       },
     });
     await prisma.storageUnit.createMany({ data: unitNumbers.map((unitNumber, index) => ({ storageTypeId: productId, unitNumber, row: 1, position: index + 1 })) });
-    const stored = await prisma.user.create({ data: { id: userId, fullName: 'Test Customer', email: `${runId}@example.test`, phone: '0900000000', role: 'CUSTOMER', passwordHash: 'test-only' } });
+    const stored = await prisma.user.create({ data: { id: userId, fullName: 'Test Customer', email: `${runId}@example.test`, phone: '0900000000', role: 'STORAGE_CUSTOMER', passwordHash: 'test-only' } });
     user = { id: stored.id, fullName: stored.fullName, email: stored.email, phone: stored.phone ?? '', role: stored.role };
     service = new BookingService(prisma);
   });
@@ -125,8 +125,8 @@ describe('BookingService with PostgreSQL persistence', () => {
 
     const chosen = map.units[2];
     const created = await service.createReservation(user, { ...baseDraft(), selectedUnitIds: [chosen.id], note: 'customer-selected-unit' });
-    const detail = await service.getManagerReservation(created.id);
-    expect(detail.allocatedUnits.map((unit) => unit.unitId)).toEqual([chosen.id]);
+    const detail = await service.getManagerReservation(created.id, manager);
+    expect(detail.allocatedUnits.map((unit: any) => unit.unitId)).toEqual([chosen.id]);
   });
 
   it('rejects a selected unit that becomes unavailable instead of silently assigning a different unit', async () => {
@@ -198,9 +198,9 @@ describe('BookingService with PostgreSQL persistence', () => {
 
   it('lets operations list and view automatically confirmed reservations', async () => {
     const created = await service.createReservation(user, { ...baseDraft(), note: 'manager-list' });
-    const list = await service.listManagerReservations(1, 20);
+    const list = await service.listManagerReservations(1, 20, manager);
     expect(list.items.some((item) => item.id === created.id)).toBe(true);
-    const detail = await service.getManagerReservation(created.id);
+    const detail = await service.getManagerReservation(created.id, manager);
     expect(detail.status).toBe('CONFIRMED');
     expect(detail.allocatedUnits).toHaveLength(1);
     expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id } } })).toBe(1);
@@ -211,14 +211,14 @@ describe('BookingService with PostgreSQL persistence', () => {
     const confirmed = await service.updateManagerReservationStatus(created.id, { status: 'CONFIRMED' }, manager);
     expect(confirmed.status).toBe('CONFIRMED');
     expect(confirmed.allocatedUnits).toHaveLength(2);
-    expect(confirmed.allocatedUnits.map((unit) => unit.position)).toEqual([1, 2]);
+    expect(confirmed.allocatedUnits.map((unit: any) => unit.position)).toEqual([1, 2]);
     expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id } } })).toBe(2);
     const contracts = await prisma.rentalContract.findMany({ where: { reservation: { reservationCode: created.id } }, orderBy: { contractCode: 'asc' } });
     expect(contracts).toHaveLength(2);
     expect(contracts.map((contract) => contract.contractCode)).toEqual([`${created.id}-C01`, `${created.id}-C02`]);
     expect(contracts.every((contract) => contract.status === 'PENDING_PAYMENT')).toBe(true);
     expect(contracts.map((contract) => contract.reservationUnitId)).toEqual(expect.arrayContaining((await prisma.reservationUnit.findMany({ where: { reservationId: contracts[0].reservationId } })).map((unit) => unit.id)));
-    expect(await prisma.storageUnit.count({ where: { id: { in: confirmed.allocatedUnits.map((unit) => unit.unitId) }, status: 'AVAILABLE' } })).toBe(2);
+    expect(await prisma.storageUnit.count({ where: { id: { in: confirmed.allocatedUnits.map((unit: any) => unit.unitId) }, status: 'AVAILABLE' } })).toBe(2);
     const invoices = await prisma.invoice.findMany({ where: { reservation: { reservationCode: created.id } } });
     expect(invoices).toHaveLength(1);
     expect(invoices[0]).toMatchObject({ type: 'INITIAL', status: 'OPEN', rentalAmount: 3000000n, depositAmount: 3000000n, totalAmount: 6000000n });

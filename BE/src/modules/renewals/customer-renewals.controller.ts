@@ -8,7 +8,7 @@ import { RenewalsService } from './renewals.service.js';
 
 @Controller('customer/renewals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 @ApiTags('Customer Renewal')
 @ApiBearerAuth('bearerAuth')
 export class CustomerRenewalsController {
@@ -25,7 +25,7 @@ export class CustomerRenewalsController {
   @ApiBadRequestResponse({ description: 'Term/payment plan/Idempotency-Key không hợp lệ.' })
   @ApiConflictResponse({ description: 'Rental không ACTIVE, dữ liệu không đồng nhất, đã có renewal chưa xử lý hoặc có future allocation conflict.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Active Rental thuộc Customer.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
     return this.renewals.createCustomerRenewal(request.user!.id, body, key);

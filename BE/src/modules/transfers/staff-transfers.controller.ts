@@ -7,7 +7,7 @@ import { TransfersService } from './transfers.service.js';
 
 @Controller('staff/transfers')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF')
+@Roles('FACILITY_STAFF')
 @ApiTags('Staff Transfers')
 @ApiBearerAuth('bearerAuth')
 export class StaffTransfersController {

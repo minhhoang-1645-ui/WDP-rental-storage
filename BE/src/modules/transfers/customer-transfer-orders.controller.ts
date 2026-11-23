@@ -4,7 +4,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { TransfersService } from './transfers.service.js';
 @Controller('customer/transfer-orders')
-@UseGuards(AuthGuard, RolesGuard) @Roles('CUSTOMER')
+@UseGuards(AuthGuard, RolesGuard) @Roles('STORAGE_CUSTOMER')
 export class CustomerTransferOrdersController {
   constructor(private readonly transfers: TransfersService) {}
   @Get() list(@Req() request: AuthenticatedRequest) { return this.transfers.listCustomer(request.user!); }

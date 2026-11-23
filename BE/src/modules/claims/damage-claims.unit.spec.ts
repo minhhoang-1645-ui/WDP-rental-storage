@@ -3,7 +3,7 @@ import { DamageClaimsService } from './damage-claims.service.js';
 import { businessDate } from '../../business-date.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const actor = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
+const actor = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
 const input = { rentalContractId: 'contract', description: 'Hàng trong kho bị hư hỏng cần kiểm tra', discoveredOn: businessDate(), storedItemIds: [], evidenceLinks: [] };
 function setup(status = 'ACTIVE', owner = actor.id, releasedAt: Date | null = null) {
   const contract = { id: 'contract', status, owner, reservationUnit: { releasedAt, storageUnitId: 'unit', storageUnit: { unitNumber: 'A01' } } };

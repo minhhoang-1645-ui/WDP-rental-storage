@@ -67,7 +67,7 @@ export class NotificationsService {
       || typeof kind !== 'string' || kind && !Object.hasOwn(noticeKinds, kind)
       || typeof search !== 'string' || search.length > 100) throw new BadRequestException('Bộ lọc thông báo không hợp lệ.');
 
-    const notices = await this.snapshot(actor, actor.role === 'CUSTOMER' && query.client === 'mobile');
+    const notices = await this.snapshot(actor, actor.role === 'STORAGE_CUSTOMER' && query.client === 'mobile');
     const seen = await this.receipts(actor.id, notices);
     const keyword = noticeSearch(search);
     const filtered = notices.filter(row =>
@@ -88,7 +88,7 @@ export class NotificationsService {
   async mark(actor: PublicUser, token: string, open = false, mobile = false) {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new NotFoundException(unavailable);
     // Re-evaluate visibility with current assignment, ownership and dossier status before using a saved link.
-    const notice = (await this.snapshot(actor, mobile && actor.role === 'CUSTOMER')).find(row => row.token === token);
+    const notice = (await this.snapshot(actor, mobile && actor.role === 'STORAGE_CUSTOMER')).find(row => row.token === token);
     if (!notice || open && !notice.target) throw new NotFoundException(unavailable);
     await this.prisma.notificationReceipt.createMany({ data: [{ userId: actor.id, token }], skipDuplicates: true });
     return open ? { target: notice.target } : { read: true };

@@ -1,3 +1,5 @@
+import { assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
+import { assertMonthlyRange } from '../operations/operations.service.js';
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -15,10 +17,12 @@ const unitFields = ['unitNumber', 'storageTypeId', 'floor', 'zone', 'row', 'posi
 export class InventoryManagementService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listTypes() {
+  async listTypes(actor: PublicUser) {
+    this.manager(actor);
+    const ids = await facilityIds(this.prisma, actor);
     const [items, facilities] = await Promise.all([
-      this.prisma.storageType.findMany({ orderBy: { code: 'asc' } }),
-      this.prisma.facility.findMany({ select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }),
+      this.prisma.storageType.findMany({ where: { facilityId: { in: ids } }, orderBy: { code: 'asc' } }),
+      this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }),
     ]);
     return { items: items.map(item => this.typeView(item)), facilities, total: items.length, page: 1, limit: Math.max(1, items.length) };
   }
@@ -27,11 +31,11 @@ export class InventoryManagementService {
     this.manager(actor); this.body(input, typeFields);
     return this.write(async tx => {
       const current = id ? await this.lockType(tx, id) : null;
-      if (current) this.version(current.updatedAt, input.expectedUpdatedAt);
+      if (current) { await assertFacility(tx, actor, current.facilityId); this.version(current.updatedAt, input.expectedUpdatedAt); }
       const value = { ...current, ...input };
       const data = {
         facilityId: this.text(value.facilityId, 'Cơ sở', 100),
-        code: this.code(value.code, 'Mã loại kho'), name: this.text(value.name, 'Tên loại kho', 120),
+        code: current && (input.code === undefined || input.code === current.code) ? current.code : this.code(value.code, 'Mã loại kho'), name: this.text(value.name, 'Tên loại kho', 120),
         sizeId: this.text(value.sizeId, 'Nhóm kho', 20),
         condition: value.condition as 'STANDARD' | 'AIR_CONDITIONED',
         widthCm: this.integer(value.widthCm, 'Chiều rộng', 1, 100000),
@@ -42,6 +46,8 @@ export class InventoryManagementService {
         minRentalDays: value.allowDailyRental === true ? this.integer(value.minRentalDays, 'Số ngày thuê tối thiểu', 1, 30) : current?.minRentalDays ?? null,
         image: this.image(value.image), imageAlt: this.optionalText(value.imageAlt, 'Mô tả ảnh', 300) ?? '',
       };
+      await assertFacility(tx, actor, data.facilityId);
+      await assertMonthlyRange(tx, data.facilityId, id ?? '', data.monthlyRate);
       if (!Object.hasOwn(groups, data.sizeId)) throw new BadRequestException('Nhóm kho không hợp lệ.');
       if (!['STANDARD', 'AIR_CONDITIONED'].includes(data.condition)) throw new BadRequestException('Điều kiện kho không hợp lệ.');
       if (typeof data.allowDailyRental !== 'boolean') throw new BadRequestException('allowDailyRental phải là boolean.');
@@ -74,8 +80,10 @@ export class InventoryManagementService {
     });
   }
 
-  async listUnitLocations() {
-    const locations = await this.prisma.storageUnit.groupBy({ by: ['floor', 'zone'] });
+  async listUnitLocations(actor: PublicUser) {
+    this.manager(actor);
+    const ids = await facilityIds(this.prisma, actor);
+    const locations = await this.prisma.storageUnit.groupBy({ where: { storageType: { facilityId: { in: ids } } }, by: ['floor', 'zone'] });
     const collator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
     const options = (values: (string | null)[]) => [...new Map(values.filter((value): value is string => Boolean(value))
       .map(value => [value.toLocaleLowerCase('vi'), value])).values()].sort((left, right) => collator.compare(left, right));
@@ -92,11 +100,12 @@ export class InventoryManagementService {
       if (id) await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${id} FOR UPDATE`);
       const current = id ? await tx.storageUnit.findUnique({ where: { id }, include: { _count: { select: unitHistoryCounts }, storageType: { select: { facilityId: true } } } }) : null;
       if (id && !current) throw new NotFoundException('Không tìm thấy kho vật lý.');
-      if (current) this.version(current.updatedAt, input.expectedUpdatedAt);
+      if (current) { await assertFacility(tx, actor, current.storageType.facilityId); this.version(current.updatedAt, input.expectedUpdatedAt); }
       const value = { ...current, ...input };
       const storageTypeId = this.text(value.storageTypeId, 'Loại kho', 100);
       const storageType = await tx.storageType.findUnique({ where: { id: storageTypeId }, select: { code: true, facilityId: true } });
       if (!storageType) throw new BadRequestException('Loại kho không tồn tại.');
+      await assertFacility(tx, actor, storageType.facilityId);
       const autoCode = !current && (value.unitNumber === undefined || value.unitNumber === '' || value.unitNumber === null);
       const floor = canonicalUnitFloor(this.optionalText(value.floor, 'Tầng', 100));
       const zone = canonicalUnitZone(this.optionalText(value.zone, 'Khu', 100));
@@ -139,7 +148,7 @@ export class InventoryManagementService {
     return current;
   }
   private typeView(item: { monthlyRate: unknown; [key: string]: unknown }) { return { ...item, monthlyRate: item.monthlyRate === null ? null : Number(item.monthlyRate) }; }
-  private manager(actor: PublicUser) { if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ Manager được quản lý kho và bảng giá.'); }
+  private manager(actor: PublicUser) { if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ Manager được quản lý kho và bảng giá.'); }
   private body(input: Record<string, unknown>, fields: string[]) {
     if (!input || typeof input !== 'object' || Array.isArray(input) || !Object.keys(input).length) throw new BadRequestException('Dữ liệu không hợp lệ.');
     if (Object.keys(input).some(key => !fields.includes(key))) throw new BadRequestException('Có trường không được phép thay đổi. Trạng thái kho chỉ cập nhật qua nghiệp vụ vận hành.');

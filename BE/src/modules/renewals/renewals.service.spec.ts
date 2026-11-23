@@ -34,8 +34,8 @@ describe('Renewal V1', () => {
   let booking: BookingService;
   let activeRentals: ActiveRentalsService;
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
-  const manager = actor(managerId, 'MANAGER');
-  const staff = actor(staffId, 'STAFF');
+  const manager = actor(managerId, 'FACILITY_MANAGER');
+  const staff = actor(staffId, 'FACILITY_STAFF');
 
   beforeAll(async () => {
     process.env.WDP_BANK_CODE = '970436';
@@ -54,11 +54,11 @@ describe('Renewal V1', () => {
     } });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, floor: 'Ground', zone: 'R', row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Renewal Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Renewal Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Renewal Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Renewal Staff', role: 'STAFF', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Renewal Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Renewal Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Renewal Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Renewal Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
     ] });
   });
 
@@ -200,7 +200,7 @@ describe('Renewal V1', () => {
 
   it.each([
     [3, 'PREPAID', 5], [6, 'PREPAID', 10], [12, 'PREPAID', 15], [4, 'PREPAID', 0], [3, 'PAY_MONTHLY', 0],
-  ] as const)('applies centralized renewal discount for %s months %s', async (months, plan, percent) => {
+  ] as const)('applies centralized renewal discount for %s months %s', async (months: any, plan: any, percent: any) => {
     const { reservation } = await activeRental();
     const created = await request(reservation.id, months, plan);
     expect(created.quoteSnapshot).toMatchObject({ termMonths: months, paymentPlan: plan, discountPercent: percent, depositAmount: 0 });
@@ -286,9 +286,9 @@ describe('Renewal V1', () => {
     expect(retry.invoices).toHaveLength(1);
     expect(retry.invoices[0]).toMatchObject({ type: 'RENEWAL', renewalCycle: 1, rentalAmount: 8835000, depositAmount: 0, totalAmount: 8835000, status: 'OPEN' });
     expect(approved.contracts.map(contract => contract.id)).toEqual([a.id]);
-    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: units[0].unitNumber })).total).toBe(1);
-    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: units[1].unitNumber })).total).toBe(0);
-    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: b.contractCode })).total).toBe(0);
+    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: units[0].unitNumber }, manager)).total).toBe(1);
+    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: units[1].unitNumber }, manager)).total).toBe(0);
+    expect((await renewals.listManagerRenewals({ page: 1, limit: 5, search: b.contractCode }, manager)).total).toBe(0);
     expect(await prisma.invoice.count({ where: { renewalRequestId: pending.id } })).toBe(1);
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, endDate: new Date('2027-05-10T00:00:00.000Z') } })).toBe(2);
   });
@@ -361,15 +361,15 @@ describe('Renewal V1', () => {
     const rejected = await renewals.reject(pending.id, { reason: 'Customer requested a different date.' }, manager);
     expect(rejected).toMatchObject({ status: 'REJECTED', rejectionReason: 'Customer requested a different date.' });
     expect((await renewals.listCustomerRenewals(customerId, 1, 20)).total).toBe(1);
-    expect((await renewals.listManagerRenewals({ page: 1, limit: 20, search: 'Renewal Customer', status: 'REJECTED' })).total).toBe(1);
-    expect(JSON.stringify(await renewals.getManagerRenewal(pending.id))).not.toContain('secret-hash');
+    expect((await renewals.listManagerRenewals({ page: 1, limit: 20, search: 'Renewal Customer', status: 'REJECTED' }, manager)).total).toBe(1);
+    expect(JSON.stringify(await renewals.getManagerRenewal(pending.id, manager))).not.toContain('secret-hash');
     await expect(renewals.approve(pending.id, staff)).rejects.toBeInstanceOf(ForbiddenException);
 
     const guard = new RolesGuard(new Reflector());
     const matrix: Array<[typeof CustomerRenewalsController | typeof ManagerRenewalsController, PublicUser['role'][]]> = [
-      [CustomerRenewalsController, ['CUSTOMER']], [ManagerRenewalsController, ['MANAGER']],
+      [CustomerRenewalsController, ['STORAGE_CUSTOMER']], [ManagerRenewalsController, ['FACILITY_MANAGER']],
     ];
-    for (const [controller, roles] of matrix) for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+    for (const [controller, roles] of matrix) for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
       const context = { getHandler: () => function renewalOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
       if (roles.includes(role)) expect(guard.canActivate(context)).toBe(true); else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
     }
@@ -417,7 +417,7 @@ describe('Renewal V1', () => {
   it('returns B while A renews and keeps the return and renewal scoped after payment', async () => {
     const { reservation, contracts: [a, b], invoice: shared } = await activeRental({ quantity: 2, endDate: '2026-11-18' });
     const returns = new ReturnsService(prisma);
-    const customer = actor(customerId, 'CUSTOMER');
+    const customer = actor(customerId, 'STORAGE_CUSTOMER');
     const pending = await request(reservation.id, 3, 'PREPAID', undefined, a.id);
     await expect(returns.createCustomerReturn(customer, { reservationId: reservation.id, rentalContractId: a.id }, 'renew-return-a-' + runId))
       .rejects.toMatchObject({ response: { code: 'UNRESOLVED_RENEWAL_EXISTS' } });

@@ -31,7 +31,7 @@ export class AuthService {
     if (await this.users.findByEmail(email)) throw new ConflictException('Email này đã được đăng ký.');
     const salt = randomBytes(16).toString('hex');
     const passwordHash = 'scrypt$' + salt + '$' + (await this.hashPassword(password, salt)).toString('hex');
-    const user = await this.users.create({ fullName, email, phone, passwordHash, role: 'CUSTOMER' });
+    const user = await this.users.create({ fullName, email, phone, passwordHash, role: 'STORAGE_CUSTOMER' });
     return this.createSession(user);
   }
 
@@ -48,13 +48,14 @@ export class AuthService {
     return this.createSession(user, input.rememberMe === true);
   }
 
-  async createInternalUser(input: Record<string, unknown>) {
+  async createInternalUser(input: Record<string, unknown>, actor: PublicUser) {
+    await this.users.authorizeAdministrator(actor.id);
     this.assertBody(input);
     const fullName = this.requiredText(input.fullName, 'Họ và tên', 2, 120);
     const email = this.email(input.email);
     const phone = this.phone(input.phone);
     const role = input.role;
-    if (role !== 'STAFF' && role !== 'MANAGER') throw new BadRequestException('Admin chỉ được tạo STAFF hoặc MANAGER.');
+    if (role !== 'FACILITY_STAFF' && role !== 'FACILITY_MANAGER' && role !== 'BUSINESS_OPERATIONS_MANAGER') throw new BadRequestException('Chỉ được tạo tài khoản nhân viên, quản lý cơ sở hoặc điều hành kinh doanh.');
     if (await this.users.findByEmail(email)) throw new ConflictException('Email này đã được đăng ký.');
     const password = this.password(input.password, 8);
     const salt = randomBytes(16).toString('hex');

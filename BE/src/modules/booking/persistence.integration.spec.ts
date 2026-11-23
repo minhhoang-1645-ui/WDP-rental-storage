@@ -36,14 +36,14 @@ describe('Persistence and manager milestone', () => {
     await prisma.$disconnect();
   });
 
-  it('persists CUSTOMER registration, hashes password and rejects duplicate email', async () => {
+  it('persists STORAGE_CUSTOMER registration, hashes password and rejects duplicate email', async () => {
     const repository = new PrismaUserRepository(prisma);
     const auth = new AuthService(repository);
     const email = `persist-${randomUUID()}@example.test`;
-    const input = { fullName: 'Persistent Customer', email, phone: '0900000003', password: 'strong-test-password', role: 'ADMIN' };
+    const input = { fullName: 'Persistent Customer', email, phone: '0900000003', password: 'strong-test-password', role: 'SYSTEM_ADMINISTRATOR' };
     const session = await auth.register(input);
     createdUserIds.push(session.user.id);
-    expect(session.user.role).toBe('CUSTOMER');
+    expect(session.user.role).toBe('STORAGE_CUSTOMER');
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
     expect(stored.passwordHash).toMatch(/^scrypt\$/);
     expect(stored.passwordHash).not.toContain(input.password);
@@ -71,36 +71,36 @@ describe('Persistence and manager milestone', () => {
     expect((await restarted.getInquiry(inquiry.id, inquiry.accessToken)).id).toBe(inquiry.id);
   });
 
-  it('allows MANAGER to list, view and update the same persisted inquiry', async () => {
-    const manager = await prisma.user.findFirstOrThrow({ where: { role: 'MANAGER' } });
+  it('allows FACILITY_MANAGER to list, view and update the same persisted inquiry', async () => {
+    const manager = await prisma.user.findFirstOrThrow({ where: { role: 'FACILITY_MANAGER' } });
     const service = new BookingService(prisma);
     const email = `manager-flow-${randomUUID()}@example.test`;
     const inquiry = await service.createInquiry({ productId: 'md-d04', startDate: futureDate(), periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY', fullName: 'Manager Flow Guest', phone: '0900000006', email });
     const stored = await prisma.contactInquiry.findUniqueOrThrow({ where: { inquiryCode: inquiry.id } });
     createdInquiryIds.push(stored.id);
-    expect((await service.listManagerInquiries(1, 100)).items.some((item) => item.id === inquiry.id)).toBe(true);
-    expect((await service.getManagerInquiry(inquiry.id)).customer.email).toBe(email);
+    expect((await service.listManagerInquiries(1, 100, { ...manager, phone: manager.phone ?? '' })).items.some((item) => item.id === inquiry.id)).toBe(true);
+    expect((await service.getManagerInquiry(inquiry.id, { ...manager, phone: manager.phone ?? '' })).customer.email).toBe(email);
     const updated = await service.updateManagerInquiry(inquiry.id, { status: 'CONTACTED', internalNotes: 'Đã gọi xác nhận nhu cầu.' }, { id: manager.id, fullName: manager.fullName, email: manager.email, phone: manager.phone ?? '', role: manager.role });
     expect(updated.status).toBe('CONTACTED');
     expect(updated.internalNotes).toContain('Đã gọi');
   });
 
-  it('blocks a CUSTOMER from Manager inquiry controllers through RolesGuard', () => {
+  it('blocks a STORAGE_CUSTOMER from Manager inquiry controllers through RolesGuard', () => {
     const guard = new RolesGuard(new Reflector());
     const context = {
       getHandler: () => function managerInquiryList() {},
       getClass: () => ManagerInquiriesController,
-      switchToHttp: () => ({ getRequest: () => ({ user: { role: 'CUSTOMER' } }) }),
+      switchToHttp: () => ({ getRequest: () => ({ user: { role: 'STORAGE_CUSTOMER' } }) }),
     } as unknown as ExecutionContext;
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
-  it('blocks a CUSTOMER from Manager reservation status APIs through RolesGuard', () => {
+  it('blocks a STORAGE_CUSTOMER from Manager reservation status APIs through RolesGuard', () => {
     const guard = new RolesGuard(new Reflector());
     const context = {
       getHandler: () => function managerReservationStatus() {},
       getClass: () => ManagerReservationsController,
-      switchToHttp: () => ({ getRequest: () => ({ user: { role: 'CUSTOMER' } }) }),
+      switchToHttp: () => ({ getRequest: () => ({ user: { role: 'STORAGE_CUSTOMER' } }) }),
     } as unknown as ExecutionContext;
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });

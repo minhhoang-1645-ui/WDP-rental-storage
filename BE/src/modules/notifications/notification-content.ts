@@ -1,3 +1,4 @@
+import { roleNamespace } from '../../role-names.js';
 import { createHash } from 'node:crypto';
 import type { PublicUser } from '../auth/auth.types.js';
 import { EARLY_RETURN_SUBJECT } from '../returns/early-return-classification.js';
@@ -70,7 +71,7 @@ const auditTitles: Record<string, string> = {
   DISABLE_ACCOUNT: 'Đã vô hiệu hóa tài khoản',
   REACTIVATE_ACCOUNT: 'Đã kích hoạt lại tài khoản',
 };
-const roles: Record<string, string> = { ADMIN: 'Quản trị viên', MANAGER: 'Quản lý', STAFF: 'Nhân viên', CUSTOMER: 'Khách hàng' };
+const roles: Record<string, string> = { SYSTEM_ADMINISTRATOR: 'Quản trị viên', FACILITY_MANAGER: 'Quản lý', BUSINESS_OPERATIONS_MANAGER: 'Điều hành kinh doanh', FACILITY_STAFF: 'Nhân viên', STORAGE_CUSTOMER: 'Khách hàng' };
 const byDate = (a: Notice, b: Notice) => Date.parse(b.at) - Date.parse(a.at) || a.key.localeCompare(b.key);
 const queryPath = (path: string, values: Record<string, string>) => path + '?' + new URLSearchParams(values);
 const hash = (parts: unknown[]) => createHash('sha256').update(JSON.stringify(parts)).digest('hex');
@@ -89,7 +90,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const id = get('id');
   if (!id || !Object.hasOwn(noticeKinds, source)) return;
   const key = `${source}:${id}`;
-  if (actor.role === 'ADMIN') {
+  if (actor.role === 'SYSTEM_ADMINISTRATOR') {
     const action = get('action'), target = get('resourceId'), at = get('createdAt');
     if (source !== 'users' || row.resource !== 'users' || row.outcome !== 'SUCCESS' || !target || !Object.hasOwn(auditTitles, action) || !Number.isFinite(Date.parse(at))) return;
     const account = get('targetAccount.fullName');
@@ -100,15 +101,15 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   if (source === 'users') return;
   const status = get('status');
   if (!status) return;
-  const root = '/' + actor.role.toLowerCase();
+  const root = '/' + roleNamespace(actor.role);
   const encoded = encodeURIComponent(id);
   const assignedId = get('assignedStaff.id');
-  const customer = actor.role === 'CUSTOMER';
-  const staff = actor.role === 'STAFF';
+  const customer = actor.role === 'STORAGE_CUSTOMER';
+  const staff = actor.role === 'FACILITY_STAFF';
   const early = source === 'support-requests' && (row.subject === EARLY_RETURN_SUBJECT || Boolean(row.earlyReturnDecision));
   const transfer = source === 'support-requests' && !early && (row.resolutionType === 'TRANSFER_RECOMMENDED' || /chuyen (doi )?kho/.test(noticeSearch(get('subject'))));
   const linkedTransfer = transfer ? list(row.transfers)[0] : undefined;
-  if (actor.role === 'MANAGER' && linkedTransfer) return;
+  if (actor.role === 'FACILITY_MANAGER' && linkedTransfer) return;
   if (staff && (source === 'reservations' || assignedId !== actor.id || early || source === 'transfers' && !['APPROVED', 'COMPLETED'].includes(status))) return;
   if (staff && source === 'appointments' && staffActionable.appointments.includes(status) && row.bookingReady === false) return;
   if (staff && linkedTransfer && data.transfers?.some(item => item.id === linkedTransfer.id && text(item, 'assignedStaff.id') === actor.id)) return;
@@ -118,7 +119,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   let title = `${label} ${states[status] ?? 'đã cập nhật'}`;
   if (source === 'appointments' && status === 'COMPLETED') title = 'Bàn giao đã hoàn tất';
   if (source === 'invoices' && status === 'OPEN') title = 'Hóa đơn chưa thanh toán';
-  let target = `${root}${actor.role === 'MANAGER' ? '/operations' : ''}/${source}/${encoded}`;
+  let target = `${root}${actor.role === 'FACILITY_MANAGER' ? '/operations' : ''}/${source}/${encoded}`;
   let actionLabel = '';
   let important = row.priority === 'HIGH' || status === 'ISSUE_FOUND';
   let version = '';
@@ -146,7 +147,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   }
   if (!customer && !staff) {
     const needsAssignment = !early && !transfer && managerAssignable[source]?.includes(status)
-      && (!assignedId || get('assignedStaff.accountStatus') === 'DISABLED' || get('assignedStaff.role') && get('assignedStaff.role') !== 'STAFF');
+      && (!assignedId || get('assignedStaff.accountStatus') === 'DISABLED' || get('assignedStaff.role') && get('assignedStaff.role') !== 'FACILITY_STAFF');
     if (needsAssignment) {
       actionLabel = assignedId ? 'Đổi người phụ trách' : 'Phân công nhân viên';
       title = `${label} ${assignedId ? 'cần đổi người phụ trách' : 'chờ phân công'}`;
@@ -171,7 +172,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
       if (Date.parse(due) < now) { title = 'Hóa đơn quá hạn'; important = true; actionLabel = 'Kiểm tra công nợ'; }
     }
     if (!actionLabel && !['deposit-settlements', 'invoices'].includes(source) &&
-      !(source === 'support-requests' && !early && get('resolvedBy.role') === 'MANAGER') &&
+      !(source === 'support-requests' && !early && get('resolvedBy.role') === 'FACILITY_MANAGER') &&
       !(source === 'damage-claims' && status === 'RESOLVED')) return;
   }
   if (customer) {

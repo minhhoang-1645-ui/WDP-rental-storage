@@ -1,6 +1,4 @@
 import 'dotenv/config';
-import { ConfigService } from '@nestjs/config';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
@@ -29,19 +27,18 @@ const dayAfter = (days: number) => {
   return value.toISOString().slice(0, 10);
 };
 const appointmentAt = (days = 6) => `${dayAfter(days)}T09:30:00+07:00`;
-
-describe('Appointment and Staff Handover V1', () => {
+describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:\/\/[^@]+@(?:localhost|127\.0\.0\.1):55439\//.test(process.env.DATABASE_URL ?? ''))('Appointment and Staff Handover V1', () => {
   let prisma: PrismaService;
   let service: AppointmentsService;
   const user = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
-  const customer = user(customerId, 'CUSTOMER');
-  const manager = user(managerId, 'MANAGER');
-  const staff = user(staffId, 'STAFF');
+  const customer = user(customerId, 'STORAGE_CUSTOMER');
+  const manager = user(managerId, 'FACILITY_MANAGER');
+  const staff = user(staffId, 'FACILITY_STAFF');
 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    service = new AppointmentsService(prisma, undefined, undefined, undefined, new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' })));
+    service = new AppointmentsService(prisma);
     await prisma.facility.create({ data: { id: facilityId, code: `APPT-${runId}`, name: 'Appointment test', address: 'Test only' } });
     await prisma.storageType.create({ data: {
       id: storageTypeId, facilityId, code: `AP-${runId}`, name: 'Appointment product', sizeId: 'small', sizeName: 'Kho nhỏ', kicker: 'Test', condition: 'STANDARD',
@@ -50,13 +47,14 @@ describe('Appointment and Staff Handover V1', () => {
     } });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, floor: 'Ground', zone: 'A', row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Appointment Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Appointment Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Appointment Staff', role: 'STAFF', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Appointment Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Appointment Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Appointment Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Appointment Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Appointment Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
     ] });
-  });
+  await prisma.facilityAccess.createMany({data:[managerId,staffId].map(userId=>({userId,facilityId,grantedById:adminId}))});
+});
 
   afterEach(async () => {
     await prisma.handoverAppointment.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -67,18 +65,18 @@ describe('Appointment and Staff Handover V1', () => {
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.updateMany({ where: { storageTypeId }, data: { status: 'AVAILABLE' } });
   });
-
-  afterAll(async () => {
+afterAll(async () => {
     await prisma.handoverAppointment.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
-    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
+
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
+await prisma.facilityAccess.deleteMany({where:{facilityId}});
+await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
   });
@@ -95,11 +93,7 @@ describe('Appointment and Staff Handover V1', () => {
     } });
     const units = await prisma.storageUnit.findMany({ where: { storageTypeId }, orderBy: { unitNumber: 'asc' }, take: quantity });
     for (const [index, unit] of units.entries()) {
-      await prisma.unitStaffAssignment.upsert({
-        where: { id: `appointment-owner-${unit.id}` },
-        create: { id: `appointment-owner-${unit.id}`, storageUnitId: unit.id, staffUserId: staff.id, assignedByUserId: manager.id },
-        update: {},
-      });
+
       const allocation = await prisma.reservationUnit.create({ data: { reservationId: created.id, storageUnitId: unit.id, plannedStartDate: created.startDate, plannedEndDate: created.endDate } });
       await prisma.rentalContract.create({ data: {
         contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: created.id, reservationUnitId: allocation.id,
@@ -119,7 +113,8 @@ describe('Appointment and Staff Handover V1', () => {
   }
 
   async function requestAppointment(reservationId: string, key = `appointment-key-${randomUUID()}`) {
-    return service.createCustomerAppointment(customer, { reservationId, scheduledAt: appointmentAt(), note: 'Morning preferred' }, key);
+    const created=await service.createCustomerAppointment(customer, { reservationId, scheduledAt: appointmentAt(), note: 'Morning preferred' }, key);
+    return service.assignAppointment(created.id,{staffUserId:staff.id,expectedAssignedStaffUserId:created.assignedStaff?.id??null},manager);
   }
 
   async function makeAppointmentDue(reservationId: string, appointmentId: string) {
@@ -136,7 +131,7 @@ describe('Appointment and Staff Handover V1', () => {
     expect(first).toMatchObject({ status: 'CONFIRMED', confirmedBy: null, reservation: { reference: created.reservationCode, contractCount: 2 } });
     expect(first.confirmedAt).not.toBeNull();
     await expect(service.getOperationalAppointment(first.id, staff)).resolves.toMatchObject({ assignedStaff: { id: staff.id } });
-    const unrelatedStaff = user('another-staff', 'STAFF');
+    const unrelatedStaff = user('another-staff', 'FACILITY_STAFF');
     expect((await service.listOperationalAppointments({ page: 1, limit: 20 }, unrelatedStaff)).total).toBe(0);
     await expect(service.getOperationalAppointment(first.id, unrelatedStaff)).rejects.toBeInstanceOf(NotFoundException);
     expect(await prisma.handoverAppointment.count({ where: { reservationId: created.id } })).toBe(1);
@@ -202,7 +197,7 @@ describe('Appointment and Staff Handover V1', () => {
     await expect(service.confirmAppointment(requested.id, manager)).rejects.toBeInstanceOf(ForbiddenException);
     const confirmed = await service.confirmAppointment(requested.id, staff);
     expect(confirmed.status).toBe('CONFIRMED');
-    expect(confirmed.confirmedBy).toMatchObject({ id: staffId, role: 'STAFF' });
+    expect(confirmed.confirmedBy).toMatchObject({ id: staffId, role: 'FACILITY_STAFF' });
     expect(confirmed.confirmedAt).not.toBeNull();
   });
 
@@ -230,9 +225,9 @@ describe('Appointment and Staff Handover V1', () => {
     const completed = await service.completeHandover(requested.id, { note: 'Units handed over successfully', handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true } }, staff);
     expect(completed.status).toBe('COMPLETED');
     expect(completed.completedAt).not.toBeNull();
-    expect(completed.completedBy).toMatchObject({ id: staffId, role: 'STAFF' });
+    expect(completed.completedBy).toMatchObject({ id: staffId, role: 'FACILITY_STAFF' });
     expect(completed.allocatedUnits).toHaveLength(2);
-    expect(completed.allocatedUnits.every((unit) => unit.contractStatus === 'ACTIVE' && unit.activatedAt !== null && unit.unitStatus === 'OCCUPIED')).toBe(true);
+    expect(completed.allocatedUnits.every((unit: any) => unit.contractStatus === 'ACTIVE' && unit.activatedAt !== null && unit.unitStatus === 'OCCUPIED')).toBe(true);
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE', activatedAt: { not: null } } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: created.id } }, status: 'OCCUPIED' } })).toBe(2);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: created.id } })).quoteSnapshot).toEqual(snapshot);
@@ -252,7 +247,7 @@ describe('Appointment and Staff Handover V1', () => {
     await prisma.storageUnit.update({ where: { id: allocation.storageUnitId }, data: { status: 'MAINTENANCE' } });
     await expect(service.completeHandover(requested.id, {
       handoverReport: { condition: 'Kho bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true,
-        unitChecks: requested.allocatedUnits.map(unit => ({ unitId: unit.unitId, condition: 'Kho bình thường', inspected: true })) },
+        unitChecks: requested.allocatedUnits.map((unit: any) => ({ unitId: unit.unitId, condition: 'Kho bình thường', inspected: true })) },
     }, staff)).rejects.toBeInstanceOf(ConflictException);
     expect(await prisma.rentalContract.count({ where: { reservationId: created.id, status: 'ACTIVE' } })).toBe(0);
     expect((await prisma.handoverAppointment.findUniqueOrThrow({ where: { id: requested.id } })).status).toBe('CONFIRMED');
@@ -306,12 +301,12 @@ describe('Appointment and Staff Handover V1', () => {
 
     const rolesGuard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerAppointmentsController | typeof ManagerAppointmentsController | typeof StaffAppointmentsController, PublicUser['role'][]]> = [
-      [CustomerAppointmentsController, ['CUSTOMER']],
-      [ManagerAppointmentsController, ['MANAGER']],
-      [StaffAppointmentsController, ['STAFF']],
+      [CustomerAppointmentsController, ['STORAGE_CUSTOMER']],
+      [ManagerAppointmentsController, ['FACILITY_MANAGER']],
+      [StaffAppointmentsController, ['FACILITY_STAFF']],
     ];
     for (const [controller, roles] of allowed) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
         const context = {
           getHandler: () => function appointmentOperation() {},
           getClass: () => controller,

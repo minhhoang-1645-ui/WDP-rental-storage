@@ -10,7 +10,7 @@ export class RegisterRequestDto {
   @ApiProperty({ example: '0900000000', description: 'Số điện thoại 8-25 ký tự.' })
   phone!: string;
 
-  @ApiProperty({ format: 'password', example: 'your-password-here', description: 'Thay bằng mật khẩu của bạn. Public registration luôn tạo role CUSTOMER.' })
+  @ApiProperty({ format: 'password', example: 'your-password-here', description: 'Thay bằng mật khẩu của bạn. Public registration luôn tạo role STORAGE_CUSTOMER.' })
   password!: string;
 }
 
@@ -30,7 +30,7 @@ export class CreateAdminUserDto {
   @ApiProperty({ example: 'staff.demo@example.test', format: 'email' }) email!: string;
   @ApiProperty({ example: '0900000011' }) phone!: string;
   @ApiProperty({ format: 'password', example: 'replace-with-secure-password', minLength: 8 }) password!: string;
-  @ApiProperty({ enum: ['STAFF', 'MANAGER'], example: 'STAFF' }) role!: 'STAFF' | 'MANAGER';
+  @ApiProperty({ enum: ['FACILITY_STAFF', 'FACILITY_MANAGER'], example: 'FACILITY_STAFF' }) role!: 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 }
 
 export class UpdateAccountStatusDto {
@@ -131,9 +131,10 @@ export class CreateGuestBookingRequestDto {
   @ApiPropertyOptional({ type: 'array', items: { type: 'object', properties: { serviceId: { type: 'string' }, quantity: { type: 'integer' }, serviceStartDate: { type: 'string', format: 'date' }, serviceEndDate: { type: 'string', format: 'date' } } }, example: [{ serviceId: 'shelf-id', quantity: 1, serviceStartDate: '2026-12-01', serviceEndDate: '2027-02-01' }, { serviceId: 'padlock-id', quantity: 1 }] }) services?: Array<Record<string, unknown>>;
 }
 
-export class CreateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
-export class UpdateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái' }) physicalUnit?: string; @ApiPropertyOptional({ example: 'Kệ tiêu chuẩn' }) name?: string; @ApiPropertyOptional({ nullable: true }) description?: string | null; @ApiPropertyOptional({ enum: ['PURCHASE', 'RENTAL'] }) kind?: string; @ApiPropertyOptional({ enum: ['ONE_TIME', 'DAY', 'MONTH'] }) billingUnit?: string; @ApiPropertyOptional({ example: 120000, minimum: 1 }) unitPrice?: number; @ApiPropertyOptional({ nullable: true, example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ nullable: true, example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: false }) isActive?: boolean; }
-export class UpdateAdditionalServiceInventoryDto { @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
+export class CreateAdditionalServiceDto { @ApiPropertyOptional({description:'Cơ sở cung cấp; bắt buộc chọn khi quản lý có nhiều cơ sở.'}) facilityId?:string; @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
+export class UpdateAdditionalServiceDto { @ApiPropertyOptional({description:'Cơ sở cung cấp; không thay đổi danh mục chung.'}) facilityId?:string; @ApiPropertyOptional({minimum:1,description:'Giá VND của cơ sở, không đổi snapshot cũ.'}) unitPrice?:number; @ApiPropertyOptional() isActive?:boolean; }
+export class ConfigureServiceOfferingDto { @ApiProperty() facilityId!:string; @ApiProperty({minimum:1}) unitPrice!:number; @ApiPropertyOptional({default:false}) isActive?:boolean; }
+export class UpdateAdditionalServiceInventoryDto { @ApiPropertyOptional() facilityId?:string; @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
 
 export class VerifyGuestBookingDto {
   @ApiProperty({ example: 'one-time-token-from-email', description: 'Token bí mật từ secure claim link; không dùng bookingCode.' }) token!: string;
@@ -322,7 +323,7 @@ export class CreateMaintenanceRequestDto {
 }
 
 export class AssignMaintenanceRequestDto {
-  @ApiProperty({ example: 'staff-user-id', description: 'User tồn tại và có role STAFF.' })
+  @ApiProperty({ example: 'staff-user-id', description: 'User tồn tại và có role FACILITY_STAFF.' })
   staffUserId!: string;
 }
 

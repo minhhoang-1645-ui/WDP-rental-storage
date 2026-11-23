@@ -4,29 +4,29 @@ import { ManagerStockMovementsController } from './manager-stock-movements.contr
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 function setup(quantities: number[], initial = 6, type = 'OUT') {
   let balance = initial;
-  const item = { id: 'item', itemCode: 'ITEM', name: 'Thùng', unit: 'thùng', balance: initial };
+  const item = { rentalContractId:'contract', customerUserId:'customer', id: 'item', itemCode: 'ITEM', name: 'Thùng', unit: 'thùng', balance: initial };
   const lines = quantities.map((quantity, i) => ({ id: 'line' + i, storedItemId: 'item', requestedQty: quantity, actualQty: null, storedItem: item, note: null }));
-  const row = { id: 'movement', movementCode: 'MOV', status: 'ASSIGNED', type, assignedStaffUserId: 'staff', createdAt: new Date(), updatedAt: new Date(), lines };
-  const tx = { $queryRaw: vi.fn().mockResolvedValue([]), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', reservationUnit: { storageUnit: { id: 'unit', unitNumber: 'A01', floor: '1', zone: 'A' } } }) }, stockMovement: { findFirst: vi.fn().mockResolvedValue({ id: row.id }), findUniqueOrThrow: vi.fn(async () => row), update: vi.fn(async ({ data }) => Object.assign(row, data)) }, stockMovementLine: { findMany: vi.fn().mockResolvedValue(lines), update: vi.fn() }, storedItem: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn(async ({ where, data }) => { if (balance < where.balance.gte) return { count: 0 }; balance -= data.balance.decrement; return { count: 1 }; }), update: vi.fn(async ({ data }) => { balance += data.balance.increment; }) } };
+  const row = { id: 'movement', customerUserId:'customer', rentalContractId:'contract', movementCode: 'MOV', status: 'ASSIGNED', type, assignedStaffUserId: 'staff', createdAt: new Date(), updatedAt: new Date(), lines };
+  const tx = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'staff'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])}, $queryRaw: vi.fn().mockResolvedValue([]), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', reservation:{facilityId:'A'}, reservationUnit: { storageUnit: { id: 'unit', unitNumber: 'A01', floor: '1', zone: 'A' } } }) }, stockMovement: { findFirst: vi.fn().mockResolvedValue({ id: row.id }), findUniqueOrThrow: vi.fn(async () => row), update: vi.fn(async ({ data }) => Object.assign(row, data)) }, stockMovementLine: { findMany: vi.fn().mockResolvedValue(lines), update: vi.fn() }, storedItem: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn(async ({ where, data }) => { if (balance < where.balance.gte) return { count: 0 }; balance -= data.balance.decrement; return { count: 1 }; }), update: vi.fn(async ({ data }) => { balance += data.balance.increment; }) } };
   const db = { $transaction: vi.fn(async operation => { const before = balance; try { return await operation(tx); } catch (error) { balance = before; throw error; } }) };
   return { service: new StockMovementsService(db as never), tx, balance: () => balance };
 }
 describe('stock movement safety with stubbed transaction', () => {
-  it('automatically assigns a movement to the active responsible employee', async () => {
+  it('leaves a new movement in Manager queue without changing actual stock', async () => {
     const stamp = new Date();
     const movement = { id: 'movement', lines: [], createdAt: stamp, updatedAt: stamp };
     const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', startDate: new Date('2026-01-01'), endDate: new Date('2035-01-01'), reservationUnit: { storageUnitId: 'unit', storageUnit: { unitNumber: 'A01', floor: '1', zone: 'A' } } }) },
       stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
       storedItem: { create: vi.fn().mockResolvedValue({ id: 'item' }) }, stockMovementLine: { create: vi.fn() } };
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
-    const responsibility = { resolveStaff: vi.fn().mockResolvedValue({ staffUserId: 'staff', assignedByUserId: 'manager' }) };
-    const service = new StockMovementsService(db as never, responsibility as never);
-    await service.create({ id: 'customer', role: 'CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'create-manual-assignment');
-    expect(responsibility.resolveStaff).toHaveBeenCalledWith(tx, ['unit']);
-    expect(tx.stockMovement.create.mock.calls[0][0].data).toMatchObject({ status: 'ASSIGNED', assignedStaffUserId: 'staff', assignedByUserId: 'manager' });
+    const service = new StockMovementsService(db as never);
+    await service.create({ id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'create-manual-assignment');
+    expect(tx.storedItem.create.mock.calls[0][0].data).not.toHaveProperty('balance');
+    expect(tx.stockMovement.create.mock.calls[0][0].data).not.toHaveProperty('assignedStaffUserId');
+    expect(tx.stockMovement.create.mock.calls[0][0].data).not.toHaveProperty('assignedByUserId');
   });
 
   it('rejects new scheduled movements in the past or outside the Vietnam rental dates', async () => {
@@ -37,7 +37,7 @@ describe('stock movement safety with stubbed transaction', () => {
     const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue(contract) }, stockMovement: { create } };
     const db = { $transaction: vi.fn(operation => operation(tx)), rentalContract: { findFirst: vi.fn().mockResolvedValue(contract) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) } };
     const service = new StockMovementsService(db as never);
-    const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
+    const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
     const input = { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Hồ sơ', unit: 'thùng', quantity: 1 }] };
     const submit = (scheduledAt: string) => service.create(customer, { ...input, scheduledAt }, 'schedule-check');
 
@@ -85,30 +85,29 @@ describe('stock movement safety with stubbed transaction', () => {
   });
   it('cannot change inventory after the contract has completed', async () => {
     const state = setup([1]);
-    state.tx.rentalContract.findUnique.mockResolvedValue({ status: 'COMPLETED' });
+    state.tx.rentalContract.findUnique.mockResolvedValue({ status: 'COMPLETED', reservation:{facilityId:'A'} } as never);
     await expect(state.service.complete('movement', {}, staff)).rejects.toThrow('Hợp đồng đã kết thúc');
     expect(state.balance()).toBe(6);
   });
   it('denies another Staff, non-Staff, and foreign line IDs', async () => {
     const state = setup([1]);
     await expect(state.service.complete('movement', {}, { ...staff, id: 'other' })).rejects.toThrow('được giao');
-    await expect(state.service.complete('movement', {}, { ...staff, role: 'MANAGER' })).rejects.toThrow('được giao');
+    await expect(state.service.complete('movement', {}, { ...staff, role: 'FACILITY_MANAGER' })).rejects.toThrow('được giao');
     await expect(state.service.complete('movement', { lines: [{ lineId: 'foreign', actualQty: 1 }] }, staff)).rejects.toThrow('tất cả dòng hàng');
     expect(state.balance()).toBe(6);
   });
   it('does not reveal a different customer movement through an idempotency collision', async () => {
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue({ customerUserId: 'other', rentalContractId: 'other-contract', type: 'IN', note: null, lines: [] }) } };
     const service = new StockMovementsService(db as never);
-    await expect(service.create({ id: 'customer', role: 'CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'collision-key')).rejects.toThrow('Idempotency-Key');
+    await expect(service.create({ id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'collision-key')).rejects.toThrow('Idempotency-Key');
   });
   it('scopes Staff operational reads without assigning pending movements', async () => {
     const stockMovement = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
-    const recover = vi.fn();
-    const service = new StockMovementsService({ stockMovement } as never, { recoverPendingStockMovements: recover } as never);
+    const service = new StockMovementsService({ stockMovement } as never);
     const controller = new ManagerStockMovementsController(service);
     await controller.list({ user: staff } as AuthenticatedRequest, {});
     expect(stockMovement.findMany.mock.calls[0][0].where).toMatchObject({ assignedStaffUserId: staff.id });
-    expect(recover).not.toHaveBeenCalled();
+    expect(stockMovement.findMany.mock.calls[0][0].where.rentalContract.reservation).toHaveProperty("facility");
   });
   it.each([undefined, [], [{ lineId: 'line0' }], [{ lineId: 'line0', actualQty: '' }], [{ lineId: 'line0', actualQty: null }]])('rejects missing or blank counts: %j', async lines => {
     const state = setup([4]);

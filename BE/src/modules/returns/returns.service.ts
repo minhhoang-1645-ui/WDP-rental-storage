@@ -1,7 +1,9 @@
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskFacility, assertTaskExecution, reservationScope } from '../facility-access/task-access.js';
 import { Optional } from '@nestjs/common';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../unit-staff/operational-assignment.js';
+import { assertActiveAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { EARLY_RETURN_APPROVAL_MESSAGE, EARLY_RETURN_SUBJECT, earlyReturnApprovalNote, earlyReturnScope } from './early-return-classification.js';
 import { businessDate, businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -15,7 +17,7 @@ import { BillingService } from '../billing/billing.service.js';
 import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, rentRefundView, summarizeEarlyReturn } from './return-period-closeout.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
-type ViewMode = 'CUSTOMER' | 'MANAGER' | 'STAFF';
+type ViewMode = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER' | 'FACILITY_STAFF';
 type ReturnStatus = 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED';
 type IssueType = 'NORMAL_WEAR' | 'FACILITY_FAULT' | 'CUSTOMER_DAMAGE' | 'CLEANING_REQUIRED' | 'LOST_KEY_OR_ACCESS_ITEM' | 'OTHER';
 
@@ -37,10 +39,10 @@ type CloseoutApproval = Prisma.JsonObject & { policy?: string; agreementReferenc
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService, @Optional() private readonly renewalBilling?: RenewalsService, @Optional() private readonly billing?: BillingService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly renewalBilling?: RenewalsService, @Optional() private readonly billing?: BillingService) {}
 
   async createCustomerReturn(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được gửi yêu cầu trả kho qua endpoint này.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được gửi yêu cầu trả kho qua endpoint này.');
     const parsed = this.createInput(input, idempotencyKey);
     const identity = await this.prisma.reservation.findFirst({
       where: { customerId: customer.id, OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }] },
@@ -54,7 +56,7 @@ export class ReturnsService {
         const duplicate = await tx.returnRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
         if (duplicate) {
           this.assertMatchingRetry(duplicate, customer.id, identity.id, parsed.note, parsed.rentalContractId);
-          return this.toReturn(duplicate, 'CUSTOMER');
+          return this.toReturn(duplicate, 'STORAGE_CUSTOMER');
         }
         const reservation = await tx.reservation.findUnique({ where: { id: identity.id }, include: this.eligibilityInclude() });
         const now = new Date();
@@ -65,13 +67,11 @@ export class ReturnsService {
         await this.assertNoConflictingWork(tx, [rental.contractId]);
         contractDeposit(reservation!.invoices, [rental.contractId], reservation!.contracts.map(contract => contract.id), reservation!.quoteSnapshot, false);
         const sequence = await tx.returnRequest.count({ where: { reservationId: identity.id } }) + 1;
-        const responsibility = await this.unitStaff?.resolveStaff(tx, rental.unitIds);
         const created = await tx.returnRequest.create({
           data: {
             returnCode: `${reservation!.reservationCode}-RT${String(sequence).padStart(2, '0')}`,
             reservationId: identity.id,
             requestedByUserId: customer.id,
-            assignedStaffUserId: responsibility?.staffUserId,
             note: parsed.note,
             idempotencyKey: parsed.idempotencyKey,
             activeKey: this.contractKey(rental.contractId),
@@ -82,14 +82,14 @@ export class ReturnsService {
           },
           include: this.include(),
         });
-        return this.toReturn(created, 'CUSTOMER');
+        return this.toReturn(created, 'STORAGE_CUSTOMER');
       }, 'Yêu cầu trả kho vừa được cập nhật. Vui lòng tải lại và thử lại.');
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const duplicate = await this.prisma.returnRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include() });
         if (duplicate) {
           this.assertMatchingRetry(duplicate, customer.id, identity.id, parsed.note, parsed.rentalContractId);
-          return this.toReturn(duplicate, 'CUSTOMER');
+          return this.toReturn(duplicate, 'STORAGE_CUSTOMER');
         }
         throw new ConflictException({ code: 'ACTIVE_RETURN_EXISTS', message: 'Kho đã có yêu cầu trả chưa hoàn tất hoặc vừa được cập nhật.' });
       }
@@ -98,7 +98,7 @@ export class ReturnsService {
   }
 
   listCustomerReturns(customerId: string, query: Pick<ReturnListQuery, 'page' | 'limit'>) {
-    return this.page({ reservation: { customerId } }, query, 'CUSTOMER');
+    return this.page({ reservation: { customerId } }, query, 'STORAGE_CUSTOMER');
   }
 
   async getCustomerReturn(customerId: string, id: string) {
@@ -108,25 +108,29 @@ export class ReturnsService {
       include: this.include(false),
     });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-    return this.toReturn(record, 'CUSTOMER');
+    return this.toReturn(record, 'STORAGE_CUSTOMER');
   }
 
-  listManagerReturns(query: ReturnListQuery) {
-    return this.page(this.operationalWhere(query), query, 'MANAGER');
+  listManagerReturns(query: ReturnListQuery,actor:PublicUser) {
+    managerReservationScope(actor);
+
+    return this.page({...this.operationalWhere(query),reservation:reservationScope(actor)}, query, 'FACILITY_MANAGER');
   }
 
   listStaffReturns(query: ReturnListQuery, actor: PublicUser) {
-    return this.page({ ...this.operationalWhere(query), assignedStaffUserId: actor.id }, query, 'STAFF');
+    return this.page({ ...this.operationalWhere(query), reservation:reservationScope(actor), assignedStaffUserId: actor.id }, query, 'FACILITY_STAFF');
   }
 
-  async getManagerReturn(id: string) {
-    return this.toReturn(await this.find(id, this.prisma), 'MANAGER');
+  async getManagerReturn(id: string,actor:PublicUser) {
+    managerReservationScope(actor);
+
+ const row=await this.find(id,this.prisma);await assertTaskFacility(this.prisma,actor,{reservationId:row.reservationId});return this.toReturn(row,'FACILITY_MANAGER');
   }
 
   async getStaffReturn(id: string, actor: PublicUser) {
-    const record = await this.prisma.returnRequest.findFirst({ where: { OR: [{ id }, { returnCode: id }], assignedStaffUserId: actor.id }, include: this.include(true, actor.id) });
+    const record = await this.prisma.returnRequest.findFirst({ where: { OR: [{ id }, { returnCode: id }], reservation:reservationScope(actor), assignedStaffUserId: actor.id }, include: this.include(true, actor.id) });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-    return this.toReturn(record, 'STAFF');
+    return this.toReturn(record, 'FACILITY_STAFF');
   }
 
   async assign(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -136,9 +140,10 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.returnRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (!['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Phiếu trả kho đã được tiếp nhận.');
-      await assertActiveAssignee(tx, staffId);
-      if (current.assignedStaffUserId === staffId) return this.toReturn(current, 'MANAGER');
-      return this.toReturn(await tx.returnRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }), 'MANAGER');
+      await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
+      if (current.assignedStaffUserId === staffId) return this.toReturn(current, 'FACILITY_MANAGER');
+      await recordAssignment(tx,actor,"returns",current.id,current.assignedStaffUserId,staffId);
+      return this.toReturn(await tx.returnRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }), 'FACILITY_MANAGER');
     }, 'Phân công vừa thay đổi. Vui lòng tải lại.');
   }
 
@@ -149,8 +154,8 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-      assertTaskAssignee(actor, current.assignedStaffUserId);
-      if (current.status === 'INSPECTION_IN_PROGRESS') return this.toReturn(current, 'STAFF');
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+      if (current.status === 'INSPECTION_IN_PROGRESS') return this.toReturn(current, 'FACILITY_STAFF');
       if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể bắt đầu kiểm tra ở trạng thái ${current.status}.`);
       this.requestContracts(current);
       const updated = await tx.returnRequest.update({
@@ -158,7 +163,7 @@ export class ReturnsService {
         data: { status: 'INSPECTION_IN_PROGRESS', inspectionStartedAt: new Date(), inspectionStartedById: actor.id },
         include: this.include(),
       });
-      return this.toReturn(updated, 'STAFF');
+      return this.toReturn(updated, 'FACILITY_STAFF');
     }, 'Yêu cầu trả kho vừa được xử lý bởi thao tác khác. Vui lòng tải lại.');
   }
 
@@ -170,7 +175,7 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-      assertTaskAssignee(actor, current.assignedStaffUserId);
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
       if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Chỉ yêu cầu đang kiểm tra mới được ghi kết quả.');
       const inspection = current.inspections.find((item) => item.id === inspectionId);
       if (!inspection) throw new NotFoundException('Inspection không thuộc yêu cầu trả kho này.');
@@ -178,7 +183,7 @@ export class ReturnsService {
         throw new ConflictException('Return V1 không cho phép tự xóa kết quả ISSUE_FOUND.');
       }
       if (inspection.result === parsed.result && inspection.issueType === parsed.issueType && (inspection.conditionNote ?? null) === parsed.conditionNote && (inspection.issueNote ?? null) === parsed.issueNote) {
-        return this.toReturn(current, 'STAFF');
+        return this.toReturn(current, 'FACILITY_STAFF');
       }
       const now = new Date();
       await tx.returnInspection.update({
@@ -195,7 +200,7 @@ export class ReturnsService {
       if (parsed.result === 'ISSUE_FOUND' && current.status !== 'ISSUE_FOUND') {
         await tx.returnRequest.update({ where: { id: current.id }, data: { status: 'ISSUE_FOUND' } });
       }
-      return this.toReturn(await this.find(current.id, tx), 'STAFF');
+      return this.toReturn(await this.find(current.id, tx), 'FACILITY_STAFF');
     }, 'Kết quả kiểm tra vừa được cập nhật bởi thao tác khác. Vui lòng tải lại.');
   }
 
@@ -206,8 +211,8 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       let current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-      assertTaskAssignee(actor, current.assignedStaffUserId);
-      if (['PENDING_SETTLEMENT', 'COMPLETED'].includes(current.status)) return this.toReturn(current, 'STAFF');
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+      if (['PENDING_SETTLEMENT', 'COMPLETED'].includes(current.status)) return this.toReturn(current, 'FACILITY_STAFF');
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Reservation" WHERE id = ${current.reservationId} FOR UPDATE`);
       if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Yêu cầu phải đang kiểm tra trước khi hoàn tất trả kho vật lý.');
       if (current.inspections.some((inspection) => inspection.result === 'PENDING')) {
@@ -238,8 +243,8 @@ export class ReturnsService {
       }, select: { id: true } });
       if (previousCredit) throw new ConflictException('Tiền cọc của hợp đồng đã được ghi nhận trong một quyết toán khác.');
       const depositAmount = contractDeposit(current.reservation.invoices, contractIds, allContractIds, current.reservation.quoteSnapshot, legacy);
-      const remainingGoods = await tx.storedItem.count({ where: { rentalContractId: { in: contractIds }, balance: { gt: 0 } } });
-      if (remainingGoods) throw new ConflictException({ code: 'RETURN_STORED_ITEMS_REMAIN', message: 'Còn hàng đang lưu trên hợp đồng. Khách cần tạo phiếu xuất, nhân viên kiểm đếm và hoàn tất lấy hàng trước khi trả kho.' });
+
+      // Self-storage return is based on physical inspection, not a mandatory customer-goods ledger.
 
       let closeout: Prisma.InputJsonValue | undefined;
       if (periodCloseout) {
@@ -292,7 +297,6 @@ export class ReturnsService {
         activeKey: { in: issueUnitIds.map(id => `MAINTENANCE:${id}`) },
       }, select: { id: true } })) throw new ConflictException('Kho đã có phiếu bảo trì đang xử lý. Cần quản lý kiểm tra trước khi nhận trả.');
       for (const [index, inspection] of issueInspections.entries()) {
-        const responsibility = await this.unitStaff?.resolveStaff(tx, [inspection.storageUnitId]);
         await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: `${current.returnCode}-MNT${String(index + 1).padStart(2, '0')}`,
@@ -304,7 +308,6 @@ export class ReturnsService {
             status: 'OPEN',
             description: inspection.issueNote ?? inspection.conditionNote ?? 'Return inspection requires maintenance.',
             reportedByUserId: actor.id,
-            assignedStaffUserId: responsibility?.staffUserId,
             activeKey: `MAINTENANCE:${inspection.storageUnitId}`,
             createIdempotencyKey: `RETURN_INSPECTION:${inspection.id}`,
           },
@@ -338,25 +341,25 @@ export class ReturnsService {
         },
         include: this.include(),
       });
-      return this.toReturn(updated, 'STAFF');
+      return this.toReturn(updated, 'FACILITY_STAFF');
     }, 'Yêu cầu trả kho vừa được hoàn tất hoặc thay đổi bởi thao tác khác. Vui lòng tải lại.');
   }
 
-  async listEarlyReturnRequests(page: number, limit: number) {
+  async listEarlyReturnRequests(page: number, limit: number, actor: PublicUser) {
     if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Phân trang không hợp lệ.');
-    const where = { subject: EARLY_RETURN_SUBJECT, category: 'OTHER' as const };
+    const where = { subject: EARLY_RETURN_SUBJECT, category: 'OTHER' as const, reservation:reservationScope(actor) };
     const total = await this.prisma.supportRequest.count({ where });
     const items = await this.prisma.supportRequest.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.earlyReturnInclude() });
     return { page, limit, total, items: items.map(item => this.toEarlyReturn(item)) };
   }
 
   async reviewEarlyReturnFinance(_id: string, _input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xem xét đề nghị trả trước hạn.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xem xét đề nghị trả trước hạn.');
     throw new ConflictException({ code: 'RETURN_DEBT_WAIVER_DISABLED', message: 'Hóa đơn được điều chỉnh theo kỳ thuê khi nhân viên nhận lại kho.' });
   }
 
   async settleEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser, confirmTransfer = false) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết toán tiền thuê.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết toán tiền thuê.');
     const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
     const transferredAt = typeof input.transferredAt === 'string' ? new Date(input.transferredAt) : null;
     if (confirmTransfer && (!reference || reference.length > 160 || !transferredAt || !Number.isFinite(+transferredAt) || +transferredAt > Date.now())) {
@@ -367,6 +370,7 @@ export class ReturnsService {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${id} FOR UPDATE`);
         const current = await tx.returnRequest.findUnique({ where: { id }, include: { depositSettlement: { select: { status: true } } } });
         if (!current) throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
+        await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
         const closeout = current.earlyReturnCloseout as { appliedAt?: string; refundAmount?: number } | null;
         if (!current.physicallyReturnedAt || !closeout?.appliedAt || input.amount !== closeout.refundAmount) throw new ConflictException('Số tiền trong hồ sơ quyết toán đã thay đổi hoặc kho chưa được bàn giao.');
         if (confirmTransfer) {
@@ -392,13 +396,14 @@ export class ReturnsService {
   }
 
   async reviewEarlyReturnFault(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xác minh trách nhiệm lỗi cơ sở.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xác minh trách nhiệm lỗi cơ sở.');
     const reference = typeof input.reference === 'string' ? input.reference.trim() : '';
     if (typeof input.approved !== 'boolean' || !reference || reference.length > 200) throw new BadRequestException('Cần quyết định và căn cứ xác minh lỗi cơ sở.');
     return this.serializable(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${id} FOR UPDATE`);
       const record = await tx.returnRequest.findUnique({ where: { id }, include: this.include() });
       if (!record) throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
+      await assertTaskFacility(tx,actor,{reservationId:record.reservationId});
       const review = this.closeoutForReturn(record);
       if (review?.policy !== PERIOD_CLOSEOUT || record.physicallyReturnedAt || !record.inspections.some(inspection => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT')) {
         throw new ConflictException('Cần kết quả kiểm tra lỗi cơ sở trước khi xác minh và trước khi bàn giao.');
@@ -412,7 +417,7 @@ export class ReturnsService {
   }
 
   async decideEarlyReturn(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định đề nghị trả trước hạn.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định đề nghị trả trước hạn.');
     assertFullSettlementPolicyInput(input);
     const decision = input.decision;
     const note = typeof input.note === 'string' ? input.note.trim() : '';
@@ -421,6 +426,7 @@ export class ReturnsService {
     return this.serializable(async tx => {
       const identity = await tx.supportRequest.findFirst({ where: { OR: [{ id }, { supportCode: id }], subject: EARLY_RETURN_SUBJECT, category: 'OTHER' }, select: { id: true, reservationId: true } });
       if (!identity) throw new NotFoundException('Không tìm thấy đề nghị trả trước hạn.');
+      await assertTaskFacility(tx,actor,{reservationId:identity.reservationId});
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${identity.reservationId} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const request = await tx.supportRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.earlyReturnInclude() });
@@ -542,7 +548,7 @@ export class ReturnsService {
     const endDate = this.isoDate(target.endDate)!;
     const approval = reservation.supportRequests?.find(request =>
       (request.rentalContractId === target.id || (request.rentalContractId === null && reservation.contracts.every(contract => +contract.endDate === +target.endDate)))
-      && request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'MANAGER'
+      && request.lastAction === 'EARLY_RETURN_APPROVED' && request.status === 'RESOLVED' && request.resolvedBy?.role === 'FACILITY_MANAGER'
       && request.lastActionIdempotencyKey === earlyReturnScope(request.id, endDate));
     if (!approval) return null;
     return { ...(approval.earlyReturnFinancialReview as Prisma.JsonObject | null), policy: PERIOD_CLOSEOUT, approvedEndDate: endDate, supportRequestId: approval.id };
@@ -602,7 +608,7 @@ export class ReturnsService {
         rentalContractId: true, status: true, termMonths: true, paymentPlan: true, previousEndDate: true,
         invoices: { select: { renewalCycle: true, status: true } },
       } },
-      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, category: 'OTHER', lastAction: 'EARLY_RETURN_APPROVED', status: 'RESOLVED', resolvedBy: { role: 'MANAGER' } }, select: { id: true, rentalContractId: true, status: true, lastAction: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true, resolvedBy: { select: { role: true } } } },
+      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, category: 'OTHER', lastAction: 'EARLY_RETURN_APPROVED', status: 'RESOLVED', resolvedBy: { role: 'FACILITY_MANAGER' } }, select: { id: true, rentalContractId: true, status: true, lastAction: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true, resolvedBy: { select: { role: true } } } },
     } satisfies Prisma.ReservationInclude;
   }
 
@@ -647,7 +653,7 @@ export class ReturnsService {
   private async page(where: Prisma.ReturnRequestWhereInput, query: Pick<ReturnListQuery, 'page' | 'limit'>, mode: ViewMode) {
     const [total, records] = await Promise.all([
       this.prisma.returnRequest.count({ where }),
-      this.prisma.returnRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], omit: { assignedStaffUserId: mode === 'CUSTOMER' }, include: this.include(mode !== 'CUSTOMER') }),
+      this.prisma.returnRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], omit: { assignedStaffUserId: mode === 'STORAGE_CUSTOMER' }, include: this.include(mode !== 'STORAGE_CUSTOMER') }),
     ]);
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toReturn(record, mode)) };
   }
@@ -697,13 +703,13 @@ export class ReturnsService {
           position: inspection.storageUnit.position,
         },
       };
-      if (mode === 'CUSTOMER') return { ...base, hasIssue: inspection.result === 'ISSUE_FOUND' };
+      if (mode === 'STORAGE_CUSTOMER') return { ...base, hasIssue: inspection.result === 'ISSUE_FOUND' };
       return {
         ...base,
         conditionNote: inspection.conditionNote,
         issueNote: inspection.issueNote,
         inspectedBy: inspection.inspectedBy,
-        ...(mode === 'STAFF' && inspection.maintenanceRequest?.assignedStaffUserId === record.assignedStaffUserId && inspection.maintenanceRequest
+        ...(mode === 'FACILITY_STAFF' && inspection.maintenanceRequest?.assignedStaffUserId === record.assignedStaffUserId && inspection.maintenanceRequest
           ? { maintenance: { id: inspection.maintenanceRequest.id, maintenanceCode: inspection.maintenanceRequest.maintenanceCode } } : {}),
         nextConfirmedAllocation: future ? { reference: future.reservation.reservationCode, startDate: this.isoDate(future.plannedStartDate), endDate: this.isoDate(future.plannedEndDate) } : null,
       };
@@ -723,14 +729,14 @@ export class ReturnsService {
       id: record.id,
       rentalContractId: ids.length === 1 ? ids[0] : null,
       timing: businessDate(record.requestedAt) < this.isoDate(effectiveEndDate)! ? 'EARLY' : 'ON_OR_AFTER_END',
-      ...(mode === 'STAFF' ? {} : { remainingUnitCount: record.reservation.contracts.filter((contract: ReturnContract) => !ids.includes(contract.id) && contract.status === 'ACTIVE' && contract.reservationUnit.releasedAt === null).length }),
-      returnReadiness: mode === 'STAFF' ? { canReturn: readiness.canReturn, ...(periodCloseout ? { policy: PERIOD_CLOSEOUT, facilityFaultReviewRequired } : {}) } : readiness,
-      earlyReturnCloseout: !record.physicallyReturnedAt || !closeout?.appliedAt || mode === 'STAFF' ? null : mode === 'MANAGER' ? closeout : {
+      ...(mode === 'FACILITY_STAFF' ? {} : { remainingUnitCount: record.reservation.contracts.filter((contract: ReturnContract) => !ids.includes(contract.id) && contract.status === 'ACTIVE' && contract.reservationUnit.releasedAt === null).length }),
+      returnReadiness: mode === 'FACILITY_STAFF' ? { canReturn: readiness.canReturn, ...(periodCloseout ? { policy: PERIOD_CLOSEOUT, facilityFaultReviewRequired } : {}) } : readiness,
+      earlyReturnCloseout: !record.physicallyReturnedAt || !closeout?.appliedAt || mode === 'FACILITY_STAFF' ? null : mode === 'FACILITY_MANAGER' ? closeout : {
         effectiveDate: closeout.effectiveDate, appliedAt: closeout.appliedAt, outstandingAmount: closeout.outstandingAmount,
         waivedAmount: closeout.waivedAmount, refundAmount: closeout.refundAmount, facilityFaultCredit: closeout.facilityFaultCredit,
         rentalAmount: closeout.rentalAmount, serviceAmount: closeout.serviceAmount, penaltyAmount: closeout.penaltyAmount,
       },
-      rentRefund: mode === 'STAFF' || !record.physicallyReturnedAt ? null : rentRefundView(record),
+      rentRefund: mode === 'FACILITY_STAFF' || !record.physicallyReturnedAt ? null : rentRefundView(record),
       returnCode: record.returnCode, inventory: { remainingItemTypes: contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),
@@ -747,7 +753,7 @@ export class ReturnsService {
         endDate: this.isoDate(effectiveEndDate),
         effectiveEndDate: this.isoDate(effectiveEndDate),
         storageType: record.reservation.storageType,
-        ...(mode === 'CUSTOMER' ? {} : { customer: record.reservation.customer }),
+        ...(mode === 'STORAGE_CUSTOMER' ? {} : { customer: record.reservation.customer }),
       },
       inspections,
       inspectionSummary: {
@@ -760,7 +766,7 @@ export class ReturnsService {
       updatedAt: record.updatedAt.toISOString(),
       settlementStatus: record.depositSettlement?.status ?? null,
     };
-    if (mode === 'CUSTOMER') return { ...base, requestedBy: record.requestedBy, settlementId: record.depositSettlement?.id ?? null };
+    if (mode === 'STORAGE_CUSTOMER') return { ...base, requestedBy: record.requestedBy, settlementId: record.depositSettlement?.id ?? null };
     const renewals = record.reservation.renewals.filter((renewal: { rentalContractId: string | null }) => renewalAppliesTo(renewal, ids)).map((renewal: any) => ({
       renewalCode: renewal.renewalCode,
       status: renewal.status,
@@ -775,7 +781,7 @@ export class ReturnsService {
       physicallyReturnedBy: record.physicallyReturnedBy,
       completedBy: record.completedBy,
     };
-    if (mode === 'STAFF') return { ...operational, renewalHistory: renewals.filter((renewal: { status: string }) => renewal.status === 'COMPLETED') };
+    if (mode === 'FACILITY_STAFF') return { ...operational, renewalHistory: renewals.filter((renewal: { status: string }) => renewal.status === 'COMPLETED') };
     return {
       ...operational,
       renewalHistory: renewals,
@@ -846,7 +852,7 @@ export class ReturnsService {
   }
 
   private assertOperational(actor: PublicUser) {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý kiểm tra trả kho.');
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được xử lý kiểm tra trả kho.');
   }
 
   private async identity(id: string) {
@@ -877,8 +883,7 @@ export class ReturnsService {
   }
 
   private async assertNoConflictingWork(tx: Prisma.TransactionClient, ids: string[]) {
-    const stock = await tx.stockMovement.count({ where: { rentalContractId: { in: ids }, status: { in: ['REQUESTED', 'ASSIGNED'] } } });
-    if (stock) throw new ConflictException({ code: 'RETURN_PENDING_STOCK_MOVEMENTS', message: 'Cần hoàn tất phiếu nhập – xuất của kho trước khi trả.' });
+
     const transfers = await tx.transferRequest.count({ where: { rentalContractId: { in: ids }, status: { in: ['REQUESTED', 'APPROVED'] } } });
     if (transfers) throw new ConflictException({ code: 'RETURN_PENDING_TRANSFER', message: 'Cần xử lý xong yêu cầu chuyển kho của hợp đồng trước khi trả.' });
   }

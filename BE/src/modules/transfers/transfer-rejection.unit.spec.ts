@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TransfersService } from './transfers.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 describe('Transfer rejection reason', () => {
   it('requires a reason and shares it with the customer’s linked request', async () => {
     const row = { id: 'transfer', status: 'REQUESTED', reservationId: 'reservation', supportRequestId: 'support' };
     const update = vi.fn(async ({ data }) => Object.assign(row, data)), updateMany = vi.fn();
     const tx = { $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue(row), update }, supportRequest: { updateMany } };
-    const service = new TransfersService({ $transaction: operation => operation(tx) } as never);
+    const service = new TransfersService({ $transaction: (operation: any) => operation(tx) } as never);
     vi.spyOn(service as any, 'toTransfer').mockImplementation(value => value);
     await expect(service.reject('transfer', staff, { reason: 'Không còn kho cùng loại phù hợp' })).rejects.toThrow('Chỉ quản lý');
     await expect(service.reject('transfer', manager, {})).rejects.toThrow('lý do');

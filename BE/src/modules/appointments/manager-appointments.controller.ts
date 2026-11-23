@@ -11,7 +11,7 @@ const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 @Controller(['manager/appointments', 'staff/management/appointments'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Appointment')
 @ApiBearerAuth('bearerAuth')
 export class ManagerAppointmentsController {
@@ -56,7 +56,7 @@ export class ManagerAppointmentsController {
   @Patch(':id/confirm')
   @ApiOperation({ summary: 'Xác nhận lịch bàn giao', description: 'REQUESTED → CONFIRMED. Người xác nhận lấy từ bearer token.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
-  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', confirmedBy: { fullName: 'WDP Demo Manager', role: 'MANAGER' }, confirmedAt: '2026-11-08T03:00:00.000Z' } } })
+  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', confirmedBy: { fullName: 'WDP Demo Manager', role: 'FACILITY_MANAGER' }, confirmedAt: '2026-11-08T03:00:00.000Z' } } })
   @ApiConflictResponse({ description: 'Không còn ở REQUESTED hoặc trạng thái tài chính/contract không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên đã được phân công có thể xác nhận.' })

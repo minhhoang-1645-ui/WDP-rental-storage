@@ -10,7 +10,7 @@ import { TransfersService } from './transfers.service.js';
 @Controller(['manager/transfers', 'staff/management/transfers'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Transfers')
 @ApiBearerAuth('bearerAuth')
 export class ManagerTransfersController {
@@ -23,14 +23,14 @@ export class ManagerTransfersController {
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20, description: '1–100.' })
   @ApiQuery({ name: 'status', required: false, enum: ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] })
   @ApiQuery({ name: 'search', required: false, example: 'WDP-TRF', description: 'Tìm transfer, reservation, contract hoặc unit code.' })
-  @ApiOkResponse({ description: 'Danh sách có phân trang và stable sorting.' }) @ApiBadRequestResponse({ description: 'Pagination/filter/search không hợp lệ.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ STAFF.' })
-  list(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return req.user!.role === 'STAFF' ? this.transfers.listForStaff(query, req.user!) : this.transfers.list(query); }
+  @ApiOkResponse({ description: 'Danh sách có phân trang và stable sorting.' }) @ApiBadRequestResponse({ description: 'Pagination/filter/search không hợp lệ.' }) @ApiUnauthorizedResponse({ description: 'Thiếu/sai token.' }) @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF.' })
+  list(@Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return req.user!.role === 'FACILITY_STAFF' ? this.transfers.listForStaff(query, req.user!) : this.transfers.list(query,req.user!); }
   @Get(':id/destinations') @ApiOperation({ summary: 'Kho đích cùng loại và khả dụng trong toàn kỳ thuê còn lại', description: 'Có phân trang, không bao gồm kho nguồn. Trả lý do không thể chọn và lịch trùng, không trả thông tin khách thuê khác. Duyệt vẫn kiểm tra lại trong transaction.' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 100 })
-  destinations(@Param('id') id: string, @Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) { if (req.user!.role !== 'MANAGER') throw new ForbiddenException(); return this.transfers.destinations(id, query); }
+  destinations(@Param('id') id: string, @Query() query: Record<string, unknown>, @Req() req: AuthenticatedRequest) { if (req.user!.role !== 'FACILITY_MANAGER') throw new ForbiddenException(); return this.transfers.destinations(id, query,req.user!); }
   @Get(':id/commercial-preview')
-  commercialPreview(@Param('id') id: string, @Query('destination') destination: string, @Req() req: AuthenticatedRequest) { if (req.user!.role !== 'MANAGER') throw new ForbiddenException(); return this.transfers.previewCommercial(id, destination); }
-  @Get(':id') @ApiOperation({ summary: 'Chi tiết TransferRequest' }) @ApiNotFoundResponse({ description: 'Không tìm thấy TransferRequest.' }) get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'STAFF' ? this.transfers.getForStaff(id, req.user!) : this.transfers.get(id); }
+  commercialPreview(@Param('id') id: string, @Query('destination') destination: string, @Req() req: AuthenticatedRequest) { if (req.user!.role !== 'FACILITY_MANAGER') throw new ForbiddenException(); return this.transfers.previewCommercial(id, destination,req.user!); }
+  @Get(':id') @ApiOperation({ summary: 'Chi tiết TransferRequest' }) @ApiNotFoundResponse({ description: 'Không tìm thấy TransferRequest.' }) get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return req.user!.role === 'FACILITY_STAFF' ? this.transfers.getForStaff(id, req.user!) : this.transfers.get(id,req.user!); }
   @ManagerAssignment() @Patch(':id/assign')
   assign(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.assign(id, body, req.user!); }
   @ManagerAssignment() @Post(':id/approve') @ApiOperation({ summary: 'Duyệt, giữ kho đích và phân công Staff trong cùng giao dịch' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })

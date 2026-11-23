@@ -7,10 +7,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 const scryptAsync = promisify(scrypt);
 
 const testUsers: Array<{ email: string; fullName: string; phone: string; role: UserRole }> = [
-  { email: 'customer@test.com', fullName: 'WDP Test Customer', phone: '0900000001', role: 'CUSTOMER' },
-  { email: 'staff@test.com', fullName: 'WDP Test Staff', phone: '0900000002', role: 'STAFF' },
-  { email: 'manager@test.com', fullName: 'WDP Test Manager', phone: '0900000003', role: 'MANAGER' },
-  { email: 'admin@test.com', fullName: 'WDP Test Admin', phone: '0900000004', role: 'ADMIN' },
+  { email: 'customer@test.com', fullName: 'WDP Test Customer', phone: '0900000001', role: 'STORAGE_CUSTOMER' },
+  { email: 'staff@test.com', fullName: 'WDP Test Staff', phone: '0900000002', role: 'FACILITY_STAFF' },
+  { email: 'manager@test.com', fullName: 'WDP Test Manager', phone: '0900000003', role: 'FACILITY_MANAGER' },
+  { email: 'admin@test.com', fullName: 'WDP Test Admin', phone: '0900000004', role: 'SYSTEM_ADMINISTRATOR' },
 ];
 
 async function passwordHash(password: string) {

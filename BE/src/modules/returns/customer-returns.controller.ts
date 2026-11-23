@@ -8,7 +8,7 @@ import { ReturnsService } from './returns.service.js';
 
 @Controller('customer/returns')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 @ApiTags('Customer Return')
 @ApiBearerAuth('bearerAuth')
 export class CustomerReturnsController {
@@ -22,7 +22,7 @@ export class CustomerReturnsController {
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiConflictResponse({ description: 'Đề nghị trả sớm chưa được duyệt, còn công nợ, công việc xung đột hoặc đã có yêu cầu trả cho hợp đồng.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   @ApiNotFoundResponse({ description: 'Reservation không tồn tại hoặc không thuộc Customer.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
     return this.returns.createCustomerReturn(request.user!, body, key);

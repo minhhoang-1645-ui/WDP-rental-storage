@@ -6,7 +6,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 // No PrismaService instance, environment file or database connection is created.
 function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
-  const actor = { id: 'staff-id', role: 'STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
+  const actor = { id: 'staff-id', role: 'FACILITY_STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
   const stamp = new Date('2026-10-27T13:00:00Z');
   const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ' };
   const support = { id: 'support', reservationId: 'reservation', rentalContractId: 'contract', status: supportStatus, assignedStaffUserId: actor.id, subject: 'Yêu cầu chuyển kho', resolutionType: null as string | null, resolutionNote: null as string | null };
@@ -89,7 +89,7 @@ describe('Transfer completion and linked customer request, with memory-only depe
   });
   it('completes physical movement and resolves the linked request in the same transaction', async () => {
     const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
-    expect(result.status).toBe('COMPLETED'); expect(result.supportRequest.status).toBe('RESOLVED');
+    expect(result.status).toBe('COMPLETED'); expect(result.supportRequest!.status).toBe('RESOLVED');
     expect(app.support.resolutionNote).toContain('A101 sang A102'); expect(app.support.resolutionNote).toContain('CON-1');
     expect(app.tx.supportRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ reservationId: 'reservation' }), data: expect.objectContaining({ resolvedByUserId: app.actor.id, resolutionType: 'ON_SITE_RESOLVED' }) }));
     expect(app.prisma.$transaction).toHaveBeenCalledTimes(1); expect(app.tx.storageUnit.update).toHaveBeenCalledTimes(2);

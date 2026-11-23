@@ -1,3 +1,5 @@
+import { assertInvoiceReceivable, initialPaymentWindowClosed } from './invoice-state.js';
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { businessToday } from '../../business-date.js';
@@ -209,8 +211,9 @@ export class BillingService {
     return this.toPayment(record, false);
   }
 
-  async listManagerInvoices(query: InvoiceListQuery) {
+  async listManagerInvoices(query: InvoiceListQuery, actor: PublicUser) {
     const where: Prisma.InvoiceWhereInput = {
+      AND:[{reservation:managerReservationScope(actor)}],
       ...(query.status ? { status: query.status } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.billingCycle ? { billingCycle: query.billingCycle } : {}),
@@ -225,14 +228,15 @@ export class BillingService {
     return this.invoicePage(where, query.page, query.limit, true);
   }
 
-  async getManagerInvoice(id: string) {
-    const record = await this.prisma.invoice.findFirst({ where: { OR: [{ id }, { invoiceCode: id }] }, include: this.invoiceInclude() });
+  async getManagerInvoice(id: string, actor: PublicUser) {
+    const record = await this.prisma.invoice.findFirst({ where: { reservation:managerReservationScope(actor), OR: [{ id }, { invoiceCode: id }] }, include: this.invoiceInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy hóa đơn.');
     return this.toInvoice(record, true);
   }
 
-  async listManagerPayments(query: PaymentListQuery) {
+  async listManagerPayments(query: PaymentListQuery, actor: PublicUser) {
     const where: Prisma.PaymentWhereInput = {
+      AND:[{invoice:{reservation:managerReservationScope(actor)}}],
       ...(query.method ? { method: query.method } : {}),
       ...(query.search ? { OR: [
         { paymentCode: { contains: query.search, mode: 'insensitive' } },
@@ -246,14 +250,14 @@ export class BillingService {
     return this.paymentPage(where, query.page, query.limit, true);
   }
 
-  async getManagerPayment(id: string) {
-    const record = await this.prisma.payment.findFirst({ where: { OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude() });
+  async getManagerPayment(id: string, actor: PublicUser) {
+    const record = await this.prisma.payment.findFirst({ where: { invoice:{reservation:managerReservationScope(actor)}, OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy thanh toán.');
     return this.toPayment(record, true);
   }
 
   async recordPayment(invoiceId: string, input: Record<string, unknown>, idempotencyKey: string | undefined, actor: PublicUser, transaction?: Prisma.TransactionClient) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được ghi nhận thanh toán.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý cơ sở được ghi nhận thanh toán.');
     const parsed = this.paymentInput(input, idempotencyKey);
     const database = transaction ?? this.prisma;
     const invoiceIdentity = await database.invoice.findFirst({ where: { OR: [{ id: invoiceId }, { invoiceCode: invoiceId }] }, select: { id: true } });
@@ -261,18 +265,22 @@ export class BillingService {
 
     const apply = async (tx: Prisma.TransactionClient) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Invoice" WHERE "id" = ${invoiceIdentity.id} FOR UPDATE`);
+        await assertManagerRecordAccess(tx,actor,{invoiceId:invoiceIdentity.id});
         const duplicate = await tx.payment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentInclude() });
         if (duplicate) {
+          await assertManagerRecordAccess(tx,actor,{invoiceId:invoiceIdentity.id});
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
           return this.paymentResult(duplicate);
         }
         const invoice = await tx.invoice.findUnique({ where: { id: invoiceIdentity.id }, include: { reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        assertInvoiceReceivable(invoice);
         if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
         await this.assertSignedBeforePayment(tx, invoice);
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền thanh toán không được vượt quá số dư hóa đơn.');
 
+        if(parsed.method==='BANK_TRANSFER') await this.assertUnusedBankReference(tx,parsed.reference!);
         const sequence = await tx.payment.count({ where: { invoiceId: invoice.id } }) + 1;
         const payment = await tx.payment.create({
           data: {
@@ -298,6 +306,7 @@ export class BillingService {
       if (!transaction && this.isPrismaCode(error, 'P2002')) {
         const duplicate = await this.prisma.payment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.paymentInclude() });
         if (duplicate) {
+          await assertManagerRecordAccess(database,actor,{invoiceId:invoiceIdentity.id});
           this.assertMatchingRetry(duplicate, invoiceIdentity.id, parsed);
           return this.paymentResult(duplicate);
         }
@@ -341,8 +350,9 @@ export class BillingService {
           this.assertMatchingSubmissionRetry(duplicate, identity.id, customerId, parsed);
           return this.toPaymentSubmission(duplicate);
         }
-        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, balanceDue: true, type: true, renewalCycle: true, dueAt: true, reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
+        const invoice = await tx.invoice.findFirst({ where: { id: identity.id, reservation: { customerId } }, select: { id: true, invoiceCode: true, status: true, amountPaid:true, balanceDue: true, type: true, renewalCycle: true, dueAt: true, reservation: { select: closeoutReservationSelect }, renewalRequest: renewalInvoiceScope } });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        assertInvoiceReceivable(invoice);
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
         if (!['OPEN', 'PARTIALLY_PAID'].includes(invoice.status)) throw new ConflictException('Hóa đơn hiện không thể nhận yêu cầu thanh toán.');
@@ -386,8 +396,9 @@ export class BillingService {
     return this.toPaymentSubmission(record);
   }
 
-  async listManagerPaymentSubmissions(query: { page: number; limit: number; status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED'; search?: string; invoiceCode?: string }) {
+  async listManagerPaymentSubmissions(query: { page: number; limit: number; status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED'; search?: string; invoiceCode?: string }, actor: PublicUser) {
     const where: Prisma.PaymentSubmissionWhereInput = {
+      AND:[{invoice:{reservation:managerReservationScope(actor)}}],
       ...(query.status ? { status: query.status } : {}),
       ...(query.invoiceCode ? { invoice: { invoiceCode: { contains: query.invoiceCode, mode: 'insensitive' } } } : {}),
       ...(query.search ? { OR: [
@@ -401,14 +412,14 @@ export class BillingService {
     return this.paymentSubmissionPage(where, query.page, query.limit);
   }
 
-  async getManagerPaymentSubmission(id: string) {
-    const record = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, include: this.paymentSubmissionInclude() });
+  async getManagerPaymentSubmission(id: string, actor: PublicUser) {
+    const record = await this.prisma.paymentSubmission.findFirst({ where: { invoice:{reservation:managerReservationScope(actor)}, OR: [{ id }, { submissionCode: id }] }, include: this.paymentSubmissionInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
     return this.toPaymentSubmission(record);
   }
 
   async verifyPaymentSubmission(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xác nhận thanh toán.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý cơ sở được xác nhận thanh toán.');
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu xác nhận không hợp lệ.');
     const details = { reference: this.optionalText(input.reference, 200, 'reference'), note: this.optionalText(input.note, 2000, 'note') };
     const identity = await this.prisma.paymentSubmission.findFirst({ where: { OR: [{ id }, { submissionCode: id }] }, select: { id: true } });
@@ -418,13 +429,25 @@ export class BillingService {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "PaymentSubmission" WHERE "id" = ${identity.id} FOR UPDATE`);
         const submission = await tx.paymentSubmission.findUnique({ where: { id: identity.id }, include: this.paymentSubmissionInclude() });
         if (!submission) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+        await assertManagerRecordAccess(tx,actor,{invoiceId:submission.invoiceId});
         const demo = this.isDemoSubmission(submission);
         if (demo && !this.demoPaymentEnabled(actor)) throw new ForbiddenException('Chỉ Manager demo trong môi trường phát triển được xác nhận giao dịch demo.');
         if (!demo && !details.reference) throw new BadRequestException('reference giao dịch ngân hàng là bắt buộc để xác nhận.');
         if (submission.status === 'VERIFIED') return this.toPaymentSubmission(submission);
+        if(submission.reconciliation){if(submission.reconciliation.providerTransactionId!==details.reference)throw new ConflictException('Hồ sơ đã đối soát theo mã giao dịch khác.');return this.toPaymentSubmission(submission);}
         if (submission.status !== 'PENDING_VERIFICATION') throw new ConflictException('Yêu cầu đã bị từ chối và không thể xác nhận.');
-        const invoice = await tx.invoice.findUnique({ where: { id: submission.invoiceId }, select: { status: true, balanceDue: true } });
+        const invoice = await tx.invoice.findUnique({ where: { id: submission.invoiceId }, include:{reservation:{select:closeoutReservationSelect}} });
         if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn.');
+        if(!demo && (invoice.status==='VOID'||initialPaymentWindowClosed(invoice)||invoice.status==='PAID'||submission.amount>invoice.balanceDue)) {
+          const bankReference=details.reference!.trim();
+          await this.assertUnusedBankReference(tx,bankReference);
+          const reason='Đã xác minh chuyển khoản nhưng hóa đơn/đơn đặt kho không còn nhận khoản này. Không kích hoạt lại đơn; cần đối soát và xử lý tiền thực nhận.';
+          await tx.onlinePaymentReconciliation.upsert({where:{paymentSubmissionId:submission.id},update:{},create:{
+            reconciliationCode:'WDP-BANK-RC-'+submission.id,paymentSubmissionId:submission.id,
+            externalReferenceKey:'BANK_TRANSFER:'+bankReference.toUpperCase(),providerTransactionId:bankReference,amount:submission.amount,reason}});
+          const updated=await tx.paymentSubmission.update({where:{id:submission.id},data:{status:'REJECTED',rejectionReason:reason,reviewedByUserId:actor.id,reviewedAt:new Date()},include:this.paymentSubmissionInclude()});
+          return this.toPaymentSubmission(updated);
+        }
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (submission.amount > invoice.balanceDue) throw new ConflictException('Số tiền yêu cầu vượt quá số dư hiện tại của hóa đơn.');
         const payment = await this.recordPayment(submission.invoiceId, {
@@ -448,7 +471,7 @@ export class BillingService {
   }
 
   async rejectPaymentSubmission(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được từ chối yêu cầu thanh toán.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý cơ sở được từ chối yêu cầu thanh toán.');
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu từ chối không hợp lệ.');
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (!reason || reason.length > 1000) throw new BadRequestException('reason là bắt buộc và không được vượt quá 1000 ký tự.');
@@ -458,6 +481,7 @@ export class BillingService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "PaymentSubmission" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.paymentSubmission.findUnique({ where: { id: identity.id } });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
+        await assertManagerRecordAccess(tx,actor,{invoiceId:current.invoiceId});
       if (current.status === 'REJECTED' && current.rejectionReason === reason) {
         const rejected = await tx.paymentSubmission.findUniqueOrThrow({ where: { id: current.id }, include: this.paymentSubmissionInclude() });
         return this.toPaymentSubmission(rejected);
@@ -472,6 +496,8 @@ export class BillingService {
     if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
     const existing = await tx.payment.findUnique({ where: { onlinePaymentTransactionId: transaction.id } });
     if (existing) return existing;
+    assertInvoiceReceivable(invoice);
+    await this.assertSignedBeforePayment(tx,invoice);
     if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
     if (transaction.amount !== invoice.balanceDue) throw new ConflictException({ code: 'PAYMENT_AMOUNT_MISMATCH', message: 'Số tiền giao dịch không khớp số dư hóa đơn.' });
     const sequence = await tx.payment.count({ where: { invoiceId: invoice.id } }) + 1;
@@ -482,8 +508,9 @@ export class BillingService {
 
   async assertSignedBeforePayment(tx: Prisma.TransactionClient, invoice: { type: string; reservationId: string; renewalRequestId: string | null }) {
     if (invoice.type === 'INITIAL') {
+      const reservation=await tx.reservation.findUnique({where:{id:invoice.reservationId},select:{quantity:true}});
       const contracts = await tx.rentalContract.findMany({ where: { reservationId: invoice.reservationId }, select: { termsAcceptedAt: true } });
-      if (!contracts.length || contracts.some((contract) => !contract.termsAcceptedAt)) throw new ConflictException({ code: 'CONTRACT_ACCEPTANCE_REQUIRED', message: 'Vui lòng xác nhận tất cả hợp đồng trước khi thanh toán.' });
+      if (!reservation || contracts.length!==reservation.quantity || !contracts.length || contracts.some((contract) => !contract.termsAcceptedAt)) throw new ConflictException({ code: 'CONTRACT_ACCEPTANCE_REQUIRED', message: 'Vui lòng xác nhận tất cả hợp đồng trước khi thanh toán.' });
     }
     if (invoice.type === 'RENEWAL' && invoice.renewalRequestId) {
       const renewal = await tx.renewalRequest.findUnique({ where: { id: invoice.renewalRequestId }, select: { appendixAcceptedAt: true, status: true } });
@@ -497,6 +524,7 @@ export class BillingService {
     const paid = balanceDue === 0n;
     await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid, balanceDue, status: paid ? 'PAID' : 'PARTIALLY_PAID', paidAt: paid ? new Date() : null } });
     if (paid && invoice.type === 'INITIAL') {
+      assertInvoiceReceivable(invoice);
       await tx.rentalContract.updateMany({ where: { reservationId: invoice.reservation.id, status: 'PENDING_PAYMENT' }, data: { status: 'READY_FOR_HANDOVER' } });
       await tx.reservation.update({ where: { id: invoice.reservation.id }, data: { expiresAt: null } });
     }
@@ -544,6 +572,7 @@ export class BillingService {
 
   private paymentSubmissionInclude() {
     return {
+      reconciliation: {select:{id:true,reconciliationCode:true,status:true,reason:true,providerTransactionId:true,resolutionNote:true,reviewedAt:true}},
       invoice: { include: { reservation: { include: {
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true } },
@@ -559,6 +588,7 @@ export class BillingService {
       id: record.id,
       isDemo: this.isDemoSubmission(record),
       submissionCode: record.submissionCode,
+      reconciliation:record.reconciliation??null,
       status: record.status,
       amount: this.money(record.amount),
       method: record.method,
@@ -652,6 +682,14 @@ export class BillingService {
   private snapshotMoney(value: unknown, field: string) {
     if (!Number.isSafeInteger(value) || Number(value) < 0) throw new ConflictException(`quoteSnapshot.${field} không hợp lệ.`);
     return BigInt(Number(value));
+  }
+
+  private async assertUnusedBankReference(tx: Prisma.TransactionClient, reference: string) {
+    const normalized=reference.trim().toUpperCase();
+    await tx.$queryRaw(Prisma.sql`SELECT 1 FROM pg_advisory_xact_lock(hashtext(${`bank-proof:${normalized}`}))`);
+    const ledger=await tx.onlinePaymentReconciliation.findUnique({where:{externalReferenceKey:'BANK_TRANSFER:'+normalized},select:{id:true}});
+    const payment=await tx.payment.findFirst({where:{method:'BANK_TRANSFER',OR:[{bankTransactionReference:{equals:reference,mode:'insensitive'}},{reference:{equals:reference,mode:'insensitive'}}]},select:{id:true}});
+    if(ledger||payment)throw new ConflictException('Giao dịch ngân hàng đã có chứng từ thu hoặc hồ sơ đối soát. Không ghi nhận lại.');
   }
 
   private paymentInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {

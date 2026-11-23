@@ -1,3 +1,8 @@
+import {pricedServices,offeringView,publicOfferingScope} from '../additional-services/service-offerings.js';
+import { assertFacility } from '../facility-access/facility-access.service.js';
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { facilityScope, assertTaskFacility } from '../facility-access/task-access.js';
+import { assertAcceptingBookings } from '../facilities/facility-booking.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -60,8 +65,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
 
   async getCatalog() {
     const [records, addons] = await Promise.all([
-      this.prisma.storageType.findMany({ orderBy: { code: 'asc' } }),
-      this.prisma.additionalService.findMany({ where: { isActive: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
+      this.prisma.storageType.findMany({ where: { facility: { bookingEnabled: true, operationalStatus: 'OPEN' } }, orderBy: { code: 'asc' } }),
+      this.prisma.facilityServiceOffering.findMany({where:publicOfferingScope,include:{additionalService:true},orderBy:{facilityId:'asc'}}).then(items=>items.map(offeringView)),
     ]);
     const products = records.map((record) => this.toProduct(record));
     const sizes = [...new Map(records.map((record) => [record.sizeId, record])).values()]
@@ -84,7 +89,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       products,
       sizes,
       approvedDurations,
-      addons: addons.map((addon) => ({ id: addon.id, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
+      addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
       pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
@@ -95,7 +100,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async (tx) => {
       await this.expireUnpaidAutomaticReservations(tx, draft.productId);
       const result = await this.checkAvailabilityForDraft(tx, draft);
-      if (result.available) await this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : []);
+      if (result.available) await this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : [],draft.productId);
       return result;
     }, { maxWait: 10000, timeout: 20000 });
   }
@@ -134,7 +139,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createReservation(user: PublicUser, input: Record<string, unknown>): Promise<PendingReservation> {
-    if (user.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
+    if (user.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
     const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
     const idempotencyKey = this.fingerprint('reservation', user.id, draft);
@@ -150,9 +155,10 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           await this.expireUnpaidAutomaticReservations(tx, draft.productId);
           const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    await assertAcceptingBookings(this.prisma, product.id);
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
+          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
           const reservation = await tx.reservation.create({
             data: {
               reservationCode: this.createReference('WDP'),
@@ -211,7 +217,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
+          await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
           return tx.contactInquiry.create({
             data: {
               inquiryCode: this.createReference('WDPQ'),
@@ -335,15 +341,16 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getReservation(user: PublicUser, id: string) {
-    if (user.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
+    if (user.role === 'FACILITY_STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const record = await this.prisma.reservation.findFirst({
       where: { OR: [{ id }, { reservationCode: id }] },
       include: this.customerReservationInclude(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu đặt kho.');
-    if (record.customerId !== user.id && !['MANAGER', 'ADMIN'].includes(user.role)) {
+    if (user.role !== 'FACILITY_MANAGER' && (user.role !== 'STORAGE_CUSTOMER' || record.customerId !== user.id)) {
       throw new ForbiddenException('Bạn không có quyền xem yêu cầu đặt kho này.');
     }
+    if(user.role==='FACILITY_MANAGER')await assertTaskFacility(this.prisma,user,{reservationId:record.id});
     return this.toReservation(record);
   }
 
@@ -385,8 +392,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private reservationReadScope(actor?: PublicUser): Prisma.ReservationWhereInput {
-    if (actor?.role !== 'STAFF') return {};
-    return { appointments: { some: this.staffHandoverScope(actor.id) } };
+    if(!actor)throw new ForbiddenException('Cần tài khoản nhân sự để tra cứu hồ sơ.');
+    return {facility:facilityScope(actor),...(actor.role==='FACILITY_STAFF'?{appointments:{some:this.staffHandoverScope(actor.id)}}:{})};
   }
 
   private staffHandoverScope(staffId: string): Prisma.HandoverAppointmentWhereInput {
@@ -406,24 +413,24 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
     return { page, limit, total, items: records.map((record) =>
-      actor?.role === 'STAFF' ? this.toStaffHandoverReservation(record) : this.toManagerReservation(record)) };
+      actor?.role === 'FACILITY_STAFF' ? this.toStaffHandoverReservation(record) : this.toManagerReservation(record)) };
   }
 
   async getManagerReservation(id: string, actor?: PublicUser) {
     const record = await this.prisma.reservation.findFirst({
       where: { AND: [{ OR: [{ id }, { reservationCode: id }] }, this.reservationReadScope(actor)] },
-      include: actor?.role === 'STAFF' ? { ...reservationDetailInclude, appointments: {
+      include: actor?.role === 'FACILITY_STAFF' ? { ...reservationDetailInclude, appointments: {
         ...reservationDetailInclude.appointments, where: this.staffHandoverScope(actor.id),
       } } : reservationDetailInclude,
     });
     if (!record) throw new NotFoundException('Không tìm thấy reservation.');
     const workflow = reservationWorkflow(record, actor);
-    if (actor?.role === 'STAFF') return { ...this.toStaffHandoverReservation(record), workflow };
+    if (actor?.role === 'FACILITY_STAFF') return { ...this.toStaffHandoverReservation(record), workflow };
     return { ...this.toManagerReservation(record), workflow };
   }
 
   async updateManagerReservationStatus(id: string, input: Record<string, unknown>, manager: PublicUser) {
-    if (manager.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý ngoại lệ đặt kho.');
+    if (manager.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý ngoại lệ đặt kho.');
     const requestedStatus = typeof input.status === 'string' ? input.status : '';
     if (!managerReservationStatuses.includes(requestedStatus as ManagerReservationStatus)) {
       throw new BadRequestException('Trạng thái Reservation không hợp lệ.');
@@ -440,6 +447,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
         });
         if (!current) throw new NotFoundException('Không tìm thấy reservation.');
+        await assertTaskFacility(tx,manager,{reservationId:current.id});
         if (current.status === targetStatus) return this.toManagerReservation(current);
         const allowed = reservationTransitions[current.status as ManagerReservationStatus] ?? [];
         if (!allowed.includes(targetStatus)) {
@@ -474,9 +482,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listManagerInquiries(page: number, limit: number, actor?: PublicUser) {
-    if (actor?.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
+    if (actor?.role === 'FACILITY_STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const [inquiries, reservations] = await Promise.all([
-      this.prisma.contactInquiry.findMany({ include: { storageType: true, processedBy: true }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.contactInquiry.findMany({ where:{facility:managerReservationScope(actor!).facility}, include: { storageType: true, processedBy: true }, orderBy: { createdAt: 'desc' } }),
       this.prisma.reservation.findMany({ where: this.reservationReadScope(actor), include: { customer: true, storageType: true }, orderBy: { createdAt: 'desc' } }),
     ]);
     const items = [
@@ -488,9 +496,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getManagerInquiry(id: string, actor?: PublicUser) {
-    if (actor?.role === 'STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
+    if (actor?.role === 'FACILITY_STAFF') throw new ForbiddenException('Nhân viên tra cứu hồ sơ qua công việc được giao.');
     const inquiry = await this.prisma.contactInquiry.findFirst({
-      where: { OR: [{ id }, { inquiryCode: id }] },
+      where: { facility:managerReservationScope(actor!).facility, OR: [{ id }, { inquiryCode: id }] },
       include: { storageType: true, processedBy: true },
     });
     if (inquiry) return this.toManagerInquiry(inquiry);
@@ -503,11 +511,12 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateManagerInquiry(id: string, input: Record<string, unknown>, manager: PublicUser) {
-    if (manager.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý yêu cầu tư vấn.');
+    if (manager.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý yêu cầu tư vấn.');
     const status = typeof input.status === 'string' ? input.status : '';
     const internalNotes = typeof input.internalNotes === 'string' ? input.internalNotes.trim().slice(0, 2000) : undefined;
-    const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { OR: [{ id }, { inquiryCode: id }] } });
+    const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { facility:managerReservationScope(manager).facility, OR: [{ id }, { inquiryCode: id }] } });
     if (currentInquiry) {
+      await assertFacility(this.prisma,manager,currentInquiry.facilityId);
       if (!managerInquiryStatuses.includes(status as (typeof managerInquiryStatuses)[number])) {
         throw new BadRequestException('Trạng thái Inquiry không hợp lệ.');
       }
@@ -529,6 +538,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async confirmReservation(tx: Prisma.TransactionClient, reservation: any) {
+    await assertAcceptingBookings(tx, reservation.storageTypeId, true);
     if (!Number.isInteger(reservation.quantity) || reservation.quantity < 1) {
       throw new BadRequestException('Số lượng reservation không hợp lệ.');
     }
@@ -547,7 +557,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     `);
     const availability = await this.checkAvailabilityForDraft(tx, draft, reservation.quoteSnapshot as QuoteSnapshot);
     if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-    await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : []);
+    await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
 
     const start = this.date(draft.startDate);
     const end = this.date(availability.endDateExclusive);
@@ -557,7 +567,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED' },
+        
       },
       select: { storageUnitId: true },
     }) : [];
@@ -628,7 +638,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       select: { id: true },
     });
     for (const reservation of stale) {
-      const expired = await tx.reservation.updateMany({ where: { id: reservation.id, status: 'CONFIRMED', expiresAt: { lte: now } }, data: { status: 'EXPIRED' } });
+      const expired = await tx.reservation.updateMany({ where: { id: reservation.id, status: 'CONFIRMED', expiresAt: { lte: now }, invoices:{none:{type:'INITIAL',amountPaid:{gt:0n}},every:{onlinePaymentTransactions:{none:{status:'PENDING',createdAt:{gt:activePaymentCutoff}}}}} }, data: { status: 'EXPIRED' } });
       if (expired.count !== 1) continue;
       await tx.reservationUnit.updateMany({ where: { reservationId: reservation.id, releasedAt: null }, data: { releasedAt: now } });
       await this.inventory.releasePurchases(tx, reservation.id);
@@ -689,7 +699,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         releasedAt: null,
         plannedStartDate: { lt: end },
         plannedEndDate: { gt: start },
-        reservation: { status: 'CONFIRMED' },
+
       },
       select: { storageUnitId: true },
     });
@@ -786,8 +796,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string, knownStorageType?: any) {
     const storageType = knownStorageType ?? await db.storageType.findUnique({ where: { id: draft.productId } });
     if (!storageType) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    await assertAcceptingBookings(db, storageType.id, true);
     const selections = draft.serviceSelections ?? [];
-    const services = selections.length ? await db.additionalService.findMany({ where: { id: { in: selections.map((item) => item.serviceId) } } }) : [];
+    const services = await pricedServices(db,selections.map(item=>item.serviceId),storageType.facilityId);
     return this.pricing.calculate(storageType, {
       storageTypeId: draft.productId,
       quantity: draft.quantity,
@@ -851,6 +862,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   private toProduct(record: any): BookingProduct & Record<string, unknown> {
     return {
       id: record.id,
+      facilityId:record.facilityId,
       code: record.code,
       name: record.name,
       sizeId: record.sizeId,

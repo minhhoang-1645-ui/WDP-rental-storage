@@ -44,7 +44,7 @@ export class AccountOnboardingService {
     const proof = await this.proof(input.token, 'ONBOARDING');
     const guest = await this.prisma.guestBookingRequest.findUniqueOrThrow({ where: { bookingCode: proof.bookingCode! } });
     if (guest.status !== 'VERIFIED') throw new ConflictException('Yêu cầu không còn ở bước tạo tài khoản.');
-    // Register always creates CUSTOMER, hashes with the existing password policy and rejects duplicate email.
+    // Register always creates STORAGE_CUSTOMER, hashes with the existing password policy and rejects duplicate email.
     const session = await this.auth.register({ email: proof.email, fullName: guest.fullName, phone: guest.phone, password: input.password });
     await this.prisma.accountFlowToken.update({ where: { id: proof.id }, data: { usedAt: new Date() } });
     return session;

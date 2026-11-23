@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Patch, Post, Query, Req, UseGuards, ForbiddenException } from '@nestjs/common';
 import type { AuthenticatedRequest } from './auth.types.js';
 import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CreateAdminUserDto, UpdateAccountProfileDto, UpdateAccountStatusDto } from '../../openapi/api-dtos.js';
@@ -9,23 +9,25 @@ import { Roles, RolesGuard } from './roles.guard.js';
 
 @Controller(['admin/users', 'users'])
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('ADMIN')
+@Roles('SYSTEM_ADMINISTRATOR')
 @ApiTags('Admin User Management')
 @ApiBearerAuth('bearerAuth')
 export class AdminUsersController {
   constructor(@Inject(UserRepository) private readonly users: UserRepository, private readonly auth: AuthService) {}
   @Get()
-  @ApiOperation({ summary: 'Liệt kê tài khoản', description: 'ADMIN only. /api/users được giữ như alias tương thích.' })
+  @ApiOperation({ summary: 'Liệt kê tài khoản', description: 'SYSTEM_ADMINISTRATOR only. /api/users được giữ như alias tương thích.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'staff@test.com', description: 'Tìm tên, email hoặc số điện thoại.' })
-  @ApiQuery({ name: 'role', required: false, enum: ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] })
+  @ApiQuery({ name: 'role', required: false, enum: ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] })
   @ApiQuery({ name: 'sort', required: false, enum: [...userSorts] })
   @ApiQuery({ name: 'accountStatus', required: false, enum: ['ACTIVE', 'DISABLED'] })
-  @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'CUSTOMER', accountStatus: 'ACTIVE', createdAt: '2026-10-14T00:00:00.000Z' }] } } })
+  @ApiOkResponse({ description: 'Danh sách người dùng không chứa passwordHash.', schema: { example: { page: 1, limit: 20, items: [{ id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'STORAGE_CUSTOMER', accountStatus: 'ACTIVE', createdAt: '2026-10-14T00:00:00.000Z' }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ ADMIN được phép.' })
-  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string, @Query('sort') sortInput?: string) {
+  @ApiForbiddenResponse({ description: 'Chỉ SYSTEM_ADMINISTRATOR được phép.' })
+  async list(@Query('page') pageInput = '1', @Query('limit') limitInput = '20', @Query('search') searchInput?: string, @Query('role') roleInput?: string, @Query('accountStatus') statusInput?: string, @Query('sort') sortInput?: string,@Req() request?:AuthenticatedRequest) {
+    if(!request?.user)throw new ForbiddenException('Cần phiên quản trị hợp lệ.');
+    await this.users.authorizeAdministrator(request.user.id);
     const page = Number(pageInput);
     const limit = Number(limitInput);
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -33,30 +35,32 @@ export class AdminUsersController {
     }
     const search = searchInput?.trim();
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
-    if (roleInput && !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(roleInput)) throw new BadRequestException('role không hợp lệ.');
+    if (roleInput && !['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(roleInput)) throw new BadRequestException('role không hợp lệ.');
     if (statusInput && !['ACTIVE', 'DISABLED'].includes(statusInput)) throw new BadRequestException('accountStatus không hợp lệ.');
     const sort = userSorts.find(value => value === sortInput);
     if (sortInput && !sort) throw new BadRequestException('sort không hợp lệ.');
-    const filters: UserListFilters = { ...(sort ? { sort } : {}), ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
+    const filters: UserListFilters = { ...(sort ? { sort } : {}), ...(search ? { search } : {}), ...(roleInput ? { role: roleInput as NonNullable<UserListFilters['role']> } : {}), ...(statusInput ? { accountStatus: statusInput as 'ACTIVE' | 'DISABLED' } : {}) };
     const [total, users] = await Promise.all([this.users.count(filters), this.users.list((page - 1) * limit, limit, filters)]);
     return { page, limit, total, items: users.map(user => this.publicUser(user)) };
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Xem chi tiết tài khoản', description: 'ADMIN only.' })
+  @ApiOperation({ summary: 'Xem chi tiết tài khoản', description: 'SYSTEM_ADMINISTRATOR only.' })
   @ApiOkResponse({ description: 'Thông tin tài khoản không chứa passwordHash.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy tài khoản.' })
-  async get(@Param('id') id: string) {
+  async get(@Param('id') id: string,@Req() request?:AuthenticatedRequest) {
+    if(!request?.user)throw new ForbiddenException('Cần phiên quản trị hợp lệ.');
+    await this.users.authorizeAdministrator(request.user.id);
     const user = await this.users.findById(id);
     if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
     return this.publicUser(user);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Tạo STAFF hoặc MANAGER', description: 'Không cho phép tạo ADMIN qua API này.' })
+  @ApiOperation({ summary: 'Tạo tài khoản Staff, Facility Manager hoặc BOM', description: 'Không cho phép tạo SYSTEM_ADMINISTRATOR qua API này.' })
   @ApiBody({ type: CreateAdminUserDto })
   @ApiCreatedResponse({ description: 'Tài khoản nội bộ ACTIVE đã được tạo; passwordHash không được trả về.' })
-  create(@Body() body: Record<string, unknown>) { return this.auth.createInternalUser(body); }
+  create(@Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) { return this.auth.createInternalUser(body,request.user!); }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Cập nhật họ tên và số điện thoại tài khoản' })

@@ -11,14 +11,14 @@ const statuses = ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE', 'COMPLETED'
 @Controller(['manager/contracts', 'staff/management/contracts'])
 @StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Contract')
 @ApiBearerAuth('bearerAuth')
 export class ManagerContractsController {
   constructor(private readonly contracts: ContractsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách RentalContract', description: 'STAFF. Read-only trong milestone này.' })
+  @ApiOperation({ summary: 'Danh sách RentalContract', description: 'FACILITY_STAFF. Read-only trong milestone này.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20, description: '1–100.' })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001', description: 'Tìm contract code, reservation reference, tên/email khách hoặc unit code.' })
@@ -29,18 +29,18 @@ export class ManagerContractsController {
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
     const parsed = this.parseQuery(query);
-    return request.user!.role === 'STAFF' ? this.contracts.listStaffContracts(parsed, request.user!.id) : this.contracts.listManagerContracts(parsed);
+    return request.user!.role === 'FACILITY_STAFF' ? this.contracts.listStaffContracts(parsed, request.user!.id) : this.contracts.listManagerContracts(parsed, request.user!);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết RentalContract', description: 'STAFF. Trả Reservation pricing lịch sử; không tính lại giá.' })
+  @ApiOperation({ summary: 'Chi tiết RentalContract', description: 'FACILITY_STAFF. Trả Reservation pricing lịch sử; không tính lại giá.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-C01' })
   @ApiOkResponse({ description: 'Hợp đồng, customer, reservation, unit vật lý và reservationPricing.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy hợp đồng.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return request.user!.role === 'STAFF' ? this.contracts.getStaffContract(id, request.user!.id) : this.contracts.getManagerContract(id);
+    return request.user!.role === 'FACILITY_STAFF' ? this.contracts.getStaffContract(id, request.user!.id) : this.contracts.getManagerContract(id, request.user!);
   }
 
   private parseQuery(query: Record<string, unknown>): ContractListQuery {

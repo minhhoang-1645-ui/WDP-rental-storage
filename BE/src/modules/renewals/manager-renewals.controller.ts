@@ -8,7 +8,7 @@ import { RenewalsService, type RenewalListQuery } from './renewals.service.js';
 
 @Controller('manager/renewals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 @ApiTags('Manager Renewal')
 @ApiBearerAuth('bearerAuth')
 export class ManagerRenewalsController {
@@ -22,14 +22,14 @@ export class ManagerRenewalsController {
   @ApiOkResponse({ description: 'Stable pagination, customer/contracts/units và renewal billing status.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ quản lý được xử lý yêu cầu gia hạn chờ quyết định.' })
-  list(@Query() input: Record<string, unknown>) { return this.renewals.listManagerRenewals(this.query(input)); }
+  list(@Query() input: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) { return this.renewals.listManagerRenewals(this.query(input), foundationRequest.user!); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết yêu cầu gia hạn' })
   @ApiParam({ name: 'id', example: 'WDPR-2027-AB12CD34EF' })
   @ApiOkResponse({ description: 'Renewal snapshot, contracts/units, invoices và payments.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Renewal.' })
-  get(@Param('id') id: string) { return this.renewals.getManagerRenewal(id); }
+  get(@Param('id') id: string, @Req() foundationRequest: AuthenticatedRequest) { return this.renewals.getManagerRenewal(id, foundationRequest.user!); }
 
   @Post(':id/approve')
   @ApiOperation({ summary: 'Duyệt Renewal', description: 'Recheck future allocation trong transaction. Thành công tạo invoice idempotently và chuyển APPROVED_PENDING_PAYMENT; chưa kéo dài contract.' })

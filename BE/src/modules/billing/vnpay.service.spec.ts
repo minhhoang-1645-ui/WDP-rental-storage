@@ -16,7 +16,7 @@ describe('VnpayService', () => {
     expect(service.verify(callback({ ...params, vnp_TmnCode: config.VNPAY_TMN_CODE }))).toMatchObject({ orderRef: 'ORDER1', amountMinor: 65000000n });
   });
 
-  it.each([['00', '99'], { value: '00' }, 0, null])('rejects ambiguous non-scalar callback values instead of dropping them: %j', value => {
+  it.each([['00', '99'], { value: '00' }, 0, null])('rejects ambiguous non-scalar callback values instead of dropping them: %j', (value: any) => {
     const service = new VnpayService(new ConfigService(config));
     const signed = callback({ vnp_TmnCode: config.VNPAY_TMN_CODE, vnp_TxnRef: 'ORDER1', vnp_Amount: '65000000' });
     expect(() => service.verify({ ...signed, unexpected: value })).toThrow('tham số không hợp lệ');
@@ -68,11 +68,11 @@ describe('VnpayService', () => {
       expect(() => service.assertConfigured()).toThrow(ServiceUnavailableException);
     }
   });
-  it.each(['https://evil.example/pay', 'https://sandbox.vnpayment.vn.evil.example/pay', 'https://user:secret@sandbox.vnpayment.vn/pay', 'http://sandbox.vnpayment.vn/pay', 'https://sandbox.vnpayment.vn:8443/pay', 'https://sandbox.vnpayment.vn/pay?untrusted=1'])('does not advertise an invalid gateway: %s', paymentUrl => {
+  it.each(['https://evil.example/pay', 'https://sandbox.vnpayment.vn.evil.example/pay', 'https://user:secret@sandbox.vnpayment.vn/pay', 'http://sandbox.vnpayment.vn/pay', 'https://sandbox.vnpayment.vn:8443/pay', 'https://sandbox.vnpayment.vn/pay?untrusted=1'])('does not advertise an invalid gateway: %s', (paymentUrl: any) => {
     const service = new VnpayService(new ConfigService({ ...config, VNPAY_PAYMENT_URL: paymentUrl }));
     expect(service.isConfigured()).toBe(false); expect(() => service.assertConfigured()).toThrow(ServiceUnavailableException);
   });
-  it.each(['javascript:alert(1)', 'https://shop.example/wrong-route', 'https://user:secret@shop.example/customer/payments/vnpay-return'])('does not advertise a broken return URL: %s', returnUrl => {
+  it.each(['javascript:alert(1)', 'https://shop.example/wrong-route', 'https://user:secret@shop.example/customer/payments/vnpay-return'])('does not advertise a broken return URL: %s', (returnUrl: any) => {
     expect(new VnpayService(new ConfigService({ ...config, VNPAY_RETURN_URL: returnUrl })).isConfigured()).toBe(false);
   });
   it('supports the live provider hosts and disables Sandbox by default in production', () => {

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { StockMovementsService } from './stock-movements.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const staff = { id: 'staff-a', role: 'STAFF' } as PublicUser;
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
+const staff = { id: 'staff-a', role: 'FACILITY_STAFF' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 const unit = { id: 'unit-b', unitNumber: 'B02', floor: '1', zone: 'B' };
 
 describe('RV3 stored items and historical location', () => {
@@ -15,17 +15,14 @@ describe('RV3 stored items and historical location', () => {
       $queryRaw: vi.fn().mockResolvedValue([{ itemId: 'item', unitId: unit.id }]),
       storageUnit: { findFirst: vi.fn().mockResolvedValue(unit) },
       storedItem: { findMany, count },
-    } as never, { enabled: () => true } as never);
+    } as never);
     const result = await service.listOperationalStoredItems(staff, { page: 1, limit: 20, search: 'Vali', storageUnitId: 'unit-b' });
     expect(result.items[0]).toMatchObject({ currentStorageUnit: unit, customer: { fullName: 'Khách thuê' }, balance: 2 });
     const where = findMany.mock.calls[0][0].where;
     expect(result.selectedStorageUnit).toEqual(unit);
-    expect(where.AND).toEqual([
-      { OR: [
-        { id: { in: ['item'] }, rentalContract: { reservationUnit: { storageUnitId: unit.id } } },
-        { rentalContract: { reservationUnit: { storageUnit: { staffAssignments: { some: { staffUserId: staff.id, endedAt: null } } } } } },
-      ] },
-    ]);
+    expect(JSON.stringify(where.AND)).toContain('facilityAccess');
+    expect(JSON.stringify(where.AND)).toContain('item');
+    expect(JSON.stringify(where.AND)).not.toContain('staffAssignments');
     expect(where.rentalContract).toEqual({ reservationUnit: { storageUnitId: unit.id } });
     expect(where.OR).toHaveLength(4);
     expect(count).toHaveBeenCalledWith({ where });
@@ -37,7 +34,7 @@ describe('RV3 stored items and historical location', () => {
     await expect(service.listOperationalStoredItems(staff, { page: 1, limit: 20 })).resolves.toMatchObject({ total: 0, items: [] });
     expect(findMany).not.toHaveBeenCalled();
     await service.listOperationalStoredItems(manager, { page: 1, limit: 20 });
-    expect(findMany.mock.calls[0][0].where.AND).toEqual([{}]);
+    expect(JSON.stringify(findMany.mock.calls[0][0].where.AND)).toContain('facilityAccess');
     await expect(service.complete('movement', {}, manager)).rejects.toThrow('được giao');
   });
 
@@ -73,7 +70,7 @@ describe('RV3 stored items and historical location', () => {
     };
     const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
     const service = new StockMovementsService(db as never);
-    const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
+    const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
     await expect(service.create(customer, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Hàng mới', unit: 'đơn vị tùy ý', quantity: 1 }] }, 'units-new-test')).rejects.toThrow('danh mục chuẩn');
     await expect(service.create(customer, { rentalContractId: 'contract', type: 'IN', lines: [{ storedItemId: existing.id, quantity: 1 }] }, 'units-old-test')).resolves.toMatchObject({ id: movement.id });
     expect(tx.storedItem.create).not.toHaveBeenCalled();

@@ -14,10 +14,10 @@ describe('Customer stock movements V1', () => {
   let prisma: PrismaService;
   let service: StockMovementsService;
   let contractId: string;
-  const customer = actor(ids.customer, 'CUSTOMER');
-  const other = actor(ids.other, 'CUSTOMER');
-  const staff = actor(ids.staff, 'STAFF');
-  const manager = actor(ids.manager, 'MANAGER');
+  const customer = actor(ids.customer, 'STORAGE_CUSTOMER');
+  const other = actor(ids.other, 'STORAGE_CUSTOMER');
+  const staff = actor(ids.staff, 'FACILITY_STAFF');
+  const manager = actor(ids.manager, 'FACILITY_MANAGER');
 
   beforeAll(async () => {
     prisma = new PrismaService(); await prisma.$connect(); service = new StockMovementsService(prisma);
@@ -39,18 +39,18 @@ describe('Customer stock movements V1', () => {
     const requested = await service.create(customer, { rentalContractId: contractId, type: 'IN', lines: [{ name: 'Thùng hồ sơ', unit: 'thùng', quantity: 4 }] }, `stock-in-${runId}`);
     expect(requested.status).toBe('REQUESTED'); expect(requested.lines[0].storedItem.balance).toBe(0);
     const assigned = await service.assign(requested.id, staff.id, manager); expect(assigned.status).toBe('ASSIGNED');
-    await expect(service.complete(requested.id, {}, actor('wrong-staff', 'STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
-    const completed = await service.complete(requested.id, { note: 'Đã kiểm đếm', lines: requested.lines.map(line => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
+    await expect(service.complete(requested.id, {}, actor('wrong-staff', 'FACILITY_STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    const completed = await service.complete(requested.id, { note: 'Đã kiểm đếm', lines: requested.lines.map((line: any) => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
     expect(completed.status).toBe('COMPLETED'); expect(completed.lines[0].actualQty).toBe(4);
     expect((await prisma.storedItem.findUniqueOrThrow({ where: { id: completed.lines[0].storedItem.id } })).balance).toBe(4);
   });
 
   it('preserves ownership and applies OUT against completed balance', async () => {
     const inbound = await service.create(customer, { rentalContractId: contractId, type: 'IN', lines: [{ name: 'Ghế gấp', unit: 'cái', quantity: 3 }] }, `stock-in2-${runId}`);
-    await service.assign(inbound.id, staff.id, manager); const received = await service.complete(inbound.id, { lines: inbound.lines.map(line => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
+    await service.assign(inbound.id, staff.id, manager); const received = await service.complete(inbound.id, { lines: inbound.lines.map((line: any) => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
     await expect(service.getCustomer(other.id, inbound.id)).rejects.toThrow();
     const outbound = await service.create(customer, { rentalContractId: contractId, type: 'OUT', lines: [{ storedItemId: received.lines[0].storedItem.id, quantity: 2 }] }, `stock-out-${runId}`);
-    await service.assign(outbound.id, staff.id, manager); await service.complete(outbound.id, { lines: outbound.lines.map(line => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
+    await service.assign(outbound.id, staff.id, manager); await service.complete(outbound.id, { lines: outbound.lines.map((line: any) => ({ lineId: line.id, actualQty: line.requestedQty })) }, staff);
     expect((await prisma.storedItem.findUniqueOrThrow({ where: { id: received.lines[0].storedItem.id } })).balance).toBe(1);
   });
 
@@ -63,14 +63,14 @@ describe('Customer stock movements V1', () => {
         lines: [{ name: 'Hồ sơ', unit: 'thùng', quantity: 4 }, { name: 'Ghế', unit: 'cái', quantity: 2 }],
       }, `stock-schedule-in-${runId}`);
       await service.assign(inbound.id, staff.id, manager);
-      const inboundCounts = inbound.lines.map(line => ({ lineId: line.id, actualQty: line.storedItem.name === 'Hồ sơ' ? 3 : 2 }));
+      const inboundCounts = inbound.lines.map((line: any) => ({ lineId: line.id, actualQty: line.storedItem.name === 'Hồ sơ' ? 3 : 2 }));
       await expect(service.complete(inbound.id, { lines: inboundCounts }, staff)).rejects.toThrow('lý do chênh lệch');
       const received = await service.complete(inbound.id, { lines: inboundCounts, note: 'Khách mang thiếu một thùng.' }, staff);
-      const receivedItem = received.lines.find(line => line.storedItem.name === 'Hồ sơ')!;
+      const receivedItem = received.lines.find((line: any) => line.storedItem.name === 'Hồ sơ')!;
       expect(received).toMatchObject({ scheduledAt, completedAt: '2026-11-14T03:00:00.000Z' });
       expect(receivedItem).toMatchObject({ requestedQty: 4, actualQty: 3, storedItem: { balance: 3, unit: 'thùng' } });
       const itemId = receivedItem.storedItem.id;
-      const otherStaff = actor('wrong-staff', 'STAFF');
+      const otherStaff = actor('wrong-staff', 'FACILITY_STAFF');
       const itemPage = { page: 1, limit: 5, search: receivedItem.storedItem.itemCode, storageUnitId: ids.unit };
       await expect(service.listOperationalStoredItems(staff, itemPage)).resolves.toMatchObject({
         total: 1, selectedStorageUnit: { id: ids.unit }, items: [{ id: itemId, balance: 3, currentStorageUnit: { id: ids.unit } }],
@@ -85,7 +85,7 @@ describe('Customer stock movements V1', () => {
         lines: [{ storedItemId: receivedItem.storedItem.id, quantity: 2 }],
       }, `stock-schedule-out-${runId}`);
       await service.assign(outbound.id, staff.id, manager);
-      await expect(service.getStaff(actor('wrong-staff', 'STAFF'), outbound.id)).rejects.toThrow('Không tìm thấy');
+      await expect(service.getStaff(actor('wrong-staff', 'FACILITY_STAFF'), outbound.id)).rejects.toThrow('Không tìm thấy');
       const counts = [{ lineId: outbound.lines[0].id, actualQty: 3 }];
       await expect(service.complete(outbound.id, { lines: counts }, staff)).rejects.toThrow('lý do chênh lệch');
       await expect(service.complete(outbound.id, { lines: [{ ...counts[0], actualQty: 4 }], note: 'Khách yêu cầu thêm.' }, staff)).rejects.toThrow('Không đủ tồn');

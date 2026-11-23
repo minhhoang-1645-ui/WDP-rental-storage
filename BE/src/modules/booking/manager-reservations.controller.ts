@@ -10,7 +10,7 @@ import { BookingService } from './booking.service.js';
 @Controller(['manager/reservations', 'staff/management/reservations'])
 @StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Reservation')
 @ApiBearerAuth('bearerAuth')
 export class ManagerReservationsController {
@@ -34,11 +34,11 @@ export class ManagerReservationsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'STAFF. Nhận reservation reference hoặc database id.' })
+  @ApiOperation({ summary: 'Chi tiết Reservation', description: 'FACILITY_STAFF. Nhận reservation reference hoặc database id.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Reservation cùng customer, quote, availability snapshot và allocatedUnits.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Reservation.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.bookingService.getManagerReservation(id, request.user);

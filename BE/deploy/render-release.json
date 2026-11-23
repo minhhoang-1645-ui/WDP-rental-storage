@@ -1,0 +1,19 @@
+{
+  "existingServiceOnly": true,
+  "applyAutomatically": false,
+  "branch": "codex/nestbox-five-role-foundation-release-20261124",
+  "autoDeploy": false,
+  "rootDirectory": "BE",
+  "buildCommand": "npm ci --include=dev && npm run build",
+  "startCommand": "npm run start:prod",
+  "preDeployCommand": null,
+  "healthCheckPath": "/api/health/ready",
+  "instances": 1,
+  "notes": [
+    "No migrations in build/start commands.",
+    "Stop the old service, including background workers, before changing the schema.",
+    "Use this release commit as the manual deployment target after migration.",
+    "Keep existing secrets in Render; do not commit environment values.",
+    "DATABASE_URL and DIRECT_URL must identify the same verified Neon database."
+  ]
+}

@@ -1,6 +1,9 @@
-import { Optional } from '@nestjs/common';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
+import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
+
 import { EARLY_RETURN_SUBJECT, earlyReturnApprovalNote } from '../returns/early-return-classification.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { businessDate } from '../../business-date.js';
@@ -14,7 +17,7 @@ import { businessToday } from '../../business-date.js';
 type SupportStatus = 'OPEN' | 'ASSIGNED' | 'IN_PROGRESS' | 'ESCALATED' | 'RESOLVED';
 type SupportPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 type SupportCategory = 'UNIT_ISSUE' | 'LOCK_OR_KEY_ISSUE' | 'ACCESS_CODE_ISSUE' | 'FACILITY_EQUIPMENT_FAILURE' | 'PAYMENT_SUPPORT' | 'STORED_ITEM_CONCERN' | 'OTHER';
-type ViewMode = 'CUSTOMER' | 'STAFF' | 'MANAGER';
+type ViewMode = 'STORAGE_CUSTOMER' | 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 
 export interface SupportListQuery { page: number; limit: number; status?: SupportStatus; priority?: SupportPriority; category?: SupportCategory; assignedToMe?: boolean; search?: string }
 
@@ -24,19 +27,19 @@ const managerResolutions = ['MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTI
 
 @Injectable()
 export class SupportService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async createCustomer(actor: PublicUser, input: Record<string, unknown>, key: string | undefined) {
-    if (actor.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được tạo Support Request.');
+    if (actor.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được tạo Support Request.');
     const parsed = this.createInput(input, key);
-    const retry = await this.prisma.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('CUSTOMER') });
+    const retry = await this.prisma.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('STORAGE_CUSTOMER') });
     if (retry) return this.assertCreateRetry(retry, parsed, actor.id);
     const identity = await this.prisma.reservation.findFirst({ where: { customerId: actor.id, OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }] }, select: { id: true } });
     if (!identity) throw new NotFoundException('Không tìm thấy Reservation thuộc Customer.');
     try {
       return await this.serializable(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${identity.id} FOR UPDATE`);
-        const duplicate = await tx.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('CUSTOMER') });
+        const duplicate = await tx.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('STORAGE_CUSTOMER') });
         if (duplicate) return this.assertCreateRetry(duplicate, { ...parsed, reservationId: identity.id }, actor.id);
         const reservation = await tx.reservation.findUnique({ where: { id: identity.id }, include: {
           contracts: { include: { reservationUnit: { include: { storageUnit: true } } } },
@@ -58,7 +61,7 @@ export class SupportService {
             reservationId: reservation.id, subject: parsed.subject, category: 'OTHER',
             AND: [
               { OR: [{ rentalContractId: contract.id }, { rentalContractId: null }] },
-              { OR: [{ status: { not: 'RESOLVED' } }, { lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: { endsWith: `:${endDate}` }, resolvedBy: { role: 'MANAGER' } }] },
+              { OR: [{ status: { not: 'RESOLVED' } }, { lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: { endsWith: `:${endDate}` }, resolvedBy: { role: 'FACILITY_MANAGER' } }] },
             ],
           }, select: { id: true } });
           if (previous) throw new ConflictException('Kho đã có đề nghị trả sớm đang chờ hoặc đã được chấp thuận.');
@@ -87,23 +90,22 @@ export class SupportService {
           const legacy = await tx.supportRequest.findFirst({ where: { reservationId: reservation.id, status: { not: 'RESOLVED' }, AND: [transferSubjectFilter, { OR: [{ rentalContractId: transferContract.id }, { rentalContractId: null, OR: [{ storageUnitId: transferContract.reservationUnit.storageUnitId }, { storageUnitId: null }] }] }], transferRequests: { none: {} } }, select: { id: true } });
           if (legacy) throw new ConflictException('Kho đã có yêu cầu chuyển đang xử lý. Xem tiến độ trong Chuyển đổi kho.');
         }
-        const responsibility = early || transfer ? null : await this.unitStaff?.resolveStaff(tx, unit ? [unit.id] : contract ? activeContracts.includes(contract) ? [contract.reservationUnit.storageUnitId] : [] : activeContracts.map(item => item.reservationUnit.storageUnitId));
         const created = await tx.supportRequest.create({ data: {
           supportCode: this.code(), customerUserId: actor.id, reservationId: reservation.id,
           rentalContractId: transferContract?.id ?? contract?.id, storageUnitId: transferContract?.reservationUnit.storageUnitId ?? unit?.id ?? (early ? contract?.reservationUnit.storageUnitId : undefined), invoiceId: invoice?.id,
-          category: parsed.category, priority: 'MEDIUM', ...(responsibility ? { assignedStaffUserId: responsibility.staffUserId, status: 'ASSIGNED' as const } : { status: 'OPEN' as const }), subject: parsed.subject, description: parsed.description,
+          category: parsed.category, priority: 'MEDIUM', status: 'OPEN' as const, subject: parsed.subject, description: parsed.description,
           idempotencyKey: parsed.idempotencyKey,
           ...(parsed.earlyReturn ? { earlyReturnFinancialReview: parsed.earlyReturn } : {}),
           transferRequestedStartAt: parsed.proposal?.startAt,
           transferRequestedEndAt: parsed.proposal?.endAt,
-        }, include: this.include('CUSTOMER') });
-        if (!transferContract) return this.toView(created, 'CUSTOMER');
+        }, include: this.include('STORAGE_CUSTOMER') });
+        if (!transferContract) return this.toView(created, 'STORAGE_CUSTOMER');
         await createLinkedTransfer(tx, transferContract, created);
-        return this.toView(await tx.supportRequest.findUniqueOrThrow({ where: { id: created.id }, include: this.include('CUSTOMER') }), 'CUSTOMER');
+        return this.toView(await tx.supportRequest.findUniqueOrThrow({ where: { id: created.id }, include: this.include('STORAGE_CUSTOMER') }), 'STORAGE_CUSTOMER');
       }, 'Support Request vừa được tạo bởi thao tác khác.');
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
-        const duplicate = await this.prisma.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('CUSTOMER') });
+        const duplicate = await this.prisma.supportRequest.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.include('STORAGE_CUSTOMER') });
         if (duplicate) return this.assertCreateRetry(duplicate, { ...parsed, reservationId: identity.id }, actor.id);
         if (isTransferSubject(parsed.subject)) throw new ConflictException('Kho đã có yêu cầu chuyển đang xử lý hoặc yêu cầu vừa được cập nhật.');
       }
@@ -111,29 +113,34 @@ export class SupportService {
     }
   }
 
-  listCustomer(customerId: string, query: SupportListQuery) { return this.list({ customerUserId: customerId }, query, 'CUSTOMER'); }
-  listStaff(query: SupportListQuery, actor: PublicUser) { return this.list({ assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, query, 'STAFF'); }
-  listManager(query: SupportListQuery, assignedStaffUserId?: string) { return this.list(assignedStaffUserId ? { assignedStaffUserId } : {}, query, 'MANAGER'); }
-  listLegacyTransfers(query: SupportListQuery) { return this.list(legacyTransferFilter, query, 'MANAGER'); }
+  listCustomer(customerId: string, query: SupportListQuery) { return this.list({ customerUserId: customerId }, query, 'STORAGE_CUSTOMER'); }
+  listStaff(query: SupportListQuery, actor: PublicUser) { return this.list({ reservation:reservationScope(actor), assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, query, 'FACILITY_STAFF'); }
+  listManager(query: SupportListQuery, actor:PublicUser, assignedStaffUserId?: string) {
+    managerReservationScope(actor);
+ return this.list({reservation:reservationScope(actor),...(assignedStaffUserId ? { assignedStaffUserId } : {})}, query, 'FACILITY_MANAGER'); }
+  listLegacyTransfers(query: SupportListQuery, actor:PublicUser) { return this.list({AND:[legacyTransferFilter,{reservation:reservationScope(actor)}]}, query, 'FACILITY_MANAGER'); }
 
   async getCustomer(customerId: string, id: string) {
-    const record = await this.prisma.supportRequest.findFirst({ where: { customerUserId: customerId, OR: [{ id }, { supportCode: id }] }, include: this.include('CUSTOMER') });
+    const record = await this.prisma.supportRequest.findFirst({ where: { customerUserId: customerId, OR: [{ id }, { supportCode: id }] }, include: this.include('STORAGE_CUSTOMER') });
     if (!record) throw new NotFoundException('Không tìm thấy Support Request.');
-    return this.toView(record, 'CUSTOMER');
+    return this.toView(record, 'STORAGE_CUSTOMER');
   }
   async getStaff(id: string, actor: PublicUser) {
-    const record = await this.prisma.supportRequest.findFirst({ where: { OR: [{ id }, { supportCode: id }], assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, include: this.include('STAFF') });
+    const record = await this.prisma.supportRequest.findFirst({ where: { reservation:reservationScope(actor), OR: [{ id }, { supportCode: id }], assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, include: this.include('FACILITY_STAFF') });
     if (!record) throw new NotFoundException('Không tìm thấy Support Request.');
-    return this.toView(record, 'STAFF');
+    return this.toView(record, 'FACILITY_STAFF');
   }
-  async getManager(id: string) { return this.toView(await this.find(id, this.prisma), 'MANAGER'); }
+  async getManager(id: string, actor:PublicUser) {
+    managerReservationScope(actor);
+ const row=await this.find(id,this.prisma); await assertTaskFacility(this.prisma,actor,{reservationId:row.reservationId}); return this.toView(row,'FACILITY_MANAGER'); }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.id(input.staffUserId, 'staffUserId');
-    return this.transition(id, key, 'ASSIGN', actor, 'MANAGER', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'ASSIGN', actor, 'FACILITY_MANAGER', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await tx.user.findUnique({ where: { id: staffUserId }, select: { id: true, role: true, accountStatus: true } });
-      if (!staff || staff.role !== 'STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao công việc cho nhân viên đang hoạt động.');
+      const staff = await assertAssignmentAccess(tx,actor,staffUserId,{reservationId:current.reservationId});
+      if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao công việc cho nhân viên đang hoạt động.');
+      await recordAssignment(tx,actor,"support-requests",current.id,current.assignedStaffUserId,staff.id);
       return tx.supportRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, status: current.status === 'OPEN' ? 'ASSIGNED' : current.status, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
@@ -141,22 +148,22 @@ export class SupportService {
   priority(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const priority = input.priority;
     if (typeof priority !== 'string' || !['LOW', 'MEDIUM', 'HIGH'].includes(priority)) throw new BadRequestException('priority không hợp lệ.');
-    return this.transition(id, key, 'PRIORITY', actor, 'MANAGER', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'PRIORITY', actor, 'FACILITY_MANAGER', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
       return tx.supportRequest.update({ where: { id: current.id }, data: { priority: priority as SupportPriority, lastAction: 'PRIORITY', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
 
   start(id: string, key: string | undefined, actor: PublicUser) {
-    return this.transition(id, key, 'START', actor, 'STAFF', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'START', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'ASSIGNED') throw new ConflictException('Chỉ Support Request ASSIGNED mới có thể bắt đầu.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'IN_PROGRESS', startedAt: new Date(), lastAction: 'START', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
 
-  resolveStaff(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+  resolveAssignedRequest(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const parsed = this.resolutionInput(input, staffResolutions);
-    return this.transition(id, key, 'STAFF_RESOLVE', actor, 'STAFF', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'STAFF_RESOLVE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được Staff resolve.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
@@ -164,7 +171,7 @@ export class SupportService {
 
   escalate(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const reason = this.text(input.reason, 4000, 'reason');
-    return this.transition(id, key, 'ESCALATE', actor, 'STAFF', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'ESCALATE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được escalate.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'ESCALATED', escalatedAt: new Date(), escalatedByUserId: actor.id, escalationReason: reason, lastAction: 'ESCALATE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
@@ -172,24 +179,25 @@ export class SupportService {
 
   resolveManager(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const parsed = this.resolutionInput(input, managerResolutions);
-    return this.transition(id, key, 'MANAGER_RESOLVE', actor, 'MANAGER', async (tx, current, safeKey) => {
+    return this.transition(id, key, 'MANAGER_RESOLVE', actor, 'FACILITY_MANAGER', async (tx, current, safeKey) => {
       if (current.status !== 'ESCALATED') throw new ConflictException('Manager chỉ resolve Support Request ESCALATED.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'MANAGER_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
 
-  private async transition(id: string, key: string | undefined, action: string, actor: PublicUser, role: 'STAFF' | 'MANAGER', operation: (tx: Prisma.TransactionClient, current: any, key: string) => Promise<any>) {
-    const managerAction = role === 'MANAGER';
-    const permitted = managerAction ? ['MANAGER', 'ADMIN'].includes(actor.role) : actor.role === 'STAFF';
-    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ Manager hoặc Admin được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
+  private async transition(id: string, key: string | undefined, action: string, actor: PublicUser, role: 'FACILITY_STAFF' | 'FACILITY_MANAGER', operation: (tx: Prisma.TransactionClient, current: any, key: string) => Promise<any>) {
+    const managerAction = role === 'FACILITY_MANAGER';
+    const permitted = managerAction ? actor.role === 'FACILITY_MANAGER' : actor.role === 'FACILITY_STAFF';
+    if (!permitted) throw new ForbiddenException(managerAction ? 'Chỉ quản lý cơ sở được thực hiện thao tác này.' : 'Chỉ Staff được thực hiện thao tác này.');
     const safeKey = this.key(key); const identity = await this.identity(id);
     return this.serializable(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.supportRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy Support Request.');
+      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
       if (current.subject === EARLY_RETURN_SUBJECT) throw new ForbiddenException('Đề nghị trả trước hạn do quản lý xem xét tại mục Đề nghị trả sớm; không xử lý như hỗ trợ thông thường.');
       if (isTransferSubject(current.subject)) throw new ForbiddenException('Yêu cầu này được xử lý trong hồ sơ chuyển kho.');
-      if (role === 'STAFF') this.assertAssigned(current, actor);
+      if (role === 'FACILITY_STAFF') this.assertAssigned(current, actor);
       if (current.lastAction === action && current.lastActionIdempotencyKey === safeKey) return this.toView(current, role);
       if (await tx.supportRequest.findUnique({ where: { lastActionIdempotencyKey: safeKey }, select: { id: true } })) throw new ConflictException('Idempotency-Key đã được dùng cho thao tác khác.');
       const updated = await operation(tx, current, safeKey);
@@ -214,14 +222,14 @@ export class SupportService {
     return { page: query.page, limit: query.limit, total, items: records.map((item) => this.toView(item, mode)) };
   }
 
-  private include(mode: ViewMode = 'MANAGER'): Prisma.SupportRequestInclude { return {
-    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, ...(mode === 'CUSTOMER' ? {} : { assignedStaffUserId: true }), rentalContractId: true, customerAcceptedAt: true, commercialSnapshot: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
+  private include(mode: ViewMode = 'FACILITY_MANAGER'): Prisma.SupportRequestInclude { return {
+    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, ...(mode === 'STORAGE_CUSTOMER' ? {} : { assignedStaffUserId: true }), rentalContractId: true, customerAcceptedAt: true, commercialSnapshot: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
-    reservation: { select: { id: true, reservationCode: true, status: true, ...(mode === 'CUSTOMER' ? { _count: { select: { contracts: true } } } : {}) } },
+    reservation: { select: { id: true, reservationCode: true, status: true, ...(mode === 'STORAGE_CUSTOMER' ? { _count: { select: { contracts: true } } } : {}) } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
     storageUnit: { include: {
       storageType: { select: { id: true, code: true, name: true } },
-      ...(mode === 'MANAGER' ? {
+      ...(mode === 'FACILITY_MANAGER' ? {
         maintenanceRequests: { where: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } }, take: 1, select: { id: true, maintenanceCode: true, status: true, priority: true } },
         reservationUnits: { where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } }, include: { reservation: { select: { reservationCode: true } } }, orderBy: { plannedStartDate: 'asc' } },
       } : {}),
@@ -231,19 +239,19 @@ export class SupportService {
   } }
 
   private toView(record: any, mode: ViewMode) {
-    const earlyReturnDecision = record.subject === EARLY_RETURN_SUBJECT && record.resolvedBy?.role === 'MANAGER'
+    const earlyReturnDecision = record.subject === EARLY_RETURN_SUBJECT && record.resolvedBy?.role === 'FACILITY_MANAGER'
       ? (record.lastAction === 'EARLY_RETURN_APPROVED' ? 'APPROVED' : record.lastAction === 'EARLY_RETURN_REJECTED' ? 'REJECTED' : null)
       : null;
     const resolutionNote = earlyReturnDecision === 'APPROVED'
       ? earlyReturnApprovalNote(record.resolutionNote)
       : record.resolutionNote;
     const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).filter((transfer: { status: string; assignedStaffUserId: string | null }) =>
-      mode !== 'STAFF' || Boolean(record.assignedStaffUserId && transfer.assignedStaffUserId === record.assignedStaffUserId && ['APPROVED', 'COMPLETED'].includes(transfer.status)),
+      mode !== 'FACILITY_STAFF' || Boolean(record.assignedStaffUserId && transfer.assignedStaffUserId === record.assignedStaffUserId && ['APPROVED', 'COMPLETED'].includes(transfer.status)),
     ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, hasCommercialAppendix: Boolean(transfer.commercialSnapshot), requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     const view = { ...base, transferRequestedSchedule: transferProposalView(record) };
-    if (mode === 'CUSTOMER') return view;
+    if (mode === 'STORAGE_CUSTOMER') return view;
     const operational = { ...view, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
-    if (mode === 'STAFF') return {
+    if (mode === 'FACILITY_STAFF') return {
       ...operational,
       hasTransferOrder: (record.transferRequests ?? []).some((transfer: { status: string }) => transfer.status !== 'REJECTED'),
     };
@@ -280,7 +288,7 @@ export class SupportService {
       || record.transferRequestedEndAt?.getTime() !== parsed.proposal?.endAt.getTime()
       || (parsed.storageUnitId && ![record.storageUnitId, record.storageUnit?.unitNumber].includes(parsed.storageUnitId))
       || (parsed.invoiceId && record.invoiceId !== parsed.invoiceId)) throw new ConflictException('Idempotency-Key đã được dùng cho Support Request khác.');
-    return this.toView(record, 'CUSTOMER');
+    return this.toView(record, 'STORAGE_CUSTOMER');
   }
   private assertAssigned(record: any, actor: PublicUser) { if (!record.assignedStaffUserId || record.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được assign mới có thể xử lý request này.'); }
   private assertUnresolved(record: any) { if (record.status === 'RESOLVED') throw new ConflictException('Support Request RESOLVED là trạng thái cuối.'); }

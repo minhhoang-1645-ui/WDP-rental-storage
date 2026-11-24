@@ -35,6 +35,10 @@ export class ManagerTransfersController {
   assign(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.assign(id, body, req.user!); }
   @ManagerAssignment() @Post(':id/approve') @ApiOperation({ summary: 'Duyệt, giữ kho đích và phân công Staff trong cùng giao dịch' }) @ApiBody({ type: ApproveTransferDto }) @ApiConflictResponse({ description: 'Unit không phù hợp, không AVAILABLE hoặc có allocation trùng kỳ.' })
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.approve(id, body, req.user!); }
+  @ManagerAssignment() @Post(':id/review-problem')
+  reviewProblem(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
+    return this.transfers.reviewProblem(id, body, req.user!);
+  }
   @ManagerAssignment() @Post(':id/reject') @ApiOperation({ summary: 'Từ chối Transfer REQUESTED' })
   reject(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.reject(id, req.user!, body); }
 }

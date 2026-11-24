@@ -49,6 +49,9 @@ export function StaffAppointmentDetailPage() {
       <RefreshStatus active={data.refreshing} />
       {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
+      {first(row, 'scheduleAdjustment.note') && <p role="status">
+        {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Quản lý đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
+      </p>}
       <Fragment key={formRevision}>
       {row.status === 'COMPLETED' && <>
         <HandoverResult row={row} />
@@ -68,7 +71,7 @@ export function StaffAppointmentDetailPage() {
       {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Chưa thể xử lý bàn giao</h2>
         <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.'
-          : first(readiness, 'reason') || (row.bookingReady === false
+          : first(readiness, 'reason') || first(row, 'bookingBlockReason') || (row.bookingReady === false
             ? 'Đơn đặt kho chưa đủ điều kiện bàn giao.' : 'Làm mới hồ sơ để kiểm tra điều kiện bàn giao.')}</p>
       </section>}
       </Fragment>

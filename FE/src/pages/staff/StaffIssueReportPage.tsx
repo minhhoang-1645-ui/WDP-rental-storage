@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { date, first, label, type Row } from '../../components/manager/portal-data';
-import { Empty, Facts, LoadState, PageHeader } from '../../components/manager/PortalUi';
+import { Empty, Facts, LoadState, PageHeader, Status } from '../../components/manager/PortalUi';
+import { useAuth } from '../../auth/auth-context';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { ApiError } from '../../services/api';
 import { allPages, mutate } from '../../services/portal';
+import { usePaginatedResource } from '../../services/usePaginatedResource';
 
 type ReportUnit = {
   id: string;
@@ -17,6 +19,8 @@ const priorities = ['LOW', 'MEDIUM', 'HIGH'];
 
 export function StaffIssueReportPage() {
   const confirm = useConfirmation();
+  const { user } = useAuth();
+  const reports = usePaginatedResource<Row>(user ? '/staff/maintenance/reported-by-me' : null, user?.id, true);
   const lock = useRef(false);
   const [units, setUnits] = useState<ReportUnit[]>([]);
   const [formAvailable, setFormAvailable] = useState(false);
@@ -84,12 +88,17 @@ export function StaffIssueReportPage() {
       }, true);
       form.reset();
       setReceipt(result);
+      reports.refresh();
     } catch (cause) {
       const denied = cause instanceof ApiError && [403, 404].includes(cause.status);
       setError(denied
         ? 'Bạn không còn quyền báo sự cố cho kho này.'
         : cause instanceof Error ? cause.message : 'Không gửi được báo cáo sự cố.');
-      if (denied || cause instanceof ApiError && cause.status === 409) setRevision(value => value + 1);
+      if (denied || cause instanceof ApiError && cause.status === 409) {
+        setLoading(true);
+        setRevision(value => value + 1);
+        reports.refresh();
+      }
     } finally {
       lock.current = false;
       setBusy(false);
@@ -151,5 +160,29 @@ export function StaffIssueReportPage() {
         ].filter(([, value]) => Boolean(value)) as [string, string][]} />
       </section>}
     </section>}
+    <section className="manager-section">
+      <PageHeader title="Sự cố tôi đã báo">
+        <button className="button-secondary" type="button" disabled={reports.loading || reports.refreshing}
+          onClick={reports.refresh}>Làm mới danh sách</button>
+      </PageHeader>
+      <LoadState loading={reports.loading} error={reports.error} retry={reports.refresh} />
+      {reports.data?.items.length === 0 && <Empty title="Chưa có sự cố đã báo" />}
+      {Boolean(reports.data?.items.length) && <div className="manager-table-wrap">
+        <table className="manager-table" aria-label="Sự cố tôi đã báo">
+          <thead><tr><th>Phiếu sự cố</th><th>Cơ sở / Kho</th><th>Ngày báo</th><th>Người xử lý</th><th>Kết quả</th></tr></thead>
+          <tbody>{reports.data?.items.map(report => <tr key={first(report, 'id')}>
+            <td><strong>{first(report, 'maintenanceCode')}</strong><br />{label(report.category)}</td>
+            <td>{[first(report, 'facility.name'), first(report, 'unitCode')].filter(Boolean).join(' · ')}</td>
+            <td>{date(report.createdAt, true)}</td>
+            <td>{first(report, 'assignedStaff.fullName') || 'Chưa phân công'}</td>
+            <td><Status value={report.status} />
+              {first(report, 'workNote') && <p>{first(report, 'workNote')}</p>}
+              {first(report, 'verificationNote') && <p>{first(report, 'verificationNote')}</p>}
+              {first(report, 'verifiedBy.fullName') && <small>Nghiệm thu: {first(report, 'verifiedBy.fullName')}</small>}
+            </td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+    </section>
   </section>;
 }

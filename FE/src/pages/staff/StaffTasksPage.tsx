@@ -81,7 +81,8 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
   const page = Math.min(Math.max(1, Math.floor(Number(params.get('page')) || 1)), Math.max(1, Math.ceil(filtered.length / limit)));
   const columns: StaffColumn<(typeof tasks)[number]>[] = [
     { key: 'task', label: 'Công việc', cell: task => <><strong>{task.title}</strong><CopyRecordCode value={task.entry.code} />
-      {task.facilityName && <small>{task.facilityName}</small>}</> },
+      {task.facilityName && <small>{task.facilityName}</small>}
+      {task.blocked && task.blockingReason && <small>{task.blockingReason}</small>}</> },
     { key: 'identity', label: 'Khách hàng / Kho', cell: task => <><strong>{task.customer || task.unit || '—'}</strong>{task.customer && task.unit && <small>Kho {task.unit}</small>}</> },
     { key: 'date', label: completed ? 'Thời điểm xử lý' : scheduled ? 'Lịch hẹn' : 'Lịch / cập nhật', sort: { direction: sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'asc' ? 'desc' : 'asc') },
       cell: task => <><span>{date(displayedTime(task), true)}</span>{!completed && task.overdue && <small className="staff-table-overdue">Đã qua giờ</small>}</> },

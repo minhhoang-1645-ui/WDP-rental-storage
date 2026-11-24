@@ -7,6 +7,7 @@ import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { RecordTimeline } from '../../components/workspace/RecordTimeline';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 import type { StaffOperation } from './staff-resources';
+import { transferProblem } from '../../utils/transfer-problem';
 type Fact = [string, ReactNode];
 
 function DateFact({ value, withTime = false }: { value: string; withTime?: boolean }) {
@@ -45,7 +46,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
 
   if (resource === 'transfers') {
     const handover = object(row.handoverReport);
-    const problems = rows(handover.problems);
+    const { pending, review } = transferProblem(row);
     const completed = row.status === 'COMPLETED';
     const completedBy = first(row, 'completedBy.fullName', 'handoverReport.recordedByName');
     const contractId = first(row, 'contract.id');
@@ -76,9 +77,13 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ])} />
         {first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}
       </section>
-      {row.status === 'APPROVED' && problems.length > 0 && <div className="booking-alert is-warning" role="status">
+      {pending && <div className="booking-alert is-warning" role="status">
         Đã báo vướng mắc. Chờ quản lý xử lý.
       </div>}
+      {review.decision && <Section title="Quyết định của quản lý" items={[
+        ['Kết quả', review.decision === 'CANCEL' ? 'Đã hủy chuyển kho' : 'Cho tiếp tục bàn giao'],
+        ['Thời điểm', first(review, 'reviewedAt') && date(review.reviewedAt, true)],
+      ]} note={first(review, 'note')} />}
       {actions}
       {completed && <Section title="Kết quả chuyển kho" items={[
         ['Kết quả điều chuyển', 'Đã hoàn tất điều chuyển'],

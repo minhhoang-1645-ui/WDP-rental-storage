@@ -164,6 +164,8 @@ export function StaffActions({
   );
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
   const returnPaid = returnDebt?.canReturn === true;
+  const returnBlocks = Array.isArray(returnDebt?.blockingReasons)
+    ? returnDebt.blockingReasons.filter((reason): reason is string => typeof reason === 'string') : [];
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -262,8 +264,10 @@ export function StaffActions({
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
-                        {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.'
-                          : returnDebt ? 'Hồ sơ chưa đủ điều kiện nhận kho. Liên hệ quản lý để kiểm tra.' : 'Làm mới hồ sơ để kiểm tra điều kiện nhận kho.'}</li>}
+                        {!returnPaid && (returnBlocks.length
+                          ? returnBlocks.map(reason => <li key={reason}>{reason}</li>)
+                          : <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.'
+                            : returnDebt ? 'Hồ sơ chưa đủ điều kiện nhận kho. Liên hệ quản lý để kiểm tra.' : 'Làm mới hồ sơ để kiểm tra điều kiện nhận kho.'}</li>)}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
                       </ul>
                     </div>

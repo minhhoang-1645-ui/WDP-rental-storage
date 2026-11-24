@@ -4,7 +4,7 @@ import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, assertTaskExecution, reservationScope } from '../facility-access/task-access.js';
 import { Optional } from '@nestjs/common';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { assertActiveAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
+import { assertActiveAssignee, assertAssignmentVersion, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { EARLY_RETURN_APPROVAL_MESSAGE, EARLY_RETURN_SUBJECT, earlyReturnApprovalNote, earlyReturnScope } from './early-return-classification.js';
 import { businessDate, businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -142,6 +142,7 @@ export class ReturnsService {
       const current = await tx.returnRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (!['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Phiếu trả kho đã được tiếp nhận.');
       await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
+      assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staffId) return this.toReturn(current, 'FACILITY_MANAGER');
       await recordAssignment(tx,actor,"returns",current.id,current.assignedStaffUserId,staffId);
       return this.toReturn(await tx.returnRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }), 'FACILITY_MANAGER');
@@ -744,7 +745,16 @@ export class ReturnsService {
       rentalContractId: ids.length === 1 ? ids[0] : null,
       timing: businessDate(record.requestedAt) < this.isoDate(effectiveEndDate)! ? 'EARLY' : 'ON_OR_AFTER_END',
       ...(mode === 'FACILITY_STAFF' ? {} : { remainingUnitCount: record.reservation.contracts.filter((contract: ReturnContract) => !ids.includes(contract.id) && contract.status === 'ACTIVE' && contract.reservationUnit.releasedAt === null).length }),
-      returnReadiness: mode === 'FACILITY_STAFF' ? { canReturn: readiness.canReturn, ...(periodCloseout ? { policy: PERIOD_CLOSEOUT, facilityFaultReviewRequired } : {}) } : readiness,
+      returnReadiness: mode === 'FACILITY_STAFF' ? {
+        canReturn: readiness.canReturn,
+        ...(periodCloseout ? { policy: PERIOD_CLOSEOUT, facilityFaultReviewRequired } : {}),
+        blockingReasons: [
+          ...(facilityFaultReviewRequired ? ['Chờ quản lý xác minh lỗi cơ sở.'] : []),
+          ...(awaitingRenewalInvoices ? ['Chờ phát hành hóa đơn gia hạn liên quan.'] : []),
+          ...(!periodCloseout && !debt.canReturn ? [debt.totalOutstanding === null
+            ? 'Chờ quản lý đối soát các hóa đơn liên quan.' : 'Hóa đơn liên quan chưa được thanh toán đủ.'] : []),
+        ],
+      } : readiness,
       earlyReturnCloseout: !record.physicallyReturnedAt || !closeout?.appliedAt || mode === 'FACILITY_STAFF' ? null : mode === 'FACILITY_MANAGER' ? closeout : {
         effectiveDate: closeout.effectiveDate, appliedAt: closeout.appliedAt, outstandingAmount: closeout.outstandingAmount,
         waivedAmount: closeout.waivedAmount, refundAmount: closeout.refundAmount, facilityFaultCredit: closeout.facilityFaultCredit,

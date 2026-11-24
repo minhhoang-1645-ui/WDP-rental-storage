@@ -106,7 +106,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
     const version = { expectedUpdatedAt: claim.updatedAt };
     try {
       switch (action) {
-        case 'assign': await mutate(path + '/assign', 'PATCH', { staffUserId: staff }); break;
+        case 'assign': await mutate(path + '/assign', 'PATCH', { staffUserId: staff, expectedAssignedStaffUserId: claim.assignedStaff?.id ?? null }); break;
         case 'inspect': await mutate(path, 'PATCH', { ...version, staffFacts: note,
           staffEvidenceLinks: staffEvidence.split('\n').map(value => value.trim()).filter(Boolean) }); break;
         case 'decide': await mutate(path, 'PATCH', { ...version, decision, decisionReason: note, approvedCompensationAmount: showAmount ? Number(amount) : null }); break;

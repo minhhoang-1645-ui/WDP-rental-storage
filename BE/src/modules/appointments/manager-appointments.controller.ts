@@ -53,6 +53,12 @@ export class ManagerAppointmentsController {
     return this.appointments.assignAppointment(id, input, request.user!);
   }
 
+  @ManagerAssignment()
+  @Patch(':id/schedule')
+  adjustSchedule(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    return this.appointments.adjustAppointment(id, body, request.user!);
+  }
+
   @Patch(':id/confirm')
   @ApiOperation({ summary: 'Xác nhận lịch bàn giao', description: 'REQUESTED → CONFIRMED. Người xác nhận lấy từ bearer token.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })

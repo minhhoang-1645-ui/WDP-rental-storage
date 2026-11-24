@@ -54,6 +54,7 @@ page.on('pageerror', error => errors.push(error.message));
 try {
   page.setDefaultTimeout(10000);
   const sent = [];
+  const reports = [];
   let revoked = false;
   let reassigned = false;
   let scheduleDenied = false;
@@ -68,7 +69,10 @@ try {
       const body = request.postDataJSON();
       sent.push({ body, key: request.headers()['idempotency-key'] });
       if (revoked || body.storageUnitId !== 'unit-a') return route.fulfill({ status: 403, json: { message: 'FacilityAccess denied' } });
-      return route.fulfill({ status: 201, json: { maintenanceCode: 'MNT-FIXTURE' } });
+      const report = { id: 'report-a', maintenanceCode: 'MNT-FIXTURE', category: body.category, facility,
+        unitCode: 'A01', unit: reservedUnit, status: 'OPEN', createdAt: new Date().toISOString() };
+      reports.push(report);
+      return route.fulfill({ status: 201, json: report });
     }
     if (request.method() === 'POST' && path === '/api/staff/maintenance/repair-a/start') {
       assert.equal(repair.status, 'OPEN');
@@ -139,6 +143,7 @@ try {
     if (request.method() !== 'GET') return route.abort();
     if (path === '/api/auth/me') return route.fulfill({ json: staff });
     if (path === '/api/staff/maintenance/units') return route.fulfill({ json: asPage(revoked ? [] : [reservedUnit]) });
+    if (path === '/api/staff/maintenance/reported-by-me') return route.fulfill({ json: asPage(revoked ? [] : reports) });
     if (path === '/api/staff/management/maintenance') return route.fulfill({ json: asPage([maintenance, repair]) });
     if (path === '/api/staff/management/maintenance/repair-a') return route.fulfill({ json: repair });
     if (path === '/api/staff/management/appointments') return scheduleDenied
@@ -238,7 +243,12 @@ try {
   await page.getByRole('button', { name: 'Gửi vướng mắc' }).click();
   await page.getByText('Đã báo vướng mắc. Chờ quản lý xử lý.').waitFor();
   assert.equal(transfer.status, 'APPROVED');
-  // The existing Staff completion API is still available after the issue is corrected onsite.
+  assert.equal(await page.getByRole('button', { name: 'Hoàn tất chuyển kho' }).count(), 0);
+  transfer.handoverReport.problemReview = {
+    problemCount: 1, decision: 'CONTINUE', note: 'Đã kiểm tra kho đích.', reviewedAt: new Date().toISOString(),
+  };
+  await page.reload();
+  await page.getByText('Cho tiếp tục bàn giao', { exact: true }).waitFor();
   await page.getByLabel('Người nhận kho mới').fill('Khách kiểm thử');
   await page.getByLabel('Số chìa khóa/thẻ kho cũ đã thu').fill('1');
   await page.getByLabel('Số chìa khóa/thẻ kho mới đã giao').fill('1');
@@ -276,6 +286,7 @@ try {
   await submit.click();
   await dialog.getByRole('button', { name: 'Gửi báo cáo', exact: true }).click();
   await page.getByText(/Đã gửi báo cáo MNT-FIXTURE/).waitFor();
+  await page.getByRole('table', { name: 'Sự cố tôi đã báo' }).getByText('MNT-FIXTURE').waitFor();
   assert.equal(sent[0].body.storageUnitId, 'unit-a');
   assert.ok(sent[0].key);
 

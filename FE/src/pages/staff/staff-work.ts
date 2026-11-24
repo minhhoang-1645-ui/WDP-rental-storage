@@ -2,6 +2,7 @@ import type { ActivityState } from '../../activity/context';
 import { first, object, rows, type Row } from '../../components/manager/portal-data';
 import { activitySources } from '../../utils/activity';
 import { recordIdentity } from '../../utils/record-identity';
+import { transferProblem } from '../../utils/transfer-problem';
 import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
 
 export const staffActivitySources = activitySources('FACILITY_STAFF').filter(source => needsStaffAssignment(source.kind));
@@ -43,9 +44,8 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const dueAt = first(row, 'dueAt') || scheduledAt;
     const blocked = entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
       && (row.bookingReady === false || object(row.handoverReadiness).allowed === false);
-    const transferProblem = entry.kind === 'transfers' && status === 'APPROVED'
-      && rows(object(row.handoverReport).problems).length > 0;
-    const waiting = transferProblem || entry.kind === 'support-requests' && status === 'ESCALATED'
+    const transferPending = entry.kind === 'transfers' && transferProblem(row).pending;
+    const waiting = transferPending || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION';
     const actionable = !blocked && !waiting && entry.action
       && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
@@ -53,7 +53,9 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
       || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
-      || entry.kind === 'damage-claims' && Boolean(row.staffFacts));
+      || entry.kind === 'damage-claims' && Boolean(row.staffFacts)
+      || entry.kind === 'transfers' && transferProblem(row).review.decision === 'CANCEL'
+      || entry.kind === 'appointments' && first(row, 'scheduleAdjustment.action') === 'NO_SHOW');
     const titles: Record<string, string> = {
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       returns: status === 'REQUESTED' ? 'Tiếp nhận trả kho' : 'Kiểm tra kho trả',
@@ -63,13 +65,15 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       'damage-claims': 'Kiểm tra sự cố hàng hóa',
     };
     return {
-      entry, status, scheduledAt, processed, blocked, waiting, actionable, title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
+      entry, status, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
+      title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
       unit: identity.location || first(row, 'unitCodeSnapshot'),
       priority: first(row, 'priority'),
       facilityId: first(row, 'facility.id'),
       facilityName: first(row, 'facility.name'),
-      finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt') || entry.at,
+      finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt',
+        'handoverReport.problemReview.reviewedAt', 'scheduleAdjustment.at') || entry.at,
       timestamp: dueAt || scheduledAt || entry.at,
       overdue: (actionable || blocked) && Boolean(dueAt) && Date.parse(dueAt) < now,
     };

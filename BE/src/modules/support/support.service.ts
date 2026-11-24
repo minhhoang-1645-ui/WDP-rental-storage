@@ -1,5 +1,6 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
 import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 
@@ -140,8 +141,23 @@ export class SupportService {
       this.assertUnresolved(current);
       const staff = await assertAssignmentAccess(tx,actor,staffUserId,{reservationId:current.reservationId});
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao công việc cho nhân viên đang hoạt động.');
-      await recordAssignment(tx,actor,"support-requests",current.id,current.assignedStaffUserId,staff.id);
-      return tx.supportRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, status: current.status === 'OPEN' ? 'ASSIGNED' : current.status, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey }, include: this.include() });
+      assertAssignmentVersion(input, current.assignedStaffUserId);
+      if (current.assignedStaffUserId === staff.id) {
+        if (current.status === 'ESCALATED') throw new ConflictException('Chọn nhân viên khác để giao lại hồ sơ đã chuyển cấp.');
+        return current;
+      }
+      await recordAssignment(tx,actor,"support-requests",current.id,current.assignedStaffUserId,staff.id,
+        current.status === 'ESCALATED' ? {
+          previousStatus: 'ESCALATED', nextStatus: 'ASSIGNED',
+          escalatedAt: current.escalatedAt?.toISOString() ?? null,
+          escalatedByUserId: current.escalatedByUserId ?? null,
+          escalationReason: current.escalationReason ?? null,
+        } : undefined);
+      return tx.supportRequest.update({ where: { id: current.id }, data: {
+        assignedStaffUserId: staff.id, status: ['OPEN', 'ESCALATED'].includes(current.status) ? 'ASSIGNED' : current.status,
+        ...(current.status === 'ESCALATED' ? { startedAt: null } : {}),
+        lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
     });
   }
 

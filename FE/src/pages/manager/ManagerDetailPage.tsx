@@ -120,6 +120,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
       : resource === 'support-requests' && ['ASSIGNED', 'IN_PROGRESS'].includes(String(status)) && !isEarlyReturnRequest(row)
   );
   const canConfirmAppointment = resource !== 'appointments'
+    || (!isStaff && ['REQUESTED', 'CONFIRMED'].includes(String(row?.status)))
     || (row?.status === 'REQUESTED' && first(row, 'assignedStaff.id') === user?.id);
   const showProcessing = !['contracts', 'rentals', 'payments', 'customers', 'units', 'returns'].includes(resource)
     && canAccessManagerReview(user?.role ?? '', resource) && !hasInlineActions && !transferSupport && canConfirmAppointment
@@ -167,6 +168,9 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             </button>
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
+          {resource === 'appointments' && first(row, 'scheduleAdjustment.note') && <p role="status">
+            {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
+          </p>}
           {resource === 'transfers' && rows(object(row.handoverReport).problems).length > 0 &&
             <DetailDisclosure title="Vướng mắc khi bàn giao">
               <ul>{rows(object(row.handoverReport).problems).map((problem, index) =>

@@ -65,11 +65,12 @@ async function main() {
       update: { customerId: customer.id, facilityId: storageType.facilityId, storageTypeId: storageType.id, quantity: 1, startDate: activeStart, endDate: activeEnd, status: 'CONFIRMED', quoteSnapshot: unknownQuote, availabilitySnapshot: { demo: true, available: true } },
       create: { reservationCode: 'WDP-DEMO-ACTIVE', customerId: customer.id, facilityId: storageType.facilityId, storageTypeId: storageType.id, quantity: 1, startDate: activeStart, endDate: activeEnd, periodMode: 'DURATION', durationMonths: 6, adjacentPreference: false, status: 'CONFIRMED', quoteSnapshot: unknownQuote, availabilitySnapshot: { demo: true, available: true }, idempotencyKey: 'demo-active-reservation-v1', confirmedAt: new Date() },
     });
-    const activeAllocation = await prisma.reservationUnit.upsert({
-      where: { reservationId_storageUnitId: { reservationId: activeReservation.id, storageUnitId: occupiedUnit.id } },
-      update: { plannedStartDate: activeStart, plannedEndDate: activeEnd, releasedAt: null, actualVacatedAt: null },
-      create: { reservationId: activeReservation.id, storageUnitId: occupiedUnit.id, plannedStartDate: activeStart, plannedEndDate: activeEnd },
+    const existingAllocation = await prisma.reservationUnit.findFirst({
+      where: { reservationId: activeReservation.id, storageUnitId: occupiedUnit.id, releasedAt: null },
     });
+    const activeAllocation = existingAllocation
+      ? await prisma.reservationUnit.update({ where: { id: existingAllocation.id }, data: { plannedStartDate: activeStart, plannedEndDate: activeEnd, actualVacatedAt: null } })
+      : await prisma.reservationUnit.create({ data: { reservationId: activeReservation.id, storageUnitId: occupiedUnit.id, plannedStartDate: activeStart, plannedEndDate: activeEnd } });
     const activeContract = await prisma.rentalContract.upsert({
       where: { contractCode: 'WDP-DEMO-ACTIVE-C01' },
       update: { reservationId: activeReservation.id, reservationUnitId: activeAllocation.id, status: 'ACTIVE', startDate: activeStart, endDate: activeEnd, activatedAt: activeStart, completedAt: null },

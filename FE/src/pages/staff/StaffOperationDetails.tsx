@@ -45,6 +45,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
 
   if (resource === 'transfers') {
     const handover = object(row.handoverReport);
+    const problems = rows(handover.problems);
     const completed = row.status === 'COMPLETED';
     const completedBy = first(row, 'completedBy.fullName', 'handoverReport.recordedByName');
     const contractId = first(row, 'contract.id');
@@ -75,6 +76,9 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ])} />
         {first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}
       </section>
+      {row.status === 'APPROVED' && problems.length > 0 && <div className="booking-alert is-warning" role="status">
+        Đã báo vướng mắc. Chờ quản lý xử lý.
+      </div>}
       {actions}
       {completed && <Section title="Kết quả chuyển kho" items={[
         ['Kết quả điều chuyển', 'Đã hoàn tất điều chuyển'],
@@ -140,9 +144,10 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       {received && <section className="manager-section">
         <h2>Kết quả tiếp nhận kho</h2>
         <Facts items={facts([
-          ['Tiếp nhận', dateField('physicallyReturnedAt', true)],
+          ['Đã nhận kho thực tế', dateField('physicallyReturnedAt', true)],
           ['Người tiếp nhận', first(row, 'physicallyReturnedBy.fullName')],
-          ['Quyết toán cọc', settlementStatus && <Status value={settlementStatus} text={settlementStatus === 'SETTLED' ? 'Đã quyết toán' : undefined} />],
+          ['Quyết toán cọc', settlementStatus && <Status value={settlementStatus} text={settlementStatus === 'SETTLED' ? 'Đã quyết toán'
+            : row.status === 'PENDING_SETTLEMENT' && settlementStatus === 'PENDING_REVIEW' ? 'Chờ quản lý quyết toán' : undefined} />],
         ])} />
         {inspections.map(item => {
           const unit = first(item, 'unit.unitCode');

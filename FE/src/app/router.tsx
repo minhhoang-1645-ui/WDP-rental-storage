@@ -40,6 +40,7 @@ import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetai
 import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffIssueReportPage } from "../pages/staff/StaffIssueReportPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
@@ -187,6 +188,9 @@ export function AppRouter() {
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
           <Route path="tasks" element={<StaffTasksPage />} />
+          <Route path="schedule" element={<StaffTasksPage view="schedule" />} />
+          <Route path="history" element={<StaffTasksPage view="history" />} />
+          <Route path="report-issue" element={<StaffIssueReportPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="stored-items/*" element={<Navigate to="/staff/tasks" replace />} />

@@ -88,7 +88,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
   const returnPath = useInternalListReturn(reviewReturn ?? listPath);
   useStaffProcessingTarget(isStaff && Boolean(data.data));
   if (!config) return <Empty title="Không tìm thấy trang" />;
-  const row = data.data;
+  const row = isStaff && data.status !== null && [401, 403, 404].includes(data.status) ? null : data.data;
   const staffOperation = isStaff && isStaffOperationDetail(resource) ? resource : null;
   const identity = row && (staffOperation ? staffRecordIdentity(row, resource) : recordIdentity(row, resource));
   const reference = row ? code(row) : '';

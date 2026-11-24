@@ -20,6 +20,7 @@ import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
 import { CombinedReturnRefund } from '../../components/manager/EarlyReturnFinanceReview';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 
 
 export function ManagerActions({
@@ -36,6 +37,7 @@ export function ManagerActions({
   onSuccess?: (message: string) => void;
 }) {
   const { user } = useAuth();
+  const confirm = useConfirmation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState(first(row, "status"));
@@ -89,6 +91,11 @@ export function ManagerActions({
       setBusy(true);
       setError("");
       try {
+        if (resource === 'transfers' && user?.role === 'FACILITY_STAFF' && path.endsWith('/complete') && !await confirm({
+          title: 'Hoàn tất chuyển kho?',
+          description: 'Xác nhận khách đã chuyển đồ, trả quyền truy cập kho cũ và nhận quyền truy cập kho mới.',
+          confirmLabel: 'Hoàn tất chuyển kho',
+        })) return;
         await mutate(path, verb, body, idempotent);
         onSuccess?.("Đã lưu thao tác thành công.");
         refresh();
@@ -103,7 +110,7 @@ export function ManagerActions({
         setBusy(false);
       }
     },
-    [onSuccess, refresh, resource, row, renewalReviewed],
+    [confirm, onSuccess, refresh, resource, row, renewalReviewed, user?.role],
   );
   const paymentFields = (
     <>
@@ -155,7 +162,7 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
-        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && row.status === 'APPROVED' && !row.commercial &&
+        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && first(row, 'assignedStaff.id') === user.id && row.status === 'APPROVED' && !row.commercial &&
           <TransferHandoverForm busy={busy}
             onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }}
             onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />}

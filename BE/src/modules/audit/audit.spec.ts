@@ -29,16 +29,17 @@ describe('audit persistence and filters (mock DB)', () => {
     const findMany = vi.fn().mockResolvedValue([{ id: 'target', fullName: 'Fixture Staff', role: 'FACILITY_STAFF' }]);
     const service = new AuditService({ ...db, user: { ...db.user,findMany } } as never);
     const page = await service.list({ category: 'ACCOUNT_NOTICES' }, admin);
-    const where = { category: 'ACTIVITY', resource: 'users', resourceId: { not: null }, outcome: 'SUCCESS',
-      action: { in: ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'] } };
+    const where = expect.objectContaining({
+      category: 'ACTIVITY', outcome: 'SUCCESS', resourceId: { not: null },
+    });
     expect(db.auditEvent.count).toHaveBeenCalledWith({ where });
     expect(db.auditEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true },
+      where, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true, route: true, metadata: true },
     }));
     expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['target'] } }, select: { id: true, fullName: true, role: true } });
-    expect(page.items).toEqual([{ ...item, targetAccount: { fullName: 'Fixture Staff', role: 'FACILITY_STAFF' } }]);
+    expect(page.items).toEqual([{ ...item, targetUserId: 'target', targetAccount: { fullName: 'Fixture Staff', role: 'FACILITY_STAFF' } }]);
     await service.list({ category: 'ACTIVITY', event: 'notice' }, admin);
-    expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where: expect.objectContaining({ category: 'ACTIVITY', id: 'notice' }) });
+    expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where: expect.objectContaining({ id: 'notice' }) });
   });
   it('looks up the account name for old failed login rows without changing their unauthenticated attribution', async () => {
     const db = database();

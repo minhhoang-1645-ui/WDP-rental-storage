@@ -14,7 +14,7 @@ function fixture() {
     accountFlowToken: { findUnique: vi.fn().mockResolvedValue(proof), create: vi.fn().mockResolvedValue(proof), update: vi.fn().mockResolvedValue(proof), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     accountFlowLimit: { upsert: vi.fn().mockResolvedValue({ bucket: new Date(Math.floor(Date.now() / 900000) * 900000) }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     user: { findUnique: vi.fn().mockResolvedValue(null), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    authSession: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    authSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(),
   };
   db.$transaction.mockImplementation(async callback => callback(db));
@@ -76,8 +76,11 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     const input = { token: 'p'.repeat(40), password: 'password123', confirmPassword: 'password123' };
     await service.reset(input);
     expect(db.user.updateMany).toHaveBeenCalledWith({ where: { id: 'u', email: proof.email, accountStatus: 'ACTIVE', passwordHash: 'scrypt$old' }, data: { passwordHash: 'scrypt$new' } });
-    expect(db.authSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u' } });
-    db.accountFlowToken.updateMany.mockResolvedValue({ count: 0 }); await expect(service.reset(input)).rejects.toThrow(); expect(db.authSession.deleteMany).toHaveBeenCalledOnce();
+    expect(db.authSession.updateMany).toHaveBeenCalledWith({
+      where: { AND: [{ userId: 'u' }, { revokedAt: null, expiresAt: { gt: expect.any(Date) }, NOT: { tokenHash: { startsWith: 'disabled:' } } }] },
+      data: { revokedAt: expect.any(Date), revokedById: 'u', revocationReason: 'PASSWORD_RESET' },
+    });
+    db.accountFlowToken.updateMany.mockResolvedValue({ count: 0 }); await expect(service.reset(input)).rejects.toThrow(); expect(db.authSession.updateMany).toHaveBeenCalledOnce();
   });
   it('checks provider availability before looking up any account and rejects incorrect, expired or consumed reset proofs', async () => {
     const { service, proof, db, email, auth } = fixture();
@@ -112,7 +115,7 @@ describe('secure guest account onboarding (isolated mocks)', () => {
       proof.usedAt = data.usedAt;
       return { count: 1 };
     });
-    db.authSession.deleteMany.mockImplementation(async () => { await users.deleteUserSessions(user.id); return { count: 1 }; });
+    db.authSession.updateMany.mockImplementation(async () => { await users.deleteUserSessions(user.id); return { count: 1 }; });
     const service = new AccountOnboardingService(db as never, auth, email as never);
     const reset = (password: string) => service.reset({ token: rawToken, password, confirmPassword: password });
     await expect(reset('short')).rejects.toThrow('Mật khẩu phải có 8–128 ký tự.');
@@ -122,12 +125,12 @@ describe('secure guest account onboarding (isolated mocks)', () => {
     expect(user.passwordHash).toBe(oldHash);
     expect(proof.usedAt).toBeNull();
     expect(db.$transaction).not.toHaveBeenCalled();
-    expect(db.authSession.deleteMany).not.toHaveBeenCalled();
+    expect(db.authSession.updateMany).not.toHaveBeenCalled();
     const attempts = await Promise.allSettled([reset(newPassword), reset('other-fixture-password')]);
     const success = attempts.findIndex(attempt => attempt.status === 'fulfilled');
     expect(attempts.filter(attempt => attempt.status === 'fulfilled')).toEqual([{ status: 'fulfilled', value: { message: 'Đặt lại mật khẩu thành công.' } }]);
     expect(proof.usedAt).toBeInstanceOf(Date);
-    expect(db.authSession.deleteMany).toHaveBeenCalledOnce();
+    expect(db.authSession.updateMany).toHaveBeenCalledOnce();
     await expect(reset(oldPassword)).rejects.toMatchObject({ status: 401 });
     await expect(auth.getUserByToken(currentSession.token)).rejects.toMatchObject({ status: 401 });
     await expect(auth.login({ email: user.email, password: oldPassword })).rejects.toMatchObject({ status: 401 });

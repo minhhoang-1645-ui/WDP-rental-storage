@@ -7,6 +7,8 @@ import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown'
 import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  Layers3,
+  Home,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -44,6 +46,8 @@ export function InternalPortalLayout({
   pageNavigation = [],
   themed = false,
   scopeControl,
+  topbarControl,
+  collapsibleGroups = false,
   scopeReady = true,
   scopeNotice,
 }: {
@@ -53,6 +57,8 @@ export function InternalPortalLayout({
   pageNavigation?: Pick<InternalNavItem, "to" | "label" | "end">[];
   themed?: boolean;
   scopeControl?: ReactNode;
+  topbarControl?: ReactNode;
+  collapsibleGroups?: boolean;
   scopeReady?: boolean;
   scopeNotice?: ReactNode;
 }) {
@@ -63,6 +69,7 @@ export function InternalPortalLayout({
   const notificationBack = useInternalListReturn(notificationInbox ?? '');
   const navigate = useNavigate();
   const { theme, toggleTheme } = useWorkspaceTheme(themed);
+  const admin = themed && user?.role === 'SYSTEM_ADMINISTRATOR';
   const profileMenu = themed && user && ['FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role) ? user : null;
   const sidebarKey = user?.role === 'SYSTEM_ADMINISTRATOR' ? 'nestbox-admin-sidebar' : user?.role === 'FACILITY_MANAGER' ? 'nestbox-manager-sidebar' : 'nestbox-staff-sidebar';
   const [collapsed, setCollapsed] = useState(() => themed && safeLocalStorage.getItem(sidebarKey) === 'collapsed');
@@ -127,7 +134,7 @@ export function InternalPortalLayout({
       }
     >
       <span>
-        <Warehouse size={23} />
+        {admin ? <Layers3 size={26} strokeWidth={1.7} /> : <Warehouse size={23} />}
       </span>
       <div>
         <strong>
@@ -159,7 +166,7 @@ export function InternalPortalLayout({
           || matchesAlias(item, location.pathname));
         const count = staff || user?.role === 'FACILITY_MANAGER' && group === 'Quản lý' ? 0
           : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
-        return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
+        return <NavigationGroup key={group} title={group} active={active} count={count} expanded={collapsibleGroups || (themed ? index <= 2 : index === 1)} collapsible={!iconOnly && (collapsibleGroups || navigation.length > 8) && group !== 'Tổng quan'}>
           {items.map(item => {
             const { to, label: itemLabel, icon: Icon, end } = item;
             const aliasActive = matchesAlias(item, location.pathname);
@@ -176,7 +183,11 @@ export function InternalPortalLayout({
       })}
     </nav>
   );
-  const account = (
+  const account = admin && profileMenu ? (
+    <WorkspaceProfileDropdown user={profileMenu} roleLabel="Quản trị viên hệ thống" theme={theme} variant="sidebar"
+      onToggleTheme={toggleTheme} onProfile={() => openSettings('profile')} onSecurity={() => openSettings('security')}
+      onAppearance={() => openSettings('appearance')} onLogout={signOut} />
+  ) : (
     <div className="manager-account">
       <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>
       <div>
@@ -205,7 +216,7 @@ export function InternalPortalLayout({
       <div className="portal-workspace">
         <header className="portal-topbar">
           <div>
-            {themed && <button type="button" className="icon-button workspace-sidebar-toggle" aria-label={collapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}</button>}
+            {themed && <button type="button" className="icon-button workspace-sidebar-toggle" aria-label={collapsed ? 'Mở rộng thanh bên' : 'Thu gọn thanh bên'} aria-expanded={!collapsed} onClick={toggleSidebar}>{collapsed ? <PanelLeftOpen size={19} /> : admin ? <Home size={17} /> : <PanelLeftClose size={19} />}</button>}
             <button
               className="icon-button portal-menu"
               aria-label="Mở điều hướng"
@@ -214,7 +225,7 @@ export function InternalPortalLayout({
               <Menu size={19} />
             </button>
             <nav className="portal-breadcrumb" aria-label="Đường dẫn">
-              <span className="portal-breadcrumb-root">{label}</span>
+              {admin ? <Link className="portal-breadcrumb-root" to="/admin">{label}</Link> : <span className="portal-breadcrumb-root">{label}</span>}
               <span className="portal-topbar-divider" aria-hidden="true">/</span>
               {crumbParent && <>
                 <Link className="portal-topbar-parent" to={crumbParent.to}>{crumbParent.label}</Link>
@@ -224,6 +235,7 @@ export function InternalPortalLayout({
             </nav>
           </div>
           <div className="portal-topbar-actions">
+            {topbarControl}
             {scopeControl}
             <ActivityBell />
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}

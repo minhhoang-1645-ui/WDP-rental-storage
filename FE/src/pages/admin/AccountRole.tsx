@@ -1,3 +1,5 @@
+import { useAuth } from '../../auth/auth-context';
+import { useApiResource } from '../../services/useApiResource';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/manager/PortalUi';
 import { BriefcaseBusiness, ClipboardCheck, ShieldCheck, UserRound } from 'lucide-react';
@@ -51,11 +53,21 @@ export function AccountRoleAccess({ value }: { value: unknown }) {
 export function AdminRolesPage() {
   return <section>
     <PageHeader title="Vai trò và phân quyền" description="Vai trò quyết định phạm vi nghiệp vụ. Quyền tại từng cơ sở được quản lý theo tài khoản." />
-    {Object.entries(adminRoles).map(([value, role]) => <section key={value} className="manager-section admin-detail-panel">
+    <div className="admin-role-grid">{Object.entries(adminRoles).map(([value, role]) => <section key={value} className="manager-section admin-detail-panel">
       <h2><AccountRole value={value} /></h2>
       <p><code>{value}</code> · {role.description}</p>
       <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
+      <RoleAccountCount role={value} />
       <Link to={'/admin/users?role=' + value}>Xem tài khoản theo vai trò</Link>
-    </section>)}
+    </section>)}</div>
   </section>;
+}
+
+function RoleAccountCount({ role }: { role: string }) {
+  const { user } = useAuth();
+  const source = useApiResource<{ total: number }>(user?.id ? '/admin/users?limit=1&role=' + encodeURIComponent(role) : null, user?.id);
+  return <div className="admin-role-count">
+    {source.loading ? 'Đang tải số tài khoản…' : source.data ? source.data.total.toLocaleString('vi-VN') + ' tài khoản'
+      : source.error ? <button className="button-secondary" type="button" onClick={source.refresh}>Tải lại số tài khoản</button> : null}
+  </div>;
 }

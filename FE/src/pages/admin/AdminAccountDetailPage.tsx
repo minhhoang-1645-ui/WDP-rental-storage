@@ -1,5 +1,6 @@
 import { accessPath, AssignmentImpact, type AccountAccess } from './AdminFacilityAccessPage';
 import { AdminAccountSessions } from './AdminAccountSessions';
+import { AdminAvatar } from './AdminAvatar';
 import { AccountRoleEditor } from './AccountRoleEditor';
 import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
@@ -76,7 +77,7 @@ export function AdminAccountDetailPage() {
     <Link className="booking-back" to={back}><ArrowLeft size={17} aria-hidden="true" />Về danh sách tài khoản</Link>
     <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}
       status={row && <Status value={row.accountStatus} />}
-      meta={row && <><span>{first(row, 'email')}</span><AccountRole value={row.role} /></>}>
+      meta={row && <><AdminAvatar name={first(row, 'fullName')} large /><span>{first(row, 'email')}</span><AccountRole value={row.role} /></>}>
       <button type="button" className="button-secondary" disabled={detail.loading || detail.refreshing || editingId === id} onClick={() => { detail.refresh(); access.refresh(); }}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới
       </button>
@@ -115,10 +116,16 @@ export function AdminAccountDetailPage() {
       <div role="tabpanel" id="admin-panel-permissions" aria-labelledby="admin-tab-permissions" hidden={tab !== 'permissions'}>
         <section className="manager-section admin-detail-panel">
           <AccountRoleAccess value={row.role} />
+          {access.data?.history.some(grant => !grant.revokedAt) && <div className="admin-grants-summary">
+            <h3>Cơ sở đã được cấp</h3>
+            <ul>{access.data.history.filter(grant => !grant.revokedAt).map(grant => <li key={grant.id}>{grant.facility.name}</li>)}</ul>
+          </div>}
           {['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(String(row.role)) && <Link to={'/admin/facility-access?user=' + encodeURIComponent(id)}>Quản lý quyền theo cơ sở</Link>}
           <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
           <Link to={'/admin/permission-history?accountId=' + encodeURIComponent(id)}>Xem lịch sử thay đổi quyền</Link>
           {id !== user?.id && <AccountRoleEditor key={id + ':' + String(row.role)} id={id} currentRole={String(row.role)} access={access.data}
+            refreshing={detail.refreshing || access.refreshing}
+            onRefresh={() => { detail.refresh(); access.refresh(); }}
             onSaved={() => { detail.refresh(); access.refresh(); setSaved({ id, row, previous: detail.data, text: 'Đã đổi vai trò tài khoản.' }); }} />}
           <div className="admin-access-status">
             <h3>Khóa và mở khóa tài khoản</h3>
@@ -133,8 +140,8 @@ export function AdminAccountDetailPage() {
         </section>
       </div>
       <div role="tabpanel" id="admin-panel-sessions" aria-labelledby="admin-tab-sessions" hidden={tab !== 'sessions'}>
-        <AdminAccountSessions key={id} accountId={id} ownAccount={id === user?.id} access={access.data}
-          loading={access.loading} refreshing={access.refreshing} loadError={access.error} refresh={access.refresh} />
+        {tab === 'sessions' && <AdminAccountSessions key={id} accountId={id} accountName={first(row, 'fullName', 'email')}
+          adminId={user?.role === 'SYSTEM_ADMINISTRATOR' ? user.id : ''} access={access.data} refreshAccess={access.refresh} />}
       </div>
       {canChange && status === next && <StatusConfirmation key={id + ':' + next}
         path={path} name={first(row, 'fullName')} next={next} access={access.data} onClose={() => changeTab('permissions')} onSaved={updated => {

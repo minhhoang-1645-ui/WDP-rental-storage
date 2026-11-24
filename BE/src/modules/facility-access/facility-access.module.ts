@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Module, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Module, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -11,6 +11,15 @@ class FacilityAccessController {
  constructor(private readonly access: FacilityAccessService) {}
  @Patch('facility-access/users/:id/role') role(@Req() req: AuthenticatedRequest,@Param('id') id:string,@Body() body:Record<string,unknown>){return this.access.changeRole(req.user!,id,body.role,body.expectedRole);}
  @Get('users/:id/access') userAccess(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.userAccess(req.user!, id); }
+ @Get('users/:id/sessions') listSessions(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Query('page') page = '1') {
+   return this.access.listSessions(req.user!, id, Number(page));
+ }
+ @Get('users/:id/sessions/:sessionId') session(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('sessionId') sessionId: string) {
+   return this.access.getSession(req.user!, id, sessionId);
+ }
+ @Patch('users/:id/sessions/:sessionId/revoke') revokeSession(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('sessionId') sessionId: string) {
+   return this.access.revokeSessions(req.user!, id, sessionId);
+ }
  @Patch('users/:id/sessions/revoke') revokeSessions(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revokeSessions(req.user!, id); }
  @Get('facility-access') list(@Req() req:AuthenticatedRequest) { return this.access.list(req.user!); }
  @Post('facility-access') grant(@Req() req: AuthenticatedRequest, @Body() body: Record<string,unknown>) { return this.access.grant(req.user!, body); }

@@ -2,9 +2,25 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { activeSessions, disabledSessionPrefix, revokeActiveSessions } from '../auth/session-revocation.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 type Db = Prisma.TransactionClient;
+const sessionSelect = {
+  id: true, userId: true, createdAt: true, expiresAt: true, revokedAt: true,
+  revokedById: true, revocationReason: true, device: true, tokenHash: true,
+} satisfies Prisma.AuthSessionSelect;
+
+function sessionView(session: Prisma.AuthSessionGetPayload<{ select: typeof sessionSelect }>, accountActive: boolean, now: Date) {
+  const { tokenHash, ...publicFields } = session;
+  const disabled = tokenHash.startsWith(disabledSessionPrefix);
+  const status = session.revokedAt || disabled ? 'REVOKED' : session.expiresAt <= now ? 'EXPIRED' : accountActive ? 'ACTIVE' : 'REVOKED';
+  return { ...publicFields, status, revocationReason: session.revocationReason ?? (disabled ? 'ACCOUNT_DISABLED' : null) };
+}
+
+function validateSessionId(id: string) {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id)) throw new NotFoundException('Không tìm thấy phiên đăng nhập.');
+}
 export async function facilityIds(db: Db, actor: PublicUser) {
   if (!['FACILITY_MANAGER', 'FACILITY_STAFF'].includes(actor.role)) throw new ForbiddenException('Vai trò không có quyền vận hành cơ sở.');
   const user = await db.user.findFirst({ where: { id: actor.id, role: actor.role, accountStatus: 'ACTIVE' }, select: { id: true } });
@@ -57,7 +73,7 @@ export class FacilityAccessService {
       assignmentCounts(this.prisma, id, true),
       this.prisma.authSession.findMany({
         where: { userId: id, expiresAt: { gt: new Date() } },
-        select: { expiresAt: true, tokenHash: true }, orderBy: { expiresAt: 'desc' },
+        select: { expiresAt: true, tokenHash: true, revokedAt: true }, orderBy: { expiresAt: 'desc' },
       }),
     ]);
     const actorIds = [...new Set(history.flatMap(item => item.revokedById ? [item.grantedById, item.revokedById] : [item.grantedById]))];
@@ -70,23 +86,60 @@ export class FacilityAccessService {
       grantedByName: actorNames.get(item.grantedById) ?? null,
       revokedByName: item.revokedById ? actorNames.get(item.revokedById) ?? null : null,
     }));
-    return { history: grants, openAssignments, closedAssignments, sessions: sessions.map(session => ({
-      expiresAt: session.expiresAt, status: user.accountStatus !== 'ACTIVE' || session.tokenHash.startsWith('disabled:') ? 'REVOKED' : 'ACTIVE',
+    return { sessionManagement: true, history: grants, openAssignments, closedAssignments, sessions: sessions.map(session => ({
+      expiresAt: session.expiresAt, status: user.accountStatus !== 'ACTIVE' || session.revokedAt || session.tokenHash.startsWith(disabledSessionPrefix) ? 'REVOKED' : 'ACTIVE',
     })) };
   }
 
-  async revokeSessions(actor: PublicUser, id: string) {
-    if (id === actor.id) throw new ForbiddenException('Đăng xuất để kết thúc phiên hiện tại của bạn.');
+  async listSessions(actor: PublicUser, userId: string, page: number) {
+    await this.assertAdmin(this.prisma, actor);
+    if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new BadRequestException('Trang phiên đăng nhập không hợp lệ.');
+    const user = await this.sessionUser(userId);
+    const now = new Date();
+    const limit = 20;
+    const accountActive = user.accountStatus === 'ACTIVE';
+    const [items, total, activeCount] = await Promise.all([
+      this.prisma.authSession.findMany({
+        where: { userId }, select: sessionSelect, skip: (page - 1) * limit, take: limit,
+        orderBy: [{ createdAt: { sort: 'desc', nulls: 'last' } }, { expiresAt: 'desc' }, { id: 'asc' }],
+      }),
+      this.prisma.authSession.count({ where: { userId } }),
+      accountActive ? this.prisma.authSession.count({ where: { userId, ...activeSessions(now) } }) : 0,
+    ]);
+    return { items: items.map(session => sessionView(session, accountActive, now)), page, limit, total, activeCount };
+  }
+
+  async getSession(actor: PublicUser, userId: string, sessionId: string) {
+    await this.assertAdmin(this.prisma, actor);
+    validateSessionId(sessionId);
+    const user = await this.sessionUser(userId);
+    const session = await this.prisma.authSession.findFirst({ where: { id: sessionId, userId }, select: sessionSelect });
+    if (!session) throw new NotFoundException('Không tìm thấy phiên đăng nhập.');
+    return sessionView(session, user.accountStatus === 'ACTIVE', new Date());
+  }
+
+  async revokeSessions(actor: PublicUser, userId: string, sessionId?: string) {
+    if (sessionId !== undefined) validateSessionId(sessionId);
     return this.prisma.$transaction(async tx => {
       await this.admin(tx, actor);
-      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', id);
-      if (!await tx.user.findUnique({ where: { id }, select: { id: true } })) throw new NotFoundException('Không tìm thấy tài khoản.');
-      const { count } = await tx.authSession.deleteMany({
-        where: { userId: id, NOT: { tokenHash: { startsWith: 'disabled:' } } },
-      });
-      await this.audit(tx, actor, 'REVOKE_SESSIONS', id, '/admin/users/:id/sessions/revoke', { count });
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      if (!locked.length) throw new NotFoundException('Không tìm thấy tài khoản.');
+      const where = { userId, ...(sessionId ? { id: sessionId } : {}) };
+      if (sessionId && !await tx.authSession.findFirst({ where, select: { id: true } })) {
+        throw new NotFoundException('Không tìm thấy phiên đăng nhập.');
+      }
+      const { count } = await revokeActiveSessions(tx, where, 'ADMIN', actor.id);
+      await this.audit(tx, actor, sessionId ? 'REVOKE_SESSION' : 'REVOKE_SESSIONS', userId,
+        sessionId ? '/admin/users/:id/sessions/:sessionId/revoke' : '/admin/users/:id/sessions/revoke',
+        sessionId ? { sessionId, count } : { count });
       return { count };
     });
+  }
+
+  private async sessionUser(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { accountStatus: true } });
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản.');
+    return user;
   }
 
   async changeRole(actor:PublicUser,id:string,role:unknown,expectedRole?:unknown) {
@@ -103,7 +156,7 @@ export class FacilityAccessService {
       await assertNoOpenAssignments(tx,id);
       if(await tx.facilityAccess.count({where:{userId:id,revokedAt:null}}))throw new ConflictException('Thu hồi quyền cơ sở cũ trước khi đổi vai trò.');
       await tx.user.update({where:{id},data:{role:role as 'FACILITY_STAFF'|'FACILITY_MANAGER'|'BUSINESS_OPERATIONS_MANAGER'}});
-      await tx.authSession.deleteMany({where:{userId:id}});
+      await revokeActiveSessions(tx, { userId: id }, 'ROLE_CHANGED', actor.id);
       await this.audit(tx, actor, 'CHANGE_ROLE', id, '/admin/facility-access/users/:id/role', { previousRole: target.role, nextRole: role });
       return {changed:true};
     });
@@ -149,7 +202,7 @@ export class FacilityAccessService {
       if (!row.revokedAt) {
         await assertNoOpenAssignments(tx, row.userId);
         await tx.facilityAccess.update({ where: { id }, data: { activeKey: null, revokedById: actor.id, revokedAt: new Date() } });
-        await tx.authSession.deleteMany({ where: { userId: row.userId } });
+        await revokeActiveSessions(tx, { userId: row.userId }, 'FACILITY_ACCESS_REVOKED', actor.id);
         await this.audit(tx, actor, 'REVOKE_FACILITY_ACCESS', row.userId, '/admin/facility-access/:id/revoke', { facilityId: row.facilityId, accessId: id });
       }
       return { revoked: true };

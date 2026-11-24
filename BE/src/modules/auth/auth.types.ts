@@ -14,6 +14,6 @@ export interface AuthSession {
 
 export interface AuthenticatedRequest {
   query?: Record<string, unknown>;
-  headers: { authorization?: string };
+  headers: { authorization?: string; 'user-agent'?: string };
   user?: PublicUser;
 }

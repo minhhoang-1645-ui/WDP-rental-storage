@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronRight, Info, Tag, X } from 'lucide-react-native';
+import { ChevronRight, Info, X } from 'lucide-react-native';
 import { object, rows, text, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
 import { quotePaymentSummary } from '@/utils/quote-payment-summary';
@@ -24,16 +24,8 @@ export function BookingBill({ quote }: { quote: Row }) {
   const duration = typeof quote.termMonths === 'number' && quote.termMonths > 0 ? quote.termMonths + ' tháng'
     : typeof quote.billableDays === 'number' ? quote.billableDays + ' ngày' : '';
   return <View style={s.group}>
-    {discount > 0 ? <View style={[s.panel, s.notice, s.green]}><Tag size={19} color="#09672A" />
-      <View style={s.noticeText}><Text style={s.saving}>Giảm {formatMoney(discount)}</Text><Text style={s.label}>Ưu đãi khi thanh toán toàn bộ kỳ thuê.</Text></View></View>
-      : sum.monthly ? <View style={[s.panel, s.notice]}><Info size={19} color={blue} />
-        <View style={s.noticeText}><Text style={s.linkText}>Thanh toán sau khi ký hợp đồng</Text><Text style={s.label}>Bạn sẽ thanh toán lần đầu theo hóa đơn.</Text></View></View> : null}
-    <View style={s.panel}>
-      <Text style={s.strong}>{sum.monthly ? 'Thanh toán lần đầu' : 'Dự kiến thanh toán một lần'}</Text>
-      <Text style={s.amount}>{money(sum.first ?? (!sum.monthly ? sum.total : null))}</Text>
-      {sum.monthly ? <><Text style={s.label}>Tổng dự kiến cả kỳ (gồm cọc)</Text><Text style={s.strong}>{money(sum.total)}</Text></>
-        : <Text style={s.label}>Thanh toán sau khi ký hợp đồng</Text>}
-    </View>
+    <View style={s.breakdown}>
+    <Text style={s.title}>Chi tiết chi phí</Text>
     {sum.monthly ? <>
       <Line title="Tiền thuê kỳ đầu" value={initial.rentalAmount} />
       <Line title="Tiền cọc" value={initial.depositAmount ?? quote.depositAmount} />
@@ -46,6 +38,15 @@ export function BookingBill({ quote }: { quote: Row }) {
       <Line title="Tiền cọc" value={quote.depositAmount} />
       {Number(quote.addOnTotalAmount) > 0 ? <Line title="Thiết bị và vật tư" value={quote.addOnTotalAmount} /> : null}
     </>}
+      <View style={[s.panel, s.line]}>
+        <Text style={s.strong}>{sum.monthly ? 'Tổng dự kiến cả kỳ' : 'Tổng thanh toán'}</Text>
+        <Text style={s.amount}>{money(sum.total)}</Text>
+      </View>
+    </View>
+    <View style={[s.panel, s.notice]}><Info size={18} color={blue} />
+      <View style={s.noticeText}><Text style={s.strong}>Thanh toán sau khi ký hợp đồng</Text>
+        {sum.monthly ? <Text style={s.label}>Thanh toán lần đầu: {money(sum.first)}</Text> : null}</View>
+    </View>
     <Pressable accessibilityRole="button" style={s.link} onPress={() => setDetails(true)}>
       <Text style={s.linkText}>Xem chi tiết chi phí</Text><ChevronRight color={blue} size={17} />
     </Pressable>
@@ -74,10 +75,11 @@ export function BookingBill({ quote }: { quote: Row }) {
 }
 
 const s = StyleSheet.create({
+  breakdown: { borderWidth: 1, borderColor: '#DCE3EC', borderRadius: 12, padding: 10, gap: 3 },
   group: { gap: 8 }, panel: { backgroundColor: '#EDF3FD', borderRadius: 12, padding: 12, gap: 4 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, noticeText: { flex: 1, gap: 4 },
   green: { backgroundColor: '#E7F6E9' }, saving: { fontSize: 15, fontWeight: '700', color: '#09672A' },
-  amount: { color: blue, fontSize: 27, fontWeight: '800' }, title: { fontSize: 18, fontWeight: '800', color: '#18263B' },
+  amount: { color: blue, fontSize: 19, fontWeight: '800' }, title: { fontSize: 18, fontWeight: '800', color: '#18263B' },
   line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 5 },
   label: { fontSize: 13, color: '#40516A', flexShrink: 1 }, strong: { fontSize: 14, color: '#18263B', fontWeight: '700' },
   link: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 44 }, linkText: { color: blue, fontWeight: '700' },

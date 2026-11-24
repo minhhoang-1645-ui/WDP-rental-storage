@@ -64,10 +64,19 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     if (this.expirationTimer) clearInterval(this.expirationTimer);
   }
 
-  async getCatalog() {
-    const [records, addons] = await Promise.all([
-      this.prisma.storageType.findMany({ where: { facility: { bookingEnabled: true, operationalStatus: 'OPEN' } }, orderBy: { code: 'asc' } }),
-      this.prisma.facilityServiceOffering.findMany({where:publicOfferingScope,include:{additionalService:true},orderBy:{facilityId:'asc'}}).then(items=>items.map(offeringView)),
+  async getCatalog(facilityId?: string) {
+    if (facilityId !== undefined && (typeof facilityId !== 'string' || !facilityId.trim() || facilityId.length > 120)) {
+      throw new BadRequestException('Mã cơ sở không hợp lệ.');
+    }
+    const scope = facilityId ? { facilityId } : {};
+    const [records, addons, facilities] = await Promise.all([
+      this.prisma.storageType.findMany({ where: { ...scope, facility: { bookingEnabled: true, operationalStatus: 'OPEN' } }, orderBy: { code: 'asc' } }),
+      this.prisma.facilityServiceOffering.findMany({ where: { ...publicOfferingScope, ...scope }, include: { additionalService: true }, orderBy: { facilityId: 'asc' } }).then(items => items.map(offeringView)),
+      facilityId ? Promise.resolve(undefined) : this.prisma.facility.findMany({
+        where: { operationalStatus: 'OPEN' },
+        select: { id: true, name: true, address: true, bookingEnabled: true, operationalStatus: true, accessHours: true, officeHours: true },
+        orderBy: { code: 'asc' },
+      }),
     ]);
     const products = records.map((record) => this.toProduct(record));
     const sizes = [...new Map(records.map((record) => [record.sizeId, record])).values()]
@@ -87,6 +96,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         image: record.image,
       }));
     return {
+      ...(facilityId ? { facilityId } : { facilities }),
       products,
       sizes,
       approvedDurations,
@@ -110,6 +120,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async getUnitMap(input: Record<string, unknown>) {
     const { draft } = await this.validateDraft(input);
     return this.prisma.$transaction(async (tx) => {
+      if (input.facilityId !== undefined) await assertAcceptingBookings(tx, draft.productId, true);
       await this.expireUnpaidAutomaticReservations(tx, draft.productId);
       const endDateExclusive = this.getEndDateExclusive(draft);
       const start = this.date(draft.startDate);
@@ -816,6 +827,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const productId = typeof input.productId === 'string' ? input.productId : '';
     const product = await this.prisma.storageType.findUnique({ where: { id: productId } });
     if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
+    if (input.facilityId !== undefined && input.facilityId !== product.facilityId) {
+      throw new BadRequestException('Loại kho không thuộc cơ sở đã chọn.');
+    }
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
     if (!this.isDate(startDate) || startDate < businessDate()) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const periodMode = input.periodMode === 'dates' ? 'dates' as const : 'duration' as const;

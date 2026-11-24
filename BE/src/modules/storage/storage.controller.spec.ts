@@ -36,6 +36,23 @@ describe('Shared storage catalog and database inventory', () => {
     expect((await storage.list({})).items).toHaveLength(catalog.products.length);
   });
 
+  it('returns a public facility directory and keeps scoped catalog and unit selection consistent', async () => {
+    const catalog = await booking.getCatalog();
+    const product = catalog.products[0];
+    const facilityId = String(product.facilityId);
+    expect(catalog.facilities).toEqual(expect.arrayContaining([expect.objectContaining({
+      id: facilityId, operationalStatus: 'OPEN', bookingEnabled: true,
+    })]));
+    const scoped = await booking.getCatalog(facilityId);
+    expect(scoped.facilityId).toBe(facilityId);
+    expect(scoped.products.length).toBeGreaterThan(0);
+    expect(scoped.products.every(item => item.facilityId === facilityId)).toBe(true);
+    expect(scoped.addons.every(item => item.facilityId === facilityId)).toBe(true);
+    await expect(booking.getUnitMap({
+      productId: product.id, facilityId: 'different-facility',
+    })).rejects.toThrow('Loại kho không thuộc cơ sở đã chọn.');
+  });
+
   it('filters by product type and full-period availability', async () => {
     const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '1' });
     expect(result.checkedPeriod).toBe(true);

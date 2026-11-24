@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { Prisma, type DamageClaim, type DamageClaimCompensation } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
+import { assertActiveAssignee, assertAssignmentVersion, assertTaskAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { businessDate } from '../../business-date.js';
 
 type ClaimRow = DamageClaim & {
@@ -136,6 +136,7 @@ export class DamageClaimsService {
       await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
       if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ConflictException('Hồ sơ sự cố đã có quyết định.');
       await assertActiveAssignee(tx, staffId, actor, {rentalContractId:row.rentalContractId});
+      assertAssignmentVersion(input, row.assignedStaffId);
       if (row.assignedStaffId === staffId) return this.view(row, 'FACILITY_MANAGER');
       await recordAssignment(tx,actor,"damage-claims",row.id,row.assignedStaffId,staffId);
       const updated = await tx.damageClaim.update({ where: { id }, data: {

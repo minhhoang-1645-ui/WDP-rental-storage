@@ -1,7 +1,8 @@
 import type { ActivityState } from '../../activity/context';
-import { first, rows, type Row } from '../../components/manager/portal-data';
-import { activitySources, staffPriorityActivities } from '../../utils/activity';
+import { first, object, rows, type Row } from '../../components/manager/portal-data';
+import { activitySources } from '../../utils/activity';
 import { recordIdentity } from '../../utils/record-identity';
+import { transferProblem } from '../../utils/transfer-problem';
 import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
 
 export const staffActivitySources = activitySources('FACILITY_STAFF').filter(source => needsStaffAssignment(source.kind));
@@ -29,24 +30,32 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const row = records.get(entry.id);
     if (!row || !staffSourceNames.has(entry.kind)) return false;
     const assigned = isAssignedStaffWork(entry.kind, row, userId);
-    if (!entry.action) return includeHistory && (assigned || first(row, 'completedBy.id', 'resolvedBy.id') === userId);
-    if (!assigned || first(row, 'assignedStaff.accountStatus') === 'DISABLED') return false;
+    if (!assigned) return includeHistory && !entry.action && first(row, 'completedBy.id', 'resolvedBy.id') === userId;
+    if (first(row, 'assignedStaff.accountStatus') === 'DISABLED') return false;
     const role = first(row, 'assignedStaff.role');
     return (!role || role === 'FACILITY_STAFF') &&
-      (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId)) &&
       (entry.kind !== 'support-requests' || !entry.web.startsWith('/staff/transfers/'));
   });
-  return (includeHistory ? entries : staffPriorityActivities(entries)).map(entry => {
+  return entries.map(entry => {
     const row = records.get(entry.id)!;
     const identity = staffRecordIdentity(row, entry.kind);
     const status = first(row, 'status');
-    const scheduledAt = first(row, 'scheduledAt');
-    const dueAt = entry.kind === 'appointments' && status === 'CONFIRMED' ? scheduledAt : first(row, 'dueAt');
+    const scheduledAt = first(row, 'scheduledAt', 'transferRequestedSchedule.startAt');
+    const dueAt = first(row, 'dueAt') || scheduledAt;
+    const blocked = entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
+      && (row.bookingReady === false || object(row.handoverReadiness).allowed === false);
+    const transferPending = entry.kind === 'transfers' && transferProblem(row).pending;
+    const waiting = transferPending || entry.kind === 'support-requests' && status === 'ESCALATED'
+      || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION';
+    const actionable = !blocked && !waiting && entry.action
+      && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
     const processed = !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
       || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
-      || entry.kind === 'damage-claims' && Boolean(row.staffFacts));
+      || entry.kind === 'damage-claims' && Boolean(row.staffFacts)
+      || entry.kind === 'transfers' && transferProblem(row).review.decision === 'CANCEL'
+      || entry.kind === 'appointments' && first(row, 'scheduleAdjustment.action') === 'NO_SHOW');
     const titles: Record<string, string> = {
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       returns: status === 'REQUESTED' ? 'Tiếp nhận trả kho' : 'Kiểm tra kho trả',
@@ -56,15 +65,24 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       'damage-claims': 'Kiểm tra sự cố hàng hóa',
     };
     return {
-      entry, status, scheduledAt, processed, title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
+      entry, status, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
+      title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
       unit: identity.location || first(row, 'unitCodeSnapshot'),
       priority: first(row, 'priority'),
       facilityId: first(row, 'facility.id'),
       facilityName: first(row, 'facility.name'),
-      finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt') || entry.at,
+      finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt',
+        'handoverReport.problemReview.reviewedAt', 'scheduleAdjustment.at') || entry.at,
       timestamp: dueAt || scheduledAt || entry.at,
-      overdue: Boolean(dueAt) && Date.parse(dueAt) < now,
+      overdue: (actionable || blocked) && Boolean(dueAt) && Date.parse(dueAt) < now,
     };
-  });
+  }).filter(task => includeHistory ? task.processed : task.actionable || task.blocked || task.waiting);
+}
+
+export function staffWorkPhase(task: ReturnType<typeof staffWorkItems>[number]) {
+  if (task.blocked) return 'blocked';
+  if (task.waiting) return 'waiting';
+  if (task.processed) return 'completed';
+  return staffInProgress(task.status) ? 'progress' : 'pending';
 }

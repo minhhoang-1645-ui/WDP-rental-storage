@@ -38,7 +38,7 @@ describe('Transfer completion and linked customer request, with memory-only depe
     const reads = new TransfersService({ transferRequest: { findFirst } } as never);
     await expect(reads.getForStaff('transfer', app.actor)).rejects.toThrow('Không tìm thấy');
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ assignedStaffUserId: app.actor.id, status: { in: ['APPROVED', 'COMPLETED'] } }),
+      where: expect.objectContaining({ assignedStaffUserId: app.actor.id, status: { in: ['APPROVED', 'COMPLETED', 'REJECTED'] } }),
     }));
   });
 

@@ -13,6 +13,8 @@ import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { isTransferRequest } from '../../utils/transfer-request';
 import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointment';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { ApiError } from '../../services/api';
 
 export function StaffActions({
   resource,
@@ -28,6 +30,7 @@ export function StaffActions({
   onSuccess: (message: string, result?: Row) => void;
 }) {
   const { user } = useAuth();
+  const confirm = useConfirmation();
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
   const busy = pendingAction !== undefined;
@@ -51,7 +54,13 @@ export function StaffActions({
   const progress = new Map([...rows(row.unitHandoverProgress), ...savedUnits].map(item => [first(item, 'unitId'), item]));
   const allUnitsRecorded = physicalUnits.every(unit => progress.has(unit.id));
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
-  const assigned = first(row, "assignedStaff.id") === user?.id;
+  const assigned = Boolean(user && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
+  function reportFailure(caught: unknown, fallback: string) {
+    const denied = caught instanceof ApiError && [403, 404].includes(caught.status);
+    setError(denied ? 'Hồ sơ không còn truy cập được. Đang kiểm tra lại phân công và quyền cơ sở.'
+      : caught instanceof Error ? caught.message : fallback);
+    if (denied || caught instanceof ApiError && caught.status === 409) refresh();
+  }
   async function recordPhysicalUnit(form: HTMLFormElement | null, unitId: string) {
     if (!form || !assigned || lock.current) return;
     const data = new FormData(form);
@@ -70,7 +79,7 @@ export function StaffActions({
       setSavedUnits(rows(result.unitHandoverProgress));
       refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Không thể lưu kết quả bàn giao kho.');
+      reportFailure(caught, 'Không thể lưu kết quả bàn giao kho.');
     } finally {
       lock.current = false;
       setPendingAction(undefined);
@@ -82,7 +91,7 @@ export function StaffActions({
     input?: Row,
     idempotent = false,
   ) => {
-    if (lock.current || user?.role !== "FACILITY_STAFF") return;
+    if (lock.current || user?.role !== 'FACILITY_STAFF' || !assigned) return;
     if (resource === 'appointments' && suffix === '/complete-handover') {
       const issue = handoverCompletionIssue(row.scheduledAt, undefined, handoverContracts, typeof handoverReadiness.leadDays === 'number' ? handoverReadiness.leadDays : undefined);
       if (issue) { setError(issue); return; }
@@ -91,6 +100,16 @@ export function StaffActions({
     setPendingAction(suffix);
     setError("");
     try {
+      if (suffix === '/complete-handover' && !await confirm({
+        title: 'Hoàn tất bàn giao?',
+        description: 'Xác nhận đã giao kho, quyền truy cập và giấy tờ cho người nhận ghi trên biên bản.',
+        confirmLabel: 'Hoàn tất bàn giao',
+      })) return;
+      if (suffix === '/finalize' && !await confirm({
+        title: 'Hoàn tất nhận kho trả?',
+        description: 'Hệ thống sẽ ghi nhận việc nhận kho thực tế theo kết quả kiểm tra đã lưu.',
+        confirmLabel: 'Xác nhận nhận kho',
+      })) return;
       const result = await mutate(root + suffix, method, input, idempotent);
       onSuccess(suffix === '/complete-handover'
         ? result?.usageStatus === 'WAITING_FOR_RENTAL_START'
@@ -99,11 +118,7 @@ export function StaffActions({
         : 'Đã lưu thao tác thành công.', result);
       refresh();
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Không thể thực hiện thao tác.",
-      );
+      reportFailure(caught, 'Không thể thực hiện thao tác.');
     } finally {
       lock.current = false;
       setPendingAction(undefined);
@@ -149,7 +164,8 @@ export function StaffActions({
   );
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
   const returnPaid = returnDebt?.canReturn === true;
-  const periodCloseout = returnDebt?.policy === 'PERIOD_CLOSEOUT_V1';
+  const returnBlocks = Array.isArray(returnDebt?.blockingReasons)
+    ? returnDebt.blockingReasons.filter((reason): reason is string => typeof reason === 'string') : [];
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -207,10 +223,6 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status">
-              <strong>{periodCloseout ? 'Trả kho trước hạn' : 'Điều kiện thanh toán'}</strong>
-              <p>{periodCloseout ? 'Quyết toán dựa vào ngày nhận kho thực tế.' : returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt ? 'Khách cần thanh toán số dư để hoàn tất nhận kho.' : 'Hãy làm mới hồ sơ để kiểm tra tình trạng thanh toán.'}</p>
-            </div>}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
@@ -252,7 +264,10 @@ export function StaffActions({
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
-                        {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.' : 'Cần kiểm tra các hóa đơn liên quan đến kho trả.'}</li>}
+                        {!returnPaid && (returnBlocks.length
+                          ? returnBlocks.map(reason => <li key={reason}>{reason}</li>)
+                          : <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.'
+                            : returnDebt ? 'Hồ sơ chưa đủ điều kiện nhận kho. Liên hệ quản lý để kiểm tra.' : 'Làm mới hồ sơ để kiểm tra điều kiện nhận kho.'}</li>)}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
                       </ul>
                     </div>

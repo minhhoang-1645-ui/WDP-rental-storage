@@ -146,10 +146,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{reservation:reservationScope(actor)}, { OR: [{ id }, { appointmentCode: id }] }, actor.role === 'FACILITY_STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
     const view = this.toAppointment(appointment, true, actor.role === 'FACILITY_STAFF');
-    if (actor.role !== 'FACILITY_STAFF' || !['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
+    if (!['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
     const leadDays = await this.appointmentLeadDays(appointment);
     try {
-      this.assertAssigned(appointment, actor);
+      if (actor.role === 'FACILITY_STAFF') this.assertAssigned(appointment, actor);
       this.assertHandoverReady(appointment.reservation);
       await this.assertAppointmentDate(appointment.reservation, appointment.scheduledAt, leadDays);
       if (appointment.status === 'CONFIRMED') {
@@ -165,6 +165,52 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
   private staffScope(staffId: string): Prisma.HandoverAppointmentWhereInput {
     return { OR: [{ assignedStaffUserId: staffId }, { assignedStaffUserId: null, status: 'COMPLETED', completedByUserId: staffId }] };
+  }
+
+  async adjustAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý ngoại lệ lịch bàn giao.');
+    const action = input.action;
+    const note = typeof input.note === 'string' ? input.note.trim() : '';
+    const expected = typeof input.expectedScheduledAt === 'string' ? Date.parse(input.expectedScheduledAt) : NaN;
+    if ((action !== 'RESCHEDULE' && action !== 'NO_SHOW') || note.length < 3 || note.length > 1000 || !Number.isFinite(expected)) {
+      throw new BadRequestException('Cần thao tác, lý do và lịch hẹn hiện tại.');
+    }
+    const value = typeof input.scheduledAt === 'string' ? input.scheduledAt : '';
+    const scheduledAt = new Date(value);
+    if (action === 'RESCHEDULE' && (!/(?:Z|[+-]\d\d:\d\d)$/.test(value) || !Number.isFinite(scheduledAt.getTime()))) {
+      throw new BadRequestException('Lịch mới phải có ngày giờ và múi giờ hợp lệ.');
+    }
+    const identity = await this.appointmentIdentity(id);
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const current = await tx.handoverAppointment.findUniqueOrThrow({ where: { id: identity.id }, include: this.appointmentInclude() });
+      await assertTaskFacility(tx, actor, { reservationId: current.reservationId });
+      if (!['REQUESTED', 'CONFIRMED'].includes(current.status) || current.scheduledAt.getTime() !== expected
+        || readUnitHandoverDraft(current.handoverReport).unitProgress.length) {
+        throw new ConflictException('Lịch đã thay đổi hoặc đã ghi nhận bàn giao từng kho. Vui lòng tải lại.');
+      }
+      const now = new Date();
+      const leadDays = await this.appointmentLeadDays(current, tx);
+      if (action === 'NO_SHOW' && current.scheduledAt >= now) throw new ConflictException('Chỉ ghi nhận khách không đến sau giờ hẹn.');
+      if (action === 'RESCHEDULE') {
+        if (scheduledAt <= now || scheduledAt.getTime() === expected) throw new BadRequestException('Chọn một thời điểm mới trong tương lai.');
+        this.assertHandoverReady(current.reservation);
+        await this.assertAppointmentDate(current.reservation, scheduledAt, leadDays);
+      }
+      const report = current.handoverReport && typeof current.handoverReport === 'object' && !Array.isArray(current.handoverReport)
+        ? current.handoverReport : {};
+      const history = Array.isArray(report.scheduleHistory) ? report.scheduleHistory : [];
+      const adjustment = {
+        action, note, previousScheduledAt: current.scheduledAt.toISOString(),
+        scheduledAt: action === 'RESCHEDULE' ? scheduledAt.toISOString() : null,
+        managerId: actor.id, managerName: actor.fullName, at: now.toISOString(),
+      };
+      const updated = await tx.handoverAppointment.update({ where: { id: current.id }, data: {
+        ...(action === 'NO_SHOW' ? { status: 'CANCELLED', cancelledAt: now, activeKey: null } : { scheduledAt, handoverLeadDays: leadDays }),
+        handoverReport: { ...report, scheduleHistory: [...history, adjustment] },
+      }, include: this.appointmentInclude() });
+      return this.toAppointment(updated, true);
+    }, 'Lịch bàn giao vừa thay đổi. Vui lòng tải lại.');
   }
 
   async assignAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -249,7 +295,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       const recorded: UnitHandover = { unitId, unitCode: target.unitNumber, condition, inspected: true, completedAt: now.toISOString(), staffUserId: actor.id };
       const updated = await tx.handoverAppointment.update({
         where: { id: current.id },
-        data: { handoverReport: { unitProgress: [...unitProgress, recorded], activityUpdatedAt: activityUpdatedAt ?? current.updatedAt.toISOString() } },
+        data: { handoverReport: {
+          ...this.appointmentScheduleHistory(current.handoverReport),
+          unitProgress: [...unitProgress, recorded], activityUpdatedAt: activityUpdatedAt ?? current.updatedAt.toISOString(),
+        } },
         include: this.appointmentInclude(),
       });
       return this.toAppointment(updated, true);
@@ -297,7 +346,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (contracts.every((contract: any) => this.vietnamDate(now) >= this.isoDate(contract.startDate))) await this.activateContracts(tx, current.reservation);
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
-          data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, handoverNote: report.text, handoverReport: { ...report.data, unitChecks }, activeKey: null },
+          data: { status: 'COMPLETED', completedAt: now, completedByUserId: actor.id, handoverNote: report.text,
+            handoverReport: { ...this.appointmentScheduleHistory(current.handoverReport), ...report.data, unitChecks }, activeKey: null },
           include: this.appointmentInclude(),
         });
         return this.toAppointment(updated, true);
@@ -394,14 +444,30 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (reservation.contracts.some(contract => !allocationIds.has(contract.reservationUnitId))) throw new ConflictException('Hợp đồng không khớp với kho vật lý đã phân bổ.');
   }
 
-  private hasHandoverPrerequisites(reservation: HandoverPrerequisites) {
+  private handoverBlockReason(reservation: HandoverPrerequisites) {
     try {
       this.assertHandoverReady(reservation);
-      return true;
+      return null;
     } catch (error) {
-      if (error instanceof ConflictException) return false;
+      if (error instanceof ConflictException) return error.message;
       throw error;
     }
+  }
+
+  private handoverBookingReadiness(reservation: HandoverPrerequisites) {
+    const bookingBlockReason = this.handoverBlockReason(reservation);
+    return { bookingReady: bookingBlockReason === null, bookingBlockReason };
+  }
+
+  private appointmentScheduleHistory(value: Prisma.JsonValue | null) {
+    return value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.scheduleHistory)
+      ? { scheduleHistory: value.scheduleHistory } : {};
+  }
+
+  private publicHandoverReport(value: Prisma.JsonValue | null) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value ?? null;
+    const { scheduleHistory: _scheduleHistory, ...report } = value;
+    return report;
   }
 
   private async appointmentLeadDays(record:any,db:Prisma.TransactionClient=this.prisma) {
@@ -577,9 +643,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           physicalUnit: purchasedPhysicalUnit(record.reservation.quoteSnapshot, line.additionalServiceId),
         })),
       } : {}),
-      handoverReport: record.status === 'COMPLETED' ? record.handoverReport ?? null : null,
+      handoverReport: record.status === 'COMPLETED' ? this.publicHandoverReport(record.handoverReport) : null,
       ...(includeCustomer && ['REQUESTED', 'CONFIRMED'].includes(record.status)
-        ? { bookingReady: this.hasHandoverPrerequisites(record.reservation) } : {}),
+        ? this.handoverBookingReadiness(record.reservation) : {}),
+      ...(includeCustomer && record.handoverReport?.scheduleHistory?.length
+        ? { scheduleAdjustment: record.handoverReport.scheduleHistory.at(-1) } : {}),
       ...(draft?.activityUpdatedAt ? { activityUpdatedAt: draft.activityUpdatedAt } : {}),
       ...(includeCustomer && draft ? { unitHandoverProgress: draft.unitProgress.map(({ unitId, unitCode, condition, completedAt }) => ({ unitId, unitCode, condition, completedAt })) } : {}),
       id: record.id,

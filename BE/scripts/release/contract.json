@@ -22,7 +22,8 @@
     "20261124000100_legacy_service_facility_evidence",
     "20261124000200_shared_service_catalog",
     "20261124000300_auth_session_history",
-    "20261124000300_offering_configuration_review"
+    "20261124000300_offering_configuration_review",
+    "20261124000400_live_reservation_unit_uniqueness"
   ],
   "migrations": [
     {
@@ -394,6 +395,13 @@
       "checksums": [
         "fe9ee62349215faf6491fb852fe2ff71c30feac656d497b16b02804705a8d286",
         "62b8166afbadd1d3dfd03a040ae8307197a6bcaf6516ce015b01be238d430965"
+      ]
+    },
+    {
+      "name": "20261124000400_live_reservation_unit_uniqueness",
+      "checksums": [
+        "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
+        "0f4aa6c5fa6a3f0c6e9d23c3ca287374703428c565e823eaa852ff9b50df6477"
       ]
     }
   ],

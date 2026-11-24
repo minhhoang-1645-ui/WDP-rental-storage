@@ -24,6 +24,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { allPages, mutate } from "../../services/portal";
+import { ApiError } from '../../services/api';
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
 import { assignmentNeedsAttention, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
@@ -216,6 +217,10 @@ export function ManagerAssignmentsPage() {
           task={selected}
           workloads={workloads}
           onClose={closeDetails}
+          onReload={() => {
+            closeDetails();
+            setRevision(value => value + 1);
+          }}
           onAssigned={() => {
             closeDetails();
             setNotice("Đã cập nhật nhân viên phụ trách.");
@@ -232,11 +237,13 @@ function AssignmentDetail({
   task,
   workloads,
   onClose,
+  onReload,
   onAssigned,
 }: {
   task: Task;
   workloads: Map<string, number>;
   onClose: () => void;
+  onReload: () => void;
   onAssigned: () => void;
 }) {
   const id = first(task.row, "id");
@@ -247,6 +254,7 @@ function AssignmentDetail({
   const assignable = canAssign(task);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState(false);
   const lock = useRef(false);
   const close = () => {
     if (lock.current) return;
@@ -254,7 +262,7 @@ function AssignmentDetail({
   };
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || !assignable || !staffId || staffId === currentStaffId) return;
+    if (lock.current || stale || !assignable || !staffId || staffId === currentStaffId) return;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -262,11 +270,12 @@ function AssignmentDetail({
       await mutate(
         `/manager/${task.kind}/${encodeURIComponent(id)}/assign`,
         "PATCH",
-        { staffUserId: staffId.trim(), ...(task.kind === 'appointments' ? { expectedAssignedStaffUserId: first(task.row, 'assignedStaff.id') || null } : {}) },
+        { staffUserId: staffId.trim(), expectedAssignedStaffUserId: currentStaffId || null },
         true,
       );
       onAssigned();
     } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) setStale(true);
       setError(
         caught instanceof Error
           ? caught.message
@@ -281,7 +290,8 @@ function AssignmentDetail({
     <Modal title={assignable ? currentStaffId ? 'Đổi nhân viên' : 'Phân công nhân viên' : 'Chi tiết phân công'} onClose={close} busy={busy}
       className="assignment-dialog" footer={<>
         <button type="button" className="button-secondary" disabled={busy} onClick={close}>{assignable ? 'Hủy' : 'Đóng'}</button>
-        {assignable && <button type="submit" form={formId} className="button-primary" disabled={busy || !staffId || staffId === currentStaffId}>
+        {stale ? <button type="button" className="button-primary" onClick={onReload}>Tải lại phân công</button>
+        : assignable && <button type="submit" form={formId} className="button-primary" disabled={busy || !staffId || staffId === currentStaffId}>
           {busy ? 'Đang lưu…' : currentStaffId ? 'Xác nhận đổi nhân viên' : 'Xác nhận phân công'}
         </button>}
       </>}>
@@ -300,7 +310,7 @@ function AssignmentDetail({
       </div>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
-        <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); setError(''); }} workloads={workloads} disabled={busy} />
+        <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); if (!stale) setError(''); }} workloads={workloads} disabled={busy || stale} />
       </form>}
     </Modal>
   );

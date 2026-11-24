@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppState, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { router, type Href } from 'expo-router';
-import { ArrowLeftRight, Bell, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, PackageCheck, RefreshCw, TriangleAlert, Wallet, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowLeftRight, Bell, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, PackageCheck, ReceiptText, RefreshCw, TriangleAlert, Wallet, Warehouse, X, type LucideIcon } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { ApiError, apiRequest } from '@/services/api';
 import { refreshScreens, subscribeDataChanged } from '@/services/live-events';
@@ -27,25 +27,27 @@ type Filter = (typeof filters)[number]['value'];
 
 const icons: Record<string, LucideIcon> = {
   reservations: ClipboardList, contracts: FileText, appointments: CalendarDays,
-  invoices: CreditCard, 'payment-submissions': CreditCard, renewals: RefreshCw,
+  invoices: ReceiptText, payments: CreditCard, rentals: Warehouse, 'payment-submissions': CreditCard, renewals: RefreshCw,
   transfers: ArrowLeftRight, 'transfer-orders': ArrowLeftRight,
   returns: PackageCheck, 'early-returns': PackageCheck, 'deposit-settlements': Wallet,
   'support-requests': Headphones, 'damage-claims': TriangleAlert,
 };
-const dayKey = new Intl.DateTimeFormat('vi-VN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-const timeLabel = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-function formatNoticeTime(at: string) {
+const vietnamTime = { timeZone: 'Asia/Ho_Chi_Minh' } as const;
+const dayKey = new Intl.DateTimeFormat('vi-VN', { ...vietnamTime, year: 'numeric', month: '2-digit', day: '2-digit' });
+const timeLabel = new Intl.DateTimeFormat('vi-VN', { ...vietnamTime, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const hourLabel = new Intl.DateTimeFormat('vi-VN', { ...vietnamTime, hour: '2-digit', minute: '2-digit' });
+function formatNoticeTime(at: string, now: number) {
   const value = Date.parse(at);
-  return Number.isFinite(value) ? timeLabel.format(value) : '—';
+  if (!Number.isFinite(value)) return '—';
+  const group = groupFor(at, now);
+  return group === 'Trước đó' ? timeLabel.format(value) : group + ', ' + hourLabel.format(value);
 }
 function groupFor(at: string, now: number) {
   const value = Date.parse(at);
   if (!Number.isFinite(value)) return 'Trước đó';
   const day = dayKey.format(value);
   if (day === dayKey.format(now)) return 'Hôm nay';
-  const today = new Date(now);
-  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-  if (day === dayKey.format(yesterday)) return 'Hôm qua';
+  if (day === dayKey.format(now - 86_400_000)) return 'Hôm qua';
   return 'Trước đó';
 }
 const notificationContext = createContext<{ unread: number; open: () => void }>({ unread: 0, open: () => {} });
@@ -53,9 +55,13 @@ const notificationContext = createContext<{ unread: number; open: () => void }>(
 export function CustomerNotificationProvider({ children }: { children: ReactNode }) {
   const [opened, setOpened] = useState(false);
   const badge = useResource<NoticePage>(inbox + '&limit=5', false, true);
+  const { refresh: refreshBadge } = badge;
   const previous = useRef<string | undefined>(undefined);
-  const [inboxCount, setInboxCount] = useState<number>();
-  const unread = inboxCount ?? badge.data?.unreadTotal ?? 0;
+  const [inboxCounts, setInboxCounts] = useState<{ unread: number; total?: number }>();
+  const unread = inboxCounts?.unread ?? badge.data?.unreadTotal ?? 0;
+  const updateCounts = useCallback((nextUnread: number, total?: number) => {
+    setInboxCounts(previous => ({ unread: nextUnread, total: total ?? previous?.total }));
+  }, []);
   const recent = badge.data?.items;
   useEffect(() => {
     if (!recent) return;
@@ -63,18 +69,19 @@ export function CustomerNotificationProvider({ children }: { children: ReactNode
     if (previous.current !== undefined && previous.current !== latest) refreshScreens();
     previous.current = latest;
   }, [recent]);
-  useEffect(() => subscribeDataChanged(() => badge.refresh()), [badge.refresh]);
+  useEffect(() => subscribeDataChanged(refreshBadge), [refreshBadge]);
   useEffect(() => {
     if (opened) return;
     const timer = setInterval(() => {
-      if (AppState.currentState === 'active') badge.refresh();
+      if (AppState.currentState === 'active') refreshBadge();
     }, 60_000);
     return () => clearInterval(timer);
-  }, [badge.refresh, opened]);
+  }, [refreshBadge, opened]);
 
-  return <notificationContext.Provider value={{ unread, open: () => { setInboxCount(badge.data?.unreadTotal); setOpened(true); } }}>
+  return <notificationContext.Provider value={{ unread, open: () => setOpened(true) }}>
     {children}
-    {opened && <NotificationInbox onCount={setInboxCount} onClose={() => { badge.refresh(); setInboxCount(undefined); setOpened(false); }} />}
+    {opened && <NotificationInbox knownTotal={inboxCounts?.total ?? badge.data?.total} knownUnread={unread}
+      onCount={updateCounts} onClose={() => { refreshBadge(); setInboxCounts(undefined); setOpened(false); }} />}
   </notificationContext.Provider>;
 }
 
@@ -87,7 +94,9 @@ export function CustomerNotifications({ inverse = false, label }: { inverse?: bo
   </Pressable>;
 }
 
-function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => void; onClose: () => void }) {
+function NotificationInbox({ onCount, onClose, knownTotal, knownUnread }: {
+  onCount: (count: number, total?: number) => void; onClose: () => void; knownTotal?: number; knownUnread: number;
+}) {
   const [filter, setFilter] = useState<Filter>('all');
   const [page, setPage] = useState(1);
   const [clock, setClock] = useState(Date.now);
@@ -96,22 +105,25 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const source = useResource<NoticePage>(inbox + '&limit=20&view=' + filter + '&page=' + page);
-  const { data } = source;
+  const { data, refresh: refreshPage } = source;
+  const { data: actionCount, refresh: refreshActionCount } = useResource<NoticePage>(inbox + '&limit=5&view=action', false, true);
   useEffect(() => {
     const timer = setInterval(() => {
-      if (AppState.currentState === 'active' && !lock.current) { setClock(Date.now()); source.refresh(); }
+      if (AppState.currentState === 'active' && !lock.current) { setClock(Date.now()); refreshPage(); refreshActionCount(); }
     }, 60_000);
     return () => clearInterval(timer);
-  }, [source.refresh]);
-  const rows = data?.items ?? [];
+  }, [refreshPage, refreshActionCount]);
+  const rows = [...new Map((data?.items ?? []).map(item => [item.token, item])).values()]
+    .sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   useEffect(() => {
-    if (data) onCount(data.unreadTotal);
-  }, [data, onCount]);
+    if (data) onCount(data.unreadTotal, filter === 'all' ? data.total : undefined);
+  }, [data, filter, onCount]);
 
   function refresh() {
     setClock(Date.now());
     setOperationError('');
     source.refresh();
+    refreshActionCount();
   }
 
   async function write(action: () => Promise<void>) {
@@ -122,6 +134,7 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
     try {
       await action();
       source.refresh();
+      refreshActionCount();
     } catch (error) {
       setOperationError(error instanceof ApiError && error.status === 404 ? 'Hồ sơ không còn khả dụng. Danh sách đang được cập nhật.'
         : error instanceof Error ? error.message : 'Chưa cập nhật được thông báo. Vui lòng thử lại.');
@@ -151,7 +164,8 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
     });
   }
 
-  const unread = data?.unreadTotal ?? 0;
+  const unread = data?.unreadTotal ?? knownUnread;
+  const counts = { all: filter === 'all' && data ? data.total : knownTotal, unread, action: filter === 'action' && data ? data.total : actionCount?.total };
   const visiblePage = data?.page ?? page;
   const pages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
   const empty = filter === 'unread' ? 'Bạn đã đọc hết thông báo' : filter === 'action' ? 'Không có việc cần thực hiện' : 'Chưa có thông báo';
@@ -169,16 +183,16 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
       {notice ? <View style={s.detail}>
         <Text accessibilityRole="header" style={s.rowTitle}>{notice.title}</Text>
         {notice.summary ? <Text style={s.preview}>{notice.summary}</Text> : null}
-        <Text style={s.time}>{formatNoticeTime(notice.at)}</Text>
-        <Text style={s.preview}>Hồ sơ liên quan hiện không mở được từ thông báo này.</Text>
+        <Text style={s.time}>{formatNoticeTime(notice.at, clock)}</Text>
       </View> : <>
         <View style={s.toolbar}>
           <View style={s.filters}>{filters.map(option => {
             const active = filter === option.value;
             return <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: active }}
+              disabled={busy}
               onPress={() => { setFilter(option.value); setPage(1); setOperationError(''); }}
               style={[s.filterTap, active && s.filterTapActive]}>
-              <Text style={[s.filterText, active && s.filterTextActive]}>{option.label}</Text>
+              <Text style={[s.filterText, active && s.filterTextActive]}>{option.label}{counts[option.value] === undefined ? '' : ' ' + counts[option.value]}</Text>
             </Pressable>;
           })}</View>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || unread === 0 }} disabled={busy || unread === 0}
@@ -186,7 +200,7 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
               await apiRequest(endpoint + '/read-all', { method: 'PATCH' });
               setPage(1);
             })} style={s.readAll}>
-            <Text style={[s.actionText, (busy || !unread) && s.muted]}>Đọc tất cả</Text>
+            <Text style={[s.actionText, (busy || !unread) && s.muted]}>{busy ? 'Đang cập nhật…' : 'Đánh dấu tất cả đã đọc'}</Text>
           </Pressable>
         </View>
         {operationError ? <Text accessibilityRole="alert" style={s.error}>{operationError}</Text> : null}
@@ -195,10 +209,10 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
           ListEmptyComponent={source.error ? <ErrorState message={source.error} onRetry={refresh} />
             : source.loading ? <LoadingState layout="list" /> : <EmptyState title={empty} message="" />}
           ListFooterComponent={pages > 1 ? <View style={s.paging}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Trang trước" disabled={visiblePage <= 1}
+            <Pressable accessibilityRole="button" accessibilityLabel="Trang trước" disabled={busy || visiblePage <= 1}
               onPress={() => setPage(visiblePage - 1)} style={s.iconButton}><ChevronLeft size={21} color={visiblePage <= 1 ? C.muted : C.cobalt} /></Pressable>
             <Text style={s.time}>{visiblePage} / {pages}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Trang sau" disabled={visiblePage >= pages}
+            <Pressable accessibilityRole="button" accessibilityLabel="Trang sau" disabled={busy || visiblePage >= pages}
               onPress={() => setPage(visiblePage + 1)} style={s.iconButton}><ChevronRight size={21} color={visiblePage >= pages ? C.muted : C.cobalt} /></Pressable>
           </View> : undefined}
           renderItem={({ item, index }) => {
@@ -207,18 +221,19 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
             return <>
               {(index === 0 || group !== groupFor(rows[index - 1].at, clock)) &&
                 <Text accessibilityRole="header" style={s.group}>{group}</Text>}
-              <Pressable accessibilityRole="button" accessibilityLabel={[item.unread ? 'Chưa đọc' : '', item.title, item.summary, formatNoticeTime(item.at), item.actionLabel].filter(Boolean).join('. ')}
+              <Pressable accessibilityRole="button" accessibilityLabel={[item.unread ? 'Chưa đọc' : '', item.title, item.summary, formatNoticeTime(item.at, clock), item.actionLabel].filter(Boolean).join('. ')}
                 disabled={busy} onPress={() => open(item)} style={({ pressed }) => [s.row, pressed && s.pressed]}>
                 <View style={s.category}><Icon size={19} color={C.cobalt} /></View>
-                <View style={s.content}>
+                <View style={[s.content, index !== rows.length - 1 && s.divider]}>
                   <Text numberOfLines={2} style={[s.rowTitle, item.unread && s.unreadTitle]}>{item.title}</Text>
                   {item.summary ? <Text numberOfLines={2} style={s.preview}>{item.summary}</Text> : null}
                   <View style={s.metadata}>
-                    <Text style={s.time}>{formatNoticeTime(item.at)}</Text>
-                    {item.actionLabel ? <Text style={s.actionText}>{item.actionLabel}</Text> : null}
+                    <Text style={s.time}>{formatNoticeTime(item.at, clock)}</Text>
+                    {item.actionLabel ? <Text style={s.actionText}>·  {item.actionLabel}</Text> : null}
                   </View>
                 </View>
-                {item.unread ? <View style={s.unreadDot} /> : <View style={s.dotSpace} />}
+                {item.unread ? <View style={s.unreadDot} /> : item.canOpen && !item.actionLabel
+                  ? <ChevronRight size={14} color={C.muted} /> : <View style={s.dotSpace} />}
               </Pressable>
             </>;
           }}
@@ -231,23 +246,24 @@ function NotificationInbox({ onCount, onClose }: { onCount: (count: number) => v
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: 'white' },
   header: { paddingHorizontal: 12, flexDirection: 'row', minHeight: 48, alignItems: 'center', justifyContent: 'space-between' },
-  title: { color: C.cobalt, fontSize: 20, fontWeight: '700' },
+  title: { color: C.cobalt, fontSize: 21, fontWeight: '800' },
   iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   bellDot: { position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: C.cobalt },
   pressed: { opacity: 0.65 },
-  toolbar: { paddingHorizontal: 16, paddingTop: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
-  filters: { flexDirection: 'row', padding: 3, gap: 3, borderRadius: 12, backgroundColor: '#F0F4FB' },
-  filterTap: { flex: 1, minHeight: 41, alignItems: 'center', justifyContent: 'center', borderRadius: 9, paddingHorizontal: 3 },
+  toolbar: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 6 },
+  filters: { flexDirection: 'row', padding: 2, gap: 2, borderRadius: 13, backgroundColor: '#EAF0FC' },
+  filterTap: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 11, paddingHorizontal: 3, paddingVertical: 3 },
   filterTapActive: { backgroundColor: C.cobalt },
-  filterText: { color: C.navy, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  filterText: { color: C.cobalt, fontSize: 13, fontWeight: '800', textAlign: 'center' },
   filterTextActive: { color: 'white' },
   readAll: { alignSelf: 'flex-end', minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   actionText: { color: C.cobalt, fontSize: 13, fontWeight: '700' },
   list: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 16, paddingBottom: 16 },
-  group: { color: C.muted, fontSize: 13, fontWeight: '700', marginTop: 13, marginBottom: 4 },
-  row: { minHeight: 76, flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
-  category: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#EBF2FF', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  content: { flex: 1, minWidth: 0, gap: 4 },
+  group: { color: '#415167', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', marginTop: 8, marginBottom: 2 },
+  row: { minHeight: 68, flexDirection: 'row', alignItems: 'flex-start', paddingTop: 8, gap: 11 },
+  category: { width: 42, height: 42, borderRadius: 11, backgroundColor: '#EAF0FC', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  content: { flex: 1, minWidth: 0, gap: 3, paddingBottom: 8 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
   rowTitle: { color: C.text, fontSize: 15, fontWeight: '600', lineHeight: 21 },
   unreadTitle: { fontWeight: '800' },
   preview: { color: C.muted, fontSize: 13, lineHeight: 18 },

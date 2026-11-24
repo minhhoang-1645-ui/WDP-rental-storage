@@ -1,7 +1,8 @@
+import { InvoiceHeader } from './customer-invoice-header';
 import { useCallback, useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
-import { Stack, router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
-import { ArrowLeft, Calendar, Check, ChevronRight, CreditCard, History, Info } from 'lucide-react-native';
+import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
+import { Calendar, Check, ChevronRight, CreditCard, History, Info } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { OnlinePayment } from '@/portals/online-payment';
@@ -25,7 +26,7 @@ export function CustomerInvoiceDetail({ id }: { id: string }) {
   const source = useResource<Row>('/customer/invoices/' + encodeURIComponent(id), false, true);
   const invoice = source.data;
   return invoice ? <InvoiceDetails key={id} invoice={invoice} refresh={source.refresh} /> : <>
-    <Stack.Screen options={{ title: 'Chi tiết hóa đơn', headerTitleAlign: 'center' }} />
+    <InvoiceHeader title="Chi tiết hóa đơn" />
     <ScrollView style={s.screen} contentContainerStyle={s.page}>
       {source.loading ? <LoadingState layout="detail" /> : source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
         : <EmptyState title="Chưa tìm thấy hóa đơn" message="Về danh sách để chọn hóa đơn." />}
@@ -79,11 +80,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
     : !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true ? 'VNPay hiện chưa khả dụng.' : '';
 
   return <View style={s.screen}>
-    <Stack.Screen options={{ title: paymentScreen ? 'Thanh toán hóa đơn' : 'Chi tiết hóa đơn', headerTitleAlign: 'center',
-      headerTitleStyle: { color: C.navy, fontSize: 20, fontWeight: '700' },
-      gestureEnabled: !paymentScreen,
-      headerLeft: paymentScreen ? () => <Pressable style={s.history} accessibilityLabel="Quay lại chi tiết hóa đơn" accessibilityRole="button" onPress={() => setSelecting(false)}><ArrowLeft size={22} color={C.text} /></Pressable> : undefined,
-    }} />
+    <InvoiceHeader title={paymentScreen ? "Thanh toán hóa đơn" : "Chi tiết hóa đơn"} onBack={paymentScreen ? () => setSelecting(false) : undefined} />
     <ScrollView style={s.screen} contentContainerStyle={s.page}>
       <InvoiceIdentity invoice={invoice} badge />
       <View style={[s.hero, paid ? s.greenBadge : voided ? s.grayBadge : null]}>
@@ -103,23 +100,27 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         <View style={s.method} accessible accessibilityLabel="VNPay, tự động xác nhận">
           <View style={s.iconSmall}><Check size={20} color={C.navy} /></View>
           <View style={s.grow}><Text style={s.title}>VNPay / VNPay QR</Text><Text style={s.link}>Tự động xác nhận</Text></View>
-          <CreditCard size={22} color={C.navy} />
+          <View style={[s.icon, s.providerBadge]}>
+            <Text style={s.link} numberOfLines={1} adjustsFontSizeToFit>VNPay</Text>
+          </View>
         </View>
         <View style={[s.hero, s.row]}><Info size={20} color={C.navy} />
-          <Text style={[s.body, s.grow]}>Bạn sẽ mở cổng VNPay để hoàn tất giao dịch. NestBox sẽ kiểm tra kết quả khi bạn quay lại.</Text></View>
+          <Text style={[s.body, s.grow]}>Bạn sẽ mở cổng VNPay để hoàn tất giao dịch. NestBox sẽ kiểm tra kết quả khi bạn quay lại.</Text></View><View style={s.card}><Text style={s.heading}>Lưu ý</Text><Text style={s.muted}>VNPay tự động xác nhận giao dịch. Bạn không cần gửi thông báo chuyển khoản thủ công.</Text></View>
       </View> : <>
         <View style={s.section}>
           <Text accessibilityRole="header" style={s.title}>Thông tin hóa đơn</Text>
-          <Fact title="Ngày phát hành" value={dateLabel(text(invoice, 'issuedAt')) || '—'} />
+          <View style={s.card}><Fact title="Mã hóa đơn" value={text(invoice, 'invoiceCode') || '—'} /><Fact title="Ngày phát hành" value={dateLabel(text(invoice, 'issuedAt')) || '—'} />
           {text(invoice, 'billingPeriodStart') ? <Fact title="Bắt đầu kỳ tính phí" value={dateLabel(text(invoice, 'billingPeriodStart'))} /> : null}
           {text(invoice, 'billingPeriodEnd') ? <Fact title="Kết thúc kỳ tính phí" value={dateLabel(text(invoice, 'billingPeriodEnd'))} /> : null}
+          <Fact title="Cơ sở" value={text(invoice, 'reservation.facility.name') || 'Chưa có thông tin'} />
+          {rows(invoice.contracts).map(contract => text(contract, 'contractCode') ? <Fact key={idOf(contract)} title="Hợp đồng" value={text(contract, 'contractCode')} /> : null)}</View>
         </View>
         <View style={s.section}>
-          <Text accessibilityRole="header" style={s.title}>Chi tiết các khoản thu</Text>
+          <Text accessibilityRole="header" style={s.title}>Chi tiết các khoản thu</Text><View style={s.card}>
           {([['Tiền thuê', invoice.rentalAmount], ['Tiền cọc', invoice.depositAmount], ['Dịch vụ', invoice.serviceAmount], ['Phí đã duyệt', invoice.chargeAmount]] as const)
             .filter(([, value]) => typeof value === 'number' && value !== 0).map(([title, value]) => <Fact key={title} title={title} value={amount(value)} />)}
           {!voided && typeof invoice.totalAmount === 'number' ? <Fact title="Tổng hóa đơn" value={amount(invoice.totalAmount)} total /> : null}
-          {!paid && !voided && typeof invoice.amountPaid === 'number' ? <Fact title="Đã thanh toán" value={amount(invoice.amountPaid)} /> : null}
+          {!voided && typeof invoice.amountPaid === 'number' ? <Fact title="Đã thanh toán" value={amount(invoice.amountPaid)} /> : null}{!voided && <Fact title="Còn phải trả" value={amount(invoice.balanceDue)} />}</View>
         </View>
         {payments.length ? <View style={s.card}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPayments }} style={[s.row, { minHeight: 44 }]} onPress={() => setShowPayments(value => !value)}>
@@ -137,6 +138,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         <Text style={s.heading}>Thông báo chuyển khoản đang chờ xác minh</Text>
         <Text style={s.muted}>Số dư sẽ cập nhật sau khi NestBox đối chiếu khoản chuyển.</Text>
       </View> : null}
+      {!paymentScreen && eligible && !blocked && <View style={[s.hero,s.row]}><Info size={18} color={C.cobalt} /><Text style={[s.body,s.grow]}>Hóa đơn này có thể thanh toán qua VNPay / VNPay QR.</Text></View>}
       {reason ? <Text accessibilityRole="alert" style={s.muted}>{reason}</Text> : null}
       {!paymentScreen && text(invoice, 'renewalRequest.id') ? <Pressable accessibilityRole="button" style={[s.card, s.row]}
         onPress={() => router.push(('/customer/renewals/' + encodeURIComponent(text(invoice, 'renewalRequest.id'))) as Href)}>
@@ -156,7 +158,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         else setSelecting(true);
       }}>
         <CreditCard size={19} color={C.onHero} />
-        <Text style={[s.heading, s.white]}>{waiting ? 'Theo dõi VNPay' : unsigned ? 'Xem và ký ' + (renewalId ? 'phụ lục' : 'hợp đồng') : 'Thanh toán'}</Text>
+        <Text style={[s.heading, s.white]}>{waiting ? 'Theo dõi VNPay' : unsigned ? 'Xem và ký ' + (renewalId ? 'phụ lục' : 'hợp đồng') : 'Thanh toán với VNPay'}</Text>
       </Pressable>
     </View> : null}
   </View>;

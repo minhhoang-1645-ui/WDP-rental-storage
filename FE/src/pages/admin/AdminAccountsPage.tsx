@@ -1,6 +1,7 @@
 import { Ellipsis, Eye, EyeOff, ListFilter, Plus, RefreshCw, UserRoundCheck, UserRoundX, X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { AdminAvatar } from './AdminAvatar';
 import { AccountRole } from './AccountRole';
 import { apiRequest } from '../../services/api';
 import { safeLocalStorage, safeSessionStorage } from '../../services/browser-storage';
@@ -107,11 +108,11 @@ export function AdminAccountsPage() {
     { key: 'account', label: 'Tài khoản', sort: { direction: sort === 'name-asc' ? 'ascending' : sort === 'name-desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'name-asc' ? 'name-desc' : 'name-asc') }, cell: row => {
       const id = first(row, 'id');
       const name = first(row, 'fullName', 'email');
-      return <>
-        <strong>{name}</strong>
-        {first(row, 'email') !== name && <small>{first(row, 'email')}</small>}
+      return <div className="admin-identity"><AdminAvatar name={name} /><div>
+        <strong title={name}>{name}</strong>
+        {first(row, 'email') !== name && <small title={first(row, 'email')}>{first(row, 'email')}</small>}
         {id === user?.id && <small>Tài khoản của bạn</small>}
-      </>;
+      </div></div>;
     } },
     { key: 'role', label: 'Vai trò', cell: row => <AccountRole value={row.role} /> },
     { key: 'status', label: 'Trạng thái', cell: row => <Status value={row.accountStatus} /> },
@@ -132,7 +133,7 @@ export function AdminAccountsPage() {
   ];
 
   return <section className="admin-accounts">
-    <PageHeader title="Quản lý tài khoản">
+    <PageHeader title="Quản lý tài khoản" description="Tìm tài khoản, kiểm tra vai trò và quản lý trạng thái truy cập.">
       <button type="button" className="button-primary" onClick={() => setCreating(true)}><Plus size={17} />Tạo tài khoản</button>
       <button type="button" className="button-secondary" onClick={data.refresh} disabled={data.loading}><RefreshCw size={16} />Làm mới</button>
     </PageHeader>
@@ -248,7 +249,7 @@ function CreateUser({
     if (fieldError?.field === field) setFieldError(undefined);
   };
   return (
-    <Modal title="Tạo tài khoản" onClose={onClose} busy={busy}>
+    <Modal title="Tạo tài khoản" className="admin-create-dialog" onClose={onClose} busy={busy}>
       <form className="portal-form" onSubmit={submit}>
         <p>Tất cả các trường đều bắt buộc.</p>
         {error && (
@@ -257,6 +258,7 @@ function CreateUser({
           </div>
         )}
         <fieldset className="admin-create-fields" disabled={busy}>
+          <legend>Thông tin cá nhân</legend>
           <label className="field-label">
             Họ và tên
             <input
@@ -292,6 +294,9 @@ function CreateUser({
               autoComplete="tel"
             />
           </label>
+        </fieldset>
+        <fieldset className="admin-create-fields" disabled={busy}>
+          <legend>Thông tin truy cập</legend>
           <label className="field-label">
             Vai trò
             <select aria-label="Vai trò" value={role} onChange={(e) => setRole(e.target.value)}>

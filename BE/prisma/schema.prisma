@@ -444,12 +444,19 @@ model User {
 }
 
 model AuthSession {
-  tokenHash String   @id
-  userId    String
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash        String    @id
+  id               String    @unique @default(dbgenerated("gen_random_uuid()::text"))
+  userId           String
+  expiresAt        DateTime
+  createdAt        DateTime? @default(now())
+  revokedAt        DateTime?
+  revokedById      String?
+  revocationReason String?
+  device           String?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([userId, createdAt, id])
 }
 
 model Facility {

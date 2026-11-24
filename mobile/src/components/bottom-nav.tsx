@@ -21,7 +21,7 @@ export function BottomNav(_props: { role: 'STORAGE_CUSTOMER' }) {
   const insets = useSafeAreaInsets();
   const tabs = customerTabs;
 
-  return <View style={[styles.wrap, { minHeight: 68 + Math.max(insets.bottom, 8), height: 'auto', paddingTop: 8, paddingBottom: Math.max(insets.bottom, 8) }]}>
+  return <View style={[styles.wrap, { minHeight: 56 + Math.max(insets.bottom, 8), height: 'auto', paddingTop: 4, paddingBottom: Math.max(insets.bottom, 8) }]}>
     {tabs.map(tab => {
       const active = tab.match.some(m => pathname === m || !['/customer', '/staff', '/manager', '/admin'].includes(m) && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;

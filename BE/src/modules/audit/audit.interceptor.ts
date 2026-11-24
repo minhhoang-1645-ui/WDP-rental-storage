@@ -25,6 +25,7 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   const adminAccessAction = request.method === 'POST' && route === '/admin/facility-access' ? 'GRANT_FACILITY_ACCESS'
     : request.method === 'PATCH' && route === '/admin/facility-access/:id/revoke' ? 'REVOKE_FACILITY_ACCESS'
     : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/role' ? 'CHANGE_ROLE'
+    : request.method === 'PATCH' && route === '/admin/users/:id/sessions/:sessionId/revoke' ? 'REVOKE_SESSION'
     : request.method === 'PATCH' && route === '/admin/users/:id/sessions/revoke' ? 'REVOKE_SESSIONS' : undefined;
   if (adminAccessAction) return {
     category: 'ACTIVITY', action: adminAccessAction,
@@ -47,7 +48,7 @@ export class AuditInterceptor implements NestInterceptor {
     if (!target) return next.handle();
     const record = async (status: number, result?: unknown, error?: unknown) => {
       // Successful IAM writes record their audit event inside the mutation transaction.
-      if (status < 400 && ['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSIONS'].includes(target.action)) return;
+      if (status < 400 && ['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(target.action)) return;
       const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown; statusChanged?: unknown } : undefined;
       const auth = target.resource === 'auth';
       const disabledLogin = target.action === 'AUTH_LOGIN' && error instanceof AccountDisabledException ? error : undefined;
@@ -58,10 +59,14 @@ export class AuditInterceptor implements NestInterceptor {
         if (data?.statusChanged === true && data.accountStatus === 'ACTIVE') action = 'REACTIVATE_ACCOUNT';
       }
       const resourceId = ['id', 'invoiceId', 'contractId', 'reservationId', 'renewalId', 'transferId', 'unitId', 'requestId', 'returnId', 'submissionId', 'bookingCode'].map(key => request.params?.[key]).find(value => typeof value === 'string') ?? data?.id;
+      const sessionId = request.params?.sessionId;
       return this.audit.record({ ...target, action, method: request.method, httpStatus: status,
         actor: disabledLogin?.verifiedAccount ?? request.user ?? (auth && status < 400 ? data?.user : undefined),
         attemptedEmail: auth && target.action !== 'AUTH_LOGOUT' ? request.body?.email : undefined,
         resourceId: auth ? undefined : resourceId,
+        ...(target.action === 'REVOKE_SESSION' && sessionId && /^[0-9a-f-]{36}$/.test(sessionId)
+          ? { metadata: { sessionId, count: 0 } }
+          : target.action === 'REVOKE_SESSIONS' ? { metadata: { count: 0 } } : {}),
         ipAddress: request.socket?.remoteAddress ?? request.ip,
       });
     };

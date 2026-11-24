@@ -14,8 +14,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng ký khách hàng', description: 'Guest access. Role từ request bị bỏ qua; tài khoản mới luôn là STORAGE_CUSTOMER.' })
   @ApiBody({ type: RegisterRequestDto, examples: { customer: { summary: 'Khách hàng mới', value: { fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', password: 'your-password-here' } } } })
   @ApiCreatedResponse({ description: 'Tạo STORAGE_CUSTOMER và phiên đăng nhập thành công.', schema: { example: { token: 'token-returned-by-api', user: { id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'STORAGE_CUSTOMER' } } } })
-  register(@Body() body: Record<string, unknown>) {
-    return this.authService.register(body);
+  register(@Body() body: Record<string, unknown>, @Req() request?: AuthenticatedRequest) {
+    return this.authService.register(body, request?.headers['user-agent']);
   }
 
   @Post('login')
@@ -25,7 +25,7 @@ export class AuthController {
   @ApiOkResponse({ description: 'Đăng nhập thành công.', schema: { example: { token: 'token-returned-by-api', user: { id: 'user-id', fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000', role: 'STORAGE_CUSTOMER' } } } })
   @ApiUnauthorizedResponse({ description: 'Email hoặc mật khẩu không đúng, hoặc tài khoản đã bị vô hiệu hóa (ACCOUNT_DISABLED).', schema: { example: { statusCode: 401, message: 'Email hoặc mật khẩu không đúng.', error: 'Unauthorized' } } })
   login(@Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest & { socket?: { remoteAddress?: string } }) {
-    return this.authService.login(body, request.socket?.remoteAddress);
+    return this.authService.login(body, request.socket?.remoteAddress, request.headers['user-agent']);
   }
 
   @Get('me')

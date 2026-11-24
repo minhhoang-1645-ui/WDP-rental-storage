@@ -2,18 +2,26 @@ import { facilityIds } from '../facility-access/facility-access.service.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { isIP } from 'node:net';
-import { Prisma, type UserRole } from '../../generated/prisma/client.js';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 export type AuditInput = {
   category: 'LOGIN' | 'ACTIVITY'; action: string; resource: string; resourceId?: unknown;
-  method: string; route: string; httpStatus: number; actor?: Pick<PublicUser, 'id' | 'fullName' | 'email' | 'role'>; attemptedEmail?: unknown; ipAddress?: string;
+  method: string; route: string; httpStatus: number; actor?: Pick<PublicUser, 'id' | 'fullName' | 'email' | 'role'>; attemptedEmail?: unknown; ipAddress?: string; metadata?: Prisma.InputJsonObject;
 };
 export const disabledLoginAction = 'AUTH_LOGIN_ACCOUNT_DISABLED';
-const permissionActions = ['CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
-const legacyPermissionRoutes = ['/admin/facility-access', '/admin/facility-access/:id/revoke', '/admin/facility-access/users/:id/role', '/admin/users/:id/status'];
-const accountNoticeActions = ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
+const permissionActions = ['CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSION', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
+const roleChangeRoute = '/admin/facility-access/users/:id/role';
+const grantRoutes = ['/admin/facility-access', '/admin/facility-access/:id/revoke'];
+const legacyPermissionRoutes = [...grantRoutes, roleChangeRoute, '/admin/users/:id/status'];
+const accountNoticeActions = ['CREATE', 'UPDATE', ...permissionActions];
+const legacyAccountNotices = [
+  { route: roleChangeRoute, action: 'ROLE', titleAction: 'CHANGE_ROLE' },
+  { route: grantRoutes[0], action: 'CREATE', titleAction: 'GRANT_FACILITY_ACCESS' },
+  { route: grantRoutes[1], action: 'REVOKE', titleAction: 'REVOKE_FACILITY_ACCESS' },
+];
+const historicalRoles: Record<string, string> = { STORAGE_CUSTOMER: 'CUSTOMER', FACILITY_MANAGER: 'MANAGER', FACILITY_STAFF: 'STAFF' };
 const roles = ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'];
 // oxlint-disable-next-line no-control-regex -- Strip control characters from untrusted display fields.
 const clean = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) || null : null;
@@ -55,6 +63,7 @@ export class AuditService {
     const email = clean(input.actor?.email ?? input.attemptedEmail, 254)?.toLowerCase();
     const data = {
       category: input.category, action: input.action, resource: input.resource,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       resourceId: clean(input.resourceId, 120), method: input.method, route: input.route,
       outcome: input.httpStatus < 400 ? 'SUCCESS' as const : 'FAILURE' as const, httpStatus: input.httpStatus,
       actorId: clean(input.actor?.id, 120), actorName: clean(input.actor?.fullName, 120),
@@ -100,15 +109,25 @@ export class AuditService {
     const extraFilters: Prisma.AuditEventWhereInput[] = [];
     if (scope === 'permissions') extraFilters.push({ OR: [{ action: { in: permissionActions } }, { route: { in: legacyPermissionRoutes } }] });
     if (action) {
-      const legacy = action === 'CHANGE_ROLE' ? { action: 'ROLE', route: '/admin/facility-access/users/:id/role' }
+      const legacy = action === 'CHANGE_ROLE' ? { action: 'ROLE', route: roleChangeRoute }
         : action === 'GRANT_FACILITY_ACCESS' ? { action: 'CREATE', route: '/admin/facility-access' }
         : action === 'REVOKE_FACILITY_ACCESS' ? { action: 'REVOKE', route: '/admin/facility-access/:id/revoke' }
         : undefined;
       extraFilters.push(legacy ? { OR: [{ action }, legacy] } : { action });
     }
+    const accountGrants = accountId && category === 'ACTIVITY'
+      ? await this.prisma.facilityAccess.findMany({ where: { userId: accountId }, select: { id: true } })
+      : [];
     if (accountId) extraFilters.push(category === 'LOGIN'
       ? { actorId: accountId }
-      : { OR: [{ actorId: accountId }, { resource: 'users', resourceId: accountId }] });
+      : { OR: [
+          { actorId: accountId },
+          { resource: 'users', resourceId: accountId },
+          { resource: 'facility-access', route: roleChangeRoute, resourceId: accountId },
+          ...(accountGrants.length ? [{
+            resource: 'facility-access', route: { in: grantRoutes }, resourceId: { in: accountGrants.map(grant => grant.id) },
+          }] : []),
+        ] });
     if (from && to && from > to) throw new BadRequestException('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
     const sessionActions = ['AUTH_LOGIN', 'AUTH_LOGOUT', disabledLoginAction];
     const categoryFilter: Prisma.AuditEventWhereInput = category === 'LOGIN'
@@ -120,12 +139,16 @@ export class AuditService {
       : category === 'ACTIVITY'
         ? { category: 'ACTIVITY', action: { notIn: sessionActions } }
         : {};
+    if (category === 'ACCOUNT_NOTICES') extraFilters.push({ OR: [
+      { resource: 'users', action: { in: accountNoticeActions } },
+      ...legacyAccountNotices.map(({ route, action }) => ({ resource: 'facility-access', route, action })),
+    ] });
     const where: Prisma.AuditEventWhereInput = {
       AND: [categoryFilter, ...extraFilters],
       ...(outcome ? { outcome: outcome as 'SUCCESS' | 'FAILURE' } : {}),
-      ...(category === 'ACCOUNT_NOTICES' ? { category: 'ACTIVITY', resource: 'users', outcome: 'SUCCESS', action: { in: accountNoticeActions }, resourceId: { not: null } } : {}),
+      ...(category === 'ACCOUNT_NOTICES' ? { category: 'ACTIVITY', outcome: 'SUCCESS', resourceId: { not: null } } : {}),
       ...(eventId ? { id: eventId } : {}),
-      ...(role ? { actorRole: role as UserRole } : {}),
+      ...(role ? { actorRole: { in: [role, ...(historicalRoles[role] ? [historicalRoles[role]] : [])] } } : {}),
       ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: new Date(to.getTime() + 86400000) } : {}) } } : {}),
       ...(search ? { OR: ['actorName', 'actorEmail', 'resourceId', 'resource', 'action'].map(field => ({ [field]: { contains: search, mode: 'insensitive' as const } })) } : {}),
     };
@@ -134,9 +157,15 @@ export class AuditService {
       if (category === 'ACCOUNT_NOTICES') {
         const [total, items] = await Promise.all([
           this.prisma.auditEvent.count({ where }),
-          this.prisma.auditEvent.findMany({ where, ...paging, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true } }),
+          this.prisma.auditEvent.findMany({ where, ...paging, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true, route: true, metadata: true } }),
         ]);
-        return { page, limit, total, items: await this.withTargetAccounts(items) };
+        const enriched = await this.withTargetAccounts(await this.withFacilities(items));
+        const notices = enriched.map(item => {
+          const legacy = item.resource === 'facility-access'
+            ? legacyAccountNotices.find(row => row.route === item.route && row.action === item.action) : undefined;
+          return legacy ? { ...item, action: legacy.titleAction } : item;
+        });
+        return { page, limit, total, items: notices };
       }
       const [total, items] = await Promise.all([
         this.prisma.auditEvent.count({ where }),
@@ -151,23 +180,47 @@ export class AuditService {
         ? { ...item, attemptAccountName: namesByEmail.get(item.actorEmail.toLowerCase()) }
         : item);
       if (category !== 'ACTIVITY') return { page, limit, total, items: withNames };
-      const facilityId = (metadata: Prisma.JsonValue) => metadata && typeof metadata === 'object' && !Array.isArray(metadata) &&
-        typeof metadata.facilityId === 'string' ? metadata.facilityId : undefined;
-      const ids = [...new Set(items.flatMap(item => facilityId(item.metadata) ?? []))];
-      const facilities = ids.length ? await this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
-      const names = new Map(facilities.map(facility => [facility.id, facility.name]));
-      const enriched = withNames.map(item => ({ ...item, facilityName: names.get(facilityId(item.metadata) ?? '') }));
-      return { page, limit, total, items: await this.withTargetAccounts(enriched) };
+      return { page, limit, total, items: await this.withTargetAccounts(await this.withFacilities(withNames)) };
     } catch {
       throw new ServiceUnavailableException({ code: 'AUDIT_STORAGE_UNAVAILABLE', message: 'Chưa đọc được nhật ký. Kiểm tra kết nối DB và migration nhật ký Admin.' });
     }
   }
 
-  private async withTargetAccounts<T extends { resource: string; resourceId: string | null }>(items: T[]) {
-    const ids = [...new Set(items.flatMap(item => item.resource === 'users' && item.resourceId ? [item.resourceId] : []))];
+  private async withFacilities<T extends { resource: string; resourceId: string | null; route: string; metadata: Prisma.JsonValue }>(items: T[]) {
+      const facilityId = (metadata: Prisma.JsonValue) => metadata && typeof metadata === 'object' && !Array.isArray(metadata) &&
+        typeof metadata.facilityId === 'string' ? metadata.facilityId : undefined;
+      const ids = [...new Set(items.flatMap(item => facilityId(item.metadata) ?? []))];
+      const facilities = ids.length ? await this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+      const names = new Map(facilities.map(facility => [facility.id, facility.name]));
+      const grantIds = [...new Set(items.flatMap(item =>
+        item.resource === 'facility-access' && grantRoutes.includes(item.route) && item.resourceId ? [item.resourceId] : []))];
+      const grants = grantIds.length ? await this.prisma.facilityAccess.findMany({
+        where: { id: { in: grantIds } },
+        select: { id: true, userId: true, facility: { select: { name: true } } },
+      }) : [];
+      const grantsById = new Map(grants.map(grant => [grant.id, grant]));
+      return items.map(item => {
+        const grant = item.resource === 'facility-access' && grantRoutes.includes(item.route)
+          ? grantsById.get(item.resourceId ?? '') : undefined;
+        return {
+          ...item,
+          ...(grant ? { targetUserId: grant.userId } : {}),
+          facilityName: names.get(facilityId(item.metadata) ?? '') ?? grant?.facility.name,
+        };
+      });
+  }
+
+  private async withTargetAccounts<T extends { resource: string; resourceId: string | null; route?: string; targetUserId?: string }>(items: T[]) {
+    // Legacy role changes stored the user ID under the facility-access resource.
+    const targetId = (item: T) => item.targetUserId ?? (item.resource === 'users' ||
+      (item.resource === 'facility-access' && item.route === roleChangeRoute) ? item.resourceId : null);
+    const ids = [...new Set(items.flatMap(item => targetId(item) ?? []))];
     if (!ids.length) return items;
     const accounts = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true, role: true } });
     const byId = new Map(accounts.map(({ id, fullName, role }) => [id, { fullName, role }]));
-    return items.map(item => item.resource === 'users' && item.resourceId ? { ...item, targetAccount: byId.get(item.resourceId) ?? null } : item);
+    return items.map(item => {
+      const id = targetId(item);
+      return id ? { ...item, targetUserId: id, targetAccount: byId.get(id) ?? null } : item;
+    });
   }
 }

@@ -28,7 +28,10 @@ function LocationDetails({ rental, contract }: { rental: Row; contract: Row }) {
   const zone = text(unit, 'zone').trim();
   const row = text(unit, 'row').trim();
   const position = text(unit, 'position').trim();
+  const facility = object(object(unit.storageType).facility ?? rental.facility);
   const location = [
+    { label: 'Cơ sở', value: text(facility, 'name'), icon: Warehouse },
+    { label: 'Địa chỉ', value: text(facility, 'address'), icon: MapPin },
     { label: 'Tầng', value: floor, icon: Layers },
     { label: 'Khu', value: zone && (/^khu\b/i.test(zone) ? zone : `Khu ${zone}`), icon: Grid2X2 },
     { label: 'Hàng', value: row && `Hàng ${row}`, icon: Rows3 },

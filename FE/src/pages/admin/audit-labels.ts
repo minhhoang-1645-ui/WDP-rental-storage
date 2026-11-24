@@ -2,6 +2,20 @@ export const auditResources: Record<string, string> = {
   auth: 'Tài khoản', users: 'Người dùng', units: 'Kho', 'storage-types': 'Loại kho', reservations: 'Đặt kho', contracts: 'Hợp đồng', renewals: 'Gia hạn', appointments: 'Lịch bàn giao', maintenance: 'Bảo trì', returns: 'Trả kho', 'early-return-requests': 'Trả trước hạn', transfers: 'Chuyển kho', 'stock-movements': 'Nhập/xuất hàng', 'stored-items': 'Hàng lưu kho', 'additional-services': 'Dịch vụ', payments: 'Thanh toán', invoices: 'Hóa đơn', 'payment-submissions': 'Thông báo chuyển khoản', 'online-payment-reconciliations': 'Kiểm tra thanh toán VNPay', 'support-requests': 'Hỗ trợ', 'deposit-settlements': 'Xử lý tiền cọc', 'unit-staff': 'Phụ trách kho', 'staff-assignments': 'Phân công', inquiries: 'Tư vấn',
 };
 const actions: Record<string, string> = { ONLINE_PAYMENT: 'Mở phiên thanh toán', SIGNATURE_OTP: 'Gửi mã xác nhận', STAFF_ASSIGNMENT: 'Phân công', AUTH_LOGIN: 'Đăng nhập', AUTH_LOGOUT: 'Đăng xuất', AUTH_REGISTER: 'Đăng ký', CREATE: 'Tạo mới', UPDATE: 'Cập nhật', DELETE: 'Xóa', STATUS: 'Đổi trạng thái', APPROVE: 'Phê duyệt', REJECT: 'Từ chối', CONFIRM: 'Xác nhận', COMPLETE: 'Hoàn tất', FINALIZE: 'Hoàn tất', ASSIGN: 'Phân công', RESOLVE: 'Giải quyết', VERIFY: 'Nghiệm thu', REJECT_VERIFICATION: 'Yêu cầu sửa lại', PAYMENTS: 'Ghi nhận thanh toán', SIGN: 'Xác nhận hợp đồng', ACCEPT: 'Chấp thuận', START: 'Bắt đầu', START_INSPECTION: 'Bắt đầu kiểm tra', RECONCILE: 'Đối soát', SUBMIT: 'Gửi yêu cầu' };
+export const activityActionOptions = () => {
+  const all = { ...actions };
+  for (const labels of Object.values(resourceActions)) {
+    for (const [action, title] of Object.entries(labels)) {
+      if (!all[action] && !['ROLE', 'REVOKE', 'CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSION', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'].includes(action)) all[action] = title;
+    }
+  }
+  return Object.entries(all).filter(([action]) => action !== 'AUTH_LOGIN' && action !== 'AUTH_LOGOUT')
+    .sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+};
+
+const historicalRoles: Record<string, string> = { CUSTOMER: 'STORAGE_CUSTOMER', MANAGER: 'FACILITY_MANAGER', STAFF: 'FACILITY_STAFF' };
+export const auditRole = (role: string) => historicalRoles[role] ?? role;
+
 actions.AUTH_PROFILE_UPDATE = 'Cập nhật thông tin liên hệ';
 auditResources['facility-access'] = 'Quyền cơ sở';
 auditResources['business-policies'] = 'Chính sách hệ thống';
@@ -13,7 +27,7 @@ const resourceActions: Record<string, Record<string, string>> = {
   users: {
     CREATE: 'Tạo tài khoản', UPDATE: 'Cập nhật thông tin tài khoản', STATUS: 'Đổi trạng thái tài khoản',
     DISABLE_ACCOUNT: 'Khóa tài khoản', REACTIVATE_ACCOUNT: 'Mở khóa tài khoản',
-    CHANGE_ROLE: 'Đổi vai trò', GRANT_FACILITY_ACCESS: 'Cấp quyền cơ sở', REVOKE_FACILITY_ACCESS: 'Thu hồi quyền cơ sở', REVOKE_SESSIONS: 'Thu hồi các phiên đăng nhập',
+    CHANGE_ROLE: 'Đổi vai trò', GRANT_FACILITY_ACCESS: 'Cấp quyền cơ sở', REVOKE_FACILITY_ACCESS: 'Thu hồi quyền cơ sở', REVOKE_SESSION: 'Thu hồi một phiên đăng nhập', REVOKE_SESSIONS: 'Thu hồi toàn bộ phiên đăng nhập',
     ACCOUNT_STATUS_UNCHANGED: 'Giữ nguyên trạng thái tài khoản',
   },
   'facility-access': { CREATE: 'Cấp quyền cơ sở', ROLE: 'Đổi vai trò', REVOKE: 'Thu hồi quyền cơ sở', REVOKE_FACILITY_ACCESS: 'Thu hồi quyền cơ sở' },
@@ -38,9 +52,10 @@ export type AuditEvent = {
   action: string;
   resource: string;
   resourceId?: string | null;
+  targetUserId?: string | null;
   targetAccount?: { fullName: string; role: string } | null;
   facilityName?: string | null;
-  metadata?: { facilityId?: string; previousRole?: string; nextRole?: string; count?: number } | null;
+  metadata?: { facilityId?: string; previousRole?: string; nextRole?: string; sessionId?: string; count?: number } | null;
   actorName?: string | null;
   attemptAccountName?: string | null;
   actorEmail?: string | null;

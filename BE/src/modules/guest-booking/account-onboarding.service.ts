@@ -1,3 +1,4 @@
+import { revokeActiveSessions } from '../auth/session-revocation.js';
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -81,7 +82,7 @@ export class AccountOnboardingService {
       const changed = await tx.accountFlowToken.updateMany({ where: { id: proof.id, usedAt: null, expiresAt: { gt: new Date() } }, data: { usedAt: new Date() } });
       if (!changed.count) throw new UnauthorizedException('Liên kết đã hết hạn hoặc đã được dùng.');
       await tx.accountFlowToken.updateMany({ where: { email: proof.email, kind: 'RESET', usedAt: null }, data: { usedAt: new Date() } });
-      await tx.authSession.deleteMany({ where: { userId: user.id } });
+      await revokeActiveSessions(tx, { userId: user.id }, 'PASSWORD_RESET', user.id);
       return true;
     }).catch(error => {
       if (error instanceof UnauthorizedException) throw error;

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { BookingAvailabilityRequestDto, GuestInquiryRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -14,8 +14,8 @@ export class BookingController {
   @Get('booking/catalog')
   @ApiOperation({ summary: 'Catalog dùng cho wizard đặt kho', description: 'Guest access. Nguồn catalog hiện tại của frontend, gồm sản phẩm, quy tắc thuê tối thiểu và Pricing V1.' })
   @ApiOkResponse({ description: 'Catalog WDP.', schema: { example: { products: [{ id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', monthlyPrice: 1500000, minRentalDays: 7, allowDailyRental: true }], sizes: [{ id: 'small', name: 'Kho nhỏ', dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' }], approvedDurations: [1, 3, 6, 12], addons: [{ id: 'service-id', code: 'UTILITY_DOLLY', kind: 'RENTAL', billingUnit: 'DAY', unitPrice: 60000 }], pricingPolicy: 'PRICING_V1', inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' } } })
-  catalog() {
-    return this.bookingService.getCatalog();
+  catalog(@Query('facilityId') facilityId?: string) {
+    return this.bookingService.getCatalog(facilityId);
   }
 
   @Post('booking/availability')

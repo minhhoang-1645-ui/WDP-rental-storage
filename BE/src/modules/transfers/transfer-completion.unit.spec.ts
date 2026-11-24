@@ -8,7 +8,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
   const actor = { id: 'staff-id', role: 'FACILITY_STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
   const stamp = new Date('2026-10-27T13:00:00Z');
-  const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ' };
+  const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ', facilityId: 'facility' };
   const support = { id: 'support', reservationId: 'reservation', rentalContractId: 'contract', status: supportStatus, assignedStaffUserId: actor.id, subject: 'Yêu cầu chuyển kho', resolutionType: null as string | null, resolutionNote: null as string | null };
   const transfer = { id: 'transfer', transferCode: 'TRF-1', status, assignedStaffUserId: actor.id, supportRequestId: 'support' as string | null, reservationId: 'reservation', rentalContractId: 'contract', fromStorageUnitId: 'source', toStorageUnitId: 'destination', fromReservationUnitId: 'allocation-old', toReservationUnitId: 'allocation-new',
     fromStorageUnit: { id: 'source', unitNumber: 'A101', status: status === 'COMPLETED' ? 'MAINTENANCE' : 'OCCUPIED', storageType }, toStorageUnit: { id: 'destination', unitNumber: 'A102', status: 'RESERVED', storageType },
@@ -17,7 +17,7 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
   const maintenance: Record<string, unknown>[] = [];
   const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, assignedStaffUserId: support.assignedStaffUserId, resolutionType: support.resolutionType } });
   const tx = {
-    $queryRawUnsafe: vi.fn(),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
     reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
@@ -125,13 +125,14 @@ describe('Transfer completion and linked customer request, with memory-only depe
   it('does not finish an unapproved transfer', async () => {
     const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
-  it('rejects another Staff member and ignores historical inventory after physical confirmation', async () => {
+  it('requires assigned Staff to verify the source is empty without consulting legacy inventory', async () => {
     const app = setup();
     await expect(app.service.complete('transfer', { ...app.actor, id: 'other-staff' }, handover)).rejects.toThrow('Chỉ nhân viên được giao');
+    app.tx.storedItem.count.mockResolvedValue(1);
+    await expect(app.service.complete('transfer', app.actor, { ...handover, goodsMoved: false })).rejects.toThrow('kho cũ đã trống');
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
     expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
-    app.tx.storedItem.count.mockResolvedValue(1);
-    await expect(app.service.complete('transfer', app.actor, handover)).resolves.toMatchObject({ status: 'COMPLETED' });
+    expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED');
     expect(app.tx.storedItem.count).not.toHaveBeenCalled();
     expect(app.tx.stockMovement.count).not.toHaveBeenCalled();
   });

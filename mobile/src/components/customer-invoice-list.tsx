@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
-import { Stack, router, type Href } from 'expo-router';
+import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
 import { Calendar, Check, ChevronRight, CreditCard, FileText, History, Search } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
@@ -63,6 +63,7 @@ export function InvoiceIdentity({ invoice, badge = true }: { invoice: Row; badge
 
 export function InvoiceList() {
   const { user } = useAuth();
+  const { reservationId, rentalContractId } = useLocalSearchParams<{ reservationId?: string; rentalContractId?: string }>();
   const source = useResource<Row>('/customer/invoices', true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState(0);
@@ -76,7 +77,14 @@ export function InvoiceList() {
     return () => { active = false; };
   }, [user?.id, source.loading]);
 
-  const invoices = [...new Map(rows(source.data?.items).filter(item => idOf(item)).map(item => [idOf(item), item])).values()];
+  const invoices = [...new Map(rows(source.data?.items).filter(item => {
+    if (!idOf(item)) return false;
+    if (!reservationId) return true;
+    if (text(item, 'reservation.id') !== reservationId) return false;
+    const contracts = rows(item.contracts);
+    return !rentalContractId || item.type === 'INITIAL' || !contracts.length
+      || contracts.some(contract => idOf(contract) === rentalContractId);
+  }).map(item => [idOf(item), item])).values()];
   const today = vietnamCalendarDate();
   const due = invoices.filter(invoice => outstanding(invoice) && !paymentWindowClosed(invoice) &&
     (invoice.type === 'INITIAL' || needsRenewalPayment(invoice) || invoice.isPastDue === true || (text(invoice, 'dueAt') && text(invoice, 'dueAt').slice(0, 10) <= today)))

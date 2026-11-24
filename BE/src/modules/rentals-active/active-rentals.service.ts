@@ -145,7 +145,8 @@ export class ActiveRentalsService {
           transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
           reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true, storageTypeId: true,
-          storageType: { select: { id: true, name: true } },
+          storageType: { select: { id: true, name: true, widthCm: true, lengthCm: true, heightCm: true,
+            facility: { select: { id: true, name: true, address: true } } } },
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
             select: { id: true, reservationId: true, plannedStartDate: true, plannedEndDate: true, reservation: { select: { reservationCode: true, customer: { select: { id: true, fullName: true, email: true, phone: true } } } } },

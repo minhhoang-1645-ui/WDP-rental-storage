@@ -11,6 +11,7 @@ export function portalResource(role: PortalRole, key: string): ResourceDefinitio
   if (role === 'STORAGE_CUSTOMER' && key === 'reservations') return { title: 'Đơn đặt kho', path: '/reservations', shape: 'array', statuses: resources.reservations.statuses };
   if (role === 'STORAGE_CUSTOMER' && key === 'payment-history') return { title: 'Lịch sử thanh toán', path: '/customer/payments' };
   if (role === 'STORAGE_CUSTOMER' && key === 'transfers') return { title: 'Chuyển kho', path: '/customer/support-requests' };
+  if (role === 'STORAGE_CUSTOMER' && key === 'early-returns') return { title: 'Trả kho trước hạn', path: '/customer/support-requests' };
   if (!(role === 'STORAGE_CUSTOMER' ? customerKeys : staffKeys).includes(key)) return;
   const config = resources[key];
   const titles: Record<string, string> = {

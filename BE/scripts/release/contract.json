@@ -21,6 +21,7 @@
     "20261123000500_void_invoice_balance_integrity",
     "20261124000100_legacy_service_facility_evidence",
     "20261124000200_shared_service_catalog",
+    "20261124000300_auth_session_history",
     "20261124000300_offering_configuration_review"
   ],
   "migrations": [
@@ -379,6 +380,13 @@
       "checksums": [
         "8351e5580f86732ae9ee96cb17dcef7f2de99e4049dcc7f789c913f355b29a49",
         "1749bec2830b5ee15520cde0b1a96ccdaf917556318ac0205077b05e6ddc22fd"
+      ]
+    },
+    {
+      "name": "20261124000300_auth_session_history",
+      "checksums": [
+        "bec44da5c693d15638e9fe46dff7bd27c4144ff529a4e39dcfe4a47d782f3034",
+        "f1123bfb9b512e141a90c3efc1bbc72020c045ef4eca6df6b3813b0322090a4e"
       ]
     },
     {

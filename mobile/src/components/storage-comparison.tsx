@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, X } from 'lucide-react-native';
+import { Check, ChevronRight, Scale, X } from 'lucide-react-native';
 import { Button } from '@/operations/ui';
 import { text, type Row } from '@/operations/model';
 import { formatMoney } from '@/utils/format';
@@ -50,8 +50,11 @@ export function StorageComparison({ products, sizes, onChoose, compact = false }
   const openComparison = () => {setComparing(false);setOpen(true);};
   return <>
     {compact ? <Pressable accessibilityRole="button" disabled={products.length<2} onPress={openComparison}
-      style={{flexGrow:1,minHeight:44,justifyContent:'center',alignItems:'center',paddingHorizontal:6,opacity:products.length<2?0.45:1}}>
-      <Text style={{color:blue,fontWeight:'700',fontSize:13}}>So sánh kho ›</Text>
+      style={{backgroundColor:'#EAF1FD',borderRadius:11,minHeight:49,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,opacity:products.length<2?0.45:1}}>
+      <View style={{padding:7,borderRadius:10,backgroundColor:'#E5F3FF'}}><Scale size={19} color={blue} /></View>
+      <View style={{flex:1}}><Text style={{color:blue,fontWeight:'700',fontSize:13}}>So sánh kho</Text>
+        <Text style={{fontSize:12,color:'#52637A'}}>Xem chi tiết các loại kho</Text></View>
+      <ChevronRight size={16} color={blue} />
     </Pressable> : <Button title="So sánh kho" variant="secondary" disabled={products.length<2} onPress={openComparison} />}
     <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
       <View style={s.overlay}><SafeAreaView edges={['bottom']} style={s.sheet}>

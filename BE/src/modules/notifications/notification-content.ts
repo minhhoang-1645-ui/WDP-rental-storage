@@ -68,6 +68,11 @@ const auditTitles: Record<string, string> = {
   UPDATE: 'Đã cập nhật thông tin tài khoản',
   DISABLE_ACCOUNT: 'Đã vô hiệu hóa tài khoản',
   REACTIVATE_ACCOUNT: 'Đã kích hoạt lại tài khoản',
+  CHANGE_ROLE: 'Đã đổi vai trò tài khoản',
+  GRANT_FACILITY_ACCESS: 'Đã cấp quyền truy cập cơ sở',
+  REVOKE_FACILITY_ACCESS: 'Đã thu hồi quyền truy cập cơ sở',
+  REVOKE_SESSION: 'Đã thu hồi một phiên đăng nhập',
+  REVOKE_SESSIONS: 'Đã thu hồi toàn bộ phiên đăng nhập',
 };
 const roles: Record<string, string> = { SYSTEM_ADMINISTRATOR: 'Quản trị viên', FACILITY_MANAGER: 'Quản lý', BUSINESS_OPERATIONS_MANAGER: 'Điều hành kinh doanh', FACILITY_STAFF: 'Nhân viên', STORAGE_CUSTOMER: 'Khách hàng' };
 const byDate = (a: Notice, b: Notice) => Date.parse(b.at) - Date.parse(a.at) || a.key.localeCompare(b.key);
@@ -89,11 +94,11 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   if (!id || !Object.hasOwn(noticeKinds, source)) return;
   const key = `${source}:${id}`;
   if (actor.role === 'SYSTEM_ADMINISTRATOR') {
-    const action = get('action'), target = get('resourceId'), at = get('createdAt');
-    if (source !== 'users' || row.resource !== 'users' || row.outcome !== 'SUCCESS' || !target || !Object.hasOwn(auditTitles, action) || !Number.isFinite(Date.parse(at))) return;
+    const action = get('action'), target = get('targetUserId') || (row.resource === 'users' ? get('resourceId') : ''), at = get('createdAt');
+    if (source !== 'users' || row.outcome !== 'SUCCESS' || !target || (action.startsWith('REVOKE_SESSION') && row.metadata && typeof row.metadata === 'object' && 'count' in row.metadata && row.metadata.count === 0) || !Object.hasOwn(auditTitles, action) || !Number.isFinite(Date.parse(at))) return;
     const account = get('targetAccount.fullName');
     return { key, token: hash([key]), kind: source, title: auditTitles[action], at, code: '', actionLabel: '', important: false,
-      summary: [account, roles[get('targetAccount.role')]].filter(Boolean).join(' · '),
+      summary: [account, roles[get('targetAccount.role')], get('facilityName')].filter(Boolean).join(' · '),
       target: row.targetAccount ? `/admin/users/${encodeURIComponent(target)}` : '' };
   }
   if (source === 'catalog-changes') {

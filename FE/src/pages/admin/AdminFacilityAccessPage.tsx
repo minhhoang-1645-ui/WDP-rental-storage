@@ -1,16 +1,166 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
-import { apiRequest } from '../../services/api';
-import '../operations/operations.css';
-type Data={facilities:{id:string;name:string}[];users:{id:string;fullName:string;role:string}[];items:{id:string;user:{fullName:string};facility:{name:string};grantedAt:string}[]};
-export function AdminFacilityAccessPage(){
- const {user}=useAuth();const data=useApiResource<Data>('/admin/facility-access',user?.id);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[message,setMessage]=useState('');
- async function run(path:string,method:'POST'|'PATCH',body:unknown){setBusy(true);setError('');setMessage('');try{await apiRequest(path,{method,body:JSON.stringify(body)});setMessage('Đã cập nhật quyền cơ sở.');data.refresh();}catch(err){setError(err instanceof Error?err.message:'Chưa cập nhật được quyền.');}finally{setBusy(false);}}
- function grant(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);void run('/admin/facility-access','POST',{userId:f.get('userId'),facilityId:f.get('facilityId')});}
- return <section className="operations-page"><h1>Quyền cơ sở</h1><p>Cấp quyền vào cơ sở cho Staff và Manager. Việc giao công việc do Manager thực hiện riêng.</p>
- {data.loading?<p>Đang tải…</p>:null}{data.error||error?<p role="alert">{data.error||error}</p>:null}{message?<p role="status">{message}</p>:null}
- <form onSubmit={grant}><label>Tài khoản<select name="userId" required><option value="">Chọn nhân viên hoặc quản lý</option>{data.data?.users.map(u=><option key={u.id} value={u.id}>{u.fullName} · {u.role==='FACILITY_MANAGER'?'Quản lý':'Nhân viên'}</option>)}</select></label><label>Cơ sở<select name="facilityId" required><option value="">Chọn cơ sở</option>{data.data?.facilities.map(f=><option value={f.id} key={f.id}>{f.name}</option>)}</select></label><button disabled={busy||data.loading}>Cấp quyền cơ sở</button></form>
- {data.data?.items.map(r=><div className="operations-row" key={r.id}><div><strong>{r.user.fullName}</strong><p>{r.facility.name}</p><small>Cấp ngày {new Date(r.grantedAt).toLocaleDateString('vi-VN')}</small></div><button disabled={busy} onClick={()=>{if(window.confirm('Thu hồi quyền cơ sở? Các phiên đăng nhập của tài khoản sẽ kết thúc.'))void run('/admin/facility-access/'+encodeURIComponent(r.id)+'/revoke','PATCH',{});}}>Thu hồi</button></div>)}
- {data.data&&!data.data.items.length?<p>Chưa có tài khoản được cấp quyền cơ sở.</p>:null}</section>;
+import { mutate } from '../../services/portal';
+import { date } from '../../components/manager/portal-data';
+import { Empty, LoadState, Modal, PageHeader, Pagination, Status } from '../../components/manager/PortalUi';
+import { AccountRole } from './AccountRole';
+
+const path = '/admin/facility-access';
+type Facility = { id: string; name: string; code: string };
+type Account = { id: string; fullName: string; email: string; role: string; accountStatus: string };
+type Grant = { id: string; facilityId: string; facility: { name: string }; grantedAt: string; revokedAt: string | null; grantedById: string; revokedById: string | null; grantedByName?: string | null; revokedByName?: string | null };
+type Directory = { facilities: Facility[]; users: Account[]; items: { userId: string; facility: { name: string } }[] };
+export type AccountAccess = {
+  history: Grant[];
+  openAssignments: number;
+  closedAssignments: number;
+  sessions: { expiresAt: string; status: 'ACTIVE' | 'REVOKED' }[];
+};
+
+export const accessPath = (id: string) => '/admin/users/' + encodeURIComponent(id) + '/access';
+
+export function AssignmentImpact({ access }: { access?: AccountAccess | null }) {
+  if (!access) return <p>Chưa có số liệu phân công. Backend kiểm tra điều kiện trước khi thay đổi quyền.</p>;
+  return <p>Công việc được giao trên toàn hệ thống: <strong>{access.openAssignments}</strong> đang mở · <strong>{access.closedAssignments}</strong> đã đóng.
+    {access.openAssignments > 0 && ' Việc chuyển giao nhiệm vụ thuộc quyền Quản lý cơ sở.'}</p>;
+}
+
+export function AdminFacilityAccessPage() {
+  const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 15;
+  const directory = useApiResource<Directory>(path, user?.id, true);
+  const chosen = directory.data?.users.find(item => item.id === params.get('user'));
+  const phrase = search.trim().toLocaleLowerCase('vi-VN');
+  const accounts = directory.data?.users.filter(item => (item.fullName + ' ' + item.email).toLocaleLowerCase('vi-VN').includes(phrase)) ?? [];
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(accounts.length / limit)));
+  const visible = accounts.slice((currentPage - 1) * limit, currentPage * limit);
+  return <section>
+    <PageHeader title="Quyền truy cập cơ sở" description="Xem và quản lý quyền của nhân viên và quản lý cơ sở.">
+      <button type="button" className="button-secondary" onClick={directory.refresh} disabled={directory.loading || directory.refreshing}>Làm mới</button>
+    </PageHeader>
+    <LoadState loading={directory.loading} error={directory.error} retry={directory.refresh} />
+    {directory.data && <>
+      <label className="field-label portal-search">Tìm tài khoản
+        <input type="search" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Tên hoặc email" />
+      </label>
+      {accounts.length ? <div className="manager-table-wrap"><table className="manager-table">
+        <thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Cơ sở đã cấp</th><th>Chi tiết</th></tr></thead>
+        <tbody>{visible.map(account => {
+          const facilities = directory.data?.items.filter(item => item.userId === account.id).map(item => item.facility.name) ?? [];
+          return <tr key={account.id}>
+            <td><strong>{account.fullName}</strong><small>{account.email}</small></td>
+            <td><AccountRole value={account.role} /></td><td><Status value={account.accountStatus} /></td>
+            <td>{facilities.length ? facilities.join(', ') : 'Chưa cấp quyền'}</td>
+            <td><button type="button" className="button-secondary" aria-pressed={chosen?.id === account.id}
+              onClick={() => setParams({ user: account.id }, { replace: true })}>Xem quyền</button></td>
+          </tr>;
+        })}</tbody>
+      </table></div> : <Empty title="Không tìm thấy tài khoản" description="Thử tìm theo tên hoặc email khác." />}
+      {accounts.length > limit && <Pagination page={currentPage} limit={limit} total={accounts.length} onChange={setPage} />}
+      {chosen && <FacilityAccessDetail key={chosen.id} account={chosen} facilities={directory.data.facilities} onChanged={directory.refresh} />}
+    </>}
+  </section>;
+}
+
+function FacilityAccessDetail({ account, facilities, onChanged }: { account: Account; facilities: Facility[]; onChanged: () => void }) {
+  const { user } = useAuth();
+  const data = useApiResource<AccountAccess>(accessPath(account.id), user?.id, true);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [revoke, setRevoke] = useState<Grant>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const lock = useRef(false);
+  const active = new Map<string, Grant>(data.data?.history.filter(item => !item.revokedAt).map(item => [item.facilityId, item] as const));
+  const toGrant = facilities.filter(item => selected.includes(item.id) && !active.has(item.id));
+
+  async function save() {
+    if (lock.current || !data.data || (!revoke && (account.accountStatus !== 'ACTIVE' || !toGrant.length))) return;
+    lock.current = true;
+    setBusy(true);
+    setNotice('');
+    setError('');
+    try {
+      if (revoke) {
+        await mutate(path + '/' + encodeURIComponent(revoke.id) + '/revoke', 'PATCH', {});
+        setNotice('Đã thu hồi quyền tại ' + revoke.facility.name + '.');
+        setRevoke(undefined);
+      } else {
+        const failures: string[] = [];
+        const completed: string[] = [];
+        for (const facility of toGrant) {
+          try {
+            await mutate(path, 'POST', { userId: account.id, facilityId: facility.id });
+            completed.push(facility.id);
+          } catch (caught) {
+            failures.push(facility.name + ' · ' + (caught instanceof Error ? caught.message : 'Chưa cấp được quyền.'));
+          }
+        }
+        if (completed.length) setNotice('Đã xác nhận quyền tại ' + completed.length + ' cơ sở.');
+        setSelected(previous => previous.filter(id => !completed.includes(id)));
+        setError(failures.join(' | '));
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Chưa cập nhật được quyền.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+      data.refresh();
+      onChanged();
+    }
+  }
+
+  return <section className="manager-section admin-detail-panel">
+    <h2>Quyền của {account.fullName}</h2>
+    <Link to={'/admin/users/' + encodeURIComponent(account.id) + '?tab=permissions'}>Mở hồ sơ tài khoản</Link>
+    <LoadState loading={data.loading} error={data.error} retry={data.refresh} />
+    {notice && <p className="portal-success" role="status">{notice}</p>}
+    {error && !revoke && <p className="booking-alert is-error" role="alert">{error}</p>}
+    {data.data && <>
+      <AssignmentImpact access={data.data} />
+      {account.accountStatus !== 'ACTIVE' && <p>Tài khoản đang bị khóa. Chỉ có thể cấp quyền sau khi mở khóa.</p>}
+      <div className="manager-table-wrap"><table className="manager-table">
+        <thead><tr><th>Cơ sở</th><th>Quyền</th><th>Thao tác</th></tr></thead>
+        <tbody>{facilities.map(facility => {
+          const grant = active.get(facility.id);
+          const revoked = data.data?.history.some(item => item.facilityId === facility.id && item.revokedAt);
+          return <tr key={facility.id}>
+            <td>{facility.name}<small>{facility.code}</small></td>
+            <td>{grant ? 'Đã cấp' : revoked ? 'Đã thu hồi' : 'Chưa cấp'}</td>
+            <td>{grant ? <button type="button" className="button-secondary portal-danger" disabled={busy || data.refreshing}
+              onClick={() => { setError(''); setRevoke(grant); }}>Thu hồi</button>
+              : <label className="portal-checkbox"><input type="checkbox" checked={selected.includes(facility.id)}
+                disabled={busy || data.refreshing || account.accountStatus !== 'ACTIVE'} onChange={event => {
+                  const checked = event.target.checked;
+                  setSelected(previous => checked ? [...previous, facility.id] : previous.filter(id => id !== facility.id));
+                }} />Chọn cấp quyền tại {facility.name}</label>}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+      {!facilities.length && <Empty title="Chưa có cơ sở" description="Danh mục hệ thống chưa có cơ sở để cấp quyền." />}
+      <button type="button" className="button-primary" disabled={busy || data.refreshing || !toGrant.length || account.accountStatus !== 'ACTIVE'}
+        onClick={() => void save()}>{busy && !revoke ? 'Đang cấp quyền…' : 'Cấp quyền cho cơ sở đã chọn'}</button>
+      <h3>Lịch sử cấp và thu hồi</h3>
+      {data.data.history.length ? <div className="manager-table-wrap"><table className="manager-table">
+        <thead><tr><th>Cơ sở</th><th>Cấp quyền</th><th>Thu hồi</th></tr></thead>
+        <tbody>{data.data.history.map(item => <tr key={item.id}><td>{item.facility.name}</td>
+          <td>{date(item.grantedAt, true)}<small>{item.grantedByName || item.grantedById}</small></td>
+          <td>{item.revokedAt ? <>{date(item.revokedAt, true)}<small>{item.revokedByName || item.revokedById}</small></> : 'Còn hiệu lực'}</td></tr>)}</tbody>
+      </table></div> : <p>Tài khoản chưa có lịch sử quyền cơ sở.</p>}
+    </>}
+    {revoke && <Modal title="Xác nhận thu hồi quyền cơ sở" busy={busy} onClose={() => setRevoke(undefined)} footer={<>
+      <button type="button" className="button-secondary" disabled={busy} onClick={() => setRevoke(undefined)}>Hủy</button>
+      <button type="button" className="button-secondary portal-danger" disabled={busy || data.refreshing || Boolean(data.data?.openAssignments)}
+        onClick={() => void save()}>Thu hồi quyền</button>
+    </>}>
+      <p><strong>{account.fullName}</strong> sẽ mất quyền tại <strong>{revoke.facility.name}</strong> và phải đăng nhập lại.</p>
+      <AssignmentImpact access={data.data} />
+      {error && <p role="alert" className="booking-alert is-error">{error}</p>}
+    </Modal>}
+  </section>;
 }

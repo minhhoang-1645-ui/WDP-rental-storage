@@ -10,6 +10,8 @@ export type AuditInput = {
   method: string; route: string; httpStatus: number; actor?: Pick<PublicUser, 'id' | 'fullName' | 'email' | 'role'>; attemptedEmail?: unknown; ipAddress?: string;
 };
 export const disabledLoginAction = 'AUTH_LOGIN_ACCOUNT_DISABLED';
+const permissionActions = ['CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
+const legacyPermissionRoutes = ['/admin/facility-access', '/admin/facility-access/:id/revoke', '/admin/facility-access/users/:id/role', '/admin/users/:id/status'];
 const accountNoticeActions = ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
 const roles = ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'];
 // oxlint-disable-next-line no-control-regex -- Strip control characters from untrusted display fields.
@@ -63,7 +65,21 @@ export class AuditService {
       return parsed;
     };
     const from = date('from'), to = date('to');
-    const eventId = category === 'ACTIVITY' ? scalar('event', 120) : undefined;
+    const eventId = category === 'ACTIVITY' || category === 'LOGIN' ? scalar('event', 120) : undefined;
+    const action = scalar('action', 80), accountId = scalar('accountId', 120), scope = scalar('scope');
+    if (scope && (scope !== 'permissions' || category !== 'ACTIVITY')) throw new BadRequestException('Phạm vi nhật ký không hợp lệ.');
+    const extraFilters: Prisma.AuditEventWhereInput[] = [];
+    if (scope === 'permissions') extraFilters.push({ OR: [{ action: { in: permissionActions } }, { route: { in: legacyPermissionRoutes } }] });
+    if (action) {
+      const legacy = action === 'CHANGE_ROLE' ? { action: 'ROLE', route: '/admin/facility-access/users/:id/role' }
+        : action === 'GRANT_FACILITY_ACCESS' ? { action: 'CREATE', route: '/admin/facility-access' }
+        : action === 'REVOKE_FACILITY_ACCESS' ? { action: 'REVOKE', route: '/admin/facility-access/:id/revoke' }
+        : undefined;
+      extraFilters.push(legacy ? { OR: [{ action }, legacy] } : { action });
+    }
+    if (accountId) extraFilters.push(category === 'LOGIN'
+      ? { actorId: accountId }
+      : { OR: [{ actorId: accountId }, { resource: 'users', resourceId: accountId }] });
     if (from && to && from > to) throw new BadRequestException('Ngày kết thúc phải từ ngày bắt đầu trở đi.');
     const sessionActions = ['AUTH_LOGIN', 'AUTH_LOGOUT', disabledLoginAction];
     const categoryFilter: Prisma.AuditEventWhereInput = category === 'LOGIN'
@@ -76,7 +92,7 @@ export class AuditService {
         ? { category: 'ACTIVITY', action: { notIn: sessionActions } }
         : {};
     const where: Prisma.AuditEventWhereInput = {
-      ...categoryFilter,
+      AND: [categoryFilter, ...extraFilters],
       ...(outcome ? { outcome: outcome as 'SUCCESS' | 'FAILURE' } : {}),
       ...(category === 'ACCOUNT_NOTICES' ? { category: 'ACTIVITY', resource: 'users', outcome: 'SUCCESS', action: { in: accountNoticeActions }, resourceId: { not: null } } : {}),
       ...(eventId ? { id: eventId } : {}),
@@ -105,7 +121,14 @@ export class AuditService {
       const withNames = items.map(item => item.action === 'AUTH_LOGIN' && item.outcome === 'FAILURE' && !item.actorName && item.actorEmail
         ? { ...item, attemptAccountName: namesByEmail.get(item.actorEmail.toLowerCase()) }
         : item);
-      return { page, limit, total, items: category === 'ACTIVITY' ? await this.withTargetAccounts(withNames) : withNames };
+      if (category !== 'ACTIVITY') return { page, limit, total, items: withNames };
+      const facilityId = (metadata: Prisma.JsonValue) => metadata && typeof metadata === 'object' && !Array.isArray(metadata) &&
+        typeof metadata.facilityId === 'string' ? metadata.facilityId : undefined;
+      const ids = [...new Set(items.flatMap(item => facilityId(item.metadata) ?? []))];
+      const facilities = ids.length ? await this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+      const names = new Map(facilities.map(facility => [facility.id, facility.name]));
+      const enriched = withNames.map(item => ({ ...item, facilityName: names.get(facilityId(item.metadata) ?? '') }));
+      return { page, limit, total, items: await this.withTargetAccounts(enriched) };
     } catch {
       throw new ServiceUnavailableException({ code: 'AUDIT_STORAGE_UNAVAILABLE', message: 'Chưa đọc được nhật ký. Kiểm tra kết nối DB và migration nhật ký Admin.' });
     }

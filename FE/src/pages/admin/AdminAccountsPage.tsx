@@ -123,6 +123,7 @@ export function AdminAccountsPage() {
       const active = row.accountStatus === 'ACTIVE';
       return <div className="staff-table-actions">
         <TablePopover name={`Thao tác tài khoản ${first(row, 'email', 'fullName')}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
+          <Link to={path + '?tab=sessions'}>Phiên đăng nhập</Link>
           <Link className={active ? 'admin-destructive-link' : undefined}
             to={`${path}?tab=permissions&status=${active ? 'DISABLED' : 'ACTIVE'}`}>{active ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</Link>
         </TablePopover>
@@ -384,7 +385,7 @@ function BulkStatusDialog({ status, rows, skipped, onClose, onComplete }: {
   return <Modal title={action} busy={busy} onClose={onClose}>
     <form className="portal-form" onSubmit={submit}>
       <p>{disabling ? 'Khóa' : 'Mở khóa'} <strong>{rows.length} tài khoản</strong>.{skipped > 0 && ` Bỏ qua ${skipped} tài khoản đã ở trạng thái này.`}</p>
-      {disabling && <p>Người dùng sẽ không thể đăng nhập hoặc tiếp tục dùng tài khoản đang mở.</p>}
+      {disabling && <p>Người dùng sẽ không thể đăng nhập hoặc tiếp tục dùng phiên đang mở. Backend sẽ bỏ qua tài khoản không đủ điều kiện do còn nhiệm vụ và báo lý do theo từng tài khoản.</p>}
       <div className="portal-actions">
         <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
         <button type="submit" className={disabling ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy}>

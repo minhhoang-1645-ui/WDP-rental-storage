@@ -1,18 +1,20 @@
+import { Link } from 'react-router-dom';
+import { PageHeader } from '../../components/manager/PortalUi';
 import { BriefcaseBusiness, ClipboardCheck, ShieldCheck, UserRound } from 'lucide-react';
 
 const adminRoles = {
   STORAGE_CUSTOMER: {
-    label: 'Khách hàng', icon: UserRound,
+    label: 'Khách thuê kho', icon: UserRound,
     description: 'Quản lý hồ sơ và dịch vụ lưu trữ của mình.',
     access: ['Đặt kho và theo dõi yêu cầu của mình.', 'Xem hợp đồng, hóa đơn, thanh toán và hàng đang lưu của mình.', 'Gửi yêu cầu nhập/xuất, gia hạn, chuyển kho, trả kho hoặc hỗ trợ.'],
   },
   FACILITY_STAFF: {
-    label: 'Nhân viên', icon: ClipboardCheck,
+    label: 'Nhân viên cơ sở', icon: ClipboardCheck,
     description: 'Thực hiện nhiệm vụ được giao tại cơ sở được cấp quyền.',
     access: ['Thực hiện bàn giao, chuyển kho và kiểm tra trả kho theo nhiệm vụ được giao.', 'Báo sự cố tại cơ sở được cấp quyền; không bắt buộc kiểm đếm đồ cá nhân của khách khi chuyển hoặc trả kho.', 'Xử lý yêu cầu hỗ trợ và bảo trì được giao.'],
   },
   FACILITY_MANAGER: {
-    label: 'Quản lý', icon: BriefcaseBusiness,
+    label: 'Quản lý cơ sở', icon: BriefcaseBusiness,
     description: 'Điều phối hoạt động tại các cơ sở được cấp quyền.',
     access: ['Phân công nhân viên và theo dõi kho, khách hàng, hợp đồng, kết quả kiểm đếm.', 'Duyệt yêu cầu nhân viên chuyển lên và kết quả bảo trì.', 'Kiểm tra khoản thu và quyết định khấu trừ, hoàn tiền cọc.', 'Theo dõi tài chính, bảng giá và báo cáo.'],
   },
@@ -44,4 +46,16 @@ export function AccountRoleAccess({ value }: { value: unknown }) {
     <p>{role.description}</p>
     <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
   </div>;
+}
+
+export function AdminRolesPage() {
+  return <section>
+    <PageHeader title="Vai trò và phân quyền" description="Vai trò quyết định phạm vi nghiệp vụ. Quyền tại từng cơ sở được quản lý theo tài khoản." />
+    {Object.entries(adminRoles).map(([value, role]) => <section key={value} className="manager-section admin-detail-panel">
+      <h2><AccountRole value={value} /></h2>
+      <p><code>{value}</code> · {role.description}</p>
+      <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
+      <Link to={'/admin/users?role=' + value}>Xem tài khoản theo vai trò</Link>
+    </section>)}
+  </section>;
 }

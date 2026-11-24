@@ -22,6 +22,14 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   if (request.method === 'POST' && route === '/customer/transfer-orders/:id/accept') {
     return { category: 'ACTIVITY', action: 'ACCEPT', resource: 'transfer-orders', route };
   }
+  const adminAccessAction = request.method === 'POST' && route === '/admin/facility-access' ? 'GRANT_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/:id/revoke' ? 'REVOKE_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/role' ? 'CHANGE_ROLE'
+    : request.method === 'PATCH' && route === '/admin/users/:id/sessions/revoke' ? 'REVOKE_SESSIONS' : undefined;
+  if (adminAccessAction) return {
+    category: 'ACTIVITY', action: adminAccessAction,
+    resource: adminAccessAction === 'REVOKE_FACILITY_ACCESS' ? 'facility-access' : 'users', route,
+  };
   const segments = route.replace(/^\/(?:customer|manager|admin|staff|operations)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
   const resource = segments[0];
   if (!resources.has(resource)) return;
@@ -37,7 +45,9 @@ export class AuditInterceptor implements NestInterceptor {
     const http = context.switchToHttp(), request = http.getRequest<AuditRequest>();
     const target = auditTarget(request);
     if (!target) return next.handle();
-    const record = (status: number, result?: unknown, error?: unknown) => {
+    const record = async (status: number, result?: unknown, error?: unknown) => {
+      // Successful IAM writes record their audit event inside the mutation transaction.
+      if (status < 400 && ['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSIONS'].includes(target.action)) return;
       const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown; statusChanged?: unknown } : undefined;
       const auth = target.resource === 'auth';
       const disabledLogin = target.action === 'AUTH_LOGIN' && error instanceof AccountDisabledException ? error : undefined;

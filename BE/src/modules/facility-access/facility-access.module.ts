@@ -4,15 +4,17 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { FacilityAccessService } from './facility-access.service.js';
-@Controller('admin/facility-access')
+@Controller('admin')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('SYSTEM_ADMINISTRATOR')
 class FacilityAccessController {
  constructor(private readonly access: FacilityAccessService) {}
- @Patch('users/:id/role') role(@Req() req: AuthenticatedRequest,@Param('id') id:string,@Body() body:Record<string,unknown>){return this.access.changeRole(req.user!,id,body.role);}
- @Get() list(@Req() req:AuthenticatedRequest) { return this.access.list(req.user!); }
- @Post() grant(@Req() req: AuthenticatedRequest, @Body() body: Record<string,unknown>) { return this.access.grant(req.user!, body); }
- @Patch(':id/revoke') revoke(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revoke(req.user!, id); }
+ @Patch('facility-access/users/:id/role') role(@Req() req: AuthenticatedRequest,@Param('id') id:string,@Body() body:Record<string,unknown>){return this.access.changeRole(req.user!,id,body.role,body.expectedRole);}
+ @Get('users/:id/access') userAccess(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.userAccess(req.user!, id); }
+ @Patch('users/:id/sessions/revoke') revokeSessions(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revokeSessions(req.user!, id); }
+ @Get('facility-access') list(@Req() req:AuthenticatedRequest) { return this.access.list(req.user!); }
+ @Post('facility-access') grant(@Req() req: AuthenticatedRequest, @Body() body: Record<string,unknown>) { return this.access.grant(req.user!, body); }
+ @Patch('facility-access/:id/revoke') revoke(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revoke(req.user!, id); }
 }
 @Module({ imports:[AuthModule], controllers:[FacilityAccessController], providers:[FacilityAccessService] })
 export class FacilityAccessModule {}

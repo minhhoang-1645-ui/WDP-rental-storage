@@ -8,7 +8,7 @@ import { Button } from '@/operations/ui';
 import { formatDate, formatMoney } from '@/utils/format';
 
 type Result = {
-  status: 'SUCCESS' | 'FAILED' | 'PENDING'; providerStatus: string; amount: number;
+  transactionId: string; merchantOrderRef: string; status: 'SUCCESS' | 'FAILED' | 'PENDING'; providerStatus: string; amount: number;
   invoice: { id: string; invoiceCode: string; status: string; balanceDue: number };
   payment?: { amount: number; receivedAt: string; paymentCode: string } | null;
   reconciliation?: { status: string } | null;
@@ -37,14 +37,13 @@ export default function PaymentResult() {
       try {
         const status = await apiRequest<Result>('/customer/online-payments/' + encodeURIComponent(transaction), { signal: controller.signal });
         if (controller.signal.aborted) return;
-        if (status.invoice.id !== invoiceId) { terminal = true; setError('Giao dịch không khớp với hóa đơn.'); return; }
+        if (!status || (status.transactionId !== transaction && status.merchantOrderRef !== transaction) || status.invoice?.id !== invoiceId) { terminal = true; setError('Giao dịch không khớp với hóa đơn.'); return; }
         setVerified({ key, result: status });
         setError('');
         if (status.status === 'SUCCESS' && status.payment && !status.reconciliation) {
           terminal = true;
           notifyDataChanged('/customer/invoices');
           notifyDataChanged('/customer/payments');
-          router.dismissTo('/customer');
           return;
         }
         terminal = status.status !== 'PENDING' && (!status.reconciliation || status.reconciliation.status === 'RECONCILED');
@@ -53,7 +52,7 @@ export default function PaymentResult() {
           notifyDataChanged('/customer/payments');
         }
       } catch {
-        if (!controller.signal.aborted) { terminal = true; setError('Chưa kiểm tra được giao dịch. Vui lòng thử lại.'); }
+        if (!controller.signal.aborted) setError('Chưa kiểm tra được giao dịch. Hệ thống sẽ thử lại nếu còn lượt kiểm tra.');
       } finally {
         active = false;
         if (!controller.signal.aborted) {
@@ -67,12 +66,13 @@ export default function PaymentResult() {
     void check();
     const listener = AppState.addEventListener('change', state => {
       clearTimeout(timer);
-      if (state === 'active') { attempts = 0; terminal = false; void check(); }
+      if (state === 'active' && !terminal) { attempts = 0; void check(); }
     });
     return () => { clearTimeout(timer); controller.abort(); listener.remove(); };
   }, [contextValid, transaction, invoiceId, key, revision]));
-  const success = result?.status === 'SUCCESS' && Boolean(result.payment);
-  const failed = result?.status === 'FAILED' || result?.status === 'SUCCESS' && !result.payment && result.reconciliation?.status === 'RECONCILED';
+  const awaitingReconciliation = Boolean(result?.reconciliation && result.reconciliation.status !== 'RECONCILED');
+  const success = result?.status === 'SUCCESS' && Boolean(result.payment) && !awaitingReconciliation;
+  const failed = !awaitingReconciliation && (result?.status === 'FAILED' || result?.status === 'SUCCESS' && !result.payment && result.reconciliation?.status === 'RECONCILED');
   const title = success ? 'Thanh toán thành công' : failed ? 'Thanh toán chưa hoàn tất' : checking ? 'Đang xác nhận thanh toán' : 'Chưa xác nhận thanh toán';
   const invoicePath = (contextValid ? '/customer/invoices/' + encodeURIComponent(invoiceId) : '/customer/invoices') as Href;
   return <ScrollView style={s.screen} contentContainerStyle={s.page}>

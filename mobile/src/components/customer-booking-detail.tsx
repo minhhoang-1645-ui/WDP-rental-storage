@@ -68,6 +68,7 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const firstPayment = initialInvoiceTotal || bookingAmount(paymentSummary.first);
   const initialBalance = flow.initial?.status === 'VOID' ? '' : bookingAmount(flow.initial?.balanceDue);
   const holdUntil = cancelled ? '' : bookingHoldDeadline(row ?? {}, flow.initial);
+  const allocatedUnits = rows(object(row?.rentalSummary).currentUnits);
   const charges: [string, string][] = [
     ['Tiền thuê', bookingAmount(quote.rentalAmount)], ['Tiền cọc', bookingAmount(quote.depositAmount)],
     ['Dịch vụ', Number(quote.addOnTotalAmount) > 0 ? bookingAmount(quote.addOnTotalAmount) : ''],
@@ -91,6 +92,12 @@ export function CustomerBookingDetail({id}:{id:string}) {
           ['Thời gian thuê', term.length], ['Số lượng', term.quantity],
           ['Hạn giữ ô', holdUntil ? formatDate(holdUntil, true) : ''],
         ]} />
+        {allocatedUnits.length > 0 && <View style={{gap:8,padding:12,borderWidth:1,borderColor:C.divider,borderRadius:12}}>
+          <Text accessibilityRole="header" style={s.section}>Ô kho đã phân bổ</Text>
+          {allocatedUnits.map(unit => <Text key={text(unit, 'contractId')} style={s.body}>
+            {[text(unit, 'unitCode'), text(unit, 'floor'), text(unit, 'zone'), text(unit, 'contractCode')].filter(Boolean).join(' · ')}
+          </Text>)}
+        </View>}
         {charges.some(([, value]) => value) && <View style={{gap:8,padding:12,borderWidth:1,borderColor:C.divider,borderRadius:12}}>
           <Text accessibilityRole="header" style={s.section}>Chi phí đơn đặt</Text>
           <CustomerInfoGrid values={charges} />

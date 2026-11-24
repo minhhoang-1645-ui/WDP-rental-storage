@@ -1,3 +1,5 @@
+import { accessPath, AssignmentImpact, type AccountAccess } from './AdminFacilityAccessPage';
+import { AdminAccountSessions } from './AdminAccountSessions';
 import { AccountRoleEditor } from './AccountRoleEditor';
 import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
@@ -14,6 +16,7 @@ import { AccountRole, AccountRoleAccess } from './AccountRole';
 const tabs = [
   { id: 'profile', label: 'Thông tin tài khoản' },
   { id: 'permissions', label: 'Phân quyền' },
+  { id: 'sessions', label: 'Phiên đăng nhập' },
 ] as const;
 type AccountTab = typeof tabs[number]['id'];
 
@@ -28,7 +31,8 @@ export function AdminAccountDetailPage() {
   const detail = useApiResource<Row>(id && user?.id ? path : null, user?.id, false, true);
   const row = saved?.id === id && (!detail.data || saved.previous === detail.data) ? saved.row : detail.data;
   const status = params.get('status');
-  const tab: AccountTab = params.get('tab') === 'permissions' || Boolean(status) ? 'permissions' : 'profile';
+  const tab: AccountTab = status ? 'permissions' : tabs.find(item => item.id === params.get('tab'))?.id ?? 'profile';
+  const access = useApiResource<AccountAccess>(id && user?.id && tab !== 'profile' ? accessPath(id) : null, user?.id, true);
   const next = row?.accountStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
   const canChange = Boolean(row && user?.id && id !== user.id && ['ACTIVE', 'DISABLED'].includes(String(row.accountStatus)));
 
@@ -36,7 +40,7 @@ export function AdminAccountDetailPage() {
     setParams(previous => {
       const updated = new URLSearchParams(previous);
       updated.delete('status');
-      if (value === 'permissions') updated.set('tab', value);
+      if (value !== 'profile') updated.set('tab', value);
       else updated.delete('tab');
       return updated;
     }, { replace: true });
@@ -45,7 +49,10 @@ export function AdminAccountDetailPage() {
   function onTabKey(event: KeyboardEvent<HTMLButtonElement>) {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const nextTab = event.key === 'Home' ? 'profile' : event.key === 'End' ? 'permissions' : tab === 'profile' ? 'permissions' : 'profile';
+    const index = tabs.findIndex(item => item.id === tab);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex].id;
     changeTab(nextTab);
     document.getElementById('admin-tab-' + nextTab)?.focus();
   }
@@ -62,6 +69,7 @@ export function AdminAccountDetailPage() {
   function onSaved(updated: Row, text: string) {
     setSaved({ id, row: updated, previous: detail.data, text });
     detail.refresh();
+    access.refresh();
   }
 
   return <section className="admin-account-detail record-detail-page">
@@ -69,7 +77,7 @@ export function AdminAccountDetailPage() {
     <PageHeader title={first(row ?? {}, 'fullName') || 'Thông tin tài khoản'}
       status={row && <Status value={row.accountStatus} />}
       meta={row && <><span>{first(row, 'email')}</span><AccountRole value={row.role} /></>}>
-      <button type="button" className="button-secondary" disabled={detail.loading || detail.refreshing || editingId === id} onClick={detail.refresh}>
+      <button type="button" className="button-secondary" disabled={detail.loading || detail.refreshing || editingId === id} onClick={() => { detail.refresh(); access.refresh(); }}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới
       </button>
     </PageHeader>
@@ -107,7 +115,11 @@ export function AdminAccountDetailPage() {
       <div role="tabpanel" id="admin-panel-permissions" aria-labelledby="admin-tab-permissions" hidden={tab !== 'permissions'}>
         <section className="manager-section admin-detail-panel">
           <AccountRoleAccess value={row.role} />
-          {id!==user?.id?<AccountRoleEditor id={id} currentRole={String(row.role)} onSaved={detail.refresh}/>:null}
+          {['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(String(row.role)) && <Link to={'/admin/facility-access?user=' + encodeURIComponent(id)}>Quản lý quyền theo cơ sở</Link>}
+          <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
+          <Link to={'/admin/permission-history?accountId=' + encodeURIComponent(id)}>Xem lịch sử thay đổi quyền</Link>
+          {id !== user?.id && <AccountRoleEditor key={id + ':' + String(row.role)} id={id} currentRole={String(row.role)} access={access.data}
+            onSaved={() => { detail.refresh(); access.refresh(); setSaved({ id, row, previous: detail.data, text: 'Đã đổi vai trò tài khoản.' }); }} />}
           <div className="admin-access-status">
             <h3>Khóa và mở khóa tài khoản</h3>
             {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>
@@ -120,8 +132,12 @@ export function AdminAccountDetailPage() {
           </div>
         </section>
       </div>
+      <div role="tabpanel" id="admin-panel-sessions" aria-labelledby="admin-tab-sessions" hidden={tab !== 'sessions'}>
+        <AdminAccountSessions key={id} accountId={id} ownAccount={id === user?.id} access={access.data}
+          loading={access.loading} refreshing={access.refreshing} loadError={access.error} refresh={access.refresh} />
+      </div>
       {canChange && status === next && <StatusConfirmation key={id + ':' + next}
-        path={path} name={first(row, 'fullName')} next={next} onClose={() => changeTab('permissions')} onSaved={updated => {
+        path={path} name={first(row, 'fullName')} next={next} access={access.data} onClose={() => changeTab('permissions')} onSaved={updated => {
           changeTab('permissions');
           onSaved(updated, next === 'DISABLED' ? 'Đã khóa tài khoản.' : 'Đã mở khóa tài khoản.');
         }} />}
@@ -178,8 +194,8 @@ function ProfileEditor({ path, row, onCancel, onSave }: {
   </form>;
 }
 
-function StatusConfirmation({ path, name, next, onClose, onSaved }: {
-  path: string; name: string; next: 'ACTIVE' | 'DISABLED'; onClose: () => void; onSaved: (updated: Row) => void;
+function StatusConfirmation({ path, name, next, access, onClose, onSaved }: {
+  path: string; name: string; next: 'ACTIVE' | 'DISABLED'; access: AccountAccess | null; onClose: () => void; onSaved: (updated: Row) => void;
 }) {
   const formId = useId();
   const [confirmed, setConfirmed] = useState(false);
@@ -189,13 +205,13 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
   const disable = next === 'DISABLED';
   return <Modal title={disable ? 'Xác nhận khóa tài khoản' : 'Xác nhận mở khóa tài khoản'} busy={busy} onClose={onClose} footer={<>
         <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-        <button type="submit" form={formId} className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy}>
+        <button type="submit" form={formId} className={disable ? 'button-secondary portal-danger' : 'button-primary'} disabled={!confirmed || busy || (disable && Boolean(access?.openAssignments))}>
           {busy ? 'Đang lưu…' : disable ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
         </button>
     </>}>
     <form id={formId} className="portal-form" onSubmit={async event => {
       event.preventDefault();
-      if (!confirmed || lock.current) return;
+      if (!confirmed || lock.current || (disable && access?.openAssignments)) return;
       lock.current = true;
       setBusy(true);
       setError('');
@@ -204,6 +220,7 @@ function StatusConfirmation({ path, name, next, onClose, onSaved }: {
       finally { lock.current = false; setBusy(false); }
     }}>
       <p><strong>{name}</strong> · {disable ? 'Các yêu cầu từ phiên đang mở sẽ bị từ chối. Hồ sơ của tài khoản vẫn được lưu.' : 'Người dùng cần đăng nhập lại để truy cập.'}</p>
+      {disable && <AssignmentImpact access={access} />}
       <label className="portal-checkbox"><input type="checkbox" required checked={confirmed} disabled={busy}
         onChange={event => setConfirmed(event.target.checked)} />Tôi xác nhận thay đổi quyền truy cập</label>
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}

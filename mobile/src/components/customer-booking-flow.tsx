@@ -44,13 +44,13 @@ const unitStatus: Record<FloorPlanUnit['status'], { label: string; background: s
 export function CustomerBookingFlow() {
   const catalog = usePublicCatalog(undefined, true, true);
   const { facilityId, selectFacility } = useBookingFacility();
-  const [choosing, setChoosing] = useState(false);
+  const [choosing, setChoosing] = useState(true);
   const insets = useSafeAreaInsets();
   const entries = catalog.data?.facilities;
   const productFacilityIds = [...new Set(rows(catalog.data?.products).map(item => text(item, 'facilityId')).filter(Boolean))];
   const facilities: BookingFacility[] = entries === undefined
     ? productFacilityIds.map(id => ({
-        id, name: productFacilityIds.length === 1 ? 'Cơ sở đang nhận đặt kho' : 'Cơ sở · ' + id,
+        id, name: productFacilityIds.length === 1 ? 'Cơ sở lưu trữ' : 'Cơ sở · ' + id,
         address: '', bookingEnabled: true, operationalStatus: 'OPEN',
       }))
     : Array.isArray(entries) ? entries.filter(isBookingFacility) : [];
@@ -63,9 +63,7 @@ export function CustomerBookingFlow() {
   }, [catalog.data, invalidList, facilityId, facility, selectFacility]);
 
   const leave = () => {
-    if (facility && choosing && !catalog.error && !invalidList) setChoosing(false);
-    else if (router.canGoBack()) router.back();
-    else router.replace('/customer');
+    router.dismissTo('/customer');
   };
   const pickerError = catalog.error || (invalidList ? 'Danh sách cơ sở không hợp lệ.' : undefined);
   const showPicker = !facility || choosing || !catalog.data || Boolean(pickerError);
@@ -133,7 +131,18 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   const end = effectiveMode === 'duration' ? monthEnd(start, months) : dailyEnd;
   useDraftGuard(Boolean(start || selections.length || busy));
   useEffect(() => () => request.current?.abort(), []);
-  useFocusEffect(useCallback(() => {if(hidden)return;const sub = BackHandler.addEventListener('hardwareBackPress', () => {if(busy)return true;if(createdBooking){router.dismissTo('/customer');return true;}if(step > 1 && !locked.current) {setStep(step - 1); return true;} return locked.current;}); return () => sub.remove();}, [step,busy,createdBooking,hidden,setStep]));
+  const back = useCallback(() => {
+    if (busy || locked.current) return;
+    if (createdBooking) router.dismissTo('/customer');
+    else if (step > 1) setStep(step - 1);
+    else if (onChangeFacility) onChangeFacility();
+    else router.dismissTo('/customer');
+  }, [busy, createdBooking, step, onChangeFacility, setStep]);
+  useFocusEffect(useCallback(() => {
+    if (hidden) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { back(); return true; });
+    return () => subscription.remove();
+  }, [back, hidden]));
   const invalidate = () => {version.current++; request.current?.abort(); request.current=null; setBusy(false); setUnits([]); setSelected([]); setQuote(undefined); setError(''); setSoldOut(false);};
   const chooseProduct = (choice: Row) => {
     invalidate();
@@ -237,12 +246,9 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   }
   const floors=[...new Set(units.map(unit=>unit.floor??''))], zones=[...new Set(units.filter(unit=>(unit.floor??'')===floor).map(unit=>unit.zone??''))];
   const visible=units.filter(unit=>(unit.floor??'')===floor && (unit.zone??'')===zone);
-  const orderedUnits = [...visible].sort((a, b) => (a.row ?? 0) - (b.row ?? 0) || (a.position ?? 0) - (b.position ?? 0));
-  const activeIndex = orderedUnits.findIndex(unit => selected.includes(unit.id));
-  const nearbyStart = Math.max(0, Math.min(activeIndex - 1, orderedUnits.length - 3));
-  const detailUnits = orderedUnits.filter((unit, index) =>
-    !Number.isInteger(unit.row) || !Number.isInteger(unit.position)
-    || selected.includes(unit.id) || (index >= nearbyStart && index < nearbyStart + 3));
+  const detailUnits = [...units].sort((a, b) => (a.floor ?? '').localeCompare(b.floor ?? '')
+    || (a.zone ?? '').localeCompare(b.zone ?? '') || (a.row ?? 0) - (b.row ?? 0)
+    || (a.position ?? 0) - (b.position ?? 0) || a.code.localeCompare(b.code));
   const toggle=(unit:FloorPlanUnit)=>{if(busy || request.current || !unit.available)return;setError('');setQuote(undefined);setSelected(previous=>previous.includes(unit.id)?previous.filter(id=>id!==unit.id):Number(quantity)===1?[unit.id]:previous.length<Number(quantity)?[...previous,unit.id]:previous);};
   const webOrigin=process.env.EXPO_PUBLIC_WEB_URL || (__DEV__ ? new URL(apiUrl).origin.replace(/:\d+$/,':5173') : '');
   const image=text(product??{},'image')||text(size??{},'image');
@@ -255,7 +261,6 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   const area = product ? storageArea(product,sizes) : 0;
   const areaLabel = area > 0 ? area.toLocaleString('vi-VN') + ' m²' : '';
   const rentalDays = (Date.parse(end) - Date.parse(start)) / 86400000;
-  const back=()=>{if(busy)return;if(createdBooking){router.dismissTo('/customer');return;}if(step>1)setStep(step-1);else if(onChangeFacility)onChangeFacility();else if(router.canGoBack())router.back();else router.replace('/customer');};
   const clearQuote = () => {version.current++;request.current?.abort();request.current=null;setBusy(false);setQuote(undefined);setError('');};
   const submittedPayment = createdBooking ? quotePaymentSummary(object(createdBooking.quote ?? quote)) : undefined;
   const payment = quote ? quotePaymentSummary(quote) : undefined;
@@ -356,7 +361,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         </View>)}</View>
         {visible.some(unit => Number.isInteger(unit.row) && Number.isInteger(unit.position)) && <FloorPlanViewer compact key={floor + ':' + zone}
           units={visible.filter(unit => Number.isInteger(unit.row) && Number.isInteger(unit.position))} selectedIds={selected} onPress={toggle} />}
-        {visible.length ? <><Text style={booking.label}>Thông tin ô kho</Text><View style={booking.grid}>{detailUnits.map(unit=>{
+        {detailUnits.length ? <><Text style={booking.label}>Thông tin ô kho ({detailUnits.length})</Text><View style={booking.grid}>{detailUnits.map(unit=>{
           const active=selected.includes(unit.id);
           const disabled=busy || !unit.available || (!active && Number(quantity)>1 && selected.length>=Number(quantity));
           const status = unitStatus[unit.status];
@@ -403,7 +408,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
             <Text style={{ color: value === plan ? 'white' : C.text, fontWeight: '700', textAlign: 'center' }}>{value === 'PAY_MONTHLY' ? 'Trả hàng tháng' : 'Trả thẳng'}</Text>
           </Pressable>)}
         </View>
-      </View>{busy?<LoadingState layout="compact" label="Đang cập nhật chi phí…"/>:quote && quoteReady?<BookingBill quote={quote}/>:<Button title="Cập nhật chi phí" variant="secondary" onPress={()=>void availability(5,true)}/>}{profileContactIssue(user?.fullName??'',user?.phone??'')&&<Navigation title="Bổ sung thông tin liên hệ" path="/customer/account"/>}</>}
+      </View>{busy?<LoadingState layout="compact" label="Đang cập nhật chi phí…"/>:quote && quoteReady?<BookingBill quote={quote}/>:<Button title="Cập nhật chi phí" variant="secondary" onPress={()=>void availability(5,true)}/>}{profileContactIssue(user?.fullName??'',user?.phone??'')&&<Navigation title="Bổ sung thông tin liên hệ" path="/customer/account?returnTo=booking"/>}</>}
 
       </CustomerReveal>}{error?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{step===2&&<Button title="Thử lại" variant="secondary" disabled={busy} onPress={()=>void availability(3)}/>}</View>:null}
     </ScrollView>}

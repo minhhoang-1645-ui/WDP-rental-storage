@@ -43,6 +43,10 @@ describe('Scheduled invoices for approved rental closeout', () => {
       const invoice = scheduledInvoice(), afterGuard = new Error('AFTER_SCHEDULE_CHECK');
       const tx = {
         $queryRaw: vi.fn(),
+        $queryRawUnsafe: vi.fn(),
+        reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+        user: { findFirst: vi.fn().mockResolvedValue({ id: manager.id }) },
+        facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
         invoice: { findUnique: vi.fn().mockResolvedValue(invoice), findFirst: vi.fn().mockResolvedValue(invoice) },
         payment: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
         paymentSubmission: { findUnique: vi.fn().mockResolvedValue(null), count: vi.fn().mockRejectedValue(afterGuard), create: vi.fn() },

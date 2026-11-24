@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Check, Maximize, Minus, Plus } from 'lucide-react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Check, Maximize, Minus, Plus, RotateCcw, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { WdpColors as C } from '@/constants/wdp-theme';
 import { bookingBlue as blue } from './booking-header';
@@ -10,10 +11,12 @@ export type FloorPlanUnit = { id: string; code: string; status: 'AVAILABLE' | 'R
 const fills = { AVAILABLE: '#DCF4E6', RESERVED: '#FFF0CF', OCCUPIED: '#EDF0F4', MAINTENANCE: '#FBE4E6' };
 const labels = { AVAILABLE: 'Còn trống', RESERVED: 'Đã giữ', OCCUPIED: 'Đang dùng', MAINTENANCE: 'Bảo trì' };
 
-export function FloorPlanViewer({ units, selectedIds = [], onPress, compact = false }: {
+export function FloorPlanViewer({ units, selectedIds = [], onPress, compact = false, fullscreen = false }: {
   units: FloorPlanUnit[]; selectedIds?: string[]; onPress?: (unit: FloorPlanUnit) => void; compact?: boolean;
+  fullscreen?: boolean;
 }) {
   const [width, setWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const scale = useSharedValue(1), x = useSharedValue(0), y = useSharedValue(0);
   const initialScale = useSharedValue(1), initialX = useSharedValue(0), initialY = useSharedValue(0);
   const pinch = Gesture.Pinch().onBegin(() => { initialScale.set(scale.get()); })
@@ -31,7 +34,9 @@ export function FloorPlanViewer({ units, selectedIds = [], onPress, compact = fa
       <Text style={s.label}>Vị trí theo hàng</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Thu nhỏ sơ đồ" style={s.control} onPress={() => scale.set(Math.max(1, scale.get() - 0.35))}><Minus size={16} color={blue} /></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel="Phóng to sơ đồ" style={s.control} onPress={() => scale.set(Math.min(2.4, scale.get() + 0.35))}><Plus size={16} color={blue} /></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Đặt lại sơ đồ" style={s.control} onPress={() => { scale.set(1); x.set(0); y.set(0); }}><Maximize size={15} color={blue} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Đặt lại sơ đồ" style={s.control} onPress={() => { scale.set(1); x.set(0); y.set(0); }}><RotateCcw size={15} color={blue} /></Pressable>
+      {!fullscreen && <Pressable accessibilityRole="button" accessibilityLabel="Mở sơ đồ toàn màn hình" style={s.control}
+        onPress={() => setExpanded(true)}><Maximize size={16} color={blue} /></Pressable>}
     </View>
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
       <View accessibilityLabel="Sơ đồ kho" onLayout={event => setWidth(event.nativeEvent.layout.width)} style={s.viewport}>
@@ -54,10 +59,25 @@ export function FloorPlanViewer({ units, selectedIds = [], onPress, compact = fa
         </Animated.View>
       </View>
     </GestureDetector>
+    {expanded && <Modal visible animationType="slide" onRequestClose={() => setExpanded(false)}>
+      <GestureHandlerRootView style={s.fullscreen}>
+        <SafeAreaView style={s.fullscreen}>
+          <View style={s.toolbar}>
+            <Text accessibilityRole="header" style={s.label}>Sơ đồ vị trí kho</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Đóng sơ đồ" style={s.control}
+              onPress={() => setExpanded(false)}><X size={22} color={blue} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
+            <FloorPlanViewer units={units} selectedIds={selectedIds} onPress={onPress} fullscreen />
+          </ScrollView>
+        </SafeAreaView>
+      </GestureHandlerRootView>
+    </Modal>}
   </View>;
 }
 
 const s = StyleSheet.create({
+  fullscreen: { flex: 1, backgroundColor: 'white', paddingHorizontal: 8 },
   panel: { backgroundColor: '#F1F4F8', borderColor: '#DCE3EC', borderWidth: 1, borderRadius: 13, padding: 7, gap: 3 },
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   label: { fontSize: 12, fontWeight: '700', color: C.navy, flex: 1 },

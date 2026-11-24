@@ -28,8 +28,11 @@ const groups: { title: string; items: Service[] }[] = [
     { title: 'Đơn đặt kho', icon: ClipboardList, path: 'reservations', hint: 'Yêu cầu đặt kho' },
     { title: 'Lịch nhận kho', icon: CalendarDays, path: 'appointments', hint: 'Lịch hẹn bàn giao' },
     { title: 'Hợp đồng', icon: FileText, path: 'contracts', hint: 'Hợp đồng thuê', purple: true },
+    { title: 'Yêu cầu gia hạn', icon: RefreshCw, path: 'renewals', hint: 'Theo dõi yêu cầu, phụ lục và thanh toán' },
   ] },
   { title: 'Tài chính & hỗ trợ', items: [
+    { title: 'Lịch sử thanh toán', icon: Wallet, path: 'payment-history', hint: 'Các khoản đã được ghi nhận' },
+    { title: 'Thông báo chuyển khoản', icon: ClipboardList, path: 'payment-submissions', hint: 'Theo dõi kết quả đối chiếu chuyển khoản' },
     { title: 'Tiền cọc', icon: Wallet, path: 'deposit-settlements', hint: 'Quyết toán hoàn cọc', purple: true },
     { title: 'Hỗ trợ khách hàng', icon: Headphones, path: 'support-requests', hint: 'Gửi yêu cầu, hóa đơn, thanh toán' },
   ] },
@@ -53,8 +56,8 @@ export default function CustomerServicesScreen() {
   const choices = !service || loading || issue ? [] : rows(rentals.data?.items).flatMap(rental => {
     const active = rows(rental.contracts).filter(contract => contract.status === 'ACTIVE' && idOf(contract) && text(contract, 'unit.id'));
     return active.flatMap(contract => {
-      const form = customerRentalActions(rental, rows(returns.data?.items), Date.now(), rows(requests.data?.items), idOf(contract))
-        .find(item => item.renewal);
+    const form = service.path === 'renewals' ? customerRentalActions(rental, rows(returns.data?.items), Date.now(), rows(requests.data?.items), idOf(contract))
+        .find(item => item.renewal) : undefined;
       return form || service.path === 'damage-claims' ? [{
         id: idOf(contract), ids: [idOf(contract)], form, title: text(rental, 'storageType.name') || 'Kho đang thuê',
         caption: text(contract, 'unit.unitCode'),

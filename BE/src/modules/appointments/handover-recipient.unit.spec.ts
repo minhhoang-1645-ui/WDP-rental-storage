@@ -12,7 +12,7 @@ function setup(status = 'CONFIRMED') {
   const startDate = new Date(today + 86400000);
   const endDate = new Date(today + 31 * 86400000);
   const row = {
-    id: 'appointment', appointmentCode: 'A01', status,
+    id: 'appointment', reservationId: 'reservation', appointmentCode: 'A01', status,
     assignedStaffUserId: status === 'COMPLETED' ? null : staff.id,
     assignedStaff: status === 'COMPLETED' ? null : { ...staff, accountStatus: 'ACTIVE' },
     completedByUserId: status === 'COMPLETED' ? staff.id : null,
@@ -30,7 +30,16 @@ function setup(status = 'CONFIRMED') {
     },
   };
   const update = vi.fn(async ({ data }) => Object.assign(row, data));
-  const tx = { $queryRaw: vi.fn(), handoverAppointment: { findUnique: vi.fn().mockResolvedValue(row), update }, rentalContract: { count: vi.fn().mockResolvedValue(0) } };
+  const tx = {
+    $queryRaw: vi.fn(),
+    $queryRawUnsafe: vi.fn(),
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    handoverAppointment: { findUnique: vi.fn().mockResolvedValue(row), update },
+    maintenanceRequest: { count: vi.fn().mockResolvedValue(0) },
+    rentalContract: { count: vi.fn().mockResolvedValue(0) },
+  };
   const prisma = {
     handoverAppointment: { findFirst: vi.fn().mockResolvedValue({ id: row.id }) },
     $transaction: vi.fn(operation => operation(tx)),
@@ -117,7 +126,7 @@ describe('RV3 handover completion service', () => {
     const capture = { condition: 'Cửa và khóa bình thường', inspected: true, identityVerified: true, accessDelivered: true };
     vi.setSystemTime(begin);
     try {
-      await expect(service.recordUnitHandover('appointment', 'unit', capture, { ...staff, id: 'other' })).rejects.toThrow('phân công');
+      await expect(service.recordUnitHandover('appointment', 'unit', capture, { ...staff, id: 'other' })).rejects.toThrow('được giao');
       await expect(service.recordUnitHandover('appointment', 'foreign', capture, staff)).rejects.toThrow('không thuộc');
       const first = await service.recordUnitHandover('appointment', 'unit', capture, staff);
       expect(first.status).toBe('CONFIRMED');

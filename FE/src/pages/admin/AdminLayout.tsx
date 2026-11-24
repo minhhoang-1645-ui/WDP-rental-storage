@@ -18,9 +18,9 @@ const navigation: InternalNavItem[] = [
   { to: '/admin/users', label: 'Quản lý tài khoản', icon: Users, group: 'Quản lý truy cập' },
   { to: '/admin/roles', label: 'Vai trò & phân quyền', icon: Shield, group: 'Quản lý truy cập' },
   { to: '/admin/facility-access', label: 'Quyền truy cập cơ sở', icon: Warehouse, group: 'Quản lý truy cập' },
-  ...auditItems.slice(0, 2).map(item => ({ ...item, group: 'Bảo mật' })),
+  ...auditItems.map(item => ({ ...item, group: 'Bảo mật' })),
 ];
 
 export function AdminLayout() {
-  return <InternalPortalLayout label="Quản trị hệ thống" navigation={navigation} pageNavigation={[auditItems[2], { to: '/admin/settings', label: 'Cài đặt' }]} topbarControl={<AdminSearch />} themed />;
+  return <InternalPortalLayout label="Quản trị hệ thống" navigation={navigation} pageNavigation={[{ to: '/admin/settings', label: 'Cài đặt' }]} topbarControl={<AdminSearch />} themed />;
 }

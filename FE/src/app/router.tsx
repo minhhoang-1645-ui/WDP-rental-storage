@@ -1,3 +1,4 @@
+import { AdminRolesPage } from '../pages/admin/AccountRole';
 import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
 import { OperationsLayout } from '../pages/operations/OperationsLayout';
 import { OperationsFacilities, OperationsPolicies, OperationsPricing } from '../pages/operations/OperationsPages';
@@ -225,11 +226,12 @@ export function AppRouter() {
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />
           <Route path="login-history" element={<AdminAuditPage key="login" category="LOGIN" />} />
           <Route path="activity" element={<AdminAuditPage key="activity" category="ACTIVITY" />} />
+          <Route path="roles" element={<AdminRolesPage />} />
+          <Route path="permission-history" element={<AdminAuditPage key="permissions" category="ACTIVITY" permissions />} />
           <Route index element={<AdminDashboardPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="users" element={<AdminAccountsPage />} /><Route path="facility-access" element={<AdminFacilityAccessPage/>}/>
           <Route path="users/:id" element={<AdminAccountDetailPage />} />
-          <Route path="roles" element={<Navigate to="/admin/users" replace />} />
           <Route path="assignments" element={<Navigate to="/admin" replace />} />
           <Route
             path="account-status"

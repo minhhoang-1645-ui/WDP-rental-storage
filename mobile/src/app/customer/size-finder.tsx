@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { BackHandler, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, Stack, useFocusEffect } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Armchair, Archive, Boxes, BriefcaseBusiness, ChevronLeft, ChevronRight, Info, Layers, Minus, Package, Plus, Table, Warehouse, X } from 'lucide-react-native';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
@@ -26,8 +26,13 @@ export default function SizeFinderScreen() {
   const [counts, setCounts] = useState<Partial<Record<ItemId, number>>>({});
   const [result, setResult] = useState(false);
   const [explanation, setExplanation] = useState(false);
-  const catalog = usePublicCatalog();
-  const products = rows(catalog.data?.products);
+  const { facilityId } = useLocalSearchParams<{ facilityId?: string }>();
+  const catalog = usePublicCatalog(facilityId);
+  const catalogProducts = rows(catalog.data?.products);
+  const wrongScope = Boolean(facilityId && catalog.data && (
+    catalog.data.facilityId !== facilityId || catalogProducts.some(item => item.facilityId !== facilityId)
+  ));
+  const products = wrongScope ? [] : catalogProducts;
   const sizes = rows(catalog.data?.sizes);
   const selected = items.filter(item => (counts[item.id] ?? 0) > 0);
   const area = selected.reduce((sum, item) => sum + item.area * (counts[item.id] ?? 0), 0) * (1 + accessAllowance);
@@ -66,7 +71,7 @@ export default function SizeFinderScreen() {
         <Note>Chỉ mang tính tham khảo. Hãy đối chiếu kích thước đồ, chiều cao kho và cách xếp.</Note>
         <Text style={s.heading}>Kho phù hợp với diện tích ước tính</Text>
         {catalog.loading && !catalog.data ? <Text style={s.copy}>Đang tải loại kho…</Text>
-          : catalog.error ? <Pressable accessibilityRole="button" style={s.linkButton} onPress={catalog.refresh}><Text style={s.link}>Chưa tải được loại kho. Thử lại</Text></Pressable>
+          : catalog.error || wrongScope ? <Pressable accessibilityRole="button" style={s.linkButton} onPress={catalog.refresh}><Text style={s.link}>Chưa tải được loại kho. Thử lại</Text></Pressable>
           : suggestions.length ? <View style={s.selectedList}>{suggestions.map(({ product, area: floorArea }, index) =>
             <Pressable key={text(product, 'id')} accessibilityRole="button" onPress={() => choose(product)}
               style={[s.row, s.selectedRow, index > 0 && s.divider]}>

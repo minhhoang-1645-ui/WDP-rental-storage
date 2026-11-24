@@ -21,7 +21,11 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
   const [signing,setSigning] = useState(false);
   const pad = useRef<SignaturePadHandle>(null), lock = useRef(false);
   const [agreed, setAgreed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const [receipt, setReceipt] = useState<Receipt | null>(null), [signature, setSignature] = useState(''), [otp, setOtp] = useState(''), [remaining, setRemaining] = useState(0);
+  const [receipt, setReceipt] = useState<Receipt | null>(null), [signature, setSignature] = useState(''), [otp, setOtp] = useState(''), [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now);
+  const remaining = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const expiration = receipt ? Date.parse(receipt.expiresAt) : 0;
+  const expiresIn = Number.isFinite(expiration) ? Math.max(0, Math.ceil((expiration - now) / 1000)) : 0;
   const [reviewed, setReviewed] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const transfer = resource === 'transfer-orders';
@@ -31,14 +35,18 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
   const accepted = Boolean(document.acceptedAt), hash = text(document, 'snapshotHash'), configured = object(document.otp).emailConfigured !== false;
   const base = `/customer/${resource}/${encodeURIComponent(idOf(row))}/${resource === 'renewals' ? 'appendix/' : ''}`;
   useDraftGuard(!accepted && (signing || agreed || busy));
-  useEffect(() => { if (!remaining) return; const timer = setTimeout(() => setRemaining(value => Math.max(0, value - 1)), 1000); return () => clearTimeout(timer); }, [remaining]);
+  useEffect(() => { if (!remaining && !expiresIn) return; const timer = setTimeout(() => setNow(Date.now()), 1000); return () => clearTimeout(timer); }, [remaining, expiresIn, now]);
   async function submit(verify: boolean) {
-    if (lock.current || !agreed || !user || !hash || accepted || !maySign || (verify && (!receipt || otp.length !== 6))) return;
+    if (lock.current || !agreed || !user || !hash || accepted || !maySign || (verify ? !receipt || otp.length !== 6 || !(expiration > Date.now()) : !configured || Date.now() < resendAt)) return;
     lock.current = true; setBusy(true); setError('');
     try {
       const signatureImage = signature || await pad.current?.capture(); if (!signatureImage) throw new Error('Vui lòng vẽ chữ ký trước khi nhận mã.');
       const body = { agreed: true, acceptanceName: user.fullName, signatureImage, snapshotHash: hash };
-      if (!verify) { const result = await apiRequest<Receipt>(`${base}signature-otp`, { method: 'POST', body: JSON.stringify(body) }); setSignature(signatureImage); setReceipt(result); setOtp(''); setRemaining(result.resendAfterSeconds); }
+      if (!verify) { const result = await apiRequest<Receipt>(`${base}signature-otp`, { method: 'POST', body: JSON.stringify(body) }); if (!result.challengeId || !Number.isFinite(Date.parse(result.expiresAt)) || !Number.isFinite(result.resendAfterSeconds)) {
+          throw new Error('Chưa nhận được thông tin xác thực. Vui lòng thử lại.');
+        }
+        const sentAt = Date.now();
+        setSignature(signatureImage); setReceipt(result); setOtp(''); setResendAt(sentAt + result.resendAfterSeconds * 1000); setNow(sentAt); }
       else { await apiRequest(`${base}accept`, { method: 'POST', body: JSON.stringify({ ...body, challengeId: receipt?.challengeId, otp }) }); onSaved(); }
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể xác nhận tài liệu.'); }
     finally { lock.current = false; setBusy(false); }
@@ -59,7 +67,7 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
       {receipt ? <Image accessibilityLabel="Chữ ký chờ xác thực" source={{ uri: signature }} resizeMode="contain" style={{ height: 180, backgroundColor: '#fff' }} /> : <SignaturePad ref={pad} compact={transfer} onValidityChange={transfer ? setHasSignature : undefined} />}
       <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{pad.current?.clear();setSignature('');setReceipt(null);setOtp('');setAgreed(false);setHasSignature(false);}} style={{minHeight:44,alignSelf:'flex-start',justifyContent:'center',paddingHorizontal:4}}><Text style={{fontSize:14,fontWeight:'600',color:'#175CD3'}}>{transfer ? 'Xóa chữ ký' : 'Ký lại'}</Text></Pressable>
       <Pressable accessibilityRole="checkbox" aria-checked={agreed} accessibilityLabel={consent} accessibilityState={{ checked: agreed, disabled: busy || Boolean(receipt) || (transfer && !reviewed) }} disabled={busy || Boolean(receipt) || (transfer && !reviewed)} onPress={() => setAgreed(value => !value)} style={{ minHeight: 48, justifyContent: 'center' }}><Text style={styles.copy}>{agreed ? '☑' : '☐'} {consent}</Text></Pressable>
-      {receipt ? <View style={{ gap: 12 }}><Text accessibilityRole="alert" style={styles.copy}>Mã đã gửi đến {receipt.recipient}. Mã có hiệu lực 10 phút, tối đa 5 lần nhập sai. Chữ ký chưa được lưu.</Text><Text style={styles.label}>Mã xác thực 6 số</Text><TextInput accessibilityLabel="Mã xác thực chữ ký" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, ''))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} editable={!busy} style={{ minHeight: 50, borderWidth: 1, borderColor: '#cbd7df', borderRadius: 10, padding: 12, fontSize: 22, backgroundColor: '#fff' }} /><Button title={busy ? 'Đang xác thực…' : 'Xác thực và ký tài liệu'} disabled={busy || otp.length !== 6} onPress={() => void submit(true)} /><Button title={remaining ? `Gửi lại sau ${remaining}s` : 'Gửi lại mã'} variant="secondary" disabled={busy || remaining > 0} onPress={() => void submit(false)} /></View> : <Button title={busy ? 'Đang gửi mã…' : remaining ? `Gửi lại sau ${remaining}s` : transfer ? 'Gửi mã xác thực' : 'Gửi mã xác thực qua email'} disabled={!agreed || !maySign || busy || !configured || remaining > 0} onPress={() => void submit(false)} />}
+      {receipt ? <View style={{ gap: 12 }}><Text accessibilityRole="alert" style={styles.copy}>Mã đã gửi đến {receipt.recipient}. {expiresIn ? 'Mã hết hạn sau ' + Math.floor(expiresIn / 60) + ':' + String(expiresIn % 60).padStart(2, '0') + '.' : 'Mã đã hết hạn. Hãy gửi mã mới.'} Chữ ký chưa được lưu.</Text><Text style={styles.label}>Mã xác thực 6 số</Text><TextInput accessibilityLabel="Mã xác thực chữ ký" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, ''))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} editable={!busy && expiresIn > 0} style={{ minHeight: 50, borderWidth: 1, borderColor: '#cbd7df', borderRadius: 10, padding: 12, fontSize: 22, backgroundColor: '#fff' }} /><Button title={busy ? 'Đang xác thực…' : 'Xác thực và ký tài liệu'} disabled={busy || expiresIn === 0 || otp.length !== 6} onPress={() => void submit(true)} /><Button title={remaining ? `Gửi lại sau ${remaining}s` : 'Gửi lại mã'} variant="secondary" disabled={busy || !configured || remaining > 0} onPress={() => void submit(false)} /></View> : <Button title={busy ? 'Đang gửi mã…' : remaining ? `Gửi lại sau ${remaining}s` : transfer ? 'Gửi mã xác thực' : 'Gửi mã xác thực qua email'} disabled={!agreed || !maySign || busy || !configured || remaining > 0} onPress={() => void submit(false)} />}
     </> : null}
     {document.version != null && <Disclosure title="Phiên bản tài liệu"><Text style={styles.copy}>{String(document.version)}</Text></Disclosure>}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

@@ -3,6 +3,7 @@ export const auditResources: Record<string, string> = {
 };
 const actions: Record<string, string> = { ONLINE_PAYMENT: 'Mở phiên thanh toán', SIGNATURE_OTP: 'Gửi mã xác nhận', STAFF_ASSIGNMENT: 'Phân công', AUTH_LOGIN: 'Đăng nhập', AUTH_LOGOUT: 'Đăng xuất', AUTH_REGISTER: 'Đăng ký', CREATE: 'Tạo mới', UPDATE: 'Cập nhật', DELETE: 'Xóa', STATUS: 'Đổi trạng thái', APPROVE: 'Phê duyệt', REJECT: 'Từ chối', CONFIRM: 'Xác nhận', COMPLETE: 'Hoàn tất', FINALIZE: 'Hoàn tất', ASSIGN: 'Phân công', RESOLVE: 'Giải quyết', VERIFY: 'Nghiệm thu', REJECT_VERIFICATION: 'Yêu cầu sửa lại', PAYMENTS: 'Ghi nhận thanh toán', SIGN: 'Xác nhận hợp đồng', ACCEPT: 'Chấp thuận', START: 'Bắt đầu', START_INSPECTION: 'Bắt đầu kiểm tra', RECONCILE: 'Đối soát', SUBMIT: 'Gửi yêu cầu' };
 actions.AUTH_PROFILE_UPDATE = 'Cập nhật thông tin liên hệ';
+auditResources['facility-access'] = 'Quyền cơ sở';
 auditResources['business-policies'] = 'Chính sách hệ thống';
 auditResources['transfer-orders'] = 'Phụ lục chuyển kho';
 auditResources['booking-requests'] = 'Đơn đặt kho';
@@ -12,8 +13,10 @@ const resourceActions: Record<string, Record<string, string>> = {
   users: {
     CREATE: 'Tạo tài khoản', UPDATE: 'Cập nhật thông tin tài khoản', STATUS: 'Đổi trạng thái tài khoản',
     DISABLE_ACCOUNT: 'Khóa tài khoản', REACTIVATE_ACCOUNT: 'Mở khóa tài khoản',
+    CHANGE_ROLE: 'Đổi vai trò', GRANT_FACILITY_ACCESS: 'Cấp quyền cơ sở', REVOKE_FACILITY_ACCESS: 'Thu hồi quyền cơ sở', REVOKE_SESSIONS: 'Thu hồi các phiên đăng nhập',
     ACCOUNT_STATUS_UNCHANGED: 'Giữ nguyên trạng thái tài khoản',
   },
+  'facility-access': { CREATE: 'Cấp quyền cơ sở', ROLE: 'Đổi vai trò', REVOKE: 'Thu hồi quyền cơ sở', REVOKE_FACILITY_ACCESS: 'Thu hồi quyền cơ sở' },
   'stock-movements': { CREATE: 'Tạo phiếu nhập/xuất hàng', ASSIGN: 'Phân công nhập/xuất hàng', COMPLETE: 'Hoàn tất nhập/xuất hàng' },
   'support-requests': { CREATE: 'Gửi yêu cầu hỗ trợ', ASSIGN: 'Phân công xử lý hỗ trợ', START: 'Bắt đầu xử lý hỗ trợ', RESOLVE: 'Giải quyết yêu cầu hỗ trợ', ESCALATE: 'Chuyển yêu cầu hỗ trợ lên quản lý', PRIORITY: 'Đổi mức ưu tiên hỗ trợ' },
   maintenance: { CREATE: 'Tạo phiếu bảo trì', ASSIGN: 'Phân công bảo trì', START: 'Bắt đầu bảo trì', COMPLETE_WORK: 'Báo hoàn thành bảo trì', VERIFY: 'Kiểm tra kết quả bảo trì', REJECT_VERIFICATION: 'Yêu cầu bảo trì lại', PRIORITY: 'Đổi mức ưu tiên bảo trì' },
@@ -36,6 +39,8 @@ export type AuditEvent = {
   resource: string;
   resourceId?: string | null;
   targetAccount?: { fullName: string; role: string } | null;
+  facilityName?: string | null;
+  metadata?: { facilityId?: string; previousRole?: string; nextRole?: string; count?: number } | null;
   actorName?: string | null;
   attemptAccountName?: string | null;
   actorEmail?: string | null;

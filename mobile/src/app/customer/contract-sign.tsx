@@ -16,7 +16,7 @@ import { canSignContract } from '@/components/customer-contracts';
 import { currentTimeMs } from '@/utils/calendar-date';
 
 const otpLength = 6;
-type Receipt = { challengeId: string; recipient: string; resendAfterSeconds: number };
+type Receipt = { challengeId: string; recipient: string; expiresAt: string; resendAfterSeconds: number };
 
 export default function ContractSign() {
   const { id, reviewedHash } = useLocalSearchParams<{ id: string; reviewedHash?: string }>();
@@ -34,13 +34,15 @@ export default function ContractSign() {
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now);
   const [otp, setOtp] = useState('');
+  const expiresAt = receipt ? Date.parse(receipt.expiresAt) : 0;
+  const expiresIn = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : 0;
   const remaining = Math.max(0, Math.ceil((resendAt - now) / 1000));
   useDraftGuard(true);
   useEffect(() => {
-    if (!remaining) return;
-    const timer = setTimeout(() => setNow(Date.now()), 1000);
+    if (!remaining && !expiresIn) return;
+    const timer = setTimeout(() => setNow(currentTimeMs()), 1000);
     return () => clearTimeout(timer);
-  }, [remaining, now]);
+  }, [remaining, expiresIn, now]);
 
   const row = source.data;
   const terms = object(row?.terms);
@@ -50,7 +52,7 @@ export default function ContractSign() {
 
   async function submit(verify: boolean) {
     if (lock.current || !agreed || !user || !path || !row || !reviewed || !canSignContract(row)) return;
-    if (verify ? !receipt || otp.length !== otpLength : !emailReady || currentTimeMs() < resendAt) return;
+    if (verify ? !receipt || !Number.isFinite(expiresAt) || expiresAt <= currentTimeMs() || otp.length !== otpLength : !emailReady || currentTimeMs() < resendAt) return;
     lock.current = true;
     setOperation(verify ? 'verify' : 'send');
     setError('');
@@ -63,6 +65,9 @@ export default function ContractSign() {
         router.dismissTo({ pathname: '/customer/[resource]/[id]', params: { resource: 'contracts', id } });
       } else {
         const result = await apiRequest<Receipt>(path + '/signature-otp', { method: 'POST', body: JSON.stringify(body) });
+        if (!result.challengeId || !Number.isFinite(Date.parse(result.expiresAt)) || !Number.isFinite(result.resendAfterSeconds)) {
+          throw new Error('Chưa nhận được thông tin xác thực. Vui lòng thử lại.');
+        }
         const sentAt = currentTimeMs();
         setImage(signatureImage);
         setReceipt(result);
@@ -91,9 +96,12 @@ export default function ContractSign() {
             <View style={styles.mailIcon}><Mail size={32} color="#0758DC" /></View>
             <Text style={s.section}>Nhập mã xác thực (OTP)</Text>
             <Text style={[s.secondary, { textAlign: 'center' }]}>Mã xác thực đã được gửi đến email {receipt.recipient}.</Text>
+            <Text style={s.secondary}>{expiresIn > 0
+              ? 'Mã hết hạn sau ' + Math.floor(expiresIn / 60) + ':' + String(expiresIn % 60).padStart(2, '0')
+              : 'Mã đã hết hạn. Hãy gửi mã mới.'}</Text>
           </View>
           <View>
-            <TextInput accessibilityLabel="Mã xác thực email gồm 6 số" value={otp} editable={!busy}
+            <TextInput accessibilityLabel="Mã xác thực email gồm 6 số" value={otp} editable={!busy && expiresIn > 0}
               onChangeText={value => { setOtp(value.replace(/\D/g, '')); setError(''); }} maxLength={otpLength}
               keyboardType="number-pad" autoComplete="one-time-code" caretHidden underlineColorAndroid="transparent"
               style={styles.otpInput} />
@@ -109,7 +117,7 @@ export default function ContractSign() {
           <View style={styles.notice}><Info size={20} color="#0758DC" />
             <Text style={[s.secondary, { flex: 1 }]}>Hợp đồng được ký sau khi hệ thống xác nhận mã hợp lệ.</Text>
           </View>
-          <Button title={operation === 'verify' ? 'Đang xác nhận chữ ký…' : 'Xác nhận ký'} disabled={busy || otp.length !== otpLength} onPress={() => void submit(true)} />
+          <Button title={operation === 'verify' ? 'Đang xác nhận chữ ký…' : 'Xác nhận ký'} disabled={busy || expiresIn === 0 || otp.length !== otpLength} onPress={() => void submit(true)} />
           <Pressable accessibilityRole="button" disabled={busy} style={styles.center} onPress={() => {
             setReceipt(undefined); setImage(''); setOtp(''); setAgreed(false); setError('');
           }}><Text style={s.link}>Vẽ lại chữ ký</Text></Pressable>

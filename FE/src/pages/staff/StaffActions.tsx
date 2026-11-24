@@ -1,5 +1,4 @@
 import { useId, useRef, useState, type FormEvent } from "react";
-import { Link } from 'react-router-dom';
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
@@ -35,6 +34,7 @@ export function StaffActions({
   const lock = useRef(false);
   const returnRequirementsId = useId();
   const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
+  const supportOption = row.category === 'PAYMENT_SUPPORT' ? 'escalate' : supportDisposition;
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [escalationDraft, setEscalationDraft] = useState('');
   const [recipientType, setRecipientType] = useState('CUSTOMER');
@@ -118,6 +118,7 @@ export function StaffActions({
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
+    if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
     if (suffix === '/complete-handover') {
       if (tracksUnits && !allUnitsRecorded) { setError('Cần ghi nhận bàn giao từng kho trước khi hoàn tất lịch.'); return; }
       const unitChecks = perUnit && !tracksUnits ? physicalUnits.map(unit => ({
@@ -154,17 +155,7 @@ export function StaffActions({
         ["PASS", "ISSUE_FOUND"].includes(String(item.result)) &&
         (item.result !== "ISSUE_FOUND" || first(item, "issueType")),
     );
-  const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
-  const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
   const canFinalize = returnPaid && allInspected;
-  const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
-  const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
-  const stockMovementsPath = contractId
-    ? `/staff/stock-movements?${new URLSearchParams({ rentalContractId: contractId })}`
-    : '/staff/stock-movements';
-  const storedItemsPath = storageUnitId
-    ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
-    : '/staff/stored-items';
   return (
     <section className="manager-section record-action-panel" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
       <h2>{resource === 'support-requests' ? 'Kết quả hỗ trợ' : resource === 'maintenance' ? 'Kết quả sửa chữa' : resource === 'returns' ? 'Kiểm tra kho trả' : resource === 'appointments' ? 'Bàn giao kho' : 'Xử lý hồ sơ'}</h2>
@@ -248,7 +239,10 @@ export function StaffActions({
                   className="portal-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (canFinalize) void run('/finalize', 'POST', periodCloseout ? { accessRevoked: true } : undefined);
+                    const checks = new FormData(event.currentTarget);
+                    if (canFinalize && checks.get('unitsEmpty') === 'on' && checks.get('accessRevoked') === 'on') {
+                      void run('/finalize', 'POST', { unitsEmpty: true, accessRevoked: true });
+                    }
                   }}
                 >
                   {!canFinalize && (
@@ -257,20 +251,16 @@ export function StaffActions({
                       <ul>
                         {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.' : 'Cần kiểm tra các hóa đơn liên quan đến kho trả.'}</li>}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
-                        {remainingItems > 0 && <li>Thông tin hàng hóa đã ghi nhận chỉ để tham khảo; đối chiếu hiện trạng kho khi nhận trả.</li>}
-                        {pendingMovements > 0 && <li>Có {pendingMovements} phiếu nhập/xuất để tham khảo, không chặn nhận trả kho.</li>}
                       </ul>
-                      {(remainingItems > 0 || pendingMovements > 0) && <div className="portal-actions">
-                        {remainingItems > 0 && <Link className="button-secondary" to={storedItemsPath}>Xem hàng đang lưu</Link>}
-                        {pendingMovements > 0 && <Link className="button-secondary" to={stockMovementsPath}>Mở phiếu nhập – xuất</Link>}
-                      </div>}
                     </div>
                   )}
                   <label className="portal-checkbox">
-                    <input type="checkbox" required disabled={!canFinalize}
+                    <input name="unitsEmpty" type="checkbox" required disabled={!canFinalize}
                       aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
-                    {periodCloseout ? 'Đã nhận kho, lưu kết quả kiểm tra và thu hồi chìa khóa, thẻ hoặc quyền truy cập' : 'Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra'}
+                    Đã kiểm tra thực tế và xác nhận tất cả kho trong hồ sơ đã trống
                   </label>
+                  <label className="portal-checkbox"><input name="accessRevoked" type="checkbox" required disabled={!canFinalize} />
+                    Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập kho</label>
                   <button type="submit" className="button-primary" disabled={!canFinalize}
                     aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
                     Hoàn tất nhận kho trả
@@ -318,13 +308,16 @@ export function StaffActions({
                     rows={4}
                   />
                 </label>
+                <label className="field-label">Liên kết ảnh kết quả (tùy chọn)
+                  <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
+                </label>
                 <button className="button-primary">
                   Gửi kết quả nghiệm thu
                 </button>
               </form>
             )}
             {row.status === "AWAITING_VERIFICATION" && (
-              <p>Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
+              <p>Đang chờ quản lý nghiệm thu.</p>
             )}
             {row.status === "COMPLETED" && (
               <p>Đã nghiệm thu và hoàn tất bảo trì.</p>
@@ -352,25 +345,25 @@ export function StaffActions({
                 const data = new FormData(event.currentTarget);
                 const note = String(data.get('supportNote') ?? '').trim();
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
-                if (supportDisposition === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
-                else void run('/resolve', 'POST', { resolutionType: supportDisposition, resolutionNote: note }, true);
+                if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note }, true);
               }}>
                 <label className="field-label">Hướng xử lý
-                  <select value={supportDisposition} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
+                  <select value={supportOption} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
                     <option value="">Chọn hướng xử lý</option>
-                    {['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
+                    {row.category !== 'PAYMENT_SUPPORT' && ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
                       <option key={value} value={value}>{label(value)}</option>)}
                     <option value="escalate">Cần quản lý xem xét</option>
                   </select>
                 </label>
                 <label className="field-label">
-                  {supportDisposition === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
+                  {supportOption === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
                   <textarea name="supportNote" required minLength={3} maxLength={4000} rows={3}
-                    value={supportDisposition === 'escalate' ? escalationDraft : resolutionDraft}
-                    onChange={event => (supportDisposition === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
+                    value={supportOption === 'escalate' ? escalationDraft : resolutionDraft}
+                    onChange={event => (supportOption === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
                 </label>
-                <button className="button-primary" disabled={busy || !supportDisposition}>
-                  {busy ? 'Đang lưu…' : supportDisposition === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
+                <button className="button-primary" disabled={busy || !supportOption}>
+                  {busy ? 'Đang lưu…' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>
               </form>
             )}
@@ -415,6 +408,7 @@ function InspectionEditor({
         : {}),
       conditionNote:
         String(data.get("conditionNote") ?? "").trim() || undefined,
+      evidenceLink: String(data.get('evidenceLink') ?? '').trim() || undefined,
     });
   };
   return (
@@ -442,6 +436,9 @@ function InspectionEditor({
           maxLength={2000}
           rows={3}
         />
+      </label>
+      <label className="field-label">Liên kết ảnh kiểm tra (tùy chọn)
+        <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
       </label>
       {result === "ISSUE_FOUND" && (
         <>

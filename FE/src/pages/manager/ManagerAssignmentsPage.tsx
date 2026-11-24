@@ -33,7 +33,6 @@ import { normalizeSearch } from '../../utils/notification-tools';
 const workNames = {
   'support-requests': 'Hỗ trợ',
   maintenance: 'Bảo trì',
-  'stock-movements': 'Nhập – xuất hàng',
   appointments: 'Lịch bàn giao',
   returns: 'Trả kho',
   transfers: 'Chuyển kho',
@@ -127,10 +126,12 @@ export function ManagerAssignmentsPage() {
   const taskDate = ({ row }: Task) => first(row, 'requestedAt', 'createdAt');
   const tasks = allTasks.filter((task) => {
     const assigned = Boolean(first(task.row, "assignedStaff.id"));
+    const scheduled = Date.parse(first(task.row, 'scheduledAt', 'dueAt'));
+    const overdue = !finished(task) && Number.isFinite(scheduled) && scheduled < Date.now();
     return (
       (kind === "all" || task.kind === kind) &&
       (!assignee || first(task.row, "assignedStaff.id") === assignee) &&
-      (status === 'all' || (status === 'active' ? !finished(task) : task.row.status === status)) &&
+      (status === 'all' || (status === 'active' ? !finished(task) : status === 'finished' ? finished(task) : status === 'overdue' ? overdue : task.row.status === status)) &&
 
       (assignment === "all" ||
         (assignment === "attention" ? assignmentNeedsAttention(task.kind, task.row) : assignment === "assigned" ? assigned : !assigned)) &&
@@ -166,7 +167,7 @@ export function ManagerAssignmentsPage() {
   const statuses = [...new Set(allTasks.map(task => first(task.row, 'status')).filter(Boolean))];
   const columns: StaffColumn<Task>[] = [
     { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
-    { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}</> },
+    { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}<small>{first(row, 'facility.name', 'reservation.facility.name')}</small></> },
     { key: 'staff', label: 'Nhân viên phụ trách', cell: task => {
       const assigned = first(task.row, 'assignedStaff.fullName');
       return <><strong>{assigned || 'Chưa phân công'}</strong>
@@ -196,7 +197,7 @@ export function ManagerAssignmentsPage() {
         toolbar={<div className="manager-assignment-filters">
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã, kho hoặc nhân viên…" />
           <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)}
-            options={[[ 'active', 'Chưa hoàn tất' ], ['all', 'Tất cả'], ...statuses.map(value => [value, label(value)] as [string, string])]} />
+            options={[[ 'active', 'Chưa hoàn tất' ], ['overdue', 'Quá lịch hẹn'], ['finished', 'Đã kết thúc'], ['all', 'Tất cả'], ...statuses.map(value => [value, label(value)] as [string, string])]} />
           <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
             options={[[ '', 'Tất cả' ], ...knownStaff]} />
           <details className="manager-assignment-filter-more" open={kind !== 'all' || assignment !== 'all' || undefined}>
@@ -289,6 +290,7 @@ function AssignmentDetail({
         <Facts items={[
           ...(first(customer(task.row), 'fullName') ? [['Khách hàng', first(customer(task.row), 'fullName')]] as [string, string][] : []),
           ['Kho / Đặt thuê', relatedUnit(task.row)],
+          ['Cơ sở', first(task.row, 'facility.name', 'reservation.facility.name') || '—'],
           ...(task.kind === 'appointments' && task.row.scheduledAt ? [['Giờ bàn giao', date(task.row.scheduledAt, true)]] as [string, string][] : []),
           ['Đang phụ trách', currentStaffName || 'Chưa phân công'],
         ]} />

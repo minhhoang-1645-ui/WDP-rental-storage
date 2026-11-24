@@ -51,14 +51,14 @@ describe('Transfer completion and linked customer request, with memory-only depe
     });
   });
 
-  it('returns the positive inventory count to the assigned Staff', async () => {
+  it('does not expose personal inventory counts to the assigned Staff', async () => {
     const app = setup();
     const findFirst = vi.fn().mockResolvedValue({ ...app.transfer, rentalContract: {
       ...app.transfer.rentalContract, _count: { storedItems: 2 },
     } });
     const service = new TransfersService({ transferRequest: { findFirst } } as never);
     const result = await service.getForStaff('transfer', app.actor);
-    expect(result.storedItemCount).toBe(2);
+    expect(result).not.toHaveProperty('storedItemCount');
   });
 
   it('searches the assigned transfer list by customer name and returns only the name', async () => {

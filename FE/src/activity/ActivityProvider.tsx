@@ -1,4 +1,4 @@
-import { safeLocalStorage } from '../services/browser-storage';
+import { safeLocalStorage, safeSessionStorage } from '../services/browser-storage';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/auth-context';
 import { apiRequest } from '../services/api';
@@ -15,6 +15,14 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   return user ? <ActivitySession key={`${user.id}:${user.role}`} userId={user.id} role={user.role}>{children}</ActivitySession> : children;
 }
 function ActivitySession({ children, userId, role }: { children: ReactNode; userId: string; role: ActivityRole }) {
+  const [facility, setFacility] = useState(() => role === 'FACILITY_MANAGER' ? safeSessionStorage.getItem('nestbox-manager-facility') ?? '' : '');
+  useEffect(() => {
+    if (role !== 'FACILITY_MANAGER') return;
+    const changed = () => setFacility(safeSessionStorage.getItem('nestbox-manager-facility') ?? '');
+    window.addEventListener('nestbox-manager-facility-change', changed);
+    changed();
+    return () => window.removeEventListener('nestbox-manager-facility-change', changed);
+  }, [role]);
   const storageKey = `wdp-activity-read:${userId}:${role}`;
   const [read, setRead] = useState(() => storedRead(storageKey));
   const [state, setState] = useState<{ data: ActivityData; checkedAt: number; failed: string[]; checking: boolean }>({ data: {}, checkedAt: 0, failed: [], checking: true });
@@ -30,6 +38,8 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
   }, [storageKey]);
   useEffect(() => {
     const controller = new AbortController(), sources = activitySources(role);
+    setState({ data: {}, checkedAt: 0, failed: [], checking: Boolean(role !== 'FACILITY_MANAGER' || facility) });
+    if (role === 'FACILITY_MANAGER' && !facility) return;
     const sessionToken = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
     const snapshot: ActivityData = {}; let running = false, initialized = false, queued = false, timer: ReturnType<typeof setTimeout>;
     const load = async () => {
@@ -67,6 +77,6 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     document.addEventListener('visibilitychange', resume); window.addEventListener('online', resume); window.addEventListener('offline', resume); window.addEventListener('focus', resume); window.addEventListener(DATA_CHANGED, mutation); window.addEventListener('storage', crossTab);
     void load().finally(schedule);
     return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('input', dirty, true); document.removeEventListener('change', dirty, true); document.removeEventListener('submit', submit, true); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('offline', resume); window.removeEventListener('focus', resume); window.removeEventListener(DATA_CHANGED, mutation); window.removeEventListener('storage', crossTab); };
-  }, [role, userId]);
+  }, [role, userId, facility]);
   return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, refresh, markRead }}>{children}</ActivityContext.Provider>;
 }

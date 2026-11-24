@@ -63,6 +63,21 @@ it('refuses physically closing a facility with live contracts',async()=>{
  await expect(service.save('A',{bookingEnabled:false,operationalStatus:'CLOSED',expectedUpdatedAt:old.updatedAt.toISOString()},actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('còn đơn hoặc hợp đồng');
  expect(tx.facility.update).not.toHaveBeenCalled();
 });
+it('keeps a newly created facility closed to new bookings until local configuration is ready',async()=>{
+ const tx={user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),facility:{findUnique:vi.fn().mockResolvedValue(null),create:vi.fn()}};
+ const service=new OperationsService({$transaction:async(fn:(t:unknown)=>unknown)=>fn(tx)} as unknown as PrismaService);
+ const body={code:'NEW',name:'New',address:'Address',officeHours:'8–17',accessHours:'8–20',bookingEnabled:true,operationalStatus:'OPEN'};
+ await expect(service.save(undefined,body,actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('cấu hình kho');
+ expect(tx.facility.create).not.toHaveBeenCalled();
+});
+it('resolves a policy at the supplied historical time without modifying the published version',async()=>{
+ const asOf=new Date('2026-11-24T00:00:00Z');
+ const db={businessRule:{findFirst:vi.fn().mockResolvedValue({value:90})},businessPolicy:{findUnique:vi.fn()}};
+ const service=new BusinessPolicyService(db as never);
+ await expect(service.value('reservationHoldMinutes',db as never,asOf)).resolves.toBe(90);
+ expect(db.businessRule.findFirst).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({effectiveFrom:{lte:asOf},OR:[{effectiveTo:null},{effectiveTo:{gt:asOf}}]})}));
+ expect(db.businessPolicy.findUnique).not.toHaveBeenCalled();
+});
 
 it('assignment requires access for both manager and selected staff at the task facility',async()=>{
  const {assertAssignmentAccess}=await import('../facility-access/facility-access.service.js');

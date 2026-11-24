@@ -155,7 +155,10 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
-        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
+        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && row.status === 'APPROVED' && !row.commercial &&
+          <TransferHandoverForm busy={busy}
+            onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }}
+            onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />}
         {resource === "reservations" && user?.role === 'FACILITY_MANAGER' &&
           (row.status === "PENDING" ? (
             <form
@@ -636,7 +639,7 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!target || !transferDestinationReady) return;
+                  if (!target || !transferDestinationReady || !transferStaff) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
                     staffUserId: transferStaff,
@@ -654,9 +657,9 @@ export function ManagerActions({
                   disabled={busy}
                 />
                 <StaffPicker task={{kind:"transfers",id}} list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
-                <p>Có thể phân công sau; phiếu chưa có nhân viên sẽ vào hàng chờ.</p>
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady}>
-                  {busy ? 'Đang lưu…' : (transferStaff ? 'Duyệt và phân công' : 'Duyệt phiếu')}
+                <p>Chọn kho cùng loại và nhân viên thực hiện trước khi duyệt.</p>
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || !transferStaff}>
+                  {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
                 </button>
               </form>
               <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>

@@ -30,7 +30,10 @@ export function ManagerCatalogPage() {
   const [editor, setEditor] = useState<{ record?: Row }>();
   const [selected, setSelected] = useState<Row>();
   const refresh = () => { resource.refresh(); managed.refresh(); };
-  const products = rows(resource.data?.products);
+  const publicProducts = rows(resource.data?.products);
+  const products: Row[] = user?.role === 'FACILITY_MANAGER' ? rows(managed.data?.items).map(row => publicProducts.find(product => product.id === row.id) ?? {
+    ...row, monthlyPrice: row.monthlyRate, dimensions: [row.widthCm, row.lengthCm, row.heightCm].join(' × ') + ' cm', status: 'UNAVAILABLE',
+  }) : publicProducts;
   const { items: visibleProducts, pagination } = useListPagination(products);
   const categories = new Map(
     rows(resource.data?.sizes).map((row) => [
@@ -62,10 +65,10 @@ export function ManagerCatalogPage() {
       />
       {user?.role === 'FACILITY_MANAGER' && <LoadState loading={managed.loading} error={managed.error} retry={managed.refresh} />}
       {editor && <InventoryEditor kind="type" record={editor.record} onClose={() => setEditor(undefined)} onSaved={() => { setEditor(undefined); refresh(); }} />}
-      {resource.data && (
+      {(resource.data || managed.data) && (
         <>
-          {products.length > 0 && (
-            <details className="catalog-availability"><summary>Kiểm tra kho trống</summary><ManagerAvailabilityForm key={user?.id} products={products} /></details>
+          {products.some(row => row.status !== 'UNAVAILABLE') && (
+            <details className="catalog-availability"><summary>Kiểm tra kho trống</summary><ManagerAvailabilityForm key={user?.id} products={products.filter(row => row.status !== 'UNAVAILABLE')} /></details>
           )}
           <div className="booking-alert">
             Giá mới chỉ áp dụng cho báo giá mới. Hợp đồng và hóa đơn đã lập giữ nguyên dữ liệu.

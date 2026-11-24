@@ -214,7 +214,10 @@ it('VNPay signed callbacks reconcile expired orders without reactivation or dupl
 });
 it('scopes facility offerings without assigning legacy global stock',async()=>{
  const service=new AdditionalServicesService(db),inventory=new AdditionalServiceInventoryService(db);
- const addon=await service.create({code:'FOUNDATION_BOX',name:'Thùng thử nghiệm',kind:'PURCHASE',billingUnit:'ONE_TIME',unitPrice:10000,physicalUnit:'thùng'},users.managerA);
+ const definition={code:'FOUNDATION_BOX',name:'Thùng thử nghiệm',kind:'PURCHASE',billingUnit:'ONE_TIME',physicalUnit:'thùng'};
+ await expect(service.create({...definition,unitPrice:10000},users.managerA)).rejects.toThrow('Chỉ điều hành kinh doanh');
+ const shared=await service.saveCatalog(undefined,definition,users.bom);
+ const addon=await service.configure(shared.id,{facilityId:'A',unitPrice:10000,isActive:true},users.managerA);
  await inventory.update(addon.id,{stockOnHand:10},users.managerA);
  await expect(inventory.update(addon.id,{stockOnHand:999},users.managerB)).rejects.toThrow();
  expect((await inventory.managerList(users.managerB)).some(x=>x.serviceId===addon.id)).toBe(false);

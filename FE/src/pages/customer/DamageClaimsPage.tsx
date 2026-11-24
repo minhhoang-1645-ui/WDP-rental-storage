@@ -146,6 +146,9 @@ function ClaimDetail({ id, role, identity, back, created }: { id: string; role: 
             ...(inspection?.actorName ? [['Người kiểm tra', inspection.actorName] as [string, string]] : []),
             ...(claim.factsRecordedAt ? [['Thời điểm kiểm tra', claimDate(claim.factsRecordedAt, true)] as [string, string]] : []),
           ]} />}</> : <p className="claims-muted">Chưa có kết quả kiểm tra.</p>}
+          {!!claim.staffEvidenceLinks?.length && <ul className="claims-evidence" aria-label="Chứng cứ nhân viên">
+            {claim.staffEvidenceLinks.map((link, index) => <li key={index}><a href={link} target="_blank" rel="noopener noreferrer">Chứng cứ nhân viên {index + 1}</a></li>)}
+          </ul>}
         </ClaimSection>
       </div>
       <div className="claims-detail-stack">

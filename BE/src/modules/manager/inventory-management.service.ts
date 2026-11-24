@@ -20,11 +20,12 @@ export class InventoryManagementService {
   async listTypes(actor: PublicUser) {
     this.manager(actor);
     const ids = await facilityIds(this.prisma, actor);
-    const [items, facilities] = await Promise.all([
+    const [items, facilities, rules] = await Promise.all([
       this.prisma.storageType.findMany({ where: { facilityId: { in: ids } }, orderBy: { code: 'asc' } }),
       this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }),
+      this.prisma.businessRule.findMany({where:{key:'monthlyPriceRange',facilityId:{in:ids},effectiveFrom:{lte:new Date()},OR:[{effectiveTo:null},{effectiveTo:{gt:new Date()}}]},orderBy:{version:'desc'},select:{facilityId:true,storageTypeId:true,value:true}}),
     ]);
-    return { items: items.map(item => this.typeView(item)), facilities, total: items.length, page: 1, limit: Math.max(1, items.length) };
+    return { items: items.map(item => this.typeView(item)), facilities, pricingRanges: rules, total: items.length, page: 1, limit: Math.max(1, items.length) };
   }
 
   async saveType(id: string | undefined, input: Record<string, unknown>, actor: PublicUser) {

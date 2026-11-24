@@ -12,10 +12,10 @@ import { localizeService } from './additional-service-labels.js';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   offeringView,
@@ -40,9 +40,11 @@ export class AdditionalServicesService {
       managerReservationScope(actor);
       await facilityIds(this.prisma, actor);
     }
-    return (
-      await this.prisma.additionalService.findMany({ orderBy: { code: 'asc' } })
-    ).map((o) => this.view({ ...o, facilityId: null, unitPrice: null }, true));
+    if(actor.role==='BUSINESS_OPERATIONS_MANAGER') {
+      const rows=await this.prisma.additionalService.findMany({orderBy:{code:'asc'},include:{offerings:{include:{facility:{select:{id:true,name:true,code:true}}}}}});
+      return rows.map(o=>({...this.view({...o,facilityId:null,unitPrice:null},true),offerings:o.offerings.map(x=>({facility:x.facility,isActive:x.isActive,unitPrice:x.unitPrice===null?null:Number(x.unitPrice),stockOnHand:x.stockOnHand,rentalCapacity:x.rentalCapacity}))}));
+    }
+    return (await this.prisma.additionalService.findMany({ orderBy: { code: 'asc' } })).map((o) => this.view({ ...o, facilityId: null, unitPrice: null }, true));
   }
   async managerList(actor: PublicUser) {
     managerReservationScope(actor);
@@ -104,6 +106,7 @@ export class AdditionalServicesService {
       });
       if (!item)
         throw new NotFoundException('Không tìm thấy dịch vụ trong danh mục.');
+      if (!item.isActive && input.isActive===true) throw new ConflictException('Dịch vụ đã bị tắt trong danh mục chung. Không thể mở cung cấp mới.');
       const offer = await tx.facilityServiceOffering.upsert({
         where: {
           additionalServiceId_facilityId: {
@@ -128,44 +131,9 @@ export class AdditionalServicesService {
       return this.view(offeringView(offer), true);
     });
   }
-  async create(input: Record<string, unknown>, actor: PublicUser) {
+  async create(_input: Record<string, unknown>, actor: PublicUser): Promise<ReturnType<AdditionalServicesService['view']>> {
     managerReservationScope(actor);
-    const ids = await facilityIds(this.prisma, actor),
-      facilityId =
-        typeof input.facilityId === 'string'
-          ? input.facilityId
-          : ids.length === 1
-            ? ids[0]
-            : undefined;
-    if (!facilityId) throw new BadRequestException('Chọn cơ sở.');
-    const data = this.parse(input, false);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await assertFacility(tx, actor, facilityId);
-        const item = await tx.additionalService.create({
-          data: { ...data, unitPrice: null } as any,
-        });
-        const offer = await tx.facilityServiceOffering.create({
-          data: {
-            additionalServiceId: item.id,
-            facilityId,
-            unitPrice: explicitPrice(input.unitPrice),
-            isActive: input.isActive !== false,
-          },
-          include: { additionalService: true },
-        });
-        return this.view(offeringView(offer), true);
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      )
-        throw new ConflictException(
-          'Mã đã có trong danh mục; cấu hình cung cấp cho cơ sở thay vì tạo trùng.',
-        );
-      throw e;
-    }
+    throw new ForbiddenException('Chỉ điều hành kinh doanh được tạo dịch vụ trong danh mục chung. Hãy chọn dịch vụ có sẵn để cung cấp tại cơ sở.');
   }
   async update(id: string, input: Record<string, unknown>, actor: PublicUser) {
     const current = await this.managerGet(
@@ -200,11 +168,14 @@ export class AdditionalServicesService {
       );
     return this.prisma.$transaction(async (tx) => {
       await assertActiveRole(tx, actor, 'BUSINESS_OPERATIONS_MANAGER');
+      await tx.$queryRawUnsafe('SELECT 1 FROM pg_advisory_xact_lock(hashtext($1))','shared-service-catalog');
       const current = id
         ? await tx.additionalService.findUnique({ where: { id } })
         : null;
       if (id && !current) throw new NotFoundException();
+      if(current && input.expectedUpdatedAt!==current.updatedAt.toISOString())throw new ConflictException('Dịch vụ vừa thay đổi. Vui lòng tải lại.');
       const data = this.parse(input, !!id, current ?? undefined, true);
+      if(current && (input.code!==undefined&&input.code!==current.code || input.billingUnit!==undefined&&input.billingUnit!==current.billingUnit))throw new ConflictException('Không đổi mã hoặc chu kỳ tính tiền của dịch vụ đã tạo.');
       delete data.unitPrice;
       const item = id
         ? await tx.additionalService.update({

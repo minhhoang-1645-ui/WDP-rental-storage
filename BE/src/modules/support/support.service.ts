@@ -165,6 +165,7 @@ export class SupportService {
     const parsed = this.resolutionInput(input, staffResolutions);
     return this.transition(id, key, 'STAFF_RESOLVE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được Staff resolve.');
+      if (current.category === 'PAYMENT_SUPPORT') throw new ConflictException('Chuyển yêu cầu thanh toán cho quản lý xem xét.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
@@ -225,7 +226,7 @@ export class SupportService {
   private include(mode: ViewMode = 'FACILITY_MANAGER'): Prisma.SupportRequestInclude { return {
     transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, ...(mode === 'STORAGE_CUSTOMER' ? {} : { assignedStaffUserId: true }), rentalContractId: true, customerAcceptedAt: true, commercialSnapshot: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
-    reservation: { select: { id: true, reservationCode: true, status: true, ...(mode === 'STORAGE_CUSTOMER' ? { _count: { select: { contracts: true } } } : {}) } },
+    reservation: { select: { id: true, reservationCode: true, status: true, ...(mode !== 'STORAGE_CUSTOMER' ? { facility: { select: { id: true, name: true } } } : {}), ...(mode === 'STORAGE_CUSTOMER' ? { _count: { select: { contracts: true } } } : {}) } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
     storageUnit: { include: {
       storageType: { select: { id: true, code: true, name: true } },
@@ -253,10 +254,11 @@ export class SupportService {
     const operational = { ...view, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'FACILITY_STAFF') return {
       ...operational,
+      facility: record.reservation.facility,
       hasTransferOrder: (record.transferRequests ?? []).some((transfer: { status: string }) => transfer.status !== 'REJECTED'),
     };
     const future = record.storageUnit?.reservationUnits.map((item: any) => ({ reservationReference: item.reservation.reservationCode, startDate: this.date(item.plannedStartDate), endDate: this.date(item.plannedEndDate) })) ?? [];
-    return { ...operational, activeMaintenance: record.storageUnit?.maintenanceRequests[0] ?? null, hasFutureAllocation: future.length > 0, nextConfirmedAllocation: future[0] ?? null, futureAllocations: future };
+    return { ...operational, facility: record.reservation.facility, activeMaintenance: record.storageUnit?.maintenanceRequests[0] ?? null, hasFutureAllocation: future.length > 0, nextConfirmedAllocation: future[0] ?? null, futureAllocations: future };
   }
 
   private createInput(input: Record<string, unknown>, key: string | undefined) {

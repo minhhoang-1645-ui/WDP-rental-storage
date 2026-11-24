@@ -60,11 +60,12 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === 'SYSTEM_ADMINISTRATOR') return [{ kind: 'account-notices', path: '/admin/audit-events?category=ACCOUNT_NOTICES', title: 'Thông báo quản trị' }];
   const kinds = role === 'STORAGE_CUSTOMER'
     ? ['transfer-orders', 'damage-claims', 'reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'FACILITY_STAFF' ? ['damage-claims', 'appointments', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['damage-claims', 'support-requests', 'maintenance', 'stock-movements', 'appointments', 'returns', 'transfers', 'renewals', 'invoices', 'deposit-settlements'];
+    : role === 'FACILITY_STAFF' ? ['damage-claims', 'appointments', 'returns', 'maintenance', 'support-requests', 'transfers']
+      : ['damage-claims', 'support-requests', 'maintenance', 'appointments', 'returns', 'transfers', 'renewals', 'invoices', 'deposit-settlements', 'payment-submissions', 'online-payment-reconciliations'];
   const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['transfer-orders'] = 'Phụ lục chuyển kho';
   names['damage-claims'] = 'Sự cố hàng hóa';
+  names['online-payment-reconciliations'] = 'Đối soát thanh toán';
   return kinds.map(kind => ({ kind, title: names[kind], path: role === 'FACILITY_STAFF' && kind === 'damage-claims' ? '/staff/management/damage-claims' : role === 'STORAGE_CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${roleNamespace(role)}/${kind}`, array: role === 'STORAGE_CUSTOMER' && kind === 'reservations' }));
 }
 const customerStates: Record<string, string> = {
@@ -107,7 +108,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     if (role === 'FACILITY_STAFF' && needsStaffAssignment(kind) && !isAssignedStaffWork(kind, row, userId)
       && !(status === 'COMPLETED' && get('completedBy.id') === userId && !get('assignedStaff.id'))) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
-    const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
+    const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'reconciliationCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;
     let title = source.title, message = '', action = false, priority = 2;
     let web = `/${roleNamespace(role)}/${kind}/${encodeURIComponent(id)}`, mobile = web;
     if (role === 'STORAGE_CUSTOMER') {
@@ -165,6 +166,11 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const assignment = needsStaffAssignment(kind);
         if (assignment && (kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
+        if (kind === 'payment-submissions' || kind === 'online-payment-reconciliations') {
+          action = kind === 'payment-submissions' ? status === 'PENDING_VERIFICATION' : ['PENDING_REVIEW','REFUND_REQUIRED'].includes(status);
+          web = `/manager/${kind}?status=${encodeURIComponent(status)}&record=${encodeURIComponent(id)}`;
+          mobile = web;
+        }
         if (kind === 'invoices' && (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0)) continue;
       } else action = staffNeedsAction(kind, row, userId);
       title = `${source.title} · ${action ? 'Cần xử lý' : 'Theo dõi tiến độ'}`;

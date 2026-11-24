@@ -27,6 +27,11 @@ export async function assignmentReference(db:Prisma.TransactionClient,kind:strin
 @ApiBearerAuth('bearerAuth') @ApiTags('Staff Operations')
 export class StaffDirectoryController {
  constructor(private readonly prisma:PrismaService){}
+ @Get('facilities')
+ async facilities(@Req() req:AuthenticatedRequest){
+  const ids=await facilityIds(this.prisma,{...req.user!,selectedFacilityId:undefined});
+  return this.prisma.facility.findMany({where:{id:{in:ids}},select:{id:true,name:true,code:true},orderBy:{name:'asc'}});
+ }
  @Get()
  async list(@Req() req:AuthenticatedRequest,@Query('page') pageInput='1',@Query('limit') limitInput='100',@Query('taskType') type?:string,@Query('taskId') id?:string){
   if(req.user?.role!=='FACILITY_MANAGER')throw new ForbiddenException('Chỉ quản lý cơ sở được tra cứu nhân viên để phân công.');

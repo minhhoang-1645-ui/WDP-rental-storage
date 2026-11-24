@@ -59,7 +59,8 @@ export class StaffReturnsController {
   }
 
   @Post(':id/finalize')
-  @ApiOperation({ summary: 'Hoàn tất trả kho vật lý', description: 'Yêu cầu mọi inspection đã ghi kết quả; ISSUE_FOUND được phép. Transaction nguyên tử: Contract COMPLETED, allocation released, PASS → AVAILABLE, ISSUE_FOUND → MAINTENANCE và tạo DepositSettlement.' })
+  @ApiOperation({ summary: 'Hoàn tất trả kho vật lý', description: 'Yêu cầu đã kiểm tra từng ô, xác nhận kho trống và đã thu hồi quyền truy cập. Kho có lỗi hoặc bảo trì đang mở được giữ ở trạng thái MAINTENANCE.' })
+  @ApiBody({ schema: { type: 'object', required: ['unitsEmpty', 'accessRevoked'], properties: { unitsEmpty: { type: 'boolean', example: true }, accessRevoked: { type: 'boolean', example: true } } } })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiOkResponse({ schema: { examples: {
     pass: { value: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'PENDING_SETTLEMENT', settlementStatus: 'APPROVED', inspections: [{ result: 'PASS', contract: { status: 'COMPLETED' }, unit: { status: 'AVAILABLE' } }] } },

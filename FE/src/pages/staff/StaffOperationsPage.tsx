@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarClock, ClipboardList, ClockAlert, Package, RefreshCw } from 'lucide-react';
+import { ArrowRight, CalendarClock, ClipboardList, ClockAlert, Play, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import { useActivity } from '../../activity/context';
@@ -7,11 +7,10 @@ import { date } from '../../components/manager/portal-data';
 import { LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { staffDay, staffDayAfter } from './staff-resources';
-import { staffActivityReady, staffActivitySources, staffWorkItems } from './staff-work';
+import { staffActivityReady, staffActivitySources, staffInProgress, staffWorkItems } from './staff-work';
 import { handoverStatusText } from './staff-appointment';
 
 const taskPath = '/staff/tasks';
-const overdueHandoverPath = taskPath + '?type=appointments&status=CONFIRMED&timing=overdue';
 const previewSize = 5;
 
 function WorkPanel({ title, to, empty, loading, count, children }: {
@@ -45,8 +44,9 @@ export function StaffOperationsPage() {
   const complete = staffActivitySources.every(source => staffActivityReady(activity, source.kind));
   const failedSources = activity.failed;
   const handoversReady = staffActivityReady(activity, 'appointments');
-  const stockReady = staffActivityReady(activity, 'stock-movements');
   const tasks = staffWorkItems(activity, user?.id);
+  const recent = staffWorkItems(activity, user?.id, true).filter(task => task.processed)
+    .sort((a, b) => (Date.parse(b.finishedAt) || 0) - (Date.parse(a.finishedAt) || 0)).slice(0, previewSize);
   const [openedAt] = useState(Date.now);
   const today = staffDay(activity.checkedAt || openedAt);
   const through = staffDayAfter(today, 7);
@@ -56,19 +56,18 @@ export function StaffOperationsPage() {
     return day >= today && day <= through;
   })
     .sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
-  const todayAppointments = upcomingAppointments.filter(task => staffDay(task.scheduledAt) === today);
-  const lateAppointments = appointments.filter(task => task.overdue);
+  const todayTasks = tasks.filter(task => staffDay(task.scheduledAt) === today);
   const upcomingPreview = upcomingAppointments.filter(task => !task.overdue).slice(0, previewSize);
-  const todayPath = `/staff/appointments?status=CONFIRMED&date=${today}`;
+  const todayPath = `${taskPath}?date=${today}`;
   const upcomingPath = '/staff/appointments?' + new URLSearchParams({ status: 'CONFIRMED', from: today, through });
   const shownElsewhere = new Set(upcomingPreview.map(task => task.entry.web));
   const priority = tasks.filter(task => !shownElsewhere.has(task.entry.web))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.entry.priority - b.entry.priority);
   const metrics = [
-    { title: 'Việc cần làm', value: complete ? tasks.length : '—', icon: ClipboardList, to: taskPath },
-    { title: 'Bàn giao hôm nay', value: handoversReady ? todayAppointments.length : '—', icon: CalendarClock, to: todayPath },
-    { title: 'Phiếu nhập – xuất đang chờ', value: stockReady ? tasks.filter(task => task.entry.kind === 'stock-movements').length : '—', icon: Package, to: '/staff/stock-movements?status=ASSIGNED' },
-    { title: 'Bàn giao quá giờ', value: handoversReady ? lateAppointments.length : '—', icon: ClockAlert, to: overdueHandoverPath },
+    { title: 'Chờ thực hiện', value: complete ? tasks.filter(task => !staffInProgress(task.status)).length : '—', icon: ClipboardList, to: taskPath + '?phase=pending' },
+    { title: 'Có lịch hôm nay', value: complete ? todayTasks.length : '—', icon: CalendarClock, to: todayPath },
+    { title: 'Đang thực hiện', value: complete ? tasks.filter(task => staffInProgress(task.status)).length : '—', icon: Play, to: taskPath + '?phase=progress' },
+    { title: 'Quá giờ', value: complete ? tasks.filter(task => task.overdue).length : '—', icon: ClockAlert, to: taskPath + '?timing=overdue' },
   ];
 
   return <section className="staff-dashboard">
@@ -103,5 +102,12 @@ export function StaffOperationsPage() {
           status={<Status value={task.status} text={handoverStatusText(task.status)} />} action="Xem lịch" onOpen={() => activity.markRead([task.entry.token])} />)}
       </WorkPanel>
     </div>
+    <WorkPanel title="Vừa xử lý" to={taskPath + '?view=completed'} empty={complete ? 'Chưa có công việc đã xử lý.' : 'Chưa tải đủ lịch sử.'} loading={loading} count={recent.length}>
+      {recent.map(task => <WorkRow key={task.entry.id} to={task.entry.web} title={task.title}
+        details={[task.entry.code, task.unit, task.facilityName].filter(Boolean).join(' · ')}
+        time={task.finishedAt ? date(task.finishedAt, true) : undefined}
+        status={<Status value={task.status} text={task.entry.kind === 'appointments' ? handoverStatusText(task.status) : undefined} />}
+        action="Xem kết quả" />)}
+    </WorkPanel>
   </section>;
 }

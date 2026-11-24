@@ -9,7 +9,7 @@ export async function facilityIds(db: Db, actor: PublicUser) {
   if (!['FACILITY_MANAGER', 'FACILITY_STAFF'].includes(actor.role)) throw new ForbiddenException('Vai trò không có quyền vận hành cơ sở.');
   const user = await db.user.findFirst({ where: { id: actor.id, role: actor.role, accountStatus: 'ACTIVE' }, select: { id: true } });
   if (!user) throw new ForbiddenException('Quyền tài khoản đã thay đổi. Vui lòng đăng nhập lại.');
-  const rows = await db.facilityAccess.findMany({ where: { userId: actor.id, revokedAt: null }, select: { facilityId: true } });
+  const rows = await db.facilityAccess.findMany({ where: { userId: actor.id, revokedAt: null, ...(actor.role === 'FACILITY_MANAGER' && actor.selectedFacilityId ? { facilityId: actor.selectedFacilityId } : {}) }, select: { facilityId: true } });
   return rows.map(row => row.facilityId);
 }
 export async function assertFacility(db: Db, actor: PublicUser, id: string) {

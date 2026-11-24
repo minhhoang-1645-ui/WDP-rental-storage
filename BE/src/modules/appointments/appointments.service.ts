@@ -310,6 +310,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (units.some(unit => ['MAINTENANCE', 'OCCUPIED'].includes(unit.status))) {
       throw new ConflictException('Có kho đang bảo trì hoặc đang được sử dụng.');
     }
+    if (await db.maintenanceRequest.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, activeKey: { not: null } } })) {
+      throw new ConflictException('Có kho đang chờ xử lý bảo trì. Hãy kiểm tra lại trước khi bàn giao.');
+    }
     const otherActive = await db.rentalContract.count({
       where: { status: 'ACTIVE', reservationId: { not: reservationId }, reservationUnit: { storageUnitId: { in: units.map(unit => unit.id) } } },
     });
@@ -497,6 +500,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
   private reservationReadinessInclude() {
     return {
+      facility: { select: { id: true, name: true } },
       customer: { select: { id: true, fullName: true, email: true, phone: true } },
       invoices: { where: { type: 'INITIAL' as const }, select: { id: true, invoiceCode: true, type: true, status: true } },
       units: { select: { id: true, storageUnitId: true, releasedAt: true } },
@@ -511,6 +515,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const historicalUnits = (Array.isArray(reportChecks) ? reportChecks : []).flatMap(check =>
       typeof check?.unitId === 'string' && typeof check.unitCode === 'string' ? [{ unitId: check.unitId, unitCode: check.unitCode }] : []);
     return {
+      ...(includeCustomer && record.reservation.facility ? { facility: record.reservation.facility } : {}),
       ...(includeCustomer ? {
         assignedStaff: record.assignedStaff ?? null,
         assignedBy: record.assignedBy ?? null,

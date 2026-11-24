@@ -1,4 +1,5 @@
 export interface PublicUser {
+  selectedFacilityId?: string;
   id: string;
   fullName: string;
   email: string;
@@ -12,6 +13,7 @@ export interface AuthSession {
 }
 
 export interface AuthenticatedRequest {
+  query?: Record<string, unknown>;
   headers: { authorization?: string };
   user?: PublicUser;
 }

@@ -21,12 +21,14 @@ export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
         const units = handoverUnits(row).map(unit => unit.code).join(', ');
         return <><strong>{name || units || '—'}</strong>
           {name && units && <small>{units}</small>}
+          {first(row, 'facility.name') && <small>{first(row, 'facility.name')}</small>}
           <CopyRecordCode value={first(row, 'appointmentCode')} /></>;
       }
       const { person, location } = identity(row);
       const primary = maintenance ? location : person || location;
       return <><strong>{primary || '—'}</strong>
         {resource !== 'transfers' && !maintenance && person && location && <small>{location}</small>}
+        {first(row, 'facility.name') && <small>{first(row, 'facility.name')}</small>}
         <CopyRecordCode value={code(row)} /></>;
     } },
   ];

@@ -127,8 +127,8 @@ export function ManagerOverviewPage() {
       !(entry.kind === 'support-requests' && hasLinkedTransfer(row)) ? [{ entry, row }] : [];
   }).slice(0, 5);
   const metrics = [
-    { title: managerSections.reviews.title, value: queueTotal(['escalatedSupport', 'maintenanceReview', 'depositReview', 'earlyReturnReview', 'transferReview', 'renewalReview', 'damageReview']), hint: 'Hồ sơ đang chờ quyết định', to: '/manager/reviews?view=decision', icon: ClipboardCheck },
-    { title: 'Chờ phân công', value: queueTotal(['unassignedStock', 'unassignedSupport', 'unassignedMaintenance', 'unassignedAppointments', 'unassignedReturns', 'unassignedTransfers', 'unassignedClaims']), hint: 'Hồ sơ cần giao hoặc đổi người', to: '/manager/assignments?assignment=attention', icon: Users },
+    { title: managerSections.reviews.title, value: queueTotal(['escalatedSupport', 'maintenanceReview', 'depositReview', 'earlyReturnReview', 'transferReview', 'renewalReview', 'damageReview', 'paymentVerification', 'onlineReconciliation']), hint: 'Hồ sơ đang chờ quyết định', to: '/manager/reviews?view=decision', icon: ClipboardCheck },
+    { title: 'Chờ phân công', value: queueTotal(['unassignedSupport', 'unassignedMaintenance', 'unassignedAppointments', 'unassignedReturns', 'unassignedTransfers', 'unassignedClaims']), hint: 'Hồ sơ cần giao hoặc đổi người', to: '/manager/assignments?assignment=attention', icon: Users },
     { title: 'Kho đang sử dụng', value: isCount(data?.units?.occupied) && isCount(data?.units?.total) && data.units.occupied <= data.units.total ? `${count(data.units.occupied)} / ${count(data.units.total)}` : '—', hint: 'Kho đang sử dụng / Tổng kho', to: '/manager/units?status=OCCUPIED', icon: Warehouse },
     { title: 'Công nợ hiện tại', value: isCount(data?.finance?.outstandingAmount) ? money(data.finance.outstandingAmount) : '—', hint: isCount(data?.finance?.unpaidInvoices) ? `${count(data.finance.unpaidInvoices)} hóa đơn còn dư nợ` : 'Số dư hóa đơn còn hiệu lực', to: '/manager/operations/invoices', icon: WalletCards },
   ];

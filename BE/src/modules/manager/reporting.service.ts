@@ -17,12 +17,19 @@ function number(value: unknown) { const n = Number(value ?? 0); if (!Number.isSa
 @Injectable()
 export class ReportingService {
   constructor(private readonly prisma: PrismaService) {}
+  private async permittedFacilities(input:Record<string,unknown>,actor:PublicUser){
+    if(actor.role!=='BUSINESS_OPERATIONS_MANAGER')return facilityIds(this.prisma,actor);
+    if(input.facilityId===undefined||input.facilityId==='')return undefined;
+    if(typeof input.facilityId!=='string'||input.facilityId.length>120)throw new BadRequestException('Cơ sở không hợp lệ.');
+    if(!await this.prisma.facility.findUnique({where:{id:input.facilityId},select:{id:true}}))throw new BadRequestException('Cơ sở không tồn tại.');
+    return [input.facilityId];
+  }
   private scope(query: ReturnType<typeof reportFilters> & { facilityIds?:string[] }, column: Prisma.Sql, typeColumn: Prisma.Sql = Prisma.sql`COALESCE(r."quoteSnapshot"->>'storageTypeId', r."storageTypeId")`) {
     return Prisma.sql`${query.facilityIds === undefined ? Prisma.sql`TRUE` : query.facilityIds.length ? Prisma.sql`r."facilityId" IN (${Prisma.join(query.facilityIds)})` : Prisma.sql`FALSE`} AND ${query.from ? Prisma.sql`${column} >= ${new Date(query.from + 'T00:00:00+07:00')}` : Prisma.sql`TRUE`} AND ${query.to ? Prisma.sql`${column} < ${new Date(Date.parse(query.to + 'T00:00:00+07:00') + 86400000)}` : Prisma.sql`TRUE`} AND ${query.typeId ? Prisma.sql`${typeColumn} = ${query.typeId}` : Prisma.sql`TRUE`}`;
   }
   async summary(input: Record<string, unknown>, actor:PublicUser) {
     await assertActiveRole(this.prisma,actor,actor.role==='BUSINESS_OPERATIONS_MANAGER'?'BUSINESS_OPERATIONS_MANAGER':'FACILITY_MANAGER');
-    const filters = {...reportFilters(input),facilityIds:actor.role==='BUSINESS_OPERATIONS_MANAGER'?undefined:await facilityIds(this.prisma,actor)}, group = filters.group;
+    const filters = {...reportFilters(input),facilityIds:await this.permittedFacilities(input,actor)}, group = filters.group;
     const bucket = (column: Prisma.Sql) => Prisma.sql`to_char(date_trunc(${group}, ${column} + interval '7 hours'), ${group === 'year' ? 'YYYY' : group === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD'})`;
     const invoiceType = Prisma.sql`COALESCE(i."storageTypeIdSnapshot", r."quoteSnapshot"->>'storageTypeId', r."storageTypeId")`;
     const invoiceScope = this.scope(filters, Prisma.sql`i."issuedAt"`, invoiceType), paymentScope = this.scope(filters, Prisma.sql`p."receivedAt"`, invoiceType), bookingScope = this.scope(filters, Prisma.sql`r."createdAt"`);
@@ -48,7 +55,7 @@ export class ReportingService {
   }
   async csv(input: Record<string, unknown>, actor:PublicUser) {
     await assertActiveRole(this.prisma,actor,actor.role==='BUSINESS_OPERATIONS_MANAGER'?'BUSINESS_OPERATIONS_MANAGER':'FACILITY_MANAGER');
-    const filters = {...reportFilters(input),facilityIds:actor.role==='BUSINESS_OPERATIONS_MANAGER'?undefined:await facilityIds(this.prisma,actor)}, invoiceType = Prisma.sql`COALESCE(i."storageTypeIdSnapshot", r."quoteSnapshot"->>'storageTypeId', r."storageTypeId")`, scope = this.scope(filters, Prisma.sql`i."issuedAt"`, invoiceType);
+    const filters = {...reportFilters(input),facilityIds:await this.permittedFacilities(input,actor)}, invoiceType = Prisma.sql`COALESCE(i."storageTypeIdSnapshot", r."quoteSnapshot"->>'storageTypeId', r."storageTypeId")`, scope = this.scope(filters, Prisma.sql`i."issuedAt"`, invoiceType);
     const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`SELECT i."invoiceCode" AS "Mã hóa đơn", t.name AS "Loại kho", i."issuedAt" AS "Ngày phát hành", i."rentalAmount" AS "Tiền thuê VND", i."depositAmount" AS "Cọc VND", i."serviceAmount" AS "Dịch vụ VND", i."chargeAmount" AS "Phí khác VND", i."totalAmount" AS "Tổng VND", i."amountPaid" AS "Đã thu VND", i."balanceDue" AS "Còn thu VND" FROM "Invoice" i JOIN "Reservation" r ON r.id=i."reservationId" JOIN "StorageType" t ON t.id=${invoiceType} WHERE i.status <> 'VOID' AND ${scope} ORDER BY i."issuedAt", i.id LIMIT 10001`);
     if (rows.length > 10000) throw new BadRequestException('Có hơn 10.000 hóa đơn. Chọn khoảng thời gian nhỏ hơn để xuất đủ dữ liệu.');
     const headers = ['Mã hóa đơn', 'Loại kho', 'Ngày phát hành', 'Tiền thuê VND', 'Cọc VND', 'Dịch vụ VND', 'Phí khác VND', 'Tổng VND', 'Đã thu VND', 'Còn thu VND'];

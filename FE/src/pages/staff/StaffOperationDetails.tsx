@@ -66,11 +66,10 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           <TransferUnit title="Kho đích" unit={object(row.toUnit)} />
         </div>
         <Facts items={facts([
-          ['Khách hàng', name], ['Hợp đồng', contract], ['Người phụ trách', !completed ? assigned : ''],
+          ['Khách hàng', name], ['Cơ sở', first(row, 'facility.name')], ['Hợp đồng', contract], ['Người phụ trách', !completed ? assigned : ''],
           ['Lý do chuyển', row.reason ? label(row.reason) : ''],
           ['Quản lý phê duyệt', first(row, 'approvedBy.fullName')],
           ['Lịch bàn giao', transferHandoverSchedule(row)],
-          ['Phụ lục và thanh toán', first(row, 'commercial.acceptedAt') ? completed ? 'Đã đủ điều kiện khi bàn giao' : 'Đã ký · Không có hóa đơn đến hạn chưa thanh toán' : ''],
           ['Ngày hoàn tất', completed ? dateField('completedAt', true) : ''],
           ['Lý do từ chối', row.status === 'REJECTED' ? first(row, 'rejectionReason') : ''],
         ])} />
@@ -108,6 +107,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
     return <>
       <Section title="Thông tin trả kho" items={[
         ['Khách hàng', name],
+        ['Cơ sở', first(row, 'facility.name')],
         ['Kho trả', inspections.map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ')],
         ['Hợp đồng', inspections.map(item => first(item, 'contract.contractCode')).filter(Boolean).join(', ')],
         ...(inspections.length === 1 ? [['Hạn thuê thực tế', dateField('reservation.effectiveEndDate') ||
@@ -150,7 +150,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           return <div className="staff-operation-unit" key={first(item, 'id')}>
             {inspections.length > 1 && <h3>{unit}</h3>}
             <Facts items={facts([
-              ['Xử lý khi nhận kho', item.result === 'ISSUE_FOUND' ? 'Chuyển bảo trì' : item.result === 'PASS' ? 'Đã giải phóng kho' : ''],
+              ['Xử lý khi nhận kho', item.result === 'ISSUE_FOUND' ? 'Chuyển bảo trì' : item.result === 'PASS' ? 'Đã nhận kho' : ''],
               ['Tình trạng kho hiện tại', first(item, 'unit.status') && <Status value={at(item, 'unit.status')} />],
               ['Phiếu bảo trì', maintenanceId && <Link to={`/staff/maintenance/${encodeURIComponent(maintenanceId)}`}>{first(item, 'maintenance.maintenanceCode')}</Link>],
             ])} />
@@ -168,7 +168,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
     const verification = first(row, 'verificationNote');
     return <>
       <Section title="Thông tin bảo trì" items={[
-        ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
+        ['Cơ sở', first(row, 'facility.name')], ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
         ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
         ['Nguồn phát sinh', row.source ? label(row.source) : ''],
       ]} note={first(row, 'description')} />
@@ -194,6 +194,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
   return <>
     <Section title="Nội dung yêu cầu" items={[
       ['Vấn đề', first(row, 'subject') || (row.category ? label(row.category) : '')], ['Kho', first(row, 'unit.unitCode')],
+      ['Cơ sở', first(row, 'facility.name')],
       ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
       ['Liên hệ khách hàng', (phone || email) && <span className="record-links">{phone && <a href={`tel:${phone}`}>{phone}</a>}{email && <a href={`mailto:${email}`}>{email}</a>}</span>],
     ]} note={first(row, 'description')} />

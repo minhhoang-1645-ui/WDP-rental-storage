@@ -21,6 +21,8 @@ const queuePaths = {
   damage: '/manager/damage-claims',
   transfers: '/manager/transfers',
   renewals: '/manager/renewals',
+  payments: '/manager/payment-submissions',
+  reconciliation: '/manager/online-payment-reconciliations',
 } as const;
 
 type Queue = keyof typeof queuePaths;
@@ -31,25 +33,30 @@ const titles: Record<Queue, string> = {
   maintenance: 'Nghiệm thu bảo trì', support: 'Hỗ trợ chuyển cấp', early: 'Trả kho trước hạn', damage: 'Sự cố hàng hóa',
   transfers: 'Chuyển kho',
   renewals: 'Gia hạn kho',
+  payments: 'Xác minh chuyển khoản', reconciliation: 'Đối soát thanh toán',
 };
 const statusNames: Record<string, string> = {
   REQUESTED: 'Chờ duyệt chuyển kho', PENDING: 'Chờ duyệt gia hạn',
   PENDING_REVIEW: 'Chờ duyệt',
   AWAITING_VERIFICATION: 'Chờ kiểm tra kết quả', ESCALATED: 'Cần quản lý quyết định', EARLY_REVIEW: 'Chờ quyết định',
   INVESTIGATING: 'Chờ quyết định sự cố', APPROVED: 'Đã chấp thuận · chờ kết thúc', REJECTED: 'Đã từ chối · chờ kết thúc',
+  PENDING_VERIFICATION: 'Chờ xác minh giao dịch',
+  REFUND_REQUIRED: 'Chờ xác nhận hoàn tiền',
 };
 const queueStates: Record<Queue, string[]> = {
   deposits: ['PENDING_REVIEW'],
   maintenance: ['AWAITING_VERIFICATION'], support: ['ESCALATED'], early: ['EARLY_REVIEW'],
-  damage: ['INVESTIGATING', 'APPROVED', 'REJECTED'],
+  damage: ['INVESTIGATING'],
   transfers: ['REQUESTED'],
   renewals: ['PENDING'],
+  payments: ['PENDING_VERIFICATION'], reconciliation: ['PENDING_REVIEW', 'REFUND_REQUIRED'],
 };
 const fullLists: Record<Queue, string> = {
   deposits: '/manager/operations/deposit-settlements', maintenance: '/manager/operations/maintenance',
   support: '/manager/operations/support-requests', early: '/manager/early-returns', damage: queuePaths.damage,
   transfers: '/manager/operations/transfers',
   renewals: '/manager/operations/renewals',
+  payments: queuePaths.payments, reconciliation: queuePaths.reconciliation,
 };
 
 function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): Task | null {
@@ -87,14 +94,23 @@ function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): T
       to = detailPath(legacyTransfer ? 'support-requests' : 'transfers', { id });
       break;
     case 'damage':
-      if (!(status === 'INVESTIGATING' && row.staffFacts) && !['APPROVED', 'REJECTED'].includes(status)) return null;
+      if (!(status === 'INVESTIGATING' && row.staffFacts)) return null;
       search.set('claim', id);
+      break;
+    case 'payments':
+      if (status !== 'PENDING_VERIFICATION') return null;
+      search.set('record', id);
+      break;
+    case 'reconciliation':
+      if (!['PENDING_REVIEW', 'REFUND_REQUIRED'].includes(status)) return null;
+      search.set('record', id);
+      search.set('status', status);
       break;
   }
   return {
     queue, row, status: state, statusText: queue === 'damage' && first(row, 'compensation.status') === 'AWAITING_HANDOVER' ? 'Chờ giao tiền' : statusNames[state],
     created: first(row, 'createdAt'),
-    reference: first(row, 'claimCode') || code(row),
+    reference: first(row, 'claimCode', 'submissionCode', 'reconciliationCode') || code(row),
     person: first(customer(row), 'fullName'),
     unit: first(row, 'unit.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode') ||
       rows(row.physicalInspections).map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ') ||
@@ -109,7 +125,7 @@ export function ManagerReviewInbox() {
   const { pathname, search: locationSearch } = useLocation();
   const { params, page, limit, update } = useManagerTableParams();
   const rawQueue = params.get('kind') ?? '';
-  const decisionOnly = params.get('view') === 'decision';
+  const decisionOnly = true;
   const queue = Object.hasOwn(queuePaths, rawQueue) ? rawQueue as Queue : '';
   const rawStatus = params.get('status') ?? '';
   const states = (queue ? queueStates[queue] : Object.keys(statusNames)).filter(value => !decisionOnly || !['APPROVED', 'REJECTED'].includes(value));
@@ -127,7 +143,9 @@ export function ManagerReviewInbox() {
   const transfers = usePaginatedResource<Row>(queuePath('transfers', 'REQUESTED'), user?.id, true);
   const legacyTransfers = usePaginatedResource<Row>(!queue || queue === 'transfers' ? '/manager/support-requests?legacyTransfer=true&limit=100' : null, user?.id, true);
   const renewals = usePaginatedResource<Row>(queuePath('renewals', 'PENDING'), user?.id, true);
-  const sources = { deposits, maintenance, support, early, damage, transfers, renewals };
+  const payments = usePaginatedResource<Row>(queuePath('payments', 'PENDING_VERIFICATION'), user?.id, true);
+  const reconciliation = usePaginatedResource<Row>(queuePath('reconciliation'), user?.id, true);
+  const sources = { deposits, maintenance, support, early, damage, transfers, renewals, payments, reconciliation };
   const resources = [...Object.values(sources), legacyTransfers];
   const loading = resources.some(resource => resource.loading);
   const refreshing = resources.some(resource => resource.refreshing);
@@ -152,7 +170,7 @@ export function ManagerReviewInbox() {
   const visiblePage = Math.min(page, Math.max(1, Math.ceil(matching.length / limit)));
   const columns: StaffColumn<Task>[] = [
     { key: 'type', label: 'Loại hồ sơ', cell: task => <><strong>{titles[task.queue]}</strong><CopyRecordCode value={task.reference} /></> },
-    { key: 'customer', label: 'Khách hàng / Kho', cell: task => <><strong>{task.person || task.unit || '—'}</strong>{task.person && task.unit && <small>{task.unit}</small>}</> },
+    { key: 'customer', label: 'Khách hàng / Kho', cell: task => <><strong>{task.person || task.unit || '—'}</strong>{task.person && task.unit && <small>{task.unit}</small>}<small>{first(task.row, 'facility.name', 'reservation.facility.name')}</small></> },
     { key: 'created', label: 'Ngày tạo', sort: { direction: oldest ? 'ascending' : 'descending', toggle: () => update('sort', oldest ? '' : 'oldest') }, cell: task => date(task.created, true) },
     { key: 'priority', label: 'Ưu tiên', optional: true, cell: task => ['HIGH', 'MEDIUM', 'LOW'].includes(first(task.row, 'priority')) ? label(task.row.priority) : '—' },
     { key: 'status', label: 'Trạng thái', cell: task => <Status value={task.status} text={task.statusText} /> },

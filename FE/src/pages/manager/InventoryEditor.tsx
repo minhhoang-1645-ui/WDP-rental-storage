@@ -3,7 +3,7 @@ import { useId, useRef, useState, type FormEvent } from 'react';
 
 import { useAuth } from '../../auth/auth-context';
 import { Modal, LoadState } from '../../components/manager/PortalUi';
-import { first, label, money, rows, type Row } from '../../components/manager/portal-data';
+import { first, label, money, object, rows, type Row } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
 
@@ -24,6 +24,8 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
   const [daily, setDaily] = useState(record?.allowDailyRental === true);
   const selectedType = rows(options.data?.items).find(row => row.id === storageTypeId);
+  const facilityRanges = rows(options.data?.pricingRanges).filter(row => row.facilityId === facilityId);
+  const priceRange = object((facilityRanges.find(row => record && row.storageTypeId === record.id) ?? facilityRanges.find(row => row.storageTypeId == null))?.value);
   const locations = useApiResource<{ floors: string[]; zones: string[] }>(!type && !locked ? '/manager/unit-locations' : null, user?.id ?? '');
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,6 +64,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
           <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
           {field('widthCm', 'Rộng (cm)', true)}{field('lengthCm', 'Dài (cm)', true)}{field('heightCm', 'Cao (cm)', true)}
           {field('monthlyRate', 'Giá tháng (VND)', true, true, 9999999999)}
+          {typeof priceRange.min === 'number' && typeof priceRange.max === 'number' && <small>Khung giá BOM: {money(priceRange.min)} – {money(priceRange.max)} / tháng.</small>}
           <label><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
           {daily && field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, true, 30)}
           <label className="field-label">URL ảnh (tùy chọn)<input name="image" defaultValue={first(record ?? {}, 'image')} maxLength={2000} /></label>

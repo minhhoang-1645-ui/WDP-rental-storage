@@ -71,7 +71,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const managerTable = user?.role === 'FACILITY_MANAGER' && isManagerTaskResource(resource) ? resource : null;
   const limit = internalPageSize(params);
   const search = params.get("search") ?? "";
-  const reviewOnly = user?.role === 'FACILITY_MANAGER' && isManagerReviewWorkflow(resource);
+  const reviewOnly = user?.role === 'FACILITY_MANAGER' && isManagerReviewWorkflow(resource) && params.get('view') === 'decision';
   const staffTransferList = user?.role === 'FACILITY_STAFF' && resource === 'transfers';
   const statuses = staffTransferList ? ['APPROVED', 'COMPLETED'] : config?.statuses ?? [];
   const suppliedStatus = staffAppointments && appointmentView === 'completed' ? 'COMPLETED' : params.get('status') ?? '';
@@ -358,7 +358,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
           ? <Link to={`/staff/maintenance/${encodeURIComponent(first(createdMaintenance.row, 'id'))}`}>Mở phiếu được giao</Link>
           : first(createdMaintenance.row, 'assignedStaff.id') ? 'Đã có người phụ trách.' : 'Chờ phân công.'}
       </div>}
-      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Báo vấn đề ở kho trống. Với kho đang thuê, xử lý yêu cầu hỗ trợ và chuyển kho khi cần. Sau khi sửa, gửi kết quả để quản lý nghiệm thu.</p></details>}
+      {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Báo sự cố tại cơ sở được cấp quyền. Chờ quản lý phân công trước khi sửa và gửi kết quả để nghiệm thu.</p></details>}
       {managerTable ? <ManagerTaskTable title={config.title} columns={managerResourceColumns(managerTable, {
         direction: oldest ? 'ascending' : 'descending', toggle: toggleSettlementSort,
       })} items={visible}

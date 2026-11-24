@@ -16,7 +16,6 @@ import { snapshotHash, validateSignature } from '../contracts/signature.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 const statuses = ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] as const;
-const positiveStoredBalance = { balance: { gt: 0 } } satisfies Prisma.StoredItemWhereInput;
 const renewalAwaitingCurrentInvoice = (today = businessToday()): Prisma.RenewalRequestWhereInput => ({
   status: 'COMPLETED', paymentPlan: 'PAY_MONTHLY', previousEndDate: { lte: today }, requestedEndDate: { gt: today },
   invoices: { none: { type: 'RENEWAL', status: 'PAID', balanceDue: 0n, billingPeriodStart: { lte: today }, billingPeriodEnd: { gt: today } } },
@@ -24,8 +23,6 @@ const renewalAwaitingCurrentInvoice = (today = businessToday()): Prisma.RenewalR
 const staffTransferReady = (): Prisma.TransferRequestWhereInput => ({ OR: [
   { status: 'COMPLETED' },
   { commercialSnapshot: { equals: Prisma.DbNull } },
-  { customerAcceptedAt: { not: null }, commercialSignedSnapshot: { not: Prisma.DbNull },
-    reservation: { invoices: { none: transferDebtWhere() }, renewals: { none: renewalAwaitingCurrentInvoice() } } },
 ] });
 
 @Injectable()
@@ -158,8 +155,7 @@ export class TransfersService {
     if (!transfer) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho.');
     await assertTaskFacility(this.prisma,actor,{reservationId:transfer.reservationId});
     const start = this.today(), end = transfer.rentalContract.endDate;
-    const sourceType = query.includeOtherTypes === 'true' ? await this.prisma.storageType.findUniqueOrThrow({ where: { id: transfer.fromStorageUnit.storageTypeId }, select: { facilityId: true } }) : null;
-    const where = { ...(query.includeOtherTypes === 'true' ? { storageType: { facilityId: sourceType!.facilityId } } : { storageTypeId: transfer.fromStorageUnit.storageTypeId }), id: { not: transfer.fromStorageUnitId } };
+    const where = { storageTypeId: transfer.fromStorageUnit.storageTypeId, id: { not: transfer.fromStorageUnitId } };
     const total = await this.prisma.storageUnit.count({ where });
     const units = await this.prisma.storageUnit.findMany({
       where, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
@@ -193,15 +189,10 @@ export class TransfersService {
   async getForStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.transferRequest.findFirst({
       where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id,reservation:reservationScope(actor), AND: [staffTransferReady()] },
-      include: {
-        ...this.include(),
-        rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true,
-          _count: { select: { storedItems: { where: positiveStoredBalance } } },
-        } },
-      },
+      include: this.include(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy lệnh chuyển kho dành cho Staff.');
-    return { ...this.toTransfer(record, { staffId: actor.id }), storedItemCount: record.status === 'APPROVED' ? record.rentalContract._count?.storedItems ?? null : null };
+    return this.toTransfer(record, { staffId: actor.id });
   }
 
   async assign(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -237,23 +228,13 @@ export class TransfersService {
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
       if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromReservationUnit?.releasedAt || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
       const staffId = requestedStaffId ?? current.assignedStaffUserId ?? undefined;
-      if(staffId) await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
+      if(!staffId) throw new BadRequestException('Chọn nhân viên thực hiện chuyển kho trước khi duyệt.');
+      await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
       if (destination.id === current.fromStorageUnitId) throw new ConflictException('Unit đích phải khác unit nguồn.');
-      const differentType = destination.storageTypeId !== current.fromStorageUnit.storageTypeId;
-      let commercialSnapshot: Prisma.InputJsonValue | undefined;
-      if (differentType) {
-        if (!this.commercial) throw new ConflictException('Chưa bật lập phụ lục đổi loại.');
-        const sourceType = await tx.storageType.findUniqueOrThrow({ where: { id: current.fromStorageUnit.storageTypeId } });
-        if (sourceType.facilityId !== destination.storageType.facilityId) throw new ConflictException('Kho đích phải cùng cơ sở.');
-        const snapshot = await this.commercial.prepare(tx, current, destination);
-        if (input.commercialReviewHash !== undefined && input.commercialReviewHash !== this.commercialReviewHash(snapshot)) {
-          throw new ConflictException('Đối chiếu tài chính đã thay đổi. Kiểm tra lại phương án trước khi duyệt.');
-        }
-        commercialSnapshot = snapshot as unknown as Prisma.InputJsonValue;
-      }
+      if (destination.storageTypeId !== current.fromStorageUnit.storageTypeId) throw new ConflictException('Chỉ chuyển sang kho cùng loại tại cùng cơ sở.');
       const start = this.today(); const end = current.rentalContract.endDate;
       if (end <= start) throw new ConflictException('Contract không còn khoảng thuê tương lai để chuyển unit.');
       const conflicting = await tx.reservationUnit.count({ where: { storageUnitId: destination.id, releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start } } });
@@ -261,7 +242,8 @@ export class TransfersService {
       const targetAllocation = await tx.reservationUnit.create({ data: { reservationId: current.reservationId, storageUnitId: destination.id, plannedStartDate: start, plannedEndDate: end } });
       const reserved = await tx.storageUnit.updateMany({ where: { id: destination.id, status: 'AVAILABLE' }, data: { status: 'RESERVED' } });
       if (reserved.count !== 1) throw new ConflictException('Unit đích vừa được sử dụng bởi thao tác khác.');
-      const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'APPROVED', toStorageUnitId: destination.id, toReservationUnitId: targetAllocation.id, approvedByUserId: actor.id, assignedStaffUserId: staffId, approvedAt: new Date(), ...(commercialSnapshot ? { commercialSnapshot } : {}) }, include: this.include() });
+      await recordAssignment(tx,actor,'transfers',current.id,current.assignedStaffUserId,staffId);
+      const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'APPROVED', toStorageUnitId: destination.id, toReservationUnitId: targetAllocation.id, approvedByUserId: actor.id, assignedStaffUserId: staffId, approvedAt: new Date() }, include: this.include() });
       return this.toTransfer(updated);
     }, 'Không thể duyệt Transfer do xung đột đồng thời.');
   }
@@ -283,6 +265,34 @@ export class TransfersService {
     }, 'Không thể từ chối Transfer do xung đột đồng thời.');
   }
 
+  async reportStaffProblem(id: string, actor: PublicUser, value: unknown) {
+    const note = typeof value === 'string' ? value.trim() : '';
+    if (note.length < 3 || note.length > 2000) throw new BadRequestException('Mô tả vướng mắc từ 3–2000 ký tự.');
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${id} OR "transferCode" = ${id} FOR UPDATE`);
+      const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
+      if (!current) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
+      await assertTaskExecution(tx, actor, current.assignedStaffUserId, { reservationId: current.reservationId });
+      if (current.status !== 'APPROVED' || !current.toStorageUnitId || current.commercialSnapshot) throw new ConflictException('Lệnh chuyển kho hiện không thể ghi nhận vướng mắc.');
+      await assertTaskFacility(tx, actor, { storageUnitId: current.toStorageUnitId });
+      const report = this.handoverData(current.handoverReport);
+      const problems = Array.isArray(report.problems) ? report.problems : [];
+      const latest = problems.at(-1);
+      if (latest && typeof latest === 'object' && !Array.isArray(latest) && latest.note === note && latest.staffId === actor.id) {
+        return this.toTransfer(current, { staffId: actor.id });
+      }
+      if (problems.length >= 50) throw new ConflictException('Đã đạt giới hạn ghi nhận. Hãy liên hệ quản lý về hồ sơ này.');
+      const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { handoverReport: {
+        ...report, problems: [...problems, { note, staffId: actor.id, staffName: actor.fullName, reportedAt: new Date().toISOString() }],
+      } as Prisma.InputJsonObject }, include: this.include() });
+      return this.toTransfer(updated, { staffId: actor.id });
+    }, 'Không thể lưu vướng mắc do hồ sơ vừa thay đổi.');
+  }
+
+  private handoverData(value: Prisma.JsonValue | null) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
   async complete(id: string, actor: PublicUser, input: Record<string, unknown> = {}) {
     return this.serializable(async (tx) => {
       const identity = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, select: { id: true } });
@@ -298,22 +308,23 @@ export class TransfersService {
         return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }), { staffId: actor.id });
       }
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
+      if (current.commercialSnapshot || current.fromStorageUnit.storageTypeId !== current.toStorageUnit?.storageTypeId) throw new ConflictException('Chỉ bàn giao chuyển kho cùng loại tại đây.');
+      if (input.destinationReady !== true) throw new BadRequestException('Cần xác nhận kho đích đã sẵn sàng.');
       const handover = transferHandover(input);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RentalContract" WHERE "id" = ${current.rentalContractId} FOR UPDATE`);
 
       // Personal-item records remain historical and do not gate a physical unit transfer.
-      if (current.commercialSnapshot) {
-        if (!this.commercial) throw new ConflictException('Chưa sẵn sàng áp dụng phụ lục.');
-        await this.commercial.apply(tx, current);
-      }
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" IN (${current.fromStorageUnitId}, ${current.toStorageUnitId}) FOR UPDATE`);
       if (current.fromStorageUnit.status !== 'OCCUPIED' || current.toStorageUnit?.status !== 'RESERVED') throw new ConflictException('Trạng thái vật lý của unit đã thay đổi.');
+      if (await tx.maintenanceRequest.count({ where: { storageUnitId: current.toStorageUnitId, activeKey: { not: null } } })) {
+        throw new ConflictException('Kho đích có hồ sơ bảo trì đang mở. Báo vướng mắc cho quản lý trước khi bàn giao.');
+      }
       const now = new Date();
       await tx.rentalContract.update({ where: { id: current.rentalContractId }, data: { reservationUnitId: current.toReservationUnitId } });
       await tx.reservationUnit.update({ where: { id: current.fromReservationUnitId }, data: { releasedAt: now, actualVacatedAt: now } });
       await tx.storageUnit.update({ where: { id: current.fromStorageUnitId }, data: { status: 'MAINTENANCE' } });
       await tx.storageUnit.update({ where: { id: current.toStorageUnitId }, data: { status: 'OCCUPIED' } });
-      const completed = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now, handoverReport: { ...handover, recordedByUserId: actor.id, recordedByName: actor.fullName, recordedAt: now.toISOString() } }, include: this.include() });
+      const completed = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now, handoverReport: { ...this.handoverData(current.handoverReport), ...handover, recordedByUserId: actor.id, recordedByName: actor.fullName, recordedAt: now.toISOString() } as Prisma.InputJsonObject }, include: this.include() });
       await this.resolveLinkedTransferSupport(tx, completed, actor);
       await this.ensureSourceMaintenance(tx, completed, actor);
       return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }), { staffId: actor.id });
@@ -351,7 +362,7 @@ export class TransfersService {
   }
 
   private include(includeAssignee = true): Prisma.TransferRequestInclude { return {
-    reservation: { select: { id: true, reservationCode: true, startDate: true, endDate: true, quoteSnapshot: true, customer: { select: { fullName: true } },
+    reservation: { select: { id: true, reservationCode: true, startDate: true, endDate: true, facility: { select: { id: true, name: true } }, quoteSnapshot: true, customer: { select: { fullName: true } },
       invoices: { where: transferDebtWhere(), select: { id: true, invoiceCode: true, balanceDue: true }, orderBy: { dueAt: 'asc' } },
       renewals: { where: renewalAwaitingCurrentInvoice(), select: { id: true }, take: 1 } } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true } },
@@ -369,7 +380,9 @@ export class TransfersService {
       dueInvoices: (record.reservation.invoices ?? []).map((invoice: { id: string; invoiceCode: string; balanceDue: bigint }) => ({ id: invoice.id, code: invoice.invoiceCode, balanceDue: Number(invoice.balanceDue) })),
       pendingRenewalInvoice: Boolean(record.reservation.renewals?.length),
     } : null;
-    return { id: record.id, transferCode: record.transferCode, status: record.status, commercialPayment: staffId ? null : commercialPayment, transferRequestedSchedule: transferProposalView(support), rejectionReason: record.rejectionReason ?? null, handoverReport: record.handoverReport ?? null, ...(customer ? {} : { assignedStaff: record.assignedStaff }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId)), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId)) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
+    const { problems: _problems, ...customerReport } = this.handoverData(record.handoverReport);
+    const handoverReport = customer ? Object.keys(customerReport).length ? customerReport : null : record.handoverReport ?? null;
+    return { ...(staffId && record.reservation.facility ? { facility: record.reservation.facility } : {}), id: record.id, transferCode: record.transferCode, status: record.status, commercialPayment: staffId ? null : commercialPayment, transferRequestedSchedule: transferProposalView(support), rejectionReason: record.rejectionReason ?? null, handoverReport, ...(customer ? {} : { assignedStaff: record.assignedStaff }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId)), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId)) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
   private unit(unit: any, includeLocation = false) { return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType, ...(includeLocation ? { floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position } : {}) }; }
   private text(value: unknown, label: string) { if (typeof value !== 'string' || !value.trim()) throw new BadRequestException(`${label} là bắt buộc.`); return value.trim(); }
   private integer(value: unknown, fallback: number, max: number, label: string) { if (value === undefined) return fallback; const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) throw new BadRequestException(`${label} không hợp lệ.`); return parsed; }

@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { prepaidDiscounts } from '../pricing/pricing.service.js';
 export const policyDefinitions = {
  reservationHoldMinutes: { title:'Thời hạn giữ đơn chưa thanh toán',unit:'phút',defaultValue:1440,min:15,max:10080,description:'Áp dụng cho đơn xác nhận mới; giữ nguyên hạn của đơn đã tạo.' },
  handoverLeadDays: { title:'Nhận chìa khóa trước ngày thuê',unit:'ngày',defaultValue:3,min:0,max:7,description:'Không thay đổi lịch đã đặt; chỉ kích hoạt hợp đồng từ ngày bắt đầu thuê.' },
@@ -27,18 +28,21 @@ export class BusinessPolicyService {
  async list(actor:PublicUser) {
   await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
   const legacy=await this.prisma.businessPolicy.findMany();
-  const history=await this.prisma.businessRule.findMany({where:{key:{in:Object.keys(policyDefinitions)}},orderBy:{version:'desc'}});
+  const history=await this.prisma.businessRule.findMany({where:{key:{in:Object.keys(policyDefinitions)},facilityId:null,storageTypeId:null},orderBy:{version:'desc'}});
+  const now=new Date();
+  const authors=await this.prisma.user.findMany({where:{id:{in:[...new Set(history.map(row=>row.createdById))]}},select:{id:true,fullName:true}});
   const items=await Promise.all(Object.entries(policyDefinitions).map(async([key,d])=>{
    const versions=history.filter(r=>r.key===key);
    const row=legacy.find(r=>r.key===key);
-   return {key,...d,value:await this.value(key as keyof typeof policyDefinitions),updatedAt:versions[0]?.createdAt.toISOString()??row?.updatedAt.toISOString()??null,version:versions[0]?.version??0,history:versions};
+   const effective=versions.find(v=>v.effectiveFrom<=now&&(!v.effectiveTo||v.effectiveTo>now));
+   return {key,...d,value:await this.value(key as keyof typeof policyDefinitions,this.prisma,now),updatedAt:versions[0]?.createdAt.toISOString()??row?.updatedAt.toISOString()??null,version:versions[0]?.version??0,effectiveVersion:effective?.version??0,history:versions.map(v=>({...v,author:authors.find(a=>a.id===v.createdById)?.fullName??null,status:v.effectiveFrom>now?'SCHEDULED':v.effectiveTo&&v.effectiveTo<=now?'HISTORICAL':'EFFECTIVE'}))};
   }));
-  return {items};
+  return {items,commercialRules:{prepaidDiscounts:Object.entries(prepaidDiscounts).map(([months,percent])=>({months:Number(months),percent})),depositDescription:'Tủ lưu trữ: không cọc; kho nhỏ thuê ngắn ngày: bằng tiền thuê; các trường hợp còn lại: một tháng tiền thuê.'}};
  }
  async save(key:string,body:Record<string,unknown>,actor:PublicUser) {
   const value=validatePolicy(key,body.value);
   if(!Object.hasOwn(body,'expectedUpdatedAt')||Object.keys(body).some(k=>!['value','expectedUpdatedAt','effectiveFrom'].includes(k)))throw new BadRequestException('Cần gửi giá trị và phiên bản đã xem.');
-  if(body.effectiveFrom!==undefined&&typeof body.effectiveFrom!=='string')throw new BadRequestException('Ngày áp dụng không hợp lệ.');
+  if(body.effectiveFrom!==undefined&&(typeof body.effectiveFrom!=='string'||!/(?:Z|[+-]\d{2}:\d{2})$/.test(body.effectiveFrom)))throw new BadRequestException('Ngày áp dụng cần có múi giờ rõ ràng.');
   const effectiveFrom=body.effectiveFrom===undefined?new Date():new Date(body.effectiveFrom as string);
   if(!Number.isFinite(effectiveFrom.getTime())||effectiveFrom.getTime()<Date.now()-60000)throw new BadRequestException('Ngày áp dụng phải từ hiện tại trở đi.');
   return this.prisma.$transaction(async tx=>{

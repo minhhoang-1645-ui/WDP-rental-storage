@@ -3,6 +3,7 @@ import { assertFacility } from '../facility-access/facility-access.service.js';
 import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { facilityScope, assertTaskFacility } from '../facility-access/task-access.js';
 import { assertAcceptingBookings } from '../facilities/facility-booking.js';
+import { assertMonthlyRange } from '../operations/operations.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -797,6 +798,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const storageType = knownStorageType ?? await db.storageType.findUnique({ where: { id: draft.productId } });
     if (!storageType) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
     await assertAcceptingBookings(db, storageType.id, true);
+    if (storageType.monthlyRate !== null) await assertMonthlyRange(db, storageType.facilityId, storageType.id, Number(storageType.monthlyRate));
     const selections = draft.serviceSelections ?? [];
     const services = await pricedServices(db,selections.map(item=>item.serviceId),storageType.facilityId);
     return this.pricing.calculate(storageType, {

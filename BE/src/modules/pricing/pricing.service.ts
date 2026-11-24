@@ -14,6 +14,7 @@ import type {
 } from './pricing.types.js';
 import { localizeService } from '../additional-services/additional-service-labels.js';
 import { businessDate } from '../../business-date.js';
+import { assertMonthlyRange } from '../operations/operations.service.js';
 
 type PricedStorageType = {
   id: string;
@@ -36,7 +37,7 @@ type PricedService = {
 };
 
 const paymentPlans = ['PAY_MONTHLY', 'PREPAID'] as const;
-const prepaidDiscounts: Record<number, number> = { 3: 5, 6: 10, 12: 15 };
+export const prepaidDiscounts: Readonly<Record<number, number>> = { 3: 5, 6: 10, 12: 15 };
 
 @Injectable()
 export class PricingService {
@@ -53,6 +54,7 @@ export class PricingService {
         message: 'Không tìm thấy loại kho.',
       });
     await assertAcceptingBookings(this.prisma, storageType.id);
+    if (storageType.monthlyRate !== null) await assertMonthlyRange(this.prisma, storageType.facilityId, storageType.id, Number(storageType.monthlyRate));
     const services = await this.loadServices(
       parsed.serviceSelections ?? [],
       storageType.facilityId,

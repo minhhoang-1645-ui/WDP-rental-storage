@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertAssignmentAccess } from './facility-access.service.js';
-import { assertTaskExecution, assertTaskFacility, taskFacilityId, staffContractScope } from './task-access.js';
+import { assertTaskExecution, assertTaskFacility, taskFacilityId, staffContractScope, facilityScope } from './task-access.js';
 import { StaffDirectoryController } from '../auth/staff-directory.controller.js';
 
 const actor = (id: string, role: PublicUser['role']) => ({ id, role, fullName:id, email:id+'@example.test', phone:'' });
@@ -20,7 +20,7 @@ function repository() {
       findMany: vi.fn().mockResolvedValue([staff]),
     },
     facilityAccess: {
-      findMany: vi.fn(async ({where}:any)=>grants.filter(g=>g.userId===where.userId&&g.revokedAt===where.revokedAt)),
+      findMany: vi.fn(async ({where}:any)=>grants.filter(g=>g.userId===where.userId&&g.revokedAt===where.revokedAt&&(!where.facilityId||g.facilityId===where.facilityId))),
       findFirst: vi.fn(async ({where}:any)=>grants.find(g=>g.userId===where.userId&&g.facilityId===where.facilityId&&g.revokedAt===where.revokedAt)??null),
     },
     reservation: {findUnique:vi.fn(async ({where}:any)=>({facilityId:where.id==='reservation-b'?'B':'A'}))},
@@ -62,6 +62,15 @@ describe('Facility task authorization (offline, no database connection)',()=>{
     await expect(assertAssignmentAccess(db as never,manager,staff.id,{rentalContractId:'contract-a'})).resolves.toMatchObject({id:staff.id});
     await expect(assertAssignmentAccess(db as never,manager,'staff-b',{rentalContractId:'contract-a'})).rejects.toBeInstanceOf(ForbiddenException);
     await expect(assertAssignmentAccess(db as never,manager,'staff-b',{rentalContractId:'contract-b'})).rejects.toBeInstanceOf(ForbiddenException);
+  });
+  it('narrows reads and writes to the selected authorized facility', async()=>{
+    const {db,grants}=repository();
+    grants.push({userId:manager.id,facilityId:'B',revokedAt:null});
+    const selected={...manager,selectedFacilityId:'A'};
+    expect(facilityScope(selected)).toMatchObject({id:'A',facilityAccess:{some:{userId:manager.id,revokedAt:null}}});
+    await expect(assertTaskFacility(db as never,selected,{reservationId:'reservation-a'})).resolves.toBeUndefined();
+    await expect(assertTaskFacility(db as never,selected,{reservationId:'reservation-b'})).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(assertTaskFacility(db as never,{...selected,selectedFacilityId:'ungranted'},{reservationId:'reservation-a'})).rejects.toBeInstanceOf(ForbiddenException);
   });
   it('fails closed for a stale role or inactive selected Staff',async()=>{
     const {db,users}=repository();

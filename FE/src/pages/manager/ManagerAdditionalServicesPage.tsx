@@ -1,5 +1,5 @@
 import { useListPagination } from '../../components/workspace/useListPagination';
-import { serviceUnits, servicePriceBasis } from '../../utils/service-units';
+import { servicePriceBasis } from '../../utils/service-units';
 import { managerStorageLabels } from '../../utils/manager-sections';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -24,7 +24,7 @@ export function ManagerAdditionalServicesPage() {
   const refresh = () => { resource.refresh(); inventory.refresh(); };
   const { items, pagination } = useListPagination(resource.data ?? []);
   return <section><Link className="booking-back" to={operationPath(user?.role, '/manager/catalog')}>{managerStorageLabels.catalog.title}</Link>
-    <PageHeader title="Dịch vụ bổ sung"><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Tạo dịch vụ</button></PageHeader>
+    <PageHeader title="Dịch vụ tại cơ sở"><button className="button-secondary" disabled={resource.loading} onClick={refresh}>Làm mới</button><button className="button-primary" onClick={() => setActive('new')}>Thêm dịch vụ từ danh mục</button></PageHeader>
     {notice && <div className="portal-success" role="status">{notice}</div>}
     <RefreshStatus active={resource.refreshing || inventory.refreshing} />
     <LoadState loading={resource.loading} error={resource.error || inventory.error} retry={refresh}
@@ -61,9 +61,6 @@ function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | n
   const catalog=useApiResource<AdditionalService[]>(item?null:'/manager/additional-services/catalog',user?.id);
   const [catalogId,setCatalogId]=useState('');
   const catalogItem=catalog.data?.find(row=>row.id===catalogId);
-  const [kind, setKind] = useState(item?.kind ?? 'PURCHASE');
-  const [physicalUnit, setPhysicalUnit] = useState(item?.physicalUnit ?? '');
-  const [billingUnit, setBillingUnit] = useState(item?.billingUnit ?? 'ONE_TIME');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
@@ -74,32 +71,23 @@ function ServiceForm({ item, onClose, onSuccess }: { item: AdditionalService | n
     lock.current = true; setBusy(true); setError('');
     try {
       const target=item??catalogItem;
-      await mutate(`/manager/additional-services${target?'/'+encodeURIComponent(target.id)+(item?'':'/offerings'):''}`,item?'PATCH':'POST',
-        target?{facilityId:item?.facilityId??fieldText('facilityId'),unitPrice:Number(data.get('unitPrice')),isActive:data.get('isActive')==='on'}
-        :{facilityId:fieldText('facilityId'),code:fieldText('code'),name:fieldText('name'),description:fieldText('description'),kind,billingUnit,physicalUnit:physicalUnit||undefined,unitPrice:Number(data.get('unitPrice')),isActive:data.get('isActive')==='on'}); onSuccess();
+      if (!target) throw new Error('Chọn dịch vụ trong danh mục chung.');
+      await mutate(`/manager/additional-services/${encodeURIComponent(target.id)}${item?'':'/offerings'}`,item?'PATCH':'POST',
+        {facilityId:item?.facilityId??fieldText('facilityId'),unitPrice:Number(data.get('unitPrice')),isActive:data.get('isActive')==='on'});
       onSuccess();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không lưu được dịch vụ.'); }
     finally { lock.current = false; setBusy(false); }
   };
-  return <Modal title={item ? 'Chỉnh sửa dịch vụ' : 'Tạo dịch vụ'} onClose={onClose} busy={busy}><form className="portal-form" onSubmit={submit}>
+  return <Modal title={item ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ từ danh mục'} onClose={onClose} busy={busy}><form className="portal-form" onSubmit={submit}>
     {error && <div className="booking-alert is-error" role="alert">{error}</div>}
     {!item && <LoadState loading={facilities.loading} error={facilities.error} retry={facilities.refresh} />}
     <fieldset disabled={busy || (!item && (!facilities.data || choices.length === 0))}>
       {!item && facilities.data && <label className="field-label">Cơ sở<select name="facilityId" required defaultValue={choices.length === 1 ? choices[0].id : ''}><option value="">Chọn cơ sở được cấp quyền</option>{choices.map(facility => <option key={facility.id} value={facility.id}>{facility.name}</option>)}</select>{choices.length === 0 && <small>Chưa có quyền tại cơ sở. Liên hệ quản trị viên để được cấp quyền.</small>}</label>}
-      {!item && <label className="field-label">Danh mục chung<select value={catalogId} onChange={event=>setCatalogId(event.target.value)}><option value="">Tạo mặt hàng mới</option>{catalog.data?.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>}
+      {!item && <><LoadState loading={catalog.loading} error={catalog.error} retry={catalog.refresh}/><label className="field-label">Danh mục chung<select required value={catalogId} onChange={event=>setCatalogId(event.target.value)}><option value="">Chọn dịch vụ có sẵn</option>{catalog.data?.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label></>}
       {catalogItem&&<p>{catalogItem.name} · {catalogItem.code}. Giá và tồn chỉ áp dụng tại cơ sở đã chọn.</p>}
-      {!item&&!catalogItem&&<fieldset>
-      <label className="field-label">Mã dịch vụ<input name="code" required minLength={2} maxLength={50} pattern="[A-Za-z0-9_\-]{2,50}" defaultValue="" /></label>
-      <label className="field-label">Tên dịch vụ<input name="name" required minLength={2} maxLength={120} defaultValue="" /></label>
-      <label className="field-label">Mô tả<textarea name="description" maxLength={1000} defaultValue="" /></label>
-      <label className="field-label">Loại<select value={kind} disabled={Boolean(item)} onChange={event => { const value = event.target.value as AdditionalService['kind']; setKind(value); setBillingUnit(value === 'PURCHASE' ? 'ONE_TIME' : 'DAY'); }}><option value="PURCHASE">Mua</option><option value="RENTAL">Thuê</option></select></label>
-      <label className="field-label">Đơn vị vật lý<select aria-label="Đơn vị vật lý" required={!item} value={physicalUnit} disabled={false} onChange={event => setPhysicalUnit(event.target.value)}><option value="">Chưa thiết lập</option>{serviceUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>
-      <small>Đơn vị đã thiết lập được giữ cố định để không đổi nghĩa số lượng tồn. Dịch vụ cũ chưa có đơn vị cần được đối chiếu thực tế trước khi chọn.</small>
-      <label className="field-label">Chu kỳ tính tiền<select value={billingUnit} onChange={event => setBillingUnit(event.target.value as AdditionalService['billingUnit'])}>{kind === 'PURCHASE' ? <option value="ONE_TIME">Một lần</option> : <><option value="DAY">Ngày</option><option value="MONTH">Tháng</option></>}</select></label>
-      </fieldset>}
       <label className="field-label">Giá đã duyệt (VND)<input name="unitPrice" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1} required defaultValue={item?.unitPrice ?? ''} /></label>
       <label className="portal-checkbox"><input type="checkbox" name="isActive" defaultChecked={item?.isActive ?? true} />Đang hoạt động</label>
-      <button type="submit" className="button-primary">{busy ? 'Đang lưu…' : 'Lưu dịch vụ'}</button>
+      <button type="submit" className="button-primary" disabled={busy || (!item && !catalogItem)}>{busy ? 'Đang lưu…' : 'Lưu dịch vụ'}</button>
     </fieldset>
   </form></Modal>;
 }

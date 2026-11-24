@@ -1,4 +1,5 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
+import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, assertTaskExecution, reservationScope } from '../facility-access/task-access.js';
 import { Optional } from '@nestjs/common';
@@ -234,7 +235,9 @@ export class ReturnsService {
       const targetEnd = this.isoDate(targets[0].endDate)!;
       const periodCloseout = !legacy && approval?.policy === PERIOD_CLOSEOUT;
       if (periodCloseout && approval.approvedEndDate !== targetEnd) throw new ConflictException('Hạn thuê đã thay đổi. Cần quản lý duyệt lại đề nghị trả sớm.');
-      if (periodCloseout && input.accessRevoked !== true) throw new BadRequestException('Cần xác nhận đã thu hồi chìa khóa, thẻ hoặc quyền truy cập trước khi nhận kho.');
+      if (input.unitsEmpty !== true || input.accessRevoked !== true) {
+        throw new BadRequestException('Cần kiểm tra kho đã trống và xác nhận thu hồi chìa khóa, thẻ hoặc quyền truy cập trước khi nhận kho.');
+      }
       if (!periodCloseout) this.assertDebt(current.reservation.invoices, contractIds, allContractIds, false, legacy);
       this.assertRenewalsSettled(current.reservation.renewals, contractIds, periodCloseout);
       await this.assertNoConflictingWork(tx, contractIds);
@@ -280,23 +283,33 @@ export class ReturnsService {
       if (remaining._max.endDate && +remaining._max.endDate !== +current.reservation.endDate) {
         await tx.reservation.update({ where: { id: current.reservationId }, data: { endDate: remaining._max.endDate } });
       }
-      const passUnitIds = current.inspections.filter((inspection) => inspection.result === 'PASS').map((inspection) => inspection.storageUnitId);
       const issueUnitIds = current.inspections.filter((inspection) => inspection.result === 'ISSUE_FOUND').map((inspection) => inspection.storageUnitId);
+      const openRepairs = await tx.maintenanceRequest.findMany({
+        where: { activeKey: { in: unitIds.map(id => `MAINTENANCE:${id}`) } },
+        select: { id: true, storageUnitId: true, returnInspectionId: true },
+      });
+      const repairsByUnit = new Map(openRepairs.map(repair => [repair.storageUnitId, repair]));
+      const blockedUnits = new Set([...issueUnitIds, ...repairsByUnit.keys()]);
+      const passUnitIds = unitIds.filter(id => !blockedUnits.has(id));
       const availableUnits = await tx.storageUnit.updateMany({
         where: { id: { in: passUnitIds }, status: 'OCCUPIED' },
         data: { status: 'AVAILABLE' },
       });
       const maintenanceUnits = await tx.storageUnit.updateMany({
-        where: { id: { in: issueUnitIds }, status: 'OCCUPIED' },
+        where: { id: { in: [...blockedUnits] }, status: 'OCCUPIED' },
         data: { status: 'MAINTENANCE' },
       });
-      if (availableUnits.count !== passUnitIds.length || maintenanceUnits.count !== issueUnitIds.length) throw new ConflictException('Không thể cập nhật đầy đủ trạng thái vật lý StorageUnit.');
+      if (availableUnits.count !== passUnitIds.length || maintenanceUnits.count !== blockedUnits.size) throw new ConflictException('Không thể cập nhật đầy đủ trạng thái vật lý StorageUnit.');
 
       const issueInspections = current.inspections.filter((inspection) => inspection.result === 'ISSUE_FOUND');
-      if (issueInspections.length && await tx.maintenanceRequest.findFirst({ where: {
-        activeKey: { in: issueUnitIds.map(id => `MAINTENANCE:${id}`) },
-      }, select: { id: true } })) throw new ConflictException('Kho đã có phiếu bảo trì đang xử lý. Cần quản lý kiểm tra trước khi nhận trả.');
       for (const [index, inspection] of issueInspections.entries()) {
+        const openRepair = repairsByUnit.get(inspection.storageUnitId);
+        if (openRepair) {
+          if (!openRepair.returnInspectionId) {
+            await tx.maintenanceRequest.update({ where: { id: openRepair.id }, data: { returnInspectionId: inspection.id } });
+          }
+          continue;
+        }
         await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: `${current.returnCode}-MNT${String(index + 1).padStart(2, '0')}`,
@@ -638,6 +651,7 @@ export class ReturnsService {
       },
       reservation: { include: {
         supportRequests: this.eligibilityInclude().supportRequests,
+        facility: { select: { id: true, name: true } },
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
         units: { where: { releasedAt: null }, select: { id: true, storageUnitId: true, releasedAt: true, plannedStartDate: true, plannedEndDate: true } },
@@ -737,7 +751,8 @@ export class ReturnsService {
         rentalAmount: closeout.rentalAmount, serviceAmount: closeout.serviceAmount, penaltyAmount: closeout.penaltyAmount,
       },
       rentRefund: mode === 'FACILITY_STAFF' || !record.physicallyReturnedAt ? null : rentRefundView(record),
-      returnCode: record.returnCode, inventory: { remainingItemTypes: contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) },
+      ...(mode !== 'STORAGE_CUSTOMER' && record.reservation.facility ? { facility: record.reservation.facility } : {}),
+      returnCode: record.returnCode, ...(mode === 'FACILITY_STAFF' ? {} : { inventory: { remainingItemTypes: contracts.reduce((total: number, contract: any) => total + (contract.storedItems?.length ?? 0), 0), pendingMovements: contracts.reduce((total: number, contract: any) => total + (contract.stockMovements?.length ?? 0), 0) } }),
       status: record.status,
       requestedAt: record.requestedAt.toISOString(),
       inspectionStartedAt: record.inspectionStartedAt?.toISOString() ?? null,
@@ -824,7 +839,7 @@ export class ReturnsService {
     }
     const result = input.result;
     if (result !== 'PASS' && result !== 'ISSUE_FOUND') throw new BadRequestException('result phải là PASS hoặc ISSUE_FOUND.');
-    const conditionNote = this.optionalText(input.conditionNote, 2000, 'conditionNote');
+    const conditionNote = this.optionalText(appendEvidenceLink(input.conditionNote, input.evidenceLink), 2000, 'conditionNote');
     const issueNote = this.optionalText(input.issueNote, 2000, 'issueNote');
     const issueType = typeof input.issueType === 'string' ? input.issueType : null;
     const issueTypes: IssueType[] = ['NORMAL_WEAR', 'FACILITY_FAULT', 'CUSTOMER_DAMAGE', 'CLEANING_REQUIRED', 'LOST_KEY_OR_ACCESS_ITEM', 'OTHER'];

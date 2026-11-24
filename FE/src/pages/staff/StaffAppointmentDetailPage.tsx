@@ -85,6 +85,7 @@ function AppointmentSummary({ row }: { row: Row }) {
   const actualStaff = first(row, 'completedBy.fullName');
   const recipientName = recipient.name || handoverCustomer(row);
   const facts: Array<[string, string]> = [];
+  if (first(row, 'facility.name')) facts.push(['Cơ sở', first(row, 'facility.name')]);
   if (row.status !== 'COMPLETED' && recipientName) facts.push(['Người nhận', recipient.authorized ? `${recipientName} · Được ủy quyền` : recipientName]);
   if (staff && (row.status !== 'COMPLETED' || staff !== actualStaff)) facts.push(['Nhân viên bàn giao', staff]);
   return <section className="manager-section staff-handover-summary">

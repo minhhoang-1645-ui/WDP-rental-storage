@@ -19,7 +19,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 const admin = { id: 'admin', fullName: 'Admin', email: 'admin@example.test', role: 'SYSTEM_ADMINISTRATOR', phone: '' } as PublicUser;
 function database() {
-  return { auditEvent: { create: vi.fn().mockResolvedValue({ id: 'event' }), count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ id: 'event', action: 'AUTH_LOGIN' }]) } };
+  return { user:{findFirst:vi.fn().mockResolvedValue({id:'admin'}),findMany:vi.fn().mockResolvedValue([])}, auditEvent: { create: vi.fn().mockResolvedValue({ id: 'event' }), count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ id: 'event', action: 'AUTH_LOGIN' }]) } };
 }
 describe('audit persistence and filters (mock DB)', () => {
   it('selects only successful account events and resolves only public target fields', async () => {
@@ -27,7 +27,7 @@ describe('audit persistence and filters (mock DB)', () => {
     const item = { id: 'notice', resource: 'users', resourceId: 'target', action: 'UPDATE', outcome: 'SUCCESS' };
     db.auditEvent.findMany.mockResolvedValue([item]);
     const findMany = vi.fn().mockResolvedValue([{ id: 'target', fullName: 'Fixture Staff', role: 'FACILITY_STAFF' }]);
-    const service = new AuditService({ ...db, user: { findMany } } as never);
+    const service = new AuditService({ ...db, user: { ...db.user,findMany } } as never);
     const page = await service.list({ category: 'ACCOUNT_NOTICES' }, admin);
     const where = { category: 'ACTIVITY', resource: 'users', resourceId: { not: null }, outcome: 'SUCCESS',
       action: { in: ['CREATE', 'UPDATE', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'] } };
@@ -46,7 +46,7 @@ describe('audit persistence and filters (mock DB)', () => {
     const unmatched = { ...matched, id: 'unmatched', actorEmail: 'unknown@example.test' };
     db.auditEvent.findMany.mockResolvedValue([matched, unmatched]);
     const findMany = vi.fn().mockResolvedValue([{ email: matched.actorEmail, fullName: 'Known Account' }]);
-    const page = await new AuditService({ ...db, user: { findMany } } as never).list({ category: 'LOGIN' }, admin);
+    const page = await new AuditService({ ...db, user: { ...db.user,findMany } } as never).list({ category: 'LOGIN' }, admin);
     expect(page.items).toEqual([{ ...matched, attemptAccountName: 'Known Account' }, unmatched]);
     expect(findMany).toHaveBeenCalledWith({ where: { email: { in: [matched.actorEmail, unmatched.actorEmail] } }, select: { email: true, fullName: true } });
     expect(db.auditEvent.create).not.toHaveBeenCalled();

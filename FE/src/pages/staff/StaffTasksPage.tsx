@@ -8,7 +8,8 @@ import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../compo
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffTaskPagination, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { handoverStatusText } from './staff-appointment';
-import { staffSourceNames, staffWorkItems } from './staff-work';
+import { staffInProgress, staffSourceNames, staffWorkItems } from './staff-work';
+import { staffDay } from './staff-resources';
 import { DEFAULT_PAGE_SIZE, internalPageSize } from '../../utils/internal-pagination';
 import { normalizeSearch } from '../../utils/notification-tools';
 
@@ -27,6 +28,9 @@ export function StaffTasksPage() {
   const sort = params.get('sort') ?? '';
   const priority = params.get('priority') ?? '';
   const overdue = params.get('timing') === 'overdue';
+  const phase = params.get('phase') ?? '';
+  const facility = params.get('facility') ?? '';
+  const scheduledDay = params.get('date') ?? '';
   const limit = internalPageSize(params);
   function applyParams(next: URLSearchParams) {
     pendingParams.current = next;
@@ -42,16 +46,20 @@ export function StaffTasksPage() {
       next.delete('status');
       next.delete('priority');
       next.delete('timing');
+      if (key === 'view') next.delete('phase');
     }
     applyParams(next);
   }
   const tasks = staffWorkItems(activity, user?.id, completed)
     .filter(task => !completed || task.processed);
   const byType = tasks.filter(task => !type || task.entry.kind === type);
+  const facilities = new Map(tasks.filter(task => task.facilityId && task.facilityName).map(task => [task.facilityId, task.facilityName]));
   const statuses = [...new Set(byType.map(task => task.status).filter(Boolean))];
   const priorities = [...new Set(byType.map(task => task.priority).filter(Boolean))];
   const keyword = normalizeSearch(search);
   const filtered = byType.filter(task => (!status || task.status === status) &&
+    (!facility || task.facilityId === facility) && (!scheduledDay || staffDay(task.scheduledAt) === scheduledDay) &&
+    (completed || !phase || staffInProgress(task.status) === (phase === 'progress')) &&
     (!priority || task.priority === priority) && (!overdue || task.overdue) &&
     normalizeSearch([task.entry.code, task.title, task.customer, task.unit].join(' ')).includes(keyword));
   filtered.sort((a, b) => {
@@ -64,14 +72,14 @@ export function StaffTasksPage() {
   const page = Math.min(Math.max(1, Math.floor(Number(params.get('page')) || 1)), Math.max(1, Math.ceil(filtered.length / limit)));
   const columns: StaffColumn<(typeof tasks)[number]>[] = [
     { key: 'task', label: 'Công việc', cell: task => <><strong>{task.title}</strong><CopyRecordCode value={task.entry.code} />
-      <small>Theo nhiệm vụ được giao</small></> },
+      {task.facilityName && <small>{task.facilityName}</small>}</> },
     { key: 'identity', label: 'Khách hàng / Kho', cell: task => <><strong>{task.customer || task.unit || '—'}</strong>{task.customer && task.unit && <small>Kho {task.unit}</small>}</> },
     { key: 'date', label: 'Lịch / cập nhật', sort: { direction: sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'asc' ? 'desc' : 'asc') },
       cell: task => <><span>{date(task.timestamp, true)}</span>{task.overdue && <small className="staff-table-overdue">Đã qua giờ</small>}</> },
     { key: 'status', label: 'Trạng thái', cell: task => task.status ? <Status value={task.status} text={task.entry.kind === 'appointments' ? handoverStatusText(task.status) : undefined} /> : '—' },
     { key: 'actions', label: 'Thao tác', cell: task => {
       if (!task.entry.action || task.entry.kind === 'damage-claims' || task.entry.kind === 'support-requests') return null;
-      const inProgress = ['IN_PROGRESS', 'CONTACTED', 'IN_REVIEW', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(task.status);
+      const inProgress = staffInProgress(task.status);
       return <Link className="button-secondary" to={task.entry.web + '#staff-processing'} onClick={() => activity.markRead([task.entry.token])}>
         {inProgress ? 'Tiếp tục xử lý' : 'Bắt đầu xử lý'}
       </Link>;
@@ -90,14 +98,21 @@ export function StaffTasksPage() {
       <label className="field-label">Loại công việc<select value={type} onChange={event => change('type', event.target.value)}>
         <option value="">Tất cả</option>{[...staffSourceNames].map(([key, name]) => <option key={key} value={key}>{name}</option>)}
       </select></label>
+      <label className="field-label">Cơ sở<select value={facilities.has(facility) ? facility : ''} onChange={event => change('facility', event.target.value)}>
+        <option value="">Tất cả cơ sở</option>{[...facilities].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select></label>
+      <label className="field-label">Ngày hẹn<input type="date" value={scheduledDay} onChange={event => change('date', event.target.value)} /></label>
+      {!completed && <label className="field-label">Tiến độ<select value={phase} onChange={event => change('phase', event.target.value)}>
+        <option value="">Tất cả</option><option value="pending">Chờ thực hiện</option><option value="progress">Đang thực hiện</option>
+      </select></label>}
       <label className="field-label">Trạng thái<select value={status} onChange={event => change('status', event.target.value)}>
         <option value="">Tất cả</option>{statuses.map(value => <option key={value} value={value}>{type === 'appointments' ? handoverStatusText(value) ?? label(value) : label(value)}</option>)}
       </select></label>
       <label className="field-label">Ưu tiên<select value={priority} onChange={event => change('priority', event.target.value)}>
         <option value="">Tất cả</option>{priorities.map(value => <option key={value} value={value}>{label(value)}</option>)}
       </select></label>
-      {overdue && <label className="portal-checkbox"><input type="checkbox" checked onChange={() => change('timing', '')} />Đã quá giờ</label>}
-      {(type || status || search || sort || priority || overdue) && <button type="button" className="button-secondary" onClick={() => {
+      {!completed && <label className="portal-checkbox"><input type="checkbox" checked={overdue} onChange={event => change('timing', event.target.checked ? 'overdue' : '')} />Quá giờ</label>}
+      {(type || status || search || sort || priority || overdue || facility || scheduledDay || phase) && <button type="button" className="button-secondary" onClick={() => {
         const next = new URLSearchParams();
         if (completed) next.set('view', 'completed');
         if (limit !== DEFAULT_PAGE_SIZE) next.set('limit', String(limit));
@@ -109,7 +124,7 @@ export function StaffTasksPage() {
       rowKey={task => task.entry.id} emphasized={task => task.overdue || task.priority === 'HIGH'} loadingRows={loading ? Math.min(limit, 6) : undefined} />}
     {!loading && (filtered.length ?
       <StaffTaskPagination page={page} limit={limit} total={filtered.length} onChange={value => change('page', String(value))}
-        onLimitChange={value => change('limit', String(value))} /> : !activity.failed.length && <Empty title={type || status || search || priority || overdue
+        onLimitChange={value => change('limit', String(value))} /> : !activity.failed.length && <Empty title={type || status || search || priority || overdue || facility || scheduledDay || phase
           ? 'Không tìm thấy công việc phù hợp' : completed ? 'Chưa có công việc đã xử lý' : 'Không có công việc cần xử lý'} />)}
   </section>;
 }

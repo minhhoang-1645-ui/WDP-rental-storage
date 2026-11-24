@@ -71,7 +71,6 @@ export class NotificationSources {
     const operational = { ...common, appointments: (q: Query) => this.appointments.listOperationalAppointments(q, actor) };
     if (role === 'FACILITY_STAFF') return {
       ...operational,
-      'stock-movements': q => this.stock.listStaff(actor, q),
       returns: q => this.returns.listStaffReturns(q, actor),
       maintenance: q => this.maintenance.listStaff(q, actor),
       'support-requests': q => this.support.listStaff(q, actor),

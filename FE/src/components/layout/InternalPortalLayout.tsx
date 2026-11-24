@@ -24,6 +24,9 @@ import { workspaceInboxPath } from '../../activity/workspace-notifications';
 import { useActivity } from '../../activity/context';
 import { actionCountForPath } from '../../utils/notification-tools';
 import { staffWorkItems } from '../../pages/staff/staff-work';
+import { isEarlyReturnRequest } from '../../utils/early-return';
+import { isCustomerTransferSubject } from '../../utils/transfer-request';
+import { hasLinkedTransfer } from '../../utils/work-queue';
 const matchesPath = (pathname: string, path: string) => pathname === path || pathname.startsWith(path + '/');
 const matchesAlias = (item: InternalNavItem, pathname: string) =>
   Boolean(item.match?.some(path => item.end ? pathname === path : matchesPath(pathname, path)));
@@ -40,12 +43,18 @@ export function InternalPortalLayout({
   navigation,
   pageNavigation = [],
   themed = false,
+  scopeControl,
+  scopeReady = true,
+  scopeNotice,
 }: {
   label: string;
   navigation: InternalNavItem[];
   // Extra route names are used in the breadcrumb only, never added to either menu.
   pageNavigation?: Pick<InternalNavItem, "to" | "label" | "end">[];
   themed?: boolean;
+  scopeControl?: ReactNode;
+  scopeReady?: boolean;
+  scopeNotice?: ReactNode;
 }) {
   const { user, logout } = useAuth();
   const activity = useActivity();
@@ -114,7 +123,7 @@ export function InternalPortalLayout({
           ? "/admin"
           : user?.role === "FACILITY_STAFF"
             ? "/staff"
-            : "/manager"
+            : user?.role === 'BUSINESS_OPERATIONS_MANAGER' ? '/operations' : "/manager"
       }
     >
       <span>
@@ -131,9 +140,16 @@ export function InternalPortalLayout({
   const personalTasks = staff ? staffWorkItems(activity, user?.id) : [];
   const navigationActivity = staff ? personalTasks.map(task => task.entry) : activity.entries;
   const personalTaskCount = personalTasks.length;
+  const managerReviewCount = user?.role === 'FACILITY_MANAGER' ? Object.entries(activity.data).reduce((sum,[kind,records]) => sum + records.filter(row => {
+    const status = String(row.status);
+    if (kind === 'support-requests') return isEarlyReturnRequest(row) ? !row.decision && !row.earlyReturnDecision && ['OPEN','ESCALATED'].includes(status) : isCustomerTransferSubject(row.subject) ? status !== 'RESOLVED' && !hasLinkedTransfer(row) : status === 'ESCALATED' && !hasLinkedTransfer(row);
+    if (kind === 'damage-claims') return status === 'INVESTIGATING' && Boolean(row.staffFacts);
+    return (kind === 'maintenance' && status === 'AWAITING_VERIFICATION') || (kind === 'transfers' && status === 'REQUESTED') || (kind === 'renewals' && status === 'PENDING') || (kind === 'deposit-settlements' && status === 'PENDING_REVIEW') || (kind === 'payment-submissions' && status === 'PENDING_VERIFICATION') || (kind === 'online-payment-reconciliations' && ['PENDING_REVIEW','REFUND_REQUIRED'].includes(status));
+  }).length,0) : 0;
   const countFor = (item: InternalNavItem) => {
     if (item.end) return 0;
     if (staff && item.to === '/staff/tasks') return personalTaskCount;
+    if (item.to === '/manager/reviews') return managerReviewCount;
     return actionCountForPath(navigationActivity, [item.to, ...(item.match ?? [])]);
   };
   const nav = (iconOnly = false) => (
@@ -145,10 +161,9 @@ export function InternalPortalLayout({
           : actionCountForPath(activity.entries, items.flatMap(item => [item.to, ...(item.match ?? [])]));
         return <NavigationGroup key={group} title={group} active={active} count={count} expanded={themed ? index <= 2 : index === 1} collapsible={!iconOnly && navigation.length > 8 && group !== 'Tổng quan'}>
           {items.map(item => {
-            const { to, label: itemLabel, icon: Icon, end, match } = item;
+            const { to, label: itemLabel, icon: Icon, end } = item;
             const aliasActive = matchesAlias(item, location.pathname);
-            const count = staff ? countFor(item) : user?.role === 'FACILITY_MANAGER' && group === 'Quản lý' ? 0
-              : actionCountForPath(activity.entries, [to, ...(match ?? [])]);
+            const count = countFor(item);
             return <NavLink key={to} to={to} end={end} title={iconOnly ? itemLabel : undefined}
               aria-label={iconOnly ? itemLabel : undefined}
               className={({ isActive }) => isActive || aliasActive ? 'active' : undefined}>
@@ -209,6 +224,7 @@ export function InternalPortalLayout({
             </nav>
           </div>
           <div className="portal-topbar-actions">
+            {scopeControl}
             <ActivityBell />
             {profileMenu ? <WorkspaceProfileDropdown key={location.pathname} user={profileMenu}
               roleLabel={roleLabel(profileMenu.role)} theme={theme} onToggleTheme={toggleTheme}
@@ -219,7 +235,7 @@ export function InternalPortalLayout({
         <main className="manager-main" id="portal-main" tabIndex={-1}>
           {notificationInbox && location.state?.notificationInbox === notificationInbox && location.pathname !== notificationInbox &&
             <Link to={notificationBack} className="workspace-notification-back"><ArrowLeft size={15} aria-hidden="true" />Về thông báo</Link>}
-          <Outlet />
+          {scopeReady ? <Outlet /> : scopeNotice}
         </main>
       </div>
       <dialog

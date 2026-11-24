@@ -1,4 +1,5 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
+import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
@@ -34,6 +35,17 @@ export class MaintenanceService {
     if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
     const parsed = this.manualInput(input, key);
     return this.createManualTransaction(parsed, actor);
+  }
+
+  async listReportUnits(actor: PublicUser, query: MaintenanceListQuery) {
+    const { page, limit, search } = query;
+    const where = { storageType: { facility: facilityScope(actor) }, ...(search ? { unitNumber: { contains: search, mode: 'insensitive' as const } } : {}) };
+    const [total, items] = await Promise.all([this.prisma.storageUnit.count({ where }), this.prisma.storageUnit.findMany({
+      where, skip: (page - 1) * limit, take: limit,
+      select: { id: true, unitNumber: true, status: true, storageType: { select: { facility: { select: { id: true, name: true } } } } },
+      orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
+    })]);
+    return { page, limit, total, items: items.map(({ unitNumber, ...unit }) => ({ ...unit, unitCode: unitNumber })) };
   }
 
   listStaff(query: MaintenanceListQuery, actor: PublicUser) {
@@ -102,7 +114,8 @@ export class MaintenanceService {
   }
 
   completeWork(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    const workNote = this.requiredText(input.workNote, 4000, 'workNote');
+    this.requiredText(input.workNote, 4000, 'workNote');
+    const workNote = this.requiredText(appendEvidenceLink(input.workNote, input.evidenceLink), 4000, 'workNote');
     return this.transition(id, key, 'COMPLETE_WORK', async (tx, current, safeKey) => {
       if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
@@ -123,8 +136,10 @@ export class MaintenanceService {
       this.assertUnitMaintenance(current);
       const otherActive = await tx.maintenanceRequest.count({ where: { storageUnitId: current.storageUnitId, activeKey: { not: null }, id: { not: current.id } } });
       if (otherActive !== 0) throw new ConflictException('StorageUnit có maintenance case khác đang hoạt động.');
-      const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: 'AVAILABLE' } });
-      if (changed.count !== 1) throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
+      if (current.storageUnit.status === 'MAINTENANCE') {
+        const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: 'AVAILABLE' } });
+        if (changed.count !== 1) throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
+      }
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: {
@@ -158,11 +173,14 @@ export class MaintenanceService {
         const unit = await tx.storageUnit.findUnique({ where: { id: parsed.storageUnitId } });
         if (!unit) throw new NotFoundException('Không tìm thấy StorageUnit.');
         await assertTaskFacility(tx,actor,{storageUnitId:unit.id});
-        if (unit.status === 'OCCUPIED') throw new ConflictException({ code: 'OCCUPIED_UNIT_MAINTENANCE_REQUIRES_INCIDENT_FLOW', message: 'Kho đang được thuê phải đi qua Support / Incident / Transfer workflow.' });
-        if (unit.status !== 'AVAILABLE') throw new ConflictException({ code: 'UNIT_NOT_AVAILABLE_FOR_MANUAL_MAINTENANCE', message: `Chỉ unit AVAILABLE mới được tạo manual maintenance; trạng thái hiện tại là ${unit.status}.` });
+        if (actor.role !== 'FACILITY_STAFF' && unit.status !== 'AVAILABLE') {
+          throw new ConflictException({ code: 'UNIT_NOT_AVAILABLE_FOR_MANUAL_MAINTENANCE', message: 'Chỉ kho đang sẵn sàng mới có thể được quản lý đưa vào bảo trì thủ công.' });
+        }
         if (await tx.maintenanceRequest.findUnique({ where: { activeKey: this.activeKey(unit.id) } })) throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
-        const changed = await tx.storageUnit.updateMany({ where: { id: unit.id, status: 'AVAILABLE' }, data: { status: 'MAINTENANCE' } });
-        if (changed.count !== 1) throw new ConflictException('StorageUnit vừa được thay đổi bởi thao tác khác.');
+        if (unit.status === 'AVAILABLE') {
+          const changed = await tx.storageUnit.updateMany({ where: { id: unit.id, status: 'AVAILABLE' }, data: { status: 'MAINTENANCE' } });
+          if (changed.count !== 1) throw new ConflictException('StorageUnit vừa được thay đổi bởi thao tác khác.');
+        }
         const created = await tx.maintenanceRequest.create({
           data: {
             maintenanceCode: this.code(), storageUnitId: unit.id, source: 'MANUAL', category: parsed.category, priority: parsed.priority,
@@ -238,7 +256,7 @@ export class MaintenanceService {
     return {
       storageUnit: {
         include: {
-          storageType: true,
+          storageType: { include: { facility: { select: { id: true, name: true } } } },
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' }, plannedStartDate: { gt: new Date() } },
             include: { reservation: { select: { id: true, reservationCode: true } } },
@@ -261,6 +279,7 @@ export class MaintenanceService {
       endDate: this.isoDate(allocation.plannedEndDate),
     }));
     const base = {
+      ...(record.storageUnit.storageType.facility ? { facility: record.storageUnit.storageType.facility } : {}),
       id: record.id, maintenanceCode: record.maintenanceCode, status: record.status, priority: record.priority, category: record.category,
       source: record.source, description: record.description,
       unit: {
@@ -293,7 +312,8 @@ export class MaintenanceService {
 
   private manualInput(input: Record<string, unknown>, key: string | undefined) {
     const storageUnitId = this.requiredText(input.storageUnitId, 100, 'storageUnitId');
-    const description = this.requiredText(input.description, 4000, 'description');
+    this.requiredText(input.description, 4000, 'description');
+    const description = this.requiredText(appendEvidenceLink(input.description, input.evidenceLink), 4000, 'description');
     const category = input.category;
     const priority = input.priority ?? 'MEDIUM';
     if (typeof category !== 'string' || !['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'].includes(category)) throw new BadRequestException('category không hợp lệ.');
@@ -313,7 +333,9 @@ export class MaintenanceService {
   }
 
   private assertUnitMaintenance(record: any) {
-    if (record.storageUnit.status !== 'MAINTENANCE') throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
+    if (record.storageUnit.status === 'MAINTENANCE') return;
+    if (record.source === 'MANUAL' && record.reportedBy?.role === 'FACILITY_STAFF' && ['OCCUPIED', 'RESERVED'].includes(record.storageUnit.status)) return;
+    throw new ConflictException('Trạng thái kho đã thay đổi. Kiểm tra lại hồ sơ bảo trì.');
   }
 
   private async identity(id: string) {

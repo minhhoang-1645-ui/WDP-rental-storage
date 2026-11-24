@@ -32,19 +32,20 @@ describe('physical unit independent of billing and historical prices', () => {
     const db: any = {
       additionalService,
       user: { findFirst: vi.fn().mockResolvedValue(actor) },
+      $queryRawUnsafe: vi.fn(),
     };
     db.$transaction = (callback: any) => callback(db);
     const service = new AdditionalServicesService(db);
     expect(
-      await service.saveCatalog('addon', { physicalUnit: 'cái' }, actor),
+      await service.saveCatalog('addon', { physicalUnit: 'cái', expectedUpdatedAt:stamp.toISOString() }, actor),
     ).toMatchObject({ physicalUnit: 'cái', unitPrice: null });
     await expect(
-      service.saveCatalog('addon', { physicalUnit: 'ngày' }, actor),
+      service.saveCatalog('addon', { physicalUnit: 'ngày', expectedUpdatedAt:stamp.toISOString() }, actor),
     ).rejects.toThrow('đơn vị');
     await expect(
       service.saveCatalog(
         'addon',
-        { kind: 'RENTAL', billingUnit: 'DAY' },
+        { kind: 'RENTAL', billingUnit: 'DAY', expectedUpdatedAt:stamp.toISOString() },
         actor,
       ),
     ).rejects.toThrow('Không đổi loại');
@@ -53,7 +54,7 @@ describe('physical unit independent of billing and historical prices', () => {
       physicalUnit: 'cái',
     } as never);
     await expect(
-      service.saveCatalog('addon', { physicalUnit: 'thùng' }, actor),
+      service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt:stamp.toISOString() }, actor),
     ).rejects.toThrow('Không đổi');
     await expect(
       service.saveCatalog('addon', { unitPrice: 30000 }, actor),

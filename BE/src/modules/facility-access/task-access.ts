@@ -3,11 +3,11 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertFacility, type AssignmentReference } from './facility-access.service.js';
 
-export function facilityScope(actor: Pick<PublicUser, 'id' | 'role'>): Prisma.FacilityWhereInput {
+export function facilityScope(actor: Pick<PublicUser, 'id' | 'role' | 'selectedFacilityId'>): Prisma.FacilityWhereInput {
   if (!['FACILITY_STAFF', 'FACILITY_MANAGER'].includes(actor.role)) throw new ForbiddenException('Chức năng dành cho nhân sự tại cơ sở.');
-  return { facilityAccess: { some: { userId: actor.id, revokedAt: null, user: { role: actor.role, accountStatus: 'ACTIVE' } } } };
+  return { ...(actor.role === 'FACILITY_MANAGER' && actor.selectedFacilityId ? { id: actor.selectedFacilityId } : {}), facilityAccess: { some: { userId: actor.id, revokedAt: null, user: { role: actor.role, accountStatus: 'ACTIVE' } } } };
 }
-export function reservationScope(actor: Pick<PublicUser, 'id' | 'role'>): Prisma.ReservationWhereInput { return { facility: facilityScope(actor) }; }
+export function reservationScope(actor: Pick<PublicUser, 'id' | 'role' | 'selectedFacilityId'>): Prisma.ReservationWhereInput { return { facility: facilityScope(actor) }; }
 export function staffReservationScope(actor: Pick<PublicUser, 'id' | 'role'>): Prisma.ReservationWhereInput {
   if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được truy cập nhiệm vụ của mình.');
   const assigned = { assignedStaffUserId: actor.id };

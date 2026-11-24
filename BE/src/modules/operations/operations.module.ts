@@ -72,6 +72,8 @@ class OperationsController {
   @Get('reports') report(@Req() req: AuthenticatedRequest) {
     return this.operations.report(req.user!);
   }
+  @Get('reports/performance') performance(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.operations.performance(query,req.user!);}
+  @Get('audit') audit(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.operations.businessAudit(query,req.user!);}
 }
 @Module({
   imports: [AuthModule],

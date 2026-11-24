@@ -10,6 +10,7 @@ import { assertActiveAssignee, assertTaskAssignee, managerAssignmentInput, opera
 import { businessDate } from '../../business-date.js';
 
 type ClaimRow = DamageClaim & {
+  rentalContract?: { contractCode: string; reservation?: { facilityId?: string; facility?: { id: string; name: string } } };
   compensation?: (DamageClaimCompensation & { approvedBy?: { fullName: string }; recordedBy?: { fullName: string } | null }) | null;
 };
 
@@ -70,7 +71,7 @@ export class DamageClaimsService {
   private include(role: PublicUser['role']) {
     return {
       ...(role === 'STORAGE_CUSTOMER' ? {} : { customer: { select: { fullName: true, phone: true } } }),
-      rentalContract: { select: { contractCode: true } },
+      rentalContract: { select: { contractCode: true, ...(['FACILITY_STAFF','FACILITY_MANAGER'].includes(role) ? { reservation: { select: { facility: { select: { id: true, name: true } } } } } : {}) } },
       ...(role === 'STORAGE_CUSTOMER' ? { compensation: true } : role === 'FACILITY_STAFF' ? {} : { compensation: { include: {
         approvedBy: { select: { fullName: true } },
         recordedBy: { select: { fullName: true } },
@@ -152,9 +153,10 @@ export class DamageClaimsService {
       if (actor.role === 'FACILITY_STAFF') {
         if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ForbiddenException('Hồ sơ đã được quản lý quyết định.');
         const staffFacts = this.text(input.staffFacts, 'Ghi nhận thực tế', 10);
+        const staffEvidenceLinks = input.staffEvidenceLinks === undefined ? this.staffEvidence(row.history) : claimEvidence(input.staffEvidenceLinks);
         return this.view(await tx.damageClaim.update({ where: { id }, data: {
           status: 'INVESTIGATING', staffFacts, factsRecordedAt: now,
-          history: this.history(row, actor, 'INSPECTED', now, 'INVESTIGATING'),
+          history: this.history(row, actor, 'INSPECTED', now, 'INVESTIGATING', { staffEvidenceLinks }),
         } }), actor.role);
       }
       let data: Prisma.DamageClaimUpdateInput;
@@ -245,7 +247,7 @@ export class DamageClaimsService {
     return BigInt(value);
   }
 
-  private history(row: { history: Prisma.JsonValue; status: string }, actor: PublicUser, action: string, at: Date, to: string, previous: Record<string, string | null> = {}): Prisma.InputJsonArray {
+  private history(row: { history: Prisma.JsonValue; status: string }, actor: PublicUser, action: string, at: Date, to: string, previous: Prisma.InputJsonObject = {}): Prisma.InputJsonArray {
     return [...(Array.isArray(row.history) ? row.history as Prisma.InputJsonArray : []),
       { actorId: actor.id, role: actor.role, at: at.toISOString(), action, from: row.status, to, ...previous }];
   }
@@ -277,10 +279,18 @@ export class DamageClaimsService {
     return { role, at, action, from, to };
   }
 
+  private staffEvidence(history: Prisma.JsonValue) {
+    const latest = this.events(history, 'FACILITY_STAFF').findLast(event => event.action === 'INSPECTED' && Array.isArray(event.staffEvidenceLinks));
+    return Array.isArray(latest?.staffEvidenceLinks) ? latest.staffEvidenceLinks.filter((link): link is string => typeof link === 'string') : [];
+  }
+
   private view(row: ClaimRow, role: PublicUser['role']) {
-    const { idempotencyKey: _key, inputHash: _hash, compensation, history, assignedStaffId, reviewedById, ...data } = row;
+    const { idempotencyKey: _key, inputHash: _hash, compensation, history, assignedStaffId, reviewedById, rentalContract, ...data } = row;
     return {
       ...data,
+      ...(rentalContract ? { rentalContract: { contractCode: rentalContract.contractCode } } : {}),
+      ...(['FACILITY_STAFF','FACILITY_MANAGER'].includes(role) && rentalContract?.reservation?.facility ? { facility: rentalContract.reservation.facility } : {}),
+      ...(role !== 'STORAGE_CUSTOMER' ? { staffEvidenceLinks: this.staffEvidence(history) } : {}),
       ...(role === 'STORAGE_CUSTOMER' ? {} : { assignedStaffId, reviewedById }),
       estimatedValue: row.estimatedValue === null ? null : Number(row.estimatedValue),
       discoveredOn: row.discoveredOn.toISOString().slice(0, 10),

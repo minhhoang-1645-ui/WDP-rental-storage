@@ -81,9 +81,7 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
         </span>
       </label>
       <div className="transfer-destination-filters">
-        <label className="field-label">Loại kho<select value={otherTypes ? 'all' : 'same'} disabled={disabled} onChange={event => changeTypeScope(event.target.value === 'all')}>
-          <option value="same">Cùng loại với kho hiện tại</option><option value="all">Tất cả loại kho</option>
-        </select></label>
+        <p>Chỉ chọn kho cùng loại tại cơ sở hiện tại.</p>
         <label className="field-label">Tình trạng<select value={showUnavailable ? 'all' : 'available'} disabled={disabled} onChange={event => setShowUnavailable(event.target.value === 'all')}>
           <option value="available">Chỉ kho có thể chọn</option><option value="all">Cả kho chưa phù hợp</option>
         </select></label>

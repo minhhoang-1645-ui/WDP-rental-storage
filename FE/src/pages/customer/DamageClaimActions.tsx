@@ -74,6 +74,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
   const { user } = useAuth();
   const formId = useId();
   const [staff, setStaff] = useState('');
+  const [staffEvidence, setStaffEvidence] = useState(() => claim.staffEvidenceLinks?.join('\n') ?? '');
   const amendmentLabel = action === 'amend-decision' ? 'Lý do quyết định' : 'Kết quả đã thông báo cho khách';
   const [note, setNote] = useState(() => {
     if (action === 'inspect') return claim.staffFacts ?? '';
@@ -106,7 +107,8 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
     try {
       switch (action) {
         case 'assign': await mutate(path + '/assign', 'PATCH', { staffUserId: staff }); break;
-        case 'inspect': await mutate(path, 'PATCH', { ...version, staffFacts: note }); break;
+        case 'inspect': await mutate(path, 'PATCH', { ...version, staffFacts: note,
+          staffEvidenceLinks: staffEvidence.split('\n').map(value => value.trim()).filter(Boolean) }); break;
         case 'decide': await mutate(path, 'PATCH', { ...version, decision, decisionReason: note, approvedCompensationAmount: showAmount ? Number(amount) : null }); break;
         case 'amend-decision': await mutate(path, 'PATCH', { ...version, action, decisionReason: note }); break;
         case 'amend-resolution': await mutate(path, 'PATCH', { ...version, action, resolutionNote: note }); break;
@@ -138,7 +140,11 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
           {claim.assignedStaff && <p>Nhân viên hiện tại <strong>{claim.assignedStaff.fullName}</strong></p>}
           <StaffPicker task={{kind:"damage-claims",id:claim.id}} list value={staff} onChange={setStaff} disabled={busy} />
         </>}
-        {action === 'inspect' && <label className="field-label">Tình trạng thực tế và nhận xét<textarea required minLength={10} maxLength={3000} rows={4} value={note} onChange={event => setNote(event.target.value)} /></label>}
+        {action === 'inspect' && <>
+          <label className="field-label">Tình trạng thực tế và nhận xét<textarea required minLength={10} maxLength={3000} rows={4} value={note} onChange={event => setNote(event.target.value)} /></label>
+          <label className="field-label">Chứng cứ nhân viên (tùy chọn)<textarea rows={2} maxLength={16007} value={staffEvidence}
+            placeholder="Mỗi liên kết HTTPS một dòng, tối đa 8 liên kết" onChange={event => setStaffEvidence(event.target.value)} /></label>
+        </>}
         {action === 'decide' && <>
           <label className="field-label">Hướng xử lý<select value={decision} onChange={event => setDecision(event.target.value)}><option value="APPROVED">Chấp thuận hướng xử lý</option><option value="REJECTED">Từ chối đề nghị</option></select></label>
           {decision === 'APPROVED' && (supportsCompensation

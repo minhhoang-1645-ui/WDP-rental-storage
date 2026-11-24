@@ -167,6 +167,11 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             </button>
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
+          {resource === 'transfers' && rows(object(row.handoverReport).problems).length > 0 &&
+            <DetailDisclosure title="Vướng mắc khi bàn giao">
+              <ul>{rows(object(row.handoverReport).problems).map((problem, index) =>
+                <li key={index}><strong>{first(problem, 'staffName')} · {date(problem.reportedAt, true)}</strong><p>{first(problem, 'note')}</p></li>)}</ul>
+            </DetailDisclosure>}
           <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
             {!staffOperation && !service && workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">

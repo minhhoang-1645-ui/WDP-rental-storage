@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { randomUUID } from 'node:crypto';
+import { analyticsPeriod } from '../manager/manager-analytics.service.js';
 const fields = [
   'code',
   'name',
@@ -64,6 +65,8 @@ export class OperationsService {
         throw new BadRequestException('Trạng thái cơ sở không hợp lệ.');
       if (value.operationalStatus === 'CLOSED' && value.bookingEnabled)
         throw new BadRequestException('Cơ sở đóng cửa không thể nhận đặt kho.');
+      if (!old && value.bookingEnabled) throw new BadRequestException('Cơ sở mới cần được cấu hình kho vật lý và giá trước khi mở nhận đặt kho.');
+      if (old && value.bookingEnabled && !old.bookingEnabled && !await tx.storageType.count({where:{facilityId:id,monthlyRate:{gt:0},units:{some:{}}}})) throw new ConflictException('Chưa có loại kho có giá và kho vật lý. Cần Manager cấu hình trước khi nhận đặt kho.');
       if (id && value.operationalStatus === 'CLOSED') {
         const count = await tx.rentalContract.count({
           where: {
@@ -82,6 +85,13 @@ export class OperationsService {
           throw new ConflictException(
             'Cơ sở còn đơn hoặc hợp đồng. Có thể tắt nhận đặt kho mới; chưa thể đóng cửa.',
           );
+        const unresolved = await Promise.all([
+          tx.invoice.count({where:{reservation:{facilityId:id},status:{not:'VOID'},balanceDue:{gt:0}}}),
+          tx.depositSettlement.count({where:{returnRequest:{reservation:{facilityId:id}},status:{not:'SETTLED'}}}),
+          tx.supportRequest.count({where:{reservation:{facilityId:id},status:{not:'RESOLVED'}}}),
+          tx.maintenanceRequest.count({where:{storageUnit:{storageType:{facilityId:id}},activeKey:{not:null}}}),
+        ]);
+        if (unresolved.some(Boolean)) throw new ConflictException('Cơ sở còn nghĩa vụ tài chính hoặc hồ sơ vận hành chưa hoàn tất. Chưa thể đóng cửa.');
       }
       const data = {
         code: text('code', 80),
@@ -100,6 +110,7 @@ export class OperationsService {
       };
       if (old && old.code !== data.code)
         throw new ConflictException('Không đổi mã cơ sở đã tạo.');
+      if (!old && await tx.facility.findUnique({where:{code:data.code}})) throw new ConflictException('Mã cơ sở đã tồn tại.');
       return id
         ? tx.facility.update({ where: { id }, data })
         : tx.facility.create({ data });
@@ -107,12 +118,13 @@ export class OperationsService {
   }
   async ranges(actor: PublicUser) {
     await assertActiveRole(this.prisma, actor, 'BUSINESS_OPERATIONS_MANAGER');
-    return {
-      items: await this.prisma.businessRule.findMany({
+    const [items, types] = await Promise.all([this.prisma.businessRule.findMany({
         where: { key: 'monthlyPriceRange' },
-        orderBy: { createdAt: 'desc' },
-      }),
-    };
+        orderBy: [{version:'desc'},{createdAt:'desc'}],
+      }),this.prisma.storageType.findMany({select:{id:true,facilityId:true,name:true,code:true,monthlyRate:true},orderBy:{name:'asc'}})]);
+    const now=new Date();
+    const active=items.filter(r=>r.effectiveFrom<=now&&(!r.effectiveTo||r.effectiveTo>now));
+    return {items:items.map(r=>({...r,status:r.effectiveFrom>now?'SCHEDULED':r.effectiveTo&&r.effectiveTo<=now?'HISTORICAL':'EFFECTIVE'})),types:types.map(t=>{const range=active.find(r=>r.facilityId===t.facilityId&&r.storageTypeId===t.id)??active.find(r=>r.facilityId===t.facilityId&&!r.storageTypeId);const price=t.monthlyRate===null?null:Number(t.monthlyRate);const bounds=range?.value as {min:number;max:number}|undefined; return {...t,monthlyRate:price,range:bounds??null,outsideRange:price!==null&&!!bounds&&(price<bounds.min||price>bounds.max)};})};
   }
   async saveRange(body: Record<string, unknown>, actor: PublicUser) {
     if (
@@ -147,7 +159,7 @@ export class OperationsService {
       max < min
     )
       throw new BadRequestException('Chọn cơ sở và nhập khung giá hợp lệ.');
-    if (typeof body.effectiveFrom !== 'string')
+    if (typeof body.effectiveFrom !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(body.effectiveFrom))
       throw new BadRequestException('Ngày áp dụng không hợp lệ.');
     const effectiveFrom = new Date(body.effectiveFrom);
     if (
@@ -231,6 +243,43 @@ export class OperationsService {
         'Chưa hỗ trợ phân bổ tiền thu theo khoản tiền thuê/cọc hoặc báo cáo lịch sử hoàn tiền.',
       ],
     };
+  }
+  async performance(input:Record<string,unknown>,actor:PublicUser) {
+    await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
+    const {range,...period}=analyticsPeriod(input);
+    const facilityId=input.facilityId;
+    if(facilityId!==undefined&&typeof facilityId!=='string')throw new BadRequestException('Cơ sở không hợp lệ.');
+    const facilities=await this.prisma.facility.findMany({where:facilityId?{id:facilityId}:{},select:{id:true,code:true,name:true,bookingEnabled:true,operationalStatus:true},orderBy:{code:'asc'}});
+    if(facilityId&&!facilities.length)throw new NotFoundException('Không tìm thấy cơ sở.');
+    const items=await Promise.all(facilities.map(async facility=>{
+      const reservation={facilityId:facility.id};
+      const unitWhere={storageType:reservation};
+      const [units,activeContracts,newReservations,invoices,receivable,payments,refunds,rentRefunds,handovers,returns]=await Promise.all([
+        this.prisma.storageUnit.groupBy({by:['status'],where:unitWhere,_count:{_all:true}}),
+        this.prisma.rentalContract.count({where:{reservation,status:'ACTIVE'}}),
+        this.prisma.reservation.count({where:{...reservation,createdAt:range}}),
+        this.prisma.invoice.aggregate({where:{reservation,status:{not:'VOID'},issuedAt:range},_sum:{rentalAmount:true,serviceAmount:true,chargeAmount:true,depositAmount:true,totalAmount:true}}),
+        this.prisma.invoice.aggregate({where:{reservation,status:{not:'VOID'},balanceDue:{gt:0}},_sum:{balanceDue:true}}),
+        this.prisma.payment.aggregate({where:{invoice:{reservation},receivedAt:range},_sum:{amount:true}}),
+        this.prisma.depositSettlement.aggregate({where:{returnRequest:{reservation},refundedAt:{not:null,...range}},_sum:{refundAmount:true}}),
+        this.prisma.returnRequest.findMany({where:{reservation,rentRefundedAt:{not:null,...range}},select:{earlyReturnCloseout:true}}),
+        this.prisma.handoverAppointment.count({where:{reservation,status:'COMPLETED',completedAt:{not:null,...range}}}),
+        this.prisma.returnRequest.count({where:{reservation,physicallyReturnedAt:{not:null,...range}}}),
+      ]);
+      const counts=Object.fromEntries(units.map(u=>[u.status,u._count._all]));
+      const total=units.reduce((sum,u)=>sum+u._count._all,0);
+      const rentRefunded=rentRefunds.reduce((sum,r)=>{const amount=(r.earlyReturnCloseout as {refundAmount?:unknown}|null)?.refundAmount;if(typeof amount!=='number'||!Number.isSafeInteger(amount)||amount<0)throw new ConflictException('Hồ sơ hoàn tiền thuê cần được đối chiếu trước khi tổng hợp.');return sum+BigInt(amount);},0n);
+      return {...facility,units:{total,occupied:counts.OCCUPIED??0,available:counts.AVAILABLE??0,reserved:counts.RESERVED??0,maintenance:counts.MAINTENANCE??0},activeContracts,newReservations,handovers,returns,rent:String(invoices._sum.rentalAmount??0n),services:String(invoices._sum.serviceAmount??0n),fees:String(invoices._sum.chargeAmount??0n),deposit:String(invoices._sum.depositAmount??0n),billed:String(invoices._sum.totalAmount??0n),debt:String(receivable._sum.balanceDue??0n),received:String(payments._sum.amount??0n),depositRefunded:String(refunds._sum.refundAmount??0n),rentRefunded:String(rentRefunded)};
+    }));
+    return {period,asOf:new Date().toISOString(),items};
+  }
+  async businessAudit(input:Record<string,unknown>,actor:PublicUser) {
+    await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
+    const page=Number(input.page??1),limit=Number(input.limit??20);
+    if(!Number.isSafeInteger(page)||page<1||page>100000||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new BadRequestException('Phân trang không hợp lệ.');
+    const where={category:'ACTIVITY' as const,actorRole:'BUSINESS_OPERATIONS_MANAGER',resource:{in:['facilities','business-policies','pricing-rules','business-rules','additional-services']}};
+    const [total,items]=await Promise.all([this.prisma.auditEvent.count({where}),this.prisma.auditEvent.findMany({where,select:{id:true,actorName:true,action:true,outcome:true,resource:true,resourceId:true,createdAt:true},orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(page-1)*limit,take:limit})]);
+    return {page,limit,total,items};
   }
 }
 export async function assertMonthlyRange(

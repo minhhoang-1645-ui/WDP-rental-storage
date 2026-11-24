@@ -16,11 +16,11 @@ export class StaffMaintenanceController {
 
   @Post()
   @Roles('FACILITY_STAFF')
-  @ApiOperation({ summary: 'Staff báo maintenance thủ công cho unit AVAILABLE', description: 'Không hỗ trợ unit OCCUPIED; trường hợp đó phải dùng Incident/Transfer ở milestone sau.' })
+  @ApiOperation({ summary: 'Báo sự cố tại kho thuộc cơ sở được cấp quyền' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-report-20261009-001' })
   @ApiBody({ type: CreateMaintenanceRequestDto })
-  @ApiCreatedResponse({ description: 'Tạo case OPEN và chuyển unit AVAILABLE → MAINTENANCE.' })
-  @ApiConflictResponse({ description: 'Unit OCCUPIED, không AVAILABLE hoặc đã có active maintenance.' })
+  @ApiCreatedResponse({ description: 'Tạo hồ sơ OPEN chưa phân công. Giữ nguyên trạng thái kho đang thuê hoặc đã giữ.' })
+  @ApiConflictResponse({ description: 'Kho đã có hồ sơ bảo trì đang mở.' })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được dùng endpoint báo cáo này.' })
@@ -38,6 +38,12 @@ export class StaffMaintenanceController {
   @ApiQuery({ name: 'assignedToMe', required: false, type: Boolean, example: true }) @ApiQuery({ name: 'search', required: false, example: 'A01' })
   @ApiOkResponse({ description: 'Danh sách phân trang ổn định.' })
   list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.maintenance.listStaff(parseMaintenanceQuery(query), request.user!); }
+
+  @Get('units')
+  @Roles('FACILITY_STAFF')
+  reportUnits(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    return this.maintenance.listReportUnits(request.user!, parseMaintenanceQuery(query));
+  }
 
   @Get(':id')
   @Roles('FACILITY_STAFF')

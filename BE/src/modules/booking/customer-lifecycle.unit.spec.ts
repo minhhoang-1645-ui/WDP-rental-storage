@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BookingService } from './booking.service.js';
-import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 
 describe('Customer rental history preserves original prices and follows the current contract', () => {
   const unit = { id: 'new-unit', unitNumber: 'SM-C08-004', floor: 'Tầng 1', zone: 'C08' };
@@ -44,11 +43,5 @@ describe('Customer rental history preserves original prices and follows the curr
     expect(item.rentalSummary?.totalPaid).toBe(4800000);
     expect(item.rentalSummary?.renewalPaid).toBe(1000000);
     expect(item.rentalSummary?.renewals[0].status).toBe('APPROVED_PENDING_PAYMENT');
-  });
-  it('reports stored goods at the current contract unit after transfer', async () => {
-    const db = { storedItem: { findMany: vi.fn().mockResolvedValue([{ id: 'item', name: 'Máy lạnh', balance: 1, unit: 'cái', rentalContract: { id: 'contract', contractCode: 'CON-1', reservationUnit: { storageUnit: unit } } }]) } };
-    const result = await new StockMovementsService(db as never).listStoredItems('customer', 'contract');
-    expect(result[0]).toMatchObject({ name: 'Máy lạnh', balance: 1, storageUnit: { unitNumber: 'SM-C08-004' } });
-    expect(db.storedItem.findMany.mock.calls[0][0].where).toMatchObject({ customerUserId: 'customer', balance: { gt: 0 } });
   });
 });

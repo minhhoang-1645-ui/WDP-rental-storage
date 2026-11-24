@@ -7,7 +7,12 @@ describe('Transfer rejection reason', () => {
   it('requires a reason and shares it with the customer’s linked request', async () => {
     const row = { id: 'transfer', status: 'REQUESTED', reservationId: 'reservation', supportRequestId: 'support' };
     const update = vi.fn(async ({ data }) => Object.assign(row, data)), updateMany = vi.fn();
-    const tx = { $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue(row), update }, supportRequest: { updateMany } };
+    const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue(row), update }, supportRequest: { updateMany } };
     const service = new TransfersService({ $transaction: (operation: any) => operation(tx) } as never);
     vi.spyOn(service as any, 'toTransfer').mockImplementation(value => value);
     await expect(service.reject('transfer', staff, { reason: 'Không còn kho cùng loại phù hợp' })).rejects.toThrow('Chỉ quản lý');

@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Printer, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
@@ -10,9 +10,11 @@ import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { useApiResource } from '../../services/useApiResource';
 import { hasDraft } from '../../services/live-events';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { handoverReportView } from '../../utils/handover-report';
 import { ManagerActions } from '../manager/ManagerActions';
-import { StaffActions } from './StaffActions';
+import { mutate } from '../../services/portal';
+import { PurchasedProducts, StaffActions } from './StaffActions';
 import { handoverCondition, handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
 import { useStaffProcessingTarget } from './useStaffProcessingTarget';
 import '../../styles/staff-appointments.css';
@@ -31,6 +33,7 @@ export function StaffAppointmentDetailPage() {
   const data = useApiResource<Row>(id ? `/staff/management/appointments/${encodeURIComponent(id)}` : null, user?.id ?? '', true, true);
   const [notice, setNotice] = useState('');
   const [submitted, setSubmitted] = useState<Row>();
+  const [formRevision, setFormRevision] = useState(0);
   const row = data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
   const readiness = object(row?.handoverReadiness);
   const assigned = Boolean(user && row && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
@@ -41,11 +44,17 @@ export function StaffAppointmentDetailPage() {
     <Link className="booking-back" to={returnTo}><ArrowLeft size={16} />Về danh sách</Link>
     <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton form history />} />
     {row && <>
-      <AppointmentHeader row={row} refresh={data.refresh} refreshing={data.refreshing} />
+      <AppointmentHeader row={row} refresh={data.refresh} discardAndRefresh={() => { setFormRevision(value => value + 1); data.refresh(); }} refreshing={data.refreshing} />
       <RefreshStatus active={data.refreshing} />
-      {notice && row.status !== 'COMPLETED' && <div className="portal-success" role="status">{notice}</div>}
+      {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
-      {row.status === 'COMPLETED' && <HandoverResult row={row} />}
+      <Fragment key={formRevision}>
+      {row.status === 'COMPLETED' && <>
+        <HandoverResult row={row} />
+        {rows(row.purchasedProducts).length > 0 && <RemainingProducts row={row} id={id}
+          allowed={assigned || (!first(row, 'assignedStaff.id') && first(row, 'completedBy.id') === user?.id)}
+          onSuccess={result => { setSubmitted(result); setNotice('Đã ghi nhận bàn giao sản phẩm.'); data.refresh(); }} />}
+      </>}
       {row.status === 'REQUESTED' && canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Xác nhận lịch</h2>
         <ManagerActions resource="appointments" row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />
@@ -59,13 +68,49 @@ export function StaffAppointmentDetailPage() {
         <h2>Chưa thể xử lý bàn giao</h2>
         <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.' : first(readiness, 'reason') || 'Hãy làm mới hồ sơ để kiểm tra điều kiện bàn giao.'}</p>
       </section>}
+      </Fragment>
       <HandoverNotes row={row} />
       <AppointmentHistory row={row} />
     </>}
   </section>;
 }
 
-function AppointmentHeader({ row, refresh, refreshing }: { row: Row; refresh: () => void; refreshing: boolean }) {
+function RemainingProducts({ row, id, allowed, onSuccess }: {
+  row: Row; id: string; allowed: boolean; onSuccess: (result: Row) => void;
+}) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirm = allowed && rows(row.purchasedProducts).some(product => product.fulfillmentStatus === 'RESERVED');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!confirm || lock.current) return;
+    const deliveredPurchaseIds = new FormData(event.currentTarget).getAll('deliveredPurchaseIds').map(String);
+    if (!deliveredPurchaseIds.length) { setError('Chọn sản phẩm đã bàn giao.'); return; }
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await mutate('/staff/appointments/' + encodeURIComponent(id) + '/complete-handover', 'POST', { deliveredPurchaseIds });
+      onSuccess(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không ghi nhận được bàn giao sản phẩm.');
+    } finally { lock.current = false; setBusy(false); }
+  }
+  return <form className="manager-section portal-form" onSubmit={submit}>
+    <PurchasedProducts row={row} confirm={confirm} />
+    {error && <p className="booking-alert is-error" role="alert">{error}</p>}
+    {confirm && <button className="button-primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Xác nhận đã bàn giao sản phẩm'}</button>}
+  </form>;
+}
+
+function AppointmentHeader({ row, refresh, discardAndRefresh, refreshing }: { row: Row; refresh: () => void; discardAndRefresh: () => void; refreshing: boolean }) {
+  const requestConfirmation = useConfirmation();
+  const refreshRecord = async () => {
+    if (document.querySelector('form[data-wdp-submitting="true"]')) return;
+    if (!hasDraft()) { refresh(); return; }
+    if (await requestConfirmation({title:'Làm mới hồ sơ?',description:'Thông tin bàn giao chưa lưu sẽ bị bỏ.',confirmLabel:'Bỏ thay đổi và làm mới',cancelLabel:'Tiếp tục chỉnh sửa',destructive:true})) discardAndRefresh();
+  };
   const units = handoverUnits(row);
   const title = units.length ? `Bàn giao · ${units[0].code}${units.length > 1 ? ` và ${units.length - 1} kho khác` : ''}` : 'Lịch bàn giao';
   const scheduled = handoverTime(row.scheduledAt);
@@ -74,7 +119,7 @@ function AppointmentHeader({ row, refresh, refreshing }: { row: Row; refresh: ()
       <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" />
       {scheduled && <time dateTime={first(row, 'scheduledAt')}>{scheduled}</time>}</>}>
     <button className="button-secondary" type="button" onClick={() => window.print()}><Printer size={16} />In hồ sơ</button>
-    <button className="button-secondary" type="button" onClick={() => { if (!hasDraft() || window.confirm('Làm mới hồ sơ đang nhập?')) refresh(); }} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
+    <button className="button-secondary" type="button" onClick={() => void refreshRecord()} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
   </PageHeader>;
 }
 

@@ -19,8 +19,7 @@ function RecoveryCard({ title, children }: { title: string; children: ReactNode 
 }
 
 export function ForgotPasswordPage() {
-  const [params] = useSearchParams();
-  const login = params.get('from') === 'portal' ? '/portal/login' : '/account/login';
+  const login = '/account/login';
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);

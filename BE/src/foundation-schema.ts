@@ -61,6 +61,7 @@ export async function inspectFoundationDatabase(
       'FacilityServiceOffering.unitPrice',
       'FacilityServiceOffering.stockOnHand',
       'FacilityServiceOffering.rentalCapacity',
+      'FacilityServiceOffering.configurationReview',
       'AuditEvent.metadata',
       'HandoverAppointment.handoverLeadDays',
       'OnlinePaymentReconciliation.externalReferenceKey',

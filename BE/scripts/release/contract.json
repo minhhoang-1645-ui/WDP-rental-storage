@@ -1,5 +1,5 @@
 {
-  "release": "nestbox-five-role-foundation-20261124",
+  "release": "nestbox-offering-configuration-review-20261124",
   "previousBackend": {
     "branch": "dev",
     "commit": "2388bc5",
@@ -20,7 +20,8 @@
     "20261123000400_bank_reconciliation_foundation",
     "20261123000500_void_invoice_balance_integrity",
     "20261124000100_legacy_service_facility_evidence",
-    "20261124000200_shared_service_catalog"
+    "20261124000200_shared_service_catalog",
+    "20261124000300_offering_configuration_review"
   ],
   "migrations": [
     {
@@ -378,6 +379,13 @@
       "checksums": [
         "8351e5580f86732ae9ee96cb17dcef7f2de99e4049dcc7f789c913f355b29a49",
         "1749bec2830b5ee15520cde0b1a96ccdaf917556318ac0205077b05e6ddc22fd"
+      ]
+    },
+    {
+      "name": "20261124000300_offering_configuration_review",
+      "checksums": [
+        "fe9ee62349215faf6491fb852fe2ff71c30feac656d497b16b02804705a8d286",
+        "62b8166afbadd1d3dfd03a040ae8307197a6bcaf6516ce015b01be238d430965"
       ]
     }
   ],

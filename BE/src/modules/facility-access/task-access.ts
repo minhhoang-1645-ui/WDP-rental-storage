@@ -14,14 +14,14 @@ export function staffReservationScope(actor: Pick<PublicUser, 'id' | 'role'>): P
   return { ...reservationScope(actor), OR: [
     { appointments: { some: assigned } }, { returns: { some: assigned } },
     { supportRequests: { some: assigned } }, { transferRequests: { some: assigned } },
-    { contracts: { some: { OR: [{ stockMovements: { some: assigned } }, { damageClaims: { some: { assignedStaffId: actor.id } } }] } } },
+    { contracts: { some: { damageClaims: { some: { assignedStaffId: actor.id } } } } },
   ] };
 }
 export function staffContractScope(actor: Pick<PublicUser, 'id' | 'role'>): Prisma.RentalContractWhereInput {
  if(actor.role!=='FACILITY_STAFF')throw new ForbiddenException('Chỉ nhân viên được dùng lookup nhiệm vụ.');
  const assigned={assignedStaffUserId:actor.id};
  return {reservation:reservationScope(actor),OR:[
-  {stockMovements:{some:assigned}},{damageClaims:{some:{assignedStaffId:actor.id}}},
+  {damageClaims:{some:{assignedStaffId:actor.id}}},
   {supportRequests:{some:assigned}},{transferRequests:{some:assigned}},
   {reservation:{appointments:{some:assigned}}},{reservation:{returns:{some:assigned}}},
  ]};

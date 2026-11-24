@@ -133,7 +133,7 @@ try {
     await page.locator('main h1').waitFor();
     await menu.click();
     await page.locator('.workspace-profile-panel').getByRole('button', { name: 'Đăng xuất' }).click();
-    await page.waitForURL(url => url.pathname === (role === 'CUSTOMER' ? '/account/login' : '/portal/login'));
+    await page.waitForURL(url => url.pathname === '/account/login');
     assert.equal(await page.evaluate(() => localStorage.getItem('wdp-auth-token-v1')), null);
     assert.deepEqual(errors, []);
     assert.equal(calls.at(-1), 'logout');

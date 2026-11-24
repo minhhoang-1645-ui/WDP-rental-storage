@@ -120,6 +120,8 @@ export function StaffActions({
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
     if (suffix === '/complete-handover') {
+      const deliveredPurchaseIds = data.getAll('deliveredPurchaseIds').map(String);
+      if (deliveredPurchaseIds.length) input.deliveredPurchaseIds = deliveredPurchaseIds;
       if (tracksUnits && !allUnitsRecorded) { setError('Cần ghi nhận bàn giao từng kho trước khi hoàn tất lịch.'); return; }
       const unitChecks = perUnit && !tracksUnits ? physicalUnits.map(unit => ({
         unitId: unit.id,
@@ -192,6 +194,7 @@ export function StaffActions({
               {!perUnit && <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>}
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
+              <PurchasedProducts row={row} confirm />
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
@@ -481,4 +484,25 @@ function InspectionEditor({
       </button>
     </form>
   );
+}
+
+export function PurchasedProducts({ row, confirm }: { row: Row; confirm: boolean }) {
+  const products = rows(row.purchasedProducts);
+  if (!products.length) return null;
+  return <fieldset>
+    <legend>Sản phẩm bàn giao cho khách</legend>
+    {products.map(product => {
+      const id = first(product, 'id');
+      const description = [first(product, 'name'), [product.quantity, first(product, 'physicalUnit')].filter(Boolean).join(' ')].join(' · ');
+      const status = first(product, 'fulfillmentStatus');
+      const statusText = status === 'FULFILLED' ? 'Đã bàn giao' : status === 'RESERVED' ? 'Chờ bàn giao'
+        : status === 'RELEASED' ? 'Đã giải phóng số lượng giữ' : 'Chưa ghi nhận';
+      return confirm && status === 'RESERVED' ?
+        <label className="portal-checkbox" key={id}><input type="checkbox" name="deliveredPurchaseIds" value={id} />
+          {description} · {statusText}</label> :
+        <p key={id}>{description} · {statusText}</p>;
+    })}
+    {confirm && products.some(product => product.fulfillmentStatus === 'RESERVED') &&
+      <small>Chỉ chọn sản phẩm đã giao đủ số lượng. Mục chưa giao vẫn được giữ cho khách.</small>}
+  </fieldset>;
 }

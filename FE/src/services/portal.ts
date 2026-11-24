@@ -32,17 +32,22 @@ export async function mutate<T = Row>(
   method: "POST" | "PATCH",
   input?: Row,
   idempotent = false,
+  headers?: HeadersInit,
 ): Promise<T> {
   const body = input === undefined ? undefined : JSON.stringify(input);
+  const requestHeaders = new Headers(headers);
   const fingerprint = `${safeLocalStorage.getItem(AUTH_TOKEN_KEY)}:${method}:${path}:${body ?? ""}`;
   const key = idempotent
     ? (retryKeys.get(fingerprint) ?? `portal-${crypto.randomUUID()}`)
     : "";
-  if (key) retryKeys.set(fingerprint, key);
+  if (key) {
+    retryKeys.set(fingerprint, key);
+    requestHeaders.set("Idempotency-Key", key);
+  }
   const result = await apiRequest<T>(path, {
     method,
     body,
-    ...(key ? { headers: { "Idempotency-Key": key } } : {}),
+    headers: requestHeaders,
   });
   retryKeys.delete(fingerprint);
   return result;

@@ -1,0 +1,205 @@
+.facility-services-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.facility-services-filters label {
+  display: grid;
+  gap: 4px;
+}
+.facility-services-filters label:first-child {
+  flex: 1 1 230px;
+}
+.facility-services .manager-table :is(td, th) {
+  padding-block: 10px;
+}
+.facility-services-body, .facility-services-fields {
+  display: grid;
+  gap: 12px;
+}
+.facility-services-dialog :is(p, h3) {
+  margin: 0;
+}
+.facility-services-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+.facility-services-facts dt, .facility-services-dialog small {
+  color: var(--workspace-muted);
+}
+.facility-services-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.facility-services-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.facility-services-switch small {
+  display: block;
+}
+.facility-services-review {
+  display: grid;
+  gap: 8px;
+}
+
+.facility-services-filters :is(input, select) {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-input);
+  color: var(--workspace-text);
+}
+.workspace-switch:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.manager-shell.internal-web.workspace-themed :is(.facility-services, .facility-services-dialog) .manager-status.is-neutral {
+  background: var(--workspace-input);
+  color: var(--workspace-muted);
+}
+
+.workspace-themed .portal-dialog.facility-services-dialog.is-refined {
+  width: min(610px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+}
+.facility-services-dialog .portal-dialog-heading {
+  min-width: 0;
+}
+.facility-services-dialog .portal-dialog-heading:focus {
+  outline: none;
+}
+.facility-services-dialog .record-page-title {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.facility-services-dialog .record-page-title h2 {
+  overflow-wrap: anywhere;
+}
+.facility-services-dialog .portal-dialog-heading + .icon-button {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.facility-services-dialog .icon-button:focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 3px;
+}
+.facility-services-dialog .facility-services-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: .875rem;
+}
+.facility-services-subtitle span,
+.facility-services-price span,
+.facility-services-metrics dt,
+.facility-services-preview dt {
+  color: var(--workspace-muted);
+}
+.facility-services-subtitle span {
+  overflow-wrap: anywhere;
+}
+.facility-services-price {
+  display: grid;
+  gap: 2px;
+}
+.facility-services-price strong {
+  color: var(--workspace-text);
+  font-size: 1.3rem;
+  line-height: 1.25;
+}
+.facility-services-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--workspace-border);
+}
+.facility-services-dialog h3 {
+  font-size: .95rem;
+}
+.facility-services-catalog,
+.facility-services-preview,
+.facility-services-switch.is-edit {
+  padding: 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-input);
+}
+.facility-services-catalog {
+  display: grid;
+  gap: 8px;
+}
+.facility-services-metrics {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.facility-services-metrics.is-update:has(> :nth-child(3)) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.facility-services-metrics > div {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-input);
+}
+.facility-services-metrics dt,
+.facility-services-preview dt {
+  font-size: .82rem;
+}
+.facility-services-metrics dd {
+  margin: 3px 0 0;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.facility-services-metrics dd > span {
+  display: block;
+}
+.facility-services-metrics dd strong {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.facility-services-metrics dd small {
+  margin-inline-start: .28em;
+}
+.facility-services-preview dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.facility-services-preview dl div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.facility-services-preview dd {
+  margin: 0;
+  text-align: end;
+}
+.facility-services-preview .is-increase {
+  color: var(--workspace-success);
+}
+.facility-services-preview .is-decrease {
+  color: var(--workspace-warning);
+}
+@media (max-width: 420px) {
+  .workspace-themed .portal-dialog.facility-services-dialog.is-refined > :is(header, .portal-dialog-body, footer) {
+    padding-inline: 12px;
+  }
+  .facility-services-metrics.is-update:has(> :nth-child(3)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

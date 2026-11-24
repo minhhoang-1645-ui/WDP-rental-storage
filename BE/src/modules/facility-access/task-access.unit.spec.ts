@@ -81,7 +81,8 @@ describe('Facility task authorization (offline, no database connection)',()=>{
   });
   it('never broadens contract lookup to physical facility reporting or previous unit responsibility',()=>{
     const scope=staffContractScope(staff), raw=JSON.stringify(scope);
-    expect(raw).toContain('stockMovements');
+    expect(raw).not.toContain('stockMovements');
+    expect(raw).toContain('damageClaims');
     expect(raw).toContain('facilityAccess');
     expect(raw).not.toContain('staffAssignments');
     expect(raw).not.toContain('maintenanceRequests');

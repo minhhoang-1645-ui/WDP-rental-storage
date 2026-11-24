@@ -1,132 +1,63 @@
-import { describe, expect, it, vi } from 'vitest';
-import { StockMovementsService } from './stock-movements.service.js';
-import { ManagerStockMovementsController } from './manager-stock-movements.controller.js';
+import 'reflect-metadata';
+import { type ExecutionContext, type INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
-import type { PublicUser } from '../auth/auth.types.js';
+import { CustomerStockMovementsController } from './customer-stock-movements.controller.js';
+import { ManagerStockMovementsController } from './manager-stock-movements.controller.js';
+import { OperationalStoredItemsController } from './operational-stored-items.controller.js';
+import { StaffStockMovementsController } from './staff-stock-movements.controller.js';
+import { StockMovementsService } from './stock-movements.service.js';
 
-const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
-function setup(quantities: number[], initial = 6, type = 'OUT') {
-  let balance = initial;
-  const item = { rentalContractId:'contract', customerUserId:'customer', id: 'item', itemCode: 'ITEM', name: 'Thùng', unit: 'thùng', balance: initial };
-  const lines = quantities.map((quantity, i) => ({ id: 'line' + i, storedItemId: 'item', requestedQty: quantity, actualQty: null, storedItem: item, note: null }));
-  const row = { id: 'movement', customerUserId:'customer', rentalContractId:'contract', movementCode: 'MOV', status: 'ASSIGNED', type, assignedStaffUserId: 'staff', createdAt: new Date(), updatedAt: new Date(), lines };
-  const tx = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'staff'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])}, $queryRaw: vi.fn().mockResolvedValue([]), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', reservation:{facilityId:'A'}, reservationUnit: { storageUnit: { id: 'unit', unitNumber: 'A01', floor: '1', zone: 'A' } } }) }, stockMovement: { findFirst: vi.fn().mockResolvedValue({ id: row.id }), findUniqueOrThrow: vi.fn(async () => row), update: vi.fn(async ({ data }) => Object.assign(row, data)) }, stockMovementLine: { findMany: vi.fn().mockResolvedValue(lines), update: vi.fn() }, storedItem: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn(async ({ where, data }) => { if (balance < where.balance.gte) return { count: 0 }; balance -= data.balance.decrement; return { count: 1 }; }), update: vi.fn(async ({ data }) => { balance += data.balance.increment; }) } };
-  const db = { $transaction: vi.fn(async operation => { const before = balance; try { return await operation(tx); } catch (error) { balance = before; throw error; } }) };
-  return { service: new StockMovementsService(db as never), tx, balance: () => balance };
-}
-describe('stock movement safety with stubbed transaction', () => {
-  it('leaves a new movement in Manager queue without changing actual stock', async () => {
-    const stamp = new Date();
-    const movement = { id: 'movement', lines: [], createdAt: stamp, updatedAt: stamp };
-    const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue({ status: 'ACTIVE', startDate: new Date('2026-01-01'), endDate: new Date('2035-01-01'), reservationUnit: { storageUnitId: 'unit', storageUnit: { unitNumber: 'A01', floor: '1', zone: 'A' } } }) },
-      stockMovement: { create: vi.fn().mockResolvedValue(movement), findUniqueOrThrow: vi.fn().mockResolvedValue(movement) },
-      storedItem: { create: vi.fn().mockResolvedValue({ id: 'item' }) }, stockMovementLine: { create: vi.fn() } };
-    const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) }, $transaction: vi.fn(operation => operation(tx)) };
-    const service = new StockMovementsService(db as never);
-    await service.create({ id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'create-manual-assignment');
-    expect(tx.storedItem.create.mock.calls[0][0].data).not.toHaveProperty('balance');
-    expect(tx.stockMovement.create.mock.calls[0][0].data).not.toHaveProperty('assignedStaffUserId');
-    expect(tx.stockMovement.create.mock.calls[0][0].data).not.toHaveProperty('assignedByUserId');
+describe('Retired personal inventory HTTP routes', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      controllers: [
+        CustomerStockMovementsController, ManagerStockMovementsController,
+        OperationalStoredItemsController, StaffStockMovementsController,
+      ],
+      providers: [{ provide: StockMovementsService, useValue: {} }],
+    }).overrideGuard(AuthGuard).useValue({
+      canActivate(context: ExecutionContext) {
+        const req = context.switchToHttp().getRequest() as AuthenticatedRequest;
+        const role = req.headers.authorization?.replace('Bearer ', '') as NonNullable<AuthenticatedRequest['user']>['role'];
+        if (!role) return false;
+        req.user = { id: 'fixture', role, fullName: 'Fixture', email: 'fixture@example.test', phone: '' };
+        return true;
+      },
+    }).compile();
+    app = module.createNestApplication({ logger: false });
+    app.setGlobalPrefix('api');
+    await app.init();
   });
 
-  it('rejects new scheduled movements in the past or outside the Vietnam rental dates', async () => {
-    const start = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
-    const end = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-    const contract = { id: 'contract', status: 'ACTIVE', startDate: new Date(start), endDate: new Date(end) };
-    const create = vi.fn();
-    const tx = { $queryRaw: vi.fn(), rentalContract: { findUnique: vi.fn().mockResolvedValue(contract) }, stockMovement: { create } };
-    const db = { $transaction: vi.fn(operation => operation(tx)), rentalContract: { findFirst: vi.fn().mockResolvedValue(contract) }, stockMovement: { findUnique: vi.fn().mockResolvedValue(null) } };
-    const service = new StockMovementsService(db as never);
-    const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
-    const input = { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Hồ sơ', unit: 'thùng', quantity: 1 }] };
-    const submit = (scheduledAt: string) => service.create(customer, { ...input, scheduledAt }, 'schedule-check');
+  afterAll(async () => { await app?.close(); });
 
-    await expect(submit(new Date(Date.now() - 60000).toISOString())).rejects.toThrow('phải ở tương lai');
-    await expect(submit(new Date(Date.parse(`${start}T00:00:00+07:00`) - 60000).toISOString())).rejects.toThrow('Lịch nhập phải trong kỳ thuê');
-    await expect(submit(`${end}T00:00:00+07:00`)).rejects.toThrow('Lịch nhập phải trong kỳ thuê');
-    expect(create).not.toHaveBeenCalled();
+  it.each([
+    ['post', '/customer/stock-movements', 'STORAGE_CUSTOMER'],
+    ['get', '/customer/stored-items', 'STORAGE_CUSTOMER'],
+    ['get', '/customer/stock-movements', 'STORAGE_CUSTOMER'],
+    ['patch', '/manager/stock-movements/legacy/assign', 'FACILITY_MANAGER'],
+    ['get', '/manager/stock-movements', 'FACILITY_MANAGER'],
+    ['get', '/manager/stored-items', 'FACILITY_MANAGER'],
+    ['post', '/staff/stock-movements/legacy/complete', 'FACILITY_STAFF'],
+    ['get', '/staff/stored-items/legacy/history', 'FACILITY_STAFF'],
+    ['get', '/staff/management/stock-movements/legacy', 'FACILITY_STAFF'],
+    ['patch', '/staff/management/stock-movements/legacy/assign', 'FACILITY_STAFF'],
+  ] as const)('%s /api%s retires the workflow', async (method, path, role) => {
+    const response = await request(app.getHttpServer())[method]('/api' + path)
+      .set('Authorization', 'Bearer ' + role).expect(410);
+    expect(response.body.code).toBe('PERSONAL_INVENTORY_RETIRED');
   });
-  it('returns only the customer positive stock with its current warehouse after a transfer', async () => {
-    const warehouse = { id: 'destination', unitNumber: 'KHO-MOI', floor: 'Ground', zone: 'B' };
-    const findMany = vi.fn().mockResolvedValue([{ id: 'item', balance: 12, rentalContract: { id: 'contract', contractCode: 'CONTRACT', reservationUnit: { storageUnit: warehouse } } }]);
-    const service = new StockMovementsService({ storedItem: { findMany } } as never);
-    await expect(service.listStoredItems('customer', 'CONTRACT')).resolves.toEqual([{ id: 'item', balance: 12, rentalContract: { id: 'contract', contractCode: 'CONTRACT' }, storageUnit: warehouse }]);
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { customerUserId: 'customer', balance: { gt: 0 }, rentalContract: { OR: [{ id: 'CONTRACT' }, { contractCode: 'CONTRACT' }] } } }));
-    expect(findMany.mock.calls[0][0].select.rentalContract.select.reservationUnit.select.storageUnit.select.unitNumber).toBe(true);
-  });
-  it('rejects aggregate overdraw when two lines reference the same stored item', async () => {
-    const state = setup([4, 4]);
-    await expect(state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 4 }, { lineId: 'line1', actualQty: 4 }] }, staff)).rejects.toThrow('Không đủ tồn');
-    expect(state.balance()).toBe(6);
-    expect(state.tx.stockMovement.update).not.toHaveBeenCalled();
-  });
-  it('subtracts valid actual quantities and does not subtract again on retry', async () => {
-    const state = setup([4]);
-    await state.service.complete('movement', { note: 'Khách lấy ít hơn yêu cầu', lines: [{ lineId: 'line0', actualQty: 2 }] }, staff);
-    expect(state.balance()).toBe(4);
-    await state.service.complete('movement', {}, staff);
-    expect(state.balance()).toBe(4);
-    expect(state.tx.storedItem.updateMany).toHaveBeenCalledTimes(1);
-  });
-  it('increments IN only when completing, once', async () => {
-    const state = setup([10], 0, 'IN');
-    await state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 10 }] }, staff);
-    await state.service.complete('movement', {}, staff);
-    expect(state.balance()).toBe(10);
-  });
-  it('completes every counted line once in a multi-line movement', async () => {
-    const state = setup([2, 3], 8);
-    await state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 2 }, { lineId: 'line1', actualQty: 3 }] }, staff);
-    expect(state.balance()).toBe(3);
-    expect(state.tx.stockMovementLine.update).toHaveBeenCalledTimes(2);
-    await state.service.complete('movement', {}, staff);
-    expect(state.balance()).toBe(3);
-    expect(state.tx.stockMovementLine.update).toHaveBeenCalledTimes(2);
-  });
-  it('cannot change inventory after the contract has completed', async () => {
-    const state = setup([1]);
-    state.tx.rentalContract.findUnique.mockResolvedValue({ status: 'COMPLETED', reservation:{facilityId:'A'} } as never);
-    await expect(state.service.complete('movement', {}, staff)).rejects.toThrow('Hợp đồng đã kết thúc');
-    expect(state.balance()).toBe(6);
-  });
-  it('denies another Staff, non-Staff, and foreign line IDs', async () => {
-    const state = setup([1]);
-    await expect(state.service.complete('movement', {}, { ...staff, id: 'other' })).rejects.toThrow('được giao');
-    await expect(state.service.complete('movement', {}, { ...staff, role: 'FACILITY_MANAGER' })).rejects.toThrow('được giao');
-    await expect(state.service.complete('movement', { lines: [{ lineId: 'foreign', actualQty: 1 }] }, staff)).rejects.toThrow('tất cả dòng hàng');
-    expect(state.balance()).toBe(6);
-  });
-  it('does not reveal a different customer movement through an idempotency collision', async () => {
-    const db = { rentalContract: { findFirst: vi.fn().mockResolvedValue({ id: 'contract', status: 'ACTIVE' }) }, stockMovement: { findUnique: vi.fn().mockResolvedValue({ customerUserId: 'other', rentalContractId: 'other-contract', type: 'IN', note: null, lines: [] }) } };
-    const service = new StockMovementsService(db as never);
-    await expect(service.create({ id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser, { rentalContractId: 'contract', type: 'IN', lines: [{ name: 'Thùng', unit: 'thùng', quantity: 1 }] }, 'collision-key')).rejects.toThrow('Idempotency-Key');
-  });
-  it('scopes Staff operational reads without assigning pending movements', async () => {
-    const stockMovement = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
-    const service = new StockMovementsService({ stockMovement } as never);
-    const controller = new ManagerStockMovementsController(service);
-    await controller.list({ user: staff } as AuthenticatedRequest, {});
-    expect(stockMovement.findMany.mock.calls[0][0].where).toMatchObject({ assignedStaffUserId: staff.id });
-    expect(stockMovement.findMany.mock.calls[0][0].where.rentalContract.reservation).toHaveProperty("facility");
-  });
-  it.each([undefined, [], [{ lineId: 'line0' }], [{ lineId: 'line0', actualQty: '' }], [{ lineId: 'line0', actualQty: null }]])('rejects missing or blank counts: %j', async lines => {
-    const state = setup([4]);
-    await expect(state.service.complete('movement', { lines }, staff)).rejects.toThrow();
-    expect(state.balance()).toBe(6);
-    expect(state.tx.stockMovement.update).not.toHaveBeenCalled();
-  });
-  it('requires a discrepancy reason and accepts an explicitly counted zero', async () => {
-    const state = setup([4]);
-    await expect(state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 0 }] }, staff)).rejects.toThrow('chênh lệch');
-    const result = await state.service.complete('movement', { note: 'Khách chưa mang hàng đến', lines: [{ lineId: 'line0', actualQty: 0 }] }, staff);
-    expect(result.status).toBe('COMPLETED');
-    expect(state.balance()).toBe(6);
-    expect(state.tx.stockMovement.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completedByUserId: staff.id, completedAt: expect.any(Date), storageUnitSnapshot: expect.objectContaining({ unitNumber: 'A01' }) }) }));
-  });
-  it('rejects duplicate counts and partial multi-line submissions', async () => {
-    const state = setup([2, 2]);
-    await expect(state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 2 }] }, staff)).rejects.toThrow('tất cả dòng hàng');
-    await expect(state.service.complete('movement', { lines: [{ lineId: 'line0', actualQty: 2 }, { lineId: 'line0', actualQty: 2 }] }, staff)).rejects.toThrow('trùng');
-    expect(state.balance()).toBe(6);
+
+  it('does not grant Staff access to Manager or Customer history', async () => {
+    for (const prefix of ['manager', 'customer']) {
+      await request(app.getHttpServer()).get('/api/' + prefix + '/stock-movements/legacy')
+        .set('Authorization', 'Bearer FACILITY_STAFF').expect(403);
+    }
   });
 });

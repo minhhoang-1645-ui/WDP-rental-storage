@@ -2,11 +2,13 @@ import { AdminRolesPage } from '../pages/admin/AccountRole';
 import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
 import { OperationsLayout } from '../pages/operations/OperationsLayout';
 import { OperationsFacilities, OperationsPolicies, OperationsPricing } from '../pages/operations/OperationsPages';
-import { OperationsBusinessReport, OperationsCatalog, OperationsAudit } from '../pages/operations/OperationsBusinessPages';
+import { OperationsBusinessReport, OperationsAudit } from '../pages/operations/OperationsBusinessPages';
+import { OperationsDashboardPage } from '../pages/operations/OperationsDashboardPage';
+import { OperationsCatalog, OperationsCatalogDetail } from '../pages/operations/OperationsCatalogPage';
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
 import { OverstayPage } from '../pages/manager/OverstayPage';
 import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
 import { CustomerBookingGuard } from "../components/layout/CustomerBookingGuard";
 import { PublicLayout } from "../components/layout/PublicLayout";
@@ -35,7 +37,6 @@ import { ManagerStaffPage } from '../pages/manager/ManagerStaffPage';
 import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPage';
 import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
 import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetailPage";
-import { PortalLoginPage } from "../pages/portal/PortalLoginPage";
 import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
@@ -104,6 +105,11 @@ function operationalRoutes(base: string) {
   );
 }
 
+function LegacyLoginRedirect() {
+  const location = useLocation();
+  return <Navigate to={{pathname:'/account/login',search:location.search,hash:location.hash}} state={location.state} replace />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -134,7 +140,7 @@ export function AppRouter() {
         />
         <Route path="account/login" element={<AuthPage mode="login" />} />
         <Route path="account/register" element={<AuthPage mode="register" />} />
-        <Route path="portal/login" element={<PortalLoginPage />} />
+        <Route path="portal/login" element={<LegacyLoginRedirect />} />
         <Route
           path="login"
           element={<Navigate to="/account/login" replace />}
@@ -183,7 +189,7 @@ export function AppRouter() {
           <Route path="tasks" element={<StaffTasksPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
-          <Route path="stored-items" element={<Navigate to="/staff/tasks" replace />} />
+          <Route path="stored-items/*" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="overstays" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="unit-checks" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="stock-movements/*" element={<Navigate to="/staff/tasks" replace />} />
@@ -211,7 +217,8 @@ export function AppRouter() {
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
           <Route path="staff" element={<ManagerStaffPage />} />
-          <Route path="stored-items" element={<Navigate to="/manager/units" replace />} />
+          <Route path="stored-items/*" element={<Navigate to="/manager/units" replace />} />
+          <Route path="stock-movements/*" element={<Navigate to="/manager/assignments" replace />} />
           <Route path="operations/stock-movements/*" element={<Navigate to="/manager/assignments" replace />} />
           <Route path="overstays" element={<OverstayPage />} />
           <Route path="reservations" element={<ManagerListPage resource="reservations" />} />
@@ -220,7 +227,7 @@ export function AppRouter() {
           {operationalRoutes("/manager")}
         </Route>
       </Route>
-      <Route element={<RoleGuard allowedRoles={["BUSINESS_OPERATIONS_MANAGER"]} />}><Route path="operations" element={<OperationsLayout />}><Route index element={<OperationsBusinessReport dashboard />} /><Route path="facilities" element={<OperationsFacilities/>}/><Route path="policies" element={<OperationsPolicies/>}/><Route path="pricing" element={<OperationsPricing/>}/><Route path="catalog" element={<OperationsCatalog/>}/><Route path="reports" element={<OperationsBusinessReport/>}/><Route path="audit" element={<OperationsAudit/>}/><Route path="settings/:section?" element={<AccountSettingsPage/>}/><Route path="*" element={<WorkspaceNotFound/>}/></Route></Route>
+      <Route element={<RoleGuard allowedRoles={["BUSINESS_OPERATIONS_MANAGER"]} />}><Route path="operations" element={<OperationsLayout />}><Route index element={<OperationsDashboardPage />} /><Route path="facilities" element={<OperationsFacilities/>}/><Route path="policies" element={<OperationsPolicies/>}/><Route path="pricing" element={<OperationsPricing/>}/><Route path="catalog" element={<OperationsCatalog/>}/><Route path="catalog/:serviceId" element={<OperationsCatalogDetail/>}/><Route path="reports" element={<OperationsBusinessReport/>}/><Route path="audit" element={<OperationsAudit/>}/><Route path="settings/:section?" element={<AccountSettingsPage/>}/><Route path="*" element={<WorkspaceNotFound/>}/></Route></Route>
       <Route element={<RoleGuard allowedRoles={["SYSTEM_ADMINISTRATOR"]} />}>
         <Route path="admin" element={<AdminLayout />}>
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />

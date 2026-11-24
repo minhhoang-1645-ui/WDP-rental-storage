@@ -16,7 +16,7 @@ export const noticeKinds: Record<string, string> = {
   renewals: 'Gia hạn', transfers: 'Chuyển kho', 'transfer-orders': 'Phụ lục chuyển kho',
   returns: 'Trả kho', 'early-returns': 'Trả trước hạn', 'deposit-settlements': 'Tiền cọc',
   'support-requests': 'Hỗ trợ', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa',
-  users: 'Tài khoản',
+  users: 'Tài khoản', 'catalog-changes': 'Danh mục bổ trợ',
 };
 
 function read(row: NotificationRow, path: string): unknown {
@@ -50,7 +50,6 @@ const states: Record<string, string> = {
 const managerAssignable: Record<string, string[]> = {
   'support-requests': ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'],
   maintenance: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'],
-  'stock-movements': ['REQUESTED', 'ASSIGNED'],
   appointments: ['REQUESTED', 'CONFIRMED'],
   returns: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'],
   transfers: ['APPROVED'],
@@ -59,7 +58,6 @@ const managerAssignable: Record<string, string[]> = {
 const staffActionable: Record<string, string[]> = {
   'support-requests': ['ASSIGNED', 'IN_PROGRESS'],
   maintenance: ['OPEN', 'IN_PROGRESS'],
-  'stock-movements': ['ASSIGNED'],
   appointments: ['REQUESTED', 'CONFIRMED'],
   returns: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'],
   transfers: ['APPROVED'],
@@ -97,6 +95,30 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     return { key, token: hash([key]), kind: source, title: auditTitles[action], at, code: '', actionLabel: '', important: false,
       summary: [account, roles[get('targetAccount.role')]].filter(Boolean).join(' · '),
       target: row.targetAccount ? `/admin/users/${encodeURIComponent(target)}` : '' };
+  }
+  if (source === 'catalog-changes') {
+    if (actor.role !== 'FACILITY_MANAGER' || !get('facilityId') || !get('resourceId')) return;
+    const fields: Record<string, string> = {
+      name: 'Tên', description: 'Mô tả', kind: 'Phân loại', billingUnit: 'Tính phí',
+      physicalUnit: 'Đơn vị tính', isActive: 'Cung cấp toàn hệ thống',
+      imageUrl: 'Ảnh', imageAlt: 'Mô tả ảnh',
+    };
+    const values: Record<string, string> = {
+      PURCHASE: 'Sản phẩm tiêu hao', RENTAL: 'Thiết bị cho thuê', ONE_TIME: 'Một lần',
+      DAY: 'Theo ngày', MONTH: 'Theo tháng', true: 'Bật', false: 'Tắt',
+    };
+    const display = (field: string, value: unknown) => value == null ? 'Chưa thiết lập'
+      : ['kind', 'billingUnit', 'isActive'].includes(field) ? values[String(value)] ?? String(value) : String(value);
+    const changes = list(row.changes).map(change => {
+      const field = String(change.field);
+      return `${fields[field] ?? field} ${display(field, change.before)} → ${display(field, change.after)}`;
+    });
+    return { key, token: hash([key]), kind: source, at: get('createdAt'), code: get('code'),
+      title: 'Thông tin danh mục bổ trợ đã thay đổi',
+      summary: [`${get('name')} (${get('code')})`, ...changes, row.reviewRequired
+        ? 'Vui lòng kiểm tra lại giá và số lượng cung cấp tại cơ sở.' : 'Thay đổi này không yêu cầu xác nhận cấu hình.'].join(' · '),
+      target: queryPath('/manager/catalog/additional-services', { facilityId: get('facilityId'), offering: get('resourceId') }),
+      actionLabel: 'Xem cấu hình dịch vụ', important: row.reviewRequired === true };
   }
   if (source === 'users') return;
   const status = get('status');
@@ -141,7 +163,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
       && (source !== 'transfers' || commercialReady) && (source !== 'damage-claims' || !row.staffFacts);
     if (actionable) actionLabel = ({
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
-      'stock-movements': 'Kiểm đếm hàng', returns: 'Kiểm tra kho trả', maintenance: 'Xử lý bảo trì',
+      returns: 'Kiểm tra kho trả', maintenance: 'Xử lý bảo trì',
       'support-requests': 'Xử lý hỗ trợ', transfers: 'Bàn giao kho chuyển', 'damage-claims': 'Ghi nhận sự cố',
     } as Record<string, string>)[source] ?? '';
   }

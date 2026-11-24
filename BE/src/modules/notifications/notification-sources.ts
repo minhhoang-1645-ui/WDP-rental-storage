@@ -10,7 +10,6 @@ import { DepositSettlementsService } from '../deposit-settlements/deposit-settle
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { ReturnsService } from '../returns/returns.service.js';
-import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import { SupportService } from '../support/support.service.js';
 import { TransfersService } from '../transfers/transfers.service.js';
 import type { NotificationData, NotificationRow } from './notification-content.js';
@@ -44,7 +43,6 @@ export class NotificationSources {
     private readonly maintenance: MaintenanceService,
     private readonly renewals: RenewalsService,
     private readonly returns: ReturnsService,
-    private readonly stock: StockMovementsService,
     private readonly support: SupportService,
     private readonly transfers: TransfersService,
   ) {}
@@ -62,7 +60,6 @@ export class NotificationSources {
       'payment-submissions': q => this.billing.listCustomerPaymentSubmissions(id, q.page, q.limit),
       appointments: q => this.appointments.listCustomerAppointments(id, q),
       renewals: q => this.renewals.listCustomerRenewals(id, q.page, q.limit),
-      'stock-movements': q => this.stock.listCustomer(id, q),
       returns: q => this.returns.listCustomerReturns(id, q),
       'deposit-settlements': q => this.deposits.listCustomer(id, q.page, q.limit),
       'support-requests': q => this.support.listCustomer(id, q),
@@ -78,7 +75,7 @@ export class NotificationSources {
     };
     return {
       ...operational,
-      'stock-movements': q => this.stock.listManager(q, actor),
+      'catalog-changes': q => this.audit.catalogNotices(actor, q),
       returns: q => this.returns.listManagerReturns(q,actor),
       maintenance: q => this.maintenance.listManager(q,actor),
       'support-requests': q => this.support.listManager(q,actor),

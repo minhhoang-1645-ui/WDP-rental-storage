@@ -281,8 +281,11 @@ it('uses one shared catalog ID, isolated prices/stock and manager permissions at
             types[0].id,
           ),
         ).rejects.toThrow('Giá');
-        await stock.fulfillPurchases(tx, reservations[0].id);
-        await stock.fulfillPurchases(tx, reservations[0].id);
+        const items = await tx.reservationService.findMany({
+          where: { reservationId: reservations[0].id, serviceKindSnapshot: 'PURCHASE' }, select: { id: true },
+        });
+        await stock.fulfillPurchases(tx, reservations[0].id, items.map(item => item.id));
+        await stock.fulfillPurchases(tx, reservations[0].id, items.map(item => item.id));
         expect(
           (
             await tx.reservationService.findUniqueOrThrow({

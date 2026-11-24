@@ -10,11 +10,12 @@ if (
   process.env.DIRECT_URL !== raw
 )
   throw Error('Only isolated recovery database allowed.');
-const { inspectFoundationDatabase, assertFoundationSchema } =
+const { inspectFoundationDatabase, assertFoundationSchema, releaseContract } =
   await import('../../dist/foundation-schema.js');
 const state = await inspectFoundationDatabase();
 if (process.argv[2] === 'before') {
-  if (state.ready || state.pending.length !== 5)
+  if (state.ready || !state.historyValid || !state.pending.length ||
+      state.pending.some(name => !releaseContract.requiredMigrations.includes(name)))
     throw Error('Expected incomplete foundation schema before rehearsal');
   let refused = false;
   try {

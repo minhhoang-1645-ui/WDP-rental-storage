@@ -19,7 +19,6 @@ async function assignmentCounts(db: Db, userId: string, closed = false) {
   const assignedStaffUserId = userId;
   const counts = await Promise.all([
     db.handoverAppointment.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'CONFIRMED'] } : { in: ['REQUESTED', 'CONFIRMED'] } } }),
-    db.stockMovement.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'ASSIGNED'] } : { in: ['REQUESTED', 'ASSIGNED'] } } }),
     db.returnRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
     db.maintenanceRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
     db.supportRequest.count({ where: { assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),

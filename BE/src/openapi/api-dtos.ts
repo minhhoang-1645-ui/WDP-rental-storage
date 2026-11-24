@@ -48,6 +48,8 @@ export class UpdateAccountProfileDto {
 }
 
 export class BookingAvailabilityRequestDto {
+  @ApiPropertyOptional({ description: 'Khi gửi POST /reservations, dùng serviceQuoteVersion từ kết quả kiểm tra khả dụng.' })
+  expectedServiceQuoteVersion?: string;
   @ApiProperty({ example: 'sm-b12', description: 'ID sản phẩm trả về từ GET /api/booking/catalog hoặc GET /api/storage.' })
   productId!: string;
 
@@ -132,9 +134,25 @@ export class CreateGuestBookingRequestDto {
 }
 
 export class CreateAdditionalServiceDto { @ApiPropertyOptional({description:'Cơ sở cung cấp; bắt buộc chọn khi quản lý có nhiều cơ sở.'}) facilityId?:string; @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
-export class UpdateAdditionalServiceDto { @ApiPropertyOptional({description:'Cơ sở cung cấp; không thay đổi danh mục chung.'}) facilityId?:string; @ApiPropertyOptional({minimum:1,description:'Giá VND của cơ sở, không đổi snapshot cũ.'}) unitPrice?:number; @ApiPropertyOptional() isActive?:boolean; }
-export class ConfigureServiceOfferingDto { @ApiProperty() facilityId!:string; @ApiProperty({minimum:1}) unitPrice!:number; @ApiPropertyOptional({default:false}) isActive?:boolean; }
-export class UpdateAdditionalServiceInventoryDto { @ApiPropertyOptional() facilityId?:string; @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
+export class UpdateAdditionalServiceDto {
+  @ApiPropertyOptional({ description: 'Cơ sở cung cấp.' }) facilityId?: string;
+  @ApiPropertyOptional({ minimum: 1, description: 'Giá VND của cơ sở, bắt buộc khi xác nhận rà soát.' }) unitPrice?: number;
+  @ApiPropertyOptional() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Phiên bản rà soát đang hiển thị trong biểu mẫu.' }) reviewRevision?: string;
+  @ApiPropertyOptional({ minimum: 0, description: 'Tồn kho xác nhận theo cấu hình mới của sản phẩm tiêu hao.' }) stockOnHand?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'Sức chứa xác nhận theo cấu hình mới của thiết bị cho thuê.' }) rentalCapacity?: number;
+}
+export class ConfigureServiceOfferingDto {
+  @ApiProperty() facilityId!: string;
+  @ApiProperty({ minimum: 1 }) unitPrice!: number;
+  @ApiPropertyOptional({ default: false }) isActive?: boolean;
+  @ApiPropertyOptional({ deprecated: true, description: 'Tương thích với biểu mẫu cũ. Ưu tiên header X-Catalog-Updated-At.' }) expectedCatalogUpdatedAt?: string;
+  @ApiPropertyOptional({ minimum: 0, description: 'Tồn kho ban đầu của sản phẩm tiêu hao.' }) stockOnHand?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'Sức chứa ban đầu của thiết bị cho thuê.' }) rentalCapacity?: number;
+}
+export class UpdateAdditionalServiceInventoryDto {
+  @ApiPropertyOptional({ nullable: true, description: 'Số lượng trước khi chỉnh sửa, null nếu chưa thiết lập.' }) expectedQuantity?: number | null;
+ @ApiPropertyOptional() facilityId?:string; @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
 
 export class VerifyGuestBookingDto {
   @ApiProperty({ example: 'one-time-token-from-email', description: 'Token bí mật từ secure claim link; không dùng bookingCode.' }) token!: string;
@@ -222,6 +240,8 @@ export class HandoverReportRequestDto {
 }
 
 export class CompleteHandoverRequestDto {
+  @ApiPropertyOptional({ type: [String], description: 'ID các dòng sản phẩm đã thực sự bàn giao trong đơn.' })
+  deliveredPurchaseIds?: string[];
   @ApiPropertyOptional({ type: HandoverReportRequestDto, description: 'Biên bản được lưu dưới dạng dữ liệu có cấu trúc và văn bản.' })
   handoverReport?: HandoverReportRequestDto;
   @ApiPropertyOptional({ example: 'Đã bàn giao đầy đủ các kho cho khách hàng.', maxLength: 2000 })

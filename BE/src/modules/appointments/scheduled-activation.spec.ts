@@ -27,6 +27,7 @@ describe('handover activation window', async () => {
     expect(tx.rentalContract.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }));
     expect(tx.storageUnit.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'OCCUPIED' } }));
     expect(billing.ensureRecurringInvoices).toHaveBeenCalledOnce();
+    expect(inventory.fulfillPurchases).not.toHaveBeenCalled();
     current.contracts[0].reservationUnit.storageUnit.status = 'MAINTENANCE';
     await expect(Reflect.get(worker, 'activateContracts').call(worker, tx, current)).rejects.toThrow();
   });

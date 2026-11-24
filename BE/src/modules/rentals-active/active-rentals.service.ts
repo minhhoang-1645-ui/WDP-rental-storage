@@ -142,7 +142,6 @@ export class ActiveRentalsService {
       contracts: {
         include: {
           returnInspections: { where: { returnRequest: { status: { not: 'COMPLETED' as const } } }, take: 1, select: { id: true } },
-          storedItems: { where: { balance: { gt: 0 } }, select: { id: true, itemCode: true, name: true, unit: true, balance: true }, orderBy: { name: 'asc' as const } },
           transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
           reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true, storageTypeId: true,
@@ -230,7 +229,7 @@ export class ActiveRentalsService {
         pendingRenewal: pendingSummary(pendingRenewal),
         returnInProgress: contract.returnInspections.length > 0,
         unit: mode === 'STORAGE_CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
-        ...(mode === 'STORAGE_CUSTOMER' ? { storedItems: contract.storedItems ?? [], earlyReturnEstimate,
+        ...(mode === 'STORAGE_CUSTOMER' ? { earlyReturnEstimate,
         transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
           code: transfer.transferCode, from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
         })) } : {}),

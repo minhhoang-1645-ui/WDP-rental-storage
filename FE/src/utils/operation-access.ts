@@ -5,7 +5,7 @@ export const managerResources = ['units', 'customers', 'catalog', 'additional-se
 export const isManagerResource = (resource: string) => (managerResources as readonly string[]).includes(resource);
 export const managerPages = ['assignments', 'reports', 'early-returns', 'reviews', 'finance', 'rental-records', 'facility'] as const;
 // Read-only lookup routes do not grant operational write permissions.
-export const isManagerDestination = (resource: string) => isManagerResource(resource) || ['stored-items', 'stock-movements'].includes(resource) || (managerPages as readonly string[]).includes(resource);
+export const isManagerDestination = (resource: string) => isManagerResource(resource) || (managerPages as readonly string[]).includes(resource);
 export const canOperateResource = (role: string, resource: string) => role === 'FACILITY_STAFF'
   ? isStaffWorkflow(resource)
   : role === 'FACILITY_MANAGER' && isManagerResource(resource);

@@ -56,7 +56,7 @@
   color: #8195ae;
   text-transform: uppercase;
 }
-.portal-enhanced nav a {
+.portal-enhanced :where(.manager-sidebar, .portal-mobile-nav) nav a {
   border-radius: 7px;
   margin-bottom: 3px;
   padding: 10px 12px;
@@ -65,16 +65,16 @@
   font-weight: 500;
   color: #c8d4e4;
 }
-.portal-enhanced nav a.active {
+.portal-enhanced :where(.manager-sidebar, .portal-mobile-nav) nav a.active {
   color: #fff;
   background: #294360;
   box-shadow: inset 3px 0 #e98b2a;
 }
-.portal-enhanced nav a:hover:not(.active) {
+.portal-enhanced :where(.manager-sidebar, .portal-mobile-nav) nav a:hover:not(.active) {
   color: white;
   background: #203852;
 }
-.portal-enhanced nav a svg {
+.portal-enhanced :where(.manager-sidebar, .portal-mobile-nav) nav a svg {
   flex-shrink: 0;
 }
 .portal-enhanced .manager-account {

@@ -56,7 +56,7 @@ try {
   }
 
   async function report(name) {
-    const body = { rentalContractId: contract.id, description: `Hộp hàng bị móp ${name} ${tag}`, discoveredOn: businessDate(), estimatedValue: 150000, storedItemIds: [], evidenceLinks: ['https://example.test/evidence'] };
+    const body = { rentalContractId: contract.id, description: `Hộp hàng bị móp ${name} ${tag}`, discoveredOn: businessDate(), estimatedValue: 150000, evidenceLinks: ['https://example.test/evidence'] };
     const key = randomUUID();
     const created = await request(customerPath, 201, { token: customer.token, method: 'POST', key, body });
     assert.equal((await request(customerPath, 201, { token: customer.token, method: 'POST', key, body })).id, created.id);

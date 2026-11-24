@@ -132,7 +132,7 @@ function BookingWizard({ baseCatalog, facility, hidden = false, onChangeFacility
   const end = effectiveMode === 'duration' ? monthEnd(start, months) : dailyEnd;
   useDraftGuard(Boolean(start || selections.length || busy));
   useEffect(() => () => request.current?.abort(), []);
-  useFocusEffect(useCallback(() => {if(hidden)return;const sub = BackHandler.addEventListener('hardwareBackPress', () => {if(busy)return true;if(createdBooking){router.dismissTo('/customer');return true;}if(step > 1 && !locked.current) {setStep(step - 1); return true;} return locked.current;}); return () => sub.remove();}, [step,busy,createdBooking,hidden]));
+  useFocusEffect(useCallback(() => {if(hidden)return;const sub = BackHandler.addEventListener('hardwareBackPress', () => {if(busy)return true;if(createdBooking){router.dismissTo('/customer');return true;}if(step > 1 && !locked.current) {setStep(step - 1); return true;} return locked.current;}); return () => sub.remove();}, [step,busy,createdBooking,hidden,setStep]));
   const invalidate = () => {version.current++; request.current?.abort(); request.current=null; setBusy(false); setUnits([]); setSelected([]); setQuote(undefined); setError(''); setSoldOut(false);};
   const chooseProduct = (choice: Row) => {
     invalidate();
@@ -229,9 +229,24 @@ function BookingWizard({ baseCatalog, facility, hidden = false, onChangeFacility
           JSON.stringify(latest.initialPaymentBreakdown) !== JSON.stringify(quote.initialPaymentBreakdown)) {
         setQuote(latest); setError('Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.'); return;
       }
-      const created=await apiRequest<Row>('/reservations',{method:'POST',body,signal:controller.signal});
+      const expectedServiceQuoteVersion = text(check, 'serviceQuoteVersion');
+      const reservationBody = expectedServiceQuoteVersion ? JSON.stringify({ ...payload(), expectedServiceQuoteVersion }) : body;
+      const created = await apiRequest<Row>('/reservations', { method: 'POST', body: reservationBody, signal: controller.signal });
       setCreatedBooking(created);
-    } catch(caught) {setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu. Bạn thử lại nhé.');if(caught instanceof ApiError && caught.status===409) {baseCatalog.refresh();if(facility)scopedCatalog.refresh();setSelected([]);setQuote(undefined);setStep(2);setError('Kho vừa có thay đổi. Hãy kiểm tra lại ô trống.');}}
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu. Bạn thử lại nhé.');
+      if (caught instanceof ApiError && text(object(caught.payload), 'code') === 'SERVICE_QUOTE_CHANGED') {
+        addons.refresh();
+        setQuote(undefined);
+      } else if (caught instanceof ApiError && caught.status === 409) {
+        baseCatalog.refresh();
+        if (facility) scopedCatalog.refresh();
+        setSelected([]);
+        setQuote(undefined);
+        setStep(2);
+        setError('Kho vừa có thay đổi. Hãy kiểm tra lại ô trống.');
+      }
+    }
     finally {locked.current=false;request.current=null;setBusy(false);}
   }
   const floors=[...new Set(units.map(unit=>unit.floor??''))], zones=[...new Set(units.filter(unit=>(unit.floor??'')===floor).map(unit=>unit.zone??''))];

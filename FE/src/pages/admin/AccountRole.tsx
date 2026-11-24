@@ -6,7 +6,7 @@ const adminRoles = {
   STORAGE_CUSTOMER: {
     label: 'Khách thuê kho', icon: UserRound,
     description: 'Quản lý hồ sơ và dịch vụ lưu trữ của mình.',
-    access: ['Đặt kho và theo dõi yêu cầu của mình.', 'Xem hợp đồng, hóa đơn, thanh toán và hàng đang lưu của mình.', 'Gửi yêu cầu nhập/xuất, gia hạn, chuyển kho, trả kho hoặc hỗ trợ.'],
+    access: ['Đặt kho và theo dõi yêu cầu của mình.', 'Xem hợp đồng, hóa đơn và thanh toán của mình.', 'Gửi yêu cầu gia hạn, chuyển kho, trả kho hoặc hỗ trợ.'],
   },
   FACILITY_STAFF: {
     label: 'Nhân viên cơ sở', icon: ClipboardCheck,

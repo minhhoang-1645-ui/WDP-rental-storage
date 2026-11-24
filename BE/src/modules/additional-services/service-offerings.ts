@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma/client.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { businessToday } from '../../business-date.js';
 
 // Catalog IDs remain the historical service IDs; prices/stock are scoped offers.
 export type OfferingRecord = Prisma.FacilityServiceOfferingGetPayload<{
@@ -10,8 +11,10 @@ export function offeringView(offer: OfferingRecord) {
     ...offer.additionalService,
     facilityId: offer.facilityId,
     offeringId: offer.id,
+    localIsActive: offer.isActive,
+    globalIsActive: offer.additionalService.isActive,
     unitPrice: offer.unitPrice,
-    isActive: offer.isActive && offer.additionalService.isActive,
+    isActive: offer.isActive && offer.additionalService.isActive && !offer.configurationReview,
     inventory: offer,
     offerings: undefined,
   };
@@ -26,18 +29,104 @@ export async function pricedServices(
     where: {
       facilityId,
       additionalServiceId: { in: ids },
-      isActive: true,
-      additionalService: { isActive: true },
+      ...publicOfferingScope,
     },
     include: { additionalService: true },
   });
   return offers.map(offeringView);
 }
+export const eligibleServiceFacility = {
+  bookingEnabled: true,
+  operationalStatus: 'OPEN',
+} as const;
+
 export const publicOfferingScope = {
   isActive: true,
+  configurationReview: { equals: Prisma.DbNull },
   additionalService: { isActive: true },
-  facility: { bookingEnabled: true, operationalStatus: 'OPEN' },
+  facility: eligibleServiceFacility,
+  unitPrice: { gt: 0n },
 } as const;
+
+export function offeringQuantity(offer: OfferingRecord) {
+  return offer.additionalService.kind === 'PURCHASE'
+    ? offer.stockOnHand
+    : offer.rentalCapacity;
+}
+
+export async function committedOfferingQuantities(
+  db: Prisma.TransactionClient,
+  offers: OfferingRecord[],
+  includeTodaysRentals: boolean,
+) {
+  const today = businessToday();
+  const scope = offers.flatMap<Prisma.ReservationServiceWhereInput>((offer) => {
+    const base = {
+      additionalServiceId: offer.additionalServiceId,
+      reservation: {
+        status: 'CONFIRMED' as const,
+        facilityId: offer.facilityId,
+      },
+    };
+    if (offer.additionalService.kind === 'PURCHASE')
+      return [{ ...base, fulfillmentStatus: 'RESERVED' }];
+    return includeTodaysRentals
+      ? [
+          {
+            ...base,
+            serviceStartDate: { lte: today },
+            serviceEndDate: { gt: today },
+          },
+        ]
+      : [];
+  });
+  const totals = new Map<string, number>();
+  if (scope.length === 0) return totals;
+  const rows = await db.reservationService.findMany({
+    where: { OR: scope },
+    select: {
+      additionalServiceId: true,
+      quantity: true,
+      reservation: { select: { facilityId: true } },
+    },
+  });
+  for (const row of rows) {
+    const key = offeringKey(
+      row.additionalServiceId,
+      row.reservation.facilityId,
+    );
+    totals.set(key, (totals.get(key) ?? 0) + row.quantity);
+  }
+  return totals;
+}
+
+export function offeringKey(serviceId: string, facilityId: string) {
+  return `${serviceId}:${facilityId}`;
+}
+
+export async function availablePublicOfferings(
+  db: Prisma.TransactionClient,
+  facilityId?: string,
+) {
+  const offers = await db.facilityServiceOffering.findMany({
+    where: { ...publicOfferingScope, ...(facilityId ? { facilityId } : {}) },
+    include: { additionalService: true },
+    orderBy: [{ additionalService: { name: 'asc' } }, { facilityId: 'asc' }],
+  });
+  const configured = offers.filter(
+    (offer) => (offeringQuantity(offer) ?? 0) > 0,
+  );
+  const reserved = await committedOfferingQuantities(db, configured, false);
+  // Rentals are validated for the actual dates selected by the customer.
+  return configured.filter(
+    (offer) =>
+      (offeringQuantity(offer) ?? 0) >
+      (reserved.get(offeringKey(offer.additionalServiceId, offer.facilityId)) ??
+        0),
+  );
+}
+
+export const MAX_OFFERING_QUANTITY = 2_147_483_647;
 export function explicitPrice(value: unknown) {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
     throw new BadRequestException('Nhập giá VND nguyên lớn hơn 0 cho cơ sở.');

@@ -1,3 +1,4 @@
+import { AuditService } from '../src/modules/audit/audit.service.js';
 import { AuthService } from '../src/modules/auth/auth.service.js';
 import { PrismaUserRepository } from '../src/modules/users/user.repository.js';
 import { MaintenanceService } from '../src/modules/maintenance/maintenance.service.js';
@@ -163,10 +164,9 @@ it('transfers and physically returns a unit without forcing personal-goods stock
  const proposal=await support.createCustomer(users.customer,{reservationId:r.id,rentalContractId:contract.id,category:'UNIT_ISSUE',subject:'Yêu cầu chuyển kho',description:'Kho cũ cần kiểm tra khóa.'},key());
  const transfer=await db.transferRequest.findFirstOrThrow({where:{supportRequestId:proposal.id}});
  const destination=(await transfers.destinations(transfer.id,{},users.managerA)).items.find(x=>x.eligible)!;
- await transfers.approve(transfer.id,{toStorageUnitId:destination.id},users.managerA);
- expect((await db.transferRequest.findUniqueOrThrow({where:{id:transfer.id}})).assignedStaffUserId).toBeNull();
- await transfers.assign(transfer.id,{staffUserId:'staffA'},users.managerA);
- await transfers.complete(transfer.id,users.staffA,{oldKeysReturned:true,newKeysDelivered:true,goodsMoved:true,recipientName:users.customer.fullName,returnedKeyCount:1,deliveredKeyCount:1});
+ await transfers.approve(transfer.id,{toStorageUnitId:destination.id,staffUserId:'staffA'},users.managerA);
+ expect((await db.transferRequest.findUniqueOrThrow({where:{id:transfer.id}})).assignedStaffUserId).toBe('staffA');
+ await transfers.complete(transfer.id,users.staffA,{destinationReady:true,oldKeysReturned:true,newKeysDelivered:true,goodsMoved:true,recipientName:users.customer.fullName,returnedKeyCount:1,deliveredKeyCount:1});
  const moved=await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}});
  expect(moved.signedSnapshot).toEqual(original.signedSnapshot);
  expect(moved.endDate).toEqual(original.endDate);
@@ -181,7 +181,7 @@ it('transfers and physically returns a unit without forcing personal-goods stock
  await returns.startInspection(returned.id,users.staffA);
  const detail=await returns.getStaffReturn(returned.id,users.staffA);
  for(const inspection of detail.inspections)await returns.updateInspection(returned.id,inspection.id,{result:'PASS',conditionNote:'Khách đã dọn hết đồ; kho sạch, khóa tốt.'},users.staffA);
- await returns.finalize(returned.id,users.staffA,{accessRevoked:true});
+ await returns.finalize(returned.id,users.staffA,{unitsEmpty:true,accessRevoked:true});
  const actual=await db.returnRequest.findUniqueOrThrow({where:{id:returned.id}});
  expect(actual.physicallyReturnedAt).not.toBeNull();
  expect(actual.status).toBe('PENDING_SETTLEMENT');
@@ -225,6 +225,71 @@ it('scopes facility offerings without assigning legacy global stock',async()=>{
  await expect(service.managerGet(legacy.id,users.managerA)).rejects.toThrow();
  await service.configure(legacy.id,{facilityId:'B',unitPrice:10000,isActive:true},users.managerB);
  expect((await service.managerGet(legacy.id,users.managerB)).id).toBe(legacy.id);
+});
+
+it('requires the current facility configuration revision before accepting new add-ons', async () => {
+ const service = new AdditionalServicesService(db);
+ const inventory = new AdditionalServiceInventoryService(db);
+ const audit = new AuditService(db);
+ const shared = await service.saveCatalog(undefined, {
+   code: 'FOUNDATION_REVIEW', name: 'Bộ đóng gói', kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'thùng',
+ }, users.bom);
+ await service.configure(shared.id, { facilityId: 'A', unitPrice: 10000, isActive: true, stockOnHand: 100 }, users.managerA);
+ const quote = { serviceId: shared.id, kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'thùng', unitPrice: 10000, quantity: 1 };
+ const assertAvailable = (selection = quote) => db.$transaction(tx => inventory.assertQuoteAvailable(tx, [selection], 'type-A'));
+ await assertAvailable();
+ const historicalQuote = { services: [{ ...quote, code: shared.code, name: shared.name, amount: 10000 }] };
+ const historical = await db.reservation.create({ data: {
+   reservationCode: 'FOUNDATION-ADDON-HISTORY', customerId: users.customer.id, facilityId: 'A', storageTypeId: 'type-A',
+   quantity: 1, startDate: new Date('2026-01-01'), endDate: new Date('2026-02-01'), periodMode: 'CUSTOM_DATES',
+   availabilitySnapshot: {}, quoteSnapshot: historicalQuote, idempotencyKey: key(), status: 'CONFIRMED',
+   services: { create: {
+     additionalServiceId: shared.id, serviceCodeSnapshot: shared.code, serviceNameSnapshot: shared.name,
+     serviceKindSnapshot: 'PURCHASE', billingUnitSnapshot: 'ONE_TIME', unitPriceSnapshot: 10000,
+     quantity: 1, amountSnapshot: 10000, fulfillmentStatus: 'RESERVED',
+   } },
+ }, include: { services: true } });
+ await expect(service.saveCatalog(shared.id, { physicalUnit: 'bộ', expectedUpdatedAt: shared.updatedAt }, users.bom))
+   .rejects.toThrow('Còn đơn mua chưa bàn giao');
+ const deactivated = await service.saveCatalog(shared.id, { isActive: false, expectedUpdatedAt: shared.updatedAt }, users.bom);
+ await expect(assertAvailable()).rejects.toThrow();
+ await Promise.all([
+   db.$transaction(tx => inventory.fulfillPurchases(tx, historical.id, [historical.services[0].id])),
+   db.$transaction(tx => inventory.fulfillPurchases(tx, historical.id, [historical.services[0].id])),
+ ]);
+ const reactivated = await service.saveCatalog(shared.id, { isActive: true, expectedUpdatedAt: deactivated.updatedAt }, users.bom);
+ const renamed = await service.saveCatalog(shared.id, { name: 'Bộ vật tư đóng gói', expectedUpdatedAt: reactivated.updatedAt }, users.bom);
+ expect((await service.managerGet(shared.id, users.managerA)).configurationReview).toBeNull();
+ const revised = await service.saveCatalog(shared.id, { physicalUnit: 'bộ', expectedUpdatedAt: renamed.updatedAt }, users.bom);
+ const pending = await service.managerGet(shared.id, users.managerA);
+ expect(pending).toMatchObject({ unitPrice: 10000, stockOnHand: 99, localIsActive: true, isActive: false });
+ expect((await service.businessCatalog(users.bom, shared.id)).items[0]).toMatchObject({ offeringFacilityCount: 0 });
+ expect((await service.publicCatalog('A')).some(item => item.id === shared.id)).toBe(false);
+ await expect(assertAvailable()).rejects.toThrow();
+ const notices = await audit.catalogNotices(users.managerA, { page: 1, limit: 100 });
+ expect(notices).toMatchObject({ items: expect.arrayContaining([
+   expect.objectContaining({ resourceId: shared.id, reviewRequired: true, facilityId: 'A' }),
+ ]) });
+ expect(await audit.catalogNotices(users.managerB, { page: 1, limit: 100 })).toEqual({ items: [], total: 0, limit: 100 });
+
+ await service.saveCatalog(shared.id, { physicalUnit: 'cái', expectedUpdatedAt: revised.updatedAt }, users.bom);
+ const form = { facilityId: 'A', unitPrice: 10000, stockOnHand: 20, isActive: true, reviewRevision: pending.configurationReview.revision };
+ await expect(service.update(shared.id, form, users.managerA)).rejects.toThrow('đã thay đổi');
+ const latest = await service.managerGet(shared.id, users.managerA);
+ expect(latest.configurationReview.before.physicalUnit).toBe('thùng');
+ const current = { ...form, reviewRevision: latest.configurationReview.revision };
+ await expect(service.update(shared.id, current, users.managerB)).rejects.toThrow();
+ await expect(service.update(shared.id, { ...current, stockOnHand: undefined }, users.managerA)).rejects.toThrow('Nhập số lượng');
+ await service.update(shared.id, current, users.managerA);
+ expect(await service.managerGet(shared.id, users.managerA)).toMatchObject({
+   stockOnHand: 20, unitPrice: 10000, configurationReview: null, isActive: true,
+ });
+ await expect(assertAvailable()).rejects.toThrow('lấy báo giá mới');
+ await assertAvailable({ ...quote, physicalUnit: 'cái' });
+ const saved = await db.reservation.findUniqueOrThrow({ where: { id: historical.id }, include: { services: true } });
+ expect(saved.quoteSnapshot).toEqual(historicalQuote);
+ expect(saved.services[0]).toMatchObject({ ...historical.services[0], fulfillmentStatus: 'FULFILLED' });
+ expect((await service.businessCatalog(users.bom, shared.id)).items[0]).toMatchObject({ offeringFacilityCount: 1 });
 });
 
 it('keeps verified late bank receipts in the shared reconciliation ledger without duplicate rental payments',async()=>{
@@ -273,7 +338,7 @@ it('enforces identity-only Admin, BOM-only policies and facility-scoped operatio
  expect((await maintenance.listManager({page:1,limit:100},users.managerB)).items.some(row=>row.id===issue.id)).toBe(true);
  const claims=new DamageClaimsService(db);
  const active=await db.rentalContract.findFirstOrThrow({where:{status:'ACTIVE',reservation:{facilityId:'A',customerId:users.customer.id}}});
- const claim=await claims.create(users.customer,{rentalContractId:active.id,description:'Cần kiểm tra dấu hiệu ẩm trong kho đang thuê.',discoveredOn:date(),storedItemIds:[],evidenceLinks:[]},key());
+ const claim=await claims.create(users.customer,{rentalContractId:active.id,description:'Cần kiểm tra dấu hiệu ẩm trong kho đang thuê.',discoveredOn:date(),evidenceLinks:[]},key());
  await expect(claims.get(users.managerB,claim.id)).rejects.toThrow();
  await expect(claims.assign(users.managerA,claim.id,{staffUserId:'staffB'})).rejects.toThrow();
  await claims.assign(users.managerA,claim.id,{staffUserId:'staffA2'});

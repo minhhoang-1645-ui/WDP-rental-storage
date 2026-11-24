@@ -1,4 +1,4 @@
-import {pricedServices,offeringView,publicOfferingScope} from '../additional-services/service-offerings.js';
+import { availablePublicOfferings, pricedServices, offeringView } from '../additional-services/service-offerings.js';
 import { assertFacility } from '../facility-access/facility-access.service.js';
 import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { facilityScope, assertTaskFacility } from '../facility-access/task-access.js';
@@ -67,7 +67,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async getCatalog() {
     const [records, addons] = await Promise.all([
       this.prisma.storageType.findMany({ where: { facility: { bookingEnabled: true, operationalStatus: 'OPEN' } }, orderBy: { code: 'asc' } }),
-      this.prisma.facilityServiceOffering.findMany({where:publicOfferingScope,include:{additionalService:true},orderBy:{facilityId:'asc'}}).then(items=>items.map(offeringView)),
+      availablePublicOfferings(this.prisma).then(items => items.map(offeringView)),
     ]);
     const products = records.map((record) => this.toProduct(record));
     const sizes = [...new Map(records.map((record) => [record.sizeId, record])).values()]
@@ -90,7 +90,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       products,
       sizes,
       approvedDurations,
-      addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
+      addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, physicalUnit: addon.physicalUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
       pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
@@ -102,7 +102,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       await this.expireUnpaidAutomaticReservations(tx, draft.productId);
       const result = await this.checkAvailabilityForDraft(tx, draft);
       if (result.available) await this.inventory.assertQuoteAvailable(tx, Array.isArray(result.quote.services) ? result.quote.services : [],draft.productId);
-      return result;
+      return { ...result, serviceQuoteVersion: this.serviceQuoteVersion(result.quote) };
     }, { maxWait: 10000, timeout: 20000 });
   }
 
@@ -143,6 +143,10 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     if (user.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
     const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
+    const expectedServiceQuoteVersion = input.expectedServiceQuoteVersion;
+    if (expectedServiceQuoteVersion !== undefined &&
+      (typeof expectedServiceQuoteVersion !== 'string' || !/^[a-f0-9]{64}$/.test(expectedServiceQuoteVersion)))
+      throw new BadRequestException('Phiên bản báo giá dịch vụ không hợp lệ.');
     const idempotencyKey = this.fingerprint('reservation', user.id, draft);
     const existing = await this.prisma.reservation.findUnique({
       where: { idempotencyKey },
@@ -159,6 +163,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     await assertAcceptingBookings(this.prisma, product.id);
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+          if (expectedServiceQuoteVersion !== undefined &&
+            expectedServiceQuoteVersion !== this.serviceQuoteVersion(availability.quote))
+            throw new ConflictException({ code: 'SERVICE_QUOTE_CHANGED', message: 'Báo giá dịch vụ đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.' });
           await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
           const reservation = await tx.reservation.create({
             data: {
@@ -283,11 +290,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       throw error;
     }
     const immutableFields = ['currency', 'billingMode', 'paymentPlan', 'quantity', 'monthlyUnitPrice', 'rentalAmount', 'discountAmount', 'depositAmount', 'purchaseAddOnAmount', 'rentalAddOnAmount', 'addOnTotalAmount', 'quotedTotalAmount'] as const;
-    if (immutableFields.some((field) => JSON.stringify(storedQuote[field]) !== JSON.stringify(currentQuote[field]))) throw new ConflictException({ code: 'BOOKING_QUOTE_CHANGED', message: 'Báo giá đã thay đổi. Vui lòng tạo yêu cầu đặt kho mới.' });
+    if (this.serviceQuoteVersion(storedQuote) !== this.serviceQuoteVersion(currentQuote) ||
+      immutableFields.some((field) => JSON.stringify(storedQuote[field]) !== JSON.stringify(currentQuote[field]))) throw new ConflictException({ code: 'BOOKING_QUOTE_CHANGED', message: 'Báo giá đã thay đổi. Vui lòng tạo yêu cầu đặt kho mới.' });
     const availability = await this.checkAvailabilityForDraft(tx, draft, storedQuote, product);
     if (!availability.available) {
       throw new ConflictException({ code: 'REQUESTED_STORAGE_NO_LONGER_AVAILABLE', message: availability.message, availability });
     }
+    await this.inventory.assertQuoteAvailable(tx, storedQuote.services ?? [], draft.productId);
     const reservation = await tx.reservation.create({
       data: {
         reservationCode: this.createReference('WDP'),
@@ -558,7 +567,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     `);
     const availability = await this.checkAvailabilityForDraft(tx, draft, reservation.quoteSnapshot as QuoteSnapshot);
     if (!availability.available) throw new ConflictException({ message: availability.message, availability });
-    await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
+    await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId, true);
 
     const start = this.date(draft.startDate);
     const end = this.date(availability.endDateExclusive);
@@ -1059,6 +1068,14 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   private isoDate(value: Date) { return value.toISOString().slice(0, 10); }
   private date(value: string) { return new Date(value + 'T00:00:00.000Z'); }
   private createReference(prefix: 'WDP' | 'WDPQ') { return `${prefix}-${new Date().getUTCFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`; }
+  private serviceQuoteVersion(quote: QuoteSnapshot) {
+    const terms = (quote.services ?? []).map(service => [
+      service.serviceId, service.code, service.kind, service.billingUnit, service.physicalUnit ?? null,
+      service.unitPrice, service.quantity, service.amount, service.serviceStartDate, service.serviceEndDate,
+    ]);
+    return this.fingerprint(terms);
+  }
+
   private fingerprint(...parts: unknown[]) { return createHash('sha256').update(JSON.stringify(parts)).digest('hex'); }
   private tokenHash(value: string) { return createHash('sha256').update(value).digest('hex'); }
   private inquiryAccessToken(idempotencyKey: string) {

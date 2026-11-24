@@ -662,7 +662,7 @@ try {
   await savedLogin(
     "STAFF",
     "/staff/maintenance?mine=true#work",
-    "/portal/login",
+    "/account/login",
   );
   await savedLogin(
     "CUSTOMER",

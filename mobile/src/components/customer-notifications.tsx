@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { AppState, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { router, type Href } from 'expo-router';
-import { ArrowLeftRight, Bell, Box, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, PackageCheck, RefreshCw, TriangleAlert, Wallet, X, type LucideIcon } from 'lucide-react-native';
+import { ArrowLeftRight, Bell, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, PackageCheck, RefreshCw, TriangleAlert, Wallet, X, type LucideIcon } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { ApiError, apiRequest } from '@/services/api';
 import { refreshScreens, subscribeDataChanged } from '@/services/live-events';
@@ -28,7 +28,7 @@ type Filter = (typeof filters)[number]['value'];
 const icons: Record<string, LucideIcon> = {
   reservations: ClipboardList, contracts: FileText, appointments: CalendarDays,
   invoices: CreditCard, 'payment-submissions': CreditCard, renewals: RefreshCw,
-  'stock-movements': Box, transfers: ArrowLeftRight, 'transfer-orders': ArrowLeftRight,
+  transfers: ArrowLeftRight, 'transfer-orders': ArrowLeftRight,
   returns: PackageCheck, 'early-returns': PackageCheck, 'deposit-settlements': Wallet,
   'support-requests': Headphones, 'damage-claims': TriangleAlert,
 };

@@ -10,7 +10,7 @@ export const managerSections = {
     ],
   },
   finance: {
-    title: 'Tài chính', description: 'Quản lý các khoản thu, công nợ, đối soát và tiền cọc; không thực hiện bàn giao hoặc kiểm đếm.',
+    title: 'Tài chính', description: 'Quản lý các khoản thu, công nợ, đối soát và tiền cọc; không thực hiện bàn giao kho.',
     items: [
       { title: 'Hóa đơn & công nợ', description: 'Đối chiếu số phải thu và ghi nhận khoản tiền thực sự đã nhận.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
       { title: 'Xác nhận chuyển khoản', description: 'Kiểm tra thông báo khách gửi với tiền thực nhận.', web: '/manager/payment-submissions', mobile: '/manager/payment-submissions' },

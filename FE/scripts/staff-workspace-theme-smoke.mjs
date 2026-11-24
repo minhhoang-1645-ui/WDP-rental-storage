@@ -151,11 +151,11 @@ async function checkProfile(page, roleLabel, dark) {
 async function checkLogout(page, home, role) {
   await page.getByRole('button', { name: 'Menu tài khoản' }).click();
   await page.locator('.workspace-profile-panel').getByRole('button', { name: 'Đăng xuất' }).click();
-  await page.waitForURL('**/portal/login');
+  await page.waitForURL('**/account/login');
   assert.equal(await page.evaluate(() => localStorage.getItem('wdp-auth-token-v1')), null);
   await page.locator('.workspace-profile').waitFor({ state: 'detached' });
   await page.goto(base + home);
-  await page.waitForURL(url => url.pathname === '/portal/login');
+  await page.waitForURL(url => url.pathname === '/account/login');
   assert(logoutRequests.includes(role));
 }
 

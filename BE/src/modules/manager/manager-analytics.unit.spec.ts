@@ -29,10 +29,14 @@ describe('RV3 Manager report, no database writes', () => {
     for (const query of [{ from: '2026-02-30' }, { to: '2026-13-01' }, { from: '2026-11-10', to: '2026-11-09' }, { from: ['2026-01-01'] }]) expect(() => analyticsPeriod(query)).toThrow();
   });
   it('counts all physical units, actual contracts and scoped staff workload', async () => {
-    const { service } = setup(); const data = await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never);
+    const { service, tx } = setup(); const data = await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never);
     expect(data.units).toMatchObject({ total: 120, occupied: 30, reserved: 0, utilizationPercent: 25 });
     expect(data.activeContracts).toBe(31);
-    expect(data.workload).toEqual([expect.objectContaining({ stock: 3, support: 0, maintenance: 0 })]);
+    expect(data.queue).not.toHaveProperty('unassignedStock');
+    expect(data.workload[0]).not.toHaveProperty('stock');
+    expect(tx.stockMovement.count).not.toHaveBeenCalled();
+    expect(tx.stockMovement.groupBy).not.toHaveBeenCalled();
+    expect(data.workload).toEqual([expect.objectContaining({ support: 0, maintenance: 0 })]);
   });
   it('does not label an empty denominator as zero utilization or suppress API failures', async () => {
     const { service, tx } = setup(); tx.storageUnit.groupBy.mockResolvedValue([]);

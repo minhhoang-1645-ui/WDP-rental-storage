@@ -1,4 +1,4 @@
-export const staffWorkflows = ['reservations', 'inquiries', 'support-requests', 'appointments', 'stock-movements', 'renewals', 'transfers', 'returns', 'maintenance'] as const;
+export const staffWorkflows = ['reservations', 'inquiries', 'support-requests', 'appointments', 'renewals', 'transfers', 'returns', 'maintenance'] as const;
 export const staffLookups = ['units', 'contracts'] as const;
 export const isStaffWorkflow = (resource: string) => (staffWorkflows as readonly string[]).includes(resource);
 export const managerResources = ['units', 'customers', 'catalog', 'additional-services', 'contracts', 'rentals', 'invoices', 'payments', 'payment-submissions', 'online-payment-reconciliations', 'deposit-settlements'] as const;

@@ -13,8 +13,13 @@ function setup() {
   const reservation = { id: 'rental', reservationCode: 'RES-1', customerId: 'customer', status: 'CONFIRMED', quantity: 1, endDate: end, storageType: { id: 'type', name: 'Kho nhỏ' }, units: [allocation],
     contracts: [{ id: 'contract', contractCode: 'CON-1', status: 'ACTIVE', endDate: end, reservationUnitId: allocation.id, reservationUnit: allocation }], renewals: [] as { status: string }[], supportRequests: [] as any[],
     invoices: [{ invoiceCode: 'INV-1', totalAmount: 300n, amountPaid: 200n, balanceDue: 100n, depositAmount: 50n }] };
-  const request = { id: 'proposal', rentalContractId: null, supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
-  const tx = { $queryRaw: vi.fn(async () => []), supportRequest: {
+  const request = { id: 'proposal', reservationId: reservation.id, rentalContractId: null, supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
+  const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    $queryRaw: vi.fn(async () => []), supportRequest: {
     findFirst: vi.fn(async () => ({ id: request.id, reservationId: reservation.id })), findUniqueOrThrow: vi.fn(async () => request),
     update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { Object.assign(request, data); request.resolvedBy = actor; return request; }),
   }, returnRequest: { findFirst: vi.fn(async () => null as any) } };
@@ -101,7 +106,7 @@ describe('Early return approval with memory-only persistence', () => {
   it('prevents ordinary support transitions from modifying early-return approval state', async () => {
     const app = setup(); const prisma = { supportRequest: { findFirst: vi.fn(async () => ({ id: 'proposal' })) }, $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run({ ...app.tx, supportRequest: { ...app.tx.supportRequest, findUnique: vi.fn(async () => app.request) } })) };
     const support = new SupportService(prisma as unknown as PrismaService);
-    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'FACILITY_STAFF' })).rejects.toThrow('Chỉ Manager');
+    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'FACILITY_STAFF' })).rejects.toThrow('Chỉ quản lý cơ sở');
     await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', app.actor)).rejects.toThrow('trả trước hạn');
     expect(app.tx.supportRequest.update).not.toHaveBeenCalled();
   });

@@ -16,9 +16,14 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
     requestedBy: actor, approvedBy: actor, completedBy: actor, createdAt: stamp, updatedAt: stamp, approvedAt: stamp, completedAt: status === 'COMPLETED' ? stamp : null as Date | null };
   const maintenance: Record<string, unknown>[] = [];
   const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, assignedStaffUserId: support.assignedStaffUserId, resolutionType: support.resolutionType } });
-  const tx = { storedItem: { count: vi.fn().mockResolvedValue(0) }, stockMovement: { count: vi.fn().mockResolvedValue(9) }, $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
-    rentalContract: { update: vi.fn(async () => ({})) }, reservationUnit: { update: vi.fn(async () => ({})) }, storageUnit: { findUnique: vi.fn(async () => transfer.fromStorageUnit), update: vi.fn(async ({ where, data }: any) => { Object.assign(where.id === 'source' ? transfer.fromStorageUnit : transfer.toStorageUnit, data); return {}; }) },
-    maintenanceRequest: { findUnique: vi.fn(async ({ where }: any) => maintenance.find(item => Object.entries(where).every(([key, value]) => item[key] === value)) ?? null), create: vi.fn(async ({ data }: any) => { const item = { id: 'maintenance-created', ...data }; maintenance.push(item); return item; }) },
+  const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    storedItem: { count: vi.fn().mockResolvedValue(0) }, stockMovement: { count: vi.fn().mockResolvedValue(9) }, $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
+    rentalContract: { update: vi.fn(async () => ({})) }, reservationUnit: { update: vi.fn(async () => ({})) }, storageUnit: { findUnique: vi.fn(async () => ({ ...transfer.fromStorageUnit, storageType: { ...storageType, facilityId: 'facility' } })), update: vi.fn(async ({ where, data }: any) => { Object.assign(where.id === 'source' ? transfer.fromStorageUnit : transfer.toStorageUnit, data); return {}; }) },
+    maintenanceRequest: { count: vi.fn().mockResolvedValue(0), findUnique: vi.fn(async ({ where }: any) => maintenance.find(item => Object.entries(where).every(([key, value]) => item[key] === value)) ?? null), create: vi.fn(async ({ data }: any) => { const item = { id: 'maintenance-created', ...data }; maintenance.push(item); return item; }) },
     supportRequest: { findUnique: vi.fn(async () => support), updateMany: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(support, input.data); return { count: 1 }; }) } };
   const prisma = { $transaction: vi.fn(async (operation: (value: typeof tx) => Promise<unknown>) => operation(tx)) };
   return { actor, support, transfer, maintenance, tx, prisma, service: new TransfersService(prisma as unknown as PrismaService) };
@@ -120,14 +125,15 @@ describe('Transfer completion and linked customer request, with memory-only depe
   it('does not finish an unapproved transfer', async () => {
     const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
-  it('rejects completion by another Staff account and blocks when goods are still in stock', async () => {
+  it('rejects another Staff member and ignores historical inventory after physical confirmation', async () => {
     const app = setup();
     await expect(app.service.complete('transfer', { ...app.actor, id: 'other-staff' }, handover)).rejects.toThrow('Chỉ nhân viên được giao');
-    app.tx.storedItem.count.mockResolvedValue(1);
-    await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('Kho nguồn còn 1 mặt hàng');
-    expect(app.tx.storedItem.count).toHaveBeenCalledWith({ where: { rentalContractId: 'contract', balance: { gt: 0 } } });
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
     expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
+    app.tx.storedItem.count.mockResolvedValue(1);
+    await expect(app.service.complete('transfer', app.actor, handover)).resolves.toMatchObject({ status: 'COMPLETED' });
+    expect(app.tx.storedItem.count).not.toHaveBeenCalled();
+    expect(app.tx.stockMovement.count).not.toHaveBeenCalled();
   });
   it('supports transfers without a linked customer request', async () => {
     const app = setup(); app.transfer.supportRequestId = null; expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED'); expect(app.tx.supportRequest.findUnique).not.toHaveBeenCalled();
@@ -151,11 +157,11 @@ describe('Transfer completion and linked customer request, with memory-only depe
   });
 });
 
-const handover = { oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 2, note: '' };
+const handover = { destinationReady: true, oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 2, note: '' };
 describe('Transfer keys are required before a new physical completion', () => {
   it('rejects missing confirmations before changing occupancy', async () => {
     const app = setup();
-    await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('bàn giao quyền truy cập kho mới');
+    await expect(app.service.complete('transfer', app.actor, { destinationReady: true })).rejects.toThrow('bàn giao quyền truy cập kho mới');
     expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
   });

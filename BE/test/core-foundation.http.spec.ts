@@ -37,9 +37,11 @@ async function api(
   who?: string,
   body?: object,
   status = 200,
+  headers?: Record<string, string>,
 ) {
   let operation = request(app.getHttpServer())[method]('/api' + path);
   if (who) operation = operation.set('Authorization', 'Bearer ' + tokens[who]);
+  if (headers) operation = operation.set(headers);
   operation = operation.set('Idempotency-Key', key());
   if (body) operation = operation.send(body);
   const response = await operation;
@@ -66,7 +68,7 @@ async function denied(
     method + ' ' + path + ' as ' + who + ': ' + JSON.stringify(response.body),
   ).toContain(response.status);
 }
-async function reserve(facility = 'A', quantity = 1, startDate = today()) {
+async function reserve(facility = 'A', quantity = 1, startDate = today(), services: { serviceId: string; quantity: number }[] = []) {
   const response = await api(
     'post',
     '/reservations',
@@ -79,6 +81,7 @@ async function reserve(facility = 'A', quantity = 1, startDate = today()) {
       quantity,
       adjacencyPreference: false,
       addonIds: [],
+      services,
       paymentChoice: 'pay-later',
       paymentPlan: 'PAY_MONTHLY',
       note: key(),
@@ -288,7 +291,6 @@ it.each([
   'maintenance',
   'transfers',
   'returns',
-  'stock-movements',
   'support-requests',
   'inquiries',
   'overstays',
@@ -766,8 +768,22 @@ it('keeps early key handover distinct from activation until the rental start dat
     value: 3,
     expectedUpdatedAt: lead.updatedAt,
   });
+  const products = await Promise.all(['HT-BOX', 'HT-TAPE'].map(async code => {
+    const product = (await api('post', '/operations/additional-services', 'bom', {
+      code, name: code, kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'cái', isActive: true,
+    }, 201)).body;
+    await api('post', '/manager/additional-services/' + product.id + '/offerings', 'managerB', {
+      facilityId: identity('B'), unitPrice: 1000, stockOnHand: 13, isActive: true,
+    }, 201);
+    return product;
+  }));
+  const inventory = async (product = products[0]) => (await api('get',
+    '/manager/additional-services/' + product.id + '/inventory?facilityId=' + identity('B'), 'managerB')).body;
   const start = new Date(businessToday().getTime() + 2 * 86400000),
-    r = await reserve('B', 1, start.toISOString().slice(0, 10));
+    r = await reserve('B', 2, start.toISOString().slice(0, 10), products.map(product => ({ serviceId: product.id, quantity: 3 })));
+  expect(await inventory()).toMatchObject({ stockOnHand: 13, reservedQuantity: 3, availableQuantity: 10, soldByUnit: [] });
+  const lines = await db.reservationService.findMany({ where: { reservationId: r.id } });
+  const [first, second] = products.map(product => lines.find(line => line.additionalServiceId === product.id)!);
   await sign(r.id);
   const invoice = await db.invoice.findFirstOrThrow({
     where: { reservationId: r.id },
@@ -779,6 +795,7 @@ it('keeps early key handover distinct from activation until the rental start dat
     { amount: Number(invoice.totalAmount), method: 'CASH' },
     201,
   );
+  expect(await inventory()).toMatchObject({ stockOnHand: 13, reservedQuantity: 3, soldByUnit: [] });
   const appt = await api(
     'post',
     '/customer/appointments',
@@ -795,27 +812,33 @@ it('keeps early key handover distinct from activation until the rental start dat
     'managerB',
     { staffUserId: identity('staffB'), expectedAssignedStaffUserId: null },
   );
-  const unit = await db.reservationUnit.findFirstOrThrow({
-    where: { reservationId: r.id },
-  });
+  const units = await db.reservationUnit.findMany({ where: { reservationId: r.id } });
+  const path = '/staff/appointments/' + appt.body.id + '/complete-handover';
   await api(
     'post',
-    '/staff/appointments/' + appt.body.id + '/complete-handover',
+    path,
     'staffB',
     {
+      deliveredPurchaseIds: [first.id],
       handoverReport: {
         condition: 'Kho sạch',
         accessItemCount: 1,
         identityVerified: true,
         unitInspected: true,
         accessDelivered: true,
-        unitChecks: [
-          { unitId: unit.storageUnitId, condition: 'Tốt', inspected: true },
-        ],
+        unitChecks: units.map(unit => ({ unitId: unit.storageUnitId, condition: 'Tốt', inspected: true })),
       },
     },
     201,
   );
+  expect(await inventory()).toMatchObject({ stockOnHand: 10, reservedQuantity: 0, soldByUnit: [{ unit: 'cái', quantity: 3 }] });
+  expect(await inventory(products[1])).toMatchObject({ stockOnHand: 13, reservedQuantity: 3, soldByUnit: [] });
+  await denied('post', path, 'staffA', { deliveredPurchaseIds: [second.id] });
+  await api('post', path, 'staffB', { deliveredPurchaseIds: [first.id] }, 201);
+  expect(await inventory()).toMatchObject({ stockOnHand: 10, soldByUnit: [{ unit: 'cái', quantity: 3 }] });
+  await api('patch', '/manager/additional-services/' + products[0].id + '/inventory', 'managerB', { stockOnHand: 20 });
+  expect(await inventory()).toMatchObject({ stockOnHand: 20, soldByUnit: [{ unit: 'cái', quantity: 3 }] });
+  await denied('get', '/manager/additional-services/' + products[0].id + '/inventory?facilityId=' + identity('B'), 'managerA');
   const scheduler = app.get(AppointmentsService);
   await scheduler.activateDueHandovers();
   expect(
@@ -834,5 +857,47 @@ it('keeps early key handover distinct from activation until the rental start dat
     await db.rentalContract.count({
       where: { reservationId: r.id, status: 'ACTIVE' },
     }),
-  ).toBe(1);
+  ).toBe(2);
+  expect(await inventory(products[1])).toMatchObject({ stockOnHand: 13, reservedQuantity: 3, soldByUnit: [] });
+  await api('post', path, 'staffB', { deliveredPurchaseIds: [second.id] }, 201);
+  expect(await inventory(products[1])).toMatchObject({ stockOnHand: 10, reservedQuantity: 0, soldByUnit: [{ unit: 'cái', quantity: 3 }] });
+});
+
+
+it('creates facility offerings with category-specific quantities and a catalog version header', async () => {
+  const facilityId = identity('A');
+  await db.facility.update({ where: { id: facilityId }, data: { bookingEnabled: true, operationalStatus: 'OPEN' } });
+  const scope = '?scopeFacilityId=' + facilityId;
+  const catalog = '/operations/additional-services';
+  const createShared = async (code: string, name: string, kind: 'PURCHASE' | 'RENTAL', billingUnit: 'ONE_TIME' | 'DAY', physicalUnit: string) =>
+    (await api('post', catalog, 'bom', { code, name, kind, billingUnit, physicalUnit, isActive: true }, 201)).body;
+  const box = await createShared('BOX-S', 'Thùng carton nhỏ', 'PURCHASE', 'ONE_TIME', 'thùng');
+  const dolly = await createShared('DOLLY-HTTP', 'Xe đẩy', 'RENTAL', 'DAY', 'xe');
+  const base = { facilityId, unitPrice: 1000, isActive: true };
+  const boxPath = '/manager/additional-services/' + box.id;
+  const rentalPath = '/manager/additional-services/' + dolly.id;
+  const boxPayload = { ...base, stockOnHand: 10 };
+  const version = { 'X-Catalog-Updated-At': box.updatedAt };
+  await api('post', boxPath + '/offerings' + scope, 'managerA', boxPayload, 409, {
+    'X-Catalog-Updated-At': '2000-01-01T00:00:00.000Z',
+  });
+  const invalid = await api('post', boxPath + '/offerings' + scope, 'managerA', { ...boxPayload, unexpected: true }, 400);
+  expect(invalid.body.message).toContain('Dữ liệu thêm dịch vụ');
+  await denied('post', boxPath + '/offerings' + scope, 'managerB', boxPayload);
+  const created = await api('post', boxPath + '/offerings' + scope, 'managerA', boxPayload, 201, version);
+  expect(created.body).toMatchObject({ facilityId, unitPrice: 1000, isActive: true, stockOnHand: 10 });
+  await api('post', boxPath + '/offerings' + scope, 'managerA', boxPayload, 409, version);
+
+  await api('post', rentalPath + '/offerings' + scope, 'managerA', boxPayload, 400);
+  const rental = await api('post', rentalPath + '/offerings' + scope, 'managerA', { ...base, rentalCapacity: 2 }, 201);
+  expect(rental.body).toMatchObject({ facilityId, rentalCapacity: 2 });
+  await api('patch', boxPath + scope, 'managerA', { ...base, unitPrice: 1500, stockOnHand: 12 }, 400);
+  const edit = await api('patch', boxPath + scope, 'managerA', { ...base, unitPrice: 1500 });
+  expect(edit.body).toMatchObject({ unitPrice: 1500, stockOnHand: 10 });
+  const stock = await api('patch', boxPath + '/inventory' + scope, 'managerA', { facilityId, stockOnHand: 12, expectedQuantity: 10 });
+  expect(stock.body.stockOnHand).toBe(12);
+  for (const item of [box, dolly]) {
+    const detail = await api('get', catalog + '/' + item.id, 'bom');
+    expect(detail.body).toMatchObject({ configuredFacilityCount: 1, offeringFacilityCount: 1 });
+  }
 });

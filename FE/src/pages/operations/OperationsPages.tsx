@@ -1,20 +1,40 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import { useAuth } from '../../auth/auth-context';
 import { Link } from 'react-router-dom';
 import { useListPagination } from '../../components/workspace/useListPagination';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 const businessTime=(value:string)=>new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
 const businessDateTime=(value:FormDataEntryValue|null)=>new Date(String(value)+'+07:00').toISOString();
 const versionStatus:Record<string,string>={EFFECTIVE:'Đang áp dụng',SCHEDULED:'Chưa đến ngày áp dụng',HISTORICAL:'Lịch sử'};
 type Facility={id:string;code:string;name:string;address:string;officeHours:string;accessHours:string;bookingEnabled:boolean;operationalStatus:string;updatedAt:string};
 export function OperationsFacilities() {
+ const requestConfirmation = useConfirmation();
+ const saving = useRef(false);
  const {user}=useAuth();const data=useApiResource<Facility[]>('/operations/facilities',user?.id);
  const [selected,setSelected]=useState<Facility|null>();const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[search,setSearch]=useState('');const[filter,setFilter]=useState('');
  const {items,pagination}=useListPagination((data.data??[]).filter(f=>(f.name+' '+f.code+' '+f.address).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))&&(!filter||filter==='CLOSED'&&f.operationalStatus==='CLOSED'||filter==='OPEN'&&f.bookingEnabled||filter==='SUSPENDED'&&f.operationalStatus==='OPEN'&&!f.bookingEnabled)));
- async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();if(busy)return;const f=new FormData(e.currentTarget);if(selected&&(selected.bookingEnabled!==(f.get('bookingEnabled')==='on')||selected.operationalStatus!==f.get('operationalStatus'))&&!window.confirm('Xác nhận đổi trạng thái cơ sở? Hợp đồng và nghĩa vụ hiện tại vẫn được giữ nguyên.'))return;setError('');setBusy(true);
-  try{await apiRequest('/operations/facilities'+(selected?'/'+encodeURIComponent(selected.id):''),{method:selected?'PATCH':'POST',body:JSON.stringify({code:f.get('code'),name:f.get('name'),address:f.get('address'),officeHours:f.get('officeHours'),accessHours:f.get('accessHours'),bookingEnabled:f.get('bookingEnabled')==='on',operationalStatus:f.get('operationalStatus'),...(selected?{expectedUpdatedAt:selected.updatedAt}:{})})});setSelected(undefined);data.refresh();}
-  catch(err){setError(err instanceof Error?err.message:'Chưa lưu được cơ sở.');}finally{setBusy(false);}
+ async function save(e:FormEvent<HTMLFormElement>){
+  e.preventDefault();
+  if (saving.current) return;
+  const f = new FormData(e.currentTarget);
+  const bookingEnabled = f.get('bookingEnabled') === 'on';
+  const operationalStatus = f.get('operationalStatus');
+  const body = {code:f.get('code'),name:f.get('name'),address:f.get('address'),officeHours:f.get('officeHours'),accessHours:f.get('accessHours'),bookingEnabled,operationalStatus,...(selected?{expectedUpdatedAt:selected.updatedAt}:{})};
+  saving.current = true;
+  try {
+   if (selected && (selected.bookingEnabled !== bookingEnabled || selected.operationalStatus !== operationalStatus)) {
+    const operationChanged = selected.operationalStatus !== operationalStatus;
+    const action = operationChanged ? operationalStatus === 'CLOSED' ? 'Đóng cửa cơ sở' : 'Mở cửa cơ sở' : bookingEnabled ? 'Nhận đặt kho trở lại' : 'Tạm dừng nhận đặt kho';
+    const bookingState = bookingEnabled ? 'Nhận đặt kho mới.' : 'Tạm dừng nhận đặt kho mới.';
+    if (!await requestConfirmation({title:action,description:`${selected.name}. ${bookingState}`,confirmLabel:action,destructive:operationChanged && operationalStatus==='CLOSED'})) return;
+   }
+   setError(''); setBusy(true);
+   await apiRequest('/operations/facilities'+(selected?'/'+encodeURIComponent(selected.id):''),{method:selected?'PATCH':'POST',body:JSON.stringify(body)});
+   setSelected(undefined); data.refresh();
+  } catch(err){setError(err instanceof Error?err.message:'Chưa lưu được cơ sở.');}
+  finally{saving.current=false;setBusy(false);}
  }
  return <section className="operations-page"><header><h1>Cơ sở</h1><button onClick={()=>{setSelected(null);setError('');}}>Thêm cơ sở</button></header>
  {data.loading?<p role="status">Đang tải…</p>:null}{data.error?<p role="alert">{data.error}<button onClick={data.refresh}>Thử lại</button></p>:null}
@@ -29,8 +49,23 @@ export function OperationsFacilities() {
 }
 type Policy={key:string;title:string;description:string;value:number;min:number;max:number;unit:string;updatedAt:string|null;effectiveVersion:number;history:{id:string;version:number;value:number;effectiveFrom:string;effectiveTo:string|null;status:string;author:string|null}[]};
 export function OperationsPolicies(){
+ const requestConfirmation = useConfirmation();
+ const saving = useRef(false);
  const{user}=useAuth();const data=useApiResource<{items:Policy[];commercialRules:{prepaidDiscounts:{months:number;percent:number}[];depositDescription:string}}>('/operations/business-policies',user?.id);const[error,setError]=useState('');const[busy,setBusy]=useState('');
- async function save(e:FormEvent<HTMLFormElement>,p:Policy){e.preventDefault();if(busy)return;const f=new FormData(e.currentTarget);if(!window.confirm(`Công bố ${p.title}: ${p.value} → ${f.get('value')} ${p.unit}, từ ${String(f.get('effectiveFrom')).replace('T',' ')} (UTC+7)?`))return;setBusy(p.key);setError('');try{await apiRequest('/operations/business-policies/'+p.key,{method:'PATCH',body:JSON.stringify({value:Number(f.get('value')),expectedUpdatedAt:p.updatedAt,effectiveFrom:businessDateTime(f.get('effectiveFrom'))})});data.refresh();}catch(err){setError(err instanceof Error?err.message:'Chưa lưu được chính sách.');}finally{setBusy('');}}
+ async function save(e:FormEvent<HTMLFormElement>,p:Policy){
+  e.preventDefault();
+  if (saving.current) return;
+  const f = new FormData(e.currentTarget);
+  saving.current = true;
+  try {
+   const body = {value:Number(f.get('value')),expectedUpdatedAt:p.updatedAt,effectiveFrom:businessDateTime(f.get('effectiveFrom'))};
+   if (!await requestConfirmation({title:'Công bố chính sách',description:`${p.title}\n${p.value} → ${body.value} ${p.unit}\nHiệu lực từ ${businessTime(body.effectiveFrom)} (UTC+7).`,confirmLabel:'Công bố'})) return;
+   setBusy(p.key); setError('');
+   await apiRequest('/operations/business-policies/'+p.key,{method:'PATCH',body:JSON.stringify(body)});
+   data.refresh();
+  } catch(err){setError(err instanceof Error?err.message:'Chưa lưu được chính sách.');}
+  finally{saving.current=false;setBusy('');}
+ }
  return <section className="operations-page"><h1>Chính sách thuê kho</h1>{data.loading?<p>Đang tải…</p>:null}{data.error||error?<p role="alert">{data.error||error}</p>:null}
  {(data.data?.items??[]).map(p=><form key={p.key+':'+p.updatedAt} onSubmit={e=>save(e,p)}><h2>{p.title}</h2><p>{p.description}</p><p><strong>Đang áp dụng: {p.value} {p.unit}</strong> · {p.effectiveVersion?`Phiên bản ${p.effectiveVersion}`:'Giá trị nền tảng'}</p><label>Giá trị mới ({p.unit})<input name="value" type="number" required min={p.min} max={p.max} step="1" defaultValue={p.value}/><small>Phạm vi {p.min}–{p.max} {p.unit}</small></label><label>Áp dụng từ (UTC+7)<input name="effectiveFrom" type="datetime-local" required/></label><button disabled={Boolean(busy)}>{busy===p.key?'Đang lưu…':'Kiểm tra và công bố phiên bản'}</button>
  <details open><summary>Lịch sử phiên bản ({p.history.length})</summary><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Phiên bản</th><th>Giá trị</th><th>Hiệu lực</th><th>Người tạo</th><th>Trạng thái</th></tr></thead><tbody>{p.history.map(h=><tr key={h.id}><td>{h.version}</td><td>{h.value} {p.unit}</td><td>{businessTime(h.effectiveFrom)}{h.effectiveTo&&<small>Đến {businessTime(h.effectiveTo)}</small>}</td><td>{h.author??'—'}</td><td>{versionStatus[h.status]??h.status}</td></tr>)}</tbody></table></div></details></form>)}
@@ -39,8 +74,29 @@ export function OperationsPolicies(){
 type Range={id:string;facilityId:string;storageTypeId:string|null;version:number;value:{min:number;max:number};effectiveFrom:string;status:string};
 type RangeType={id:string;facilityId:string;name:string;code:string;monthlyRate:number|null;outsideRange:boolean;range:{min:number;max:number}|null};
 export function OperationsPricing(){
+ const requestConfirmation = useConfirmation();
+ const saving = useRef(false);
  const{user}=useAuth();const ranges=useApiResource<{items:Range[];types:RangeType[]}>('/operations/pricing-rules',user?.id);const facilities=useApiResource<Facility[]>('/operations/facilities',user?.id);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[facilityId,setFacilityId]=useState('');const[typeId,setTypeId]=useState('');
- async function save(e:FormEvent<HTMLFormElement>){e.preventDefault();if(busy)return;const f=new FormData(e.currentTarget);const version=ranges.data?.items.find(r=>r.facilityId===facilityId&&r.storageTypeId===(typeId||null))?.version??0;const min=Number(f.get('min')),max=Number(f.get('max'));if(min>max){setError('Giá tối thiểu không thể lớn hơn giá tối đa.');return;}if(!window.confirm(`Công bố khung giá ${min.toLocaleString('vi-VN')} – ${max.toLocaleString('vi-VN')} đ/tháng?`))return;setBusy(true);setError('');try{await apiRequest('/operations/pricing-rules',{method:'POST',body:JSON.stringify({facilityId,storageTypeId:typeId||null,min,max,effectiveFrom:businessDateTime(f.get('effectiveFrom')),expectedVersion:version})});ranges.refresh();}catch(err){setError(err instanceof Error?err.message:'Chưa lưu được khung giá.');}finally{setBusy(false);}}
+ async function save(e:FormEvent<HTMLFormElement>){
+  e.preventDefault();
+  if (saving.current) return;
+  const f = new FormData(e.currentTarget);
+  const min = Number(f.get('min')), max = Number(f.get('max'));
+  if (min > max) { setError('Giá tối thiểu không thể lớn hơn giá tối đa.'); return; }
+  const storageTypeId = typeId || null;
+  const expectedVersion = ranges.data?.items.find(r=>r.facilityId===facilityId&&r.storageTypeId===storageTypeId)?.version ?? 0;
+  const facility = facilities.data?.find(item=>item.id===facilityId);
+  const scope = storageTypeId ? ranges.data?.types.find(item=>item.id===storageTypeId)?.name ?? storageTypeId : 'Toàn cơ sở';
+  saving.current = true;
+  try {
+   const body = {facilityId,storageTypeId,min,max,effectiveFrom:businessDateTime(f.get('effectiveFrom')),expectedVersion};
+   if (!await requestConfirmation({title:'Công bố khung giá',description:`${facility?.name ?? facilityId} · ${scope}\n${min.toLocaleString('vi-VN')} – ${max.toLocaleString('vi-VN')} đ/tháng\nHiệu lực từ ${businessTime(body.effectiveFrom)} (UTC+7).`,confirmLabel:'Công bố'})) return;
+   setBusy(true); setError('');
+   await apiRequest('/operations/pricing-rules',{method:'POST',body:JSON.stringify(body)});
+   ranges.refresh();
+  } catch(err){setError(err instanceof Error?err.message:'Chưa lưu được khung giá.');}
+  finally{saving.current=false;setBusy(false);}
+ }
  return <section className="operations-page"><h1>Khung giá thuê</h1><p>Quản lý cơ sở đặt giá bán trong khung được phép. Giá và hóa đơn đã chốt giữ nguyên.</p>
  {ranges.error||facilities.error||error?<p role="alert">{ranges.error||facilities.error||error}</p>:null}<form onSubmit={save}><label>Cơ sở<select name="facilityId" required value={facilityId} onChange={e=>{setFacilityId(e.target.value);setTypeId('');}}><option value="">Chọn cơ sở</option>{facilities.data?.map(f=><option value={f.id} key={f.id}>{f.name}</option>)}</select></label>
  <label>Phạm vi<select value={typeId} onChange={e=>setTypeId(e.target.value)}><option value="">Mặc định toàn cơ sở</option>{ranges.data?.types.filter(t=>t.facilityId===facilityId).map(t=><option key={t.id} value={t.id}>{t.name} · {t.code}</option>)}</select></label>

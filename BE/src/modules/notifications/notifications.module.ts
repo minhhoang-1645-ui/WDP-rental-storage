@@ -10,7 +10,6 @@ import { DepositSettlementsModule } from '../deposit-settlements/deposit-settlem
 import { MaintenanceModule } from '../maintenance/maintenance.module.js';
 import { RenewalsModule } from '../renewals/renewals.module.js';
 import { ReturnsModule } from '../returns/returns.module.js';
-import { StockMovementsModule } from '../stock-movements/stock-movements.module.js';
 import { SupportModule } from '../support/support.module.js';
 import { TransfersModule } from '../transfers/transfers.module.js';
 import { NotificationSources } from './notification-sources.js';
@@ -21,7 +20,7 @@ import { NotificationsController } from './notifications.controller.js';
   imports: [
     AuthModule, AppointmentsModule, AuditModule, BillingModule, BookingModule, ContractsModule,
     DamageClaimsModule, DepositSettlementsModule, MaintenanceModule, RenewalsModule,
-    ReturnsModule, StockMovementsModule, SupportModule, TransfersModule,
+    ReturnsModule, SupportModule, TransfersModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationSources, NotificationsService],

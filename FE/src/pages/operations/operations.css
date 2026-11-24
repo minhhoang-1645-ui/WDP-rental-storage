@@ -8,3 +8,39 @@
 .operations-page button:not([class]){min-height:40px;padding:8px 16px;border-radius:8px;border:1px solid var(--workspace-border);background:var(--workspace-surface);color:var(--workspace-text);justify-self:start}
 .operations-page [role=alert]{color:var(--workspace-error)}.operations-page button:disabled{opacity:.55}.operations-page small{color:var(--workspace-muted)}.operations-page details{margin:10px 0}
 .operations-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}.operations-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px}.operations-metrics>div{display:grid;gap:6px;padding:12px;background:var(--workspace-table);border-radius:8px}.operations-metrics strong{font-size:1.08rem}.operations-page .manager-table-wrap{max-width:100%;overflow:auto}
+.operations-catalog{grid-template-columns:minmax(0,1fr)}
+.operations-catalog-filters{display:grid;grid-template-columns:minmax(180px,1fr) repeat(3,max-content);gap:8px}
+.operations-catalog-filters input,.operations-catalog-filters select{min-width:0;width:100%;max-width:100%}
+.operations-catalog .operations-catalog-table th,.operations-catalog .operations-catalog-table td{padding:9px 12px}
+.operations-catalog-table td small{margin-top:2px}
+.operations-catalog .operations-catalog-table .operations-catalog-count{text-align:center;font-variant-numeric:tabular-nums}
+.operations-catalog-count-zero{color:var(--workspace-muted)}
+.operations-catalog-facts,.operations-catalog-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.operations-catalog-facts dt{color:var(--workspace-muted);font-size:.875rem}
+.operations-catalog-facts dd{margin:3px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.operations-catalog-detail{gap:12px}
+.operations-catalog-detail .operations-catalog-back{display:inline-flex;align-items:center;gap:6px;margin-block:0}
+.operations-catalog-detail .manager-page-header{margin-block:0}
+.operations-catalog-detail .record-page-title{flex-wrap:wrap;align-items:center}
+.manager-shell.internal-web .operations-catalog-detail .manager-section{margin:0;padding:14px 16px}
+.operations-catalog-detail .operations-catalog-facts{grid-template-columns:repeat(3,minmax(0,1fr));margin:10px 0 0}
+.operations-catalog-detail .operations-catalog-muted{color:var(--workspace-muted)}
+.operations-catalog-detail .operations-catalog-section-header{gap:6px 12px;margin-bottom:10px}
+.operations-catalog-detail .operations-catalog-section-header h2{margin:0}
+.operations-catalog-detail .manager-status.is-neutral{background:var(--workspace-table);color:var(--workspace-muted);border-color:var(--workspace-border)}
+.operations-catalog-table-note{display:block;margin-top:8px}
+.operations-catalog-description{grid-column:1/-1}
+.operations-catalog .operations-catalog-dialog form{padding:0;border:0;background:transparent}
+.operations-catalog .operations-catalog-dialog label{max-width:none;min-width:0}
+.operations-catalog-dialog input,.operations-catalog-dialog select,.operations-catalog-dialog textarea{min-width:0}
+.operations-catalog-dialog .portal-actions{justify-content:flex-end}
+.operations-catalog-activation{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.operations-catalog-activation small{display:block;margin-top:2px}
+@media(max-width:950px){
+  .operations-catalog-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .operations-catalog-detail .operations-catalog-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){
+  .operations-catalog-facts,.operations-catalog-fields{grid-template-columns:minmax(0,1fr)}
+  .operations-catalog-detail .operations-catalog-facts{grid-template-columns:minmax(0,1fr)}
+}

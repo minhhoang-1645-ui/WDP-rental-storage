@@ -1,0 +1,4 @@
+.portal-dialog.workspace-confirmation { width: min(420px, calc(100vw - 32px)); background: var(--workspace-surface, var(--color-surface)); color: var(--workspace-text, var(--color-ink)); border-color: var(--workspace-border, var(--color-border)); }
+.workspace-confirmation p { margin: 0; white-space: pre-line; }
+.workspace-confirmation .portal-danger { background: var(--workspace-error-bg); color: var(--workspace-error); }
+.manager-shell.internal-web.workspace-themed .portal-dialog.workspace-confirmation.is-nested::backdrop { background: rgb(15 23 42 / 22%); backdrop-filter: none; }

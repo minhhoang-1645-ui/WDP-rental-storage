@@ -33,10 +33,9 @@ export const managerSections = {
     ],
   },
   facility: {
-    title: 'Kho & hàng hóa', description: 'Quản lý danh sách kho, giá thuê, vật tư và thiết bị.',
+    title: 'Kho và dịch vụ bổ trợ', description: 'Quản lý danh sách kho, giá thuê, vật tư và thiết bị.',
     items: [
       { ...managerStorageLabels.units, web: '/manager/units', mobile: '/manager/units' },
-      { title: 'Hàng đang lưu theo kho', description: 'Xem vị trí, số lượng hàng và kết quả nhân viên kiểm đếm.', web: '/manager/stored-items', mobile: '/manager/stock-movements' },
     ],
   },
 } as const;
@@ -44,6 +43,6 @@ export type ManagerSection = keyof typeof managerSections;
 export const managerPrimaryMenu = [
   { title: 'Tổng quan', key: '' }, { title: managerSections.reviews.title, key: 'reviews' },
   { title: 'Phân công nhân viên', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
-  { title: 'Kho & hàng hóa', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
+  { title: 'Kho và dịch vụ bổ trợ', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
   { title: 'Dịch vụ & bảng giá', key: 'catalog' }, { title: 'Báo cáo', key: 'reports' },
 ] as const;

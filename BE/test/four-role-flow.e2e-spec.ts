@@ -154,16 +154,9 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('POST', `/manager/support-requests/${support.id}/resolve`, 'FACILITY_STAFF', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Không có quyền' }, 403);
     await api('POST', `/manager/support-requests/${support.id}/resolve`, 'FACILITY_MANAGER', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Đã đối chiếu trên môi trường local' });
     expect((await api('GET', `/customer/support-requests/${support.id}`, 'STORAGE_CUSTOMER')).status).toBe('RESOLVED');
-    const incoming = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Thùng local', unit: 'thùng', quantity: 2 }] });
-    expect(incoming.status).toBe('ASSIGNED');
-    const counted = { lines: [{ lineId: incoming.lines[0].id, actualQty: 2 }], note: 'Local count' };
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'OTHER_STAFF', counted, 403);
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'FACILITY_STAFF', counted);
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'FACILITY_STAFF', counted);
-    const stored = (await api('GET', '/customer/stored-items', 'STORAGE_CUSTOMER'))[0]; expect(stored.balance).toBe(2);
-    const outgoing = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: stored.id, quantity: 2 }] });
-    await api('POST', `/staff/stock-movements/${outgoing.id}/complete`, 'FACILITY_STAFF', { lines: [{ lineId: outgoing.lines[0].id, actualQty: outgoing.lines[0].requestedQty }] });
-    expect(await api('GET', '/customer/stored-items', 'STORAGE_CUSTOMER')).toHaveLength(0);
+    const retired = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id }, 410);
+    expect(retired.code).toBe('PERSONAL_INVENTORY_RETIRED');
+    await api('GET', '/customer/stored-items', 'STORAGE_CUSTOMER', undefined, 410);
     let renewal = await api('POST', '/customer/renewals', 'STORAGE_CUSTOMER', { reservationId: booking.id, termMonths: 3, paymentPlan: 'PREPAID' });
     expect(renewal.status).toBe('APPROVED_PENDING_PAYMENT');
     await signDocument('renewals', renewal);
@@ -176,7 +169,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('POST', `/manager/transfers/${transfer.id}/approve`, 'FACILITY_MANAGER', { toStorageUnitId: destination.id });
     await api('PATCH', `/manager/transfers/${transfer.id}/assign`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id });
     await api('POST', `/staff/transfers/${transfer.id}/complete`, 'FACILITY_STAFF', {
-      goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, recipientName: users.STORAGE_CUSTOMER.fullName, returnedKeyCount: 1, deliveredKeyCount: 1,
+      destinationReady: true, goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, recipientName: users.STORAGE_CUSTOMER.fullName, returnedKeyCount: 1, deliveredKeyCount: 1,
     });
     expect((await api('GET', `/customer/support-requests/${transferRequest.id}`, 'STORAGE_CUSTOMER')).status).toBe('RESOLVED');
     expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).storageUnit.id).toBe(destination.id);
@@ -201,14 +194,8 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     await api('PATCH', `/manager/returns/${returned.id}/assign`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id });
     await api('POST', `/staff/returns/${returned.id}/start-inspection`, 'FACILITY_STAFF', {});
     for (const inspection of returned.inspections) await api('PATCH', `/staff/returns/${returned.id}/inspections/${inspection.id}`, 'FACILITY_STAFF', { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Khóa cần kiểm tra, không phải lỗi khách', conditionNote: 'Kho đã lấy hết hàng' });
-    const pendingGoods = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Local final item', unit: 'thùng', quantity: 1 }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'FACILITY_STAFF', {}, 409);
-    await api('POST', `/staff/stock-movements/${pendingGoods.id}/complete`, 'FACILITY_STAFF', { lines: [{ lineId: pendingGoods.lines[0].id, actualQty: pendingGoods.lines[0].requestedQty }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'FACILITY_STAFF', {}, 409);
-    const lastItem = (await api('GET', '/customer/stored-items', 'STORAGE_CUSTOMER'))[0];
-    const finalOut = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: lastItem.id, quantity: 1 }] });
-    await api('POST', `/staff/stock-movements/${finalOut.id}/complete`, 'FACILITY_STAFF', { lines: [{ lineId: finalOut.lines[0].id, actualQty: finalOut.lines[0].requestedQty }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'FACILITY_STAFF', {});
+    await api('POST', '/staff/returns/' + returned.id + '/finalize', 'FACILITY_STAFF', { unitsEmpty: false, accessRevoked: true }, 400);
+    await api('POST', '/staff/returns/' + returned.id + '/finalize', 'FACILITY_STAFF', { unitsEmpty: true, accessRevoked: true });
     const settlement = (await api('GET', '/manager/deposit-settlements', 'FACILITY_MANAGER')).items.find((s: any) => s.reservation.id === contract.reservation.id);
     await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'FACILITY_STAFF', { issues: [] }, 403);
     const reviewed = await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'FACILITY_MANAGER', { issues: returned.inspections.map((i: any) => ({ inspectionId: i.id, issueType: 'FACILITY_FAULT', approvedChargeAmount: 0, reason: 'Lỗi thiết bị cơ sở, không thu phí khách' })), note: 'Local review' });
@@ -218,7 +205,6 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     if (reviewed.refundAmount > 0) expect(customerSettlement.refundRecord).toMatchObject({ method: 'BANK_TRANSFER' });
     await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'OTHER_CUSTOMER', undefined, 404);
     expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).status).toBe('COMPLETED');
-    await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Not allowed', unit: 'thùng', quantity: 1 }] }, 409);
     const lateBooking = await api('POST', '/reservations', 'STORAGE_CUSTOMER', { ...bookingBody, startDate: new Date(baseTime + 86400000 + 25200000).toISOString().slice(0, 10), durationMonths: 1 });
     const lateContract = (await api('GET', '/customer/contracts?limit=100', 'STORAGE_CUSTOMER')).items.find((c: any) => c.reservation.reference === lateBooking.id);
     await signDocument('contracts', lateContract);
@@ -270,7 +256,13 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
   });
 
   it('preserves the actual warehouse on completed stock movements after transfer', async () => {
-    const movement = await db.stockMovement.findFirst({ where: { status: 'COMPLETED' }, orderBy: { createdAt: 'asc' } });
+    const contract = await db.rentalContract.findFirstOrThrow({ where: { reservation: { customerId: users.STORAGE_CUSTOMER.id } }, include: { reservationUnit: { include: { storageUnit: true } } } });
+    const unit = contract.reservationUnit.storageUnit;
+    const movement = await db.stockMovement.create({ data: {
+      movementCode: 'HIST-' + contract.id, idempotencyKey: 'historical-read-' + contract.id, type: 'IN',
+      status: 'COMPLETED', rentalContractId: contract.id, customerUserId: users.STORAGE_CUSTOMER.id,
+      storageUnitId: unit.id, unitCodeSnapshot: unit.unitNumber, locationRecordedAt: new Date(), completedAt: new Date(),
+    } });
     expect(movement.unitCodeSnapshot).toBeTruthy();
     const viewed = await api('GET', `/customer/stock-movements/${movement.id}`, 'STORAGE_CUSTOMER');
     expect(viewed.storageUnit.unitNumber).toBe(movement.unitCodeSnapshot);
@@ -292,7 +284,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
       include: { reservation: true },
     });
     const today = new Date(Date.now() + 25_200_000).toISOString().slice(0, 10);
-    const claimBody = { discoveredOn: today, description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', storedItemIds: [], evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 };
+    const claimBody = { discoveredOn: today, description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 };
     await api('POST', '/customer/damage-claims', 'STORAGE_CUSTOMER', { ...claimBody, rentalContractId: closed.id }, 404);
 
     const booking = await api('POST', '/reservations', 'STORAGE_CUSTOMER', {

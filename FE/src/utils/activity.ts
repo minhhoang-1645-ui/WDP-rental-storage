@@ -164,7 +164,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const simple = ['reservations', 'inquiries'].includes(kind);
         web = simple ? `/manager/${kind}/${encodeURIComponent(id)}` : `/manager/operations/${kind}/${encodeURIComponent(id)}`;
         const assignment = needsStaffAssignment(kind);
-        if (assignment && (kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
+        if (assignment && assignmentNeedsAttention(kind, row)) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
         if (kind === 'payment-submissions' || kind === 'online-payment-reconciliations') {
           action = kind === 'payment-submissions' ? status === 'PENDING_VERIFICATION' : ['PENDING_REVIEW','REFUND_REQUIRED'].includes(status);

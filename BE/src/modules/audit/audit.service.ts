@@ -1,3 +1,4 @@
+import { facilityIds } from '../facility-access/facility-access.service.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { isIP } from 'node:net';
@@ -21,6 +22,34 @@ const clean = (value: unknown, max: number) => typeof value === 'string' && valu
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async catalogNotices(actor: PublicUser, query: { page: number; limit: number }) {
+    if (actor.role !== 'FACILITY_MANAGER') return [];
+    const ids = await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
+    if (!ids.length) return [];
+    const where = {
+      resource: 'shared-service-catalog', action: 'UPDATE_SHARED_SERVICE_CATALOG',
+      metadata: { path: ['recipientIds'], array_contains: [actor.id] },
+    };
+    const [total, records] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({
+        where, select: { id: true, resourceId: true, createdAt: true, metadata: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.limit, take: query.limit,
+      }),
+    ]);
+    const items = records.flatMap(({ metadata, ...record }) => {
+      const event = metadata as { code: string; name: string; changes: unknown[];
+        grants: { userId: string; facilityId: string }[]; reviewFacilityIds: string[];
+      };
+      const grants = event.grants.filter(grant => grant.userId === actor.id && ids.includes(grant.facilityId));
+      const target = grants.find(grant => event.reviewFacilityIds.includes(grant.facilityId)) ?? grants[0];
+      return target ? [{ ...record, code: event.code, name: event.name, changes: event.changes,
+        facilityId: target.facilityId, reviewRequired: event.reviewFacilityIds.includes(target.facilityId) }] : [];
+    });
+    return { items, total, limit: query.limit };
+  }
 
   async record(input: AuditInput) {
     const email = clean(input.actor?.email ?? input.attemptedEmail, 254)?.toLowerCase();

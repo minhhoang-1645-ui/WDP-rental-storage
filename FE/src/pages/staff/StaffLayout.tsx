@@ -6,7 +6,7 @@ import type { WorkspaceSection } from '../../components/workspace/WorkspaceSecti
 import '../../styles/workspace-theme.css';
 import '../../styles/staff-workspace.css';
 
-const staffItems = staffNavigation().filter(item => !['/staff/stock-movements', '/staff/rentals'].includes(item.to));
+const staffItems = staffNavigation().filter(item => item.to !== '/staff/rentals');
 const groups = [
   { key: 'intake', title: 'Tiếp nhận yêu cầu' },
   { key: 'handover', title: 'Giao nhận & thay đổi' },

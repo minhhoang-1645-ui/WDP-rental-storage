@@ -5,7 +5,6 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { BookingService } from '../booking/booking.service.js';
 import { ActiveRentalsService } from './active-rentals.service.js';
 import { deriveOverdueState } from './overdue-state.js';
-import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import { ContractsService } from '../contracts/contracts.service.js';
 import { ManagerService } from '../manager/manager.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -34,7 +33,9 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
 
   async function assignLookupTask(unitId:string,staffId:string) {
  const contract=await prisma.rentalContract.findFirstOrThrow({where:{reservationUnit:{storageUnitId:unitId}}});
- return prisma.stockMovement.create({data:{movementCode:'MOV-'+randomUUID(),type:'IN',status:'ASSIGNED',rentalContractId:contract.id,customerUserId:customerId,assignedStaffUserId:staffId,idempotencyKey:randomUUID()}});
+ return prisma.damageClaim.create({data:{claimCode:'CLAIM-'+randomUUID(),status:'INVESTIGATING',rentalContractId:contract.id,
+  customerId,assignedStaffId:staffId,idempotencyKey:randomUUID(),inputHash:'fixture',unitCodeSnapshot:unitId,discoveredOn:dateAt(0),
+  description:'Sự cố cần kiểm tra tại kho',affectedItems:[],evidenceLinks:[]}});
  }
   beforeAll(async () => {
     prisma = new PrismaService();
@@ -58,7 +59,7 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
 });
 
   afterEach(async () => {
-    await prisma.stockMovement.deleteMany({ where: { rentalContract: { reservation: { storageTypeId } } } });
+    await prisma.damageClaim.deleteMany({ where: { rentalContract: { reservation: { storageTypeId } } } });
 
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -193,7 +194,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
  expect((await rentals.getStaffRental(staffA,mixed.reservation.id)).contracts).toHaveLength(1);
  const contracts=new ContractsService(prisma);
  await expect(contracts.getStaffContract(contractB.id,staffA.id)).rejects.toThrow('Không tìm thấy');
- await prisma.stockMovement.update({where:{id:grant.id},data:{assignedStaffUserId:staffB.id}});
+ await prisma.damageClaim.update({where:{id:grant.id},data:{assignedStaffId:staffB.id}});
  await expect(rentals.getStaffRental(staffA,mixed.reservation.id)).rejects.toThrow('Không tìm thấy');
  expect((await rentals.getStaffRental(staffB,mixed.reservation.id)).contracts).toHaveLength(1);
 });

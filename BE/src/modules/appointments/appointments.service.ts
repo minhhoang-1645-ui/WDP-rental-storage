@@ -9,7 +9,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
-import { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
+import { AdditionalServiceInventoryService, purchasedPhysicalUnit } from '../additional-services/additional-service-inventory.service.js';
 
 export interface AppointmentListQuery {
   page: number;
@@ -266,7 +266,13 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
           await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
         } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
-        if (current.status === 'COMPLETED') return this.toAppointment(current, true, true);
+        if (current.status === 'COMPLETED') {
+          if (await this.deliverProducts(tx, current, input.deliveredPurchaseIds, actor)) {
+            const updated = await tx.handoverAppointment.findUniqueOrThrow({ where: { id: current.id }, include: this.appointmentInclude() });
+            return this.toAppointment(updated, true, true);
+          }
+          return this.toAppointment(current, true, true);
+        }
         if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ lịch CONFIRMED mới được hoàn tất bàn giao.');
         this.assertHandoverReady(current.reservation);
         await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
@@ -284,6 +290,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (units.length > 1 && !report.data.unitChecks) throw new BadRequestException('Biên bản cần có kết quả kiểm tra của từng kho.');
         await this.assertHandoverUnitsAvailable(tx, current.reservation);
 
+        await this.deliverProducts(tx, current, input.deliveredPurchaseIds, actor);
         const now = new Date();
         const checks = report.data.unitChecks ?? units.map(unit => ({ unitId: unit.id, unitCode: unit.unitNumber, condition: report.data.condition, inspected: true }));
         const unitChecks = checks.map(check => ({ ...check, completedAt: unitProgress.find(item => item.unitId === check.unitId)?.completedAt ?? now.toISOString() }));
@@ -295,6 +302,42 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         });
         return this.toAppointment(updated, true);
       }, 'Lịch bàn giao vừa được hoàn tất bởi yêu cầu khác. Vui lòng tải lại.');
+  }
+
+  private async deliverProducts(
+    tx: Prisma.TransactionClient,
+    appointment: { id: string; reservation: {
+      id: string; status: string;
+      invoices: { status: string }[];
+      services: { id: string; fulfillmentStatus: string | null }[];
+    } },
+    selections: unknown,
+    actor: PublicUser,
+  ) {
+    if (selections === undefined) return false;
+    if (!Array.isArray(selections) || selections.length > 100 ||
+      selections.some(id => typeof id !== 'string' || !id || id.length > 120) ||
+      new Set(selections).size !== selections.length)
+      throw new BadRequestException('Danh sách sản phẩm xác nhận bàn giao không hợp lệ.');
+    if (!selections.length) return false;
+    const reservation = appointment.reservation;
+    if (reservation.status !== 'CONFIRMED' || reservation.invoices.length !== 1 || reservation.invoices[0].status !== 'PAID')
+      throw new ConflictException('Cần đơn đã xác nhận và hóa đơn ban đầu đã thanh toán đầy đủ để bàn giao sản phẩm.');
+    const eligible = new Set(reservation.services.filter(line =>
+      line.fulfillmentStatus === 'RESERVED' || line.fulfillmentStatus === 'FULFILLED',
+    ).map(line => line.id));
+    if (selections.some(id => !eligible.has(id)))
+      throw new BadRequestException('Sản phẩm không thuộc đơn mua đủ điều kiện bàn giao.');
+    const delivered = await this.inventory.fulfillPurchases(tx, reservation.id, selections);
+    if (!delivered.length) return false;
+    await tx.auditEvent.create({ data: {
+      action: 'DELIVER_PURCHASED_PRODUCTS', category: 'ACTIVITY', outcome: 'SUCCESS',
+      actorId: actor.id, actorName: actor.fullName, actorRole: actor.role,
+      resource: 'appointments', resourceId: appointment.id,
+      method: 'POST', route: '/staff/appointments/:id/complete-handover', httpStatus: 201,
+      metadata: { reservationId: reservation.id, deliveredPurchaseIds: delivered },
+    } });
+    return true;
   }
 
   private async assertHandoverUnitsAvailable(db: Prisma.TransactionClient, reservation: {
@@ -335,7 +378,6 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           data: { status: 'OCCUPIED' },
         });
         if (occupied.count !== reservation.quantity) throw new ConflictException('Không thể chuyển đầy đủ StorageUnit sang OCCUPIED.');
-        await this.inventory.fulfillPurchases(tx, reservation.id);
         await this.billing.ensureRecurringInvoices(tx, reservation.id);
   }
 
@@ -503,6 +545,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       facility: { select: { id: true, name: true } },
       customer: { select: { id: true, fullName: true, email: true, phone: true } },
       invoices: { where: { type: 'INITIAL' as const }, select: { id: true, invoiceCode: true, type: true, status: true } },
+      services: {
+        where: { serviceKindSnapshot: 'PURCHASE' as const },
+        select: { id: true, additionalServiceId: true, serviceNameSnapshot: true, quantity: true, fulfillmentStatus: true },
+        orderBy: { id: 'asc' as const },
+      },
       units: { select: { id: true, storageUnitId: true, releasedAt: true } },
       contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true, floor: true, zone: true } } } } }, orderBy: { contractCode: 'asc' as const } },
     };
@@ -521,6 +568,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         assignedBy: record.assignedBy ?? null,
         assignedAt: record.assignedAt?.toISOString() ?? null,
         assignmentStatus: !record.assignedStaffUserId ? 'UNASSIGNED' : record.assignedStaff?.accountStatus === 'DISABLED' ? 'NEEDS_REASSIGNMENT' : 'ASSIGNED',
+      } : {}),
+      ...(includeCustomer && record.reservation.services?.length ? {
+        purchasedProducts: record.reservation.services.map((line: {
+          id: string; additionalServiceId: string; serviceNameSnapshot: string; quantity: number; fulfillmentStatus: string | null;
+        }) => ({
+          id: line.id, name: line.serviceNameSnapshot, quantity: line.quantity, fulfillmentStatus: line.fulfillmentStatus,
+          physicalUnit: purchasedPhysicalUnit(record.reservation.quoteSnapshot, line.additionalServiceId),
+        })),
       } : {}),
       handoverReport: record.status === 'COMPLETED' ? record.handoverReport ?? null : null,
       ...(includeCustomer && ['REQUESTED', 'CONFIRMED'].includes(record.status)

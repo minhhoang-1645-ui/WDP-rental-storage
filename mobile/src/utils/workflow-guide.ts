@@ -4,14 +4,8 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
     appointments: {
       REQUESTED: 'Lịch cần nhân viên kiểm tra ngoại lệ trước khi xác nhận thời gian nhận kho.',
       CONFIRMED: 'Lịch nhận kho của bạn đã được xác nhận. Bạn hãy đến kho đúng hẹn; nhân viên NestBox sẽ kiểm tra thông tin và bàn giao kho cho bạn.',
-      COMPLETED: 'Bạn đã nhận kho. Bạn có thể gửi yêu cầu nhập hàng và xem số lượng hàng đang lưu trong tài khoản.',
+      COMPLETED: 'Bạn đã nhận kho. Xem thông tin và các yêu cầu của kho trong mục Kho đang thuê.',
       CANCELLED: 'Lịch nhận kho này đã hủy. Bạn có thể chọn lịch khác nếu hợp đồng vẫn đủ điều kiện nhận kho.',
-    },
-    'stock-movements': {
-      REQUESTED: 'Yêu cầu của bạn đã được gửi. NestBox đang sắp xếp nhân viên tiếp nhận; số lượng hàng đang lưu chưa thay đổi.',
-      ASSIGNED: 'Nhân viên đã được sắp xếp để hỗ trợ bạn giao nhận hàng. Số lượng thực tế sẽ được cập nhật sau khi kiểm đếm xong.',
-      COMPLETED: 'Hàng của bạn đã được giao nhận và cập nhật số lượng thực tế. Bạn có thể mở Hàng đang lưu để kiểm tra.',
-      CANCELLED: 'Yêu cầu giao nhận này đã hủy. Vui lòng liên hệ NestBox nếu bạn cần hỗ trợ.',
     },
     renewals: {
       PENDING: 'Yêu cầu gia hạn có ngoại lệ và đang được nhân viên kiểm tra. Kết quả sẽ được cập nhật tại đây.',
@@ -39,14 +33,8 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
     appointments: {
       REQUESTED: 'Lịch chưa thể xác nhận tự động. Nhân viên kiểm tra điều kiện và xử lý ngoại lệ trước khi bàn giao.',
       CONFIRMED: 'Lịch đã được xác nhận. Có thể hẹn nhận chìa khóa sớm tối đa 3 ngày; chỉ kích hoạt hợp đồng từ ngày bắt đầu thuê. Khách hàng đến kho đúng hẹn; nhân viên bàn giao thực tế và bấm Hoàn tất bàn giao. Chỉ thực hiện khi đã đến giờ hẹn và còn trong kỳ thuê.',
-      COMPLETED: 'Nhân viên đã hoàn tất bàn giao, hợp đồng được kích hoạt. Khách hàng có thể tạo phiếu nhập hàng trong mục Nhập – xuất hàng.',
+      COMPLETED: 'Nhân viên đã hoàn tất bàn giao. Hợp đồng có hiệu lực từ ngày bắt đầu thuê.',
       CANCELLED: 'Lịch đã hủy. Khách hàng có thể đặt lại lịch khi hợp đồng còn đủ điều kiện.',
-    },
-    'stock-movements': {
-      REQUESTED: 'Quản lý phân công nhân viên xử lý phiếu. Tồn hàng chưa thay đổi ở bước này.',
-      ASSIGNED: 'Nhân viên được giao đối chiếu từng mặt hàng, nhập số lượng thực tế và hoàn tất sau khi giao nhận. Sau đó khách hàng kiểm tra Hàng đang lưu.',
-      COMPLETED: 'Tồn đã được cập nhật theo số lượng thực tế. Khách hàng xem Hàng đang lưu và lịch sử phiếu để đối chiếu.',
-      CANCELLED: 'Phiếu đã hủy; không có bước kiểm đếm hoặc hoàn tất tiếp theo.',
     },
     renewals: {
       PENDING: 'Hệ thống không thể duyệt tự động. Nhân viên đối chiếu hợp đồng, hạn cũ – mới và xung đột kho trước khi xử lý.',

@@ -105,6 +105,8 @@ export function Pagination({
 export function Modal({
   title,
   titleBadge,
+  subtitle,
+  focusTitle = false,
   onClose,
   children,
   busy = false,
@@ -113,6 +115,8 @@ export function Modal({
 }: {
   title: string;
   titleBadge?: ReactNode;
+  subtitle?: ReactNode;
+  focusTitle?: boolean;
   onClose: () => void;
   children: ReactNode;
   busy?: boolean;
@@ -120,15 +124,17 @@ export function Modal({
   footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     const previous = document.activeElement;
     dialog?.showModal();
+    if (focusTitle) heading.current?.focus();
     return () => {
       dialog?.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
-  }, []);
+  }, [focusTitle]);
   return (
     <dialog
       ref={ref}
@@ -150,7 +156,10 @@ export function Modal({
       } : undefined}
     >
       <header>
-        {titleBadge ? <div className="record-page-title"><h2>{title}</h2>{titleBadge}</div> : <h2>{title}</h2>}
+        {(subtitle || focusTitle) ? <div className="portal-dialog-heading" ref={heading} tabIndex={focusTitle ? -1 : undefined}>
+          <div className="record-page-title"><h2>{title}</h2>{titleBadge}</div>
+          {subtitle}
+        </div> : titleBadge ? <div className="record-page-title"><h2>{title}</h2>{titleBadge}</div> : <h2>{title}</h2>}
         <button
           type="button"
           className="icon-button"

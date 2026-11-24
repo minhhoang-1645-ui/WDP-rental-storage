@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowRight, ArrowLeftRight, Bell, Boxes, CalendarDays, Check,
+  ArrowLeft, ArrowRight, ArrowLeftRight, Bell, CalendarDays, Check,
   ClipboardList, CreditCard, FileText, Grid2X2, History, Home, Layers,
   LifeBuoy, LogOut, Package, PackageCheck, Plus, RefreshCw, Save,
   Search, Settings, ShieldCheck, UserRound, Users, Wallet, Warehouse, Wrench, X,
@@ -17,7 +17,7 @@ export function featureIcon(value: string) {
   if (/appointment|lịch|bàn giao|nhận kho/.test(key)) return CalendarDays;
   if (/contract|hợp đồng|phụ lục/.test(key)) return FileText;
   if (/renewal|gia hạn/.test(key)) return RefreshCw;
-  if (/transfer|chuyển kho|stock-movement|nhập|xuất/.test(key)) return ArrowLeftRight;
+  if (/transfer|chuyển kho/.test(key)) return ArrowLeftRight;
   if (/return|trả kho/.test(key)) return PackageCheck;
   if (/support|hỗ trợ|tư vấn/.test(key)) return LifeBuoy;
   if (/maintenance|bảo trì/.test(key)) return Wrench;
@@ -28,7 +28,6 @@ export function featureIcon(value: string) {
   if (/report|dashboard|báo cáo|thống kê/.test(key)) return ChartNoAxesCombined;
   if (/size-finder|kích thước|catalog|danh mục/.test(key)) return Layers;
   if (/discover|tìm kho/.test(key)) return Search;
-  if (/stored-item|hàng đang lưu/.test(key)) return Boxes;
   if (/reservation|đặt kho|approvals|duyệt|task|công việc/.test(key)) return ClipboardList;
   if (/unit|rental|facility|kho/.test(key)) return Warehouse;
   if (/notification|activity|thông báo/.test(key)) return Bell;

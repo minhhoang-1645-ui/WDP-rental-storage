@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -16,6 +17,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -99,12 +101,15 @@ export class ManagerAdditionalServicesController {
     return this.service.catalog(req.user!);
   }
   @Post(':id/offerings')
-  @ApiBody({type:ConfigureServiceOfferingDto}) configure(
+  @ApiHeader({ name: 'X-Catalog-Updated-At', required: false, description: 'Thời điểm cập nhật mục danh mục khi mở biểu mẫu.' })
+  @ApiBody({ type: ConfigureServiceOfferingDto })
+  configure(
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,
+    @Headers('x-catalog-updated-at') catalogUpdatedAt: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.service.configure(id, body, req.user!);
+    return this.service.configure(id, body, req.user!, true, catalogUpdatedAt);
   }
   @Get('inventory')
   @ApiOperation({ summary: 'Tồn kho và công suất add-on' })
@@ -175,7 +180,14 @@ export class ManagerAdditionalServicesController {
 export class BusinessServiceCatalogController {
   constructor(private readonly service: AdditionalServicesService) {}
   @Get() list(@Req() req: AuthenticatedRequest) {
-    return this.service.catalog(req.user!);
+    return this.service.businessCatalog(req.user!);
+  }
+  @Get(':id') async detail(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.service.businessCatalog(req.user!, id);
+    return { ...result.items[0], eligibleFacilityCount: result.eligibleFacilityCount };
   }
   @Post() create(
     @Body() body: Record<string, unknown>,

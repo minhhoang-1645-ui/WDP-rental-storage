@@ -73,6 +73,8 @@ class OperationsController {
     return this.operations.report(req.user!);
   }
   @Get('reports/performance') performance(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.operations.performance(query,req.user!);}
+  @Get('dashboard') dashboard(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.reports.dashboard(query,req.user!);}
+  @Get('dashboard/trend') trend(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.reports.dashboardTrend(query,req.user!);}
   @Get('audit') audit(@Query() query:Record<string,unknown>,@Req() req:AuthenticatedRequest){return this.operations.businessAudit(query,req.user!);}
 }
 @Module({

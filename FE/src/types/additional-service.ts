@@ -1,5 +1,16 @@
+export interface ServiceDefinition {
+  kind: 'PURCHASE' | 'RENTAL';
+  billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH';
+  physicalUnit: string | null;
+}
+
 export interface AdditionalService {
+  updatedAt?: string;
+  configurationReview?: { revision: string; before: ServiceDefinition; after: ServiceDefinition } | null;
+  stockOnHand?: number | null;
+  rentalCapacity?: number | null;
   facilityId?: string | null;
+  facilityName?: string;
   id: string;
   code: string;
   name: string;
@@ -9,6 +20,8 @@ export interface AdditionalService {
   unitPrice: number | null;
   physicalUnit?: string | null;
   isActive?: boolean;
+  localIsActive?: boolean;
+  globalIsActive?: boolean;
   imageUrl?: string | null;
   imageAlt?: string | null;
 }
@@ -24,9 +37,12 @@ export interface ServiceInventory {
   facilityId?:string;
   serviceId: string;
   kind: 'PURCHASE' | 'RENTAL';
-  stockOnHand?: number;
+  stockOnHand?: number | null;
   reservedQuantity?: number;
-  availableQuantity?: number;
-  rentalCapacity?: number;
+  availableQuantity?: number | null;
+  rentalCapacity?: number | null;
+  peakCommittedQuantity?: number;
+  soldByUnit?: { unit: string | null; quantity: number }[];
+  completedRentalCount?: number;
   available?: boolean;
 }

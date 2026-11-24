@@ -8,7 +8,7 @@ const navigation=[
  {to:'/operations/facilities',label:'Cơ sở',icon:Building2,group:'Quản lý kinh doanh'},
  {to:'/operations/policies',label:'Chính sách kinh doanh',icon:FileCheck,group:'Quản lý kinh doanh'},
  {to:'/operations/pricing',label:'Khung giá',icon:CircleDollarSign,group:'Quản lý kinh doanh'},
- {to:'/operations/catalog',label:'Danh mục dịch vụ',icon:Boxes,group:'Quản lý kinh doanh'},
+ {to:'/operations/catalog',label:'Danh mục bổ trợ',icon:Boxes,group:'Quản lý kinh doanh'},
  {to:'/operations/reports',label:'Doanh thu và hiệu quả cơ sở',icon:ChartColumn,group:'Báo cáo'},
  {to:'/operations/audit',label:'Nhật ký kinh doanh',icon:History,group:'Theo dõi'},
 ];

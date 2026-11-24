@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
@@ -7,9 +7,12 @@ import { first, money, date, type Row } from '../../components/manager/portal-da
 import { Facts, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { ManagerTaskTable, ManagerTableFilter } from '../../components/manager/ManagerTaskTable';
 import { useManagerTableParams } from '../../components/manager/manager-table-params';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 
 export function ManagerPaymentReviewPage({ reconciliation = false }: { reconciliation?: boolean }) {
   const { user } = useAuth();
+  const requestConfirmation = useConfirmation();
+  const submitLock = useRef(false);
   const { params, page, limit, update } = useManagerTableParams();
   const status = params.get('status') ?? (reconciliation ? 'PENDING_REVIEW' : 'PENDING_VERIFICATION');
   const root = reconciliation ? '/manager/online-payment-reconciliations' : '/manager/payment-submissions';
@@ -25,14 +28,20 @@ export function ManagerPaymentReviewPage({ reconciliation = false }: { reconcili
   const invoice = (row: Row) => first(row, 'invoice.invoiceCode', 'transaction.invoice.invoiceCode');
   const person = (row: Row) => first(row, 'customer.fullName', 'transaction.invoice.reservation.customer.fullName');
   const submit = async (action: string) => {
-    if (!selected || busy || !note.trim() || !window.confirm('Xác nhận ghi nhận quyết định này?')) return;
+    if (!selected || submitLock.current || !note.trim()) return;
+    const endpoint = `${root}/${encodeURIComponent(first(selected, 'id'))}/${reconciliation ? 'resolve' : action}`;
+    const body = reconciliation ? { resolution: action, resolutionNote: note, refundReference: reference, refundConfirmed: verified } : action === 'verify' ? { reference, note } : { reason: note };
+    const decision = action === 'verify' ? 'Xác minh đã nhận tiền' : action === 'reject' ? 'Từ chối thông báo chuyển khoản' : action === 'REFUND_REQUIRED' ? 'Yêu cầu hoàn tiền' : selected.status === 'REFUND_REQUIRED' ? 'Ghi nhận đã hoàn tiền' : 'Kết thúc đối soát';
+    const description = action === 'REFUND_REQUIRED' ? 'Hồ sơ sẽ chuyển sang trạng thái cần hoàn tiền.' : action === 'reject' ? `Thông báo chuyển khoản sẽ bị từ chối. Lý do: ${note.trim()}` : `Ghi nhận kết quả cho khoản ${money(selected.amount)}${invoice(selected) ? ` của hóa đơn ${invoice(selected)}` : ''}.`;
+    submitLock.current = true;
+    const accepted = await requestConfirmation({title:decision,description,confirmLabel:decision,destructive:action==='reject'});
+    if (!accepted) { submitLock.current = false; return; }
     setBusy(true); setError('');
     try {
-      const body = reconciliation ? { resolution: action, resolutionNote: note, refundReference: reference, refundConfirmed: verified } : action === 'verify' ? { reference, note } : { reason: note };
-      await mutate(`${root}/${encodeURIComponent(first(selected, 'id'))}/${reconciliation ? 'resolve' : action}`, 'POST', body);
+      await mutate(endpoint, 'POST', body);
       setSelected(undefined); resource.refresh();
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể lưu quyết định.'); }
-    finally { setBusy(false); }
+    finally { submitLock.current = false; setBusy(false); }
   };
   const pending = selected?.status === (reconciliation ? 'PENDING_REVIEW' : 'PENDING_VERIFICATION');
   const refund = reconciliation && selected?.status === 'REFUND_REQUIRED';

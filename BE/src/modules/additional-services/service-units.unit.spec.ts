@@ -15,9 +15,10 @@ const catalogItem = {
   createdAt: stamp,
   updatedAt: stamp,
   isActive: true,
+  offerings: [],
 };
 describe('physical unit independent of billing and historical prices', () => {
-  it('adds a nullable catalog field without guessing legacy units; permits a deliberate one-time setup', async () => {
+  it('adds a nullable catalog field without guessing legacy units; reviews configured offerings and only blocks outstanding obligations', async () => {
     const actor = {
       id: 'bom',
       role: 'BUSINESS_OPERATIONS_MANAGER' as const,
@@ -31,6 +32,10 @@ describe('physical unit independent of billing and historical prices', () => {
     };
     const db: any = {
       additionalService,
+      reservationService: { findFirst: vi.fn().mockResolvedValue(null) },
+      facilityServiceOffering: { update: vi.fn() },
+      facilityAccess: { findMany: vi.fn().mockResolvedValue([{ userId: 'manager-1', facilityId: 'facility-1' }]) },
+      auditEvent: { create: vi.fn() },
       user: { findFirst: vi.fn().mockResolvedValue(actor) },
       $queryRawUnsafe: vi.fn(),
     };
@@ -48,14 +53,43 @@ describe('physical unit independent of billing and historical prices', () => {
         { kind: 'RENTAL', billingUnit: 'DAY', expectedUpdatedAt:stamp.toISOString() },
         actor,
       ),
-    ).rejects.toThrow('Không đổi loại');
+    ).resolves.toMatchObject({ kind: 'RENTAL', billingUnit: 'DAY' });
+    additionalService.findUnique.mockResolvedValue({ ...catalogItem, physicalUnit: 'cái' });
+    const expectedUpdatedAt = stamp.toISOString();
+    await expect(service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt }, actor))
+      .resolves.toMatchObject({ physicalUnit: 'thùng' });
+    await expect(service.saveCatalog('addon', { kind: 'RENTAL', expectedUpdatedAt }, actor))
+      .rejects.toThrow('Thiết bị cho thuê');
     additionalService.findUnique.mockResolvedValue({
-      ...catalogItem,
-      physicalUnit: 'cái',
-    } as never);
-    await expect(
-      service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt:stamp.toISOString() }, actor),
-    ).rejects.toThrow('Không đổi');
+      ...catalogItem, physicalUnit: 'cái',
+      offerings: [{ id: 'offer-1', facilityId: 'facility-1', configurationReview: null, stockOnHand: 100 }],
+    });
+    await expect(service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt }, actor))
+      .resolves.toMatchObject({ physicalUnit: 'thùng' });
+    expect(db.facilityServiceOffering.update).toHaveBeenCalledWith({
+      where: { id: 'offer-1' }, data: { configurationReview: {
+        revision: expect.any(String), before: { kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'cái' },
+        after: { kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'thùng' },
+      } },
+    });
+    expect(db.auditEvent.create).toHaveBeenLastCalledWith({ data: expect.objectContaining({
+      metadata: expect.objectContaining({ recipientIds: ['manager-1'], reviewFacilityIds: ['facility-1'],
+        changes: [{ field: 'physicalUnit', before: 'cái', after: 'thùng' }] }),
+    }) });
+    db.facilityServiceOffering.update.mockClear();
+    db.auditEvent.create.mockClear();
+    await service.saveCatalog('addon', { physicalUnit: 'cái', expectedUpdatedAt }, actor);
+    expect(db.auditEvent.create).not.toHaveBeenCalled();
+    db.reservationService.findFirst.mockResolvedValue({ serviceKindSnapshot: 'RENTAL' });
+    await expect(service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt }, actor))
+      .rejects.toThrow('Còn lượt thuê chưa kết thúc');
+    await expect(service.saveCatalog('addon', { name: 'Tên mới', isActive: false, expectedUpdatedAt }, actor))
+      .resolves.toMatchObject({ name: 'Tên mới', isActive: false });
+    expect(db.facilityServiceOffering.update).not.toHaveBeenCalled();
+    await expect(service.saveCatalog('addon', { code: 'NEW', expectedUpdatedAt }, actor))
+      .rejects.toThrow('Không đổi mã');
+    await expect(service.saveCatalog('addon', { isActive: false, expectedUpdatedAt: 'stale' }, actor))
+      .rejects.toThrow('vừa thay đổi');
     await expect(
       service.saveCatalog('addon', { unitPrice: 30000 }, actor),
     ).rejects.toThrow('cơ sở');

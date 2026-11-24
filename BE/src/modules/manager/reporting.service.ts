@@ -27,6 +27,51 @@ export class ReportingService {
   private scope(query: ReturnType<typeof reportFilters> & { facilityIds?:string[] }, column: Prisma.Sql, typeColumn: Prisma.Sql = Prisma.sql`COALESCE(r."quoteSnapshot"->>'storageTypeId', r."storageTypeId")`) {
     return Prisma.sql`${query.facilityIds === undefined ? Prisma.sql`TRUE` : query.facilityIds.length ? Prisma.sql`r."facilityId" IN (${Prisma.join(query.facilityIds)})` : Prisma.sql`FALSE`} AND ${query.from ? Prisma.sql`${column} >= ${new Date(query.from + 'T00:00:00+07:00')}` : Prisma.sql`TRUE`} AND ${query.to ? Prisma.sql`${column} < ${new Date(Date.parse(query.to + 'T00:00:00+07:00') + 86400000)}` : Prisma.sql`TRUE`} AND ${query.typeId ? Prisma.sql`${typeColumn} = ${query.typeId}` : Prisma.sql`TRUE`}`;
   }
+  async dashboard(input: Record<string, unknown>, actor: PublicUser) {
+    await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
+    const filters={...reportFilters(input),typeId:'',facilityIds:await this.permittedFacilities(input,actor)};
+    const facilityFilter=filters.facilityIds ? Prisma.sql`f.id IN (${Prisma.join(filters.facilityIds)})` : Prisma.sql`TRUE`;
+    const invoicePeriod=this.scope(filters,Prisma.sql`i."issuedAt"`);
+    const paymentPeriod=this.scope(filters,Prisma.sql`p."receivedAt"`);
+    const reservationPeriod=this.scope(filters,Prisma.sql`r."createdAt"`);
+    const handoverPeriod=this.scope(filters,Prisma.sql`h."completedAt"`);
+    const returnPeriod=this.scope(filters,Prisma.sql`rr."physicallyReturnedAt"`);
+    // Each fact is aggregated independently before joining to facilities; no
+    // multiplication of invoices by contracts, payments or physical units.
+    const rows=await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      WITH scoped AS (SELECT f.id,f.code,f.name,f."bookingEnabled",f."operationalStatus" FROM "Facility" f WHERE ${facilityFilter}),
+      units AS (SELECT t."facilityId" AS fid, COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE u.status='OCCUPIED') AS occupied, COUNT(*) FILTER (WHERE u.status='AVAILABLE') AS available,
+        COUNT(*) FILTER (WHERE u.status='RESERVED') AS reserved, COUNT(*) FILTER (WHERE u.status='MAINTENANCE') AS maintenance
+        FROM "StorageUnit" u JOIN "StorageType" t ON t.id=u."storageTypeId" JOIN scoped s ON s.id=t."facilityId" GROUP BY t."facilityId"),
+      contracts AS (SELECT r."facilityId" AS fid,COUNT(*) AS active FROM "RentalContract" c JOIN "Reservation" r ON r.id=c."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE c.status='ACTIVE' GROUP BY r."facilityId"),
+      bookings AS (SELECT r."facilityId" AS fid,COUNT(*) AS count FROM "Reservation" r JOIN scoped s ON s.id=r."facilityId" WHERE ${reservationPeriod} GROUP BY r."facilityId"),
+      billed AS (SELECT r."facilityId" AS fid,SUM(i."rentalAmount") AS rent FROM "Invoice" i JOIN "Reservation" r ON r.id=i."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE i.status<>'VOID' AND ${invoicePeriod} GROUP BY r."facilityId"),
+      debt AS (SELECT r."facilityId" AS fid,SUM(i."balanceDue") AS amount FROM "Invoice" i JOIN "Reservation" r ON r.id=i."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE i.status<>'VOID' AND i."balanceDue">0 GROUP BY r."facilityId"),
+      paid AS (SELECT r."facilityId" AS fid,SUM(p.amount) AS amount FROM "Payment" p JOIN "Invoice" i ON i.id=p."invoiceId" JOIN "Reservation" r ON r.id=i."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE ${paymentPeriod} GROUP BY r."facilityId"),
+      handovers AS (SELECT r."facilityId" AS fid,COUNT(*) AS count FROM "HandoverAppointment" h JOIN "Reservation" r ON r.id=h."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE h.status='COMPLETED' AND h."completedAt" IS NOT NULL AND ${handoverPeriod} GROUP BY r."facilityId"),
+      returns AS (SELECT r."facilityId" AS fid,COUNT(*) AS count FROM "ReturnRequest" rr JOIN "Reservation" r ON r.id=rr."reservationId" JOIN scoped s ON s.id=r."facilityId" WHERE rr."physicallyReturnedAt" IS NOT NULL AND ${returnPeriod} GROUP BY r."facilityId")
+      SELECT s.*,u.total,u.occupied,u.available,u.reserved,u.maintenance,c.active,b.count AS "newReservations",h.count AS handovers,rr.count AS returns,
+        COALESCE(bi.rent,0)::text AS rent,COALESCE(d.amount,0)::text AS debt,COALESCE(p.amount,0)::text AS received
+      FROM scoped s LEFT JOIN units u ON u.fid=s.id LEFT JOIN contracts c ON c.fid=s.id LEFT JOIN bookings b ON b.fid=s.id
+      LEFT JOIN billed bi ON bi.fid=s.id LEFT JOIN debt d ON d.fid=s.id LEFT JOIN paid p ON p.fid=s.id LEFT JOIN handovers h ON h.fid=s.id LEFT JOIN returns rr ON rr.fid=s.id ORDER BY s.code,s.id`);
+    return {asOf:new Date().toISOString(),items:rows.map(r=>({id:r.id,code:r.code,name:r.name,bookingEnabled:r.bookingEnabled,operationalStatus:r.operationalStatus,units:{total:number(r.total),occupied:number(r.occupied),available:number(r.available),reserved:number(r.reserved),maintenance:number(r.maintenance)},activeContracts:number(r.active),newReservations:number(r.newReservations),handovers:number(r.handovers),returns:number(r.returns),rent:r.rent,debt:r.debt,received:r.received}))};
+  }
+  async dashboardTrend(input: Record<string, unknown>, actor: PublicUser) {
+    await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
+    const filters={...reportFilters(input),typeId:'',facilityIds:await this.permittedFacilities(input,actor)};
+    const group=filters.group;
+    const bucket=(column:Prisma.Sql)=>Prisma.sql`to_char(date_trunc(${group},${column}+interval '7 hours'),${group==='year'?'YYYY':group==='month'?'YYYY-MM':'YYYY-MM-DD'})`;
+    const rows=await this.prisma.$queryRaw<{date:string;billed:string;received:string}[]>(Prisma.sql`
+      SELECT date,SUM(billed)::text AS billed,SUM(received)::text AS received FROM (
+        SELECT ${bucket(Prisma.sql`i."issuedAt"`)} AS date,SUM(i."rentalAmount")+SUM(i."serviceAmount") AS billed,0::numeric AS received
+        FROM "Invoice" i JOIN "Reservation" r ON r.id=i."reservationId" WHERE i.status<>'VOID' AND ${this.scope(filters,Prisma.sql`i."issuedAt"`)} GROUP BY date
+        UNION ALL
+        SELECT ${bucket(Prisma.sql`p."receivedAt"`)} AS date,0::numeric AS billed,SUM(p.amount) AS received
+        FROM "Payment" p JOIN "Invoice" i ON i.id=p."invoiceId" JOIN "Reservation" r ON r.id=i."reservationId" WHERE ${this.scope(filters,Prisma.sql`p."receivedAt"`)} GROUP BY date
+      ) series GROUP BY date ORDER BY date`);
+    return {group,asOf:new Date().toISOString(),items:rows};
+  }
   async summary(input: Record<string, unknown>, actor:PublicUser) {
     await assertActiveRole(this.prisma,actor,actor.role==='BUSINESS_OPERATIONS_MANAGER'?'BUSINESS_OPERATIONS_MANAGER':'FACILITY_MANAGER');
     const filters = {...reportFilters(input),facilityIds:await this.permittedFacilities(input,actor)}, group = filters.group;

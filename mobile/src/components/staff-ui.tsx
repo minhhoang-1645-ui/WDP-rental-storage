@@ -14,7 +14,7 @@ import { staffStatusTone } from '@/utils/staff-status';
 /** Staff-only presentation, never an authorization signal. */
 export const StaffPresentation = createContext(false);
 export const useStaffPresentation = () => useContext(StaffPresentation);
-const titles: Record<string, string> = { reservations: 'Đặt kho', inquiries: 'Tư vấn', 'support-requests': 'Hỗ trợ', appointments: 'Bàn giao', 'stock-movements': 'Nhập – xuất', renewals: 'Gia hạn', transfers: 'Chuyển kho', returns: 'Trả kho', maintenance: 'Bảo trì' };
+const titles: Record<string, string> = { reservations: 'Đặt kho', inquiries: 'Tư vấn', 'support-requests': 'Hỗ trợ', appointments: 'Bàn giao', renewals: 'Gia hạn', transfers: 'Chuyển kho', returns: 'Trả kho', maintenance: 'Bảo trì' };
 export function StaffStatusBadge({ status }: { status: string }) {
   const tone = staffStatusTone(status);
   const palette = { warning: [C.warning, C.warningBackground], information: [C.information, C.surfaceSecondary], success: [C.success, C.successBackground], danger: [C.danger, C.dangerBackground], neutral: [C.muted, C.surfaceSecondary] }[tone];
@@ -52,7 +52,7 @@ export function StaffTaskRow({ resource, row, path, titleOverride }: { resource:
   const targetUnit = text(row, 'toUnit.unitCode') || text(rows(row.transfers)[0] ?? {}, 'toUnit.unitCode');
   const unit = targetUnit && sourceUnit ? `${sourceUnit} → ${targetUnit}` : sourceUnit;
   const when = text(row, 'scheduledAt');
-  const domain = resource === 'stock-movements' ? row.type === 'IN' ? 'Nhập hàng' : row.type === 'OUT' ? 'Xuất hàng' : 'Nhập – xuất hàng' : titles[resource] ?? 'Công việc';
+  const domain = titles[resource] ?? 'Công việc';
   const title = titleOverride || (['support-requests', 'maintenance'].includes(resource) ? text(row, 'subject') || (unit ? `Kho ${unit}` : customer) || domain : customer || (unit ? `Kho ${unit}` : domain));
   return <Pressable accessibilityRole="button" accessibilityLabel={`${title}, ${publicCode}, ${label(String(row.status ?? ''))}`} onPress={() => router.push((path ?? `/staff/${resource}/${encodeURIComponent(idOf(row))}`) as Href)} style={({ pressed }) => [staffStyles.link, { backgroundColor: pressed ? C.surfaceSecondary : C.surface, padding: 12, alignItems: 'flex-start' }]}>
     <View style={{ flex: 1, gap: 6 }}><Text style={[staffStyles.body, { fontWeight: '600' }]}>{title}</Text><Text style={staffStyles.secondary}>{[domain, unit && title !== `Kho ${unit}` && `Kho ${unit}`, when && formatDate(when, true)].filter(Boolean).join(' · ')}</Text><StaffStatusBadge status={String(row.status ?? '')} />{Boolean(shortCode) && <Text style={staffStyles.secondary}>{shortCode}</Text>}</View><ChevronRight size={18} color={C.muted} />

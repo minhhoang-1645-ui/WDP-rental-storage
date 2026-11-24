@@ -44,6 +44,7 @@ export function InternalPortalLayout({
   pageNavigation = [],
   themed = false,
   scopeControl,
+  outletContext,
   scopeReady = true,
   scopeNotice,
 }: {
@@ -53,6 +54,7 @@ export function InternalPortalLayout({
   pageNavigation?: Pick<InternalNavItem, "to" | "label" | "end">[];
   themed?: boolean;
   scopeControl?: ReactNode;
+  outletContext?: unknown;
   scopeReady?: boolean;
   scopeNotice?: ReactNode;
 }) {
@@ -74,7 +76,7 @@ export function InternalPortalLayout({
   const signOut = () => {
     startTransition(() => {
       logout();
-      navigate(profileMenu ? "/portal/login" : "/account/login", { replace: true });
+      navigate('/account/login', { replace: true });
     });
   };
   const mobile = useRef<HTMLDialogElement>(null);
@@ -235,7 +237,7 @@ export function InternalPortalLayout({
         <main className="manager-main" id="portal-main" tabIndex={-1}>
           {notificationInbox && location.state?.notificationInbox === notificationInbox && location.pathname !== notificationInbox &&
             <Link to={notificationBack} className="workspace-notification-back"><ArrowLeft size={15} aria-hidden="true" />Về thông báo</Link>}
-          {scopeReady ? <Outlet /> : scopeNotice}
+          {scopeReady ? <Outlet context={outletContext} /> : scopeNotice}
         </main>
       </div>
       <dialog

@@ -363,6 +363,7 @@ model FacilityServiceOffering {
   isActive Boolean @default(false)
   stockOnHand Int?
   rentalCapacity Int?
+  configurationReview Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([additionalServiceId,facilityId])

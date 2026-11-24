@@ -3,7 +3,7 @@ import { openCreatedRenewal } from '@/components/customer-renewal';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
-import { ArrowDownUp, Boxes, Camera, CalendarDays, ChevronRight, FileText, Headphones, MapPin, RotateCcw, Warehouse } from 'lucide-react-native';
+import { ArrowDownUp, Camera, CalendarDays, ChevronRight, FileText, Headphones, MapPin, RotateCcw, Warehouse } from 'lucide-react-native';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { useResource } from '@/operations/use-resource';
 import { idOf, rows, text, type Row } from '@/operations/model';
@@ -61,7 +61,6 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
     ...(returnAction ? [{ title: 'Yêu cầu trả kho', icon: RotateCcw, action: returnAction, unavailable: '' }] : []),
   ];
   const shortcuts = [
-    { title: 'Hàng hóa', icon: Boxes, path: '/customer/stored-items?' + query + '&tab=inventory' },
     { title: 'Vị trí kho', icon: MapPin, path: '/customer/floor-plan?rentalId=' + encodeURIComponent(reservationId) + '&' + query },
   ];
   return <>
@@ -160,7 +159,6 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
         </> : <>
           <EmptyState title="Bạn chưa có kho đang thuê" message="Kho sẽ xuất hiện sau khi hoàn tất bàn giao." />
           <CustomerActionRow title="Tìm kho" path="/customer/discover" />
-          <CustomerActionRow title="Hàng hóa đã lưu trước đây" path="/customer/stored-items" />
         </>}
     </ScrollView>
   </>;

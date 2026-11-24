@@ -33,6 +33,7 @@ export interface ReservationDraft {
 export type QuoteSnapshot = PricingQuote;
 
 export interface AvailabilityResult {
+  serviceQuoteVersion?: string;
   available: boolean;
   availableQuantity: number;
   startDate: string;

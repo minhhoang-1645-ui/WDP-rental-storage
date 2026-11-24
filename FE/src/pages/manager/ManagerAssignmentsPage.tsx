@@ -249,7 +249,7 @@ function AssignmentDetail({
   const [error, setError] = useState("");
   const lock = useRef(false);
   const close = () => {
-    if (busy || staffId && staffId !== currentStaffId && !window.confirm('Bỏ thay đổi phân công chưa lưu?')) return;
+    if (lock.current) return;
     onClose();
   };
   const assign = async (event: FormEvent<HTMLFormElement>) => {
@@ -295,7 +295,7 @@ function AssignmentDetail({
           ['Đang phụ trách', currentStaffName || 'Chưa phân công'],
         ]} />
         <Link to={workDetail(task)} className="portal-text-button" onClick={event => {
-          if (busy || staffId && staffId !== currentStaffId && !window.confirm('Bỏ thay đổi phân công chưa lưu?')) event.preventDefault();
+          if (lock.current) event.preventDefault();
         }}>Xem hồ sơ công việc</Link>
       </div>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}

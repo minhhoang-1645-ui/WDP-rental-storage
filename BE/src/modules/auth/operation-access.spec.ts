@@ -8,7 +8,6 @@ import { ManagerInquiriesController } from '../booking/manager-inquiries.control
 import { ManagerAppointmentsController } from '../appointments/manager-appointments.controller.js';
 import { ManagerRenewalsController } from '../renewals/manager-renewals.controller.js';
 import { ManagerTransfersController } from '../transfers/manager-transfers.controller.js';
-import { ManagerStockMovementsController } from '../stock-movements/manager-stock-movements.controller.js';
 import { ManagerSupportController } from '../support/manager-support.controller.js';
 import { ManagerMaintenanceController } from '../maintenance/manager-maintenance.controller.js';
 import { ManagerReturnsController } from '../returns/manager-returns.controller.js';
@@ -23,7 +22,7 @@ import { ReturnsService } from '../returns/returns.service.js';
 const workflows = [
   ['inquiries', ManagerInquiriesController],
   ['appointments', ManagerAppointmentsController],
-  ['transfers', ManagerTransfersController], ['stock-movements', ManagerStockMovementsController],
+  ['transfers', ManagerTransfersController],
   ['support-requests', ManagerSupportController], ['maintenance', ManagerMaintenanceController],
   ['returns', ManagerReturnsController],
 ] as const;

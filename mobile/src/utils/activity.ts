@@ -59,10 +59,10 @@ export function activitySources(role: ActivityRole): ActivitySource[] {
   if (role === "BUSINESS_OPERATIONS_MANAGER") return [];
   if (role === 'SYSTEM_ADMINISTRATOR') return [{ kind: 'users', path: '/admin/users', title: 'Tài khoản' }];
   const kinds = role === 'STORAGE_CUSTOMER'
-    ? ['reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'stock-movements', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
-    : role === 'FACILITY_STAFF' ? ['reservations', 'inquiries', 'appointments', 'renewals', 'stock-movements', 'returns', 'maintenance', 'support-requests', 'transfers']
-      : ['appointments', 'payment-submissions', 'support-requests', 'maintenance', 'stock-movements', 'invoices', 'deposit-settlements', 'online-payment-reconciliations'];
-  const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
+    ? ['reservations', 'invoices', 'payment-submissions', 'appointments', 'renewals', 'returns', 'deposit-settlements', 'support-requests', 'contracts']
+    : role === 'FACILITY_STAFF' ? ['reservations', 'inquiries', 'appointments', 'renewals', 'returns', 'maintenance', 'support-requests', 'transfers']
+      : ['appointments', 'payment-submissions', 'support-requests', 'maintenance', 'invoices', 'deposit-settlements', 'online-payment-reconciliations'];
+  const names: Record<string, string> = { reservations: 'Đặt kho', invoices: 'Hóa đơn', 'payment-submissions': 'Chuyển khoản', appointments: 'Lịch nhận kho', renewals: 'Gia hạn', returns: 'Trả kho', 'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ', contracts: 'Hợp đồng', inquiries: 'Tư vấn', maintenance: 'Bảo trì', transfers: 'Chuyển kho' };
   names['online-payment-reconciliations'] = 'Đối soát VNPay';
   return kinds.map(kind => ({ kind, title: names[kind], path: role === 'STORAGE_CUSTOMER' && kind === 'reservations' ? '/reservations' : `/${roleNamespace(role)}/${kind}`, array: role === 'STORAGE_CUSTOMER' && kind === 'reservations' }));
 }
@@ -138,8 +138,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const simple = ['reservations', 'inquiries', 'payment-submissions'].includes(kind);
         web = simple ? `/manager/${kind}/${encodeURIComponent(id)}` : `/manager/operations/${kind}/${encodeURIComponent(id)}`;
         if (kind === 'payment-submissions') web = '/manager/payment-submissions';
-        const assignment = ['appointments', 'support-requests', 'maintenance', 'stock-movements'].includes(kind);
-        if (assignment && (kind === 'appointments' || kind === 'stock-movements' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
+        const assignment = ['appointments', 'support-requests', 'maintenance'].includes(kind);
+        if (assignment && (kind === 'appointments' || assignmentNeedsAttention(kind, row))) { web = `/manager/assignments?kind=${encodeURIComponent(kind)}&search=${encodeURIComponent(code)}`; mobile = '/manager/assignments'; }
         action = managerNeedsAction(kind, row);
         if (kind === 'invoices' && (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0)) continue;
       } else action = staffNeedsAction(kind, row, userId);

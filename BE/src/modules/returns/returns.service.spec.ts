@@ -249,7 +249,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(returns.updateInspection(requested.id, started.inspections[0].id, { result: 'PASS' }, staff)).rejects.toBeInstanceOf(ConflictException);
     await returns.updateInspection(requested.id, started.inspections[1].id, { result: 'ISSUE_FOUND', issueType: 'CLEANING_REQUIRED', conditionNote: 'Cleaning required', issueNote: 'Deep cleaning required' }, staff);
     await returns.updateInspection(requested.id, started.inspections[2].id, { result: 'PASS', conditionNote: 'Good condition' }, staff);
-    const finalized = await returns.finalize(requested.id, staff);
+    const finalized = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(finalized).toMatchObject({ status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspectionSummary: { issues: 2, passed: 1 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(3);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(3);
@@ -270,7 +270,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const requested = await historicalReturn(await activeRental({ quantity: 2 }));
     const started = await returns.startInspection(requested.id, staff);
     await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'PASS' }, staff);
-    await expect(returns.finalize(requested.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_INSPECTIONS_INCOMPLETE' } });
+    await expect(returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toMatchObject({ response: { code: 'RETURN_INSPECTIONS_INCOMPLETE' } });
   });
 
   it('atomically finalizes quantity two, retains allocation history and removes the Active Rental read model', async () => {
@@ -279,7 +279,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const requested = await historicalReturn(historical);
     await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ status: 409 });
     await passAll(requested.id);
-    const completed = await returns.finalize(requested.id, staff);
+    const completed = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'FACILITY_STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED', completedAt: { not: null } } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null }, actualVacatedAt: { not: null } } })).toBe(2);
@@ -297,7 +297,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const requested = await requestContract(reservation.id, a.id);
     const passed = await passAll(requested.id);
     await prisma.storageUnit.update({ where: { id: passed.inspections[0].unit.id }, data: { status: 'MAINTENANCE' } });
-    await expect(returns.finalize(requested.id, staff)).rejects.toBeInstanceOf(ConflictException);
+    await expect(returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toBeInstanceOf(ConflictException);
     expect((await prisma.returnRequest.findUniqueOrThrow({ where: { id: requested.id } })).status).toBe('INSPECTION_IN_PROGRESS');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(0);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(0);
@@ -308,11 +308,11 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const requested = await requestReturn(reservation.id);
     await passAll(requested.id);
     const attempts = await Promise.allSettled([
-      returns.finalize(requested.id, staff),
-      returns.finalize(requested.id, staff),
+      returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true }),
+      returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true }),
     ]);
     expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true);
-    const retry = await returns.finalize(requested.id, staff);
+    const retry = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(retry.status).toBe('PENDING_SETTLEMENT');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(1);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(1);
@@ -338,7 +338,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(requestContract(reservation.id, b.id)).rejects.toMatchObject({ response: { code: 'RETURN_PENDING_TRANSFER' } });
     const request = await requestContract(reservation.id, a.id);
     await passAll(request.id);
-    await expect(returns.finalize(request.id, staff)).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    await expect(returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
     await expect(prisma.transferRequest.findFirst({ where: { rentalContractId: b.id } })).resolves.toMatchObject({ status: 'REQUESTED' });
   });
 
@@ -348,8 +348,6 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const boxA = await prisma.storedItem.create({ data: { rentalContractId: a.id, itemCode: 'BOX-A-' + runId, name: 'A', unit: 'thùng', customerUserId: customerId, balance: 2 } });
     const boxB = await prisma.storedItem.create({ data: { rentalContractId: b.id, itemCode: 'BOX-B-' + runId, name: 'B', unit: 'thùng', customerUserId: customerId, balance: 3 } });
     const outbound = await prisma.stockMovement.create({ data: { rentalContractId: a.id, movementCode: 'OUT-' + runId, customerUserId: customerId, type: 'OUT', idempotencyKey: 'stock-return-' + runId } });
-    await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ response: { code: 'RETURN_PENDING_STOCK_MOVEMENTS' } });
-    await prisma.stockMovement.update({ where: { id: outbound.id }, data: { status: 'COMPLETED' } });
     const first = await requestContract(reservation.id, a.id);
     const overdue = new OverstayController(prisma);
     for (const user of [manager, staff]) {
@@ -358,9 +356,9 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
       expect(list.items.find(item => item.id === b.id)?.returnRequest).toBeNull();
     }
     await passAll(first.id);
-    await expect(returns.finalize(first.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_STORED_ITEMS_REMAIN' } });
-    await prisma.storedItem.update({ where: { id: boxA.id }, data: { balance: 0 } });
-    await expect(returns.finalize(first.id, staff)).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    await expect(returns.finalize(first.id, staff, { unitsEmpty: true, accessRevoked: true })).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    await expect(prisma.storedItem.findUnique({ where: { id: boxA.id } })).resolves.toMatchObject({ balance: 2 });
+    await expect(prisma.stockMovement.findUnique({ where: { id: outbound.id } })).resolves.toMatchObject({ status: 'REQUESTED' });
     await expect(returns.getManagerReturn(first.id,manager)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
     const firstDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: first.id } });
     await expect(deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, staff)).rejects.toBeInstanceOf(ForbiddenException);
@@ -376,10 +374,9 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[1].unitNumber }, manager)).resolves.toMatchObject({ total: 1, items: [{ unitCount: 1 }] });
     await expect(prisma.reservation.findUnique({ where: { id: reservation.id } })).resolves.toMatchObject({ status: 'CONFIRMED' });
 
-    await prisma.storedItem.update({ where: { id: boxB.id }, data: { balance: 0 } });
     const second = await requestContract(reservation.id, b.id);
     await passAll(second.id);
-    await returns.finalize(second.id, staff);
+    await returns.finalize(second.id, staff, { unitsEmpty: true, accessRevoked: true });
     const secondDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: second.id } });
     expect(secondDeposit.depositAmount).toBe(1750000n);
     await deposits.refund(secondDeposit.id, { method: 'CASH', reference: 'receipt-b' }, 'refund-b-' + runId, manager);
@@ -429,7 +426,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const request = await requestContract(reservation.id, a.id);
     await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({ assignedStaff: { id: staff.id } });
     await passAll(request.id);
-    await returns.finalize(request.id, staff, { accessRevoked: true });
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
     const billing = new BillingService(prisma);
     const recurring = await prisma.$transaction(tx => billing.ensureRecurringInvoices(tx, reservation.id));
     expect(recurring).toHaveLength(2);
@@ -482,8 +479,8 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await service.assign(requested.id, { staffUserId: staff.id }, manager);
     await passAll(requested.id);
     await expect(service.finalize(requested.id, staff)).rejects.toThrow('thu hồi');
-    await service.finalize(requested.id, staff, { accessRevoked: true });
-    await service.finalize(requested.id, staff, { accessRevoked: true });
+    await service.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
+    await service.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     const refundAmount = isPrepaid ? 6000000 : 0;
     expect(await service.getCustomerReturn(customerId, requested.id)).toMatchObject({ status: 'PENDING_SETTLEMENT', earlyReturnCloseout: {
       rentalAmount: 3000000, outstandingAmount: scenario === 'used-debt' ? 1500000 : 0, refundAmount,
@@ -558,13 +555,13 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).rejects.toThrow('Cần kết quả kiểm tra');
     if (verified) {
       await returns.updateInspection(request.id, inspection.id, { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Rò nước từ hệ thống kho.' }, staff);
-      await expect(returns.finalize(request.id, staff, { accessRevoked: true })).rejects.toThrow('quản lý xác minh');
+      await expect(returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toThrow('quản lý xác minh');
       await expect(returns.reviewEarlyReturnFault(request.id, evidence, staff)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).resolves.toEqual({ decision: 'APPROVED' });
     } else {
       await returns.updateInspection(request.id, inspection.id, { result: 'PASS' }, staff);
     }
-    await returns.finalize(request.id, staff, { accessRevoked: true });
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(await returns.getCustomerReturn(customerId, request.id)).toMatchObject({ earlyReturnCloseout: {
       facilityFaultCredit: verified ? 300000 : 0, refundAmount: verified ? 300000 : 0,
     } });
@@ -583,7 +580,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const futureAllocation = await prisma.reservationUnit.create({ data: { reservationId: future.id, storageUnitId: units[0].id, plannedStartDate: futureStart, plannedEndDate: futureEnd } });
     const requested = await requestReturn(reservation.id);
     await passAll(requested.id);
-    await returns.finalize(requested.id, staff);
+    await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(await prisma.reservationUnit.findUniqueOrThrow({ where: { id: futureAllocation.id } })).toMatchObject({ releasedAt: null });
     await prisma.storageUnit.updateMany({ where: { storageTypeId, id: { not: units[0].id } }, data: { status: 'MAINTENANCE' } });
     const availability = await booking.checkAvailability({

@@ -4,9 +4,14 @@ import type { PublicUser } from '../auth/auth.types.js';
 const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 function setup() {
   const now = new Date();
-  const row = { id: 'claim', status: 'RESOLVED', decision: 'APPROVED', decisionReason: 'Lý do quyết định trước đây', resolutionNote: 'Kết quả đã thông báo trước đây', staffFacts: 'Ghi nhận thực tế tại kho', history: [], updatedAt: now, discoveredOn: now, createdAt: now, estimatedValue: null };
+  const row = { id: 'claim', rentalContractId: 'contract', status: 'RESOLVED', decision: 'APPROVED', decisionReason: 'Lý do quyết định trước đây', resolutionNote: 'Kết quả đã thông báo trước đây', staffFacts: 'Ghi nhận thực tế tại kho', history: [], updatedAt: now, discoveredOn: now, createdAt: now, estimatedValue: null };
   const update = vi.fn(async ({ data }) => Object.assign(row, data));
-  const tx = { $queryRaw: vi.fn(), damageClaim: { findUnique: vi.fn().mockResolvedValue(row), update } };
+  const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    rentalContract: { findUnique: vi.fn().mockResolvedValue({ reservation: { facilityId: 'facility' } }) },
+    $queryRaw: vi.fn(), damageClaim: { findUnique: vi.fn().mockResolvedValue(row), update } };
   return { row, update, service: new DamageClaimsService({ $transaction: (operation: any) => operation(tx) } as never) };
 }
 describe('Manager incident amendments', () => {

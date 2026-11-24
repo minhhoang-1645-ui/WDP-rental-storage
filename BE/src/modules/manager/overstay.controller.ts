@@ -31,9 +31,8 @@ export class OverstayController {
           take: 1,
         },
         reservationUnit: { include: { storageUnit: { select: { unitNumber: true, floor: true, zone: true } } } },
-        storedItems: { where: { balance: { gt: 0 } }, select: { id: true, name: true, unit: true, balance: true } },
       } }),
     ]);
-    return { page, limit, total, items: rows.map(row => ({ id: row.id, contractCode: row.contractCode, reservationId: row.reservationId, reference: row.reservation.reservationCode, customer: row.reservation.customer, storageUnit: row.reservationUnit.storageUnit, endDate: row.endDate.toISOString().slice(0, 10), overdueDays: Math.floor((today.getTime() - row.endDate.getTime()) / 86400000) + 1, storedItems: row.storedItems, returnRequest: row.returnInspections[0]?.returnRequest ?? null, message: 'Đã hết kỳ thuê, chưa hoàn tất trả kho. Kho vẫn bị chặn cho tới khi lấy hết hàng và hoàn tất kiểm tra.' })) };
+    return { page, limit, total, items: rows.map(row => ({ id: row.id, contractCode: row.contractCode, reservationId: row.reservationId, reference: row.reservation.reservationCode, customer: row.reservation.customer, storageUnit: row.reservationUnit.storageUnit, endDate: row.endDate.toISOString().slice(0, 10), overdueDays: Math.floor((today.getTime() - row.endDate.getTime()) / 86400000) + 1, returnRequest: row.returnInspections[0]?.returnRequest ?? null, message: 'Đã hết kỳ thuê, chưa hoàn tất trả kho. Kho vẫn bị chặn cho tới khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng.' })) };
   }
 }

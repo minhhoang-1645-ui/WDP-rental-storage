@@ -483,7 +483,7 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
   const id = recordId(row);
   const to = user?.role === 'FACILITY_STAFF' ? `/staff/${resource}/${encodeURIComponent(id)}` : detailPath(resource, row);
   const identity = recordIdentity(row, resource);
-  const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'stock-movements', 'rentals'].includes(resource);
+  const recognizable = ['reservations', 'inquiries', 'contracts', 'invoices', 'appointments', 'renewals', 'returns', 'transfers', 'rentals'].includes(resource);
   const needsStaff = resource === 'reservations' && user?.role === 'FACILITY_STAFF' && row.status === 'PENDING';
   const information =
     resource === "units"

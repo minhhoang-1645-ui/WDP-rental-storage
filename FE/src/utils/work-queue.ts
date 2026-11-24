@@ -10,11 +10,6 @@ export const staffWorkGroups = [
     description: "Xác nhận lịch khách đề xuất và bàn giao đúng giờ.",
   },
   {
-    resource: "stock-movements",
-    title: "Nhập – xuất hàng",
-    description: "Kiểm đếm phiếu được giao; tồn chỉ đổi sau khi hoàn tất.",
-  },
-  {
     resource: "transfers",
     title: "Chuyển kho",
     description: "Ghi nhận việc chuyển kho đã được giao.",
@@ -46,7 +41,6 @@ function assignee(row: WorkRow) {
 const assignableStates: Record<string, readonly string[]> = {
   'support-requests': ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'],
   maintenance: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'],
-  'stock-movements': ['REQUESTED', 'ASSIGNED'],
   appointments: ['REQUESTED', 'CONFIRMED'],
   returns: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'],
   transfers: ['APPROVED'],
@@ -90,8 +84,6 @@ export function staffNeedsAction(
       return ["REQUESTED", "INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
         status,
       );
-    case "stock-movements":
-      return status === "ASSIGNED";
     case "support-requests":
       return ["ASSIGNED", "IN_PROGRESS"].includes(status);
     case "maintenance":

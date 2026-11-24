@@ -6,7 +6,7 @@ import { LoadState, PageHeader } from '../../components/manager/PortalUi';
 import { DetailCard } from '../../components/workspace/DetailRow';
 import { InternalPagination } from '../../components/workspace/InternalPagination';
 
-type Overstay = { id: string; reservationId: string; contractCode: string; reference: string; overdueDays: number; endDate: string; customer: { fullName: string; phone: string }; storageUnit: { unitNumber: string; floor: string | null; zone: string | null }; storedItems: { id: string; name: string; balance: number; unit: string }[]; returnRequest: { id: string; status: string } | null };
+type Overstay = { id: string; reservationId: string; contractCode: string; reference: string; overdueDays: number; endDate: string; customer: { fullName: string; phone: string }; storageUnit: { unitNumber: string; floor: string | null; zone: string | null }; returnRequest: { id: string; status: string } | null };
 export function OverstayPage() {
   const { user } = useAuth(), staff = user?.role === 'FACILITY_STAFF';
   const [params, setParams] = useSearchParams();
@@ -14,7 +14,7 @@ export function OverstayPage() {
   const setPage = (nextPage: number) => setParams({ page: String(nextPage) }, { replace: true });
   const result = useApiResource<Page<Overstay>>(`${staff ? '/staff/management/overstays' : '/manager/overstays'}?page=${page}`, user?.id, true);
   return <section>
-    <PageHeader title="Đến hạn nhưng chưa trả kho" description="Kho vẫn được giữ, không tự mở bán khi còn hàng hoặc chưa hoàn tất kiểm tra. Không tự tính phí trễ hạn." />
+    <PageHeader title="Đến hạn nhưng chưa trả kho" description="Kho vẫn được giữ cho đến khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng. Hệ thống không tự tính phí trễ hạn." />
     <LoadState loading={result.loading} error={result.error} retry={result.refresh} />
     {result.data?.items.map(row => {
       const id = encodeURIComponent(row.reservationId);
@@ -24,8 +24,6 @@ export function OverstayPage() {
         <h2>{row.storageUnit.unitNumber} · {row.customer.fullName}</h2>
         <p>{row.storageUnit.floor} · {row.storageUnit.zone} · {row.customer.phone}</p>
         <p>Hết kỳ ngày {row.endDate} · {row.overdueDays} ngày chưa hoàn tất trả · {row.contractCode}</p>
-        <ul>{row.storedItems.map(item => <li key={item.id}>{item.name}: {item.balance} {item.unit}</li>)}</ul>
-        {!row.storedItems.length && <p>Không còn hàng trong sổ. Cần kiểm tra và hoàn tất hồ sơ trả kho.</p>}
         <Link className="button-primary" to={to}>{staff ? row.returnRequest ? 'Xử lý trả kho' : 'Xem kho và liên hệ khách' : 'Xem hồ sơ thuê'}</Link>
       </DetailCard>;
     })}

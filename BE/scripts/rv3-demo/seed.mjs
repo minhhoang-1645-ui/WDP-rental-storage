@@ -5,7 +5,6 @@ import { PricingService } from '../../dist/modules/pricing/pricing.service.js';
 import { ContractsService } from '../../dist/modules/contracts/contracts.service.js';
 import { BillingService } from '../../dist/modules/billing/billing.service.js';
 import { AppointmentsService } from '../../dist/modules/appointments/appointments.service.js';
-import { StockMovementsService } from '../../dist/modules/stock-movements/stock-movements.service.js';
 import { ReturnsService } from '../../dist/modules/returns/returns.service.js';
 import { businessDate } from '../../dist/business-date.js';
 import { accounts, assertAccounts, catalogCodes, prefix, marker, hash, protectedTables, quoteIdentifier } from './safety.mjs';
@@ -48,16 +47,7 @@ async function verify(tx) {
       paid += sum; outstanding += invoice.balanceDue; invoices++;
     }
   }
-  const items = await tx.storedItem.findMany({ include: { movementLines: { include: { stockMovement: true } } } });
-  for (const item of items) {
-    let balance = 0;
-    for (const line of item.movementLines) {
-      if (line.stockMovement.status === 'COMPLETED') { assert.notEqual(line.actualQty, null); balance += (line.stockMovement.type === 'IN' ? 1 : -1) * line.actualQty; }
-      else assert.equal(line.actualQty, null, 'Requested quantity is not an actual count.');
-    }
-    assert.equal(item.balance, balance);
-  }
-  return { reservations: reservations.map(row => ({ id: row.id, code: row.reservationCode, status: row.status, typeId: row.storageTypeId, start: dateKey(row.startDate), end: dateKey(row.endDate) })), totals: { invoices, recordedDemoCash: paid.toString(), outstanding: outstanding.toString(), storedBalance: items.reduce((sum, item) => sum + item.balance, 0) }, integrity: 'PASS', authentication: 'Four original credential records preserved; live-password login not attempted.' };
+  return { reservations: reservations.map(row => ({ id: row.id, code: row.reservationCode, status: row.status, typeId: row.storageTypeId, start: dateKey(row.startDate), end: dateKey(row.endDate) })), totals: { invoices, recordedDemoCash: paid.toString(), outstanding: outstanding.toString() }, integrity: 'PASS', authentication: 'Four original credential records preserved; live-password login not attempted.' };
 }
 
 export async function execute(verifyOnly = false) {
@@ -77,7 +67,7 @@ export async function execute(verifyOnly = false) {
       for (const type of types) for (const role of ['FACILITY_STAFF','FACILITY_MANAGER']) {
         if (!await tx.facilityAccess.findFirst({where:{userId:actors[role].id,facilityId:type.facilityId,revokedAt:null}})) throw new Error('Admin must grant facility access before creating demo tasks.');
       }
-      const client = transactionFacade(tx), pricing = new PricingService(client), contracts = new ContractsService(client), billing = new BillingService(client), appointments = new AppointmentsService(client), stock = new StockMovementsService(client);
+      const client = transactionFacade(tx), pricing = new PricingService(client), contracts = new ContractsService(client), billing = new BillingService(client), appointments = new AppointmentsService(client);
       const today = new Date(businessDate() + 'T00:00:00Z'), tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 2);
       const units = [];
       for (const [index, code] of catalogCodes.entries()) {
@@ -90,7 +80,7 @@ export async function execute(verifyOnly = false) {
         { name: '01-cho-staff', unit: units[6], start: tomorrow, pending: true, description: 'Ngoại lệ chờ Staff kiểm tra; chưa phân bổ, chưa có hợp đồng/hóa đơn.' },
         { name: '02-cho-ky', unit: units[0], start: tomorrow, description: 'Đã xác nhận; Customer cần ký rồi thanh toán.' },
         { name: '03-da-thanh-toan', unit: units[3], start: tomorrow, paid: true, description: 'Đã thu tiền mô phỏng; bàn giao chìa khóa sớm, chưa được dùng kho.' },
-        { name: '04-dang-thue', unit: units[7], start: today, paid: true, active: true, description: 'Đang thuê; nhập 8/10 thùng thực tế; chờ nhập thêm và xuất hàng.' },
+        { name: '04-dang-thue', unit: units[7], start: today, paid: true, active: true, description: 'Đang thuê; có yêu cầu hỗ trợ ra vào cơ sở.' },
         { name: '05-den-han-tra', unit: units[9], start: months(today, -3), paid: true, active: true, due: true, description: 'Hồ sơ lịch sử mô phỏng đến hạn trả hôm nay.' },
       ];
       for (const [index, scenario] of cases.entries()) {
@@ -122,15 +112,7 @@ export async function execute(verifyOnly = false) {
           await appointments.completeHandover(appointment.id, { note: marker, handoverReport: { recipientType: 'CUSTOMER', identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true, condition: 'Kho sạch, khô ráo; hồ sơ mô phỏng.', accessItemCount: 1 } }, actors.FACILITY_STAFF);
         }
       }
-      const active = cases[3], movementInput = { rentalContractId: active.contract.id, type: 'IN', note: marker, lines: [{ name: 'Thùng hồ sơ RV3', unit: 'thùng', quantity: 10 }] };
-      const incoming = await stock.create(actors.STORAGE_CUSTOMER, movementInput, `${prefix}-stock-completed`);
-      await stock.assign(incoming.id, actors.FACILITY_STAFF.id, actors.FACILITY_MANAGER);
-      await stock.complete(incoming.id, { note: marker + ' Khách thực mang 8/10 thùng, Staff đếm 8.', lines: incoming.lines.map(line => ({ lineId: line.id, actualQty: 8 })) }, actors.FACILITY_STAFF);
-      const itemId = incoming.lines[0].storedItem.id;
-      for (const [type, quantity] of [['IN', 3], ['OUT', 2]]) {
-        const movement = await stock.create(actors.STORAGE_CUSTOMER, { rentalContractId: active.contract.id, type, note: marker + ' Khách tự vận chuyển, Staff kiểm đếm.', lines: [{ storedItemId: itemId, quantity }] }, `${prefix}-stock-pending-${type}`);
-        await stock.assign(movement.id, actors.FACILITY_STAFF.id, actors.FACILITY_MANAGER);
-      }
+      const active = cases[3];
       const renewalEnd = months(active.reservation.endDate, 3), renewalQuote = pricing.calculate(types.find(type => type.id === active.reservation.storageTypeId), { storageTypeId: active.reservation.storageTypeId, quantity: 1, startDate: dateKey(active.reservation.endDate), endDate: dateKey(renewalEnd), paymentPlan: 'PREPAID' });
       await tx.renewalRequest.create({ data: { renewalCode: 'RV3-GIAHAN-01', reservationId: active.reservation.id, requestedByUserId: actors.STORAGE_CUSTOMER.id, previousEndDate: active.reservation.endDate, requestedEndDate: renewalEnd, termMonths: 3, paymentPlan: 'PREPAID', quoteSnapshot: { currency: 'VND', storageTypeId: active.reservation.storageTypeId, storageTypeName: types.find(type => type.id === active.reservation.storageTypeId).name, quantity: 1, previousEndDate: dateKey(active.reservation.endDate), renewalStartDate: dateKey(active.reservation.endDate), requestedEndDate: dateKey(renewalEnd), termMonths: 3, paymentPlan: 'PREPAID', monthlyUnitPrice: renewalQuote.monthlyUnitPrice, baseRentalAmount: renewalQuote.baseRentalAmount, discountPercent: renewalQuote.discountPercent, discountAmount: renewalQuote.discountAmount, rentalAmount: renewalQuote.rentalAmount, depositAmount: 0, totalAmount: renewalQuote.rentalAmount }, status: 'PENDING', activeKey: `RENEWAL:${active.reservation.id}`, idempotencyKey: `${prefix}-renewal` } });
       await new ReturnsService(client).createCustomerReturn(actors.STORAGE_CUSTOMER, { reservationId: cases[4].reservation.id, note: marker }, `${prefix}-return`);

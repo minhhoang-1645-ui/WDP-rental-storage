@@ -6,18 +6,24 @@ import { Modal, LoadState } from '../../components/manager/PortalUi';
 import { first, label, money, object, rows, type Row } from '../../components/manager/portal-data';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 
 export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'type' | 'unit'; record?: Row; onClose: () => void; onSaved: (saved: Row) => void }) {
   const { user } = useAuth();
+  const requestConfirmation = useConfirmation();
   const options = useApiResource<Row>('/manager/storage-types', user?.id ?? '');
   const lock = useRef(false);
   const formId = useId();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const type = kind === 'type';
   const locked = !type && Boolean(record && (record.editLocked === true || record.status !== 'AVAILABLE' || rows(record.allocations).length > 0 || record.activeMaintenance));
-  const close = () => {
+  const close = async () => {
     const form = document.getElementById(formId);
-    if (busy || !type && form?.dataset.wdpDirty === 'true' && !window.confirm('Bỏ thay đổi kho chưa lưu?')) return;
+    if (lock.current) return;
+    if (!type && form?.dataset.wdpDirty === 'true') {
+      const accepted = await requestConfirmation({title:'Bỏ thay đổi chưa lưu?',description:'Những thông tin kho bạn vừa nhập chưa được lưu.',confirmLabel:'Bỏ thay đổi',cancelLabel:'Tiếp tục chỉnh sửa',destructive:true});
+      if (!accepted) return;
+    }
     onClose();
   };
   const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId'));

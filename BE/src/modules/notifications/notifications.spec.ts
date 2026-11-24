@@ -176,16 +176,16 @@ it('walks every upstream page and uses the authenticated actor in the Staff look
   const list = vi.fn(async (input: { page: number; limit: number }) => ({
     items: input.page === 1 ? [{ id: 'first' }] : [{ id: 'second' }], total: 101, limit: 100,
   }));
-  const stock = { listStaff: vi.fn().mockResolvedValue(page) };
   const sources = new NotificationSources(
     { listOperationalAppointments: list } as never, {} as never, {} as never, {} as never, {} as never,
     { list: vi.fn().mockResolvedValue(page) } as never, {} as never,
     { listStaff: vi.fn().mockResolvedValue(page) } as never, {} as never,
-    { listStaffReturns: vi.fn().mockResolvedValue(page) } as never, stock as never,
+    { listStaffReturns: vi.fn().mockResolvedValue(page) } as never,
     { listStaff: vi.fn().mockResolvedValue(page) } as never,
     { listForStaff: vi.fn().mockResolvedValue(page) } as never,
   );
-  expect((await sources.load(staff)).appointments).toEqual([{ id: 'first' }, { id: 'second' }]);
+  const notices = await sources.load(staff);
+  expect(notices).not.toHaveProperty('stock-movements');
+  expect(notices.appointments).toEqual([{ id: 'first' }, { id: 'second' }]);
   expect(list).toHaveBeenLastCalledWith({ page: 2, limit: 100 }, staff);
-  expect(stock.listStaff).toHaveBeenCalledWith(staff, { page: 1, limit: 100 });
 });

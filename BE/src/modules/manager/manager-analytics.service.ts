@@ -63,7 +63,6 @@ export class ManagerAnalyticsService {
       payment: { invoice: { reservation } },
       depositSettlement: { returnRequest: { reservation } },
       user: { facilityAccess: { some: { revokedAt: null, facility } } },
-      stockMovement: { rentalContract: { reservation } },
       supportRequest: { reservation },
       maintenanceRequest: { storageUnit: { storageType: { facility } } },
       handoverAppointment: { reservation },
@@ -159,13 +158,6 @@ export class ManagerAnalyticsService {
           NOT: transferSubjectFilter,
         };
         const queue = {
-          unassignedStock: await tx.stockMovement.count({
-            where: {
-              ...scope.stockMovement,
-              status: { in: ['REQUESTED', 'ASSIGNED'] },
-              ...missingAssignee,
-            },
-          }),
           unassignedSupport: await tx.supportRequest.count({
             where: {
               ...scope.supportRequest,
@@ -288,11 +280,6 @@ export class ManagerAnalyticsService {
             },
           }),
         };
-        const stock = await tx.stockMovement.groupBy({
-          by: ['assignedStaffUserId'],
-          where: { ...scope.stockMovement, status: 'ASSIGNED' },
-          _count: { _all: true },
-        });
         const support = await tx.supportRequest.groupBy({
           by: ['assignedStaffUserId'],
           where: {
@@ -309,7 +296,7 @@ export class ManagerAnalyticsService {
           },
           _count: { _all: true },
         });
-        const count = (rows: typeof stock, id: string) =>
+        const count = (rows: typeof support, id: string) =>
           rows.find((row) => row.assignedStaffUserId === id)?._count._all ?? 0;
         return {
           asOf: new Date().toISOString(),
@@ -336,7 +323,6 @@ export class ManagerAnalyticsService {
           queue,
           workload: staff.map((person) => ({
             ...person,
-            stock: count(stock, person.id),
             support: count(support, person.id),
             maintenance: count(maintenance, person.id),
           })),

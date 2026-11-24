@@ -812,6 +812,9 @@ export class BillingService {
 
   private toInvoice(record: any, includeCustomer: boolean) {
     const reservation = record.reservation;
+    const historicalQuote = reservation.quoteSnapshot as HistoricalQuote | null;
+    const serviceUnits = new Map(Array.isArray(historicalQuote?.services)
+      ? historicalQuote.services.map(item => [item.serviceId, item.physicalUnit ?? null]) : []);
     return {
       id: record.id,
       invoiceCode: record.invoiceCode,
@@ -859,7 +862,7 @@ export class BillingService {
         storageUnit: { id: contract.reservationUnit.storageUnit.id, unitCode: contract.reservationUnit.storageUnit.unitNumber, physicalStatus: contract.reservationUnit.storageUnit.status },
       })),
       payments: record.payments.map((payment: any) => this.paymentSummary(payment)),
-      services: reservation.services?.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, unitPrice: this.money(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: this.isoDate(service.serviceStartDate), serviceEndDate: this.isoDate(service.serviceEndDate), amount: this.money(service.amountSnapshot) })) ?? [],
+      services: reservation.services?.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, physicalUnit: serviceUnits.get(service.additionalServiceId) ?? null, unitPrice: this.money(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: this.isoDate(service.serviceStartDate), serviceEndDate: this.isoDate(service.serviceEndDate), amount: this.money(service.amountSnapshot) })) ?? [],
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };

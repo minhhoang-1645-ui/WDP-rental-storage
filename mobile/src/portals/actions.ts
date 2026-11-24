@@ -59,6 +59,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
     { name: 'recipientName', title: 'Người nhận kho mới', required: true, minLength: 2, maxLength: 120 },
     { name: 'returnedKeyCount', title: 'Số chìa khóa/thẻ kho cũ đã thu', required: true, numeric: true, minimum: 0, maximum: 50 },
     { name: 'deliveredKeyCount', title: 'Số chìa khóa/thẻ kho mới đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
+    { name: 'destinationReady', title: 'Đã kiểm tra kho đích và xác nhận sẵn sàng', checkbox: true, required: true },
     { name: 'goodsMoved', title: 'Đã kiểm tra kho cũ và xác nhận kho trống', checkbox: true, required: true },
     { name: 'oldKeysReturned', title: 'Đã thu chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ', checkbox: true, required: true },
     { name: 'newKeysDelivered', title: 'Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới', checkbox: true, required: true },
@@ -75,9 +76,12 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
         if (inspection.result !== 'ISSUE_FOUND') result.push({ title: `Ghi nhận kho ${unit} đạt`, path: base, method: 'PATCH', fields: [note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'PASS' }) });
         result.push({ title: `Ghi nhận vấn đề kho ${unit}`, path: base, method: 'PATCH', fields: [choice('issueType', 'Phân loại vấn đề', issues, text(inspection, 'issueType') || undefined), note('issueNote', 'Mô tả vấn đề', true), note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'ISSUE_FOUND' }), description: 'Chỉ ghi hiện trạng; quản lý xác định trách nhiệm và phí.' });
       }
-      if (object(row.returnReadiness).canReturn === true && Number(text(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(text(row, 'inventory.pendingMovements') || 0) === 0 && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) {
+      if (object(row.returnReadiness).canReturn === true && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) {
         result.push({ title: 'Hoàn tất nhận kho trả', path: root + '/finalize', method: 'POST',
-          fields: [confirmation('Đã nhận kho, lưu kết quả kiểm tra và thu hồi quyền truy cập')], transform: input => ({ ...input, accessRevoked: true }) });
+          fields: [
+            { name: 'unitsEmpty', title: 'Đã kiểm tra và xác nhận kho đã dọn trống', checkbox: true, required: true },
+            { name: 'accessRevoked', title: 'Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập', checkbox: true, required: true },
+          ] });
       }
     }
   }

@@ -1,5 +1,6 @@
 import { isEarlyReturnRequest } from './early-return';
 import { isCustomerTransferSubject } from './transfer-request';
+import { transferProblem } from './transfer-problem';
 
 type WorkRow = Record<string, unknown>;
 
@@ -59,7 +60,8 @@ export function canAssignWork(resource: string, row: WorkRow) {
 export function isAssignedStaffWork(resource: string, row: WorkRow, userId: string) {
   return Boolean(userId && assignee(row) === userId) &&
     !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
-    (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status)));
+    (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status))
+      || row.status === 'REJECTED' && transferProblem(row).review.decision === 'CANCEL');
 }
 
 /** Receiving a request does not grant an employee authority to assign it. */
@@ -120,7 +122,7 @@ export function managerNeedsAction(resource: string, row: WorkRow) {
   return assignmentNeedsAttention(resource, row)
     || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
     || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"
-    || resource === "transfers" && row.status === "REQUESTED"
+    || resource === "transfers" && (row.status === "REQUESTED" || transferProblem(row).pending)
     || resource === "renewals" && row.status === "PENDING"
     || resource === "deposit-settlements" && (row.status === "PENDING_REVIEW" ||
       (row.status === "APPROVED" && typeof row.refundAmount === "number" && row.refundAmount > 0 &&

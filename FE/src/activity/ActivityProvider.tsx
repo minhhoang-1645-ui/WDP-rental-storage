@@ -1,7 +1,7 @@
 import { safeLocalStorage, safeSessionStorage } from '../services/browser-storage';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/auth-context';
-import { apiRequest } from '../services/api';
+import { ApiError, apiRequest } from '../services/api';
 import { allPages } from '../services/portal';
 import { DATA_CHANGED, LIVE_REFRESH, markFormDirty } from '../services/live-events';
 import { activitySources, buildActivity, type ActivityData, type ActivityRole, type ActivityRow } from '../utils/activity';
@@ -57,7 +57,14 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
           if (!Array.isArray(rows)) throw new Error('Danh sách không hợp lệ');
           if (initialized && JSON.stringify(snapshot[source.kind]) !== JSON.stringify(rows)) changed.push(source.path);
           snapshot[source.kind] = rows;
-        } catch { if (!controller.signal.aborted) failed.push(source.title); }
+        } catch (error) {
+          if (controller.signal.aborted) continue;
+          if (role === 'FACILITY_STAFF' && error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+            if (snapshot[source.kind]?.length) changed.push(source.path);
+            delete snapshot[source.kind];
+          }
+          failed.push(source.title);
+        }
       } };
       await Promise.all([worker(), worker(), worker()]);
       if (controller.signal.aborted) return;

@@ -1,8 +1,10 @@
+import { useAuth } from '@/auth/use-auth';
+import { invoiceBadge, invoiceTitle, outstanding } from '@/components/customer-invoice-list';
 import { useEffect, useState } from 'react';
-import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Box, CalendarDays, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, MapPin, Search, Warehouse, X } from 'lucide-react-native';
+import { Box, Building2, CalendarDays, Check, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, MapPin, Search, Tag, Warehouse, X } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
 import { CustomerHero } from '@/components/customer-premium';
@@ -28,6 +30,7 @@ const shortcuts = [
 const go = (path: string) => router.push(path as Href);
 const unique = (items: Row[]) => [...new Map(items.filter(item => idOf(item)).map(item => [idOf(item), item])).values()];
 const storageName = (row: Row) => text(row, 'reservation.storageType.name', 'reservation.product.name', 'storageType.name', 'product.name');
+const facilityName = (row: Row) => text(row, 'reservation.facility.name', 'facility.name');
 const reservationId = (row: Row) => text(row, 'reservation.id');
 const closedBooking = (row: Row) => ['EXPIRED', 'CANCELLED', 'REJECTED'].includes(text(row, 'reservation.status'));
 
@@ -103,6 +106,7 @@ function TaskRow({ task, onPress }: { task: Task; onPress: () => void }) {
 }
 
 export default function CustomerHomeScreen() {
+  const { user } = useAuth();
   const { top } = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [cardIndex, setCardIndex] = useState(0);
@@ -143,25 +147,40 @@ export default function CustomerHomeScreen() {
   const nextVisit = rows(appointments.data?.items)
     .filter(item => idOf(item) && ['REQUESTED', 'CONFIRMED'].includes(String(item.status)) && Date.parse(text(item, 'scheduledAt')) >= now)
     .sort((a, b) => Date.parse(text(a, 'scheduledAt')) - Date.parse(text(b, 'scheduledAt')))[0];
-  const recent = unique(rows(reservations.data)).sort((a, b) => Number(a.status !== 'PENDING') - Number(b.status !== 'PENDING') ||
-    (Date.parse(text(b, 'createdAt')) || 0) - (Date.parse(text(a, 'createdAt')) || 0)).slice(0, 2);
-
+  const recent = unique(rows(reservations.data)).sort((a, b) =>
+    (Date.parse(text(b, 'createdAt')) || 0) - (Date.parse(text(a, 'createdAt')) || 0)).slice(0, 1);
+  const pendingInvoiceIds = new Set(rows(submissions.data?.items).filter(item => item.status === 'PENDING_VERIFICATION' ||
+    Boolean(text(item, 'reconciliation.status') && text(item, 'reconciliation.status') !== 'RECONCILED'))
+    .map(item => text(item, 'invoice.id')));
+  const upcoming = !submissions.error && !submissions.loading && config.data?.vnpayConfigured === true
+    ? rows(invoices.data?.items).filter(item => idOf(item) && outstanding(item) && !closedBooking(item) &&
+      ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(item.type)) && !paymentWindowClosed(item, now) &&
+      !invoicePaymentBlockedBySchedule(item, now) && !pendingInvoiceIds.has(idOf(item)) &&
+      (item.type === 'RECURRING' ? object(item.signing).complete !== false : object(item.signing).complete === true))
+      .sort((a, b) => (text(a, 'dueAt') || '9999').localeCompare(text(b, 'dueAt') || '9999'))[0]
+    : undefined;
   return <ScrollView style={s.screen} contentInsetAdjustmentBehavior="never" contentContainerStyle={s.page}
     refreshControl={<RefreshControl refreshing={refreshing && loading} onRefresh={() => { setRefreshing(true); setNow(Date.now()); sources.forEach(source => source.refresh()); }} />}>
     <View style={s.heroFrame}>
       <CustomerHero topInset={top} compact>
+        <Image source={require('../../../assets/images/customer-home-hero.png')} resizeMode="cover"
+          accessible={false} pointerEvents="none" style={s.heroArt} />
         <View style={s.heroHeader}>
-          <Text style={s.logo}>NestBox</Text>
+          <View style={s.grow}><Text style={s.logo}>NestBox</Text><Text style={s.heroMessage}>Xin chào{user?.fullName ? <Text style={s.greetingName}>{", " + user.fullName}</Text> : null}</Text></View>
           <CustomerNotifications inverse />
         </View>
         {rentals.loading && !rentals.data ? <Text style={s.heroMessage}>Đang tải kho của bạn…</Text>
           : rentals.error ? <Pressable accessibilityRole="button" onPress={rentals.refresh} style={s.profile}><Text style={s.heroMessage}>Chưa tải được kho · Thử lại</Text></Pressable>
           : <>
             <View style={[s.count, !count && s.emptyCount]}>
-              <View><Text style={[s.heroMessage, count > 0 && s.center]}>Bạn đang có</Text>
-                <Text style={[s.number, count > 0 && s.center]}>{String(count).padStart(2, '0')}</Text>
-                <Text style={[s.heroMessage, count > 0 && s.center]}>kho đang thuê</Text></View>
+              <View style={s.countCopy}><Text style={s.heroMessage}>Bạn đang thuê</Text>
+                <Text style={s.number}>{String(count).padStart(2, '0')}</Text>
+                <Text style={s.heroMessage}>kho đang hoạt động</Text></View>
               {!count ? <View style={s.emptyIcon}><Warehouse size={56} color={C.onHeroSecondary} strokeWidth={1.4} /></View> : null}
+              {count === 1 && <Pressable style={s.linkButton} accessibilityRole="link" accessibilityLabel="Xem tất cả kho đang thuê"
+                onPress={() => go('/customer/rentals')}>
+                <Text style={s.heroLink}>Xem tất cả</Text><ChevronRight size={14} color={C.onHeroSecondary} />
+              </Pressable>}
             </View>
             {count > 0 ? <>
               <FlatList horizontal data={active} keyExtractor={({ contract }) => idOf(contract)}
@@ -179,21 +198,24 @@ export default function CustomerHomeScreen() {
                   const floor = text(contract, 'unit.floor').replace(/^ground(?: floor)?$/i, 'Tầng trệt').replace(/^(?:floor\s+)?(\d+)$/i, 'Tầng $1');
                   const zone = text(contract, 'unit.zone');
                   const location = [floor, zone && (/^khu\b/i.test(zone) ? zone : 'Khu ' + zone)].filter(Boolean).join(' · ');
-                  const name = storageName(rental) || 'Kho của bạn';
+                  const name = text(contract, 'unit.storageType.name') || storageName(rental) || 'Kho của bạn';
+                  const facility = text(contract, 'unit.storageType.facility.name') || facilityName(rental);
                   const code = text(contract, 'unit.unitCode');
                   return <Pressable accessibilityRole="button" accessibilityLabel={[name, code, location, 'Thuê đến ' + formatDate(text(contract, 'endDate'))].filter(Boolean).join(', ')}
                     onPress={() => go('/customer/rentals/' + encodeURIComponent(idOf(rental)) + '?rentalContractId=' + encodeURIComponent(idOf(contract)))}
                     style={({ pressed }) => [s.storage, { width: cardWidth }, pressed && s.pressed]}>
-                    <SmallIcon icon={Warehouse} />
-                    <View style={s.grow}>
+                    <SmallIcon icon={Box} />
+                    <View style={[s.grow, s.rentalCopy]}>
                       <View style={s.row}><Text style={[s.heading, s.grow]} numberOfLines={2}>{name}</Text><Text style={s.active}>Đang hoạt động</Text></View>
-                      {location || code ? <View style={s.row}><MapPin size={14} color={C.navy} /><Text style={[s.secondary, s.grow]} numberOfLines={1}>{location || code}</Text></View> : null}
+                      {code ? <View style={s.row}><Tag size={14} color={C.cobalt} /><Text style={s.secondary}>{code}</Text></View> : null}
+                      {facility ? <View style={s.row}><Building2 size={14} color={C.cobalt} /><Text style={[s.secondary,s.grow]}>{facility}</Text></View> : null}
+                      {location ? <View style={s.row}><MapPin size={14} color={C.cobalt} /><Text style={[s.secondary, s.grow]}>{location}</Text></View> : null}
                       <View style={s.row}><CalendarDays size={14} color={C.navy} /><Text style={s.secondary}>Đến {formatDate(text(contract, 'endDate'))}</Text></View>
                     </View>
                     <ChevronRight size={17} color={C.navy} />
                   </Pressable>;
                 }} />
-              <View style={s.spread}>
+              {count > 1 && <View style={s.spread}>
                 <View style={s.row}>{count > 1 ? <>
                   {count <= 7 && active.map(({ contract }, index) => <View key={idOf(contract)} style={[s.dot, index === current && s.activeDot]} />)}
                   <Text accessibilityLabel={`Kho ${current + 1} trên ${count}`} style={s.heroLink}>{current + 1}/{count}</Text>
@@ -201,7 +223,7 @@ export default function CustomerHomeScreen() {
                 <Pressable style={s.linkButton} accessibilityRole="link" accessibilityLabel="Xem tất cả kho đang thuê" onPress={() => go('/customer/rentals')}>
                   <Text style={s.heroLink}>Xem tất cả</Text><ChevronRight size={14} color={C.onHeroSecondary} />
                 </Pressable>
-              </View>
+              </View>}
             </> : null}
           </>}
       </CustomerHero>
@@ -224,7 +246,12 @@ export default function CustomerHomeScreen() {
             {tasks.length > 3 ? <Pressable accessibilityRole="button" accessibilityLabel="Xem tất cả việc cần làm" style={s.linkButton} onPress={() => setShowTasks(true)}><Text style={s.link}>Xem tất cả</Text><ChevronRight size={14} color={C.navy} /></Pressable> : null}
           </View>
           {tasks.slice(0, 3).map(task => <TaskRow key={task.key} task={task} onPress={() => go(task.path)} />)}
-        </View> : <Text style={s.secondary}>Bạn chưa có việc cần làm.</Text>}
+        </View> : <View style={s.recent}><Text accessibilityRole="header" style={s.sectionTitle}>Việc cần làm</Text>
+          {!nextVisit && <View style={s.done}><SmallIcon icon={Check} /><View style={s.grow}>
+            <Text style={s.heading}>Không có việc cần xử lý hôm nay.</Text>
+            <Text style={s.secondary}>Mọi thứ đang được cập nhật đầy đủ.</Text>
+          </View></View>}
+        </View>}
 
       {nextVisit ? <Pressable accessibilityRole="link" style={s.booking} onPress={() => go('/customer/appointments/' + encodeURIComponent(idOf(nextVisit)))}>
         <SmallIcon icon={CalendarDays} /><View style={s.grow}>
@@ -234,6 +261,20 @@ export default function CustomerHomeScreen() {
         </View><ChevronRight size={17} color={C.muted} />
       </Pressable> : null}
 
+      {upcoming && <View style={s.recent}>
+        <Text accessibilityRole="header" style={s.sectionTitle}>Hóa đơn sắp đến hạn</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Thanh toán VNPay · ' + invoiceTitle(upcoming)}
+          onPress={() => go('/customer/invoices/' + encodeURIComponent(idOf(upcoming)))} style={s.booking}>
+          <SmallIcon icon={CreditCard} />
+          <View style={s.grow}>
+            <Text style={s.heading}>{invoiceTitle(upcoming)}</Text>
+            <Text style={s.invoiceAmount}>{formatMoney(Number(upcoming.balanceDue))}</Text>
+            {[storageName(upcoming), facilityName(upcoming)].filter(Boolean).length > 0 && <Text style={s.secondary}>{[storageName(upcoming), facilityName(upcoming)].filter(Boolean).join(' · ')}</Text>}
+            <Text style={s.secondary}>{text(upcoming, 'dueAt') ? 'Đến hạn ' + formatDate(text(upcoming, 'dueAt')) + ' · ' : ''}{invoiceBadge(upcoming).label}</Text>
+          </View>
+          <View style={s.pay}><Text style={s.payText}>Thanh toán VNPay</Text></View>
+        </Pressable>
+      </View>}
       <View style={s.recent}>
         <View style={s.spread}><Text accessibilityRole="header" style={[s.sectionTitle, s.grow]}>Đơn đặt gần đây</Text>
           <Pressable accessibilityRole="link" accessibilityLabel="Xem tất cả đơn đặt" style={s.linkButton} onPress={() => go('/customer/reservations')}><Text style={s.link}>Xem tất cả</Text><ChevronRight size={14} color={C.navy} /></Pressable>
@@ -241,11 +282,11 @@ export default function CustomerHomeScreen() {
         {reservations.loading ? <LoadingState layout="compact" /> : reservations.error ? <ErrorState message={reservations.error} onRetry={reservations.refresh} />
           : recent.length ? recent.map(row => <Pressable key={idOf(row)} accessibilityRole="button" onPress={() => go('/customer/reservations/' + encodeURIComponent(idOf(row)))} style={s.booking}>
             <SmallIcon icon={Box} /><View style={s.grow}><Text style={s.heading}>{storageName(row) || 'Đơn đặt kho'}</Text>
-              <Text style={s.secondary}>{text(row, 'reference', 'id')}</Text>
+              <Text style={s.secondary}>{text(row, 'reference', 'id')}</Text>{facilityName(row) ? <Text style={s.secondary}>{facilityName(row)}</Text> : null}
               <View style={s.bookingMeta}><StatusBadge status={String(row.status)} displayLabel={bookingStatusText[String(row.status)]} />
                 {text(row, 'createdAt') ? <Text style={s.secondary}>Đặt {formatDate(text(row, 'createdAt'))}</Text> : null}</View>
             </View><ChevronRight size={17} color={C.muted} />
-          </Pressable>) : <Text style={s.secondary}>Bạn chưa có đơn đặt kho.</Text>}
+          </Pressable>) : <Pressable accessibilityRole="button" style={s.booking} onPress={() => go('/customer/discover')}><SmallIcon icon={Search} /><View style={s.grow}><Text style={s.heading}>Bạn chưa có đơn đặt kho.</Text><Text style={s.link}>Tìm kho</Text></View><ChevronRight size={17} color={C.muted} /></Pressable>}
       </View>
     </View>
 
@@ -264,21 +305,29 @@ export default function CustomerHomeScreen() {
 const s = StyleSheet.create({
   screen: { backgroundColor: C.surface },
   page: { paddingBottom: 24 },
-  heroFrame: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, overflow: 'hidden', width: '100%', maxWidth: 540, alignSelf: 'center' },
+  heroFrame: { borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden', width: '100%', maxWidth: 540, alignSelf: 'center' },
   heroHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logo: { fontSize: 23, fontWeight: '800', color: C.onHero },
+  heroArt: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  logo: { fontSize: 26, fontWeight: '800', color: C.onHero },
   profile: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  count: { alignItems: 'center', paddingBottom: 5 },
+  count: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },
   emptyCount: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8 },
   emptyIcon: { width: 102, height: 86, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: C.heroControl },
   number: { fontSize: 42, lineHeight: 50, fontWeight: '800', color: C.onHero },
   heroMessage: { color: C.onHero, fontSize: 14, lineHeight: 20 },
+  countCopy: { borderLeftWidth: 3, borderLeftColor: '#52ACFF', paddingLeft: 12 },
+  greetingName: { fontWeight: '800' },
+  done: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 12, backgroundColor: '#EDF4FF', padding: 9 },
+  invoiceAmount: { color: '#0758DC', fontSize: 17, fontWeight: '800' },
+  pay: { backgroundColor: '#0758DC', borderRadius: 9, paddingHorizontal: 8, paddingVertical: 9, maxWidth: '34%' },
+  payText: { color: 'white', fontWeight: '700', fontSize: 12, textAlign: 'center' },
   center: { textAlign: 'center' },
   carousel: { marginHorizontal: -20 },
   carouselContent: { paddingHorizontal: 20 },
   storage: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, padding: 10, borderRadius: 15, backgroundColor: '#EEF5FF', minHeight: 97 },
   pressed: { opacity: 0.76 },
   grow: { flex: 1, minWidth: 0, gap: 4 },
+  rentalCopy: { gap: 2 },
   heading: { color: C.text, fontSize: 14, fontWeight: '700' },
   sectionTitle: { color: C.text, fontSize: 16, fontWeight: '800' },
   secondary: { color: C.muted, fontSize: 12, lineHeight: 17 },

@@ -12,7 +12,7 @@ const customerTabs: Tab[] = [
   { key: 'discover', label: 'Tìm kho', icon: Search, path: '/customer/discover', match: ['/customer/discover', '/customer/booking', '/customer/size-finder'] },
   { key: 'rentals', label: 'Kho đang thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/floor-plan', '/customer/contracts', '/customer/contract-document', '/customer/contract-sign', '/customer/renewals', '/customer/returns', '/customer/early-returns', '/customer/transfers', '/customer/transfer-order'] },
   { key: 'payments', label: 'Thanh toán', icon: CreditCard, path: '/customer/invoices', match: ['/customer/invoices', '/customer/payments', '/customer/payment-result', '/customer/payment-history', '/customer/payment-submissions'] },
-  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/account', '/customer/support-requests', '/customer/damage-claims', '/customer/deposit-settlements', '/customer/deposit-deductions', '/customer/deposit-refund', '/customer/reservations', '/customer/appointments'] },
+  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/my-requests', '/customer/account', '/customer/support-requests', '/customer/damage-claims', '/customer/deposit-settlements', '/customer/deposit-deductions', '/customer/deposit-refund', '/customer/reservations', '/customer/appointments'] },
 ];
 
 

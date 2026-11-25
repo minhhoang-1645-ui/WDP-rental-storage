@@ -1,4 +1,4 @@
-import { ClipboardList } from 'lucide-react';
+import { CalendarClock, ClipboardList, History, ShieldAlert } from 'lucide-react';
 import { InternalPortalLayout, type InternalNavItem } from '../../components/layout/InternalPortalLayout';
 import { staffNavigation } from '../../components/manager/operations-navigation';
 import { OperationsWorkspace } from '../../components/manager/operations-workspace';
@@ -16,20 +16,12 @@ export const staffSections: WorkspaceSection[] = groups.map(group => ({
   ...group,
   items: staffItems.filter(item => item.group === group.title),
 }));
-function section(group: string, destinations: Record<string, string>): InternalNavItem[] {
-  return Object.entries(destinations).flatMap(([resource, label]) => {
-    const item = staffItems.find(entry => entry.to === `/staff/${resource}`);
-    if (!item) return [];
-    return [{ ...item, label, group, match: [`/staff/operations/${resource}`] }];
-  });
-}
-
 const menu: InternalNavItem[] = [
-  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Bàn làm việc', group: 'Tổng quan', match: ['/staff/operations'] })),
+  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Tổng quan', group: 'Tổng quan', match: ['/staff/operations'] })),
   { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Tổng quan' },
-  ...section('Đặt kho & bàn giao', { appointments: 'Lịch bàn giao' }),
-  ...section('Vận hành kho', { returns: 'Trả kho', transfers: 'Chuyển kho', maintenance: 'Bảo trì' }),
-  ...section('Hỗ trợ', { 'support-requests': 'Hỗ trợ khách hàng', 'damage-claims': 'Sự cố tài sản' }),
+  { to: '/staff/schedule', label: 'Lịch công việc', icon: CalendarClock, group: 'Tổng quan' },
+  { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Tổng quan' },
+  { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Tổng quan' },
 ];
 
 export function StaffLayout() {

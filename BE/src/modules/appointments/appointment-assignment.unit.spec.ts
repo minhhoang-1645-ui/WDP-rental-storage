@@ -15,12 +15,15 @@ function setup() {
     id, reservationId: 'reservation', appointmentCode: id, status, assignedStaffUserId, completedByUserId,
     assignedStaff: assignedStaffUserId ? { id: assignedStaffUserId, fullName: assignedStaffUserId, accountStatus: 'ACTIVE' } : null,
     scheduledAt: now, createdAt: now, updatedAt: now,
-    reservation: { id: 'reservation', contracts: [], customer: { id: 'customer', fullName: 'Khách thuê' } },
+    reservation: { id: 'reservation', invoices: [], contracts: [], customer: { id: 'customer', fullName: 'Khách thuê' } },
   });
   const records = [make('unassigned', null), make('mine', staff.id), make('other', other.id), make('legacy-mine', null, 'COMPLETED', staff.id), make('legacy-other', null, 'COMPLETED', other.id)];
   const matches = (row: any, where: any): boolean => Object.entries(where).every(([key, value]: [string, any]) =>
-    key === 'AND' ? value.every((clause: any) => matches(row, clause)) : key === 'OR' ? value.some((clause: any) => matches(row, clause))
-      : key === 'reservation' && value?.facility?.facilityAccess?.some ? [staff.id,other.id,manager.id].includes(value.facility.facilityAccess.some.userId)
+    key === 'AND' ? value.every((clause: any) => matches(row, clause))
+      : key === 'OR' ? value.some((clause: any) => matches(row, clause))
+      : key === 'reservation' && value?.facility?.facilityAccess?.some
+        ? value.facility.facilityAccess.some.revokedAt === null &&
+          [staff.id, other.id, manager.id].includes(value.facility.facilityAccess.some.userId)
       : row[key] === value);
   const model = {
     findFirst: vi.fn(async ({ where }) => records.find(row => matches(row, where)) ?? null),
@@ -33,11 +36,19 @@ function setup() {
       return Object.assign(row, data, { assignedStaff: { id: data.assignedStaffUserId, fullName: data.assignedStaffUserId, accountStatus: 'ACTIVE' } });
     }),
   };
-  const tx = { handoverAppointment: model, $queryRaw: vi.fn().mockResolvedValue([]), $queryRawUnsafe: vi.fn(),
-    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
-    facilityAccess: { findMany: vi.fn().mockResolvedValue([{facilityId:'facility'}]), findFirst: vi.fn().mockResolvedValue({id:'grant'}) },
+  const tx = {
+    handoverAppointment: model,
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRawUnsafe: vi.fn(),
+    reservation: { findUnique: vi.fn(async () => ({ facilityId: 'facility-a' })) },
+    user: { findFirst: vi.fn(async ({ where }) => (where.role === 'FACILITY_STAFF' && where.id === manager.id
+       ? null : { id: where.id, role: where.role, accountStatus: 'ACTIVE' })) },
+    facilityAccess: {
+      findMany: vi.fn(async () => [{ facilityId: 'facility-a' }]),
+      findFirst: vi.fn(async () => ({ id: 'grant' })),
+    },
     auditEvent: { create: vi.fn() },
-    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id, role: where.id===manager.id ? 'FACILITY_MANAGER' : 'FACILITY_STAFF', accountStatus: 'ACTIVE' })), findUnique: vi.fn(async ({ where }) => ({ id: where.id, role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' })) } };
+  };
   const db = { ...tx, $transaction: vi.fn(operation => operation(tx)) };
   return { service: new AppointmentsService(db as never, {} as never, {} as never), records, model, tx };
 }

@@ -18,9 +18,15 @@ describe('Transfer destination availability, without database writes', () => {
     expect(result).toMatchObject({ total: 5, page: 2, limit: 2 });
     expect(prisma.storageUnit.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { storageTypeId: 'large', id: { not: 'source' } }, skip: 2, take: 2, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }] }));
   });
-  it('checks the remaining rental interval with exclusive end, all unreleased allocations', async () => {
+  it('checks unreleased same-reservation allocations and overlapping rental intervals', async () => {
     const { service, prisma, contract } = setup(); await service.destinations('transfer', {},{id:'manager',role:'FACILITY_MANAGER'} as never);
-    expect(prisma.storageUnit.findMany.mock.calls[0][0].include.reservationUnits.where).toEqual({ releasedAt: null, plannedStartDate: { lt: contract.endDate }, plannedEndDate: { gt: expect.any(Date) } });
+    expect(prisma.storageUnit.findMany.mock.calls[0][0].include.reservationUnits.where).toEqual({
+      releasedAt: null,
+      OR: [
+        { reservationId: 'reservation' },
+        { plannedStartDate: { lt: contract.endDate }, plannedEndDate: { gt: expect.any(Date) } },
+      ],
+    });
   });
   it('distinguishes free, overlapping, occupied, held and maintenance units without leaking other customer data', async () => {
     const { service } = setup(); const result = await service.destinations('transfer', {},{id:'manager',role:'FACILITY_MANAGER'} as never);

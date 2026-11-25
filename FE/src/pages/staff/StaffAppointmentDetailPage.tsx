@@ -12,7 +12,7 @@ import { useApiResource } from '../../services/useApiResource';
 import { hasDraft } from '../../services/live-events';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { handoverReportView } from '../../utils/handover-report';
-import { ManagerActions } from '../manager/ManagerActions';
+import { ApiError } from '../../services/api';
 import { mutate } from '../../services/portal';
 import { PurchasedProducts, StaffActions } from './StaffActions';
 import { handoverCondition, handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
@@ -34,20 +34,24 @@ export function StaffAppointmentDetailPage() {
   const [notice, setNotice] = useState('');
   const [submitted, setSubmitted] = useState<Row>();
   const [formRevision, setFormRevision] = useState(0);
-  const row = data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
+  const denied = data.status !== null && [401, 403, 404].includes(data.status);
+  const row = denied ? null : data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
   const readiness = object(row?.handoverReadiness);
   const assigned = Boolean(user && row && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
-  const canAct = assigned && readiness.allowed !== false;
+  const canAct = assigned && row?.bookingReady !== false && readiness.allowed === true;
   useStaffProcessingTarget(Boolean(row && ['REQUESTED', 'CONFIRMED'].includes(String(row.status))));
 
   return <section className="record-detail-page staff-appointment-detail">
     <Link className="booking-back" to={returnTo}><ArrowLeft size={16} />Về danh sách</Link>
-    <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton form history />} />
+    <LoadState loading={data.loading} error={denied ? 'Bạn không còn quyền mở lịch này hoặc lịch đã được giao lại.' : data.error} retry={data.refresh} placeholder={<DetailSkeleton form history />} />
     {row && <>
       <AppointmentHeader row={row} refresh={data.refresh} discardAndRefresh={() => { setFormRevision(value => value + 1); data.refresh(); }} refreshing={data.refreshing} />
       <RefreshStatus active={data.refreshing} />
       {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
+      {first(row, 'scheduleAdjustment.note') && <p role="status">
+        {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Quản lý đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
+      </p>}
       <Fragment key={formRevision}>
       {row.status === 'COMPLETED' && <>
         <HandoverResult row={row} />
@@ -57,7 +61,7 @@ export function StaffAppointmentDetailPage() {
       </>}
       {row.status === 'REQUESTED' && canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Xác nhận lịch</h2>
-        <ManagerActions resource="appointments" row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />
+        <ConfirmAppointment id={id} refresh={data.refresh} onConfirmed={() => setNotice('Đã xác nhận lịch bàn giao.')} />
       </section>}
       {row.status === 'CONFIRMED' && canAct && <StaffActions resource="appointments" row={row} id={id}
         refresh={data.refresh} onSuccess={(message, result) => {
@@ -66,13 +70,44 @@ export function StaffAppointmentDetailPage() {
         }} />}
       {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Chưa thể xử lý bàn giao</h2>
-        <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.' : first(readiness, 'reason') || 'Hãy làm mới hồ sơ để kiểm tra điều kiện bàn giao.'}</p>
+        <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.'
+          : first(readiness, 'reason') || first(row, 'bookingBlockReason') || (row.bookingReady === false
+            ? 'Đơn đặt kho chưa đủ điều kiện bàn giao.' : 'Làm mới hồ sơ để kiểm tra điều kiện bàn giao.')}</p>
       </section>}
       </Fragment>
       <HandoverNotes row={row} />
       <AppointmentHistory row={row} />
     </>}
   </section>;
+}
+
+function ConfirmAppointment({ id, refresh, onConfirmed }: { id: string; refresh: () => void; onConfirmed: () => void }) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit() {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await mutate(`/staff/management/appointments/${encodeURIComponent(id)}/confirm`, 'PATCH');
+      onConfirmed();
+      refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không xác nhận được lịch.');
+      if (caught instanceof ApiError && [403, 404, 409].includes(caught.status)) refresh();
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  return <>
+    {error && <p className="booking-alert is-error" role="alert">{error}</p>}
+    <button type="button" className="button-primary" disabled={busy} onClick={() => void submit()}>
+      {busy ? 'Đang xác nhận…' : 'Xác nhận lịch bàn giao'}
+    </button>
+  </>;
 }
 
 function RemainingProducts({ row, id, allowed, onSuccess }: {
@@ -130,7 +165,10 @@ function AppointmentSummary({ row }: { row: Row }) {
   const actualStaff = first(row, 'completedBy.fullName');
   const recipientName = recipient.name || handoverCustomer(row);
   const facts: Array<[string, string]> = [];
+  const reservation = first(row, 'reservation.reference');
+  if (reservation) facts.push(['Đơn đặt kho', reservation]);
   if (first(row, 'facility.name')) facts.push(['Cơ sở', first(row, 'facility.name')]);
+  if (row.bookingReady === true) facts.push(['Điều kiện đơn thuê', 'Đã ký hợp đồng và thanh toán hóa đơn ban đầu']);
   if (row.status !== 'COMPLETED' && recipientName) facts.push(['Người nhận', recipient.authorized ? `${recipientName} · Được ủy quyền` : recipientName]);
   if (staff && (row.status !== 'COMPLETED' || staff !== actualStaff)) facts.push(['Nhân viên bàn giao', staff]);
   return <section className="manager-section staff-handover-summary">

@@ -1,14 +1,15 @@
+import { recordMatches } from '@/utils/record-search';
 import { rentalChangePath } from '@/components/customer-rental-change';
 import { openCreatedRenewal } from '@/components/customer-renewal';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stack, router, useLocalSearchParams, type Href } from 'expo-router';
-import { ArrowDownUp, Box, Building2, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, FileText, Headphones, Layers, LogOut, MapPin, ReceiptText, Warehouse, type LucideIcon } from 'lucide-react-native';
+import { ArrowDownUp, Box, Building2, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, FileText, Headphones, Layers, LogOut, MapPin, ReceiptText, Search, Warehouse, type LucideIcon } from 'lucide-react-native';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { CustomerTheme as C } from '@/constants/wdp-theme';
-import { customerStyles as s, CustomerActionRow } from '@/components/customer-premium';
+import { CustomerActionRow } from '@/components/customer-premium';
 import { CustomerNotifications } from './customer-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CustomerRecordActions } from '@/components/customer-record-actions';
@@ -18,7 +19,7 @@ import { customerRentalActions } from '@/portals/actions';
 import { supportPath } from '@/components/customer-support';
 import type { FormAction } from '@/operations/form';
 import { formatDate } from '@/utils/format';
-import { currentTimeMs, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
+import { currentTimeMs } from '@/utils/calendar-date';
 import { isTransferRequest } from '@/utils/transfer-request';
 import { CustomerRelocations } from '@/components/customer-relocations';
 
@@ -35,12 +36,62 @@ function rentalName(rental: Row) {
   return text(rental, 'storageType.name') || 'Kho của bạn';
 }
 
-function RentalStatus({ rental, contract }: Selection) {
-  const end = text(contract, 'endDate');
-  const overdue = isCalendarDate(end) ? vietnamCalendarDate() >= end : rental.isOverdue || rental.rentalState === 'OVERDUE';
-  return <StatusBadge status={overdue ? 'OVERDUE' : 'ACTIVE'} />;
+function RentalList({ items }: { items: Selection[] }) {
+  const [search, setSearch] = useState('');
+  const records = items.map(({ rental, contract }) => ({
+    rental, contract,
+    name: text(contract, 'unit.storageType.name') || text(rental, 'storageType.name'),
+    unit: text(contract, 'unit.unitCode'),
+    code: text(contract, 'contractCode'),
+    facility: text(contract, 'unit.storageType.facility.name', 'unit.facility.name') || text(rental, 'facility.name'),
+  }));
+  const visible = records.filter(item => recordMatches([item.name, item.unit, item.code, item.facility], search));
+  return <>
+    <View style={styles.listTotal}>
+      <View style={[styles.icon, styles.listIcon]}><Warehouse size={26} color={C.cobalt} /></View>
+      <View style={styles.listCount}><Text style={styles.listMeta}>Tổng số kho đang thuê</Text>
+        <Text style={styles.countValue}>{items.length} kho</Text></View>
+    </View>
+    <View style={styles.search}>
+      <Search size={20} color={C.muted} />
+      <TextInput accessibilityLabel="Tìm kho đang thuê" placeholder="Tìm theo loại kho, mã kho, hợp đồng hoặc cơ sở..."
+        placeholderTextColor={C.muted} value={search} onChangeText={setSearch} style={styles.searchInput}
+        autoCorrect={false} returnKeyType="search" />
+    </View>
+    <Text accessibilityRole="header" style={styles.sectionTitle}>Danh sách kho đang thuê</Text>
+    {!items.length ? <View style={styles.listEmpty}>
+      <Warehouse size={30} color={C.cobalt} />
+      <Text style={styles.sectionTitle}>Bạn chưa có kho đang thuê</Text>
+      <Text style={styles.listMeta}>Các kho bạn thuê sẽ hiển thị tại đây.</Text>
+    </View> : !visible.length ? <EmptyState title="Không tìm thấy kho phù hợp" message="Thử tìm theo loại kho, mã kho, hợp đồng hoặc cơ sở khác." />
+      : visible.map(({ rental, contract, name, unit, code, facility }) => {
+        const start = text(contract, 'startDate'), end = text(contract, 'endDate');
+        const dates = [start, end].filter(Boolean).map(value => formatDate(value)).join(' – ');
+        const period = start && end ? 'Thời hạn thuê' : start ? 'Bắt đầu thuê' : 'Kết thúc thuê';
+        return <Pressable key={idOf(contract)} accessibilityRole="button" style={({pressed}) => [styles.listCard, pressed && styles.pressed]}
+          onPress={() => router.push({ pathname: '/customer/[resource]/[id]', params: { resource: 'rentals', id: idOf(rental), rentalContractId: idOf(contract) } })}>
+          <View style={styles.grow}>
+            <View style={styles.listIdentity}>
+              <View style={[styles.icon, styles.listIcon]}><Warehouse size={24} color={C.cobalt} /></View>
+              <View style={styles.grow}>
+                <Text style={styles.listName}>{name || 'Kho của bạn'}</Text>
+                {unit ? <Text style={styles.listMeta}>{unit}</Text> : null}
+              </View>
+              <Text style={styles.activeListBadge}>Đang hoạt động</Text>
+            </View>
+            {facility ? <RentalListFact icon={MapPin} value={'Cơ sở: ' + facility} /> : null}
+            {code ? <RentalListFact icon={FileText} value={'Hợp đồng: ' + code} /> : null}
+            {dates ? <RentalListFact icon={CalendarDays} value={period + ': ' + dates} /> : null}
+          </View>
+          <ChevronRight size={18} color={C.muted} />
+        </Pressable>;
+      })}
+  </>;
 }
 
+function RentalListFact({ icon: Icon, value }: { icon: LucideIcon; value: string }) {
+  return <View style={styles.listFact}><Icon size={15} color={C.muted} /><Text style={[styles.listMeta, styles.grow]}>{value}</Text></View>;
+}
 function RentalDetail({ rental, contract, product, onRefresh }: Selection & { product: Row; onRefresh: () => void }) {
   const [action, setAction] = useState<FormAction>();
   const [notice, setNotice] = useState(false);
@@ -172,7 +223,7 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
   const rentals = useResource<{ items: Row[] }>(initialRentalId ? null : '/customer/rentals', true, true);
   const detail = useResource<Row>(initialRentalId ? '/customer/rentals/' + encodeURIComponent(initialRentalId) : null, false, true);
   const source = initialRentalId ? detail : rentals;
-  const catalog = usePublicCatalog();
+  const catalog = usePublicCatalog(undefined, Boolean(initialRentalId));
   const rentalRows = initialRentalId ? (detail.data ? [detail.data] : []) : rentals.data?.items ?? [];
   const choices = rentalRows.flatMap(rental => rows(rental.contracts)
     .filter(contract => contract.status === 'ACTIVE' && idOf(contract) && text(contract, 'unit.id'))
@@ -184,12 +235,12 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
     : group.length === 1 ? group[0] : undefined);
   const productId = selection && text(selection.contract, 'unit.storageType.id');
   const product = rows(catalog.data?.products).find(item => productId && text(item, 'id') === productId) ?? {};
-  const refresh = () => { source.refresh(); catalog.refresh(); };
+  const refresh = () => { source.refresh(); if (initialRentalId) catalog.refresh(); };
   const unavailable = Boolean(initialRentalId && (rentalContractId ? !selection : !group.length));
   return <>
     <Stack.Screen options={{ title: selection || rentalContractId ? 'Chi tiết kho' : 'Kho đang thuê',
-      headerTitleAlign: 'center', headerTitleStyle: { fontSize: 20, fontWeight: '700', color: C.navy },
-      headerShown: !selection, headerBackVisible: Boolean(initialRentalId) }} />
+      headerTitleAlign: 'center', headerTitleStyle: { fontSize: 20, fontWeight: '800', color: C.cobalt },
+      headerShown: !selection, headerBackVisible: Boolean(initialRentalId), headerLeft: initialRentalId ? undefined : () => null, headerRight: () => <View style={styles.navButton}><CustomerNotifications /></View> }} />
     {selection && <SafeAreaView edges={['top']} style={styles.nav}>
       <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.navButton}
         onPress={() => router.dismissTo('/customer/rentals')}>
@@ -198,7 +249,7 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
       <Text accessibilityRole="header" style={styles.navTitle}>Chi tiết kho</Text>
       <View style={styles.navButton}><CustomerNotifications /></View>
     </SafeAreaView>}
-    <ScrollView style={styles.screen} contentContainerStyle={selection ? styles.detailPage : s.page} contentInsetAdjustmentBehavior="automatic"
+    <ScrollView style={styles.screen} contentContainerStyle={selection ? styles.detailPage : styles.listPage} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic"
       refreshControl={<RefreshControl refreshing={source.loading && Boolean(source.data)} onRefresh={refresh} />}>
       {source.loading && !source.data ? <LoadingState layout="detail" />
         : source.error ? <ErrorState message={source.error} onRetry={refresh} />
@@ -206,29 +257,9 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
         : unavailable ? <>
           <EmptyState title="Kho này không còn trong danh sách đang thuê" message="Về danh sách để chọn kho khác." />
           <CustomerActionRow title="Về danh sách kho đang thuê" path="/customer/rentals" />
-        </> : group.length ? <>
-          <View style={styles.titleRow}><Text accessibilityRole="header" style={[s.section, styles.grow]}>Kho đang thuê</Text><Text style={s.secondary}>{group.length} kho</Text></View>
-          <CustomerRelocations onRefresh={refresh} />
-          {group.map(({ rental, contract }) => {
-            const contractCode = text(contract, 'contractCode');
-            const dates = [text(contract, 'startDate'), text(contract, 'endDate') || text(rental, 'effectiveEndDate')]
-              .filter(Boolean).map(value => formatDate(value)).join(' – ');
-            return <Pressable key={idOf(contract)} accessibilityRole="button"
-              onPress={() => router.push(('/customer/rentals/' + encodeURIComponent(idOf(rental)) + '?rentalContractId=' + encodeURIComponent(idOf(contract))) as Href)}
-              style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-              <View style={styles.icon}><Warehouse size={20} color={C.navy} /></View>
-              <View style={styles.grow}>
-                <View style={styles.titleRow}><Text style={[s.section, styles.grow]}>{rentalName(rental)}</Text><RentalStatus rental={rental} contract={contract} /></View>
-                {text(contract, 'unit.unitCode') ? <Text style={styles.endDate}>{text(contract, 'unit.unitCode')}</Text> : null}
-                {contractCode ? <Text style={s.secondary}>Hợp đồng · {contractCode}</Text> : null}
-                {dates ? <Text style={s.secondary}>{dates}</Text> : null}
-              </View>
-              <ChevronRight size={17} color={C.muted} />
-            </Pressable>;
-          })}
         </> : <>
-          <EmptyState title="Bạn chưa có kho đang thuê" message="Kho sẽ xuất hiện sau khi hoàn tất bàn giao." />
-          <CustomerActionRow title="Tìm kho" path="/customer/discover" />
+          <CustomerRelocations onRefresh={refresh} />
+          <RentalList items={group} />
         </>}
     </ScrollView>
   </>;
@@ -237,11 +268,22 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.surface },
   grow: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderWidth: 1, borderColor: C.divider, borderRadius: 14 },
   pressed: { backgroundColor: C.soft },
-  icon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: "#E7F0FC" },
-  endDate: { color: C.text, fontSize: 13, fontWeight: '600', marginTop: 4 },
+  icon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#E7F0FC' },
+  listPage: { padding: 15, paddingTop: 12, gap: 12 },
+  listTotal: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 14, borderRadius: 13, backgroundColor: '#EAF2FD' },
+  listIcon: { width: 44, height: 44 },
+  listCount: { flex: 1, borderLeftWidth: 1, borderColor: '#C9DAF1', paddingLeft: 12, gap: 2 },
+  countValue: { color: '#0758DC', fontSize: 24, fontWeight: '800' },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 44, paddingHorizontal: 10, borderWidth: 1, borderColor: '#D9E1EC', borderRadius: 11 },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 42, color: C.text, fontSize: 13 },
+  listCard: { flexDirection: 'row', alignItems: 'center', gap: 7, padding: 12, borderWidth: 1, borderColor: '#DFE5EE', borderRadius: 15, backgroundColor: 'white' },
+  listIdentity: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 5 },
+  listName: { fontSize: 16, color: C.text, fontWeight: '800' },
+  listMeta: { color: '#415167', fontSize: 13, lineHeight: 18 },
+  activeListBadge: { color: '#087643', backgroundColor: '#D5F1E3', borderRadius: 15, overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 4, fontSize: 11, fontWeight: '800' },
+  listFact: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingTop: 5 },
+  listEmpty: { padding: 21, alignItems: 'center', gap: 7, borderWidth: 1, borderColor: '#DFE5EE', borderRadius: 14 },
   nav: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 5, backgroundColor: 'white' },
   navButton: { width: 42, height: 42, borderRadius: 22, borderWidth: 1, borderColor: '#DFE5EE', alignItems: 'center', justifyContent: 'center' },
   navTitle: { flex: 1, color: C.cobalt, fontSize: 19, fontWeight: '800', textAlign: 'center' },

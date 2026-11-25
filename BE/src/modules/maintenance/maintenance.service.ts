@@ -1,6 +1,8 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
+import { businessToday } from '../../business-date.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
+import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
 import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 
@@ -52,6 +54,30 @@ export class MaintenanceService {
     return this.list(query, 'FACILITY_STAFF', actor.id,actor);
   }
 
+  async listReportedByStaff(query: MaintenanceListQuery, actor: PublicUser) {
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được xem báo cáo của mình.');
+    const where: Prisma.MaintenanceRequestWhereInput = {
+      source: 'MANUAL', reportedByUserId: actor.id,
+      storageUnit: { storageType: { facility: facilityScope(actor) } },
+    };
+    const [total, records] = await Promise.all([
+      this.prisma.maintenanceRequest.count({ where }),
+      this.prisma.maintenanceRequest.findMany({
+        where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (query.page - 1) * query.limit, take: query.limit,
+        select: {
+          id: true, maintenanceCode: true, category: true, status: true, createdAt: true,
+          workNote: true, verificationNote: true, verifiedAt: true,
+          reportedBy: { select: { fullName: true } }, assignedStaff: { select: { fullName: true } },
+          verifiedBy: { select: { fullName: true } },
+          storageUnit: { select: { unitNumber: true, storageType: { select: { facility: { select: { name: true } } } } } },
+        },
+      }),
+    ]);
+    return { page: query.page, limit: query.limit, total, items: records.map(({ storageUnit, ...record }) => ({
+      ...record, unitCode: storageUnit.unitNumber, facility: storageUnit.storageType.facility,
+    })) };
+  }
+
   listManager(query: MaintenanceListQuery, actor:PublicUser, assignedStaffUserId?: string) {
     managerReservationScope(actor);
 
@@ -76,6 +102,8 @@ export class MaintenanceService {
       this.assertUnresolved(current);
       const staff = await assertAssignmentAccess(tx,actor,staffUserId,{storageUnitId:current.storageUnitId});
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
+      assertAssignmentVersion(input, current.assignedStaffUserId);
+      if (current.assignedStaffUserId === staff.id) return current;
       await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id);
       return tx.maintenanceRequest.update({
         where: { id: current.id },
@@ -137,7 +165,18 @@ export class MaintenanceService {
       const otherActive = await tx.maintenanceRequest.count({ where: { storageUnitId: current.storageUnitId, activeKey: { not: null }, id: { not: current.id } } });
       if (otherActive !== 0) throw new ConflictException('StorageUnit có maintenance case khác đang hoạt động.');
       if (current.storageUnit.status === 'MAINTENANCE') {
-        const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: 'AVAILABLE' } });
+        const occupied = await tx.rentalContract.count({ where: {
+          status: 'ACTIVE', reservationUnit: { storageUnitId: current.storageUnitId, releasedAt: null },
+        } });
+        if (occupied) throw new ConflictException('Kho vẫn còn hợp đồng đang sử dụng. Kiểm tra phân bổ trước khi nghiệm thu.');
+        const today = businessToday();
+        const held = await tx.reservationUnit.count({ where: {
+          storageUnitId: current.storageUnitId, releasedAt: null,
+          OR: [{ incomingTransfer: { status: 'APPROVED' } }, {
+            reservation: { status: 'CONFIRMED' }, plannedStartDate: { lte: today }, plannedEndDate: { gt: today },
+          }],
+        } });
+        const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: held ? 'RESERVED' : 'AVAILABLE' } });
         if (changed.count !== 1) throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
       }
       return tx.maintenanceRequest.update({

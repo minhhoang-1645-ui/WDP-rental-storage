@@ -91,7 +91,10 @@ function List({ role, resource }: { role: PortalRole; resource: string }) {
     {role === 'FACILITY_STAFF' && resource === 'maintenance' && !action && <Button title="Báo tình trạng cần bảo trì" onPress={() => setAction(staffMaintenanceCreate())} />}
     {action && <OperationForm action={action} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); setNotice('Đã gửi yêu cầu.'); data.refresh(); }} />}
     {role === 'STORAGE_CUSTOMER' && ['appointments', 'contracts'].includes(resource) && <Navigation title={resource === 'appointments' ? 'Đặt lịch từ hợp đồng đủ điều kiện' : 'Xem lịch bàn giao'} path={resource === 'appointments' ? '/customer/contracts' : '/customer/appointments'} />}
-    {role === 'STORAGE_CUSTOMER' && ['renewals', 'returns'].includes(resource) && <><Navigation title={resource === 'renewals' ? 'Chọn kho muốn gia hạn' : 'Chọn kho muốn trả'} path="/customer/rentals" />{resource === 'returns' && <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />}</>}
+    {role === 'STORAGE_CUSTOMER' && resource === 'returns' && <>
+      <Navigation title="Chọn kho muốn trả" path="/customer/rentals" />
+      <Navigation title="Xem quyết toán tiền cọc" path="/customer/deposit-settlements" />
+    </>}
     {role === 'STORAGE_CUSTOMER' && resource === 'returns' && <Panel title="Trước khi bàn giao"><Text style={styles.copy}>Khi trả trước hạn đã được duyệt, NestBox tính tiền thuê theo ngày bàn giao. Khách cần lấy hết hàng và trả lại chìa khóa hoặc quyền truy cập. Tiền cọc được xử lý riêng.</Text><Navigation title="Xem hóa đơn" path="/customer/invoices" /></Panel>}
     {Boolean(notice) && <Text accessibilityRole="alert" style={styles.success}>{notice}</Text>}
     <Field title={role === 'STORAGE_CUSTOMER' ? 'Tìm trong danh sách' : 'Tìm kiếm hồ sơ'} value={search} onChange={setSearch} maxLength={120} />

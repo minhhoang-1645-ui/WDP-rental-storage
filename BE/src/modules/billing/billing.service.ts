@@ -796,6 +796,7 @@ export class BillingService {
   private invoiceInclude() {
     return {
       reservation: { include: {
+        facility: { select: { id: true, name: true } },
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         storageType: { select: { id: true, code: true, name: true, condition: true } },
         services: true,
@@ -848,6 +849,7 @@ export class BillingService {
         expiresAt: reservation.expiresAt?.toISOString() ?? null,
         quantity: reservation.quantity,
         storageType: reservation.storageType,
+        facility: reservation.facility ?? null,
         ...(includeCustomer ? { customer: reservation.customer } : {}),
       },
       rentalAmount: this.money(record.rentalAmount),

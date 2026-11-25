@@ -45,6 +45,12 @@ export class StaffMaintenanceController {
     return this.maintenance.listReportUnits(request.user!, parseMaintenanceQuery(query));
   }
 
+  @Get('reported-by-me')
+  @Roles('FACILITY_STAFF')
+  listReports(@Req() req: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
+    return this.maintenance.listReportedByStaff(parseMaintenanceQuery(query), req.user!);
+  }
+
   @Get(':id')
   @Roles('FACILITY_STAFF')
   @ApiOperation({ summary: 'Chi tiết maintenance vận hành cho Staff' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })

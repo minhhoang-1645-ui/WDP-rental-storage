@@ -1,9 +1,19 @@
 import { assertAssignmentAccess, type AssignmentReference } from './facility-access.service.js';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 export const operationalAssignee = { id: true, fullName: true, role: true, accountStatus: true } as const;
+
+export function assertAssignmentVersion(input: Record<string, unknown>, current: string | null | undefined) {
+  const expected = input.expectedAssignedStaffUserId;
+  if (expected !== undefined && expected !== null && typeof expected !== 'string') {
+    throw new BadRequestException('Phiên bản phân công không hợp lệ.');
+  }
+  if ((expected ?? null) !== (current ?? null)) {
+    throw new ConflictException('Phân công đã thay đổi. Tải lại hồ sơ trước khi lưu.');
+  }
+}
 
 export function assertTaskAssignee(actor: PublicUser, assignedStaffUserId: string | null | undefined) {
   if (actor.role !== 'FACILITY_STAFF' || assignedStaffUserId !== actor.id) {

@@ -13,6 +13,7 @@ import { isEarlyReturnRequest } from '../../utils/early-return';
 import { managerRefundTitle, managerSections } from '../../utils/manager-sections';
 import { hasLinkedTransfer } from '../../utils/work-queue';
 import { isCustomerTransferSubject } from '../../utils/transfer-request';
+import { transferProblem } from '../../utils/transfer-problem';
 const queuePaths = {
   deposits: '/manager/deposit-settlements',
   maintenance: '/manager/maintenance',
@@ -37,6 +38,7 @@ const titles: Record<Queue, string> = {
 };
 const statusNames: Record<string, string> = {
   REQUESTED: 'Chờ duyệt chuyển kho', PENDING: 'Chờ duyệt gia hạn',
+  TRANSFER_PROBLEM: 'Vướng mắc chuyển kho',
   PENDING_REVIEW: 'Chờ duyệt',
   AWAITING_VERIFICATION: 'Chờ kiểm tra kết quả', ESCALATED: 'Cần quản lý quyết định', EARLY_REVIEW: 'Chờ quyết định',
   INVESTIGATING: 'Chờ quyết định sự cố', APPROVED: 'Đã chấp thuận · chờ kết thúc', REJECTED: 'Đã từ chối · chờ kết thúc',
@@ -47,7 +49,7 @@ const queueStates: Record<Queue, string[]> = {
   deposits: ['PENDING_REVIEW'],
   maintenance: ['AWAITING_VERIFICATION'], support: ['ESCALATED'], early: ['EARLY_REVIEW'],
   damage: ['INVESTIGATING'],
-  transfers: ['REQUESTED'],
+  transfers: ['REQUESTED', 'TRANSFER_PROBLEM'],
   renewals: ['PENDING'],
   payments: ['PENDING_VERIFICATION'], reconciliation: ['PENDING_REVIEW', 'REFUND_REQUIRED'],
 };
@@ -89,8 +91,9 @@ function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): T
       to = detailPath('renewals', { id });
       break;
     case 'transfers':
-      if (legacyTransfer ? !isCustomerTransferSubject(row.subject) || status === 'RESOLVED' || rows(row.transfers).length > 0 : status !== 'REQUESTED') return null;
-      state = 'REQUESTED';
+      if (legacyTransfer ? !isCustomerTransferSubject(row.subject) || status === 'RESOLVED' || rows(row.transfers).length > 0
+        : status !== 'REQUESTED' && !transferProblem(row).pending) return null;
+      state = !legacyTransfer && transferProblem(row).pending ? 'TRANSFER_PROBLEM' : 'REQUESTED';
       to = detailPath(legacyTransfer ? 'support-requests' : 'transfers', { id });
       break;
     case 'damage':
@@ -140,7 +143,7 @@ export function ManagerReviewInbox() {
   const support = usePaginatedResource<Row>(queuePath('support', 'ESCALATED'), user?.id, true);
   const early = usePaginatedResource<Row>(queuePath('early'), user?.id, true);
   const damage = usePaginatedResource<Row>(queuePath('damage'), user?.id, true);
-  const transfers = usePaginatedResource<Row>(queuePath('transfers', 'REQUESTED'), user?.id, true);
+  const transfers = usePaginatedResource<Row>(!queue || queue === 'transfers' ? '/manager/transfers?limit=100&reviewQueue=true' : null, user?.id, true);
   const legacyTransfers = usePaginatedResource<Row>(!queue || queue === 'transfers' ? '/manager/support-requests?legacyTransfer=true&limit=100' : null, user?.id, true);
   const renewals = usePaginatedResource<Row>(queuePath('renewals', 'PENDING'), user?.id, true);
   const payments = usePaginatedResource<Row>(queuePath('payments', 'PENDING_VERIFICATION'), user?.id, true);

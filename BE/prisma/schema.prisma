@@ -733,7 +733,7 @@ model ReservationUnit {
   outgoingTransfers TransferRequest[] @relation("TransferSourceAllocation")
   incomingTransfer  TransferRequest?  @relation("TransferDestinationAllocation")
 
-  @@unique([reservationId, storageUnitId])
+  // Live pair uniqueness is a partial index in 20261124000400_live_reservation_unit_uniqueness.
   @@index([storageUnitId, plannedStartDate, plannedEndDate])
 }
 

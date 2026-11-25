@@ -23,7 +23,8 @@
     "20261124000200_shared_service_catalog",
     "20261124000300_auth_session_history",
     "20261124000300_offering_configuration_review",
-    "20261124000400_facility_closure_relocation"
+    "20261124000400_facility_closure_relocation",
+    "20261124000400_live_reservation_unit_uniqueness"
   ],
   "migrations": [
     {
@@ -403,6 +404,13 @@
         "c187b0faddd0bf3800b5e5a47e1e45698ebdb8f26b5ef4a00138c58a5f5c738c"
       ],
       "name": "20261124000400_facility_closure_relocation"
+      },
+      {
+      "name": "20261124000400_live_reservation_unit_uniqueness",
+      "checksums": [
+        "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
+        "0f4aa6c5fa6a3f0c6e9d23c3ca287374703428c565e823eaa852ff9b50df6477"
+      ]
     }
   ],
   "historicalException": {

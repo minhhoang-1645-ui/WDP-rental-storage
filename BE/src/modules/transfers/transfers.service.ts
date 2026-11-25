@@ -1,7 +1,7 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, assertTaskExecution, transferTaskScope, supportTaskReference } from '../facility-access/task-access.js';
-import { assertActiveAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
+import { assertActiveAssignee, assertAssignmentVersion, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { assertTransferIntakeAvailable, createLinkedTransfer, isTransferSubject } from './transfer-intake.js';
 import { Optional } from '@nestjs/common';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
@@ -16,6 +16,13 @@ import { snapshotHash, validateSignature } from '../contracts/signature.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 const statuses = ['REQUESTED', 'APPROVED', 'COMPLETED', 'REJECTED'] as const;
+const destinationMaintenance = { where: { activeKey: { not: null } }, select: { id: true }, take: 1 } as const;
+function liveDestinationConflicts(reservationId: string, start: Date, end: Date): Prisma.ReservationUnitWhereInput {
+  return { releasedAt: null, OR: [
+    { reservationId },
+    { plannedStartDate: { lt: end }, plannedEndDate: { gt: start } },
+  ] };
+}
 const renewalAwaitingCurrentInvoice = (today = businessToday()): Prisma.RenewalRequestWhereInput => ({
   status: 'COMPLETED', paymentPlan: 'PAY_MONTHLY', previousEndDate: { lte: today }, requestedEndDate: { gt: today },
   invoices: { none: { type: 'RENEWAL', status: 'PAID', balanceDue: 0n, billingPeriodStart: { lte: today }, billingPeriodEnd: { gt: today } } },
@@ -117,9 +124,22 @@ export class TransfersService {
     if (status && allowedStatuses.length && !allowedStatuses.includes(status as (typeof statuses)[number])) throw new BadRequestException('Transfer status không hợp lệ cho vai trò hiện tại.');
     const search = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : undefined;
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
+    const reviewQueue = actor.role === 'FACILITY_MANAGER' && query.reviewQueue === 'true';
+    const flagged = reviewQueue ? await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT "id" FROM "TransferRequest"
+      WHERE "status" = 'APPROVED'
+        AND CASE WHEN jsonb_typeof("handoverReport"->'problems') = 'array'
+          THEN jsonb_array_length("handoverReport"->'problems') > 0
+            AND jsonb_array_length("handoverReport"->'problems')::text
+              IS DISTINCT FROM "handoverReport"#>>'{problemReview,problemCount}'
+          ELSE false END
+    `) : [];
     const where: Prisma.TransferRequestWhereInput = {
       closurePlanId: null,
       ...transferTaskScope(actor),
+      ...(reviewQueue ? { AND: [{ OR: [
+        { status: 'REQUESTED' }, { status: 'APPROVED', id: { in: flagged.map(item => item.id) } },
+      ] }] } : {}),
       ...(assignedStaffUserId ? { assignedStaffUserId, AND: [staffTransferReady()] } : {}),
       ...(status ? { status: status as (typeof statuses)[number] } : allowedStatuses.length ? { status: { in: [...allowedStatuses] } } : {}),
       ...(search ? { OR: [
@@ -160,17 +180,18 @@ export class TransfersService {
     const total = await this.prisma.storageUnit.count({ where });
     const units = await this.prisma.storageUnit.findMany({
       where, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
-      include: { storageType: true, reservationUnits: {
-        where: { releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start } },
-        select: { plannedStartDate: true, plannedEndDate: true }, orderBy: { plannedStartDate: 'asc' },
+      include: { storageType: true, maintenanceRequests: destinationMaintenance, reservationUnits: {
+        where: liveDestinationConflicts(transfer.reservationId, start, end),
+        select: { reservationId: true, plannedStartDate: true, plannedEndDate: true }, orderBy: { plannedStartDate: 'asc' },
       } },
     });
     return { page, limit, total, items: units.map(unit => {
       const reason = transfer.status !== 'REQUESTED' ? 'Yêu cầu đã được xử lý. Mở lại hồ sơ để xem kết quả.'
         : transfer.rentalContract.status !== 'ACTIVE' || end <= start ? 'Hợp đồng không còn kỳ thuê đang hoạt động.'
         : transfer.rentalContract.reservationUnitId !== transfer.fromReservationUnitId || transfer.fromStorageUnit.status !== 'OCCUPIED' ? 'Kho nguồn đã thay đổi. Vui lòng kiểm tra lại hồ sơ trước khi chuyển.'
-        : unit.status === 'MAINTENANCE' ? 'Kho đang bảo trì.' : unit.status === 'OCCUPIED' ? 'Kho đang có khách sử dụng.'
+        : unit.status === 'MAINTENANCE' || unit.maintenanceRequests?.length ? 'Kho đang bảo trì.' : unit.status === 'OCCUPIED' ? 'Kho đang có khách sử dụng.'
         : unit.status !== 'AVAILABLE' ? 'Kho đang được giữ cho đơn khác.'
+        : unit.reservationUnits.some(allocation => allocation.reservationId === transfer.reservationId) ? 'Ô đích đã có phân bổ còn hiệu lực trong đơn này.'
         : unit.reservationUnits.length ? 'Kho có lịch đặt trùng thời gian thuê còn lại.' : '';
       return { id: unit.id, unitCode: unit.unitNumber, floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position,
         storageType: { id: unit.storageType.id, code: unit.storageType.code, name: unit.storageType.name },
@@ -184,12 +205,12 @@ export class TransfersService {
   }
 
   async listForStaff(query: Record<string, unknown>, actor: PublicUser) {
-    return this.listFiltered(query, ['APPROVED', 'COMPLETED'], actor.id,actor);
+    return this.listFiltered(query, ['APPROVED', 'COMPLETED', 'REJECTED'], actor.id,actor);
   }
 
   async getForStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.transferRequest.findFirst({
-      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id,...transferTaskScope(actor), AND: [staffTransferReady()] },
+      where: { closurePlanId: null, OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED', 'REJECTED'] }, assignedStaffUserId: actor.id,...transferTaskScope(actor), AND: [staffTransferReady()] },
       include: this.include(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy lệnh chuyển kho dành cho Staff.');
@@ -207,6 +228,7 @@ export class TransfersService {
       await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (current.status !== 'APPROVED') throw new ConflictException('Chỉ phân công lệnh chuyển kho đã duyệt.');
       await assertActiveAssignee(tx, staffId, actor, {storageUnitId:current.fromStorageUnitId});
+      assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staffId) return this.toTransfer(current);
       await recordAssignment(tx,actor,"transfers",current.id,current.assignedStaffUserId,staffId);
       return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }));
@@ -233,15 +255,20 @@ export class TransfersService {
       const staffId = requestedStaffId ?? current.assignedStaffUserId ?? undefined;
       if(!staffId) throw new BadRequestException('Chọn nhân viên thực hiện chuyển kho trước khi duyệt.');
       await assertActiveAssignee(tx, staffId, actor, {storageUnitId:current.fromStorageUnitId});
-      const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
+      const destination = await tx.storageUnit.findUnique({
+        where: { id: toStorageUnitId }, include: { storageType: true, maintenanceRequests: destinationMaintenance },
+      });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
+      if (destination.maintenanceRequests?.length) throw new ConflictException('Kho đích có hồ sơ bảo trì đang mở.');
       if (destination.id === current.fromStorageUnitId) throw new ConflictException('Unit đích phải khác unit nguồn.');
       if (destination.storageTypeId !== current.fromStorageUnit.storageTypeId) throw new ConflictException('Chỉ chuyển sang kho cùng loại tại cùng cơ sở.');
       const start = this.today(); const end = current.rentalContract.endDate;
       if (end <= start) throw new ConflictException('Contract không còn khoảng thuê tương lai để chuyển unit.');
-      const conflicting = await tx.reservationUnit.count({ where: { storageUnitId: destination.id, releasedAt: null, plannedStartDate: { lt: end }, plannedEndDate: { gt: start } } });
-      if (conflicting) throw new ConflictException('Unit đích có confirmed allocation trùng khoảng thuê còn lại.');
+      const conflicting = await tx.reservationUnit.count({
+        where: { storageUnitId: destination.id, ...liveDestinationConflicts(current.reservationId, start, end) },
+      });
+      if (conflicting) throw new ConflictException('Ô đích đã có phân bổ trong đơn này hoặc có lịch đặt trùng thời gian thuê.');
       const targetAllocation = await tx.reservationUnit.create({ data: { reservationId: current.reservationId, storageUnitId: destination.id, plannedStartDate: start, plannedEndDate: end } });
       const reserved = await tx.storageUnit.updateMany({ where: { id: destination.id, status: 'AVAILABLE' }, data: { status: 'RESERVED' } });
       if (reserved.count !== 1) throw new ConflictException('Unit đích vừa được sử dụng bởi thao tác khác.');
@@ -283,7 +310,7 @@ export class TransfersService {
       const report = this.handoverData(current.handoverReport);
       const problems = Array.isArray(report.problems) ? report.problems : [];
       const latest = problems.at(-1);
-      if (latest && typeof latest === 'object' && !Array.isArray(latest) && latest.note === note && latest.staffId === actor.id) {
+      if (this.problemPending(report) && latest && typeof latest === 'object' && !Array.isArray(latest) && latest.note === note && latest.staffId === actor.id) {
         return this.toTransfer(current, { staffId: actor.id });
       }
       if (problems.length >= 50) throw new ConflictException('Đã đạt giới hạn ghi nhận. Hãy liên hệ quản lý về hồ sơ này.');
@@ -296,6 +323,70 @@ export class TransfersService {
 
   private handoverData(value: Prisma.JsonValue | null) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
+  private problemPending(report: Prisma.JsonObject) {
+    return Array.isArray(report.problems) && report.problems.length > 0
+      && this.handoverData(report.problemReview ?? null).problemCount !== report.problems.length;
+  }
+
+  async reviewProblem(id: string, input: Record<string, unknown>, actor: PublicUser) {
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý vướng mắc chuyển kho.');
+    const decision = input.decision;
+    const note = typeof input.note === 'string' ? input.note.trim() : '';
+    const expected = input.expectedProblemCount;
+    if ((decision !== 'CONTINUE' && decision !== 'CANCEL') || note.length < 3 || note.length > 2000
+      || typeof expected !== 'number' || !Number.isInteger(expected) || expected < 1) {
+      throw new BadRequestException('Cần quyết định, ghi chú và phiên bản báo cáo vướng mắc.');
+    }
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${id} OR "transferCode" = ${id} FOR UPDATE`);
+      const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
+      if (!current) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskFacility(tx, actor, { storageUnitId: current.fromStorageUnitId });
+      const report = this.handoverData(current.handoverReport);
+      const previous = this.handoverData(report.problemReview ?? null);
+      const count = Array.isArray(report.problems) ? report.problems.length : 0;
+      if (count === expected && previous.problemCount === expected && previous.decision === decision
+        && previous.note === note && previous.managerId === actor.id) return this.toTransfer(current);
+      if (current.status !== 'APPROVED' || current.commercialSnapshot || count !== expected || !this.problemPending(report)) {
+        throw new ConflictException('Hồ sơ vướng mắc đã thay đổi. Vui lòng tải lại.');
+      }
+      if (!current.toStorageUnitId || !current.toReservationUnitId || current.fromStorageUnitId === current.toStorageUnitId
+        || current.fromStorageUnit.storageTypeId !== current.toStorageUnit?.storageTypeId) {
+        throw new ConflictException('Không xác định được kho đích cùng loại của lệnh chuyển.');
+      }
+      await assertTaskFacility(tx, actor, { storageUnitId: current.toStorageUnitId });
+      const now = new Date();
+      if (decision === 'CANCEL') {
+        const unitId = current.toStorageUnitId;
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${unitId} FOR UPDATE`);
+        const released = await tx.reservationUnit.updateMany({
+          where: { id: current.toReservationUnitId, reservationId: current.reservationId, storageUnitId: unitId, releasedAt: null,
+            contract: null, outgoingTransfers: { none: { status: { in: ['REQUESTED', 'APPROVED'] } } } },
+          data: { releasedAt: now },
+        });
+        if (released.count !== 1) throw new ConflictException('Kho đích không còn là phân bổ giữ riêng của lệnh chuyển.');
+        const otherHold = await tx.reservationUnit.count({ where: { storageUnitId: unitId, releasedAt: null } });
+        if (!otherHold) {
+          const maintenance = await tx.maintenanceRequest.count({ where: { storageUnitId: unitId, activeKey: { not: null } } });
+          await tx.storageUnit.updateMany({ where: { id: unitId, status: 'RESERVED' }, data: { status: maintenance ? 'MAINTENANCE' : 'AVAILABLE' } });
+        }
+        if (current.supportRequestId) await tx.supportRequest.updateMany({
+          where: { id: current.supportRequestId, reservationId: current.reservationId,
+            OR: [{ status: { not: 'RESOLVED' } }, { resolutionType: 'TRANSFER_RECOMMENDED' }] },
+          data: { status: 'RESOLVED', resolutionType: 'OTHER', resolutionNote: 'Đã hủy chuyển kho: ' + note,
+            resolvedByUserId: actor.id, resolvedAt: now, lastAction: 'TRANSFER_CANCELLED' },
+        });
+      }
+      const review = { decision, note, problemCount: count, managerId: actor.id, managerName: actor.fullName, reviewedAt: now.toISOString() };
+      const history = Array.isArray(report.problemReviewHistory) ? report.problemReviewHistory : [];
+      return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: {
+        ...(decision === 'CANCEL' ? { status: 'REJECTED', rejectionReason: note } : {}),
+        handoverReport: { ...report, problemReview: review, problemReviewHistory: [...history, review] },
+      }, include: this.include() }));
+    }, 'Hồ sơ vừa thay đổi. Vui lòng tải lại.');
   }
 
   async complete(id: string, actor: PublicUser, input: Record<string, unknown> = {}) {
@@ -314,6 +405,7 @@ export class TransfersService {
         return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }), { staffId: actor.id });
       }
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
+      if (this.problemPending(this.handoverData(current.handoverReport))) throw new ConflictException('Chờ quản lý xử lý vướng mắc trước khi bàn giao.');
       if (current.commercialSnapshot || current.fromStorageUnit.storageTypeId !== current.toStorageUnit?.storageTypeId) throw new ConflictException('Chỉ bàn giao chuyển kho cùng loại tại đây.');
       if (input.destinationReady !== true) throw new BadRequestException('Cần xác nhận kho đích đã sẵn sàng.');
       await assertRoutineAccess(tx, [current.fromStorageUnitId, current.toStorageUnitId]);
@@ -387,7 +479,7 @@ export class TransfersService {
       dueInvoices: (record.reservation.invoices ?? []).map((invoice: { id: string; invoiceCode: string; balanceDue: bigint }) => ({ id: invoice.id, code: invoice.invoiceCode, balanceDue: Number(invoice.balanceDue) })),
       pendingRenewalInvoice: Boolean(record.reservation.renewals?.length),
     } : null;
-    const { problems: _problems, ...customerReport } = this.handoverData(record.handoverReport);
+    const { problems: _problems, problemReview: _review, problemReviewHistory: _history, ...customerReport } = this.handoverData(record.handoverReport);
     const handoverReport = customer ? Object.keys(customerReport).length ? customerReport : null : record.handoverReport ?? null;
     return { ...(staffId && record.reservation.facility ? { facility: record.reservation.facility } : {}), id: record.id, transferCode: record.transferCode, status: record.status, commercialPayment: staffId ? null : commercialPayment, transferRequestedSchedule: transferProposalView(support), rejectionReason: record.rejectionReason ?? null, handoverReport, ...(customer ? {} : { assignedStaff: record.assignedStaff }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId)), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId)) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
   private unit(unit: any, includeLocation = false) { return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType, ...(includeLocation ? { floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position } : {}) }; }
@@ -396,13 +488,21 @@ export class TransfersService {
   private today() { return businessToday(); }
   private iso(value: Date) { return value.toISOString().slice(0, 10); }
   private prismaCode(error: unknown, code: string) { return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code; }
+  private postgresState(error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return undefined;
+    const adapter = error.meta?.driverAdapterError as { cause?: { originalCode?: string } } | undefined;
+    return adapter?.cause?.originalCode ?? error.meta?.code;
+  }
   private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, message: string) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
       } catch (error) {
-        if (this.prismaCode(error, 'P2034') && attempt < 2) continue;
-        if (this.prismaCode(error, 'P2034') || this.prismaCode(error, 'P2002')) throw new ConflictException(message);
+        const sqlState = this.postgresState(error);
+        // A raw SELECT FOR UPDATE can surface PostgreSQL's serialization failure as P2010.
+        const concurrent = this.prismaCode(error, 'P2034') || sqlState === '40001' || sqlState === '40P01';
+        if (concurrent && attempt < 2) continue;
+        if (concurrent || this.prismaCode(error, 'P2002') || sqlState === '23P01') throw new ConflictException(message);
         throw error;
       }
     }

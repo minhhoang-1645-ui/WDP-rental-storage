@@ -1,6 +1,6 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
-import { assertTaskFacility, assertTaskExecution, reservationScope } from '../facility-access/task-access.js';
+import { assertTaskFacility, assertTaskExecution, transferTaskScope, supportTaskReference } from '../facility-access/task-access.js';
 import { assertActiveAssignee, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
 import { assertTransferIntakeAvailable, createLinkedTransfer, isTransferSubject } from './transfer-intake.js';
 import { Optional } from '@nestjs/common';
@@ -41,7 +41,7 @@ export class TransfersService {
   async previewCommercial(id: string, destinationId: string,actor:PublicUser) {
     const transfer = await this.prisma.transferRequest.findFirst({ where: { id }, include: this.include() });
     if (!transfer || transfer.status !== 'REQUESTED') throw new NotFoundException('Không có lệnh chuyển đang chọn kho đích.');
-    await assertTaskFacility(this.prisma,actor,{reservationId:transfer.reservationId});
+    await assertTaskFacility(this.prisma,actor,{storageUnitId:transfer.fromStorageUnitId});
     const destination = await this.prisma.storageUnit.findUnique({ where: { id: destinationId } });
     if (!destination) throw new NotFoundException('Không tìm thấy kho đích.');
     await assertTaskFacility(this.prisma, actor, { storageUnitId: destination.id });
@@ -89,7 +89,7 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${id} FOR UPDATE`);
       const support = await tx.supportRequest.findUnique({ where: { id }, include: { transferRequests: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } } } });
       if (!support || !isTransferSubject(support.subject)) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho của khách.');
-      await assertTaskFacility(tx,actor,{reservationId:support.reservationId});
+      await assertTaskFacility(tx,actor,supportTaskReference(support));
       if (support.transferRequests[0]) return support.transferRequests[0];
       if (support.status === 'RESOLVED') throw new ConflictException('Yêu cầu đã được xử lý.');
       const contracts = await tx.rentalContract.findMany({
@@ -118,7 +118,8 @@ export class TransfersService {
     const search = typeof query.search === 'string' && query.search.trim() ? query.search.trim() : undefined;
     if (search && search.length > 120) throw new BadRequestException('search tối đa 120 ký tự.');
     const where: Prisma.TransferRequestWhereInput = {
-      reservation:reservationScope(actor),
+      closurePlanId: null,
+      ...transferTaskScope(actor),
       ...(assignedStaffUserId ? { assignedStaffUserId, AND: [staffTransferReady()] } : {}),
       ...(status ? { status: status as (typeof statuses)[number] } : allowedStatuses.length ? { status: { in: [...allowedStatuses] } } : {}),
       ...(search ? { OR: [
@@ -140,7 +141,7 @@ export class TransfersService {
   async get(id: string,actor:PublicUser) {
     managerReservationScope(actor);
 
-    const record = await this.prisma.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }],reservation:reservationScope(actor) }, include: this.include() });
+    const record = await this.prisma.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }],...transferTaskScope(actor) }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy TransferRequest.');
     return this.toTransfer(record);
   }
@@ -153,7 +154,7 @@ export class TransfersService {
       include: { fromStorageUnit: true, rentalContract: true },
     });
     if (!transfer) throw new NotFoundException('Không tìm thấy yêu cầu chuyển kho.');
-    await assertTaskFacility(this.prisma,actor,{reservationId:transfer.reservationId});
+    await assertTaskFacility(this.prisma,actor,{storageUnitId:transfer.fromStorageUnitId});
     const start = this.today(), end = transfer.rentalContract.endDate;
     const where = { storageTypeId: transfer.fromStorageUnit.storageTypeId, id: { not: transfer.fromStorageUnitId } };
     const total = await this.prisma.storageUnit.count({ where });
@@ -188,7 +189,7 @@ export class TransfersService {
 
   async getForStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.transferRequest.findFirst({
-      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id,reservation:reservationScope(actor), AND: [staffTransferReady()] },
+      where: { OR: [{ id }, { transferCode: id }], status: { in: ['APPROVED', 'COMPLETED'] }, assignedStaffUserId: actor.id,...transferTaskScope(actor), AND: [staffTransferReady()] },
       include: this.include(),
     });
     if (!record) throw new NotFoundException('Không tìm thấy lệnh chuyển kho dành cho Staff.');
@@ -202,9 +203,10 @@ export class TransfersService {
       if (!identity) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
-      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (current.status !== 'APPROVED') throw new ConflictException('Chỉ phân công lệnh chuyển kho đã duyệt.');
-      await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
+      await assertActiveAssignee(tx, staffId, actor, {storageUnitId:current.fromStorageUnitId});
       if (current.assignedStaffUserId === staffId) return this.toTransfer(current);
       await recordAssignment(tx,actor,"transfers",current.id,current.assignedStaffUserId,staffId);
       return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }));
@@ -222,14 +224,15 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
-      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (['APPROVED', 'COMPLETED'].includes(current.status) && current.approvedByUserId === actor.id
         && current.toStorageUnitId === toStorageUnitId && (!requestedStaffId || current.assignedStaffUserId === requestedStaffId)) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
       if (current.rentalContract.status !== 'ACTIVE' || current.rentalContract.reservationUnitId !== current.fromReservationUnitId || current.fromReservationUnit?.releasedAt || current.fromStorageUnit.status !== 'OCCUPIED') throw new ConflictException('Hợp đồng hoặc kho nguồn đã thay đổi. Vui lòng tải lại hồ sơ chuyển kho.');
       const staffId = requestedStaffId ?? current.assignedStaffUserId ?? undefined;
       if(!staffId) throw new BadRequestException('Chọn nhân viên thực hiện chuyển kho trước khi duyệt.');
-      await assertActiveAssignee(tx, staffId, actor, {reservationId:current.reservationId});
+      await assertActiveAssignee(tx, staffId, actor, {storageUnitId:current.fromStorageUnitId});
       const destination = await tx.storageUnit.findUnique({ where: { id: toStorageUnitId }, include: { storageType: true } });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
@@ -256,7 +259,8 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${id} OR "transferCode" = ${id} FOR UPDATE`);
       const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy TransferRequest.');
-      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (current.status === 'REJECTED' && current.rejectionReason === rejectionReason && current.approvedByUserId === actor.id) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được từ chối.');
       const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'REJECTED', rejectionReason, approvedByUserId: actor.id, approvedAt: new Date() }, include: this.include() });
@@ -272,7 +276,8 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${id} OR "transferCode" = ${id} FOR UPDATE`);
       const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
-      await assertTaskExecution(tx, actor, current.assignedStaffUserId, { reservationId: current.reservationId });
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskExecution(tx, actor, current.assignedStaffUserId, { storageUnitId: current.fromStorageUnitId });
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || current.commercialSnapshot) throw new ConflictException('Lệnh chuyển kho hiện không thể ghi nhận vướng mắc.');
       await assertTaskFacility(tx, actor, { storageUnitId: current.toStorageUnitId });
       const report = this.handoverData(current.handoverReport);
@@ -299,8 +304,9 @@ export class TransfersService {
       if (!identity) throw new NotFoundException('Không tìm thấy TransferRequest.');
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
-      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
-      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+      if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
+      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
+      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{storageUnitId:current.fromStorageUnitId});
       if(current.toStorageUnitId) await assertTaskFacility(tx,actor,{storageUnitId:current.toStorageUnitId});
       if (current.status === 'COMPLETED') {
         await this.resolveLinkedTransferSupport(tx, current, actor);
@@ -310,6 +316,7 @@ export class TransfersService {
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || !current.toReservationUnitId) throw new ConflictException('Chỉ Transfer APPROVED mới được hoàn tất.');
       if (current.commercialSnapshot || current.fromStorageUnit.storageTypeId !== current.toStorageUnit?.storageTypeId) throw new ConflictException('Chỉ bàn giao chuyển kho cùng loại tại đây.');
       if (input.destinationReady !== true) throw new BadRequestException('Cần xác nhận kho đích đã sẵn sàng.');
+      await assertRoutineAccess(tx, [current.fromStorageUnitId, current.toStorageUnitId]);
       const handover = transferHandover(input);
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RentalContract" WHERE "id" = ${current.rentalContractId} FOR UPDATE`);
 
@@ -413,3 +420,4 @@ export function transferHandover(input: Record<string, unknown>) {
   if (note.length > 2000 || ((returnedKeyCount === 0 || deliveredKeyCount === 0) && note.length < 3)) throw new BadRequestException('Nếu không có chìa khóa/thẻ vật lý, ghi rõ việc thu hồi và cấp lại quyền truy cập.');
   return { oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName, returnedKeyCount: returnedKeyCount as number, deliveredKeyCount: deliveredKeyCount as number, note };
 }
+import { assertRoutineAccess } from '../facilities/facility-safety.js';

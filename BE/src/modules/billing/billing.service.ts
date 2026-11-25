@@ -1,5 +1,6 @@
 import { assertInvoiceReceivable, initialPaymentWindowClosed } from './invoice-state.js';
-import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { invoiceFacilityScope } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { businessToday } from '../../business-date.js';
@@ -157,6 +158,14 @@ export class BillingService {
         return invoiceUnit(contract, rate, rate, 0n, usesNewRate ? undefined : snapshot.storageTypeName);
       });
       const serviceLines = this.serviceLines(reservation.services, snapshot, periodStart, periodEnd, 'recurring');
+      // Existing issued invoices are immutable. Attribute a newly issued cycle to the actual
+      // site only when every billed unit and service shares that site; a consolidated mixed-site
+      // invoice remains with its original booking owner rather than being counted twice.
+      const financialSites = new Set([
+        ...billed.map(({contract}) => contract.reservationUnit.storageUnit.storageType.facilityId ?? reservation.facilityId),
+        ...reservation.services.filter(service => serviceLines.some(line => line.id === service.id)).map(service => service.serviceFacilityId ?? reservation.facilityId),
+      ]);
+      const financialFacility = financialSites.size === 1 ? [...financialSites][0] : reservation.facilityId;
       const totals = this.invoiceTotals(units.reduce((sum, unit) => sum + BigInt(unit.rentalAmount), 0n), 0n, serviceLines);
       const breakdown = invoiceBreakdown(periodStart, periodEnd, units, serviceLines, totals);
       invoices.push(await tx.invoice.upsert({
@@ -165,6 +174,7 @@ export class BillingService {
         create: {
           invoiceCode: `${reservation.reservationCode}-I${String(cycle).padStart(2, '0')}`,
           storageTypeIdSnapshot: units.every(unit => unit.storageTypeId === units[0].storageTypeId) ? units[0].storageTypeId : null,
+          ...(financialFacility && financialFacility !== reservation.facilityId ? { facilityIdSnapshot: financialFacility } : {}),
           pricingSnapshot: { ...reservation.quoteSnapshot as Prisma.JsonObject, breakdown },
           reservationId,
           type: 'RECURRING',
@@ -213,7 +223,7 @@ export class BillingService {
 
   async listManagerInvoices(query: InvoiceListQuery, actor: PublicUser) {
     const where: Prisma.InvoiceWhereInput = {
-      AND:[{reservation:managerReservationScope(actor)}],
+      AND:[invoiceFacilityScope(actor)],
       ...(query.status ? { status: query.status } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.billingCycle ? { billingCycle: query.billingCycle } : {}),
@@ -229,14 +239,14 @@ export class BillingService {
   }
 
   async getManagerInvoice(id: string, actor: PublicUser) {
-    const record = await this.prisma.invoice.findFirst({ where: { reservation:managerReservationScope(actor), OR: [{ id }, { invoiceCode: id }] }, include: this.invoiceInclude() });
+    const record = await this.prisma.invoice.findFirst({ where: { AND: [invoiceFacilityScope(actor), { OR: [{ id }, { invoiceCode: id }] }] }, include: this.invoiceInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy hóa đơn.');
     return this.toInvoice(record, true);
   }
 
   async listManagerPayments(query: PaymentListQuery, actor: PublicUser) {
     const where: Prisma.PaymentWhereInput = {
-      AND:[{invoice:{reservation:managerReservationScope(actor)}}],
+      AND:[{invoice:invoiceFacilityScope(actor)}],
       ...(query.method ? { method: query.method } : {}),
       ...(query.search ? { OR: [
         { paymentCode: { contains: query.search, mode: 'insensitive' } },
@@ -251,7 +261,7 @@ export class BillingService {
   }
 
   async getManagerPayment(id: string, actor: PublicUser) {
-    const record = await this.prisma.payment.findFirst({ where: { invoice:{reservation:managerReservationScope(actor)}, OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude() });
+    const record = await this.prisma.payment.findFirst({ where: { invoice:invoiceFacilityScope(actor), OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy thanh toán.');
     return this.toPayment(record, true);
   }
@@ -398,7 +408,7 @@ export class BillingService {
 
   async listManagerPaymentSubmissions(query: { page: number; limit: number; status?: 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED'; search?: string; invoiceCode?: string }, actor: PublicUser) {
     const where: Prisma.PaymentSubmissionWhereInput = {
-      AND:[{invoice:{reservation:managerReservationScope(actor)}}],
+      AND:[{invoice:invoiceFacilityScope(actor)}],
       ...(query.status ? { status: query.status } : {}),
       ...(query.invoiceCode ? { invoice: { invoiceCode: { contains: query.invoiceCode, mode: 'insensitive' } } } : {}),
       ...(query.search ? { OR: [
@@ -413,7 +423,7 @@ export class BillingService {
   }
 
   async getManagerPaymentSubmission(id: string, actor: PublicUser) {
-    const record = await this.prisma.paymentSubmission.findFirst({ where: { invoice:{reservation:managerReservationScope(actor)}, OR: [{ id }, { submissionCode: id }] }, include: this.paymentSubmissionInclude() });
+    const record = await this.prisma.paymentSubmission.findFirst({ where: { invoice:invoiceFacilityScope(actor), OR: [{ id }, { submissionCode: id }] }, include: this.paymentSubmissionInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu xác nhận thanh toán.');
     return this.toPaymentSubmission(record);
   }

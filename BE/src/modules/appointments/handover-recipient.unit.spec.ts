@@ -31,7 +31,7 @@ function setup(status = 'CONFIRMED') {
   };
   const update = vi.fn(async ({ data }) => Object.assign(row, data));
   const tx = {
-    $queryRaw: vi.fn(),
+    $queryRaw: vi.fn().mockResolvedValue([]),
     $queryRawUnsafe: vi.fn(),
     reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
     user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },

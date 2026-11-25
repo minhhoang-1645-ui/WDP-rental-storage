@@ -17,6 +17,8 @@ export const noticeKinds: Record<string, string> = {
   returns: 'Trả kho', 'early-returns': 'Trả trước hạn', 'deposit-settlements': 'Tiền cọc',
   'support-requests': 'Hỗ trợ', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa',
   users: 'Tài khoản', 'catalog-changes': 'Danh mục bổ trợ',
+  'facility-lifecycle': 'Hoạt động cơ sở',
+  'closure-relocations': 'Hỗ trợ di dời',
 };
 
 function read(row: NotificationRow, path: string): unknown {
@@ -100,6 +102,43 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     return { key, token: hash([key]), kind: source, title: auditTitles[action], at, code: '', actionLabel: '', important: false,
       summary: [account, roles[get('targetAccount.role')], get('facilityName')].filter(Boolean).join(' · '),
       target: row.targetAccount ? `/admin/users/${encodeURIComponent(target)}` : '' };
+  }
+  if (source === 'closure-relocations') {
+    const action = get('action');
+    const titles: Record<string, string> = {
+      RELOCATION_ASSIGNED: 'Đã phân công hỗ trợ di dời',
+      RELOCATION_PROPOSED: 'Đã có phương án kho mới',
+      RELOCATION_RESERVED: 'Đã xác nhận và giữ kho mới',
+      RELOCATION_RECEIVING_ASSIGNED: 'Đã phân công tiếp nhận kho mới',
+      RELOCATION_DECLINED: 'Khách đã từ chối phương án',
+      RELOCATION_CANCELLED: 'Đã hủy phương án di dời',
+      RELOCATION_COMPLETED: 'Đã hoàn tất di dời kho',
+      RELOCATION_EXCEPTION: 'Có vướng mắc khi di dời kho',
+      CLOSURE_BOOKING_CANCELLED: 'Đã hủy đơn theo thỏa thuận',
+      CLOSURE_BOOKING_REFUND_PENDING: 'Đã hủy đơn, chờ NestBox hoàn tiền',
+      CLOSURE_BOOKING_REFUND_RECORDED: 'NestBox đã ghi nhận hoàn tiền đơn đặt kho',
+    };
+    if (!titles[action]) return;
+    const target = actor.role === 'STORAGE_CUSTOMER' ? '' : actor.role === 'FACILITY_MANAGER' ? '/manager/operations/transfers' : '/staff/transfers';
+    return { key, token: hash([key]), kind: source, title: titles[action], at: get('createdAt'), code: get('metadata.code'),
+      summary: [get('metadata.sourceName'), get('metadata.destinationName')].filter(Boolean).join(' → '),
+      target, actionLabel: 'Xem hồ sơ', important: ['RELOCATION_ASSIGNED', 'RELOCATION_PROPOSED', 'RELOCATION_RESERVED','CLOSURE_BOOKING_REFUND_PENDING','CLOSURE_BOOKING_REFUND_RECORDED'].includes(action) };
+  }
+  if (source === 'facility-lifecycle') {
+    const status = get('metadata.status');
+    const customer = actor.role === 'STORAGE_CUSTOMER';
+    if ((!customer && actor.role !== 'FACILITY_MANAGER') || !['OPEN', 'CLOSING', 'CLOSED'].includes(status)) return;
+    const titles: Record<string,string> = { OPEN: 'Cơ sở đã mở lại', CLOSING: 'Cơ sở bắt đầu ngừng kinh doanh', CLOSED: 'Cơ sở đã ngừng hoạt động' };
+    return {
+      key, token: hash([key]), kind: source, at: get('createdAt'), code: get('metadata.facilityCode'),
+      title: row.metadata && typeof row.metadata === 'object' && 'managerNotice' in row.metadata && row.metadata.managerNotice === true ? 'Quản lý đã tiếp nhận hỗ trợ ngừng kinh doanh' : titles[status], important: status === 'CLOSING', target: '', actionLabel: '',
+      summary: [get('metadata.facilityName'), customer ? '' : get('metadata.closureReason'), status === 'CLOSING' && get('metadata.closureMode') === 'REQUIRED_RELOCATION'
+        ? 'Cơ sở phải di dời. Tạm dừng ra vào và bàn giao thông thường. Liên hệ quản lý để được hỗ trợ di dời an toàn.'
+        : status === 'CLOSING'
+        ? customer
+          ? 'Nếu đang thuê, bạn có thể sử dụng kho đến hết hạn hợp đồng. Cơ sở dừng nhận gia hạn mới. Liên hệ NestBox nếu cần hỗ trợ.'
+          : 'Tiếp tục hỗ trợ khách đang thuê đến hết hạn và xử lý các hồ sơ còn mở.' : ''].filter(Boolean).join(' · '),
+    };
   }
   if (source === 'catalog-changes') {
     if (actor.role !== 'FACILITY_MANAGER' || !get('facilityId') || !get('resourceId')) return;

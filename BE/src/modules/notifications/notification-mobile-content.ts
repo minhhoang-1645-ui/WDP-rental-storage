@@ -37,6 +37,12 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
     let { title, summary, actionLabel } = notice;
     let target = detail(notice.kind === 'transfers' && source === 'support-requests' ? 'transfers' : notice.kind, id);
     switch (source) {
+      case 'closure-relocations':
+        target = str(row.action).startsWith('CLOSURE_BOOKING_') ? detail('support-requests', str(obj(row.metadata).caseId)) : '/customer/rentals';
+        break;
+      case 'facility-lifecycle':
+        target = '/customer/rentals';
+        break;
       case 'invoices': {
         const renewal = row.type === 'RENEWAL';
         const subject = renewal ? 'Hóa đơn gia hạn' : 'Hóa đơn';

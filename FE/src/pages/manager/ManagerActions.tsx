@@ -689,6 +689,10 @@ export function ManagerActions({
                   ? "Theo dõi tình trạng và lịch phân bổ kho. Trạng thái kho được cập nhật qua các nghiệp vụ bàn giao, trả kho và nghiệm thu."
                   : "Thông tin được cập nhật theo nghiệp vụ liên quan."}
             </p>
+            {resource === 'returns' && row.relocationSafetyRequired === true && !row.relocationSafetyConfirmed && !row.physicallyReturnedAt && <div className="portal-form">
+              <label className="field-label">Căn cứ an toàn thu hồi kho<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={2000}/></label>
+              <button type="button" className="button-primary" disabled={busy || reason.trim().length < 3} onClick={()=>void run(root+'/authorize-safety','PATCH',{evidence:reason})}>Xác nhận an toàn bàn giao</button>
+            </div>}
             {resource === "units" && row.activeMaintenance && (
               <Link
                 className="button-secondary"

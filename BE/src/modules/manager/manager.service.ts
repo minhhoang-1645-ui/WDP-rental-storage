@@ -1,6 +1,6 @@
-import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { facilityScope } from '../facility-access/task-access.js';
+import { facilityScope, currentRentalScope, currentContractScope, renewalTaskScope, supportTaskScope, returnTaskScope } from '../facility-access/task-access.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -53,13 +53,13 @@ export class ManagerService {
     const today = businessToday(now);
     const [pendingReservations, activeRentalRows, overdueRows, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits] = await Promise.all([
       this.prisma.reservation.count({ where: { AND:[scope], status: 'PENDING' } }),
-      this.prisma.rentalContract.findMany({ where: { reservation:scope, status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
-      this.prisma.rentalContract.findMany({ where: { reservation:scope, status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { ...currentContractScope(actor), status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { ...currentContractScope(actor), status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
       this.prisma.handoverAppointment.count({ where: { reservation:scope, status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
-      this.prisma.renewalRequest.count({ where: { reservation:scope, status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
-      this.prisma.supportRequest.count({ where: { reservation:scope, status: { not: 'RESOLVED' } } }),
+      this.prisma.renewalRequest.count({ where: { ...renewalTaskScope(actor), status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
+      this.prisma.supportRequest.count({ where: { ...supportTaskScope(actor), status: { not: 'RESOLVED' } } }),
       this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'MAINTENANCE' } }),
-      this.prisma.depositSettlement.count({ where: { returnRequest:{reservation:scope}, status: { not: 'SETTLED' } } }),
+      this.prisma.depositSettlement.count({ where: { returnRequest:returnTaskScope(actor), status: { not: 'SETTLED' } } }),
       this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'AVAILABLE' } }),
       this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'OCCUPIED' } }),
     ]);
@@ -182,7 +182,7 @@ export class ManagerService {
   }
 
   async listCustomers(query: CustomerListQuery, actor: PublicUser) {
-    const scope=managerReservationScope(actor);
+    const scope={OR:[managerReservationScope(actor),currentRentalScope(actor)]};
     const where: Prisma.UserWhereInput = { reservations:{some:scope},
       role: 'STORAGE_CUSTOMER',
       ...(query.search ? {
@@ -232,7 +232,7 @@ export class ManagerService {
   }
 
   async getCustomer(id: string, actor: PublicUser) {
-    const scope=managerReservationScope(actor);
+    const scope={OR:[managerReservationScope(actor),currentRentalScope(actor)]};
     const customer = await this.prisma.user.findFirst({
       where: { id, role: 'STORAGE_CUSTOMER', reservations:{some:scope} },
       select: {
@@ -247,7 +247,7 @@ export class ManagerService {
           orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           include: {
             storageType: true,
-            units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } },
+            units: { where:{storageUnit:{storageType:{facility:facilityScope(actor)}}}, include: { storageUnit: true }, orderBy: { createdAt: 'asc' } },
           },
         },
       },

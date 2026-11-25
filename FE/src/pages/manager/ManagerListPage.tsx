@@ -345,6 +345,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
           Làm mới
         </button>
       </PageHeader>
+      {resource === 'transfers' && !reviewOnly && <ClosureRelocations revision={revision} />}
       {managerTable === 'units' && unitCreated && <p className="portal-success" role="status">Đã thêm kho {unitCreated}.</p>}
       {staffAppointments && <div className="staff-appointment-views" role="group" aria-label="Xem lịch bàn giao">
         {appointmentViews.map(([value, title]) => {
@@ -663,3 +664,4 @@ function ListRow({ resource, row }: { resource: string; row: Row }) {
     </DetailRow>
   );
 }
+import { ClosureRelocations } from '../../components/manager/ClosureRelocations';

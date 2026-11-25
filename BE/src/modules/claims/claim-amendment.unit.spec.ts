@@ -10,7 +10,7 @@ function setup() {
     $queryRawUnsafe: vi.fn(),
     user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
-    rentalContract: { findUnique: vi.fn().mockResolvedValue({ reservation: { facilityId: 'facility' } }) },
+    rentalContract: { findUnique: vi.fn().mockResolvedValue({ reservationUnit: { storageUnit: { storageType: { facilityId: 'facility' } } } }) },
     $queryRaw: vi.fn(), damageClaim: { findUnique: vi.fn().mockResolvedValue(row), update } };
   return { row, update, service: new DamageClaimsService({ $transaction: (operation: any) => operation(tx) } as never) };
 }

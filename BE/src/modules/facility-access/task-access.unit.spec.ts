@@ -24,7 +24,7 @@ function repository() {
       findFirst: vi.fn(async ({where}:any)=>grants.find(g=>g.userId===where.userId&&g.facilityId===where.facilityId&&g.revokedAt===where.revokedAt)??null),
     },
     reservation: {findUnique:vi.fn(async ({where}:any)=>({facilityId:where.id==='reservation-b'?'B':'A'}))},
-    rentalContract: {findUnique:vi.fn(async ({where}:any)=>({reservation:{facilityId:where.id==='contract-b'?'B':'A'}}))},
+    rentalContract: {findUnique:vi.fn(async ({where}:any)=>({reservationUnit:{storageUnit:{storageType:{facilityId:where.id==='contract-b'?'B':'A'}}}}))},
     storageUnit: {findUnique:vi.fn(async ({where}:any)=>({storageType:{facilityId:where.id==='unit-b'?'B':'A'}}))},
     maintenanceRequest:{findFirst:vi.fn(async()=>({storageUnitId:'unit-b'}))},
   };
@@ -128,7 +128,7 @@ describe('Maintenance reporting creates work without selecting Staff',()=>{
 
 it('blocks early-return decisions and finance confirmation across facilities without monetary writes',async()=>{
  const {db}=repository();
- const update=vi.fn(),tx={...db,$queryRaw:vi.fn(),returnRequest:{findUnique:vi.fn().mockResolvedValue({id:'return-b',reservationId:'reservation-b'}),update},supportRequest:{findFirst:vi.fn().mockResolvedValue({id:'proposal-b',reservationId:'reservation-b'}),update}};
+ const update=vi.fn(),tx={...db,$queryRaw:vi.fn(),returnRequest:{findUnique:vi.fn().mockResolvedValue({id:'return-b',reservationId:'reservation-b',reservation:{facilityId:'A'},inspections:[{storageUnit:{storageType:{facilityId:'B'}}}]}),update},supportRequest:{findFirst:vi.fn().mockResolvedValue({id:'proposal-b',reservationId:'reservation-b'}),update}};
  const service=new ReturnsService({...tx,$transaction:vi.fn(async(fn:any)=>fn(tx))} as never);
  await expect(service.decideEarlyReturn('proposal-b',{decision:'REJECTED',note:'Cần xác minh lại'},manager)).rejects.toBeInstanceOf(ForbiddenException);
  await expect(service.reviewEarlyReturnFault('return-b',{approved:true,reference:'fault-report'},manager)).rejects.toBeInstanceOf(ForbiddenException);

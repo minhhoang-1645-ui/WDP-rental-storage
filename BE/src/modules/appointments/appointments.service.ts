@@ -51,11 +51,16 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         try {
           await this.serializable(async tx => {
             await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${item.id} FOR UPDATE`);
-            const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, select: { status: true, reservation: { include: this.reservationReadinessInclude() } } });
+            const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, select: { status: true, completedAt:true, handoverReport:true, reservation: { include: this.reservationReadinessInclude() } } });
             if (!current || current.status !== 'COMPLETED' || current.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE')) return;
             this.assertHandoverReady(current.reservation);
             if (current.reservation.contracts.some((contract: any) => this.vietnamDate(new Date()) < this.isoDate(contract.startDate) || this.vietnamDate(new Date()) >= this.isoDate(contract.endDate))) return;
-            await this.activateContracts(tx, current.reservation);
+            const report = current.handoverReport as {unitChecks?: {unitId?:string;inspected?:boolean}[]} | null;
+            const verifiedPriorHandover = !!current.completedAt && Array.isArray(report?.unitChecks) &&
+              current.reservation.contracts.every(contract=>report.unitChecks!.some(unit=>unit?.unitId===contract.reservationUnit.storageUnit.id && unit.inspected===true));
+            // When keys were already handed over, activation at the agreed date only records
+            // an existing commitment. Any subsequent physical action stays subject to closure safety.
+            await this.activateContracts(tx, current.reservation, verifiedPriorHandover);
           }, 'Hồ sơ kích hoạt vừa thay đổi.');
         } catch (error) { this.logger.warn(`Chưa kích hoạt được lịch bàn giao ${item.id}: ${error instanceof Error ? error.message : 'Lỗi xử lý'}`); }
       }
@@ -307,9 +312,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   private async deliverProducts(
     tx: Prisma.TransactionClient,
     appointment: { id: string; reservation: {
-      id: string; status: string;
+      id: string; status: string; facilityId: string;
       invoices: { status: string }[];
-      services: { id: string; fulfillmentStatus: string | null }[];
+      services: { id: string; fulfillmentStatus: string | null; serviceFacilityId: string | null }[];
     } },
     selections: unknown,
     actor: PublicUser,
@@ -321,10 +326,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Danh sách sản phẩm xác nhận bàn giao không hợp lệ.');
     if (!selections.length) return false;
     const reservation = appointment.reservation;
+    await assertRoutineFacilityAccess(tx, reservation.facilityId);
     if (reservation.status !== 'CONFIRMED' || reservation.invoices.length !== 1 || reservation.invoices[0].status !== 'PAID')
       throw new ConflictException('Cần đơn đã xác nhận và hóa đơn ban đầu đã thanh toán đầy đủ để bàn giao sản phẩm.');
     const eligible = new Set(reservation.services.filter(line =>
-      line.fulfillmentStatus === 'RESERVED' || line.fulfillmentStatus === 'FULFILLED',
+      (!line.serviceFacilityId || line.serviceFacilityId === reservation.facilityId) && (line.fulfillmentStatus === 'RESERVED' || line.fulfillmentStatus === 'FULFILLED'),
     ).map(line => line.id));
     if (selections.some(id => !eligible.has(id)))
       throw new BadRequestException('Sản phẩm không thuộc đơn mua đủ điều kiện bàn giao.');
@@ -350,6 +356,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async assertPhysicalUnitsAvailable(db: Prisma.TransactionClient, reservationId: string, units: { id: string; status: string }[]) {
+    await assertRoutineAccess(db, units.map(unit => unit.id));
     if (units.some(unit => ['MAINTENANCE', 'OCCUPIED'].includes(unit.status))) {
       throw new ConflictException('Có kho đang bảo trì hoặc đang được sử dụng.');
     }
@@ -362,9 +369,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (otherActive > 0) throw new ConflictException('Có kho đang thuộc hợp đồng thuê khác còn hiệu lực.');
   }
 
-  private async activateContracts(tx: Prisma.TransactionClient, reservation: any) {
+  private async activateContracts(tx: Prisma.TransactionClient, reservation: any, priorPhysicalHandover = false) {
         const contracts = reservation.contracts;
         const unitIds = contracts.map((contract: any) => contract.reservationUnit.storageUnit.id);
+        await assertRoutineAccess(tx, unitIds, undefined, priorPhysicalHandover);
         if (contracts.some((contract: any) => ['MAINTENANCE', 'OCCUPIED'].includes(contract.reservationUnit.storageUnit.status))) throw new ConflictException('Kho chưa sẵn sàng để kích hoạt.');
         if (await tx.rentalContract.count({ where: { status: 'ACTIVE', reservationId: { not: reservation.id }, reservationUnit: { storageUnitId: { in: unitIds } } } })) throw new ConflictException('Kho vẫn thuộc hợp đồng đang sử dụng khác.');
         const now = new Date();
@@ -547,7 +555,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       invoices: { where: { type: 'INITIAL' as const }, select: { id: true, invoiceCode: true, type: true, status: true } },
       services: {
         where: { serviceKindSnapshot: 'PURCHASE' as const },
-        select: { id: true, additionalServiceId: true, serviceNameSnapshot: true, quantity: true, fulfillmentStatus: true },
+        select: { id: true, additionalServiceId: true, serviceNameSnapshot: true, quantity: true, fulfillmentStatus: true, serviceFacilityId: true },
         orderBy: { id: 'asc' as const },
       },
       units: { select: { id: true, storageUnitId: true, releasedAt: true } },
@@ -672,3 +680,4 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     throw new ConflictException(conflictMessage);
   }
 }
+import { assertRoutineAccess, assertRoutineFacilityAccess } from '../facilities/facility-safety.js';

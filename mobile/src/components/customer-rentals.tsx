@@ -20,6 +20,7 @@ import type { FormAction } from '@/operations/form';
 import { formatDate } from '@/utils/format';
 import { currentTimeMs, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
 import { isTransferRequest } from '@/utils/transfer-request';
+import { CustomerRelocations } from '@/components/customer-relocations';
 
 type Selection = { rental: Row; contract: Row };
 
@@ -59,6 +60,7 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
   const unitCode = text(contract, 'unit.unitCode');
   const type = object(object(contract.unit).storageType);
   const facility = object(type.facility ?? rental.facility);
+  const closing = facility.operationalStatus === 'CLOSING' || facility.operationalStatus === 'CLOSED';
   const dimensions = [type.widthCm, type.lengthCm, type.heightCm];
   const hasDimensions = dimensions.every(value => typeof value === 'number' && value > 0);
   const measure = (value: number) => value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
@@ -116,6 +118,11 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
         </View>)}
       </View>
     </View>
+    {closing && <View style={styles.summary}>
+      <Text style={styles.sectionTitle}>Cơ sở đang ngừng kinh doanh</Text>
+      <Text style={styles.subtitle}>{facility.closureMode === 'REQUIRED_RELOCATION' ? 'Tạm dừng ra vào thông thường. Nhân viên sẽ liên hệ hỗ trợ di dời an toàn.' : 'Bạn tiếp tục sử dụng kho đến hết hạn thuê. Liên hệ nhân viên nếu cần chuyển cơ sở.'}</Text>
+    </View>}
+    <CustomerRelocations contractId={contractId} onRefresh={onRefresh} />
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>Truy cập nhanh</Text>
       <View style={styles.shortcuts}>{shortcuts.map(({ title, icon: Icon, path }) =>
@@ -129,7 +136,7 @@ function RentalDetail({ rental, contract, product, onRefresh }: Selection & { pr
       <RequestRow title="Yêu cầu gia hạn" icon={CalendarPlus}
         subtitle={renewalId ? 'Xem yêu cầu đang xử lý' : renewal ? 'Tiếp tục thời hạn thuê' : busyCopy}
         onPress={renewalId ? go('/customer/renewals/' + encodeURIComponent(renewalId))
-          : renewal ? () => { setNotice(false); setAction(renewal); } : undefined} />
+          : renewal && !closing ? () => { setNotice(false); setAction(renewal); } : undefined} />
       <RequestRow title="Yêu cầu chuyển kho" icon={ArrowDownUp}
         subtitle={transferId ? 'Xem yêu cầu chuyển kho đang xử lý' : returnInProgress ? 'Đang xử lý trả kho' : 'Cùng cơ sở và cùng loại kho'}
         onPress={transferId ? go('/customer/transfers/' + encodeURIComponent(transferId))
@@ -201,6 +208,7 @@ export function CustomerRentals({ initialRentalId }: { initialRentalId?: string 
           <CustomerActionRow title="Về danh sách kho đang thuê" path="/customer/rentals" />
         </> : group.length ? <>
           <View style={styles.titleRow}><Text accessibilityRole="header" style={[s.section, styles.grow]}>Kho đang thuê</Text><Text style={s.secondary}>{group.length} kho</Text></View>
+          <CustomerRelocations onRefresh={refresh} />
           {group.map(({ rental, contract }) => {
             const contractCode = text(contract, 'contractCode');
             const dates = [text(contract, 'startDate'), text(contract, 'endDate') || text(rental, 'effectiveEndDate')]

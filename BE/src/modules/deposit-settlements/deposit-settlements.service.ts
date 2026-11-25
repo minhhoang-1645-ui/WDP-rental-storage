@@ -1,4 +1,5 @@
 import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { returnTaskScope, taskFacilityId } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -43,7 +44,8 @@ export class DepositSettlementsService {
   }
 
   listManager(query: SettlementListQuery, actor: PublicUser) {
-    const filters: Prisma.DepositSettlementWhereInput[] = [{returnRequest:{reservation:managerReservationScope(actor)}}];
+    managerReservationScope(actor);
+    const filters: Prisma.DepositSettlementWhereInput[] = [{returnRequest:returnTaskScope(actor)}];
     if (query.status) filters.push({ status: query.status });
     if (query.search) filters.push({ OR: [
       { settlementCode: { contains: query.search, mode: 'insensitive' } },
@@ -115,6 +117,7 @@ export class DepositSettlementsService {
         await tx.invoice.create({ data: {
           invoiceCode: `${current.settlementCode}-I01`,
           reservationId: current.returnRequest.reservationId,
+          facilityIdSnapshot: await taskFacilityId(tx,{returnRequestId:current.returnRequestId}),
           type: 'SETTLEMENT',
           billingCycle: null,
           depositSettlementId: current.id,

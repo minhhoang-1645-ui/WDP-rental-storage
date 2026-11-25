@@ -10,6 +10,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { randomUUID } from 'node:crypto';
 import { analyticsPeriod } from '../manager/manager-analytics.service.js';
+import { CLOSURE_BOOKING_REFUND_PENDING, CLOSURE_BOOKING_REFUND_RECORDED } from '../transfers/closure-booking.js';
 const fields = [
   'code',
   'name',
@@ -18,6 +19,10 @@ const fields = [
   'accessHours',
   'bookingEnabled',
   'operationalStatus',
+  'closureReason',
+  'closureMode',
+  'closureExpectedAt',
+  'reopeningSafetyEvidence',
   'expectedUpdatedAt',
 ];
 @Injectable()
@@ -25,7 +30,17 @@ export class OperationsService {
   constructor(private readonly prisma: PrismaService) {}
   async list(actor: PublicUser) {
     await assertActiveRole(this.prisma, actor, 'BUSINESS_OPERATIONS_MANAGER');
-    return this.prisma.facility.findMany({ orderBy: { code: 'asc' } });
+    const facilities = await this.prisma.facility.findMany({ orderBy: { code: 'asc' } });
+    return Promise.all(facilities.map(async facility => {
+      if (facility.operationalStatus !== 'CLOSING') return facility;
+      const [activeContracts, openTasks, openTransfers, pendingBookings] = await Promise.all([
+        this.prisma.rentalContract.count({ where: { status: 'ACTIVE', reservationUnit: { releasedAt: null, storageUnit: { storageType: { facilityId: facility.id } } } } }),
+        this.prisma.supportRequest.count({ where: { closurePlanId: facility.closurePlanId, status: { not: 'RESOLVED' } } }),
+        this.prisma.transferRequest.count({ where: { closurePlanId: facility.closurePlanId, status: { in: ['REQUESTED','APPROVED'] } } }),
+        this.prisma.reservation.count({where:{facilityId:facility.id,status:{in:['PENDING','CONFIRMED']},OR:[{status:'PENDING'},{contracts:{none:{}}},{contracts:{some:{status:{in:['PENDING_PAYMENT','READY_FOR_HANDOVER']}}}}]}}),
+      ]);
+      return { ...facility, closureProgress: { activeContracts, openTasks, openTransfers, pendingBookings } };
+    }));
   }
   async save(
     id: string | undefined,
@@ -60,17 +75,53 @@ export class OperationsService {
       };
       if (
         typeof value.bookingEnabled !== 'boolean' ||
-        !['OPEN', 'CLOSED'].includes(String(value.operationalStatus))
+        typeof value.operationalStatus !== 'string' ||
+        !['OPEN', 'CLOSING', 'CLOSED'].includes(value.operationalStatus)
       )
         throw new BadRequestException('Trạng thái cơ sở không hợp lệ.');
-      if (value.operationalStatus === 'CLOSED' && value.bookingEnabled)
+      const changed = old !== null && old.operationalStatus !== value.operationalStatus;
+      if (!old && value.operationalStatus !== 'OPEN')
+        throw new BadRequestException('Cơ sở mới phải có trạng thái hoạt động.');
+      if (old?.operationalStatus === 'CLOSED' && value.operationalStatus === 'CLOSING')
+        throw new BadRequestException('Cần mở lại cơ sở trước khi lập kế hoạch ngừng.');
+      const closing = value.operationalStatus === 'CLOSING';
+      const mode = body.closureMode ?? old?.closureMode ?? 'CONTRACT_EXPIRY';
+      if (closing && mode !== 'CONTRACT_EXPIRY' && mode !== 'REQUIRED_RELOCATION')
+        throw new BadRequestException('Chọn phương án ngừng kinh doanh hợp lệ.');
+      const modeChanged = closing && body.closureMode !== undefined && mode !== old?.closureMode;
+      const planChanged = closing && (changed || modeChanged || (body.closureReason !== undefined && body.closureReason !== old?.closureReason)
+        || (body.closureExpectedAt !== undefined && body.closureExpectedAt !== (old?.closureExpectedAt?.toISOString().slice(0,10) ?? '')));
+      if (modeChanged && old?.closureMode === 'REQUIRED_RELOCATION' && !changed)
+        throw new ConflictException('Cần xác minh an toàn và mở lại trước khi hủy phương án di dời bắt buộc.');
+      const reopening = changed && value.operationalStatus === 'OPEN';
+      const reopeningSafetyEvidence = reopening && old?.closureMode === 'REQUIRED_RELOCATION'
+        ? text('reopeningSafetyEvidence', 500) : null;
+      const expected = body.closureExpectedAt;
+      if (expected != null && expected !== '' && (typeof expected !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expected)
+        || !Number.isFinite(Date.parse(expected)) || new Date(expected).toISOString().slice(0,10) !== expected))
+        throw new BadRequestException('Ngày dự kiến ngừng phục vụ không hợp lệ.');
+      const closureReason = planChanged
+        ? text('closureReason', 500)
+        : null;
+      const bookingEnabled = changed ? false : value.bookingEnabled;
+      if (value.operationalStatus !== 'OPEN' && bookingEnabled)
         throw new BadRequestException('Cơ sở đóng cửa không thể nhận đặt kho.');
       if (!old && value.bookingEnabled) throw new BadRequestException('Cơ sở mới cần được cấu hình kho vật lý và giá trước khi mở nhận đặt kho.');
-      if (old && value.bookingEnabled && !old.bookingEnabled && !await tx.storageType.count({where:{facilityId:id,monthlyRate:{gt:0},units:{some:{}}}})) throw new ConflictException('Chưa có loại kho có giá và kho vật lý. Cần Manager cấu hình trước khi nhận đặt kho.');
-      if (id && value.operationalStatus === 'CLOSED') {
+      if (old && bookingEnabled && !old.bookingEnabled) {
+        const [configured, staff] = await Promise.all([
+          tx.storageType.count({where:{facilityId:id,catalogStatus:'AVAILABLE',monthlyRate:{gt:0},widthCm:{gt:0},lengthCm:{gt:0},heightCm:{gt:0},units:{some:{status:'AVAILABLE',maintenanceRequests:{none:{activeKey:{not:null}}}}}}}),
+          tx.facilityAccess.findMany({
+            where:{facilityId:id,revokedAt:null,user:{accountStatus:'ACTIVE',role:{in:['FACILITY_MANAGER','FACILITY_STAFF']}}},
+            select:{user:{select:{role:true}}},
+          }),
+        ]);
+        if (!configured || new Set(staff.map(({ user }) => user.role)).size < 2)
+          throw new ConflictException('Cần có kho trống với giá hợp lệ, quản lý và nhân viên đang hoạt động trước khi nhận đặt kho.');
+      }
+      if (id && changed && value.operationalStatus === 'CLOSED') {
         const count = await tx.rentalContract.count({
           where: {
-            reservation: { facilityId: id },
+            reservationUnit: { storageUnit: { storageType: { facilityId: id } } },
             status: { in: ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE'] },
           },
         });
@@ -81,17 +132,24 @@ export class OperationsService {
             OR: [{ status: 'PENDING' }, { contracts: { none: {} } }],
           },
         });
-        if (count || holds)
-          throw new ConflictException(
-            'Cơ sở còn đơn hoặc hợp đồng. Có thể tắt nhận đặt kho mới; chưa thể đóng cửa.',
-          );
         const unresolved = await Promise.all([
-          tx.invoice.count({where:{reservation:{facilityId:id},status:{not:'VOID'},balanceDue:{gt:0}}}),
-          tx.depositSettlement.count({where:{returnRequest:{reservation:{facilityId:id}},status:{not:'SETTLED'}}}),
-          tx.supportRequest.count({where:{reservation:{facilityId:id},status:{not:'RESOLVED'}}}),
+          tx.invoice.count({where:{OR:[{facilityIdSnapshot:id},{facilityIdSnapshot:null,reservation:{facilityId:id}}],status:{not:'VOID'},balanceDue:{gt:0}}}),
+          tx.depositSettlement.count({where:{returnRequest:{OR:[{inspections:{some:{storageUnit:{storageType:{facilityId:id}}}}},{inspections:{none:{}},reservation:{facilityId:id}}]},status:{not:'SETTLED'}}}),
+          tx.supportRequest.count({where:{OR:[{storageUnit:{storageType:{facilityId:id}}},{storageUnitId:null,rentalContract:{reservationUnit:{storageUnit:{storageType:{facilityId:id}}}}},{storageUnitId:null,rentalContractId:null,reservation:{facilityId:id}}],status:{not:'RESOLVED'}}}),
           tx.maintenanceRequest.count({where:{storageUnit:{storageType:{facilityId:id}},activeKey:{not:null}}}),
+          tx.reservationUnit.count({where:{storageUnit:{storageType:{facilityId:id}},releasedAt:null,actualVacatedAt:null,reservation:{status:{in:['PENDING','CONFIRMED']}}}}),
+          tx.transferRequest.count({where:{status:{in:['REQUESTED','APPROVED']},OR:[{fromStorageUnit:{storageType:{facilityId:id}}},{toStorageUnit:{storageType:{facilityId:id}}}]}}),
+          tx.handoverAppointment.count({where:{reservation:{facilityId:id},status:{in:['REQUESTED','CONFIRMED']}}}),
+          tx.returnRequest.count({where:{OR:[{inspections:{some:{storageUnit:{storageType:{facilityId:id}}}}},{inspections:{none:{}},reservation:{facilityId:id}}],status:{not:'COMPLETED'}}}),
+          tx.storageUnit.count({where:{storageType:{facilityId:id},status:'OCCUPIED'}}),
+          tx.reservationService.count({where:{reservation:{status:'CONFIRMED'},AND:[
+            {OR:[{serviceFacilityId:id},{serviceFacilityId:null,reservation:{facilityId:id}}]},
+            {OR:[{serviceKindSnapshot:'PURCHASE',fulfillmentStatus:'RESERVED'},{serviceKindSnapshot:'RENTAL',OR:[{fulfillmentStatus:null},{fulfillmentStatus:{not:'RELEASED'}}]}]},
+          ]}}),
         ]);
-        if (unresolved.some(Boolean)) throw new ConflictException('Cơ sở còn nghĩa vụ tài chính hoặc hồ sơ vận hành chưa hoàn tất. Chưa thể đóng cửa.');
+        const labels = ['hợp đồng cần xử lý', 'đơn đặt kho đang chờ', 'hóa đơn còn nợ', 'quyết toán cọc', 'yêu cầu hỗ trợ', 'yêu cầu bảo trì', 'phân bổ kho chưa bàn giao', 'hồ sơ chuyển kho', 'lịch bàn giao', 'hồ sơ trả kho', 'ô kho đang sử dụng', 'dịch vụ đã giữ đang chờ xử lý'];
+        const blockers = [count, holds, ...unresolved].flatMap((number, index) => number ? [`${number} ${labels[index]}`] : []);
+        if (blockers.length) throw new ConflictException(`Chưa thể đóng cơ sở. Còn ${blockers.join(', ')}.`);
       }
       const data = {
         code: text('code', 80),
@@ -105,15 +163,59 @@ export class OperationsService {
           old && body.accessHours === undefined
             ? old.accessHours
             : text('accessHours', 200),
-        bookingEnabled: value.bookingEnabled,
-        operationalStatus: String(value.operationalStatus),
+        bookingEnabled,
+        operationalStatus: value.operationalStatus,
+        ...(planChanged ? {
+          closureMode: mode === 'REQUIRED_RELOCATION' ? mode : 'CONTRACT_EXPIRY', closureReason,
+          closurePlanId: changed ? randomUUID() : old?.closurePlanId ?? randomUUID(),
+          closureStartedAt: changed ? new Date() : old?.closureStartedAt ?? new Date(),
+          closureStartedById: changed ? actor.id : old?.closureStartedById ?? actor.id,
+          closureExpectedAt: typeof expected==='string' && expected ? new Date(expected) : changed || expected !== undefined ? null : old?.closureExpectedAt,
+        } : reopening ? {
+          closureMode:null,closureReason:null,closurePlanId:null,closureStartedAt:null,closureStartedById:null,closureExpectedAt:null,
+        } : {}),
       };
       if (old && old.code !== data.code)
         throw new ConflictException('Không đổi mã cơ sở đã tạo.');
       if (!old && await tx.facility.findUnique({where:{code:data.code}})) throw new ConflictException('Mã cơ sở đã tồn tại.');
-      return id
+      const facility = id
         ? tx.facility.update({ where: { id }, data })
         : tx.facility.create({ data });
+      const saved = await facility;
+      if (reopening && old?.closurePlanId) {
+        await tx.supportRequest.updateMany({ where: { closurePlanId: old.closurePlanId, status: { not: 'RESOLVED' },
+          OR:[{lastAction:null},{lastAction:{not:CLOSURE_BOOKING_REFUND_PENDING}}], transferRequests: { none: { status: { in: ['REQUESTED','APPROVED'] } } } },
+          data: { status: 'RESOLVED', resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Kế hoạch ngừng kinh doanh đã được hủy. Cơ sở mở lại.', resolvedByUserId: actor.id, resolvedAt: new Date() } });
+      }
+      if (old && (changed || planChanged || old.bookingEnabled !== bookingEnabled)) {
+        const affected = changed || planChanged ? await tx.reservation.findMany({
+          where: {
+            OR: [
+              { contracts: { some: {
+                status: { in: ['ACTIVE', 'PENDING_PAYMENT', 'READY_FOR_HANDOVER'] },
+                reservationUnit: { releasedAt: null, storageUnit: { storageType: { facilityId: saved.id } } },
+              } } },
+              { facilityId: saved.id, status: { in: ['PENDING', 'CONFIRMED'] }, contracts: { none: {} } },
+            ],
+          },
+          select: { customerId: true },
+          distinct: ['customerId'],
+        }) : [];
+        await tx.auditEvent.create({data:{
+          category:'ACTIVITY',action:'FACILITY_LIFECYCLE',outcome:'SUCCESS',
+          actorId:actor.id,actorRole:actor.role,actorName:actor.fullName,actorEmail:actor.email,
+          resource:'facility',resourceId:saved.id,method:'PATCH',route:'/operations/facilities/'+saved.id,httpStatus:200,
+          metadata:{
+            previousStatus:old.operationalStatus,status:saved.operationalStatus,
+            statusChanged:changed || planChanged,facilityName:saved.name,facilityCode:saved.code,
+            customerRecipientIds:affected.flatMap(({ customerId }) => customerId ? [customerId] : []),
+            previousBookingEnabled:old.bookingEnabled,bookingEnabled,
+            closureMode:saved.closureMode ?? null,closureReason,closurePlanId:saved.closurePlanId ?? old.closurePlanId ?? null,
+            reopeningSafetyEvidence,
+          },
+        }});
+      }
+      return saved;
     });
   }
   async ranges(actor: PublicUser) {
@@ -254,22 +356,31 @@ export class OperationsService {
     const items=await Promise.all(facilities.map(async facility=>{
       const reservation={facilityId:facility.id};
       const unitWhere={storageType:reservation};
-      const [units,activeContracts,newReservations,invoices,receivable,payments,refunds,rentRefunds,handovers,returns]=await Promise.all([
+      const returnSite: Prisma.ReturnRequestWhereInput = { OR: [
+        {inspections:{some:{},every:{storageUnit:{storageType:reservation}}}}, {inspections:{none:{}},reservation},
+      ] };
+      const [units,activeContracts,newReservations,invoices,receivable,payments,refunds,rentRefunds,handovers,returns,bookingRefunds]=await Promise.all([
         this.prisma.storageUnit.groupBy({by:['status'],where:unitWhere,_count:{_all:true}}),
-        this.prisma.rentalContract.count({where:{reservation,status:'ACTIVE'}}),
+        this.prisma.rentalContract.count({where:{reservationUnit:{releasedAt:null,storageUnit:{storageType:reservation}},status:'ACTIVE'}}),
         this.prisma.reservation.count({where:{...reservation,createdAt:range}}),
-        this.prisma.invoice.aggregate({where:{reservation,status:{not:'VOID'},issuedAt:range},_sum:{rentalAmount:true,serviceAmount:true,chargeAmount:true,depositAmount:true,totalAmount:true}}),
-        this.prisma.invoice.aggregate({where:{reservation,status:{not:'VOID'},balanceDue:{gt:0}},_sum:{balanceDue:true}}),
-        this.prisma.payment.aggregate({where:{invoice:{reservation},receivedAt:range},_sum:{amount:true}}),
-        this.prisma.depositSettlement.aggregate({where:{returnRequest:{reservation},refundedAt:{not:null,...range}},_sum:{refundAmount:true}}),
-        this.prisma.returnRequest.findMany({where:{reservation,rentRefundedAt:{not:null,...range}},select:{earlyReturnCloseout:true}}),
+        this.prisma.invoice.aggregate({where:{OR:[{facilityIdSnapshot:facility.id},{facilityIdSnapshot:null,reservation}],status:{not:'VOID'},issuedAt:range},_sum:{rentalAmount:true,serviceAmount:true,chargeAmount:true,depositAmount:true,totalAmount:true}}),
+        this.prisma.invoice.aggregate({where:{OR:[{facilityIdSnapshot:facility.id},{facilityIdSnapshot:null,reservation}],status:{not:'VOID'},balanceDue:{gt:0}},_sum:{balanceDue:true}}),
+        this.prisma.payment.aggregate({where:{invoice:{OR:[{facilityIdSnapshot:facility.id},{facilityIdSnapshot:null,reservation}]},receivedAt:range},_sum:{amount:true}}),
+        this.prisma.depositSettlement.aggregate({where:{returnRequest:returnSite,refundedAt:{not:null,...range}},_sum:{refundAmount:true}}),
+        this.prisma.returnRequest.findMany({where:{...returnSite,rentRefundedAt:{not:null,...range}},select:{earlyReturnCloseout:true}}),
         this.prisma.handoverAppointment.count({where:{reservation,status:'COMPLETED',completedAt:{not:null,...range}}}),
-        this.prisma.returnRequest.count({where:{reservation,physicallyReturnedAt:{not:null,...range}}}),
+        this.prisma.returnRequest.count({where:{...returnSite,physicallyReturnedAt:{not:null,...range}}}),
+        this.prisma.supportRequest.findMany({where:{reservation,closurePlanId:{not:null},lastAction:CLOSURE_BOOKING_REFUND_RECORDED,status:'RESOLVED',resolvedAt:{not:null,...range}},select:{earlyReturnFinancialReview:true}}),
       ]);
       const counts=Object.fromEntries(units.map(u=>[u.status,u._count._all]));
       const total=units.reduce((sum,u)=>sum+u._count._all,0);
       const rentRefunded=rentRefunds.reduce((sum,r)=>{const amount=(r.earlyReturnCloseout as {refundAmount?:unknown}|null)?.refundAmount;if(typeof amount!=='number'||!Number.isSafeInteger(amount)||amount<0)throw new ConflictException('Hồ sơ hoàn tiền thuê cần được đối chiếu trước khi tổng hợp.');return sum+BigInt(amount);},0n);
-      return {...facility,units:{total,occupied:counts.OCCUPIED??0,available:counts.AVAILABLE??0,reserved:counts.RESERVED??0,maintenance:counts.MAINTENANCE??0},activeContracts,newReservations,handovers,returns,rent:String(invoices._sum.rentalAmount??0n),services:String(invoices._sum.serviceAmount??0n),fees:String(invoices._sum.chargeAmount??0n),deposit:String(invoices._sum.depositAmount??0n),billed:String(invoices._sum.totalAmount??0n),debt:String(receivable._sum.balanceDue??0n),received:String(payments._sum.amount??0n),depositRefunded:String(refunds._sum.refundAmount??0n),rentRefunded:String(rentRefunded)};
+      const bookingRefunded = bookingRefunds.reduce((sum,row)=>{
+        const amount = (row.earlyReturnFinancialReview as {refundAmount?:unknown} | null)?.refundAmount;
+        if (typeof amount !== 'string' || !/^[1-9]\d*$/.test(amount)) throw new ConflictException('Cần đối soát số tiền hoàn đơn chưa bàn giao.');
+        return sum + BigInt(amount);
+      },0n);
+      return {...facility,units:{total,occupied:counts.OCCUPIED??0,available:counts.AVAILABLE??0,reserved:counts.RESERVED??0,maintenance:counts.MAINTENANCE??0},activeContracts,newReservations,handovers,returns,rent:String(invoices._sum.rentalAmount??0n),services:String(invoices._sum.serviceAmount??0n),fees:String(invoices._sum.chargeAmount??0n),deposit:String(invoices._sum.depositAmount??0n),billed:String(invoices._sum.totalAmount??0n),debt:String(receivable._sum.balanceDue??0n),received:String(payments._sum.amount??0n),depositRefunded:String(refunds._sum.refundAmount??0n),rentRefunded:String(rentRefunded),bookingRefunded:String(bookingRefunded)};
     }));
     return {period,asOf:new Date().toISOString(),items};
   }
@@ -277,7 +388,7 @@ export class OperationsService {
     await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
     const page=Number(input.page??1),limit=Number(input.limit??20);
     if(!Number.isSafeInteger(page)||page<1||page>100000||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new BadRequestException('Phân trang không hợp lệ.');
-    const where={category:'ACTIVITY' as const,actorRole:'BUSINESS_OPERATIONS_MANAGER',resource:{in:['facilities','business-policies','pricing-rules','business-rules','additional-services']}};
+    const where={category:'ACTIVITY' as const,actorRole:'BUSINESS_OPERATIONS_MANAGER',resource:{in:['facility','facilities','business-policies','pricing-rules','business-rules','additional-services']}};
     const [total,items]=await Promise.all([this.prisma.auditEvent.count({where}),this.prisma.auditEvent.findMany({where,select:{id:true,actorName:true,action:true,outcome:true,resource:true,resourceId:true,createdAt:true},orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(page-1)*limit,take:limit})]);
     return {page,limit,total,items};
   }

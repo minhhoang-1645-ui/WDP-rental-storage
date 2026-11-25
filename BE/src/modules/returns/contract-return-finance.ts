@@ -7,7 +7,7 @@ export const returnInvoiceFields = {
   id: true, reservationId: true, invoiceCode: true, type: true, status: true, totalAmount: true, amountPaid: true, balanceDue: true,
   rentalAmount: true, depositAmount: true, serviceAmount: true, chargeAmount: true, pricingSnapshot: true,
   billingPeriodStart: true, billingPeriodEnd: true, billingCycle: true, renewalCycle: true, renewalRequestId: true,
-  dueAt: true, currency: true, storageTypeIdSnapshot: true,
+  dueAt: true, currency: true, storageTypeIdSnapshot: true, facilityIdSnapshot: true,
   depositSettlement: { select: { returnRequest: { select: { inspections: { select: { rentalContractId: true } } } } } },
   renewalRequest: { select: { rentalContractId: true } },
 } satisfies Prisma.InvoiceSelect;

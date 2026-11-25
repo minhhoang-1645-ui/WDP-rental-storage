@@ -1,4 +1,5 @@
-import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { currentContractScope } from '../facility-access/task-access.js';
 import { staffContractScope as assignedContractScope } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -134,7 +135,8 @@ export class ContractsService {
   }
 
   async listManagerContracts(query: ContractListQuery, actor: PublicUser) {
-    const where = {AND:[this.contractFilters(query),{reservation:managerReservationScope(actor)}]};
+    managerReservationScope(actor);
+    const where = {AND:[this.contractFilters(query),currentContractScope(actor)]};
     const total = await this.prisma.rentalContract.count({ where });
     const contracts = await this.prisma.rentalContract.findMany({
       where,
@@ -148,7 +150,7 @@ export class ContractsService {
 
   async getManagerContract(id: string, actor: PublicUser) {
     const contract = await this.prisma.rentalContract.findFirst({
-      where: { reservation:managerReservationScope(actor), OR: [{ id }, { contractCode: id }] },
+      where: { ...currentContractScope(actor), OR: [{ id }, { contractCode: id }] },
       include: this.contractInclude(),
     });
     if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng.');
@@ -156,7 +158,7 @@ export class ContractsService {
   }
 
   private staffContractScope(staffId: string): Prisma.RentalContractWhereInput {
-    return { ...assignedContractScope({id:staffId,role:'FACILITY_STAFF'}), status: 'ACTIVE', reservationUnit: { releasedAt: null } };
+    return { AND: [assignedContractScope({id:staffId,role:'FACILITY_STAFF'}), {status: 'ACTIVE', reservationUnit: { releasedAt: null }}] };
   }
 
   async listStaffContracts(query: ContractListQuery, staffId: string) {
@@ -174,7 +176,7 @@ export class ContractsService {
   async getStaffContract(id: string, staffId: string) {
     const notFound = () => new NotFoundException('Không tìm thấy hợp đồng thuộc nhiệm vụ được giao.');
     const record = await this.prisma.rentalContract.findFirst({
-      where: { ...this.staffContractScope(staffId), OR: [{ id }, { contractCode: id }] }, select: staffContractSelect,
+      where: { AND: [this.staffContractScope(staffId), { OR: [{ id }, { contractCode: id }] }] }, select: staffContractSelect,
     });
     if (!record) throw notFound();
     return this.staffContract(record);
@@ -183,8 +185,8 @@ export class ContractsService {
   async getStaffTransferDocument(id:string,transferId:string,actor:PublicUser) {
     if(actor.role!=='FACILITY_STAFF')throw new ForbiddenException('Chỉ nhân viên được giao được xem biên bản.');
     const record=await this.prisma.rentalContract.findFirst({where:{id,
-      reservation:assignedContractScope(actor).reservation,
-      transferRequests:{some:{id:transferId,status:'COMPLETED',assignedStaffUserId:actor.id}}
+      AND: [assignedContractScope(actor)],
+      transferRequests:{some:{id:transferId,status:'COMPLETED',OR:[{assignedStaffUserId:actor.id},{receivingStaffId:actor.id}]}}
     },include:this.contractInclude()});
     if(!record)throw new NotFoundException('Không tìm thấy biên bản thuộc nhiệm vụ được giao.');
     return this.toContract(record,true);

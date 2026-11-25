@@ -39,6 +39,9 @@ export class ManagerReturnsController {
   @ManagerAssignment()
   @Patch(':id/assign')
   assign(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() body: Record<string, unknown>) { return this.returns.assign(id, body, req.user!); }
+  @ManagerAssignment()
+  @Patch(':id/authorize-safety')
+  authorizeSafety(@Param('id') id:string,@Req() req:AuthenticatedRequest,@Body() body:Record<string,unknown>){return this.returns.authorizeSafety(id,body,req.user!);}
 
   private query(input: Record<string, unknown>): ReturnListQuery {
     const page = this.integer(input.page, 1, 100000, 'page');

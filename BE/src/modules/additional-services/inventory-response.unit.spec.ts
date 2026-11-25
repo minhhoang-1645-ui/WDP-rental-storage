@@ -76,7 +76,8 @@ describe('Facility inventory PATCH response', () => {
     }]);
     expect(tx.reservationService.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        reservation: { status: 'CONFIRMED', facilityId: { in: ['facility'] } },
+        reservation: { status: 'CONFIRMED' },
+        AND: [{ OR: [{ OR: [{ serviceFacilityId: 'facility' }, { serviceFacilityId: null, reservation: { facilityId: 'facility' } }] }] }],
         OR: expect.arrayContaining([expect.objectContaining({ serviceKindSnapshot: 'PURCHASE', fulfillmentStatus: 'FULFILLED' })]),
       }),
     }));

@@ -1,5 +1,7 @@
-import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
 import { staffContractScope as assignedContractScope } from '../facility-access/task-access.js';
+import { currentContractScope, currentRentalScope } from '../facility-access/task-access.js';
+import { facilityIds } from '../facility-access/facility-access.service.js';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -56,13 +58,15 @@ export class ActiveRentalsService {
   }
 
   listManagerRentals(query: ActiveRentalListQuery, actor: PublicUser) {
-    return this.page(managerReservationScope(actor), query, 'FACILITY_MANAGER');
+    managerReservationScope(actor);
+    return this.page(currentRentalScope(actor), query, 'FACILITY_MANAGER', actor);
   }
 
   async getManagerRental(id: string, actor: PublicUser) {
-    const record = await this.prisma.reservation.findFirst({ where: { ...this.activeWhere(), AND:[managerReservationScope(actor)], OR: [{ id }, { reservationCode: id }] }, include: this.include() });
+    managerReservationScope(actor);
+    const record = await this.prisma.reservation.findFirst({ where: { ...this.activeWhere(), AND:[currentRentalScope(actor)], OR: [{ id }, { reservationCode: id }] }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy Active Rental.');
-    return this.toRental(record, 'FACILITY_MANAGER', new Date());
+    return this.managerView(record, await facilityIds(this.prisma, actor), new Date());
   }
 
   async listStaffRentals(actor: PublicUser, query: ActiveRentalListQuery) {
@@ -95,40 +99,65 @@ export class ActiveRentalsService {
 
   private staffContractScope(actor: PublicUser): Prisma.RentalContractWhereInput | null {
     if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được dùng chức năng này.');
-    return { ...assignedContractScope(actor), status: 'ACTIVE', reservationUnit: { releasedAt: null } };
+    return { AND: [assignedContractScope(actor), activeContract] };
   }
 
-  private async page(baseWhere: Prisma.ReservationWhereInput, query: ActiveRentalListQuery, mode: ViewMode) {
+  private async page(baseWhere: Prisma.ReservationWhereInput, query: ActiveRentalListQuery, mode: ViewMode, actor?: PublicUser) {
     const now = new Date();
     const filters: Prisma.ReservationWhereInput[] = [];
+    const scoped = (condition: Prisma.RentalContractWhereInput): Prisma.RentalContractWhereInput => ({ AND: [activeContract, ...(actor ? [currentContractScope(actor)] : []), condition] });
     if (query.search) filters.push({ OR: [
       { reservationCode: { contains: query.search, mode: 'insensitive' } },
       { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
       { customer: { email: { contains: query.search, mode: 'insensitive' } } },
-      { contracts: { some: { ...activeContract, contractCode: { contains: query.search, mode: 'insensitive' } } } },
-      { contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } } } },
+      { contracts: { some: scoped({ contractCode: { contains: query.search, mode: 'insensitive' } }) } },
+      { contracts: { some: scoped({ reservationUnit: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } }) } },
     ] });
-    if (query.storageType) filters.push({ contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { OR: [
+    if (query.storageType) filters.push({ contracts: { some: scoped({ reservationUnit: { storageUnit: { OR: [
       { storageTypeId: query.storageType },
       { storageType: { code: { contains: query.storageType, mode: 'insensitive' } } },
-    ] } } } } });
-    if (query.unitCode) filters.push({ contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { unitNumber: { contains: query.unitCode, mode: 'insensitive' } } } } } });
+    ] } } }) } });
+    if (query.unitCode) filters.push({ contracts: { some: scoped({ reservationUnit: { storageUnit: { unitNumber: { contains: query.unitCode, mode: 'insensitive' } } } }) } });
     if (query.customer) filters.push({ OR: [
       { customer: { fullName: { contains: query.customer, mode: 'insensitive' } } },
       { customer: { email: { contains: query.customer, mode: 'insensitive' } } },
     ] });
     if (query.overdue !== undefined) {
-      const hasLaterEnd = { ...activeContract, endDate: { gt: businessToday(now) } };
+      const hasLaterEnd = scoped({ endDate: { gt: businessToday(now) } });
       filters.push(query.overdue
         ? { contracts: { none: hasLaterEnd } }
         : { contracts: { some: hasLaterEnd } });
     }
-    const where: Prisma.ReservationWhereInput = { ...this.activeWhere(), ...baseWhere, ...(filters.length ? { AND: filters } : {}) };
+    const where: Prisma.ReservationWhereInput = { AND: [this.activeWhere(), baseWhere, ...filters] };
     const [total, records] = await this.prisma.$transaction([
       this.prisma.reservation.count({ where }),
       this.prisma.reservation.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], include: this.include() }),
     ], { isolationLevel: 'RepeatableRead' });
-    return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toRental(record, mode, now)) };
+    const ids = actor ? await facilityIds(this.prisma, actor) : null;
+    return { page: query.page, limit: query.limit, total, items: records.map((record) => ids ? this.managerView(record, ids, now) : this.toRental(record, mode, now)) };
+  }
+
+  private managerView(record: Prisma.ReservationGetPayload<{ include: ReturnType<ActiveRentalsService['include']> }>, ids: string[], now: Date) {
+    const view = this.toRental(record, 'FACILITY_MANAGER', now);
+    const permitted = new Set(record.contracts.filter(contract => ids.includes(contract.reservationUnit.storageUnit.storageType.facility.id)).map(contract => contract.id));
+    const contracts = view.contracts.filter((contract: { id: string }) => permitted.has(contract.id));
+    const financialScope = ids.includes(record.facilityId);
+    const financialInvoices = record.invoices.filter(invoice => ids.includes(invoice.facilityIdSnapshot ?? record.facilityId));
+    const visibleInvoiceIds = new Set(financialInvoices.map(invoice=>invoice.id));
+    const invoices = view.invoices.filter((invoice: {id:string})=>visibleInvoiceIds.has(invoice.id));
+    const paid = financialInvoices.reduce((sum,invoice)=>sum+invoice.amountPaid,0n);
+    const billed = financialInvoices.reduce((sum,invoice)=>sum+invoice.totalAmount,0n);
+    const outstanding = financialInvoices.reduce((sum,invoice)=>sum+invoice.balanceDue,0n);
+    const scheduled = financialInvoices.reduce((sum,invoice)=>sum+(isScheduledRenewalInvoice(invoice,now)?invoice.balanceDue:0n),0n);
+    const next = financialInvoices.filter(invoice=>invoice.balanceDue>0n).sort((first,second)=>this.invoiceOrder(first,second))[0];
+    if (!contracts.length) throw new NotFoundException('Không tìm thấy kho đang thuê tại cơ sở được cấp quyền.');
+    return { ...view, contracts, quantity: contracts.length, contractCount: contracts.length, unitCount: contracts.length,
+      storageType: contracts[0]?.unit.storageType ?? view.storageType,
+      canRenewTogether: view.canRenewTogether && contracts.length === view.contracts.length,
+      renewalHistory: view.renewalHistory.filter((renewal: { rentalContractId: string | null }) => renewal.rentalContractId ? permitted.has(renewal.rentalContractId) : financialScope),
+      invoices, billingSummary: {totalInvoiced:this.money(billed),totalPaid:this.money(paid),totalOutstanding:this.money(outstanding),
+        payableBalance:this.money(outstanding-scheduled),scheduledBalance:this.money(scheduled),nextInvoice:next?this.invoiceSummary(next):null},
+      historicalPricing: financialScope ? view.historicalPricing : null, financialFacilityId: record.facilityId };
   }
 
   private activeWhere(): Prisma.ReservationWhereInput {
@@ -146,7 +175,7 @@ export class ActiveRentalsService {
           reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true, storageTypeId: true,
           storageType: { select: { id: true, name: true, widthCm: true, lengthCm: true, heightCm: true,
-            facility: { select: { id: true, name: true, address: true } } } },
+            facility: { select: { id: true, name: true, address: true, operationalStatus: true, closureMode: true } } } },
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
             select: { id: true, reservationId: true, plannedStartDate: true, plannedEndDate: true, reservation: { select: { reservationCode: true, customer: { select: { id: true, fullName: true, email: true, phone: true } } } } },
@@ -157,7 +186,7 @@ export class ActiveRentalsService {
       },
       supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, status: 'RESOLVED' as const, lastAction: 'EARLY_RETURN_APPROVED', resolvedBy: { role: 'FACILITY_MANAGER' as const } },
         select: { id: true, rentalContractId: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true } },
-      services: { select: { id: true, serviceStartDate: true, serviceEndDate: true } },
+      services: { select: { id: true, serviceStartDate: true, serviceEndDate: true, fulfillmentStatus: true } },
       invoices: { include: { depositSettlement: returnInvoiceFields.depositSettlement, renewalRequest: returnInvoiceFields.renewalRequest,
         payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } }, orderBy: { billingCycle: 'asc' as const } },
       renewals: { include: { invoices: { select: { status: true, totalAmount: true, amountPaid: true, balanceDue: true, renewalCycle: true }, orderBy: { renewalCycle: 'asc' as const } } }, orderBy: { createdAt: 'desc' as const } },

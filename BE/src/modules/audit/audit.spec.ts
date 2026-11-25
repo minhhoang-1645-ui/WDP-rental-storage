@@ -76,7 +76,7 @@ describe('audit persistence and filters (mock DB)', () => {
     const db = database();
     await new AuditService(db as never).list({ category: 'LOGIN', outcome: 'FAILURE', role: 'SYSTEM_ADMINISTRATOR', search: 'manager', from: '2026-11-03', to: '2026-11-03', page: '2', limit: '20' }, admin);
     const args = db.auditEvent.findMany.mock.calls[0][0];
-    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { outcome: 'FAILURE', actorRole: 'SYSTEM_ADMINISTRATOR' } });
+    expect(args).toMatchObject({ skip: 20, take: 20, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], where: { outcome: 'FAILURE', actorRole: { in: expect.arrayContaining(['SYSTEM_ADMINISTRATOR']) } } });
     expect(args.where.createdAt.gte.toISOString()).toBe('2026-11-02T17:00:00.000Z');
     expect(args.where.createdAt.lt.toISOString()).toBe('2026-11-03T17:00:00.000Z');
     expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(args.where);
@@ -86,16 +86,16 @@ describe('audit persistence and filters (mock DB)', () => {
 
     await service.list({ category: 'LOGIN', search: 'staff', page: '2', limit: '5' }, admin);
     const history = db.auditEvent.findMany.mock.calls[0][0];
-    expect(history).toMatchObject({ skip: 5, take: 5, where: { AND: [{ OR: [
+    expect(history).toMatchObject({ skip: 5, take: 5, where: { AND: [{ AND: [{ OR: [
       { category: 'LOGIN', action: { in: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } },
       { category: 'ACTIVITY', action: 'AUTH_LOGOUT' },
-    ] }] } });
+    ] }] }] } });
     expect(history.where.OR).toContainEqual({ actorEmail: { contains: 'staff', mode: 'insensitive' } });
     expect(db.auditEvent.count.mock.calls[0][0].where).toEqual(history.where);
 
     await service.list({ category: 'ACTIVITY' }, admin);
     const activity = db.auditEvent.findMany.mock.calls[1][0];
-    expect(activity.where).toEqual({ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } });
+    expect(activity.where).toEqual({ AND: [{ category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } }] });
     expect(db.auditEvent.count.mock.calls[1][0].where).toEqual(activity.where);
   });
   it.each([{ page: '0' }, { limit: '101' }, { page: '1.5' }, { from: '2026-02-30' }, { from: '2026-11-04', to: '2026-11-03' }, { category: 'OTHER' }, { outcome: 'OTHER' }, { role: 'OTHER' }, { search: ['a', 'b'] }])('rejects invalid query %j', async query => {

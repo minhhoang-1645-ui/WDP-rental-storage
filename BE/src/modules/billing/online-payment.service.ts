@@ -1,5 +1,6 @@
 import { initialPaymentWindowClosed, assertInvoiceReceivable } from './invoice-state.js';
 import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { invoiceFacilityScope } from '../facility-access/task-access.js';
 import { closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
@@ -232,8 +233,9 @@ export class OnlinePaymentService {
   }
 
   async listManagerReconciliations(page: number, limit: number, status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED' | undefined, actor: PublicUser) {
-    const scope=managerReservationScope(actor);
-    const where = { ...(status?{status}:{}),OR:[{onlinePaymentTransaction:{invoice:{reservation:scope}}},{paymentSubmission:{invoice:{reservation:scope}}}] };
+    managerReservationScope(actor);
+    const scope=invoiceFacilityScope(actor);
+    const where = { ...(status?{status}:{}),OR:[{onlinePaymentTransaction:{invoice:scope}},{paymentSubmission:{invoice:scope}}] };
     const [total, items] = await Promise.all([
       this.prisma.onlinePaymentReconciliation.count({ where }),
       this.prisma.onlinePaymentReconciliation.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.reconciliationInclude() }),

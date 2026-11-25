@@ -7,7 +7,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { roleNamespace,userRoles } from '../../role-names.js';
 import { assertFacility, assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
-import { assertAcceptingBookings } from '../facilities/facility-booking.js';
+import { assertAcceptingBookings, assertFacilityAllowsRenewal } from '../facilities/facility-booking.js';
 import { assertMonthlyRange, OperationsService } from './operations.service.js';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 const actor=(role:PublicUser['role']):PublicUser=>({id:'u',fullName:'User',email:'u@example.test',phone:'',role});
@@ -39,6 +39,9 @@ it('booking checks facility state without changing existing contracts',async()=>
  const db={storageType:{findUnique:vi.fn().mockResolvedValue({facilityId:'A'})},facility:{findUnique:vi.fn().mockResolvedValue({bookingEnabled:false,operationalStatus:'OPEN'})}};
  await expect(assertAcceptingBookings(db as never,'type')).rejects.toThrow('tạm dừng');
  expect(db.facility.findUnique).toHaveBeenCalledWith(expect.objectContaining({where:{id:'A'}}));
+ await expect(assertFacilityAllowsRenewal(db as never,'A')).resolves.toBeUndefined();
+ db.facility.findUnique.mockResolvedValue({bookingEnabled:false,operationalStatus:'CLOSING'});
+ await expect(assertFacilityAllowsRenewal(db as never,'A')).rejects.toThrow('không nhận yêu cầu gia hạn');
 });
 it('type range takes precedence over facility range and cannot change historic amounts',async()=>{
  const db={businessRule:{findMany:vi.fn().mockResolvedValue([{storageTypeId:null,value:{min:10,max:100},version:9},{storageTypeId:'T',value:{min:20,max:30},version:1}])}};
@@ -58,10 +61,26 @@ it('only approved policy keys can be saved',async()=>{
 });
 it('refuses physically closing a facility with live contracts',async()=>{
  const old={id:'A',code:'A',name:'Facility',address:'Address',officeHours:'8–17',accessHours:'8–20',bookingEnabled:true,operationalStatus:'OPEN',updatedAt:new Date('2026-01-01')};
- const tx={user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),facility:{findUnique:vi.fn().mockResolvedValue(old),update:vi.fn()},rentalContract:{count:vi.fn().mockResolvedValue(1)},reservation:{count:vi.fn().mockResolvedValue(0)}};
+ const emptyCounts = Object.fromEntries(['invoice','depositSettlement','supportRequest','maintenanceRequest','reservationUnit','transferRequest','handoverAppointment','returnRequest','storageUnit','reservationService'].map(key=>[key,{count:vi.fn().mockResolvedValue(0)}]));
+ const tx={...emptyCounts,user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),facility:{findUnique:vi.fn().mockResolvedValue(old),update:vi.fn()},rentalContract:{count:vi.fn().mockResolvedValue(1)},reservation:{count:vi.fn().mockResolvedValue(0)}};
  const service=new OperationsService({$transaction:async(fn:(t:unknown)=>unknown)=>fn(tx)} as unknown as PrismaService);
- await expect(service.save('A',{bookingEnabled:false,operationalStatus:'CLOSED',expectedUpdatedAt:old.updatedAt.toISOString()},actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('còn đơn hoặc hợp đồng');
+ await expect(service.save('A',{bookingEnabled:false,operationalStatus:'CLOSED',expectedUpdatedAt:old.updatedAt.toISOString()},actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('1 hợp đồng cần xử lý');
  expect(tx.facility.update).not.toHaveBeenCalled();
+});
+it('starts a contract-expiry closure without ending existing contracts, and reopens without enabling bookings',async()=>{
+ const old={id:'A',code:'A',name:'Facility',address:'Address',officeHours:'8–17',accessHours:'8–20',bookingEnabled:true,operationalStatus:'OPEN',updatedAt:new Date('2026-01-01')};
+ const tx={user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),
+  facility:{findUnique:vi.fn().mockResolvedValue(old),update:vi.fn(async ({data})=>({...old,...data}))},
+  rentalContract:{count:vi.fn().mockResolvedValue(1)},reservation:{findMany:vi.fn().mockResolvedValue([{customerId:'affected'}])},supportRequest:{updateMany:vi.fn()},auditEvent:{create:vi.fn()}};
+ const service=new OperationsService({$transaction:async(fn:(t:unknown)=>unknown)=>fn(tx)} as unknown as PrismaService);
+ const expectedUpdatedAt=old.updatedAt.toISOString(), bom=actor('BUSINESS_OPERATIONS_MANAGER');
+ const closing=await service.save('A',{operationalStatus:'CLOSING',closureReason:'Hết hợp đồng mặt bằng',expectedUpdatedAt},bom);
+ expect(closing).toMatchObject({operationalStatus:'CLOSING',bookingEnabled:false});
+ expect(tx.rentalContract.count).not.toHaveBeenCalled();
+ expect(tx.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({metadata:expect.objectContaining({closureMode:'CONTRACT_EXPIRY',customerRecipientIds:['affected']})})}));
+ tx.facility.findUnique.mockResolvedValue(closing);
+ await expect(service.save('A',{bookingEnabled:true,expectedUpdatedAt},bom)).rejects.toThrow('không thể nhận đặt kho');
+ await expect(service.save('A',{operationalStatus:'OPEN',bookingEnabled:true,expectedUpdatedAt},bom)).resolves.toMatchObject({operationalStatus:'OPEN',bookingEnabled:false});
 });
 it('keeps a newly created facility closed to new bookings until local configuration is ready',async()=>{
  const tx={user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),facility:{findUnique:vi.fn().mockResolvedValue(null),create:vi.fn()}};
@@ -102,5 +121,5 @@ it('reporting SQL ignores caller-supplied scope and binds database-backed facili
  await service.csv({facilityId:'FORGED-B'},actor('FACILITY_MANAGER'));
  const sql=query.mock.calls[0][0];
  expect(sql.values).toContain('REAL-A');expect(sql.values).not.toContain('FORGED-B');
- expect(sql.sql).toContain('"facilityId" IN');
+ expect(sql.sql).toContain('COALESCE(i."facilityIdSnapshot",r."facilityId") IN');
 });

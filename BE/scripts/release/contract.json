@@ -1,5 +1,5 @@
 {
-  "release": "nestbox-offering-configuration-review-20261124",
+  "release": "nestbox-facility-closure-relocation-20261124",
   "previousBackend": {
     "branch": "dev",
     "commit": "2388bc5",
@@ -22,7 +22,8 @@
     "20261124000100_legacy_service_facility_evidence",
     "20261124000200_shared_service_catalog",
     "20261124000300_auth_session_history",
-    "20261124000300_offering_configuration_review"
+    "20261124000300_offering_configuration_review",
+    "20261124000400_facility_closure_relocation"
   ],
   "migrations": [
     {
@@ -395,6 +396,13 @@
         "fe9ee62349215faf6491fb852fe2ff71c30feac656d497b16b02804705a8d286",
         "62b8166afbadd1d3dfd03a040ae8307197a6bcaf6516ce015b01be238d430965"
       ]
+    },
+    {
+      "checksums": [
+        "026b11dc1a98dcf75cb2455aacccff837a39b6eae82891b5ffa4e3fec428e5dd",
+        "c187b0faddd0bf3800b5e5a47e1e45698ebdb8f26b5ef4a00138c58a5f5c738c"
+      ],
+      "name": "20261124000400_facility_closure_relocation"
     }
   ],
   "historicalException": {

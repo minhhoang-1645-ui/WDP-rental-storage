@@ -1,5 +1,6 @@
 import type { PublicUser } from '../auth/auth.types.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
+import { invoiceFacilityScope, returnTaskScope, supportTaskScope, transferTaskScope, renewalTaskScope, currentContractScope } from '../facility-access/task-access.js';
 import {
   legacyTransferFilter,
   transferSubjectFilter,
@@ -58,23 +59,23 @@ export class ManagerAnalyticsService {
     const facility = reservation.facility;
     const scope = {
       storageUnit: { storageType: { facility } },
-      rentalContract: { reservation },
-      invoice: { reservation },
-      payment: { invoice: { reservation } },
-      depositSettlement: { returnRequest: { reservation } },
+      rentalContract: { reservationUnit: { releasedAt: null, storageUnit: { storageType: { facility } } } },
+      invoice: invoiceFacilityScope(actor),
+      payment: { invoice: invoiceFacilityScope(actor) },
+      depositSettlement: { returnRequest: returnTaskScope(actor) },
       user: { facilityAccess: { some: { revokedAt: null, facility } } },
-      supportRequest: { reservation },
+      supportRequest: supportTaskScope(actor),
       maintenanceRequest: { storageUnit: { storageType: { facility } } },
       handoverAppointment: { reservation },
-      returnRequest: { reservation },
-      transferRequest: { reservation },
-      damageClaim: { rentalContract: { reservation } },
-      renewalRequest: { reservation },
-      paymentSubmission: { invoice: { reservation } },
+      returnRequest: returnTaskScope(actor),
+      transferRequest: transferTaskScope(actor),
+      damageClaim: { rentalContract: currentContractScope(actor) },
+      renewalRequest: renewalTaskScope(actor),
+      paymentSubmission: { invoice: invoiceFacilityScope(actor) },
       onlinePaymentReconciliation: {
         OR: [
-          { onlinePaymentTransaction: { invoice: { reservation } } },
-          { paymentSubmission: { invoice: { reservation } } },
+          { onlinePaymentTransaction: { invoice: invoiceFacilityScope(actor) } },
+          { paymentSubmission: { invoice: invoiceFacilityScope(actor) } },
         ],
       },
     };

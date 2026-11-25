@@ -16,7 +16,7 @@ export function earlyReturnSettlementPending(record: { earlyReturnCloseout?: unk
   return Boolean(closeout?.appliedAt && (!record.rentRefundApprovedAt || (Number(closeout.refundAmount) > 0 && !record.rentRefundedAt)));
 }
 type Invoice = Prisma.InvoiceGetPayload<{ select: typeof returnInvoiceFields }>;
-export type ReturnServicePeriod = { id: string; serviceStartDate: Date | null; serviceEndDate: Date | null };
+export type ReturnServicePeriod = { id: string; serviceStartDate: Date | null; serviceEndDate: Date | null; fulfillmentStatus?: string | null };
 const min = (a: bigint, b: bigint) => a < b ? a : b;
 const positive = (amount: bigint) => amount > 0n ? amount : 0n;
 const day = (value: Date) => value.toISOString().slice(0, 10);
@@ -82,8 +82,12 @@ export function planEarlyReturn(invoices: Invoice[], targetId: string, contractI
     if (solo && kept > 0 && cutoff < end && invoice.serviceAmount > 0n) {
       if (!breakdown && kept < cycles) throw new ConflictException(`Cần đối soát các dịch vụ trả trước trên hóa đơn ${invoice.invoiceCode}.`);
       for (const service of breakdown?.sharedServices ?? []) {
-        if (service.billingUnit === 'ONE_TIME' || service.amount === 0) continue;
         const period = services.find(row => row.id === service.id);
+        if (service.billingUnit === 'ONE_TIME') {
+          if (period?.fulfillmentStatus === 'RESERVED') serviceCredit += BigInt(service.amount);
+          continue;
+        }
+        if (service.amount === 0) continue;
         if (period?.serviceStartDate && period.serviceEndDate) {
           const rate = BigInt(service.unitPrice) * BigInt(service.quantity);
           const serviceStart = period.serviceStartDate > start ? period.serviceStartDate : start;
@@ -110,6 +114,11 @@ export function planEarlyReturn(invoices: Invoice[], targetId: string, contractI
           throw new ConflictException(`Dịch vụ ${service.name} thiếu phân bổ theo kỳ. Cần đối soát hóa đơn ${invoice.invoiceCode}.`);
         }
       }
+    }
+    if (solo && kept > 0 && cutoff >= end) {
+      for (const service of breakdown?.sharedServices ?? [])
+        if (service.billingUnit === 'ONE_TIME' && services.find(row => row.id === service.id)?.fulfillmentStatus === 'RESERVED')
+          serviceCredit += BigInt(service.amount);
     }
     const credit = rentalCredit + serviceCredit;
     if (credit && !solo && invoice.amountPaid > 0n && invoice.status !== 'PAID') throw new ConflictException(`Hóa đơn chung ${invoice.invoiceCode} đã trả một phần. Cần phân bổ khoản thu trước khi chấm dứt.`);
@@ -177,7 +186,7 @@ export async function applyEarlyReturn(tx: Prisma.TransactionClient, plan: Retur
           reservationId: invoice.reservationId,
           type: invoice.type, billingCycle: invoice.billingCycle, renewalRequestId: invoice.renewalRequestId, renewalCycle: invoice.renewalCycle,
           billingPeriodStart: invoice.billingPeriodStart, billingPeriodEnd: invoice.billingPeriodEnd, dueAt: invoice.dueAt,
-          storageTypeIdSnapshot: invoice.storageTypeIdSnapshot, currency: invoice.currency, status: 'OPEN', amountPaid: 0n, balanceDue: outstanding,
+          storageTypeIdSnapshot: invoice.storageTypeIdSnapshot, facilityIdSnapshot: invoice.facilityIdSnapshot, currency: invoice.currency, status: 'OPEN', amountPaid: 0n, balanceDue: outstanding,
           pricingSnapshot: { ...(invoice.pricingSnapshot as Prisma.InputJsonObject | null), adjustment: PERIOD_CLOSEOUT, returnCode, originalInvoiceCode: invoice.invoiceCode, breakdown: null,
             credit: invoiceMoney(entry.credit), priorPayment: invoiceMoney(invoice.amountPaid), ...(breakdown ? { breakdown } : {}) },
         } });

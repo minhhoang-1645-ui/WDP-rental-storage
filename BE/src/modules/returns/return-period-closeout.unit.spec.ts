@@ -11,7 +11,7 @@ const invoice = (cycle: number, paid = 0n, overrides: Partial<Invoice> = {}): In
   rentalAmount: 100n, serviceAmount: 0n, chargeAmount: 0n, depositAmount: 0n, totalAmount: 100n, amountPaid: paid, balanceDue: 100n - paid,
   billingCycle: cycle, billingPeriodStart: day(starts[cycle - 1]), billingPeriodEnd: day(starts[cycle]),
   renewalRequestId: null, renewalCycle: null, renewalRequest: null, depositSettlement: null,
-  dueAt: day(starts[cycle - 1]), storageTypeIdSnapshot: 'type', currency: 'VND', pricingSnapshot: { paymentPlan: 'PAY_MONTHLY' },
+  dueAt: day(starts[cycle - 1]), storageTypeIdSnapshot: 'type', facilityIdSnapshot: null, currency: 'VND', pricingSnapshot: { paymentPlan: 'PAY_MONTHLY' },
   ...overrides,
 });
 const plan = (invoices: Invoice[], date = '2027-01-10', fault = false) => planEarlyReturn(invoices, 'contract', ['contract'], day(date), fault);

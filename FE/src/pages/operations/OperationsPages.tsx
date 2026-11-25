@@ -3,50 +3,11 @@ import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import { useAuth } from '../../auth/auth-context';
 import { Link } from 'react-router-dom';
-import { useListPagination } from '../../components/workspace/useListPagination';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 const businessTime=(value:string)=>new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
 const businessDateTime=(value:FormDataEntryValue|null)=>new Date(String(value)+'+07:00').toISOString();
 const versionStatus:Record<string,string>={EFFECTIVE:'Đang áp dụng',SCHEDULED:'Chưa đến ngày áp dụng',HISTORICAL:'Lịch sử'};
-type Facility={id:string;code:string;name:string;address:string;officeHours:string;accessHours:string;bookingEnabled:boolean;operationalStatus:string;updatedAt:string};
-export function OperationsFacilities() {
- const requestConfirmation = useConfirmation();
- const saving = useRef(false);
- const {user}=useAuth();const data=useApiResource<Facility[]>('/operations/facilities',user?.id);
- const [selected,setSelected]=useState<Facility|null>();const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[search,setSearch]=useState('');const[filter,setFilter]=useState('');
- const {items,pagination}=useListPagination((data.data??[]).filter(f=>(f.name+' '+f.code+' '+f.address).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))&&(!filter||filter==='CLOSED'&&f.operationalStatus==='CLOSED'||filter==='OPEN'&&f.bookingEnabled||filter==='SUSPENDED'&&f.operationalStatus==='OPEN'&&!f.bookingEnabled)));
- async function save(e:FormEvent<HTMLFormElement>){
-  e.preventDefault();
-  if (saving.current) return;
-  const f = new FormData(e.currentTarget);
-  const bookingEnabled = f.get('bookingEnabled') === 'on';
-  const operationalStatus = f.get('operationalStatus');
-  const body = {code:f.get('code'),name:f.get('name'),address:f.get('address'),officeHours:f.get('officeHours'),accessHours:f.get('accessHours'),bookingEnabled,operationalStatus,...(selected?{expectedUpdatedAt:selected.updatedAt}:{})};
-  saving.current = true;
-  try {
-   if (selected && (selected.bookingEnabled !== bookingEnabled || selected.operationalStatus !== operationalStatus)) {
-    const operationChanged = selected.operationalStatus !== operationalStatus;
-    const action = operationChanged ? operationalStatus === 'CLOSED' ? 'Đóng cửa cơ sở' : 'Mở cửa cơ sở' : bookingEnabled ? 'Nhận đặt kho trở lại' : 'Tạm dừng nhận đặt kho';
-    const bookingState = bookingEnabled ? 'Nhận đặt kho mới.' : 'Tạm dừng nhận đặt kho mới.';
-    if (!await requestConfirmation({title:action,description:`${selected.name}. ${bookingState}`,confirmLabel:action,destructive:operationChanged && operationalStatus==='CLOSED'})) return;
-   }
-   setError(''); setBusy(true);
-   await apiRequest('/operations/facilities'+(selected?'/'+encodeURIComponent(selected.id):''),{method:selected?'PATCH':'POST',body:JSON.stringify(body)});
-   setSelected(undefined); data.refresh();
-  } catch(err){setError(err instanceof Error?err.message:'Chưa lưu được cơ sở.');}
-  finally{saving.current=false;setBusy(false);}
- }
- return <section className="operations-page"><header><h1>Cơ sở</h1><button onClick={()=>{setSelected(null);setError('');}}>Thêm cơ sở</button></header>
- {data.loading?<p role="status">Đang tải…</p>:null}{data.error?<p role="alert">{data.error}<button onClick={data.refresh}>Thử lại</button></p>:null}
- <input aria-label="Tìm cơ sở" placeholder="Tìm tên hoặc mã cơ sở" value={search} onChange={e=>setSearch(e.target.value)}/>
- <select aria-label="Trạng thái cơ sở" value={filter} onChange={e=>setFilter(e.target.value)}><option value="">Tất cả trạng thái</option><option value="OPEN">Nhận đặt kho</option><option value="SUSPENDED">Tạm dừng nhận đặt kho</option><option value="CLOSED">Đóng cửa</option></select>
- <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Cơ sở</th><th>Địa chỉ</th><th>Hoạt động</th><th>Nhận đặt kho</th><th>Thao tác</th></tr></thead><tbody>{items.map(f=><tr key={f.id}><td><strong>{f.name}</strong><small>{f.code}</small></td><td>{f.address}</td><td>{f.operationalStatus==='CLOSED'?'Đóng cửa':'Mở cửa'}</td><td>{f.bookingEnabled?'Đang nhận':'Tạm dừng'}</td><td><button onClick={()=>{setSelected(f);setError('');}}>Chỉnh sửa</button> <Link to={`/operations/reports?facilityId=${encodeURIComponent(f.id)}`}>Hiệu quả cơ sở</Link></td></tr>)}</tbody></table></div>{!data.loading&&!items.length&&<p>Không có cơ sở phù hợp.</p>}{pagination}
- {selected!==undefined?<form key={selected?.id??'new'} onSubmit={save}><h2>{selected?'Chỉnh cơ sở':'Thêm cơ sở'}</h2>
- {[['code','Mã cơ sở'],['name','Tên cơ sở'],['address','Địa chỉ'],['officeHours','Giờ làm việc'],['accessHours','Giờ khách ra vào']].map(([key,label])=><label key={key}>{label}<input name={key} required maxLength={key==='address'?500:120} readOnly={key==='code'&&Boolean(selected)} defaultValue={String(selected?.[key as keyof Facility]??'')}/></label>)}
- <label>Hoạt động<select name="operationalStatus" defaultValue={selected?.operationalStatus??'OPEN'}><option value="OPEN">Mở cửa</option><option value="CLOSED">Đóng cửa</option></select></label>
- <label><input type="checkbox" name="bookingEnabled" disabled={!selected} defaultChecked={selected?.bookingEnabled??false}/>Nhận đặt kho mới</label>
- <p>Tạm dừng nhận đặt kho không làm dừng các hợp đồng đang sử dụng.</p>{error?<p role="alert">{error}</p>:null}<button disabled={busy}>{busy?'Đang lưu…':'Lưu cơ sở'}</button><button type="button" disabled={busy} onClick={()=>setSelected(undefined)}>Hủy</button></form>:null}</section>;
-}
+type Facility={id:string;code:string;name:string;address:string;officeHours:string;accessHours:string;bookingEnabled:boolean;operationalStatus:string;updatedAt:string;closureMode?:string;closureReason?:string;closureExpectedAt?:string;closureProgress?:{activeContracts:number;openTasks:number;openTransfers:number;pendingBookings:number}};
 type Policy={key:string;title:string;description:string;value:number;min:number;max:number;unit:string;updatedAt:string|null;effectiveVersion:number;history:{id:string;version:number;value:number;effectiveFrom:string;effectiveTo:string|null;status:string;author:string|null}[]};
 export function OperationsPolicies(){
  const requestConfirmation = useConfirmation();

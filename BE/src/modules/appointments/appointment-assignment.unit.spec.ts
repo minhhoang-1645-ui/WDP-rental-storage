@@ -12,14 +12,16 @@ const query = { page: 1, limit: 20 };
 function setup() {
   const now = new Date();
   const make = (id: string, assignedStaffUserId: string | null, status = 'CONFIRMED', completedByUserId: string | null = null) => ({
-    id, appointmentCode: id, status, assignedStaffUserId, completedByUserId,
+    id, reservationId: 'reservation', appointmentCode: id, status, assignedStaffUserId, completedByUserId,
     assignedStaff: assignedStaffUserId ? { id: assignedStaffUserId, fullName: assignedStaffUserId, accountStatus: 'ACTIVE' } : null,
     scheduledAt: now, createdAt: now, updatedAt: now,
     reservation: { id: 'reservation', contracts: [], customer: { id: 'customer', fullName: 'Khách thuê' } },
   });
   const records = [make('unassigned', null), make('mine', staff.id), make('other', other.id), make('legacy-mine', null, 'COMPLETED', staff.id), make('legacy-other', null, 'COMPLETED', other.id)];
   const matches = (row: any, where: any): boolean => Object.entries(where).every(([key, value]: [string, any]) =>
-    key === 'AND' ? value.every((clause: any) => matches(row, clause)) : key === 'OR' ? value.some((clause: any) => matches(row, clause)) : row[key] === value);
+    key === 'AND' ? value.every((clause: any) => matches(row, clause)) : key === 'OR' ? value.some((clause: any) => matches(row, clause))
+      : key === 'reservation' && value?.facility?.facilityAccess?.some ? [staff.id,other.id,manager.id].includes(value.facility.facilityAccess.some.userId)
+      : row[key] === value);
   const model = {
     findFirst: vi.fn(async ({ where }) => records.find(row => matches(row, where)) ?? null),
     findUnique: vi.fn(async ({ where }) => records.find(row => row.id === where.id) ?? null),
@@ -31,7 +33,11 @@ function setup() {
       return Object.assign(row, data, { assignedStaff: { id: data.assignedStaffUserId, fullName: data.assignedStaffUserId, accountStatus: 'ACTIVE' } });
     }),
   };
-  const tx = { handoverAppointment: model, $queryRaw: vi.fn(), user: { findUnique: vi.fn(async ({ where }) => ({ id: where.id, role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' })) } };
+  const tx = { handoverAppointment: model, $queryRaw: vi.fn().mockResolvedValue([]), $queryRawUnsafe: vi.fn(),
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{facilityId:'facility'}]), findFirst: vi.fn().mockResolvedValue({id:'grant'}) },
+    auditEvent: { create: vi.fn() },
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id, role: where.id===manager.id ? 'FACILITY_MANAGER' : 'FACILITY_STAFF', accountStatus: 'ACTIVE' })), findUnique: vi.fn(async ({ where }) => ({ id: where.id, role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' })) } };
   const db = { ...tx, $transaction: vi.fn(operation => operation(tx)) };
   return { service: new AppointmentsService(db as never, {} as never, {} as never), records, model, tx };
 }
@@ -100,10 +106,10 @@ describe('Handover staff assignment', () => {
     const { service, model, tx } = setup();
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id, expectedAssignedStaffUserId: null }, staff)).rejects.toThrow('quản lý');
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id }, manager)).rejects.toThrow('phiên bản');
-    tx.user.findUnique.mockResolvedValueOnce({ id: staff.id, role: 'FACILITY_STAFF', accountStatus: 'DISABLED' });
+    tx.user.findFirst.mockResolvedValueOnce(null as never);
     await expect(service.assignAppointment('unassigned', { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('hoạt động');
-    tx.user.findUnique.mockResolvedValueOnce({ id: manager.id, role: 'FACILITY_MANAGER', accountStatus: 'ACTIVE' });
-    await expect(service.assignAppointment('unassigned', { staffUserId: manager.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('FACILITY_STAFF');
+    tx.user.findFirst.mockResolvedValueOnce(null as never);
+    await expect(service.assignAppointment('unassigned', { staffUserId: manager.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('nhân viên đang hoạt động');
     expect(model.update).not.toHaveBeenCalled();
   });
 
@@ -124,8 +130,8 @@ describe('Handover staff assignment', () => {
     records.push({ ...records[0], id: 'cancelled', status: 'CANCELLED' });
     for (const id of ['legacy-mine', 'cancelled']) await expect(service.assignAppointment(id, { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager)).rejects.toThrow('Chỉ phân công');
     for (const id of ['unassigned', 'other', 'legacy-other']) {
-      await expect(service.confirmAppointment(id, staff)).rejects.toThrow('phân công');
-      await expect(service.completeHandover(id, {}, staff)).rejects.toThrow('phân công');
+      await expect(service.confirmAppointment(id, staff)).rejects.toThrow('nhân viên được giao');
+      await expect(service.completeHandover(id, {}, staff)).rejects.toThrow('nhân viên được giao');
     }
     expect((await service.confirmAppointment('mine', staff)).id).toBe('mine');
     expect((await service.completeHandover('legacy-mine', {}, staff)).id).toBe('legacy-mine');

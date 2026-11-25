@@ -2,6 +2,7 @@ import {
   eligibleServiceFacility,
   offeringView,
   publicOfferingScope,
+  serviceFacilityScope,
   type OfferingRecord,
   MAX_OFFERING_QUANTITY,
 } from './service-offerings.js';
@@ -95,7 +96,8 @@ export class AdditionalServiceInventoryService {
     const lines = await this.prisma.reservationService.findMany({
       where: {
         additionalServiceId: { in: serviceIds },
-        reservation: { status: 'CONFIRMED', facilityId: { in: facilityIds } },
+        reservation: { status: 'CONFIRMED' },
+        AND: [{ OR: facilityIds.map(serviceFacilityScope) }],
         OR: [
           { serviceKindSnapshot: 'PURCHASE', fulfillmentStatus: 'FULFILLED',
             reservation: { invoices: { some: { type: 'INITIAL', status: 'PAID' } } } },
@@ -104,12 +106,12 @@ export class AdditionalServiceInventoryService {
         ],
       },
       select: {
-        additionalServiceId: true, quantity: true, serviceKindSnapshot: true,
+        additionalServiceId: true, quantity: true, serviceKindSnapshot: true, serviceFacilityId: true,
         reservation: { select: { facilityId: true, quoteSnapshot: true } },
       },
     });
     for (const line of lines) {
-      const key = line.reservation.facilityId + ':' + line.additionalServiceId;
+      const key = (line.serviceFacilityId ?? line.reservation.facilityId) + ':' + line.additionalServiceId;
       const total = totals.get(key) ?? { soldByUnit: [], completedRentalCount: 0 };
       if (line.serviceKindSnapshot === 'RENTAL') total.completedRentalCount++;
       else {
@@ -349,8 +351,9 @@ export class AdditionalServiceInventoryService {
       orderBy: { additionalServiceId: 'asc' },
     });
     for (const service of services) {
+      const facilityId = service.serviceFacilityId ?? reservation.facilityId;
       await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM "FacilityServiceOffering" WHERE "additionalServiceId"=${service.additionalServiceId} AND "facilityId"=${reservation.facilityId} FOR UPDATE`,
+        Prisma.sql`SELECT id FROM "FacilityServiceOffering" WHERE "additionalServiceId"=${service.additionalServiceId} AND "facilityId"=${facilityId} FOR UPDATE`,
       );
       const claimed = await tx.reservationService.updateMany({
         where: { id: service.id, fulfillmentStatus: 'RESERVED' },
@@ -361,7 +364,7 @@ export class AdditionalServiceInventoryService {
         where: {
           additionalServiceId_facilityId: {
             additionalServiceId: service.additionalServiceId,
-            facilityId: reservation.facilityId,
+            facilityId,
           },
         },
       });
@@ -406,7 +409,7 @@ export class AdditionalServiceInventoryService {
       where: {
         additionalServiceId: service.id,
         fulfillmentStatus: 'RESERVED',
-        reservation: { status: 'CONFIRMED', facilityId: service.facilityId },
+        reservation: { status: 'CONFIRMED' }, ...serviceFacilityScope(service.facilityId),
       },
       _sum: { quantity: true },
     });
@@ -468,7 +471,8 @@ export class AdditionalServiceInventoryService {
       where: {
         additionalServiceId: serviceId,
         serviceKindSnapshot: 'RENTAL',
-        reservation: { status: 'CONFIRMED', facilityId },
+        reservation: { status: 'CONFIRMED' }, ...serviceFacilityScope(facilityId),
+        AND: [{ OR: [{ fulfillmentStatus: null }, { fulfillmentStatus: { not: 'RELEASED' } }] }],
         serviceStartDate: end ? { lt: end } : { not: null },
         serviceEndDate: { gt: start },
       },

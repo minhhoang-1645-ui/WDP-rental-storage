@@ -53,6 +53,9 @@ export function offeringQuantity(offer: OfferingRecord) {
     ? offer.stockOnHand
     : offer.rentalCapacity;
 }
+export function serviceFacilityScope(facilityId: string): Prisma.ReservationServiceWhereInput {
+  return { OR: [{ serviceFacilityId: facilityId }, { serviceFacilityId: null, reservation: { facilityId } }] };
+}
 
 export async function committedOfferingQuantities(
   db: Prisma.TransactionClient,
@@ -63,10 +66,8 @@ export async function committedOfferingQuantities(
   const scope = offers.flatMap<Prisma.ReservationServiceWhereInput>((offer) => {
     const base = {
       additionalServiceId: offer.additionalServiceId,
-      reservation: {
-        status: 'CONFIRMED' as const,
-        facilityId: offer.facilityId,
-      },
+      reservation: { status: 'CONFIRMED' as const },
+      ...serviceFacilityScope(offer.facilityId),
     };
     if (offer.additionalService.kind === 'PURCHASE')
       return [{ ...base, fulfillmentStatus: 'RESERVED' }];
@@ -74,6 +75,7 @@ export async function committedOfferingQuantities(
       ? [
           {
             ...base,
+            AND: [{ OR: [{ fulfillmentStatus: null }, { fulfillmentStatus: { not: 'RELEASED' } }] }],
             serviceStartDate: { lte: today },
             serviceEndDate: { gt: today },
           },
@@ -87,13 +89,14 @@ export async function committedOfferingQuantities(
     select: {
       additionalServiceId: true,
       quantity: true,
+      serviceFacilityId: true,
       reservation: { select: { facilityId: true } },
     },
   });
   for (const row of rows) {
     const key = offeringKey(
       row.additionalServiceId,
-      row.reservation.facilityId,
+      row.serviceFacilityId ?? row.reservation.facilityId,
     );
     totals.set(key, (totals.get(key) ?? 0) + row.quantity);
   }

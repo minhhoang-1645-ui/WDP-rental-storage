@@ -11,6 +11,8 @@ import { NotificationsController } from './notifications.controller.js';
 import { NotificationsService } from './notifications.service.js';
 import { NotificationSources } from './notification-sources.js';
 import { buildNotices, type NotificationData } from './notification-content.js';
+import { customerMobileNotices } from './notification-mobile-content.js';
+import { AuditService } from '../audit/audit.service.js';
 
 const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: id, email: id + '@example.test', phone: '' });
 const staff = actor('staff-a', 'FACILITY_STAFF');
@@ -22,6 +24,22 @@ const accounts = [staff, customer, other, manager, admin];
 const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
 const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
+
+it('queries closure notices by the customer recipient and opens current rentals on mobile', async () => {
+  const event = { id: 'closure', createdAt: at, metadata: { status: 'CLOSING', facilityName: 'Cơ sở A', closureReason: 'Lý do nội bộ' } };
+  const count = vi.fn().mockResolvedValue(1);
+  const findMany = vi.fn().mockResolvedValue([event]);
+  const audit = new AuditService({ auditEvent: { count, findMany } } as unknown as PrismaService);
+  await audit.facilityLifecycleNotices(customer, { page: 1, limit: 10 });
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+    metadata: { path: ['customerRecipientIds'], array_contains: [customer.id] },
+  }) }));
+  const data = { 'facility-lifecycle': [event] };
+  const notices = customerMobileNotices(buildNotices(customer, data), data);
+  expect(notices[0]).toMatchObject({ target: '/customer/rentals', important: true });
+  expect(notices[0]?.summary).toContain('đến hết hạn hợp đồng');
+  expect(notices[0]?.summary).not.toContain(event.metadata.closureReason);
+});
 
 it('does not surface bookings to Staff or reset a handover receipt on per-unit progress', () => {
   const baseline = buildNotices(staff, { appointments: [work] });
@@ -177,7 +195,7 @@ it('walks every upstream page and uses the authenticated actor in the Staff look
     items: input.page === 1 ? [{ id: 'first' }] : [{ id: 'second' }], total: 101, limit: 100,
   }));
   const sources = new NotificationSources(
-    { listOperationalAppointments: list } as never, {} as never, {} as never, {} as never, {} as never,
+    { listOperationalAppointments: list } as never, { relocationNotices: vi.fn().mockResolvedValue(page) } as never, {} as never, {} as never, {} as never,
     { list: vi.fn().mockResolvedValue(page) } as never, {} as never,
     { listStaff: vi.fn().mockResolvedValue(page) } as never, {} as never,
     { listStaffReturns: vi.fn().mockResolvedValue(page) } as never,

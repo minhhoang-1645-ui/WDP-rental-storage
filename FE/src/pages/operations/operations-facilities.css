@@ -1,0 +1,187 @@
+.bom-facilities {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.bom-facilities .manager-page-header,
+.bom-facilities .manager-section,
+.bom-facilities .portal-toolbar {
+  margin: 0;
+  min-width: 0;
+}
+
+.bom-facilities .record-page-title {
+  flex-wrap: wrap;
+}
+
+.bom-facility-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.bom-facilities .bom-facility-toolbar .field-label {
+  flex: 0 1 18rem;
+  min-width: 0;
+}
+
+.bom-facility-toolbar .portal-search,
+.bom-facility-toolbar input,
+.bom-facility-toolbar select {
+  width: 100%;
+  min-width: 0;
+}
+
+.bom-facility-table {
+  overflow: auto;
+}
+
+.bom-facility-table table {
+  min-width: 690px;
+}
+
+.bom-facility-name,
+.bom-facility-back {
+  color: var(--workspace-primary);
+  font-weight: 650;
+}
+
+.bom-facility-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+}
+
+.manager-shell.internal-web.workspace-themed .bom-facilities .manager-status.is-facility-open {
+  color: var(--workspace-success);
+  background: var(--workspace-success-bg);
+}
+
+.manager-shell.internal-web.workspace-themed .bom-facilities .manager-status.is-facility-closing {
+  color: var(--workspace-warning);
+  background: var(--workspace-warning-bg);
+}
+
+.manager-shell.internal-web.workspace-themed .bom-facilities .manager-status.is-facility-closed {
+  color: var(--workspace-muted);
+  background: var(--workspace-table);
+  border-color: var(--workspace-border);
+}
+
+.bom-facility-panels,
+.bom-facility-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.bom-facility-span {
+  grid-column: 1 / -1;
+}
+
+.bom-facility-switch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.bom-facility-switch p,
+.bom-facility-options small {
+  color: var(--workspace-muted);
+  font-size: .875rem;
+  margin: 3px 0 0;
+}
+
+.bom-facility-switch button:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.bom-facility-actions {
+  margin-top: 14px;
+}
+
+.workspace-themed .portal-dialog.bom-facility-dialog {
+  width: min(700px, calc(100vw - 24px));
+}
+
+.bom-facility-form {
+  display: grid;
+  gap: 16px;
+}
+
+.bom-facility-form :is(input:not([type='radio']), textarea) {
+  width: 100%;
+  min-width: 0;
+}
+
+.bom-facility-form [aria-invalid='true'] {
+  border-color: var(--workspace-error);
+}
+
+.bom-facility-field-error {
+  color: var(--workspace-error);
+}
+
+.bom-facility-options {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bom-facility-options legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 650;
+}
+
+.bom-facility-options label {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.bom-facility-options label:has(input:checked) {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-table);
+}
+
+.bom-facility-options label:has(input:disabled) {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.bom-facility-options small {
+  display: block;
+}
+
+.bom-facility-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--workspace-table);
+  color: var(--workspace-text);
+}
+
+@media (max-width: 850px) {
+  .bom-facility-panels { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .bom-facility-fields { grid-template-columns: minmax(0, 1fr); }
+  .bom-facilities .bom-facility-toolbar .field-label { flex: 1 1 100%; }
+  .bom-facility-actions { justify-content: flex-start; }
+}

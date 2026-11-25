@@ -1,4 +1,4 @@
-import { staffContractScope, reservationScope } from '../facility-access/task-access.js';
+import { staffContractScope, currentContractScope } from '../facility-access/task-access.js';
 import { Controller, Get, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -19,7 +19,7 @@ export class OverstayController {
     const staffId = request.user!.role === 'FACILITY_STAFF' ? request.user!.id : undefined;
     const activeReturn: Prisma.ReturnRequestWhereInput = { assignedStaffUserId: staffId, physicallyReturnedAt: null, status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] } };
     const where: Prisma.RentalContractWhereInput = { status: 'ACTIVE', endDate: { lte: today }, reservationUnit: { releasedAt: null } };
-    if (staffId) where.AND = [staffContractScope(request.user!)]; else where.reservation = reservationScope(request.user!);
+    where.AND = [staffId ? staffContractScope(request.user!) : currentContractScope(request.user!)];
     const [total, rows] = await Promise.all([
       this.prisma.rentalContract.count({ where }),
       this.prisma.rentalContract.findMany({ where, orderBy: [{ endDate: 'asc' }, { id: 'asc' }], skip: (page - 1) * limit, take: limit, include: {

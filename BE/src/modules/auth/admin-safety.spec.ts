@@ -6,21 +6,24 @@ describe('administrator account status changes', () => {
   it('sorts matching accounts before slicing pages and rejects unsupported sort values', async () => {
     const users = new MemoryUserRepository();
     const controller = new AdminUsersController(users, {} as never);
+    const admin = await users.create({fullName:'Admin',role:'SYSTEM_ADMINISTRATOR',email:'admin@example.test',phone:'',passwordHash:'test'});
+    const req = {user:admin} as never;
     for (const [fullName, role] of [['Zoe', 'FACILITY_STAFF'], ['An', 'FACILITY_STAFF'], ['Be', 'FACILITY_STAFF'], ['Anh', 'STORAGE_CUSTOMER']] as const) {
       await users.create({ fullName, role, email: fullName + '@example.test', phone: '', passwordHash: 'test' });
     }
-    const result = await controller.list('2', '1', undefined, 'FACILITY_STAFF', undefined, 'name-asc');
+    const result = await controller.list('2', '1', undefined, 'FACILITY_STAFF', undefined, 'name-asc',req);
     expect(result.total).toBe(3);
     expect(result.items.map(user => user.fullName)).toEqual(['Be']);
-    await expect(controller.list('1', '1', undefined, undefined, undefined, 'bad')).rejects.toThrow('sort không hợp lệ');
+    await expect(controller.list('1', '1', undefined, undefined, undefined, 'bad',req)).rejects.toThrow('sort không hợp lệ');
   });
   it('returns the existing account update time without exposing authentication data', async () => {
     const row = { id: 'old-user', fullName: 'Nhân viên', email: 'staff@example.test', phone: '0901234567', role: 'FACILITY_STAFF', accountStatus: 'DISABLED', passwordHash: 'must-not-leak', createdAt: new Date('2020-01-01'), updatedAt: new Date('2030-01-01') };
-    const users = { list: async () => [row], count: async () => 1, findById: async () => row };
+    const users = { list: async () => [row], count: async () => 1, findById: async () => row,authorizeAdministrator:async(id:string)=>{if(id!=='admin')throw new Error('Unauthorized')} };
     const controller = new AdminUsersController(users as never, {} as never);
-    const list = await controller.list();
+    const req={user:{id:'admin',role:'SYSTEM_ADMINISTRATOR'}} as never;
+    const list = await controller.list(undefined,undefined,undefined,undefined,undefined,undefined,req);
     expect(list.items[0].updatedAt).toBe('2030-01-01T00:00:00.000Z');
-    expect(await controller.get(row.id)).toEqual(list.items[0]);
+    expect(await controller.get(row.id,req)).toEqual(list.items[0]);
     expect(list.items[0]).not.toHaveProperty('passwordHash');
   });
   it('rejects self-disable and a non-administrator actor', async () => {

@@ -38,7 +38,7 @@ async function assignmentCounts(db: Db, userId: string, closed = false) {
     db.returnRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
     db.maintenanceRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
     db.supportRequest.count({ where: { assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
-    db.transferRequest.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
+    db.transferRequest.count({ where: { OR:[{assignedStaffUserId},{receivingStaffId:userId}], status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
     db.damageClaim.count({ where: { assignedStaffId: userId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
   ]);
   return counts.reduce((total, count) => total + count, 0);
@@ -209,17 +209,31 @@ export class FacilityAccessService {
   }
 }
 
-export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string};
+export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string;returnRequestId?:string};
+export async function taskFacilityId(db: Db, ref: AssignmentReference) {
+  let id: string | undefined;
+  if (ref.returnRequestId) {
+    const record = await db.returnRequest.findUnique({ where: { id: ref.returnRequestId }, select: {
+      reservation: { select: { facilityId: true } },
+      inspections: { select: { storageUnit: { select: { storageType: { select: { facilityId: true } } } } } },
+    } });
+    if (record) {
+      const ids = [...new Set(record.inspections.map(item => item.storageUnit.storageType.facilityId))];
+      if (ids.length > 1) throw new ConflictException('Cần xử lý hồ sơ trả kho riêng theo từng cơ sở.');
+      id = ids[0] ?? record.reservation.facilityId;
+    }
+  } else if (ref.storageUnitId) id = (await db.storageUnit.findUnique({ where: { id: ref.storageUnitId }, select: { storageType: { select: { facilityId: true } } } }))?.storageType.facilityId;
+  else if (ref.rentalContractId) id = (await db.rentalContract.findUnique({ where: { id: ref.rentalContractId }, select: { reservationUnit: { select: { storageUnit: { select: { storageType: { select: { facilityId: true } } } } } } } }))?.reservationUnit.storageUnit.storageType.facilityId;
+  else if (ref.reservationId) id = (await db.reservation.findUnique({ where: { id: ref.reservationId }, select: { facilityId: true } }))?.facilityId;
+  if (!id) throw new NotFoundException('Không tìm thấy cơ sở của nhiệm vụ.');
+  return id;
+}
 export async function assertAssignmentAccess(tx:Db,actor:PublicUser,staffId:string,reference:AssignmentReference){
  if(actor.role!=='FACILITY_MANAGER')throw new ForbiddenException('Chỉ quản lý được phân công.');
  await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',actor.id,staffId);
  const staff=await tx.user.findFirst({where:{id:staffId,role:'FACILITY_STAFF',accountStatus:'ACTIVE'},select:{id:true,role:true,accountStatus:true}});
  if(!staff)throw new BadRequestException('Chỉ giao việc cho nhân viên đang hoạt động.');
- let id:string|undefined;
- if(reference.reservationId)id=(await tx.reservation.findUnique({where:{id:reference.reservationId},select:{facilityId:true}}))?.facilityId;
- else if(reference.rentalContractId)id=(await tx.rentalContract.findUnique({where:{id:reference.rentalContractId},select:{reservation:{select:{facilityId:true}}}}))?.reservation.facilityId;
- else if(reference.storageUnitId)id=(await tx.storageUnit.findUnique({where:{id:reference.storageUnitId},select:{storageType:{select:{facilityId:true}}}}))?.storageType.facilityId;
- if(!id)throw new BadRequestException('Không xác định được cơ sở của công việc.');
+ const id=await taskFacilityId(tx,reference);
  await assertFacility(tx,actor,id);
  if(!await tx.facilityAccess.findFirst({where:{userId:staffId,facilityId:id,revokedAt:null},select:{id:true}}))throw new ForbiddenException('Nhân viên chưa được cấp quyền tại cơ sở của công việc.');
  return staff;

@@ -8,7 +8,7 @@ function setup() {
   const type = { id: 'large', code: 'LG', name: 'Kho lớn', widthCm: 300, lengthCm: 400, heightCm: 240 };
   const unit = (id: string, status = 'AVAILABLE', reservationUnits: object[] = []) => ({ id, unitNumber: id, floor: 'Tầng 1', zone: 'F', row: 1, position: 2, status, storageType: type, reservationUnits });
   const units = [unit('free'), unit('future', 'AVAILABLE', [{ plannedStartDate: new Date('2099-01-01'), plannedEndDate: new Date('2099-02-01') }]), unit('occupied', 'OCCUPIED'), unit('maintenance', 'MAINTENANCE'), unit('held', 'RESERVED')];
-  const prisma = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'manager'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])},reservation:{findUnique:vi.fn().mockResolvedValue({facilityId:'A'})}, transferRequest: { findFirst: vi.fn().mockResolvedValue(transfer) }, storageUnit: { count: vi.fn().mockResolvedValue(5), findMany: vi.fn().mockResolvedValue(units) } };
+  const prisma = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'manager'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])},reservation:{findUnique:vi.fn().mockResolvedValue({facilityId:'A'})}, transferRequest: { findFirst: vi.fn().mockResolvedValue(transfer) }, storageUnit: { findUnique: vi.fn().mockResolvedValue({storageType:{facilityId:'A'}}), count: vi.fn().mockResolvedValue(5), findMany: vi.fn().mockResolvedValue(units) } };
   return { prisma, transfer, contract, service: new TransfersService(prisma as unknown as PrismaService) };
 }
 
@@ -43,9 +43,9 @@ describe('Transfer destination availability, without database writes', () => {
   it('blocks stale source allocations both in selection and at final approval, before holding any destination', async () => {
     const app = setup(); app.contract.reservationUnitId = 'already-moved';
     expect((await app.service.destinations('transfer', {},{id:'manager',role:'FACILITY_MANAGER'} as never)).items.every(item => !item.eligible)).toBe(true);
-    const tx = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'manager'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])},reservation:{findUnique:vi.fn().mockResolvedValue({facilityId:'A'})}, $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue({ id: 'transfer' }), findUniqueOrThrow: vi.fn().mockResolvedValue(app.transfer) }, storageUnit: { findUnique: vi.fn() } };
+    const tx = { $queryRawUnsafe:vi.fn(),user:{findFirst:vi.fn().mockResolvedValue({id:'manager'})},facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'A'}])},reservation:{findUnique:vi.fn().mockResolvedValue({facilityId:'A'})}, $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue({ id: 'transfer' }), findUniqueOrThrow: vi.fn().mockResolvedValue(app.transfer) }, storageUnit: { findUnique: vi.fn().mockResolvedValue({storageType:{facilityId:'A'}}) } };
     const service = new TransfersService({ $transaction: (operation: (value: unknown) => unknown) => operation(tx) } as never);
     await expect(service.approve('transfer', { toStorageUnitId: 'free', staffUserId: 'staff' }, { role: 'FACILITY_MANAGER' } as never)).rejects.toThrow('kho nguồn đã thay đổi');
-    expect(tx.storageUnit.findUnique).not.toHaveBeenCalled();
+    expect(tx.storageUnit.findUnique).toHaveBeenCalledExactlyOnceWith({ where: { id: 'source' }, select: { storageType: { select: { facilityId: true } } } });
   });
 });

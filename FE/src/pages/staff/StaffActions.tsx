@@ -244,7 +244,7 @@ export function StaffActions({
                     event.preventDefault();
                     const checks = new FormData(event.currentTarget);
                     if (canFinalize && checks.get('unitsEmpty') === 'on' && checks.get('accessRevoked') === 'on') {
-                      void run('/finalize', 'POST', { unitsEmpty: true, accessRevoked: true });
+                      void run('/finalize', 'POST', { unitsEmpty: true, accessRevoked: true, servicesReturned: checks.get('servicesReturned') === 'on' });
                     }
                   }}
                 >
@@ -264,6 +264,7 @@ export function StaffActions({
                   </label>
                   <label className="portal-checkbox"><input name="accessRevoked" type="checkbox" required disabled={!canFinalize} />
                     Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập kho</label>
+                  {row.servicesConfirmationRequired === true && <label className="portal-checkbox"><input name="servicesReturned" type="checkbox" required disabled={!canFinalize} /> Đã thu hồi thiết bị thuê và đối chiếu sản phẩm chưa bàn giao</label>}
                   <button type="submit" className="button-primary" disabled={!canFinalize}
                     aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
                     Hoàn tất nhận kho trả

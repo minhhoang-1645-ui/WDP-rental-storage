@@ -51,7 +51,7 @@ async function structureBlockReason(tx: Prisma.TransactionClient, id: string) {
         { serviceKindSnapshot: 'PURCHASE', OR: [
           { reservation: { status: 'PENDING' } }, { fulfillmentStatus: null }, { fulfillmentStatus: 'RESERVED' },
         ] },
-        { serviceKindSnapshot: 'RENTAL', OR: [
+        { serviceKindSnapshot: 'RENTAL', AND: [{ OR: [{ fulfillmentStatus: null }, { fulfillmentStatus: { not: 'RELEASED' } }] }], OR: [
           { reservation: { status: 'PENDING' } }, { serviceEndDate: null }, { serviceEndDate: { gt: businessToday() } },
         ] },
       ],

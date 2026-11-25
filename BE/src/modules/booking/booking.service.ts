@@ -1,6 +1,6 @@
 import { availablePublicOfferings, pricedServices, offeringView } from '../additional-services/service-offerings.js';
 import { assertFacility } from '../facility-access/facility-access.service.js';
-import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { managerReservationScope } from '../facility-access/record-access.js';
 import { facilityScope, assertTaskFacility } from '../facility-access/task-access.js';
 import { assertAcceptingBookings } from '../facilities/facility-booking.js';
 import { assertMonthlyRange } from '../operations/operations.service.js';
@@ -121,7 +121,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async getUnitMap(input: Record<string, unknown>) {
     const { draft } = await this.validateDraft(input);
     return this.prisma.$transaction(async (tx) => {
-      if (input.facilityId !== undefined) await assertAcceptingBookings(tx, draft.productId, true);
+      await assertAcceptingBookings(tx, draft.productId, true);
       await this.expireUnpaidAutomaticReservations(tx, draft.productId);
       const endDateExclusive = this.getEndDateExclusive(draft);
       const start = this.date(draft.startDate);
@@ -172,7 +172,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           await this.expireUnpaidAutomaticReservations(tx, draft.productId);
           const product = await tx.storageType.findUnique({ where: { id: draft.productId } });
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
-    await assertAcceptingBookings(this.prisma, product.id);
+          await assertAcceptingBookings(tx, product.id, true);
           const availability = await this.checkAvailabilityForDraft(tx, draft, undefined, product);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
           if (expectedServiceQuoteVersion !== undefined &&

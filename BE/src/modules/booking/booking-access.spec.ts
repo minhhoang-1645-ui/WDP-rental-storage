@@ -18,7 +18,7 @@ describe('reservation customer access', () => {
     await expect(service.getManagerReservation('reservation', staff)).rejects.toThrow();
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [
       { OR: [{ id: 'reservation' }, { reservationCode: 'reservation' }] },
-      { appointments: { some: { assignedStaffUserId: staff.id, status: { in: ['REQUESTED', 'CONFIRMED'] } } } },
+      { appointments: { some: { assignedStaffUserId: staff.id, status: { in: ['REQUESTED', 'CONFIRMED'] } } }, facility: { facilityAccess: { some: { userId:staff.id,revokedAt:null,user:{role:'FACILITY_STAFF',accountStatus:'ACTIVE'} } } } },
     ] } }));
     await expect(service.updateManagerReservationStatus('reservation', { status: 'CONFIRMED' }, staff)).rejects.toBeInstanceOf(ForbiddenException);
     expect(findFirst).toHaveBeenCalledOnce();

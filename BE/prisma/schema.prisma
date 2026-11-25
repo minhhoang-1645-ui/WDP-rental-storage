@@ -460,12 +460,20 @@ model AuthSession {
 }
 
 model Facility {
+  serviceCommitments ReservationService[]
+  financialInvoices Invoice[]
   additionalServices AdditionalService[] // Legacy ownership only; new availability uses offerings.
   serviceOfferings FacilityServiceOffering[]
   businessRules BusinessRule[]
   facilityAccess FacilityAccess[]
   bookingEnabled Boolean @default(true)
   operationalStatus String @default("OPEN")
+  closurePlanId String?
+  closureMode String?
+  closureReason String?
+  closureStartedAt DateTime?
+  closureExpectedAt DateTime? @db.Date
+  closureStartedById String?
   officeHours String @default("")
   accessHours String @default("")
   id                   String                @id @default(cuid())
@@ -669,6 +677,9 @@ model Reservation {
 }
 
 model ReservationService {
+  serviceFacilityId String?
+  serviceFacility Facility? @relation(fields: [serviceFacilityId], references: [id], onDelete: Restrict)
+  @@index([serviceFacilityId, additionalServiceId])
   id                  String                              @id @default(cuid())
   reservationId       String
   reservation         Reservation                         @relation(fields: [reservationId], references: [id], onDelete: Restrict)
@@ -1028,6 +1039,9 @@ model MaintenanceRequest {
 }
 
 model Invoice {
+  facilityIdSnapshot String?
+  financialFacility Facility? @relation(fields: [facilityIdSnapshot], references: [id], onDelete: Restrict)
+  @@index([facilityIdSnapshot])
   voidReason String?
   voidedAt DateTime?
   pricingSnapshot Json?
@@ -1076,6 +1090,7 @@ model Invoice {
 }
 
 model SupportRequest {
+  closurePlanId String?
   earlyReturnFinancialReview Json?
   transferRequestedStartAt DateTime?
   transferRequestedEndAt   DateTime?
@@ -1120,9 +1135,20 @@ model SupportRequest {
   @@index([assignedStaffUserId, status])
   @@index([reservationId, createdAt])
   @@index([storageUnitId, status])
+  @@index([closurePlanId, rentalContractId])
 }
 
 model TransferRequest {
+  serviceHandling Json?
+  closurePlanId String?
+  receivingStaffId String?
+  consentEvidence Json?
+  sourceHandover Json?
+  destinationHandover Json?
+  relocationException String?
+  safetyEvidence Json?
+  @@index([closurePlanId, status])
+  @@index([receivingStaffId, status])
   rejectionReason String?
   handoverReport Json?
   commercialSnapshot Json?

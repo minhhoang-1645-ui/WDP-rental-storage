@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertTaskFacility, reservationScope, type taskFacilityId } from './task-access.js';
+import { assertFacility } from './facility-access.service.js';
 type Reference = Parameters<typeof taskFacilityId>[1] & { invoiceId?: string; returnRequestId?: string };
 export function managerReservationScope(actor: PublicUser): Prisma.ReservationWhereInput {
  if(actor.role!=='FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý cơ sở được thực hiện chức năng này.');
@@ -11,12 +12,13 @@ export async function assertManagerRecordAccess(db:Prisma.TransactionClient,acto
  managerReservationScope(actor);
  let ref:Parameters<typeof taskFacilityId>[1]=reference;
  if(reference.invoiceId) {
-  const record=await db.invoice.findUnique({where:{id:reference.invoiceId},select:{reservationId:true}});
+  const record=await db.invoice.findUnique({where:{id:reference.invoiceId},select:{reservationId:true,facilityIdSnapshot:true}});
   if(!record)throw new NotFoundException('Không tìm thấy hóa đơn.');
-  ref={reservationId:record.reservationId};
- } else if(reference.returnRequestId) {
-  const record=await db.returnRequest.findUnique({where:{id:reference.returnRequestId},select:{reservationId:true}});
-  if(!record)throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
+  if(record.facilityIdSnapshot) {
+    await db.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE',actor.id);
+    await assertFacility(db,actor,record.facilityIdSnapshot);
+    return;
+  }
   ref={reservationId:record.reservationId};
  }
  await assertTaskFacility(db,actor,ref);

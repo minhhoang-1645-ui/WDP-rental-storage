@@ -1,5 +1,5 @@
 import { recordAssignment } from '../facility-access/assignment-audit.js';
-import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
+import { assertTaskFacility, currentContractScope } from '../facility-access/task-access.js';
 import { customerPhotos } from '../../customer-photos.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
@@ -67,8 +67,8 @@ export class DamageClaimsService {
   }
   private scope(actor: PublicUser): Prisma.DamageClaimWhereInput {
     if (actor.role === 'STORAGE_CUSTOMER') return { customerId: actor.id };
-    if (actor.role === 'FACILITY_STAFF') return { assignedStaffId: actor.id,rentalContract:{reservation:reservationScope(actor)} };
-    if (actor.role === 'FACILITY_MANAGER') return {rentalContract:{reservation:reservationScope(actor)}};
+    if (actor.role === 'FACILITY_STAFF') return { assignedStaffId: actor.id,rentalContract:currentContractScope(actor) };
+    if (actor.role === 'FACILITY_MANAGER') return {rentalContract:currentContractScope(actor)};
     throw new ForbiddenException();
   }
 

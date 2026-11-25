@@ -51,9 +51,10 @@ export class NotificationSources {
     const { id, role } = actor;
     if (role === "BUSINESS_OPERATIONS_MANAGER") return {};
     if (role === 'SYSTEM_ADMINISTRATOR') return { users: q => this.audit.list({ page: String(q.page), limit: String(q.limit), category: 'ACCOUNT_NOTICES' },actor) };
-    const common: Record<string, Source> = { 'damage-claims': q => this.claims.list(actor, q) };
+    const common: Record<string, Source> = { 'damage-claims': q => this.claims.list(actor, q), 'closure-relocations': q => this.audit.relocationNotices(actor, q) };
     if (role === 'STORAGE_CUSTOMER') return {
       ...common,
+      'facility-lifecycle': q => this.audit.facilityLifecycleNotices(actor, q),
       reservations: () => this.booking.listReservations(id),
       'transfer-orders': () => this.transfers.listCustomer(actor),
       invoices: q => this.billing.listCustomerInvoices(id, q.page, q.limit),
@@ -76,6 +77,7 @@ export class NotificationSources {
     return {
       ...operational,
       'catalog-changes': q => this.audit.catalogNotices(actor, q),
+      'facility-lifecycle': q => this.audit.facilityLifecycleNotices(actor, q),
       returns: q => this.returns.listManagerReturns(q,actor),
       maintenance: q => this.maintenance.listManager(q,actor),
       'support-requests': q => this.support.listManager(q,actor),

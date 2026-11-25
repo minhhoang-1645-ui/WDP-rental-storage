@@ -59,6 +59,47 @@ export class AuditService {
     return { items, total, limit: query.limit };
   }
 
+  async facilityLifecycleNotices(actor: PublicUser, query: { page: number; limit: number }) {
+    const customer = actor.role === 'STORAGE_CUSTOMER';
+    if (!customer && actor.role !== 'FACILITY_MANAGER') return [];
+    const ids = customer ? [] : await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
+    if (!customer && !ids.length) return [];
+    const where: Prisma.AuditEventWhereInput = {
+      resource: 'facility', action: customer ? { in: ['FACILITY_LIFECYCLE','MANAGER_CLOSURE_NOTICE'] } : 'FACILITY_LIFECYCLE', outcome: 'SUCCESS',
+      ...(customer
+        ? { metadata: { path: ['customerRecipientIds'], array_contains: [actor.id] } }
+        : { resourceId: { in: ids }, metadata: { path: ['statusChanged'], equals: true } }),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({
+        where, select: { id: true, createdAt: true, metadata: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.limit, take: query.limit,
+      }),
+    ]);
+    return { total, items, limit: query.limit };
+  }
+
+  async relocationNotices(actor: PublicUser, query: { page: number; limit: number }) {
+    const customer = actor.role === 'STORAGE_CUSTOMER';
+    if (!customer && !['FACILITY_MANAGER', 'FACILITY_STAFF'].includes(actor.role)) return [];
+    const ids = customer ? [] : await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
+    if (!customer && !ids.length) return [];
+    const scope: Prisma.AuditEventWhereInput = customer
+      ? { metadata: { path: ['customerId'], equals: actor.id } }
+      : { AND: [
+        { OR: ids.flatMap(id => ['sourceFacilityId','destinationFacilityId'].map(field => ({ metadata: { path: [field], equals: id } }))) },
+        ...(actor.role === 'FACILITY_STAFF' ? [{ metadata: { path: ['staffRecipientIds'], array_contains: [actor.id] } }] : []),
+      ] };
+    const where: Prisma.AuditEventWhereInput = { resource: 'relocation', outcome: 'SUCCESS', ...scope };
+    const [total, items] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({ where, select: { id: true, action: true, createdAt: true, metadata: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (query.page - 1) * query.limit, take: query.limit }),
+    ]);
+    return { total, items, limit: query.limit };
+  }
+
   async record(input: AuditInput) {
     const email = clean(input.actor?.email ?? input.attemptedEmail, 254)?.toLowerCase();
     const data = {

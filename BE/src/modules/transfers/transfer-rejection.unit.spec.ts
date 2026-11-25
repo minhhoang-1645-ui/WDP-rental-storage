@@ -5,13 +5,14 @@ const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 describe('Transfer rejection reason', () => {
   it('requires a reason and shares it with the customer’s linked request', async () => {
-    const row = { id: 'transfer', status: 'REQUESTED', reservationId: 'reservation', supportRequestId: 'support' };
+    const row = { id: 'transfer', status: 'REQUESTED', reservationId: 'reservation', supportRequestId: 'support', fromStorageUnitId: 'source' };
     const update = vi.fn(async ({ data }) => Object.assign(row, data)), updateMany = vi.fn();
     const tx = {
     $queryRawUnsafe: vi.fn(),
     user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
     reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    storageUnit: { findUnique: vi.fn().mockResolvedValue({ storageType: { facilityId: 'facility' } }) },
     $queryRaw: vi.fn(), transferRequest: { findFirst: vi.fn().mockResolvedValue(row), update }, supportRequest: { updateMany } };
     const service = new TransfersService({ $transaction: (operation: any) => operation(tx) } as never);
     vi.spyOn(service as any, 'toTransfer').mockImplementation(value => value);

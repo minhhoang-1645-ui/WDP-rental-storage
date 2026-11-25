@@ -27,7 +27,7 @@ describe('Transfer attachment in the signed contract file', () => {
   });
   it('exports only a completed transfer belonging to the authenticated customer contract', async () => {
     const { service } = setup(), record = await service.getCustomerContract('owner', 'c1');
-    const contracts = { getCustomerContract: vi.fn().mockResolvedValue(record), getManagerContract: vi.fn().mockResolvedValue(record) };
+    const contracts = { getCustomerContract: vi.fn().mockResolvedValue(record), getManagerContract: vi.fn().mockResolvedValue(record), getStaffTransferDocument:vi.fn().mockResolvedValue(record) };
     const pdf = { transferRecord: vi.fn().mockResolvedValue(Buffer.from('%PDF-attachment')) };
     const response = { set: vi.fn(), send: vi.fn() }, request = { user: { id: 'owner', role: 'STORAGE_CUSTOMER' } };
     const customer = new CustomerDocumentsController(contracts as never, {} as never, {} as never, pdf as never, {} as never);
@@ -44,6 +44,7 @@ describe('Transfer attachment in the signed contract file', () => {
     await expect(staffDocuments.transfer({ user } as never, 'unrelated-contract', 't1', response as never)).rejects.toThrow('Không tìm thấy');
     await staffDocuments.transfer({ user } as never, 'c1', 't1', response as never);
     expect(transfers.getForStaff).toHaveBeenCalledWith('t1', user);
+    expect(contracts.getStaffTransferDocument).toHaveBeenCalledWith('c1','t1',user);
     contracts.getCustomerContract.mockRejectedValue(new Error('Không tìm thấy hợp đồng.'));
     await expect(customer.transfer({ user: { id: 'other' } } as never, 'c1', 't1', response as never)).rejects.toThrow();
     expect(pdf.transferRecord).toHaveBeenCalledTimes(3);

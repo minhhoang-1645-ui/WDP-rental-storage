@@ -30,13 +30,15 @@ it('permits only an admin on the user directory', () => {
 
 it('paginates users and strips password hashes', async () => {
   const repository = new MemoryUserRepository();
+  const admin = await repository.create({ email: 'admin@example.com', fullName:'Admin',phone:'',passwordHash:'local-test',role:'SYSTEM_ADMINISTRATOR' });
+  const req={user:admin} as never;
   await repository.create({ email: 'a@example.com', fullName: 'A', phone: '', passwordHash: 'secret', role: 'STORAGE_CUSTOMER' });
   await repository.create({ email: 'staff@example.com', fullName: 'Demo Staff', phone: '0900000001', passwordHash: 'secret', role: 'FACILITY_STAFF', accountStatus: 'DISABLED' });
   const controller = new AdminUsersController(repository, {} as never);
-  expect((await controller.list()).items[0]).not.toHaveProperty('passwordHash');
-  expect((await controller.list('3', '1')).items).toHaveLength(0);
-  expect((await controller.list('1', '20', 'staff@example.com', 'FACILITY_STAFF', 'DISABLED')).items).toEqual([
+  expect((await controller.list(undefined,undefined,undefined,undefined,undefined,undefined,req)).items[0]).not.toHaveProperty('passwordHash');
+  expect((await controller.list('4', '1',undefined,undefined,undefined,undefined,req)).items).toHaveLength(0);
+  expect((await controller.list('1', '20', 'staff@example.com', 'FACILITY_STAFF', 'DISABLED',undefined,req)).items).toEqual([
     expect.objectContaining({ email: 'staff@example.com', role: 'FACILITY_STAFF', accountStatus: 'DISABLED' }),
   ]);
-  await expect(controller.list('0')).rejects.toThrow();
+  await expect(controller.list('0',undefined,undefined,undefined,undefined,undefined,req)).rejects.toThrow();
 });

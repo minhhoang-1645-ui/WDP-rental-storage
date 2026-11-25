@@ -1,6 +1,6 @@
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
-import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
+import { assertTaskFacility, supportTaskScope, supportTaskReference } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 
 import { EARLY_RETURN_SUBJECT, earlyReturnApprovalNote } from '../returns/early-return-classification.js';
@@ -92,7 +92,7 @@ export class SupportService {
         }
         const created = await tx.supportRequest.create({ data: {
           supportCode: this.code(), customerUserId: actor.id, reservationId: reservation.id,
-          rentalContractId: transferContract?.id ?? contract?.id, storageUnitId: transferContract?.reservationUnit.storageUnitId ?? unit?.id ?? (early ? contract?.reservationUnit.storageUnitId : undefined), invoiceId: invoice?.id,
+          rentalContractId: transferContract?.id ?? contract?.id, storageUnitId: transferContract?.reservationUnit.storageUnitId ?? unit?.id ?? contract?.reservationUnit.storageUnitId, invoiceId: invoice?.id,
           category: parsed.category, priority: 'MEDIUM', status: 'OPEN' as const, subject: parsed.subject, description: parsed.description,
           idempotencyKey: parsed.idempotencyKey,
           ...(parsed.earlyReturn ? { earlyReturnFinancialReview: parsed.earlyReturn } : {}),
@@ -114,11 +114,11 @@ export class SupportService {
   }
 
   listCustomer(customerId: string, query: SupportListQuery) { return this.list({ customerUserId: customerId }, query, 'STORAGE_CUSTOMER'); }
-  listStaff(query: SupportListQuery, actor: PublicUser) { return this.list({ reservation:reservationScope(actor), assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, query, 'FACILITY_STAFF'); }
+  listStaff(query: SupportListQuery, actor: PublicUser) { return this.list({ ...supportTaskScope(actor), closurePlanId: null, assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, query, 'FACILITY_STAFF'); }
   listManager(query: SupportListQuery, actor:PublicUser, assignedStaffUserId?: string) {
     managerReservationScope(actor);
- return this.list({reservation:reservationScope(actor),...(assignedStaffUserId ? { assignedStaffUserId } : {})}, query, 'FACILITY_MANAGER'); }
-  listLegacyTransfers(query: SupportListQuery, actor:PublicUser) { return this.list({AND:[legacyTransferFilter,{reservation:reservationScope(actor)}]}, query, 'FACILITY_MANAGER'); }
+ return this.list({...supportTaskScope(actor),closurePlanId:null,...(assignedStaffUserId ? { assignedStaffUserId } : {})}, query, 'FACILITY_MANAGER'); }
+  listLegacyTransfers(query: SupportListQuery, actor:PublicUser) { return this.list({AND:[legacyTransferFilter,supportTaskScope(actor)]}, query, 'FACILITY_MANAGER'); }
 
   async getCustomer(customerId: string, id: string) {
     const record = await this.prisma.supportRequest.findFirst({ where: { customerUserId: customerId, OR: [{ id }, { supportCode: id }] }, include: this.include('STORAGE_CUSTOMER') });
@@ -126,19 +126,19 @@ export class SupportService {
     return this.toView(record, 'STORAGE_CUSTOMER');
   }
   async getStaff(id: string, actor: PublicUser) {
-    const record = await this.prisma.supportRequest.findFirst({ where: { reservation:reservationScope(actor), OR: [{ id }, { supportCode: id }], assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, include: this.include('FACILITY_STAFF') });
+    const record = await this.prisma.supportRequest.findFirst({ where: { AND: [supportTaskScope(actor), { OR: [{ id }, { supportCode: id }] }], assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, include: this.include('FACILITY_STAFF') });
     if (!record) throw new NotFoundException('Không tìm thấy Support Request.');
     return this.toView(record, 'FACILITY_STAFF');
   }
   async getManager(id: string, actor:PublicUser) {
     managerReservationScope(actor);
- const row=await this.find(id,this.prisma); await assertTaskFacility(this.prisma,actor,{reservationId:row.reservationId}); return this.toView(row,'FACILITY_MANAGER'); }
+ const row=await this.find(id,this.prisma); await assertTaskFacility(this.prisma,actor,supportTaskReference(row)); return this.toView(row,'FACILITY_MANAGER'); }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.id(input.staffUserId, 'staffUserId');
     return this.transition(id, key, 'ASSIGN', actor, 'FACILITY_MANAGER', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await assertAssignmentAccess(tx,actor,staffUserId,{reservationId:current.reservationId});
+      const staff = await assertAssignmentAccess(tx,actor,staffUserId,supportTaskReference(current));
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao công việc cho nhân viên đang hoạt động.');
       await recordAssignment(tx,actor,"support-requests",current.id,current.assignedStaffUserId,staff.id);
       return tx.supportRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, status: current.status === 'OPEN' ? 'ASSIGNED' : current.status, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey }, include: this.include() });
@@ -195,7 +195,8 @@ export class SupportService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SupportRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.supportRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy Support Request.');
-      await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
+      if (current.closurePlanId) throw new ForbiddenException('Xử lý nhiệm vụ này tại hồ sơ hỗ trợ di dời.');
+      await assertTaskFacility(tx,actor,supportTaskReference(current));
       if (current.subject === EARLY_RETURN_SUBJECT) throw new ForbiddenException('Đề nghị trả trước hạn do quản lý xem xét tại mục Đề nghị trả sớm; không xử lý như hỗ trợ thông thường.');
       if (isTransferSubject(current.subject)) throw new ForbiddenException('Yêu cầu này được xử lý trong hồ sơ chuyển kho.');
       if (role === 'FACILITY_STAFF') this.assertAssigned(current, actor);
@@ -207,7 +208,9 @@ export class SupportService {
   }
 
   private async list(base: Prisma.SupportRequestWhereInput, query: SupportListQuery, mode: ViewMode) {
-    const where: Prisma.SupportRequestWhereInput = { ...base, ...(query.status ? { status: query.status } : {}), ...(query.priority ? { priority: query.priority } : {}), ...(query.category ? { category: query.category } : {}), ...(query.search ? { OR: [
+    const { OR: scopeOr, AND: scopeAnd, ...baseFields } = base;
+    const scopes = [...(Array.isArray(scopeAnd) ? scopeAnd : scopeAnd ? [scopeAnd] : []), ...(scopeOr ? [{ OR: scopeOr }] : [])];
+    const where: Prisma.SupportRequestWhereInput = { ...baseFields, ...(scopes.length ? { AND: scopes } : {}), ...(query.status ? { status: query.status } : {}), ...(query.priority ? { priority: query.priority } : {}), ...(query.category ? { category: query.category } : {}), ...(query.search ? { OR: [
       { supportCode: { contains: query.search, mode: 'insensitive' } }, { subject: { contains: query.search, mode: 'insensitive' } },
       { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
       { customer: { email: { contains: query.search, mode: 'insensitive' } } }, { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } },

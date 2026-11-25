@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   historyState,
   requireCutoverApproval,
@@ -33,6 +34,31 @@ test('unfinished migrations and missing required migrations prevent readiness', 
   assert.equal(state.pending.length, 1);
   assert.equal(state.historyValid, false);
 });
+test('an unlisted applied migration blocks startup despite otherwise clean history', () => {
+  const unexpected = '20990101000100_unlisted_migration';
+  const state = historyState([
+    ...rows,
+    { migration_name: unexpected, checksum: 'unlisted', finished_at: 'done', rolled_back_at: null },
+  ], contract);
+  assert.deepEqual(state.unexpected, [unexpected]);
+  assert.deepEqual(state.pending, []);
+  assert.deepEqual(state.failed, []);
+  assert.deepEqual(state.mismatches, []);
+  assert.equal(state.historyValid, false);
+});
+
+test('the release contract covers every migration file with a matching checksum', () => {
+  const root = new URL('../../prisma/migrations/', import.meta.url);
+  const names = fs.readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  assert.deepEqual(contract.migrations.map(entry => entry.name).sort(), names);
+  for (const { name, checksums } of contract.migrations) {
+    const sql = fs.readFileSync(new URL(name + '/migration.sql', root));
+    const checksum = createHash('sha256').update(sql).digest('hex');
+    assert.ok(checksums.includes(checksum), 'Release contract checksum mismatch for ' + name);
+  }
+});
+
 test('production cutover requires all three explicit approvals and matching receipt schema', () => {
   const state = { ...historyState(rows, contract), receiptSchemaMatches: true };
   assert.throws(() => requireCutoverApproval([], state));

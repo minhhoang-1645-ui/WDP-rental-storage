@@ -23,7 +23,13 @@
     "20261124000200_shared_service_catalog",
     "20261124000300_auth_session_history",
     "20261124000300_offering_configuration_review",
-    "20261124000400_live_reservation_unit_uniqueness"
+    "20261124000400_live_reservation_unit_uniqueness",
+    "20261125000100_maintenance_incident_reports",
+    "20261125000200_incident_booking_blocks",
+    "20261125000300_staff_shifts",
+    "20261125000400_facility_service_schedule",
+    "20261125000500_return_inspection_schedule",
+    "20261125000600_work_dispatch_fields"
   ],
   "migrations": [
     {
@@ -402,6 +408,48 @@
       "checksums": [
         "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
         "0f4aa6c5fa6a3f0c6e9d23c3ca287374703428c565e823eaa852ff9b50df6477"
+      ]
+    },
+    {
+      "name": "20261125000100_maintenance_incident_reports",
+      "checksums": [
+        "a37471ed84de1880e9a324c84e3b5e2b17203e98de459e218b43f64af4a00fa6",
+        "57b58d3cc7b9671ff82af3832cf97683dec2226af282af3d9dcaf73e67749412"
+      ]
+    },
+    {
+      "name": "20261125000200_incident_booking_blocks",
+      "checksums": [
+        "b70318974ed3008b13678c95a43707047a24d5b9e2ca930d0dced451871e6534",
+        "1a3f97b0dd4096da656c137fcf7c73870bec89bef07565b805a69c378817bbb4"
+      ]
+    },
+    {
+      "name": "20261125000300_staff_shifts",
+      "checksums": [
+        "9bf92cc311c8161e3700619d1ac6e1183cb1aa7835981aecc1066aff73953bac",
+        "a11bc6efbf334316f874e10aa2da7c9a36d552d61977cbc3a23fbb394059b031"
+      ]
+    },
+    {
+      "name": "20261125000400_facility_service_schedule",
+      "checksums": [
+        "7ea6ccc063b169ea1e8cb5d809d33f876d8a5643f1b23300040e2bd65f189e54",
+        "135946d78bf686108c704b477bdebf663cdd82a11a273f341ffb58c80b6f95f1"
+      ]
+    },
+    {
+      "name": "20261125000500_return_inspection_schedule",
+      "checksums": [
+        "c9339322fbe37d0299b109d1f3e6bbd5a609b4195f76085f0fd8035a4351bebb",
+        "765030cd97a7f13e5ce2fd2f89542b3ff1dd5b3fff5ddb596fb65c4e826188f5"
+      ]
+    },
+    {
+      "name": "20261125000600_work_dispatch_fields",
+      "checksums": [
+        "5721e6c771c63cc85f2e927e2283fae65192da293034cbed84366502fe960397",
+        "3508dbe2a8d2d3df11846a0e4fd849ae95bc6547d22bd0e578fd8bb931652cc1"
       ]
     }
   ],

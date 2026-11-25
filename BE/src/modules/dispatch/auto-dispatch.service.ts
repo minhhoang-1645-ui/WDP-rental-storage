@@ -31,7 +31,7 @@ export class AutoDispatchService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly database: PrismaService) {}
 
   onModuleInit() {
-    if (process.env.NODE_ENV === 'test') return;
+    if (process.env.NODE_ENV === 'test' || process.env.NESTBOX_AUTO_DISPATCH_ENABLED !== 'true') return;
     // Polling is a technical retry cadence. Readiness and staffing use business data.
     this.timer = setInterval(() => this.tick(), 15000);
     this.timer.unref();

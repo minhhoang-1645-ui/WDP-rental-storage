@@ -1,7 +1,7 @@
-export const landingWarehousePhoto = 'https://images.pexels.com/photos/29454378/pexels-photo-29454378/free-photo-of-spacious-warehouse-with-cardboard-boxes.jpeg?auto=compress&cs=tinysrgb&w=1600'
+export const landingWarehousePhoto = '/images/booking/self-storage-corridor.jpg'
 
 export const faqs = [
-  ['Khi nào tôi được sử dụng kho?', 'Từ ngày bắt đầu thuê, sau khi đã hoàn tất bàn giao. Khung giờ truy cập được ghi trong hợp đồng và thông tin bàn giao.'],
-  ['Tôi có thể đổi kho không?', 'Có thể, tùy kho trống và điều kiện hợp đồng tại thời điểm yêu cầu.'],
-  ['Kho cấm lưu trữ những gì?', 'Chất cháy nổ, hóa chất nguy hiểm, thực phẩm dễ hỏng, sinh vật sống và hàng hóa trái pháp luật.'],
+  ['Khi nào tôi được sử dụng kho?', 'Từ ngày bắt đầu thuê, sau khi đã hoàn tất bàn giao. Xem giờ vào kho của từng cơ sở hoặc hỏi nhân viên khi nhận kho.'],
+  ['Tôi có thể đổi kho không?', 'Trong thời gian thuê, bạn có thể gửi yêu cầu chuyển sang ô cùng loại tại cùng cơ sở. Quản lý xem xét yêu cầu dựa trên lịch trống và điều kiện hợp đồng.'],
+  ['Kho cấm lưu trữ những gì?', 'Hợp đồng quy định không lưu hàng cấm, dễ cháy nổ, nguy hiểm hoặc trái quy định.'],
 ]

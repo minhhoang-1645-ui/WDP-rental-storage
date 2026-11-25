@@ -143,6 +143,7 @@ beforeAll(async () => {
     staffA: 'FACILITY_STAFF',
     staffA2: 'FACILITY_STAFF',
     staffB: 'FACILITY_STAFF',
+    incidentReporter: 'FACILITY_STAFF',
     managerA: 'FACILITY_MANAGER',
     managerA2: 'FACILITY_MANAGER',
     managerB: 'FACILITY_MANAGER',
@@ -166,7 +167,9 @@ beforeAll(async () => {
         id: identity(f),
         code: identity(f),
         name: 'HTTP Facility ' + f,
-        address: 'Isolated HTTP test',
+        address: 'Địa chỉ kiểm thử ' + f,
+        officeHours: f === 'A' ? '08:00–17:00' : '',
+        accessHours: f === 'A' ? '07:00–20:00' : '',
       },
     });
     await db.businessRule.create({ data: { key: 'monthlyPriceRange:small', facilityId: identity(f), version: 1,
@@ -268,6 +271,203 @@ beforeAll(async () => {
 afterAll(async () => {
   if (app) await app.close();
   await db.$disconnect();
+});
+
+it('publishes the facility directory and filters guest storage searches by facility', async () => {
+  const catalog = (await api('get', '/booking/catalog')).body;
+  expect(catalog.facilities).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: identity('A'), address: 'Địa chỉ kiểm thử A', officeHours: '08:00–17:00', accessHours: '07:00–20:00' }),
+    expect.objectContaining({ id: identity('B'), address: 'Địa chỉ kiểm thử B' }),
+  ]));
+  for (const facility of ['A', 'B']) {
+    const result = (await api('get', '/storage?facilityId=' + identity(facility) + '&date=' + today() + '&duration=1')).body;
+    expect(result.checkedPeriod).toBe(true);
+    expect(result.items.map((item: { id: string }) => item.id)).toEqual([identity('type-' + facility)]);
+  }
+  await api('get', '/storage?facilityId=unknown', undefined, undefined, 400);
+  await api('get', '/storage?date=2099-02-30&duration=flexible', undefined, undefined, 400);
+});
+
+it('reports incidents without mutating rentals and secures photo evidence throughout the maintenance workflow', async () => {
+  const getFacilities = async (who: string) => (await api('get', '/staff/maintenance/facilities', who)).body;
+  expect(await getFacilities('staffA')).toEqual([expect.objectContaining({ id: identity('A') })]);
+  expect(await getFacilities('incidentReporter')).toEqual([]);
+  const reportGrant = (await api('post', '/admin/facility-access', 'admin', {
+    userId: identity('incidentReporter'), facilityId: identity('A'),
+  }, 201)).body;
+  await api('post', '/admin/facility-access', 'admin', { userId: identity('incidentReporter'), facilityId: identity('B') }, 201);
+  expect((await getFacilities('incidentReporter')).map((item: { id: string }) => item.id)).toEqual([identity('A'), identity('B')]);
+  await api('get', '/staff/maintenance/units?facilityId=' + identity('B'), 'staffA', undefined, 403);
+
+  const financialCounts = () => Promise.all([db.reservation.count(), db.reservationUnit.count(), db.rentalContract.count(),
+    db.invoice.count(), db.payment.count(), db.damageClaim.count()]);
+  const before = await financialCounts();
+  const statuses = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'] as const;
+  const unitIds = statuses.map((_, index) => identity('A-' + (8 + index)));
+  for (const [index, status] of statuses.entries()) {
+    const storageUnitId = unitIds[index];
+    await db.storageUnit.update({ where: { id: storageUnitId }, data: { status } });
+    const payload = { facilityId: identity('A'), storageUnitId, category: 'SECURITY', rentalImpact: 'NO_IMPACT', description: 'Kiểm tra hiện trạng ô kho' };
+    await denied('post', '/staff/maintenance', 'staffB', payload);
+    await api('post', '/staff/maintenance', 'incidentReporter', { ...payload, facilityId: identity('B') }, 400);
+    const report = (await api('post', '/staff/maintenance', 'incidentReporter', payload, 201)).body;
+    expect(report).toMatchObject({ status: 'OPEN', blocksUnit: false, unit: { status } });
+    expect((await db.storageUnit.findUniqueOrThrow({ where: { id: storageUnitId } })).status).toBe(status);
+    await db.storageUnit.update({ where: { id: storageUnitId }, data: { status: 'AVAILABLE' } });
+  }
+  expect(await financialCounts()).toEqual(before);
+
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jLZkAAAAASUVORK5CYII=', 'base64');
+  const newAreaReport = (contents: Buffer, createKey: string, filename = 'incident.png', contentType = 'image/png') =>
+    request(app.getHttpServer()).post('/api/staff/maintenance')
+      .set('Authorization', 'Bearer ' + tokens.incidentReporter).set('Idempotency-Key', createKey)
+      .field('facilityId', identity('A')).field('commonArea', 'CORRIDOR').field('locationNote', 'Tầng 2')
+      .field('category', 'UTILITIES').field('priority', 'URGENT').field('rentalImpact', 'NO_IMPACT').field('description', 'Phát hiện nước chảy ở hành lang.')
+      .attach('photos', contents, { filename, contentType });
+  expect((await newAreaReport(Buffer.from('fake png'), key())).status).toBe(400);
+  expect((await newAreaReport(png, key(), 'incident.webp', 'image/webp')).status).toBe(400);
+  expect((await newAreaReport(Buffer.alloc(5 * 1024 * 1024 + 1), key())).status).toBe(413);
+  const createKey = key();
+  const created = await newAreaReport(png, createKey);
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const { id, photos } = created.body;
+  expect(created.body).toMatchObject({ unit: null, commonArea: 'CORRIDOR', facility: { id: identity('A') }, priority: 'URGENT' });
+  expect((await newAreaReport(png, createKey)).body.id).toBe(id);
+  const task = '/manager/maintenance/' + id;
+  const staffTask = '/staff/maintenance/' + id;
+  await denied('get', task, 'managerB');
+  await denied('get', task + '/photos/' + photos[0].id, 'managerB');
+  await denied('get', staffTask + '/photos/' + photos[0].id, 'staffB');
+  expect((await api('get', task + '/photos/' + photos[0].id, 'managerA')).body).toEqual(png);
+  expect((await api('get', '/manager/staff?taskType=maintenance&taskId=' + id, 'managerA')).body.items)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ id: identity('staffA') })]));
+  await denied('patch', task + '/assign', 'managerA', { staffUserId: identity('staffB') });
+  await api('patch', task + '/assign', 'managerA', { staffUserId: identity('staffA') });
+  await denied('post', staffTask + '/start', 'incidentReporter');
+  await api('post', staffTask + '/start', 'staffA', {}, 201);
+  await api('post', staffTask + '/complete-work', 'staffA', { workNote: 'Đã xử lý nước rò rỉ và kiểm tra lại.' }, 201);
+  await api('post', task + '/verify', 'managerA', { note: 'Đã kiểm tra khu vực.' }, 201);
+  expect((await api('get', staffTask, 'incidentReporter')).body).toMatchObject({ status: 'COMPLETED', unit: null });
+  expect((await api('get', '/staff/maintenance/reported-by-me', 'incidentReporter')).body.items)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ id, unitCode: null, commonArea: 'CORRIDOR' })]));
+  expect(await financialCounts()).toEqual(before);
+  await api('patch', '/admin/facility-access/' + reportGrant.id + '/revoke', 'admin', {});
+  await api('get', staffTask + '/photos/' + photos[0].id, 'incidentReporter', undefined, 401);
+  const newSession = await api('post', '/auth/login', undefined, { email: identity('incidentReporter') + '@foundation.test', password }, 200);
+  tokens.incidentReporter = newSession.body.token;
+  await denied('get', staffTask, 'incidentReporter');
+  await denied('get', staffTask + '/photos/' + photos[0].id, 'incidentReporter');
+  await denied('post', '/staff/maintenance', 'incidentReporter', {
+    facilityId: identity('A'), commonArea: 'CORRIDOR', description: 'Báo tin sau thu hồi quyền', category: 'SECURITY', rentalImpact: 'NO_IMPACT',
+  });
+});
+
+it('applies incident rental holds immediately and releases only the assessed incident scope', async () => {
+  const unit = identity('A-10');
+  const second = identity('A-11');
+  const payload = { facilityId: identity('A'), category: 'SECURITY', description: 'Phạm vi cần đánh giá an toàn' };
+  const booking = {
+    productId: identity('type-A'), startDate: today(), periodMode: 'duration', durationMonths: 1, quantity: 1,
+    selectedUnitIds: [unit], addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
+  };
+  const unitMap = async (id: string) => (await api('post', '/booking/unit-map', undefined, booking, 201)).body.units
+    .find((entry: { id: string }) => entry.id === id);
+  const incident = async (body: object) => (await api('post', '/staff/maintenance', 'staffA2', { ...payload, ...body }, 201)).body;
+  const status = async (id: string) => (await db.storageUnit.findUniqueOrThrow({ where: { id } })).status;
+  const originalStatus = await status(unit);
+  expect(await unitMap(unit)).toMatchObject({ available: true, bookingBlocked: false });
+  await api('post', '/staff/maintenance', 'staffA2', { ...payload, commonArea: 'CORRIDOR', rentalImpact: 'UNKNOWN' }, 400);
+  await api('post', '/staff/maintenance', 'staffA2', { ...payload, commonArea: 'CORRIDOR', rentalImpact: 'AFFECTED', affectedUnitIds: [identity('B-11')] }, 400);
+  const firstHold = await incident({ storageUnitId: unit, rentalImpact: 'UNKNOWN' });
+  expect(firstHold).toMatchObject({ blocksUnit: true, rentalImpact: 'UNKNOWN', unit: { status: originalStatus } });
+  expect(await unitMap(unit)).toMatchObject({ status: originalStatus, bookingBlocked: true, available: false });
+  expect((await api('post', '/booking/availability', undefined, booking, 201)).body.available).toBe(false);
+  const declined = await request(app.getHttpServer()).post('/api/reservations')
+    .set('Authorization', 'Bearer ' + tokens.customer).send(booking);
+  expect([201, 409]).toContain(declined.status);
+  expect(declined.body.status).not.toBe('CONFIRMED');
+  if (declined.status === 201) {
+    const record = await db.reservation.findUniqueOrThrow({ where: { reservationCode: declined.body.id } });
+    expect(await db.reservationUnit.count({ where: { reservationId: record.id } })).toBe(0);
+  }
+  const secondHold = await incident({ commonArea: 'CORRIDOR', rentalImpact: 'AFFECTED', affectedUnitIds: [unit] });
+  expect(secondHold).toMatchObject({ unit: null, commonArea: 'CORRIDOR', affectedUnits: [{ id: unit }] });
+  expect(await unitMap(second)).toMatchObject({ available: true, bookingBlocked: false });
+  const firstPath = '/manager/maintenance/' + firstHold.id;
+  const secondPath = '/manager/maintenance/' + secondHold.id;
+  await denied('patch', secondPath + '/booking-impact', 'managerB', { affectedUnitIds: [] });
+  await api('patch', secondPath + '/booking-impact', 'managerA', { affectedUnitIds: [second], expectedAffectedUnitIds: [unit] });
+  expect(await unitMap(second)).toMatchObject({ available: false, bookingBlocked: true });
+  expect(await unitMap(unit)).toMatchObject({ available: false, bookingBlocked: true });
+  await api('patch', secondPath + '/booking-impact', 'managerA', { affectedUnitIds: [unit, second], expectedAffectedUnitIds: [second] });
+  await api('patch', firstPath + '/booking-impact', 'managerA', { affectedUnitIds: [], expectedAffectedUnitIds: [unit] });
+  expect(await unitMap(unit)).toMatchObject({ available: false, bookingBlocked: true });
+  await api('patch', secondPath + '/assign', 'managerA', { staffUserId: identity('staffA') });
+  const staffPath = '/staff/maintenance/' + secondHold.id;
+  await api('post', staffPath + '/start', 'staffA', {}, 201);
+  await api('post', staffPath + '/complete-work', 'staffA', { workNote: 'Đã xử lý hiện trạng.' }, 201);
+  await api('post', secondPath + '/reject-verification', 'managerA', { note: 'Kiểm tra lại khu vực.' }, 201);
+  expect(await unitMap(unit)).toMatchObject({ available: false, bookingBlocked: true });
+  await api('post', staffPath + '/complete-work', 'staffA', { workNote: 'Đã xử lý lại và kiểm tra.' }, 201);
+  await api('post', secondPath + '/verify', 'managerA', {}, 201);
+  expect(await unitMap(unit)).toMatchObject({ available: true, bookingBlocked: false, status: originalStatus });
+  expect(await unitMap(second)).toMatchObject({ available: true, bookingBlocked: false });
+  expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: secondHold.id, releasedAt: { not: null } } })).toBeGreaterThan(1);
+  const history = await db.auditEvent.findMany({ where: { resourceId: secondHold.id }, select: { action: true } });
+  expect(history.map(event => event.action)).toEqual(expect.arrayContaining([
+    'INCIDENT_BOOKING_SCOPE', 'TASK_ASSIGNMENT', 'INCIDENT_VERIFICATION_REJECTED', 'INCIDENT_VERIFIED',
+  ]));
+
+  const existing = await reserve('A');
+  const allocationBefore = await db.reservationUnit.findFirstOrThrow({ where: { reservationId: existing.id } });
+  const activeIncident = await incident({ storageUnitId: allocationBefore.storageUnitId, rentalImpact: 'AFFECTED' });
+  expect(await db.reservation.findUniqueOrThrow({ where: { id: existing.id } })).toMatchObject({ status: 'CONFIRMED' });
+  expect(await db.reservationUnit.findUniqueOrThrow({ where: { id: allocationBefore.id } })).toMatchObject({ releasedAt: null });
+  await api('patch', '/manager/maintenance/' + activeIncident.id + '/booking-impact', 'managerA', { affectedUnitIds: [] });
+
+  const start = new Date(today());
+  const end = new Date(start.valueOf() + 86400000);
+  let markSnapshotReady!: () => void;
+  let proceedWithAllocation!: () => void;
+  const ready = new Promise<void>(resolve => { markSnapshotReady = resolve; });
+  const proceed = new Promise<void>(resolve => { proceedWithAllocation = resolve; });
+  const staleBooking = db.$transaction(async tx => {
+    await tx.storageUnit.findUniqueOrThrow({ where: { id: second } });
+    markSnapshotReady();
+    await proceed;
+    return tx.reservationUnit.create({ data: {
+      reservationId: existing.id, storageUnitId: second, plannedStartDate: start, plannedEndDate: end,
+    } });
+  }, { isolationLevel: 'Serializable', timeout: 15000 }).then(() => true, () => false);
+  await ready;
+  let raceIncident;
+  try { raceIncident = await incident({ storageUnitId: second, rentalImpact: 'AFFECTED' }); }
+  finally { proceedWithAllocation(); }
+  expect(await staleBooking).toBe(false);
+  expect(await db.reservationUnit.count({ where: { reservationId: existing.id, storageUnitId: second } })).toBe(0);
+  await api('patch', '/manager/maintenance/' + raceIncident.id + '/booking-impact', 'managerA', { affectedUnitIds: [] });
+});
+
+it('rechecks a stale Customer Web quote even when no specific unit was selected', async () => {
+  const productId = identity('type-B');
+  const draft = {
+    productId, startDate: today(), periodMode: 'duration', durationMonths: 1, quantity: 1,
+    addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
+  };
+  const check = await api('post', '/booking/availability', undefined, draft, 201);
+  expect(check.body.available).toBe(true);
+  const units = await db.storageUnit.findMany({ where: { storageTypeId: productId }, select: { id: true } });
+  const conflict = await api('post', '/staff/maintenance', 'staffB', {
+    facilityId: identity('B'), commonArea: 'ENTRANCE', rentalImpact: 'AFFECTED', affectedUnitIds: units.map(unit => unit.id),
+    category: 'SECURITY', description: 'Lối vào các ô thuộc loại kho này chưa an toàn.',
+  }, 201);
+  const before = await db.reservationUnit.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, releasedAt: null } });
+  const rejected = await request(app.getHttpServer()).post('/api/reservations')
+    .set('Authorization', 'Bearer ' + tokens.customer).send(draft);
+  expect([201, 409]).toContain(rejected.status);
+  expect(rejected.body.status).not.toBe('CONFIRMED');
+  expect(await db.reservationUnit.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, releasedAt: null } })).toBe(before);
+  await api('patch', '/manager/maintenance/' + conflict.body.id + '/booking-impact', 'managerB', { affectedUnitIds: [] });
 });
 
 it('uses persisted bearer sessions and keeps the five role capabilities separate over HTTP', async () => {
@@ -402,6 +602,13 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
     201,
   );
   const id = appointment.body.id;
+  expect(appointment.body).toMatchObject({ status: 'REQUESTED', schedulePendingManager: true });
+  await denied('patch', '/manager/appointments/' + id + '/schedule', 'managerB', {
+    action: 'CONFIRM_EXCEPTION', expectedScheduledAt: appointment.body.scheduledAt, note: 'Check wrong facility',
+  });
+  await api('patch', '/manager/appointments/' + id + '/schedule', 'managerA', {
+    action: 'CONFIRM_EXCEPTION', expectedScheduledAt: appointment.body.scheduledAt, note: 'Staff coverage confirmed for this request.',
+  });
   await denied(
     'patch',
     '/staff/management/appointments/' + id + '/assign',
@@ -434,6 +641,47 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
   const units = await db.reservationUnit.findMany({
     where: { reservationId: r.id },
   });
+  const handoverHold = (await api('post', '/staff/maintenance', 'staffA2', {
+    facilityId: identity('A'), commonArea: 'CORRIDOR', rentalImpact: 'AFFECTED',
+    affectedUnitIds: [units[0].storageUnitId], category: 'SECURITY', description: 'Lối vào ô kho chưa an toàn.',
+  }, 201)).body;
+  const issuePath = '/manager/maintenance/' + handoverHold.id;
+  const managerWarning = (await api('get', issuePath, 'managerA')).body;
+  expect(managerWarning.affectedBookings).toEqual([expect.objectContaining({
+    reservationId: r.id, reservationReference: r.reservationCode,
+    unitCodes: [expect.any(String)], appointments: [expect.objectContaining({ id, status: 'CONFIRMED' })],
+  })]);
+  const managerList = (await api('get', '/manager/maintenance?search=' + handoverHold.maintenanceCode, 'managerA')).body.items;
+  expect(managerList).toEqual([expect.objectContaining({ id: handoverHold.id, affectedBookingCount: 1, affectedAppointmentCount: 1 })]);
+  const noticeQuery = '/notifications?kind=maintenance&scopeFacilityId=' + identity('A');
+  const managerNotices = (await api('get', noticeQuery, 'managerA')).body.items;
+  expect(managerNotices).toEqual(expect.arrayContaining([expect.objectContaining({
+    title: 'Sự cố · Có hồ sơ thuê bị ảnh hưởng',
+    summary: expect.stringContaining('1 đơn đặt · 1 lịch bàn giao'), important: true,
+  })]));
+  const foreignNotices = (await api('get', '/notifications?kind=maintenance&scopeFacilityId=' + identity('B'), 'managerB')).body.items;
+  expect(foreignNotices).not.toEqual(expect.arrayContaining([expect.objectContaining({ title: 'Sự cố · Có hồ sơ thuê bị ảnh hưởng' })]));
+  await denied('get', issuePath, 'managerB');
+  await denied('post', issuePath + '/hold-unsafe-unit', 'managerB');
+  await denied('patch', issuePath + '/booking-impact', 'managerB', { affectedUnitIds: [] });
+  await denied('patch', issuePath + '/booking-impact', 'staffA2', { affectedUnitIds: [] });
+  await denied('post', '/staff/maintenance/' + handoverHold.id + '/start', 'staffB');
+  await denied('post', issuePath + '/verify', 'managerB');
+  await api('patch', issuePath + '/booking-impact', 'managerA', { affectedUnitIds: [identity('B-0')] }, 400);
+  const reportInput = {
+    handoverReport: {
+      condition: 'Kho sạch và sử dụng tốt', accessItemCount: 2, identityVerified: true, unitInspected: true, accessDelivered: true,
+      unitChecks: units.map((u) => ({ unitId: u.storageUnitId, condition: 'Sử dụng tốt', inspected: true })),
+    },
+  };
+  const rejectedHandover = await api('post', '/staff/appointments/' + id + '/complete-handover', 'staffA2', reportInput, 409);
+  expect(rejectedHandover.body.message).toContain('chờ xử lý bảo trì');
+  const rejectedUnit = await api('patch', '/staff/appointments/' + id + '/units/' + units[0].storageUnitId + '/handover',
+    'staffA2', { condition: 'Đã kiểm tra kho', inspected: true, identityVerified: true, accessDelivered: true }, 409);
+  expect(rejectedUnit.body.message).toContain('chờ xử lý bảo trì');
+  expect(await db.handoverAppointment.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: 'CONFIRMED', completedAt: null });
+  expect(await db.rentalContract.count({ where: { reservationId: r.id, status: 'ACTIVE' } })).toBe(0);
+  await api('patch', issuePath + '/booking-impact', 'managerA', { affectedUnitIds: [] });
   await api(
     'post',
     '/staff/appointments/' + id + '/complete-handover',
@@ -501,6 +749,16 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
     const staffPath = '/staff/transfers/' + transfer.id;
     const eligible = await api('get', managerPath + '/destinations?limit=100', 'managerA');
     expect(eligible.body.items.find((item: { id: string }) => item.id === unitId).eligible).toBe(true);
+    if (decision === 'CANCEL') {
+      const blockedDestination = (await api('post', '/staff/maintenance', 'staffA2', {
+        storageUnitId: unitId, rentalImpact: 'AFFECTED', category: 'SECURITY', description: 'Ô đích chưa an toàn.',
+      }, 201)).body;
+      const blocked = (await api('get', managerPath + '/destinations?limit=100', 'managerA')).body.items.find((item: { id: string }) => item.id === unitId);
+      expect(blocked).toMatchObject({ eligible: false, unavailableReason: expect.stringContaining('sự cố') });
+      const rejected = await api('post', managerPath + '/approve', 'managerA', { toStorageUnitId: unitId, staffUserId: identity('staffA2') }, 409);
+      expect(rejected.body.message).toContain('sự cố');
+      await api('patch', '/manager/maintenance/' + blockedDestination.id + '/booking-impact', 'managerA', { affectedUnitIds: [] });
+    }
     await api('post', managerPath + '/approve', 'managerA', { toStorageUnitId: unitId, staffUserId: identity('staffA2') }, 201);
     await api('post', staffPath + '/problem', 'staffA2', { note: 'Cần kiểm tra cửa kho đích.' }, 201);
     const queue = await api('get', '/manager/transfers?reviewQueue=true', 'managerA');
@@ -527,6 +785,13 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
         storageUnitId: unitId, category: 'LOCK_OR_ACCESS', description: 'Cần sửa khóa kho đích đang giữ.',
       }, 201);
       const issueId = incident.body.id;
+      const blockedTransfer = await api('post', staffPath + '/complete', 'staffA2', {
+        recipientName: 'HTTP customer', returnedKeyCount: 1, deliveredKeyCount: 1,
+        destinationReady: true, goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true,
+      }, 409);
+      expect(blockedTransfer.body.message).toContain('bảo trì');
+      expect(await db.transferRequest.findUniqueOrThrow({ where: { id: transfer.id } })).toMatchObject({ status: 'APPROVED', completedAt: null });
+      expect(await db.rentalContract.findUniqueOrThrow({ where: { id: contract.id } })).toMatchObject({ reservationUnitId: contract.reservationUnitId });
       const issuePath = '/staff/maintenance/' + issueId;
       await api('patch', '/manager/maintenance/' + issueId + '/assign', 'managerA', {
         staffUserId: identity('staffA'), expectedAssignedStaffUserId: null,
@@ -637,6 +902,7 @@ it('allows only authorized Staff to report facility issues and prevents executio
   const input = {
     storageUnitId: unit.id,
     category: 'LOCK_OR_ACCESS',
+    rentalImpact: 'NO_IMPACT',
     description: 'Cửa bị kẹt, cần kiểm tra khóa.',
   };
   await denied('post', '/staff/maintenance', 'staffA', input);
@@ -655,6 +921,15 @@ it('allows only authorized Staff to report facility issues and prevents executio
     '/staff/management/maintenance/' + issue.body.id,
     'managerA',
   );
+  const assign = '/manager/maintenance/' + issue.body.id + '/assign';
+  const release = '/manager/assignments/maintenance/' + issue.body.id + '/release';
+  const expected = identity('staffB');
+  await api('patch', assign, 'managerB', { staffUserId: expected, expectedAssignedStaffUserId: null });
+  await denied('patch', release, 'managerA', { expectedAssignedStaffUserId: expected, reason: 'Outside scope.' });
+  await api('patch', release, 'managerB', { expectedAssignedStaffUserId: expected, reason: 'Ca làm thay đổi.' });
+  await denied('post', '/staff/maintenance/' + issue.body.id + '/start', 'staffB');
+  await api('patch', release, 'managerB', { expectedAssignedStaffUserId: expected, reason: 'Stale retry.' }, 409);
+  expect(await db.auditEvent.count({ where: { resourceId: issue.body.id, action: 'TASK_ASSIGNMENT' } })).toBe(2);
   expect(
     (
       await db.maintenanceRequest.findUniqueOrThrow({
@@ -708,7 +983,7 @@ it('keeps analytics cashflow, units, queues and staff workload inside the Manage
     );
     expect(
       report.body.workload.map((s: { id: string }) => s.id).sort(),
-    ).toEqual(f === 'A' ? [identity('staffA'), identity('staffA2')] : []);
+    ).toEqual(f === 'A' ? [identity('staffA'), identity('staffA2')] : [identity('incidentReporter')]);
   }
   for (const who of ['staffA', 'bom', 'admin'])
     await denied('get', '/manager/dashboard/analytics', who);
@@ -882,6 +1157,11 @@ it('requires assigned Staff work and Manager verification before maintenance rel
       assignedStaffUserId: null,
     },
   });
+  if (!issue.storageUnitId) throw new Error('Expected a unit incident fixture.');
+  expect((await db.storageUnit.findUniqueOrThrow({ where: { id: issue.storageUnitId } })).status).toBe('AVAILABLE');
+  await denied('post', '/manager/maintenance/' + issue.id + '/hold-unsafe-unit', 'managerA');
+  const held = await api('post', '/manager/maintenance/' + issue.id + '/hold-unsafe-unit', 'managerB', {}, 201);
+  expect(held.body).toMatchObject({ blocksUnit: true, unit: { status: 'AVAILABLE' } });
   await api(
     'patch',
     '/manager/maintenance/' + issue.id + '/assign',
@@ -908,7 +1188,8 @@ it('requires assigned Staff work and Manager verification before maintenance rel
         where: { id: issue.storageUnitId },
       })
     ).status,
-  ).toBe('MAINTENANCE');
+  ).toBe('AVAILABLE');
+  expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: issue.id, releasedAt: null } })).toBe(1);
   await denied(
     'post',
     '/manager/maintenance/' + issue.id + '/verify',
@@ -922,6 +1203,7 @@ it('requires assigned Staff work and Manager verification before maintenance rel
     { note: 'Đã nghiệm thu hiện trạng và khóa.' },
     201,
   );
+  expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: issue.id, releasedAt: null } })).toBe(0);
   expect(
     (
       await db.storageUnit.findUniqueOrThrow({
@@ -978,6 +1260,9 @@ it('keeps early key handover distinct from activation until the rental start dat
     },
     201,
   );
+  await api('patch', '/manager/appointments/' + appt.body.id + '/schedule', 'managerB', {
+    action: 'CONFIRM_EXCEPTION', expectedScheduledAt: appt.body.scheduledAt, note: 'Staff coverage confirmed for this request.',
+  });
   await api(
     'patch',
     '/manager/appointments/' + appt.body.id + '/assign',

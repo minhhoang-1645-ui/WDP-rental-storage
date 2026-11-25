@@ -65,7 +65,7 @@ export class ManagerAnalyticsService {
       depositSettlement: { returnRequest: returnTaskScope(actor) },
       user: { facilityAccess: { some: { revokedAt: null, facility } } },
       supportRequest: supportTaskScope(actor),
-      maintenanceRequest: { storageUnit: { storageType: { facility } } },
+      maintenanceRequest: { OR: [{ storageUnit: { storageType: { facility } } }, { commonAreaFacility: facility }] },
       handoverAppointment: { reservation },
       returnRequest: returnTaskScope(actor),
       transferRequest: transferTaskScope(actor),

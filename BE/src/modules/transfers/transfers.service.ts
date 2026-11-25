@@ -1,4 +1,5 @@
 import { assertListedPrice, resolveMonthlyRange, priceInRange, lockPriceRange } from '../pricing/monthly-price-range.js';
+import { workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, assertTaskExecution, transferTaskScope, supportTaskReference } from '../facility-access/task-access.js';
@@ -189,7 +190,8 @@ export class TransfersService {
     const total = await this.prisma.storageUnit.count({ where });
     const units = await this.prisma.storageUnit.findMany({
       where, skip: (page - 1) * limit, take: limit, orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
-      include: { storageType: true, maintenanceRequests: destinationMaintenance, reservationUnits: {
+      include: { storageType: true, maintenanceRequests: destinationMaintenance,
+        incidentBlocks: { where: { releasedAt: null }, select: { id: true }, take: 1 }, reservationUnits: {
         where: liveDestinationConflicts(transfer.reservationId, start, end),
         select: { reservationId: true, plannedStartDate: true, plannedEndDate: true }, orderBy: { plannedStartDate: 'asc' },
       } },
@@ -202,6 +204,7 @@ export class TransfersService {
       const reason = transfer.status !== 'REQUESTED' ? 'Yêu cầu đã được xử lý. Mở lại hồ sơ để xem kết quả.'
         : transfer.rentalContract.status !== 'ACTIVE' || end <= start ? 'Hợp đồng không còn kỳ thuê đang hoạt động.'
         : transfer.rentalContract.reservationUnitId !== transfer.fromReservationUnitId || transfer.fromStorageUnit.status !== 'OCCUPIED' ? 'Kho nguồn đã thay đổi. Vui lòng kiểm tra lại hồ sơ trước khi chuyển.'
+        : unit.incidentBlocks?.length ? 'Ô kho đang tạm ngừng nhận thuê vì sự cố.'
         : unit.status === 'MAINTENANCE' || unit.maintenanceRequests?.length ? 'Kho đang bảo trì.' : unit.status === 'OCCUPIED' ? 'Kho đang có khách sử dụng.'
         : unit.status !== 'AVAILABLE' ? 'Kho đang được giữ cho đơn khác.'
         : unit.reservationUnits.some(allocation => allocation.reservationId === transfer.reservationId) ? 'Ô đích đã có phân bổ còn hiệu lực trong đơn này.'
@@ -275,9 +278,11 @@ export class TransfersService {
       }
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${toStorageUnitId} FOR UPDATE`);
       const destination = await tx.storageUnit.findUnique({
-        where: { id: toStorageUnitId }, include: { storageType: true, maintenanceRequests: destinationMaintenance },
+        where: { id: toStorageUnitId }, include: { storageType: true, maintenanceRequests: destinationMaintenance,
+          incidentBlocks: { where: { releasedAt: null }, select: { id: true }, take: 1 } },
       });
       if (!destination) throw new NotFoundException('Không tìm thấy unit đích.');
+      if (destination.incidentBlocks?.length) throw new ConflictException('Ô đích đang tạm ngừng nhận thuê vì sự cố.');
       if (destination.status !== 'AVAILABLE') throw new ConflictException('Unit đích không còn AVAILABLE.');
       if (destination.maintenanceRequests?.length) throw new ConflictException('Kho đích có hồ sơ bảo trì đang mở.');
       if (destination.id === current.fromStorageUnitId) throw new ConflictException('Unit đích phải khác unit nguồn.');
@@ -439,7 +444,8 @@ export class TransfersService {
       // Personal-item records remain historical and do not gate a physical unit transfer.
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" IN (${current.fromStorageUnitId}, ${current.toStorageUnitId}) FOR UPDATE`);
       if (current.fromStorageUnit.status !== 'OCCUPIED' || current.toStorageUnit?.status !== 'RESERVED') throw new ConflictException('Trạng thái vật lý của unit đã thay đổi.');
-      if (await tx.maintenanceRequest.count({ where: { storageUnitId: current.toStorageUnitId, activeKey: { not: null } } })) {
+      if (await tx.maintenanceRequest.count({ where: { storageUnitId: current.toStorageUnitId, activeKey: { not: null } } })
+        || await tx.incidentUnitBlock.count({ where: { storageUnitId: current.toStorageUnitId, releasedAt: null } })) {
         throw new ConflictException('Kho đích có hồ sơ bảo trì đang mở. Báo vướng mắc cho quản lý trước khi bàn giao.');
       }
       const now = new Date();

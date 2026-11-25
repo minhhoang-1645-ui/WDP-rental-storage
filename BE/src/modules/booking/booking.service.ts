@@ -9,7 +9,7 @@ import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { businessDate } from '../../business-date.js';
+import { businessDate, isIsoCalendarDate } from '../../business-date.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
@@ -136,7 +136,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       const end = this.date(endDateExclusive);
       const units = await tx.storageUnit.findMany({
         where: { storageTypeId: draft.productId },
-        select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true },
+        select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
+          maintenanceRequests: { where: { activeKey: { not: null } }, select: { id: true }, take: 1 },
+          incidentBlocks: { where: { releasedAt: null }, select: { id: true }, take: 1 } },
         orderBy: [{ floor: 'asc' }, { zone: 'asc' }, { row: 'asc' }, { position: 'asc' }, { unitNumber: 'asc' }],
       });
       const unitIds = units.map((unit) => unit.id);
@@ -152,8 +154,10 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           zone: unit.zone,
           row: unit.row,
           position: unit.position,
-          status: unit.status === 'AVAILABLE' && !blocked.has(unit.id) ? 'AVAILABLE' : unit.status === 'AVAILABLE' ? 'RESERVED' : unit.status,
-          available: unit.status === 'AVAILABLE' && !blocked.has(unit.id),
+          status: unit.status === 'AVAILABLE' && unit.maintenanceRequests?.length ? 'MAINTENANCE'
+            : unit.status === 'AVAILABLE' && blocked.has(unit.id) ? 'RESERVED' : unit.status,
+          bookingBlocked: Boolean(unit.incidentBlocks?.length),
+          available: unit.status === 'AVAILABLE' && !unit.maintenanceRequests?.length && !unit.incidentBlocks?.length && !blocked.has(unit.id),
         })),
       };
     }, { maxWait: 10000, timeout: 20000 });
@@ -593,6 +597,14 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       FROM "StorageUnit"
       WHERE "storageTypeId" = ${reservation.storageTypeId}
         AND "status" = 'AVAILABLE'::"UnitStatus"
+        AND NOT EXISTS (
+          SELECT 1 FROM "MaintenanceRequest"
+          WHERE "storageUnitId" = "StorageUnit"."id" AND "activeKey" IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM "IncidentUnitBlock"
+          WHERE "storageUnitId" = "StorageUnit"."id" AND "releasedAt" IS NULL
+        )
       ORDER BY "id"
       FOR UPDATE
     `);
@@ -783,7 +795,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const start = this.date(draft.startDate);
     const end = this.date(endDateExclusive);
     const units = await db.storageUnit.findMany({
-      where: { storageTypeId: draft.productId, status: 'AVAILABLE' },
+      where: { storageTypeId: draft.productId, status: 'AVAILABLE', maintenanceRequests: { none: { activeKey: { not: null } } },
+        incidentBlocks: { none: { releasedAt: null } } },
       select: { id: true },
     });
     const unitIds = units.map((unit) => unit.id);
@@ -867,12 +880,12 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Loại kho không thuộc cơ sở đã chọn.');
     }
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
-    if (!this.isDate(startDate) || startDate < businessDate()) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
+    if (!isIsoCalendarDate(startDate) || startDate < businessDate()) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const periodMode = input.periodMode === 'dates' ? 'dates' as const : 'duration' as const;
     const durationMonths = Number(input.durationMonths);
     const endDate = typeof input.endDate === 'string' ? input.endDate : undefined;
     if (periodMode === 'duration' && !approvedDurations.includes(durationMonths as (typeof approvedDurations)[number])) throw new BadRequestException('Thời hạn thuê không nằm trong danh sách được duyệt.');
-    if (periodMode === 'dates' && (!endDate || !this.isDate(endDate) || endDate <= startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu.');
+    if (periodMode === 'dates' && (!endDate || !isIsoCalendarDate(endDate) || endDate <= startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu.');
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 3) throw new BadRequestException('Số lượng phải từ 1 đến 3.');
     const adjacencyPreference = input.adjacencyPreference === true && quantity > 1;
@@ -1137,11 +1150,6 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
   private isUniqueError(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'; }
   private isPrismaCode(error: unknown, code: string) { return typeof error === 'object' && error !== null && 'code' in error && error.code === code; }
-  private isDate(value: string) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const parsed = new Date(value + 'T00:00:00.000Z');
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-  }
   private addMonths(startDate: string, months: number) {
     const start = this.date(startDate);
     const day = start.getUTCDate();

@@ -1,3 +1,4 @@
+import { DispatchModule } from './modules/dispatch/dispatch.module.js';
 import { OperationsModule } from './modules/operations/operations.module.js';
 import { FacilityAccessModule } from './modules/facility-access/facility-access.module.js';
 import { Module } from '@nestjs/common';
@@ -33,6 +34,7 @@ import { StockMovementsModule } from './modules/stock-movements/stock-movements.
 @Module({
   imports: [
     FacilityAccessModule,
+    DispatchModule,
     OperationsModule,
     DamageClaimsModule,
     BusinessPolicyModule,

@@ -262,7 +262,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
               onChange={(event) => change("priority", event.target.value)}
             >
               <option value="">Tất cả</option>
-              {["LOW", "MEDIUM", "HIGH"].map((v) => (
+              {(resource === 'maintenance' ? ["LOW", "MEDIUM", "HIGH", "URGENT"] : ["LOW", "MEDIUM", "HIGH"]).map((v) => (
                 <option key={v} value={v}>
                   {label(v)}
                 </option>

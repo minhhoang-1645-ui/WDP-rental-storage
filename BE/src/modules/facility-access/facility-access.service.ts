@@ -31,21 +31,32 @@ export async function facilityIds(db: Db, actor: PublicUser) {
 export async function assertFacility(db: Db, actor: PublicUser, id: string) {
   if (!(await facilityIds(db, actor)).includes(id)) throw new ForbiddenException('Bạn chưa được cấp quyền tại cơ sở này.');
 }
-async function assignmentCounts(db: Db, userId: string, closed = false) {
+async function assignmentCounts(db: Db, userId: string, closed = false, facilityId?: string) {
   const assignedStaffUserId = userId;
+  const scoped = facilityId ? { reservation: { facilityId } } : {};
   const counts = await Promise.all([
-    db.handoverAppointment.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'CONFIRMED'] } : { in: ['REQUESTED', 'CONFIRMED'] } } }),
-    db.returnRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
-    db.maintenanceRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
-    db.supportRequest.count({ where: { assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
-    db.transferRequest.count({ where: { OR:[{assignedStaffUserId},{receivingStaffId:userId}], status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
-    db.damageClaim.count({ where: { assignedStaffId: userId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
+    db.handoverAppointment.count({ where: { ...scoped, assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'CONFIRMED'] } : { in: ['REQUESTED', 'CONFIRMED'] } } }),
+    db.returnRequest.count({ where: { ...(facilityId ? { OR: [
+      { inspections: { some: {}, every: { storageUnit: { storageType: { facilityId } } } } },
+      { inspections: { none: {} }, reservation: { facilityId } },
+    ] } : {}), assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
+    db.maintenanceRequest.count({ where: { ...(facilityId ? { OR: [{ commonAreaFacilityId: facilityId }, { storageUnit: { storageType: { facilityId } } }] } : {}), assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
+    db.supportRequest.count({ where: { ...(facilityId ? { OR: [
+      { storageUnit: { storageType: { facilityId } } },
+      { storageUnitId: null, rentalContract: { reservationUnit: { storageUnit: { storageType: { facilityId } } } } },
+      { storageUnitId: null, rentalContractId: null, reservation: { facilityId } },
+    ] } : {}), assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
+    db.transferRequest.count({ where: { OR: [
+      { assignedStaffUserId, ...(facilityId ? { fromStorageUnit: { storageType: { facilityId } } } : {}) },
+      { receivingStaffId: userId, ...(facilityId ? { toStorageUnit: { storageType: { facilityId } } } : {}) },
+    ], status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
+    db.damageClaim.count({ where: { ...(facilityId ? { rentalContract: { reservationUnit: { storageUnit: { storageType: { facilityId } } } } } : {}), assignedStaffId: userId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
   ]);
   return counts.reduce((total, count) => total + count, 0);
 }
 
-export async function assertNoOpenAssignments(db: Db, userId: string) {
-  if (await assignmentCounts(db, userId)) throw new ConflictException('Tài khoản còn công việc chưa hoàn tất. Quản lý cần phân công lại trước.');
+export async function assertNoOpenAssignments(db: Db, userId: string, facilityId?: string) {
+  if (await assignmentCounts(db, userId, false, facilityId)) throw new ConflictException('Tài khoản còn công việc chưa hoàn tất. Quản lý cần phân công lại trước.');
 }
 @Injectable()
 export class FacilityAccessService {
@@ -199,7 +210,7 @@ export class FacilityAccessService {
       if (!row) throw new NotFoundException('Không tìm thấy quyền cơ sở.');
       await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', row.userId);
       if (!row.revokedAt) {
-        await assertNoOpenAssignments(tx, row.userId);
+        await assertNoOpenAssignments(tx, row.userId, row.facilityId);
         await tx.facilityAccess.update({ where: { id }, data: { activeKey: null, revokedById: actor.id, revokedAt: new Date() } });
         await revokeActiveSessions(tx, { userId: row.userId }, 'FACILITY_ACCESS_REVOKED', actor.id);
         await this.audit(tx, actor, 'REVOKE_FACILITY_ACCESS', row.userId, '/admin/facility-access/:id/revoke', { facilityId: row.facilityId, accessId: id });
@@ -209,7 +220,7 @@ export class FacilityAccessService {
   }
 }
 
-export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string;returnRequestId?:string};
+export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string|null;commonAreaFacilityId?:string|null;returnRequestId?:string};
 export async function taskFacilityId(db: Db, ref: AssignmentReference) {
   let id: string | undefined;
   if (ref.returnRequestId) {
@@ -225,6 +236,7 @@ export async function taskFacilityId(db: Db, ref: AssignmentReference) {
   } else if (ref.storageUnitId) id = (await db.storageUnit.findUnique({ where: { id: ref.storageUnitId }, select: { storageType: { select: { facilityId: true } } } }))?.storageType.facilityId;
   else if (ref.rentalContractId) id = (await db.rentalContract.findUnique({ where: { id: ref.rentalContractId }, select: { reservationUnit: { select: { storageUnit: { select: { storageType: { select: { facilityId: true } } } } } } } }))?.reservationUnit.storageUnit.storageType.facilityId;
   else if (ref.reservationId) id = (await db.reservation.findUnique({ where: { id: ref.reservationId }, select: { facilityId: true } }))?.facilityId;
+  else if (ref.commonAreaFacilityId) id = ref.commonAreaFacilityId;
   if (!id) throw new NotFoundException('Không tìm thấy cơ sở của nhiệm vụ.');
   return id;
 }

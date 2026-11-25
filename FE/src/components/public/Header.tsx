@@ -10,7 +10,8 @@ const links = [
   ["Kho lưu trữ", "/storage"],
   ["So sánh kho", "/size-guide"],
   ["Cách thuê", "/#how-it-works"],
-  ["Cơ sở", "/#facility"],
+  ["Cơ sở", "/facilities"],
+  ["Hỗ trợ", "/#faq"],
 ];
 
 export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; toggleTheme: () => void } }) {
@@ -24,10 +25,7 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
   }, [open]);
   const { user } = useAuth();
   const location = useLocation();
-  const isInternalUser =
-    user?.role === "FACILITY_MANAGER" ||
-    user?.role === "FACILITY_STAFF" ||
-    user?.role === "SYSTEM_ADMINISTRATOR";
+  const isInternalUser = user && user.role !== "STORAGE_CUSTOMER";
   const accountPath = !user
     ? "/account/login"
     : isInternalUser

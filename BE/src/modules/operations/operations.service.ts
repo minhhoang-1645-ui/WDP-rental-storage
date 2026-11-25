@@ -1,4 +1,5 @@
 import { groupPriceKey, groupPriceKeys, lockPriceRange, priceBounds, priceInRange, priceVersionStatus, resolveMonthlyRange, sizeGroups, type SizeGroup } from '../pricing/monthly-price-range.js';
+import { readServiceSchedule } from '../dispatch/service-schedule.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import {
   BadRequestException,
@@ -22,6 +23,7 @@ const fields = [
   'name',
   'address',
   'officeHours',
+  'serviceSchedule',
   'accessHours',
   'bookingEnabled',
   'operationalStatus',
@@ -142,7 +144,7 @@ export class OperationsService {
           tx.invoice.count({where:{OR:[{facilityIdSnapshot:id},{facilityIdSnapshot:null,reservation:{facilityId:id}}],status:{not:'VOID'},balanceDue:{gt:0}}}),
           tx.depositSettlement.count({where:{returnRequest:{OR:[{inspections:{some:{storageUnit:{storageType:{facilityId:id}}}}},{inspections:{none:{}},reservation:{facilityId:id}}]},status:{not:'SETTLED'}}}),
           tx.supportRequest.count({where:{OR:[{storageUnit:{storageType:{facilityId:id}}},{storageUnitId:null,rentalContract:{reservationUnit:{storageUnit:{storageType:{facilityId:id}}}}},{storageUnitId:null,rentalContractId:null,reservation:{facilityId:id}}],status:{not:'RESOLVED'}}}),
-          tx.maintenanceRequest.count({where:{storageUnit:{storageType:{facilityId:id}},activeKey:{not:null}}}),
+          tx.maintenanceRequest.count({where:{OR:[{storageUnit:{storageType:{facilityId:id}},activeKey:{not:null}},{commonAreaFacilityId:id,status:{not:'COMPLETED'}}]}}),
           tx.reservationUnit.count({where:{storageUnit:{storageType:{facilityId:id}},releasedAt:null,actualVacatedAt:null,reservation:{status:{in:['PENDING','CONFIRMED']}}}}),
           tx.transferRequest.count({where:{status:{in:['REQUESTED','APPROVED']},OR:[{fromStorageUnit:{storageType:{facilityId:id}}},{toStorageUnit:{storageType:{facilityId:id}}}]}}),
           tx.handoverAppointment.count({where:{reservation:{facilityId:id},status:{in:['REQUESTED','CONFIRMED']}}}),
@@ -169,6 +171,7 @@ export class OperationsService {
           old && body.accessHours === undefined
             ? old.accessHours
             : text('accessHours', 200),
+        ...(body.serviceSchedule !== undefined ? { serviceSchedule: readServiceSchedule(body.serviceSchedule) } : {}),
         bookingEnabled,
         operationalStatus: value.operationalStatus,
         ...(planChanged ? {

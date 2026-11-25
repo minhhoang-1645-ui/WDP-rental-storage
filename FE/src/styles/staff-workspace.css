@@ -408,3 +408,17 @@ a.staff-metric:hover {
   .staff-metric-heading { min-height: auto; }
   .workspace-themed[data-workspace-role="staff"] .portal-breadcrumb-root { display: none; }
 }
+.staff-incident-page { width: 100%; max-width: 960px; margin-inline: auto; }
+.staff-incident-page .incident-location { display: grid; gap: 10px; padding-block: 14px; border-block: 1px solid var(--workspace-border); }
+.staff-incident-page .incident-location h2 { font-size: 16px; font-weight: 700; }
+.incident-choice { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.incident-choice label { display: flex; align-items: center; gap: 6px; }
+.incident-unit-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 8px; max-height: 240px; overflow: auto; }
+.incident-unit-options label { display: flex; align-items: center; gap: 6px; padding: 7px; border: 1px solid var(--workspace-border); border-radius: 6px; }
+.incident-two-fields { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.incident-photos { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.incident-photos li { display: grid; align-content: start; gap: 6px; }
+.incident-photos img { display: block; width: 120px; height: 92px; border-radius: 8px; object-fit: cover; }
+.maintenance-evidence { display: grid; gap: 8px; margin-top: 14px; }
+.maintenance-evidence h3 { font-weight: 700; }
+@media (max-width: 560px) { .incident-two-fields { grid-template-columns: 1fr; } }

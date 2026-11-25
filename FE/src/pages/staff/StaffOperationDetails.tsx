@@ -8,6 +8,8 @@ import { RecordTimeline } from '../../components/workspace/RecordTimeline';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 import type { StaffOperation } from './staff-resources';
 import { transferProblem } from '../../utils/transfer-problem';
+import { incidentArea } from '../../utils/maintenance-incident';
+import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 type Fact = [string, ReactNode];
 
 function DateFact({ value, withTime = false }: { value: string; withTime?: boolean }) {
@@ -172,7 +174,8 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
   }
 
   if (resource === 'maintenance') {
-    const location = [first(row, 'unit.floor'), first(row, 'unit.zone'), first(row, 'unit.row'), first(row, 'unit.position')].filter(Boolean).join(' · ');
+    const location = [first(row, 'unit.unitCode'), first(row, 'unit.floor'), first(row, 'unit.zone'),
+      incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ');
     const returnId = first(row, 'returnContext.returnRequest.id');
     const workNote = first(row, 'workNote');
     const verification = first(row, 'verificationNote');
@@ -181,7 +184,10 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ['Cơ sở', first(row, 'facility.name')], ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
         ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
         ['Nguồn phát sinh', row.source ? label(row.source) : ''],
-      ]} note={first(row, 'description')} />
+        ['Khóa đặt thuê của phiếu', row.blocksUnit === true ? 'Đang tạm chặn' : 'Không còn chặn'],
+      ]} note={first(row, 'description')}>
+        <MaintenancePhotoGallery record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
+      </Section>
       {actions}
       {(workNote || verification || row.workCompletedAt || row.verifiedAt || ['COMPLETED', 'AWAITING_VERIFICATION'].includes(String(row.status))) &&
         <Section title="Kết quả bảo trì" items={[

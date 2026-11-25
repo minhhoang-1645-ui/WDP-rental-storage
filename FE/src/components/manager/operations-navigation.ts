@@ -8,6 +8,8 @@ const managerNavigation: InternalNavItem[] = [
   { to: '/manager/damage-claims', label: 'Sự cố hàng hóa cần quyết định', icon: ShieldAlert, group: 'Phê duyệt ngoại lệ' },
   { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
   { to: '/manager/operations/support-requests', label: 'Hỗ trợ khách hàng', icon: Headphones, group: 'Tiếp nhận & phân công' },
+  { to: '/manager/service-calendar', label: 'Lịch phục vụ', icon: CalendarClock, group: 'Vận hành' },
+  { to: '/manager/shifts', label: 'Lịch ca làm', icon: ClipboardCheck, group: 'Nhân sự' },
   { to: '/manager/assignments', label: 'Phân công nhân viên', icon: ClipboardCheck, group: 'Nhân sự' },
   { to: '/manager/operations/appointments', label: 'Lịch bàn giao', icon: CalendarClock, group: 'Giao nhận & thay đổi' },
   { to: '/manager/operations/renewals', label: 'Gia hạn kho', icon: Undo2, group: 'Giao nhận & thay đổi' },

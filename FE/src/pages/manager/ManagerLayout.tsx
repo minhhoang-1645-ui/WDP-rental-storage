@@ -37,7 +37,7 @@ export function ManagerLayout() {
       scopeNotice={<section className="manager-card" role="status"><h2>{facilities.loading ? 'Đang tải cơ sở' : facilities.error ? 'Chưa tải được quyền cơ sở' : 'Chưa được cấp quyền cơ sở'}</h2><p>{facilities.loading ? 'Vui lòng chờ trong giây lát.' : facilities.error || 'Liên hệ quản trị viên để được cấp quyền quản lý cơ sở.'}</p>{facilities.error && <button className="button-secondary" onClick={facilities.refresh}>Thử lại</button>}</section>}
       scopeControl={ready ? <select aria-label="Cơ sở đang quản lý" value={selected} onChange={event => {
         safeSessionStorage.setItem('nestbox-manager-facility', event.target.value);
-        window.location.assign(pathname === '/manager/catalog/additional-services' ? pathname : '/manager');
+        window.location.assign(['/manager/catalog/additional-services', '/manager/shifts', '/manager/service-calendar'].includes(pathname) ? pathname : '/manager');
       }}>{choices.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <span role="status">{facilities.loading ? 'Đang tải cơ sở…' : facilities.error ? <button onClick={facilities.refresh}>Tải lại cơ sở</button> : 'Chưa được cấp quyền cơ sở'}</span>}
     /></OperationsWorkspace.Provider>
   );

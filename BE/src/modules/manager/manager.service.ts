@@ -60,7 +60,8 @@ export class ManagerService {
       this.prisma.supportRequest.count({ where: { ...supportTaskScope(actor), status: { not: 'RESOLVED' } } }),
       this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'MAINTENANCE' } }),
       this.prisma.depositSettlement.count({ where: { returnRequest:returnTaskScope(actor), status: { not: 'SETTLED' } } }),
-      this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'AVAILABLE' } }),
+      this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'AVAILABLE',
+        incidentBlocks: { none: { releasedAt: null } }, maintenanceRequests: { none: { activeKey: { not: null } } } } }),
       this.prisma.storageUnit.count({ where: { storageType:{facility:scope.facility}, status: 'OCCUPIED' } }),
     ]);
     return { pendingReservations, activeRentals: activeRentalRows.length, overdueRentals: overdueRows.length, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits };

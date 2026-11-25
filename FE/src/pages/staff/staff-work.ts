@@ -40,16 +40,17 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const row = records.get(entry.id)!;
     const identity = staffRecordIdentity(row, entry.kind);
     const status = first(row, 'status');
-    const scheduledAt = first(row, 'scheduledAt', 'transferRequestedSchedule.startAt');
+    const phase = first(row, 'coordination.phase');
+    const scheduledAt = first(row, 'scheduledAt', 'inspectionScheduledAt', 'transferRequestedSchedule.startAt');
     const dueAt = first(row, 'dueAt') || scheduledAt;
     const blocked = entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
       && (row.bookingReady === false || object(row.handoverReadiness).allowed === false);
     const transferPending = entry.kind === 'transfers' && transferProblem(row).pending;
-    const waiting = transferPending || entry.kind === 'support-requests' && status === 'ESCALATED'
+    const waiting = phase === 'WAITING' || transferPending || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION';
     const actionable = !blocked && !waiting && entry.action
       && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
-    const processed = !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
+    const processed = phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
       || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
@@ -65,7 +66,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       'damage-claims': 'Kiểm tra sự cố hàng hóa',
     };
     return {
-      entry, status, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
+      entry, status, phase, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
       title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
       unit: identity.location || first(row, 'unitCodeSnapshot'),
@@ -84,5 +85,5 @@ export function staffWorkPhase(task: ReturnType<typeof staffWorkItems>[number]) 
   if (task.blocked) return 'blocked';
   if (task.waiting) return 'waiting';
   if (task.processed) return 'completed';
-  return staffInProgress(task.status) ? 'progress' : 'pending';
+  return task.phase === 'IN_PROGRESS' || !task.phase && staffInProgress(task.status) ? 'progress' : 'pending';
 }

@@ -166,7 +166,7 @@ export function customerAppointmentAction(contract: Row, contracts: Row[], appoi
   const start = group.map(item => text(item, 'startDate')).sort().at(-1)!, end = group.map(item => text(item, 'endDate')).sort()[0];
   if (!start || !end || start >= end || Date.parse(`${end}T00:00:00+07:00`) <= now) return;
   const pickupStart = keyCollectionStartDate(start.slice(0, 10));
-  return { title: 'Đặt lịch nhận kho', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(pickupStart)} đến trước ${formatDate(end)}. Giờ hẹn hợp lệ được xác nhận tự động, quản lý sẽ phân công nhân viên; chỉ sử dụng kho từ ${formatDate(start)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
+  return { title: 'Đặt lịch nhận kho', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(pickupStart)} đến trước ${formatDate(end)}. Lịch được xác nhận theo khung phục vụ. Nếu cần xem xét thêm, quản lý sẽ xác nhận. Bạn được sử dụng kho từ ${formatDate(start)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
     const value = String(input.scheduledAt ?? '');
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(value)) return 'Nhập ngày giờ theo dạng YYYY-MM-DD HH:mm.';
     const instant = Date.parse(`${value.replace(' ', 'T')}+07:00`), normalized = new Date(instant + 25200000);

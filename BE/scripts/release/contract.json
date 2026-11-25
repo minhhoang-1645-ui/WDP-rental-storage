@@ -26,8 +26,15 @@
     "20261124000400_facility_closure_relocation",
     "20261124000400_live_reservation_unit_uniqueness",
     "20261125000100_deposit_refund_deadline",
+    "20261125000100_maintenance_incident_reports",
+    "20261125000200_incident_booking_blocks",
     "20261125000200_policy_charge_invoices",
-    "20261125000300_operational_policy_settlements"
+    "20261125000300_operational_policy_settlements",
+    "20261125000300_staff_shifts",
+    "20261125000400_facility_service_schedule",
+    "20261125000400_storage_type_booking_activation",
+    "20261125000500_return_inspection_schedule",
+    "20261125000600_work_dispatch_fields"
   ],
   "migrations": [
     {
@@ -402,13 +409,13 @@
       ]
     },
     {
+      "name": "20261124000400_facility_closure_relocation",
       "checksums": [
         "026b11dc1a98dcf75cb2455aacccff837a39b6eae82891b5ffa4e3fec428e5dd",
         "c187b0faddd0bf3800b5e5a47e1e45698ebdb8f26b5ef4a00138c58a5f5c738c"
-      ],
-      "name": "20261124000400_facility_closure_relocation"
-      },
-      {
+      ]
+    },
+    {
       "name": "20261124000400_live_reservation_unit_uniqueness",
       "checksums": [
         "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
@@ -423,6 +430,20 @@
       ]
     },
     {
+      "name": "20261125000100_maintenance_incident_reports",
+      "checksums": [
+        "a37471ed84de1880e9a324c84e3b5e2b17203e98de459e218b43f64af4a00fa6",
+        "57b58d3cc7b9671ff82af3832cf97683dec2226af282af3d9dcaf73e67749412"
+      ]
+    },
+    {
+      "name": "20261125000200_incident_booking_blocks",
+      "checksums": [
+        "b70318974ed3008b13678c95a43707047a24d5b9e2ca930d0dced451871e6534",
+        "1a3f97b0dd4096da656c137fcf7c73870bec89bef07565b805a69c378817bbb4"
+      ]
+    },
+    {
       "name": "20261125000200_policy_charge_invoices",
       "checksums": [
         "e89fd94fba48bf03eaabc9609dde6c0058bae44f27c3fc5d8c6ddb4b6fdb7152",
@@ -431,11 +452,45 @@
     },
     {
       "name": "20261125000300_operational_policy_settlements",
-      "checksums": ["543af5c599b4117d624cef7181af17df246eee52f1876770cd0bcd8b6477f3fc", "5bf4670f1ec0726981bf5fb88939d4eb92d3eabd36b706fd1fa723439dfbe7bf"]
+      "checksums": [
+        "543af5c599b4117d624cef7181af17df246eee52f1876770cd0bcd8b6477f3fc",
+        "5bf4670f1ec0726981bf5fb88939d4eb92d3eabd36b706fd1fa723439dfbe7bf"
+      ]
+    },
+    {
+      "name": "20261125000300_staff_shifts",
+      "checksums": [
+        "9bf92cc311c8161e3700619d1ac6e1183cb1aa7835981aecc1066aff73953bac",
+        "a11bc6efbf334316f874e10aa2da7c9a36d552d61977cbc3a23fbb394059b031"
+      ]
+    },
+    {
+      "name": "20261125000400_facility_service_schedule",
+      "checksums": [
+        "7ea6ccc063b169ea1e8cb5d809d33f876d8a5643f1b23300040e2bd65f189e54",
+        "135946d78bf686108c704b477bdebf663cdd82a11a273f341ffb58c80b6f95f1"
+      ]
     },
     {
       "name": "20261125000400_storage_type_booking_activation",
-      "checksums": ["25e41f3f30f6911ecea90bf6db8c2d0ab1d902895187f0e9812c47a8f005cf4b", "10eb105f5bee9b7efca29dcf8748d146dd23135451f19e1c4b61c708a9ebf434"]
+      "checksums": [
+        "25e41f3f30f6911ecea90bf6db8c2d0ab1d902895187f0e9812c47a8f005cf4b",
+        "10eb105f5bee9b7efca29dcf8748d146dd23135451f19e1c4b61c708a9ebf434"
+      ]
+    },
+    {
+      "name": "20261125000500_return_inspection_schedule",
+      "checksums": [
+        "c9339322fbe37d0299b109d1f3e6bbd5a609b4195f76085f0fd8035a4351bebb",
+        "765030cd97a7f13e5ce2fd2f89542b3ff1dd5b3fff5ddb596fb65c4e826188f5"
+      ]
+    },
+    {
+      "name": "20261125000600_work_dispatch_fields",
+      "checksums": [
+        "5721e6c771c63cc85f2e927e2283fae65192da293034cbed84366502fe960397",
+        "3508dbe2a8d2d3df11846a0e4fd849ae95bc6547d22bd0e578fd8bb931652cc1"
+      ]
     }
   ],
   "historicalException": {

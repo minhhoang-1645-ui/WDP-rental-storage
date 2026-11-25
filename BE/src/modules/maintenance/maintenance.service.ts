@@ -1,3 +1,4 @@
+import { workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { businessToday } from '../../business-date.js';
@@ -5,6 +6,7 @@ import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
 import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
+import { validateMaintenancePhotos, type MaintenanceUpload } from './maintenance-photo.js';
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -13,8 +15,12 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 type MaintenanceStatus = 'OPEN' | 'IN_PROGRESS' | 'AWAITING_VERIFICATION' | 'COMPLETED';
-type MaintenancePriority = 'LOW' | 'MEDIUM' | 'HIGH';
-type MaintenanceCategory = 'UNIT_DAMAGE' | 'CLEANING' | 'LOCK_OR_ACCESS' | 'FACILITY_EQUIPMENT' | 'OTHER';
+export const maintenancePriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export const maintenanceCategories = ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'ACCESS_CREDENTIAL', 'FACILITY_EQUIPMENT', 'UTILITIES', 'SECURITY', 'OTHER'] as const;
+const commonAreas = ['CORRIDOR', 'ENTRANCE', 'SECURITY', 'UTILITIES', 'OTHER'] as const;
+type MaintenancePriority = typeof maintenancePriorities[number];
+type MaintenanceCategory = typeof maintenanceCategories[number];
+type RentalImpact = 'NO_IMPACT' | 'AFFECTED' | 'UNKNOWN';
 type ViewMode = 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 
 export interface MaintenanceListQuery {
@@ -25,29 +31,81 @@ export interface MaintenanceListQuery {
   category?: MaintenanceCategory;
   assignedToMe?: boolean;
   search?: string;
+  facilityId?: string;
 }
 
 const unresolvedStatuses: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'];
+const affectedAllocationSelect = {
+  reservation: { select: {
+    id: true, facilityId: true, reservationCode: true,
+    appointments: {
+      where: { status: { in: ['REQUESTED', 'CONFIRMED'] } },
+      select: { id: true, appointmentCode: true, scheduledAt: true, status: true },
+      orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
+    },
+  } },
+} satisfies Prisma.ReservationUnitSelect;
+type AffectedAllocation = Prisma.ReservationUnitGetPayload<{ select: typeof affectedAllocationSelect }>;
+type IncidentImpactBlock = { storageUnit: { unitNumber: string; reservationUnits?: AffectedAllocation[] } };
+
+function affectedBookings(blocks: IncidentImpactBlock[], facilityId?: string) {
+  type Appointment = AffectedAllocation['reservation']['appointments'][number];
+  const bookings = new Map<string, { reservationId: string; reservationReference: string; unitCodes: string[]; appointments: Appointment[] }>();
+  for (const { storageUnit } of blocks) {
+    for (const { reservation } of storageUnit.reservationUnits ?? []) {
+      if (!facilityId || reservation.facilityId !== facilityId) continue;
+      const existing = bookings.get(reservation.id);
+      if (existing) {
+        if (!existing.unitCodes.includes(storageUnit.unitNumber)) existing.unitCodes.push(storageUnit.unitNumber);
+      } else {
+        bookings.set(reservation.id, { reservationId: reservation.id, reservationReference: reservation.reservationCode,
+          unitCodes: [storageUnit.unitNumber], appointments: reservation.appointments });
+      }
+    }
+  }
+  return [...bookings.values()].sort((left, right) => left.reservationReference.localeCompare(right.reservationReference));
+}
+
+export function maintenanceFacilityScope(actor: PublicUser): Prisma.MaintenanceRequestWhereInput {
+  return { OR: [
+    { storageUnit: { storageType: { facility: facilityScope(actor) } } },
+    { commonAreaFacility: facilityScope(actor) },
+  ] };
+}
 
 @Injectable()
 export class MaintenanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  createManual(input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+  createManual(input: Record<string, unknown>, key: string | undefined, actor: PublicUser, files: MaintenanceUpload[] = []) {
     if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được tạo yêu cầu bảo trì.');
     const parsed = this.manualInput(input, key);
-    return this.createManualTransaction(parsed, actor);
+    return this.createManualTransaction({ ...parsed, photos: validateMaintenancePhotos(files) }, actor);
+  }
+
+  listReportFacilities(actor: PublicUser) {
+    return this.prisma.facility.findMany({
+      where: facilityScope(actor), select: { id: true, name: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
   }
 
   async listReportUnits(actor: PublicUser, query: MaintenanceListQuery) {
     const { page, limit, search } = query;
-    const where = { storageType: { facility: facilityScope(actor) }, ...(search ? { unitNumber: { contains: search, mode: 'insensitive' as const } } : {}) };
+    if (query.facilityId) await assertTaskFacility(this.prisma, actor, { commonAreaFacilityId: query.facilityId });
+    const where = { storageType: { facility: { ...facilityScope(actor), ...(query.facilityId ? { id: query.facilityId } : {}) } }, ...(search ? { unitNumber: { contains: search, mode: 'insensitive' as const } } : {}) };
     const [total, items] = await Promise.all([this.prisma.storageUnit.count({ where }), this.prisma.storageUnit.findMany({
       where, skip: (page - 1) * limit, take: limit,
       select: { id: true, unitNumber: true, status: true, storageType: { select: { facility: { select: { id: true, name: true } } } } },
       orderBy: [{ unitNumber: 'asc' }, { id: 'asc' }],
     })]);
     return { page, limit, total, items: items.map(({ unitNumber, ...unit }) => ({ ...unit, unitCode: unitNumber })) };
+  }
+
+  async listAssessmentUnits(id: string, actor: PublicUser, query: MaintenanceListQuery) {
+    const report = await this.getManager(id, actor);
+    if (!report.facility?.id) throw new NotFoundException('Không tìm thấy cơ sở của phiếu.');
+    return this.listReportUnits(actor, { ...query, facilityId: report.facility.id });
   }
 
   listStaff(query: MaintenanceListQuery, actor: PublicUser) {
@@ -58,14 +116,16 @@ export class MaintenanceService {
     if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được xem báo cáo của mình.');
     const where: Prisma.MaintenanceRequestWhereInput = {
       source: 'MANUAL', reportedByUserId: actor.id,
-      storageUnit: { storageType: { facility: facilityScope(actor) } },
+      ...maintenanceFacilityScope(actor),
     };
     const [total, records] = await Promise.all([
       this.prisma.maintenanceRequest.count({ where }),
       this.prisma.maintenanceRequest.findMany({
         where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (query.page - 1) * query.limit, take: query.limit,
         select: {
-          id: true, maintenanceCode: true, category: true, status: true, createdAt: true,
+          id: true, maintenanceCode: true, category: true, priority: true, status: true, createdAt: true,
+          rentalImpact: true, activeKey: true, incidentBlocks: { where: { releasedAt: null }, select: { id: true }, take: 1 },
+          commonArea: true, locationNote: true, commonAreaFacility: { select: { name: true } },
           workNote: true, verificationNote: true, verifiedAt: true,
           reportedBy: { select: { fullName: true } }, assignedStaff: { select: { fullName: true } },
           verifiedBy: { select: { fullName: true } },
@@ -73,8 +133,9 @@ export class MaintenanceService {
         },
       }),
     ]);
-    return { page: query.page, limit: query.limit, total, items: records.map(({ storageUnit, ...record }) => ({
-      ...record, unitCode: storageUnit.unitNumber, facility: storageUnit.storageType.facility,
+    return { page: query.page, limit: query.limit, total, items: records.map(({ storageUnit, commonAreaFacility, activeKey, incidentBlocks, ...record }) => ({
+      ...record, blocksUnit: Boolean(activeKey || incidentBlocks.length),
+      unitCode: storageUnit?.unitNumber ?? null, facility: commonAreaFacility ?? storageUnit?.storageType.facility,
     })) };
   }
 
@@ -85,7 +146,7 @@ export class MaintenanceService {
   }
 
   async getStaff(id: string, actor: PublicUser) {
-    const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }], assignedStaffUserId: actor.id, storageUnit:{storageType:{facility:facilityScope(actor)}} }, include: this.include() });
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
     return this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
   }
@@ -93,14 +154,36 @@ export class MaintenanceService {
   async getManager(id: string, actor:PublicUser) {
     managerReservationScope(actor);
 
- const row=await this.find(id,this.prisma);await assertTaskFacility(this.prisma,actor,{storageUnitId:row.storageUnitId});return this.toMaintenance(row,'FACILITY_MANAGER');
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include(true) });
+    if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
+    return this.toMaintenance(record, 'FACILITY_MANAGER');
+  }
+
+  private detailScope(id: string, actor: PublicUser): Prisma.MaintenanceRequestWhereInput {
+    return { AND: [
+      { OR: [{ id }, { maintenanceCode: id }] },
+      maintenanceFacilityScope(actor),
+      ...(actor.role === 'FACILITY_STAFF' ? [{ OR: [
+        { assignedStaffUserId: actor.id },
+        { source: 'MANUAL' as const, reportedByUserId: actor.id },
+      ] }] : []),
+    ] };
+  }
+
+  async getPhoto(id: string, photoId: string, actor: PublicUser) {
+    const photo = await this.prisma.maintenancePhoto.findFirst({
+      where: { id: photoId, maintenanceRequest: this.detailScope(id, actor) },
+      select: { bytes: true, mimeType: true },
+    });
+    if (!photo) throw new NotFoundException('Không tìm thấy ảnh sự cố.');
+    return photo;
   }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.requiredText(input.staffUserId, 100, 'staffUserId');
     return this.transition(id, key, 'ASSIGN', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
-      const staff = await assertAssignmentAccess(tx,actor,staffUserId,{storageUnitId:current.storageUnitId});
+      const staff = await assertAssignmentAccess(tx, actor, staffUserId, current);
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staff.id) return current;
@@ -115,7 +198,7 @@ export class MaintenanceService {
 
   updatePriority(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const priority = input.priority;
-    if (!['LOW', 'MEDIUM', 'HIGH'].includes(String(priority))) throw new BadRequestException('priority không hợp lệ.');
+    if (!maintenancePriorities.includes(priority as MaintenancePriority)) throw new BadRequestException('Mức ưu tiên không hợp lệ.');
     return this.transition(id, key, 'PRIORITY', async (tx, current, safeKey) => {
       this.assertUnresolved(current);
       return tx.maintenanceRequest.update({
@@ -124,6 +207,70 @@ export class MaintenanceService {
         include: this.include(),
       });
     }, actor, 'FACILITY_MANAGER');
+  }
+
+  holdUnsafeUnit(id: string, key: string | undefined, actor: PublicUser) {
+    return this.transition(id, key, 'HOLD_UNSAFE_UNIT', async (tx, current, safeKey) => {
+      if (!current.storageUnitId) throw new BadRequestException('Chọn phạm vi ô bị ảnh hưởng.');
+      return this.assessBlocks(tx, current, [current.storageUnitId], actor, 'HOLD_UNSAFE_UNIT', safeKey);
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  assess(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const unitIds = this.unitIds(input.affectedUnitIds);
+    if (input.affectedUnitIds === undefined) throw new BadRequestException('Cần gửi phạm vi đánh giá.');
+    const expected = input.expectedAffectedUnitIds === undefined ? undefined : this.unitIds(input.expectedAffectedUnitIds);
+    return this.transition(id, key, 'ASSESS_BOOKING_IMPACT', (tx, current, safeKey) => {
+      if (expected && JSON.stringify(expected) !== JSON.stringify(current.incidentBlocks.map((block: { storageUnitId: string }) => block.storageUnitId).sort())) {
+        throw new ConflictException('Phạm vi khóa vừa thay đổi. Tải lại phiếu trước khi đánh giá.');
+      }
+      return this.assessBlocks(tx, current, unitIds, actor, 'ASSESS_BOOKING_IMPACT', safeKey);
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  private async assessBlocks(tx: Prisma.TransactionClient, current: any, unitIds: string[], actor: PublicUser, action: string, safeKey: string) {
+    this.assertUnresolved(current);
+    if (current.storageUnitId && unitIds.some(id => id !== current.storageUnitId)) {
+      throw new BadRequestException('Phiếu ô kho chỉ áp dụng cho ô được báo.');
+    }
+    const facilityId = current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id;
+    await this.replaceBlocks(tx, current.id, facilityId, unitIds, actor);
+    return tx.maintenanceRequest.update({
+      where: { id: current.id }, data: { lastAction: action, lastActionIdempotencyKey: safeKey }, include: this.include(),
+    });
+  }
+
+  private async replaceBlocks(tx: Prisma.TransactionClient, incidentId: string, facilityId: string, wanted: string[], actor: PublicUser, reason = 'ASSESS') {
+    const existing = await tx.incidentUnitBlock.findMany({
+      where: { maintenanceRequestId: incidentId, releasedAt: null }, select: { id: true, storageUnitId: true },
+    });
+    const currentIds = new Set(existing.map(block => block.storageUnitId));
+    const added = wanted.filter(id => !currentIds.has(id));
+    const removed = existing.filter(block => !wanted.includes(block.storageUnitId));
+    const touched = [...added, ...removed.map(block => block.storageUnitId)].sort();
+    for (const id of touched) {
+      const changed = await tx.storageUnit.updateMany({
+        where: { id, storageType: { facilityId } }, data: { bookingSafetyVersion: { increment: 1 } },
+      });
+      if (!changed.count) throw new BadRequestException('Phạm vi ảnh hưởng có ô không thuộc cơ sở của phiếu.');
+    }
+    if (removed.length) await tx.incidentUnitBlock.updateMany({
+      where: { id: { in: removed.map(block => block.id) } }, data: { releasedAt: new Date() },
+    });
+    if (added.length) await tx.incidentUnitBlock.createMany({
+      data: added.map(storageUnitId => ({ maintenanceRequestId: incidentId, storageUnitId })),
+    });
+    if (added.length || removed.length || reason !== 'REPORT') await this.auditIncident(tx, actor, incidentId, 'INCIDENT_BOOKING_SCOPE', {
+      reason, facilityId, blockedUnitIds: wanted, addedUnitIds: added, releasedUnitIds: removed.map(block => block.storageUnitId),
+    });
+  }
+
+  private auditIncident(tx: Prisma.TransactionClient, actor: PublicUser, id: string, action: string, metadata: Prisma.InputJsonObject) {
+    return tx.auditEvent.create({ data: {
+      category: 'ACTIVITY', action, outcome: 'SUCCESS', resource: 'maintenance', resourceId: id,
+      actorId: actor.id, actorName: actor.fullName, actorEmail: actor.email, actorRole: actor.role,
+      method: 'POST', route: '/maintenance/' + id, httpStatus: 200, metadata,
+    } });
   }
 
   start(id: string, key: string | undefined, actor: PublicUser) {
@@ -158,13 +305,13 @@ export class MaintenanceService {
   }
 
   verify(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    const note = this.optionalText(input.note, 4000, 'note');
+    const note = this.optionalText(input?.note, 4000, 'note');
     return this.transition(id, key, 'VERIFY', async (tx, current, safeKey) => {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể xác minh; trạng thái hiện tại là ${current.status}.`);
       this.assertUnitMaintenance(current);
-      const otherActive = await tx.maintenanceRequest.count({ where: { storageUnitId: current.storageUnitId, activeKey: { not: null }, id: { not: current.id } } });
-      if (otherActive !== 0) throw new ConflictException('StorageUnit có maintenance case khác đang hoạt động.');
-      if (current.storageUnit.status === 'MAINTENANCE') {
+      await this.replaceBlocks(tx, current.id, current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id, [], actor, 'VERIFIED');
+      await this.auditIncident(tx, actor, current.id, 'INCIDENT_VERIFIED', { note });
+      if (current.activeKey && current.storageUnit?.status === 'MAINTENANCE') {
         const occupied = await tx.rentalContract.count({ where: {
           status: 'ACTIVE', reservationUnit: { storageUnitId: current.storageUnitId, releasedAt: null },
         } });
@@ -195,6 +342,7 @@ export class MaintenanceService {
     return this.transition(id, key, 'REJECT_VERIFICATION', async (tx, current, safeKey) => {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể bị trả lại; trạng thái hiện tại là ${current.status}.`);
       this.assertUnitMaintenance(current);
+      await this.auditIncident(tx, actor, current.id, 'INCIDENT_VERIFICATION_REJECTED', { note });
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { status: 'IN_PROGRESS', verificationNote: note, lastAction: 'REJECT_VERIFICATION', lastActionIdempotencyKey: safeKey },
@@ -203,37 +351,39 @@ export class MaintenanceService {
     }, actor, 'FACILITY_MANAGER');
   }
 
-  private async createManualTransaction(parsed: ReturnType<MaintenanceService['manualInput']>, actor: PublicUser) {
-    const existing = await this.prisma.maintenanceRequest.findUnique({ where: { createIdempotencyKey: parsed.idempotencyKey }, include: this.include() });
-    if (existing) { await assertTaskFacility(this.prisma, actor, { storageUnitId: existing.storageUnitId }); return this.assertCreateRetry(existing, parsed, actor); }
+  private async createManualTransaction(parsed: ReturnType<MaintenanceService['manualInput']> & { photos: ReturnType<typeof validateMaintenancePhotos> }, actor: PublicUser) {
+    const retry = async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.maintenanceRequest.findUnique({ where: { createIdempotencyKey: parsed.idempotencyKey }, include: this.include() });
+      if (!existing) return null;
+      await assertTaskFacility(tx, actor, existing);
+      return this.assertCreateRetry(existing, parsed, actor);
+    };
     try {
       return await this.serializable(async (tx) => {
-        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${parsed.storageUnitId} FOR UPDATE`);
-        const unit = await tx.storageUnit.findUnique({ where: { id: parsed.storageUnitId } });
-        if (!unit) throw new NotFoundException('Không tìm thấy StorageUnit.');
-        await assertTaskFacility(tx,actor,{storageUnitId:unit.id});
-        if (actor.role !== 'FACILITY_STAFF' && unit.status !== 'AVAILABLE') {
-          throw new ConflictException({ code: 'UNIT_NOT_AVAILABLE_FOR_MANUAL_MAINTENANCE', message: 'Chỉ kho đang sẵn sàng mới có thể được quản lý đưa vào bảo trì thủ công.' });
-        }
-        if (await tx.maintenanceRequest.findUnique({ where: { activeKey: this.activeKey(unit.id) } })) throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
-        if (unit.status === 'AVAILABLE') {
-          const changed = await tx.storageUnit.updateMany({ where: { id: unit.id, status: 'AVAILABLE' }, data: { status: 'MAINTENANCE' } });
-          if (changed.count !== 1) throw new ConflictException('StorageUnit vừa được thay đổi bởi thao tác khác.');
-        }
+        const result = await retry(tx);
+        if (result) return result;
+        const facilityId = await assertTaskFacility(tx, actor, parsed);
+        if (parsed.facilityId && parsed.facilityId !== facilityId) throw new BadRequestException('Ô kho không thuộc cơ sở đã chọn.');
         const created = await tx.maintenanceRequest.create({
           data: {
-            maintenanceCode: this.code(), storageUnitId: unit.id, source: 'MANUAL', category: parsed.category, priority: parsed.priority,
-            description: parsed.description, reportedByUserId: actor.id, activeKey: this.activeKey(unit.id), createIdempotencyKey: parsed.idempotencyKey,
+            maintenanceCode: this.code(), storageUnitId: parsed.storageUnitId,
+            commonAreaFacilityId: parsed.commonAreaFacilityId, commonArea: parsed.commonArea, locationNote: parsed.locationNote,
+            source: 'MANUAL', category: parsed.category, priority: parsed.priority, rentalImpact: parsed.rentalImpact,
+            reportedAffectedUnitIds: parsed.affectedUnitIds,
+            description: parsed.description, reportedByUserId: actor.id, createIdempotencyKey: parsed.idempotencyKey,
+            photos: { create: parsed.photos },
           },
           include: this.include(),
         });
-        return this.toMaintenance(created, actor.role === 'FACILITY_STAFF' ? 'FACILITY_STAFF' : 'FACILITY_MANAGER');
-      }, 'StorageUnit vừa được đưa vào maintenance bởi thao tác khác.');
+        if (!parsed.affectedUnitIds.length) return this.toMaintenance(created, 'FACILITY_STAFF');
+        await this.replaceBlocks(tx, created.id, facilityId, parsed.affectedUnitIds, actor, 'REPORT');
+        const resultWithBlocks = await tx.maintenanceRequest.findUniqueOrThrow({ where: { id: created.id }, include: this.include() });
+        return this.toMaintenance(resultWithBlocks, 'FACILITY_STAFF');
+      }, 'Không thể gửi đồng thời báo cáo. Vui lòng thử lại.');
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
-        const retry = await this.prisma.maintenanceRequest.findUnique({ where: { createIdempotencyKey: parsed.idempotencyKey }, include: this.include() });
-        if (retry) { await assertTaskFacility(this.prisma, actor, { storageUnitId: retry.storageUnitId }); return this.assertCreateRetry(retry, parsed, actor); }
-        throw new ConflictException('StorageUnit đã có maintenance case đang hoạt động.');
+        const result = await this.prisma.$transaction(retry);
+        if (result) return result;
       }
       throw error;
     }
@@ -256,8 +406,11 @@ export class MaintenanceService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "MaintenanceRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.maintenanceRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy maintenance case.');
-      await assertTaskFacility(tx,actor,{storageUnitId:current.storageUnitId});
-      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${current.storageUnitId} FOR UPDATE`);
+      await assertTaskFacility(tx,actor,current);
+      if (current.activeKey && current.storageUnitId) {
+        const units = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`SELECT "status" FROM "StorageUnit" WHERE "id" = ${current.storageUnitId} FOR UPDATE`);
+        if (current.storageUnit && units[0]) Object.assign(current.storageUnit, { status: units[0].status });
+      }
       if (role === 'FACILITY_STAFF' && current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý bảo trì.');
       if (current.lastAction === action && current.lastActionIdempotencyKey === safeKey) return this.toMaintenance(current, role);
       const reused = await tx.maintenanceRequest.findUnique({ where: { lastActionIdempotencyKey: safeKey }, select: { id: true } });
@@ -269,30 +422,43 @@ export class MaintenanceService {
 
   private async list(query: MaintenanceListQuery, mode: ViewMode, assignedStaffUserId: string|undefined, actor:PublicUser) {
     const where: Prisma.MaintenanceRequestWhereInput = {
-      storageUnit:{storageType:{facility:facilityScope(actor)}},
+      ...maintenanceFacilityScope(actor),
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(assignedStaffUserId ? { assignedStaffUserId } : {}),
-      ...(query.search ? { OR: [
+      ...(query.search ? { AND: [{ OR: [
         { maintenanceCode: { contains: query.search, mode: 'insensitive' } },
         { description: { contains: query.search, mode: 'insensitive' } },
+        { locationNote: { contains: query.search, mode: 'insensitive' } },
         { storageUnit: { is: { OR: [
           { unitNumber: { contains: query.search, mode: 'insensitive' } },
           { floor: { contains: query.search, mode: 'insensitive' } },
           { zone: { contains: query.search, mode: 'insensitive' } },
         ] } } },
-      ] } : {}),
+      ] }] } : {}),
     };
     const [total, records] = await this.prisma.$transaction([
       this.prisma.maintenanceRequest.count({ where }),
-      this.prisma.maintenanceRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include() }),
+      this.prisma.maintenanceRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include(mode === 'FACILITY_MANAGER') }),
     ]);
-    return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toMaintenance(record, mode)) };
+    return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toMaintenance(record, mode, undefined, false)) };
   }
 
-  private include(): Prisma.MaintenanceRequestInclude {
+  private include(managerImpact = false): Prisma.MaintenanceRequestInclude {
     return {
+      commonAreaFacility: { select: { id: true, name: true } },
+      incidentBlocks: {
+        where: { releasedAt: null },
+        select: { storageUnitId: true, storageUnit: { select: {
+          unitNumber: true,
+          ...(managerImpact ? { reservationUnits: {
+            where: { releasedAt: null, plannedEndDate: { gt: businessToday() }, reservation: { status: 'CONFIRMED' } },
+            select: affectedAllocationSelect,
+          } } : {}),
+        } } },
+      },
+      photos: { select: { id: true, digest: true }, orderBy: { position: 'asc' } },
       storageUnit: {
         include: {
           storageType: { include: { facility: { select: { id: true, name: true } } } },
@@ -310,22 +476,30 @@ export class MaintenanceService {
     };
   }
 
-  private toMaintenance(record: any, mode: ViewMode, staffDetailId?: string) {
-    const future = record.storageUnit.reservationUnits.map((allocation: any) => ({
+  private toMaintenance(record: any, mode: ViewMode, staffDetailId?: string, includeAffectedDetails = true) {
+    const future = (record.storageUnit?.reservationUnits ?? []).map((allocation: any) => ({
       reservationId: allocation.reservation.id,
       reservationReference: allocation.reservation.reservationCode,
       startDate: this.isoDate(allocation.plannedStartDate),
       endDate: this.isoDate(allocation.plannedEndDate),
     }));
     const base = {
-      ...(record.storageUnit.storageType.facility ? { facility: record.storageUnit.storageType.facility } : {}),
+      facility: record.commonAreaFacility ?? record.storageUnit?.storageType.facility,
       id: record.id, maintenanceCode: record.maintenanceCode, status: record.status, priority: record.priority, category: record.category,
-      source: record.source, description: record.description,
-      unit: {
+      source: record.source, description: record.description, commonArea: record.commonArea, locationNote: record.locationNote,
+      rentalImpact: record.rentalImpact,
+      blocksUnit: Boolean(record.activeKey || record.incidentBlocks.length),
+      legacyBookingHold: Boolean(record.activeKey),
+      affectedUnits: record.incidentBlocks.map((block: { storageUnitId: string; storageUnit: { unitNumber: string } }) => ({
+        id: block.storageUnitId, unitCode: block.storageUnit.unitNumber,
+      })),
+      photos: record.photos.map(({ id }: { id: string }) => ({ id })),
+      unit: record.storageUnit ? {
         id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status,
         floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position,
         storageType: { id: record.storageUnit.storageType.id, code: record.storageUnit.storageType.code, name: record.storageUnit.storageType.name },
-      },
+      } : null,
+      coordination: workPhase('maintenance', record),
       assignedStaff: record.assignedStaff, startedAt: record.startedAt?.toISOString() ?? null,
       workCompletedAt: record.workCompletedAt?.toISOString() ?? null, workNote: record.workNote,
       createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
@@ -337,8 +511,12 @@ export class MaintenanceService {
       ...(relatedReturn?.assignedStaffUserId === staffDetailId
         ? { returnContext: { returnRequest: { id: relatedReturn.id, returnCode: relatedReturn.returnCode } } } : {}),
     } : base;
+    const bookings = affectedBookings(record.incidentBlocks, base.facility?.id);
     return {
       ...base, reportedBy: record.reportedBy, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
+      affectedBookingCount: bookings.length,
+      affectedAppointmentCount: bookings.reduce((count, booking) => count + booking.appointments.length, 0),
+      ...(includeAffectedDetails ? { affectedBookings: bookings } : {}),
       verifiedAt: record.verifiedAt?.toISOString() ?? null,
       returnContext: record.returnInspection ? {
         inspectionId: record.returnInspection.id, result: record.returnInspection.result, issueType: record.returnInspection.issueType,
@@ -350,18 +528,51 @@ export class MaintenanceService {
   }
 
   private manualInput(input: Record<string, unknown>, key: string | undefined) {
-    const storageUnitId = this.requiredText(input.storageUnitId, 100, 'storageUnitId');
+    const storageUnitId = this.optionalText(input.storageUnitId, 100, 'Mã ô kho');
+    const facilityId = this.optionalText(input.facilityId, 100, 'Mã cơ sở');
+    const commonArea = this.optionalText(input.commonArea, 30, 'Khu vực chung');
+    const locationNote = this.optionalText(input.locationNote, 500, 'Mô tả vị trí');
+    if (storageUnitId ? commonArea || locationNote : !facilityId || !commonAreas.includes(commonArea as typeof commonAreas[number])) {
+      throw new BadRequestException('Chọn một ô kho hoặc vị trí tại khu vực chung.');
+    }
+    if (commonArea === 'OTHER' && !locationNote) throw new BadRequestException('Mô tả vị trí khi chọn khu vực khác.');
+    const commonAreaFacilityId = storageUnitId ? null : facilityId;
+    const rentalImpact = (input.rentalImpact ?? 'UNKNOWN') as RentalImpact;
+    if (!['NO_IMPACT', 'AFFECTED', 'UNKNOWN'].includes(rentalImpact)) throw new BadRequestException('Chọn mức ảnh hưởng đến khả năng cho thuê.');
+    const scope = this.unitIds(input.affectedUnitIds);
+    if (storageUnitId && scope.length) throw new BadRequestException('Phiếu ô kho chỉ áp dụng cho ô được báo.');
+    if (rentalImpact === 'NO_IMPACT' && scope.length) throw new BadRequestException('Báo cáo không ảnh hưởng không được khóa ô kho.');
+    const affectedUnitIds = rentalImpact === 'NO_IMPACT' ? [] : storageUnitId ? [storageUnitId] : scope;
+    if (rentalImpact !== 'NO_IMPACT' && !affectedUnitIds.length) throw new BadRequestException('Chọn các ô có thể bị ảnh hưởng tại khu vực chung.');
     this.requiredText(input.description, 4000, 'description');
     const description = this.requiredText(appendEvidenceLink(input.description, input.evidenceLink), 4000, 'description');
     const category = input.category;
     const priority = input.priority ?? 'MEDIUM';
-    if (typeof category !== 'string' || !['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'].includes(category)) throw new BadRequestException('category không hợp lệ.');
-    if (typeof priority !== 'string' || !['LOW', 'MEDIUM', 'HIGH'].includes(priority)) throw new BadRequestException('priority không hợp lệ.');
-    return { storageUnitId, description, category: category as MaintenanceCategory, priority: priority as MaintenancePriority, idempotencyKey: this.idempotencyKey(key) };
+    if (!maintenanceCategories.includes(category as MaintenanceCategory)) throw new BadRequestException('Loại sự cố không hợp lệ.');
+    if (!maintenancePriorities.includes(priority as MaintenancePriority)) throw new BadRequestException('Mức ưu tiên không hợp lệ.');
+    return { storageUnitId, facilityId, commonAreaFacilityId, commonArea, locationNote, description, rentalImpact, affectedUnitIds, category: category as MaintenanceCategory, priority: priority as MaintenancePriority, idempotencyKey: this.idempotencyKey(key) };
   }
 
-  private assertCreateRetry(record: any, parsed: ReturnType<MaintenanceService['manualInput']>, actor: PublicUser) {
-    if (record.source !== 'MANUAL' || record.storageUnitId !== parsed.storageUnitId || record.category !== parsed.category || record.priority !== parsed.priority || record.description !== parsed.description || record.reportedByUserId !== actor.id) {
+  private unitIds(value: unknown): string[] {
+    let ids = value ?? [];
+    if (typeof value === 'string') {
+      try { ids = JSON.parse(value); }
+      catch { throw new BadRequestException('Danh sách ô bị ảnh hưởng không hợp lệ.'); }
+    }
+    if (!Array.isArray(ids) || ids.length > 200 || ids.some(id => typeof id !== 'string' || !id.trim() || id.length > 100)) {
+      throw new BadRequestException('Danh sách ô bị ảnh hưởng không hợp lệ.');
+    }
+    return [...new Set(ids as string[])].sort();
+  }
+
+  private assertCreateRetry(record: any, parsed: ReturnType<MaintenanceService['manualInput']> & { photos: ReturnType<typeof validateMaintenancePhotos> }, actor: PublicUser) {
+    if (record.source !== 'MANUAL' || record.storageUnitId !== parsed.storageUnitId || record.commonAreaFacilityId !== parsed.commonAreaFacilityId
+      || record.commonArea !== parsed.commonArea || record.locationNote !== parsed.locationNote || record.category !== parsed.category
+      || record.description !== parsed.description || record.reportedByUserId !== actor.id
+      || (record.rentalImpact ?? 'UNKNOWN') !== parsed.rentalImpact
+      || (record.rentalImpact !== null && JSON.stringify(record.reportedAffectedUnitIds) !== JSON.stringify(parsed.affectedUnitIds))
+      || (parsed.facilityId && parsed.facilityId !== (record.commonAreaFacilityId ?? record.storageUnit?.storageType.facility.id))
+      || record.photos.length !== parsed.photos.length || parsed.photos.some((photo, index) => photo.digest !== record.photos[index].digest)) {
       throw new ConflictException('Idempotency-Key đã được dùng cho maintenance request khác.');
     }
     return this.toMaintenance(record, actor.role === 'FACILITY_STAFF' ? 'FACILITY_STAFF' : 'FACILITY_MANAGER');
@@ -372,19 +583,14 @@ export class MaintenanceService {
   }
 
   private assertUnitMaintenance(record: any) {
+    if (!record.activeKey || !record.storageUnit) return;
     if (record.storageUnit.status === 'MAINTENANCE') return;
-    if (record.source === 'MANUAL' && record.reportedBy?.role === 'FACILITY_STAFF' && ['OCCUPIED', 'RESERVED'].includes(record.storageUnit.status)) return;
+    if (record.source === 'MANUAL' && ['AVAILABLE', 'OCCUPIED', 'RESERVED'].includes(record.storageUnit.status)) return;
     throw new ConflictException('Trạng thái kho đã thay đổi. Kiểm tra lại hồ sơ bảo trì.');
   }
 
   private async identity(id: string) {
     const record = await this.prisma.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }] }, select: { id: true } });
-    if (!record) throw new NotFoundException('Không tìm thấy maintenance case.');
-    return record;
-  }
-
-  private async find(id: string, db: PrismaService | Prisma.TransactionClient) {
-    const record = await db.maintenanceRequest.findFirst({ where: { OR: [{ id }, { maintenanceCode: id }] }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy maintenance case.');
     return record;
   }
@@ -401,7 +607,7 @@ export class MaintenanceService {
   private optionalText(value: unknown, maximum: number, label: string) {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value !== 'string' || value.trim().length > maximum) throw new BadRequestException(`${label} không hợp lệ.`);
-    return value.trim();
+    return value.trim() || null;
   }
 
   private idempotencyKey(value: string | undefined) {

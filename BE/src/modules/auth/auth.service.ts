@@ -7,6 +7,7 @@ import type { AuthSession, PublicUser } from './auth.types.js';
 import { AccountDisabledException } from './auth.errors.js';
 
 const sessionEndMessage = {
+  FACILITY_ACCESS_REVOKED: 'Quyền truy cập cơ sở đã thay đổi. Vui lòng đăng nhập lại để tiếp tục.',
   SESSION_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.',
   SESSION_INVALID: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
 };
@@ -81,7 +82,7 @@ export class AuthService {
     const account = token ? await this.users.findSessionAccount(this.tokenKey(token)) : null;
     if (!account) throw sessionEnded('SESSION_INVALID');
     if (account.revokedByDisable) throw new AccountDisabledException();
-    if (account.revokedAt) throw sessionEnded('SESSION_INVALID');
+    if (account.revokedAt) throw sessionEnded(account.revocationReason === 'FACILITY_ACCESS_REVOKED' ? 'FACILITY_ACCESS_REVOKED' : 'SESSION_INVALID');
     if (account.expiresAt.getTime() <= Date.now()) throw sessionEnded('SESSION_EXPIRED');
     if (account.accountStatus === 'DISABLED') throw new AccountDisabledException();
     return this.toPublicUser(account);

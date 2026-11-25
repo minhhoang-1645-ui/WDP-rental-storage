@@ -60,8 +60,8 @@ export async function apiRequest<T>(
   const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   try {
     const headers = new Headers(request.headers);
-    headers.set("Accept", responseType === 'blob' ? 'application/pdf' : 'application/json');
-    if (request.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    if (!headers.has("Accept")) headers.set("Accept", responseType === 'blob' ? 'application/pdf' : 'application/json');
+    if (request.body && !(request.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
     if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');

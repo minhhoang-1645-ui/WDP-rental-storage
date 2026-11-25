@@ -1,3 +1,5 @@
+import { ServiceCalendarPage } from '../pages/operations/ServiceCalendarPage';
+import { StaffShiftsPage } from '../pages/operations/StaffShiftsPage';
 import { AdminRolesPage } from '../pages/admin/AccountRole';
 import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
 import { OperationsLayout } from '../pages/operations/OperationsLayout';
@@ -20,6 +22,7 @@ import { BookingConfirmationPage } from "../pages/public/BookingConfirmationPage
 import { BookingWizardPage } from "../pages/public/BookingWizardPage";
 import { ClaimBookingPage } from '../pages/public/ClaimBookingPage';
 import { LandingPage } from "../pages/public/LandingPage";
+import { FacilitiesPage } from "../pages/public/FacilitiesPage";
 import { ReservationPage } from "../pages/public/ReservationPage";
 import { SizeGuidePage } from "../pages/public/SizeGuideExperiencePage";
 import { StorageDetailPage } from "../pages/public/StorageDetailPage";
@@ -122,6 +125,7 @@ export function AppRouter() {
         <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route element={<CatalogRouteLayout />}>
           <Route index element={<LandingPage />} />
+          <Route path="facilities" element={<FacilitiesPage />} />
           <Route path="size-guide" element={<SizeGuidePage />} />
           <Route path="storage" element={<StoragePage />} />
           <Route path="storage/:id" element={<StorageDetailPage />} />
@@ -212,7 +216,8 @@ export function AppRouter() {
           <Route path="operations/rentals/*" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="operations/:resource" element={<ManagerResourcePage />} />
           <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
-          <Route path="check-in" element={<Navigate to="/staff/appointments" replace />} />
+          <Route path="check-in" element={<Navigate to="/staff/shifts" replace />} />
+          <Route path="shifts" element={<StaffShiftsPage />} />
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>
@@ -221,6 +226,8 @@ export function AppRouter() {
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
+          <Route path="shifts" element={<StaffShiftsPage manager />} />
+          <Route path="service-calendar" element={<ServiceCalendarPage />} />
           <Route path="staff" element={<ManagerStaffPage />} />
           <Route path="stored-items/*" element={<Navigate to="/manager/units" replace />} />
           <Route path="stock-movements/*" element={<Navigate to="/manager/assignments" replace />} />

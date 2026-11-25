@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, Headers, Param, Post, Query, Req, StreamableFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiConsumes, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CompleteMaintenanceWorkDto, CreateMaintenanceRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseMaintenanceQuery } from './maintenance-query.js';
-import { MaintenanceService } from './maintenance.service.js';
+import { MaintenanceService, maintenanceCategories, maintenancePriorities } from './maintenance.service.js';
+import { maintenanceUploadLimits, type MaintenanceUpload } from './maintenance-photo.js';
 
 @Controller('staff/maintenance')
 @UseGuards(AuthGuard, RolesGuard)
@@ -15,17 +17,20 @@ export class StaffMaintenanceController {
   constructor(private readonly maintenance: MaintenanceService) {}
 
   @Post()
+  @UseInterceptors(FilesInterceptor('photos', maintenanceUploadLimits.files, { limits: maintenanceUploadLimits }))
   @Roles('FACILITY_STAFF')
-  @ApiOperation({ summary: 'Báo sự cố tại kho thuộc cơ sở được cấp quyền' })
+  @ApiOperation({ summary: 'Báo sự cố tại ô kho hoặc khu vực chung thuộc cơ sở được cấp quyền' })
+  @ApiConsumes('multipart/form-data', 'application/json')
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-report-20261009-001' })
   @ApiBody({ type: CreateMaintenanceRequestDto })
-  @ApiCreatedResponse({ description: 'Tạo hồ sơ OPEN chưa phân công. Giữ nguyên trạng thái kho đang thuê hoặc đã giữ.' })
-  @ApiConflictResponse({ description: 'Kho đã có hồ sơ bảo trì đang mở.' })
+  @ApiCreatedResponse({ description: 'Tạo hồ sơ OPEN chưa phân công. Giữ nguyên trạng thái ô kho.' })
+  @ApiConflictResponse({ description: 'Yêu cầu trùng khóa nhưng khác nội dung.' })
   @ApiBadRequestResponse({ description: 'Payload hoặc Idempotency-Key không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được dùng endpoint báo cáo này.' })
-  create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
-    return this.maintenance.createManual(body, key, request.user!);
+  create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined,
+    @Body() body: Record<string, unknown>, @UploadedFiles() photos?: MaintenanceUpload[]) {
+    return this.maintenance.createManual(body, key, request.user!, photos);
   }
 
   @Get()
@@ -33,8 +38,8 @@ export class StaffMaintenanceController {
   @ApiOperation({ summary: 'Danh sách maintenance vận hành', description: 'FACILITY_STAFF, FACILITY_MANAGER hoặc SYSTEM_ADMINISTRATOR. Không chứa dữ liệu tài chính.' })
   @ApiQuery({ name: 'page', required: false, example: 1 }) @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'status', required: false, enum: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION', 'COMPLETED'] })
-  @ApiQuery({ name: 'priority', required: false, enum: ['LOW', 'MEDIUM', 'HIGH'] })
-  @ApiQuery({ name: 'category', required: false, enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'] })
+  @ApiQuery({ name: 'priority', required: false, enum: maintenancePriorities })
+  @ApiQuery({ name: 'category', required: false, enum: maintenanceCategories })
   @ApiQuery({ name: 'assignedToMe', required: false, type: Boolean, example: true }) @ApiQuery({ name: 'search', required: false, example: 'A01' })
   @ApiOkResponse({ description: 'Danh sách phân trang ổn định.' })
   list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) { return this.maintenance.listStaff(parseMaintenanceQuery(query), request.user!); }
@@ -43,6 +48,21 @@ export class StaffMaintenanceController {
   @Roles('FACILITY_STAFF')
   reportUnits(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
     return this.maintenance.listReportUnits(request.user!, parseMaintenanceQuery(query));
+  }
+
+  @Get('facilities')
+  @Roles('FACILITY_STAFF')
+  reportFacilities(@Req() request: AuthenticatedRequest) {
+    return this.maintenance.listReportFacilities(request.user!);
+  }
+
+  @Get(':id/photos/:photoId')
+  @Roles('FACILITY_STAFF')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async photo(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('photoId') photoId: string) {
+    const photo = await this.maintenance.getPhoto(id, photoId, request.user!);
+    return new StreamableFile(photo.bytes, { type: photo.mimeType });
   }
 
   @Get('reported-by-me')

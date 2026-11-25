@@ -1,6 +1,7 @@
 import { DateTimePicker } from '../../components/workspace/DateTimeFields';
 import { useCurrentTime } from '../../hooks/useCurrentTime';
 import { keyCollectionStartDate, vietnamLocalMinute } from '../../utils/handover';
+import { ReturnInspectionSchedule } from '../operations/ServiceCalendarPage';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
@@ -16,6 +17,7 @@ import {
   type Row,
 } from "../../components/manager/portal-data";
 import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
+import { IncidentBookingImpact } from '../../components/manager/IncidentBookingImpact';
 import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { object } from '../../components/manager/portal-data';
@@ -256,6 +258,8 @@ export function ManagerActions({
               </Link>
             </>
           ))}
+        {resource === 'returns' && user?.role === 'FACILITY_MANAGER' && row.status === 'REQUESTED' &&
+          <ReturnInspectionSchedule id={id} current={first(row, 'inspectionScheduledAt') || null} onUpdated={refresh} />}
         {resource === 'appointments' && user?.role === 'FACILITY_MANAGER' && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)) &&
           <form className="portal-form" onSubmit={event => {
             event.preventDefault();
@@ -275,6 +279,7 @@ export function ManagerActions({
             </p>}
             <label className="field-label">Xử lý lịch hẹn<select value={scheduleAction} onChange={event => setScheduleAction(event.target.value)}>
               <option value="RESCHEDULE">Đổi lịch</option>
+              {row.schedulePendingManager === true && <option value="CONFIRM_EXCEPTION">Xác nhận lịch ngoại lệ</option>}
               {Date.parse(first(row, 'scheduledAt')) < scheduleClock && <option value="NO_SHOW">Khách không đến · hủy lịch</option>}
             </select></label>
             {scheduleAction === 'RESCHEDULE' && <DateTimePicker label="Lịch mới (giờ Việt Nam)" required
@@ -284,7 +289,7 @@ export function ManagerActions({
             <button className="button-primary" disabled={busy || scheduleNote.trim().length < 3}>Lưu thay đổi lịch</button>
           </form>}
         {resource === "appointments" && user?.role === 'FACILITY_STAFF' && first(row, "assignedStaff.id") === user.id &&
-          (row.status === "REQUESTED" ? (
+          (row.status === "REQUESTED" && row.schedulePendingManager === true ? <p>Chờ quản lý xác nhận giờ hẹn.</p> : row.status === "REQUESTED" ? (
             <>
               <p>
                 Xác nhận lịch nhận kho của khách. Bàn giao thực tế sẽ do nhân
@@ -584,6 +589,13 @@ export function ManagerActions({
           ))}
         {resource === 'deposit-settlements' && Boolean(row.earlyReturnSettlement) && <CombinedReturnRefund
           row={row} busy={busy} onConfirm={body => void run(`${root}/confirm-return-refund`, 'POST', body, true)} />}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER'
+          && ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'].includes(String(row.status)) && (
+          <DetailDisclosure title="Đánh giá ảnh hưởng đến cho thuê">
+            <IncidentBookingImpact key={first(row, 'updatedAt')} row={row} root={root} busy={busy}
+              onSave={(affectedUnitIds, expectedAffectedUnitIds) => void run(`${root}/booking-impact`, 'PATCH', { affectedUnitIds, expectedAffectedUnitIds }, true)} />
+          </DetailDisclosure>
+        )}
         {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
           <form className="portal-form" onSubmit={event => {
             event.preventDefault();
@@ -601,7 +613,7 @@ export function ManagerActions({
               <textarea required={!maintenancePassed} rows={3} maxLength={4000}
                 value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
             </label>
-            {maintenancePassed && <p className="record-attribution">Nghiệm thu sẽ đưa kho về trạng thái sẵn sàng.</p>}
+            {maintenancePassed && Boolean(row.blocksUnit) && <p className="record-attribution">Nghiệm thu gỡ khóa do phiếu này tạo. Những khóa khác và lịch thuê vẫn được áp dụng.</p>}
             <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
               {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
             </button>
@@ -680,7 +692,7 @@ export function ManagerActions({
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
                   >
-                    {["LOW", "MEDIUM", "HIGH"].map((v) => (
+                    {(resource === 'maintenance' ? ["LOW", "MEDIUM", "HIGH", "URGENT"] : ["LOW", "MEDIUM", "HIGH"]).map((v) => (
                       <option key={v} value={v}>
                         {label(v)}
                       </option>

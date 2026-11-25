@@ -1,4 +1,5 @@
 import { at, code, customer, date, first, object, resources, rows, type Row } from '../components/manager/portal-data';
+import { incidentArea } from './maintenance-incident';
 
 /** Presentation only: read explicit objects returned by APIs; never match code prefixes. */
 export function recordIdentity(row: Row, resource: string) {
@@ -7,7 +8,7 @@ export function recordIdentity(row: Row, resource: string) {
     ? [row.currentStorageUnit ?? at(row, 'rentalContract.reservationUnit.storageUnit') ?? row.storageUnit]
     : [row.storageUnit, row.unit, row.currentStorageUnit, at(row, 'rentalContract.storageUnit'), row.fromUnit, ...rows(row.allocatedUnits), ...rows(row.units), ...rows(row.contracts).map(contract => contract.unit ?? contract.storageUnit)];
   const unitCodes = [...new Set(candidates.map(value => first(object(value), 'unitCode', 'unitNumber', 'storageUnit.unitCode', 'storageUnit.unitNumber')).filter(Boolean))];
-  const location = unitCodes.join(', ');
+  const location = unitCodes.join(', ') || (resource === 'maintenance' ? incidentArea(row.commonArea) : '');
   const quantity = first(row, 'quantity', 'reservation.quantity');
   const start = first(row, 'startDate', 'reservation.startDate', 'rentalContract.startDate', 'billingPeriodStart');
   const end = first(row, 'endDateExclusive', 'endDate', 'effectiveEndDate', 'reservation.endDate', 'rentalContract.endDate', 'billingPeriodEnd');

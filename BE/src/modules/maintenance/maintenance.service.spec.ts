@@ -50,12 +50,14 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
 });
 
   afterEach(async () => {
+    await prisma.incidentUnitBlock.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.maintenanceRequest.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.updateMany({ where: { storageTypeId }, data: { status: 'AVAILABLE' } });
   });
 afterAll(async () => {
+    await prisma.incidentUnitBlock.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.maintenanceRequest.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
@@ -70,23 +72,26 @@ await prisma.user.deleteMany({ where: { id: { in: [staffId, otherStaffId, manage
   async function unit(index = 0) { return prisma.storageUnit.findUniqueOrThrow({ where: { unitNumber: unitCodes[index] } }); }
   const manual = async (index = 0, by: PublicUser = staff, requestKey = key('create')) => {
     const storageUnit = await unit(index);
-    return maintenance.createManual({ storageUnitId: storageUnit.id, category: 'FACILITY_EQUIPMENT', priority: 'HIGH', description: 'Climate control is not functioning.' }, requestKey, by);
+    return maintenance.createManual({ storageUnitId: storageUnit.id, category: 'FACILITY_EQUIPMENT', priority: 'HIGH', rentalImpact: 'NO_IMPACT', description: 'Climate control is not functioning.' }, requestKey, by);
   };
 
-  it('allows Staff manual AVAILABLE report, is idempotent, takes unit offline and prevents a second active case', async () => {
+  it('stores a report idempotently and only locks the unit after Manager review', async () => {
     const requestKey = key('same-create');
     const created = await manual(0, staff, requestKey);
     const retry = await manual(0, staff, requestKey);
     expect(retry.id).toBe(created.id);
     expect(created).toMatchObject({ source: 'MANUAL', status: 'OPEN', priority: 'HIGH', category: 'FACILITY_EQUIPMENT' });
-    expect((await unit(0)).status).toBe('MAINTENANCE');
-    await expect(maintenance.createManual({ storageUnitId: (await unit(0)).id, category: 'OTHER', description: 'Another issue exists.' }, key('duplicate'), staff)).rejects.toBeInstanceOf(ConflictException);
-    expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit(0)).id } })).toBe(1);
+    expect((await unit(0)).status).toBe('AVAILABLE');
+    const additional = await maintenance.createManual({ storageUnitId: (await unit(0)).id, category: 'OTHER', rentalImpact: 'NO_IMPACT', description: 'Another issue exists.' }, key('another'), staff);
+    expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit(0)).id } })).toBe(2);
+    await maintenance.holdUnsafeUnit(created.id, key('hold'), manager);
+    expect((await unit(0)).status).toBe('AVAILABLE');
+    expect(await maintenance.holdUnsafeUnit(additional.id, key('additional-hold'), manager)).toMatchObject({ blocksUnit: true });
   });
 
-  it('rejects manual maintenance for OCCUPIED and rejects Customer creation', async () => {
+  it('accepts a report on OCCUPIED without changing its status and rejects Customer creation', async () => {
     const occupied = await unit(0); await prisma.storageUnit.update({ where: { id: occupied.id }, data: { status: 'OCCUPIED' } });
-    await expect(manual(0)).rejects.toMatchObject({ response: { code: 'OCCUPIED_UNIT_MAINTENANCE_REQUIRES_INCIDENT_FLOW' } });
+    expect(await manual(0)).toMatchObject({ unit: { status: 'OCCUPIED' }, blocksUnit: false });
     await prisma.storageUnit.update({ where: { id: occupied.id }, data: { status: 'AVAILABLE' } });
     await expect(manual(0, customer)).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -113,9 +118,9 @@ await prisma.user.deleteMany({ where: { id: { in: [staffId, otherStaffId, manage
     await expect(maintenance.updatePriority(created.id, { priority: 'LOW' }, key('staff-priority'), staff)).rejects.toBeInstanceOf(ForbiddenException);
     expect(await maintenance.updatePriority(created.id, { priority: 'LOW' }, key('manager-priority'), manager)).toMatchObject({ priority: 'LOW' });
     await expect(maintenance.start(created.id, key('wrong-start'), otherStaff)).rejects.toBeInstanceOf(ForbiddenException);
+    await maintenance.holdUnsafeUnit(created.id, key('hold'), manager);
     const started = await maintenance.start(created.id, key('start'), staff);
-    expect(started).toMatchObject({ status: 'IN_PROGRESS', unit: { status: 'MAINTENANCE' } });
-    expect((await unit()).status).toBe('MAINTENANCE');
+    expect(started).toMatchObject({ status: 'IN_PROGRESS', blocksUnit: true, unit: { status: 'AVAILABLE' } });
   });
 
   it('keeps reports unassigned until Manager assigns each task explicitly', async () => {
@@ -125,20 +130,21 @@ await prisma.user.deleteMany({ where: { id: { in: [staffId, otherStaffId, manage
  await maintenance.assign(a.id,{staffUserId:staff.id},key('assign-a'),manager);
  await maintenance.assign(b.id,{staffUserId:otherStaff.id},key('assign-b'),manager);
  expect((await maintenance.listStaff({page:1,limit:10,assignedToMe:true},staff)).items.map(item=>item.id)).toEqual([a.id]);
- await expect(maintenance.getStaff(b.id,staff)).rejects.toThrow('Không tìm thấy');
+ expect(await maintenance.getStaff(b.id,staff)).toMatchObject({ id: b.id, assignedStaff: { id: otherStaffId } });
 });
 
   it('requires work note, keeps unit offline, supports rejection and only Manager verification releases it', async () => {
     const created = await manual();
+    await maintenance.holdUnsafeUnit(created.id, key('hold'), manager);
     await maintenance.assign(created.id, { staffUserId: staffId }, key('assign'), manager);
     await maintenance.start(created.id, key('start'), staff);
     expect(() => maintenance.completeWork(created.id, { workNote: '' }, key('empty-complete'), staff)).toThrow(BadRequestException);
     const awaiting = await maintenance.completeWork(created.id, { workNote: 'Replaced lock and tested access.' }, key('complete'), staff);
-    expect(awaiting).toMatchObject({ status: 'AWAITING_VERIFICATION', unit: { status: 'MAINTENANCE' } });
+    expect(awaiting).toMatchObject({ status: 'AWAITING_VERIFICATION', blocksUnit: true, unit: { status: 'AVAILABLE' } });
     await expect(maintenance.verify(created.id, {}, key('staff-verify'), staff)).rejects.toBeInstanceOf(ForbiddenException);
     expect(() => maintenance.rejectVerification(created.id, { note: '' }, key('empty-reject'), manager)).toThrow(BadRequestException);
     const rejected = await maintenance.rejectVerification(created.id, { note: 'Lock still does not engage reliably.' }, key('reject'), manager);
-    expect(rejected).toMatchObject({ status: 'IN_PROGRESS', unit: { status: 'MAINTENANCE' } });
+    expect(rejected).toMatchObject({ status: 'IN_PROGRESS', blocksUnit: true, unit: { status: 'AVAILABLE' } });
     expect(rejected.workCompletedAt).toBeTruthy();
     await maintenance.completeWork(created.id, { workNote: 'Adjusted lock and retested twice.' }, key('complete-again'), staff);
     const completed = await maintenance.verify(created.id, { note: 'Verified operational.' }, key('verify'), manager);
@@ -154,7 +160,7 @@ await prisma.user.deleteMany({ where: { id: { in: [staffId, otherStaffId, manage
     await maintenance.completeWork(created.id, { workNote: 'Work is ready for verification.' }, key('complete'), staff);
     const attempts = await Promise.allSettled([
       maintenance.verify(created.id, { note: 'First verify.' }, key('verify-one'), manager),
-      maintenance.verify(created.id, { note: 'Second verify.' }, key('verify-two'), actor(adminId, 'SYSTEM_ADMINISTRATOR')),
+      maintenance.verify(created.id, { note: 'Second verify.' }, key('verify-two'), manager),
     ]);
     expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(await prisma.maintenanceRequest.count({ where: { storageUnitId: (await unit()).id, status: 'COMPLETED' } })).toBe(1);
@@ -173,10 +179,11 @@ await prisma.user.deleteMany({ where: { id: { in: [staffId, otherStaffId, manage
       status: 'CONFIRMED', confirmedAt: new Date(), idempotencyKey: key('future-reservation'),
     } });
     const allocation = await prisma.reservationUnit.create({ data: { reservationId: reservation.id, storageUnitId: (await unit()).id, plannedStartDate: startDate, plannedEndDate: endDate } });
+    await maintenance.holdUnsafeUnit(created.id, key('hold'), manager);
     const detail = await maintenance.getManager(created.id,manager);
     expect(detail).toMatchObject({ hasFutureAllocation: true, nextConfirmedAllocation: { reservationReference: reservation.reservationCode } });
     const unitDetail = await managerUnits.getUnit((await unit()).id,manager);
-    expect(unitDetail).toMatchObject({ activeMaintenance: { id: created.id, status: 'OPEN', priority: 'HIGH' } });
+    expect(unitDetail).toMatchObject({ status: 'AVAILABLE' });
     await prisma.storageUnit.updateMany({ where: { storageTypeId, id: { not: (await unit()).id } }, data: { status: 'MAINTENANCE' } });
     const blocked = await booking.checkAvailability({ productId: storageTypeId, startDate: startDate.toISOString().slice(0, 10), periodMode: 'duration', durationMonths: 1, quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' });
     expect(blocked.available).toBe(false);

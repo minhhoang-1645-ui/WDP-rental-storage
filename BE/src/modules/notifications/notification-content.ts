@@ -150,6 +150,8 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   let actionLabel = '';
   let important = row.priority === 'HIGH' || status === 'ISSUE_FOUND';
   let version = '';
+  const affectedBookingCount = actor.role === 'FACILITY_MANAGER' && source === 'maintenance' ? Number(row.affectedBookingCount) || 0 : 0;
+  const affectedAppointmentCount = affectedBookingCount ? Number(row.affectedAppointmentCount) || 0 : 0;
   if (customer && source === 'returns' && get('earlyReturnCloseout.appliedAt')) {
     const refundedAt = get('rentRefund.refundedAt');
     const approvedAt = get('rentRefund.approvedAt');
@@ -197,6 +199,12 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
       if (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0) return;
       const due = row.type === 'INITIAL' ? first(row, 'reservation.expiresAt', 'dueAt') : get('dueAt');
       if (Date.parse(due) < now) { title = 'Hóa đơn quá hạn'; important = true; actionLabel = 'Kiểm tra công nợ'; }
+    }
+    if (affectedBookingCount > 0) {
+      title = 'Sự cố · Có hồ sơ thuê bị ảnh hưởng';
+      actionLabel = 'Xem hồ sơ bị ảnh hưởng';
+      target = `/manager/operations/maintenance/${encoded}`;
+      important = true;
     }
     if (!actionLabel && !['deposit-settlements', 'invoices'].includes(source) &&
       !(source === 'support-requests' && !early && get('resolvedBy.role') === 'FACILITY_MANAGER') &&
@@ -281,6 +289,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const unit = first(row, 'storageUnit.unitCode', 'storageUnit.unitNumber', 'currentStorageUnit.unitNumber', 'unit.unitCode',
     'allocatedUnits.0.unitCode', 'inspections.0.unit.unitCode', 'contracts.0.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode');
   const summary = [
+    affectedBookingCount ? `${affectedBookingCount} đơn đặt${affectedAppointmentCount ? ' · ' + affectedAppointmentCount + ' lịch bàn giao' : ''} có ô đang tạm chặn` : '',
     customer ? '' : first(row, 'customer.fullName', 'reservation.customer.fullName'),
     unit || first(row, 'storageType.name', 'product.name', 'reservation.storageType.name'),
     customer && linkedTransfer && text(linkedTransfer, 'status') === 'APPROVED' ? 'Kiểm tra hàng đang lưu trước khi chuyển.' : '',
@@ -291,6 +300,6 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     'confirmedAt', 'requestedAt', 'submittedAt', 'terms.acceptedAt', 'appendix.acceptedAt', 'compensation.handedOverAt'].map(get)]
     .filter(date => Number.isFinite(Date.parse(date))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   if (!at) return;
-  const token = hash([actor.role, key, status, assignedId, at]);
+  const token = hash([actor.role, key, status, assignedId, at, ...(affectedBookingCount ? [affectedBookingCount, affectedAppointmentCount] : [])]);
   return { key, token, kind, code, title, summary, at, target, actionLabel, important };
 }

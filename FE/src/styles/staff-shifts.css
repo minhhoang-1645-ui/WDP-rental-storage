@@ -1,0 +1,11 @@
+.shifts-page { display: grid; gap: 1rem; }
+.shifts-page h1, .shifts-page p { margin: 0; }
+.shifts-toolbar, .shifts-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.shifts-toolbar label { display: grid; gap: .3rem; font-weight: 600; }
+.shifts-toolbar select, .shifts-toolbar input { min-height: 2.5rem; padding: .35rem .6rem; }
+.shifts-list { padding: 0; margin: 0; list-style: none; }
+.shifts-list > li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; padding: .8rem 0; border-top: 1px solid var(--border, #dce4ee); }
+.shifts-list p { margin: .2rem 0; }
+.shifts-form { padding-block: .8rem; border-block: 1px solid var(--border, #dce4ee); }
+.shifts-warning { padding: .75rem; border: 1px solid var(--border, #dce4ee); border-radius: .5rem; }
+.shifts-warning ul { margin-block: .4rem 0; }

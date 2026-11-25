@@ -15,7 +15,7 @@ export async function assignmentReference(db:Prisma.TransactionClient,kind:strin
   case 'returns': return db.returnRequest.findFirst({where:match('returnCode'),select:{reservationId:true}});
   case 'support-requests': return db.supportRequest.findFirst({where:match('supportCode'),select:{reservationId:true}});
   case 'transfers': return db.transferRequest.findFirst({where:match('transferCode'),select:{reservationId:true}});
-  case 'maintenance': return db.maintenanceRequest.findFirst({where:match('maintenanceCode'),select:{storageUnitId:true}});
+  case 'maintenance': return db.maintenanceRequest.findFirst({where:match('maintenanceCode'),select:{storageUnitId:true,commonAreaFacilityId:true}});
   case 'damage-claims': return db.damageClaim.findFirst({where:match('claimCode'),select:{rentalContractId:true}});
   default: throw new BadRequestException('Loại nhiệm vụ không hợp lệ.');
  }

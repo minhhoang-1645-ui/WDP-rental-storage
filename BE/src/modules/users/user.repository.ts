@@ -16,6 +16,7 @@ type SessionAccount = PublicUser & {
   expiresAt: Date;
   revokedByDisable: boolean;
   revokedAt?: Date | null;
+  revocationReason?: string | null;
 };
 export type UserProfileChanges = Partial<Pick<PublicUser, 'fullName' | 'phone'>>;
 export abstract class UserRepository {
@@ -58,7 +59,7 @@ export class MemoryUserRepository extends UserRepository {
     const session = this.sessions.get(disabledHash) ?? this.sessions.get(tokenHash);
     if (!session) return null;
     const user = this.users.get(session.userId);
-    return user ? { ...user, expiresAt: session.expiresAt, revokedAt: session.revokedAt, revokedByDisable: session.tokenHash === disabledHash || session.revocationReason === 'ACCOUNT_DISABLED' } : null;
+    return user ? { ...user, expiresAt: session.expiresAt, revokedAt: session.revokedAt, revocationReason: session.revocationReason, revokedByDisable: session.tokenHash === disabledHash || session.revocationReason === 'ACCOUNT_DISABLED' } : null;
   }
   async deleteSession(tokenHash: string) {
     const session = this.sessions.get(tokenHash);
@@ -165,7 +166,7 @@ export class PrismaUserRepository extends UserRepository {
   async findSessionAccount(tokenHash: string) {
     const disabledHash = disabledSessionPrefix + tokenHash;
     const [row] = await this.prisma.$queryRaw<Array<Omit<SessionAccount, 'phone'> & { phone: string | null }>>`
-      SELECT u.id, u."fullName", u.email, u.phone, u.role, u."accountStatus", s."expiresAt", s."revokedAt",
+      SELECT u.id, u."fullName", u.email, u.phone, u.role, u."accountStatus", s."expiresAt", s."revokedAt", s."revocationReason",
         (s."tokenHash" = ${disabledHash} OR s."revocationReason" IS NOT DISTINCT FROM 'ACCOUNT_DISABLED') AS "revokedByDisable"
       FROM "AuthSession" s JOIN "User" u ON u.id = s."userId"
       WHERE s."tokenHash" IN (${tokenHash}, ${disabledHash})

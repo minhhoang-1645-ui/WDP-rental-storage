@@ -47,7 +47,16 @@ const workDetail = ({ kind, row }: Task) => {
   const id = encodeURIComponent(first(row, 'id'));
   return kind === 'damage-claims' ? `/manager/damage-claims?claim=${id}` : `/manager/operations/${kind}/${id}`;
 };
-const finished = (task: Task) => ['COMPLETED', 'RESOLVED', 'CANCELLED', 'REJECTED', 'PENDING_SETTLEMENT'].includes(String(task.row.status));
+const phaseLabels: Record<string, string> = {
+  UNASSIGNED: 'Chờ phân công', ASSIGNED: 'Đã giao, chưa bắt đầu', IN_PROGRESS: 'Đang thực hiện',
+  WAITING: 'Đang chờ', STAFF_DONE: 'Đã xong phần Staff',
+};
+const waitLabels: Record<string, string> = {
+  CUSTOMER: 'Chờ khách hàng', MANAGER: 'Chờ quản lý', SCHEDULE: 'Chưa đến giờ hẹn',
+  SAFETY: 'Chờ xác nhận an toàn ô kho', RENTAL_REQUIREMENTS: 'Chờ đủ điều kiện bàn giao',
+};
+const phase = (task: Task) => first(task.row, 'coordination.phase');
+const finished = (task: Task) => phase(task) ? phase(task) === 'STAFF_DONE' : ['COMPLETED', 'RESOLVED', 'CANCELLED', 'REJECTED', 'PENDING_SETTLEMENT'].includes(String(task.row.status));
 const canAssign = (task: Task) => canAssignWork(task.kind, task.row);
 const relatedUnit = (row: Row) =>
   rows(row.allocatedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ') || first(
@@ -84,7 +93,7 @@ export function ManagerAssignmentsPage() {
       const { items } = await allPages(`/manager/${kind}`, controller.signal);
       return items
         .filter(row => !(kind === 'support-requests' && isEarlyReturnRequest(row)) &&
-          !(kind === 'transfers' && ['REQUESTED', 'REJECTED'].includes(String(row.status))))
+          !(kind === 'transfers' && row.status === 'REJECTED'))
         .map(row => ({ kind, row }));
     }))
       .then(groups => {
@@ -124,13 +133,14 @@ export function ManagerAssignmentsPage() {
   const assignee = params.get('assignee') ?? '';
   const status = params.get('status') ?? scope;
   const order = params.get('sort') ?? '';
+  const workPhase = params.get('workPhase') ?? '';
   const taskDate = ({ row }: Task) => first(row, 'requestedAt', 'createdAt');
   const tasks = allTasks.filter((task) => {
     const assigned = Boolean(first(task.row, "assignedStaff.id"));
     const scheduled = Date.parse(first(task.row, 'scheduledAt', 'dueAt'));
     const overdue = !finished(task) && Number.isFinite(scheduled) && scheduled < Date.now();
     return (
-      (kind === "all" || task.kind === kind) &&
+      (kind === "all" || task.kind === kind) && (!workPhase || phase(task) === workPhase) &&
       (!assignee || first(task.row, "assignedStaff.id") === assignee) &&
       (status === 'all' || (status === 'active' ? !finished(task) : status === 'finished' ? finished(task) : status === 'overdue' ? overdue : task.row.status === status)) &&
 
@@ -156,7 +166,7 @@ export function ManagerAssignmentsPage() {
   const visiblePage = Math.min(page, Math.max(1, Math.ceil(tasks.length / limit)));
   const knownStaff = staffFromWork(allTasks.map(task => task.row));
   const workloads = new Map<string, number>();
-  for (const task of allTasks) { const staffId = first(task.row, 'assignedStaff.id'); if (staffId && !finished(task)) workloads.set(staffId, (workloads.get(staffId) ?? 0) + 1); }
+  for (const task of allTasks) { const staffId = first(task.row, 'assignedStaff.id'); if (staffId && phase(task) === 'IN_PROGRESS') workloads.set(staffId, (workloads.get(staffId) ?? 0) + 1); }
   const closeDetails = () => {
     setSelected(undefined);
     if (record) setParams(previous => {
@@ -177,7 +187,10 @@ export function ManagerAssignmentsPage() {
       </>;
     } },
     { key: 'date', label: 'Ngày yêu cầu', sort: { direction: order === 'oldest' ? 'ascending' : order === 'newest' ? 'descending' : 'none', toggle: () => update('sort', order === 'newest' ? 'oldest' : 'newest') }, cell: task => date(taskDate(task), true) },
-    { key: 'status', label: 'Trạng thái', cell: ({ row }) => <Status value={row.status} /> },
+    { key: 'status', label: 'Tình trạng công việc', cell: task => <>
+      {phaseLabels[phase(task)] ? <strong>{phaseLabels[phase(task)]}</strong> : <Status value={task.row.status} />}
+      {waitLabels[first(task.row, 'coordination.waitReason')] && <small>{waitLabels[first(task.row, 'coordination.waitReason')]}</small>}
+    </> },
   ];
 
   return (
@@ -199,6 +212,8 @@ export function ManagerAssignmentsPage() {
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Mã, kho hoặc nhân viên…" />
           <ManagerTableFilter label="Trạng thái" value={status} onChange={value => update('status', value)}
             options={[[ 'active', 'Chưa hoàn tất' ], ['overdue', 'Quá lịch hẹn'], ['finished', 'Đã kết thúc'], ['all', 'Tất cả'], ...statuses.map(value => [value, label(value)] as [string, string])]} />
+          <ManagerTableFilter label="Điều phối" value={workPhase} onChange={value => update('workPhase', value)}
+            options={[[ '', 'Tất cả' ], ...Object.entries(phaseLabels)]} />
           <ManagerTableFilter label="Nhân viên" value={assignee} onChange={value => update('assignee', value)}
             options={[[ '', 'Tất cả' ], ...knownStaff]} />
           <details className="manager-assignment-filter-more" open={kind !== 'all' || assignment !== 'all' || undefined}>
@@ -250,6 +265,7 @@ function AssignmentDetail({
   const currentStaffId = first(task.row, 'assignedStaff.id');
   const currentStaffName = first(task.row, 'assignedStaff.fullName');
   const formId = useId();
+  const [queueReason, setQueueReason] = useState('');
   const [staffId, setStaffId] = useState('');
   const assignable = canAssign(task);
   const [busy, setBusy] = useState(false);
@@ -286,6 +302,27 @@ function AssignmentDetail({
       setBusy(false);
     }
   };
+  const release = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (lock.current || stale || !currentStaffId || !queueReason.trim()) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await mutate(
+        `/manager/assignments/${task.kind}/${encodeURIComponent(id)}/release`,
+        'PATCH',
+        { expectedAssignedStaffUserId: currentStaffId, reason: queueReason.trim() },
+        false,
+      );
+      onAssigned();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể đưa việc về hàng chờ.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
   return (
     <Modal title={assignable ? currentStaffId ? 'Đổi nhân viên' : 'Phân công nhân viên' : 'Chi tiết phân công'} onClose={close} busy={busy}
       className="assignment-dialog" footer={<>
@@ -312,6 +349,13 @@ function AssignmentDetail({
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
         <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); if (!stale) setError(''); }} workloads={workloads} disabled={busy || stale} />
       </form>}
+      {currentStaffId && ['ASSIGNED', 'WAITING'].includes(phase(task)) && <details>
+        <summary>Đưa về hàng chờ</summary>
+        <form className="portal-form" onSubmit={release}>
+          <label className="field-label">Lý do<input required maxLength={500} value={queueReason} onChange={event => setQueueReason(event.target.value)} /></label>
+          <button type="submit" className="button-secondary" disabled={busy || stale}>Đưa về hàng chờ</button>
+        </form>
+      </details>}
     </Modal>
   );
 }

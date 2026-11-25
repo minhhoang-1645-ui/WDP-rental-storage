@@ -1,3 +1,4 @@
+import { readServiceSchedule } from '../dispatch/service-schedule.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import {
   BadRequestException,
@@ -15,6 +16,7 @@ const fields = [
   'name',
   'address',
   'officeHours',
+  'serviceSchedule',
   'accessHours',
   'bookingEnabled',
   'operationalStatus',
@@ -89,7 +91,7 @@ export class OperationsService {
           tx.invoice.count({where:{reservation:{facilityId:id},status:{not:'VOID'},balanceDue:{gt:0}}}),
           tx.depositSettlement.count({where:{returnRequest:{reservation:{facilityId:id}},status:{not:'SETTLED'}}}),
           tx.supportRequest.count({where:{reservation:{facilityId:id},status:{not:'RESOLVED'}}}),
-          tx.maintenanceRequest.count({where:{storageUnit:{storageType:{facilityId:id}},activeKey:{not:null}}}),
+          tx.maintenanceRequest.count({where:{status:{not:'COMPLETED'},OR:[{storageUnit:{storageType:{facilityId:id}}},{commonAreaFacilityId:id}]}}),
         ]);
         if (unresolved.some(Boolean)) throw new ConflictException('Cơ sở còn nghĩa vụ tài chính hoặc hồ sơ vận hành chưa hoàn tất. Chưa thể đóng cửa.');
       }
@@ -105,6 +107,7 @@ export class OperationsService {
           old && body.accessHours === undefined
             ? old.accessHours
             : text('accessHours', 200),
+        ...(body.serviceSchedule !== undefined ? { serviceSchedule: readServiceSchedule(body.serviceSchedule) } : {}),
         bookingEnabled: value.bookingEnabled,
         operationalStatus: String(value.operationalStatus),
       };

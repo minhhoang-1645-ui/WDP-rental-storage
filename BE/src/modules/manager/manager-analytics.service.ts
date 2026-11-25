@@ -64,7 +64,7 @@ export class ManagerAnalyticsService {
       depositSettlement: { returnRequest: { reservation } },
       user: { facilityAccess: { some: { revokedAt: null, facility } } },
       supportRequest: { reservation },
-      maintenanceRequest: { storageUnit: { storageType: { facility } } },
+      maintenanceRequest: { OR: [{ storageUnit: { storageType: { facility } } }, { commonAreaFacility: facility }] },
       handoverAppointment: { reservation },
       returnRequest: { reservation },
       transferRequest: { reservation },

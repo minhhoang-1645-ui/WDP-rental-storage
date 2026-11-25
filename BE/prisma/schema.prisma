@@ -269,6 +269,9 @@ enum MaintenanceSource {
 }
 
 enum MaintenanceCategory {
+  ACCESS_CREDENTIAL
+  UTILITIES
+  SECURITY
   UNIT_DAMAGE
   CLEANING
   LOCK_OR_ACCESS
@@ -277,6 +280,7 @@ enum MaintenanceCategory {
 }
 
 enum MaintenancePriority {
+  URGENT
   LOW
   MEDIUM
   HIGH
@@ -381,6 +385,7 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  staffShifts StaffShift[]
   facilityAccess FacilityAccess[]
   notificationReceipts NotificationReceipt[]
   assignedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssignee")
@@ -460,6 +465,9 @@ model AuthSession {
 }
 
 model Facility {
+  serviceSchedule Json @default("[]")
+  staffShifts StaffShift[]
+  commonAreaMaintenance MaintenanceRequest[]
   additionalServices AdditionalService[] // Legacy ownership only; new availability uses offerings.
   serviceOfferings FacilityServiceOffering[]
   businessRules BusinessRule[]
@@ -519,6 +527,8 @@ model StorageType {
 }
 
 model StorageUnit {
+  bookingSafetyVersion Int @default(0)
+  incidentBlocks IncidentUnitBlock[]
   staffAssignments    UnitStaffAssignment[]
   id                  String               @id @default(cuid())
   storageTypeId       String
@@ -964,6 +974,8 @@ model ReturnRequest {
   assignedStaff User? @relation("ReturnAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
 
   @@index([assignedStaffUserId, status])
+  inspectionScheduledAt DateTime?
+  @@index([inspectionScheduledAt])
 }
 
 model ReturnInspection {
@@ -993,10 +1005,19 @@ model ReturnInspection {
 }
 
 model MaintenanceRequest {
+  dispatchReadyAt DateTime?
+  rentalImpact             IncidentRentalImpact?
+  reportedAffectedUnitIds  String[]            @default([])
+  incidentBlocks           IncidentUnitBlock[]
   id                       String              @id @default(cuid())
   maintenanceCode          String              @unique
-  storageUnitId            String
-  storageUnit              StorageUnit         @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  storageUnitId            String?
+  storageUnit              StorageUnit?        @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  commonAreaFacilityId     String?
+  commonAreaFacility       Facility?           @relation(fields: [commonAreaFacilityId], references: [id], onDelete: Restrict)
+  commonArea               String?
+  locationNote             String?
+  photos                   MaintenancePhoto[]
   source                   MaintenanceSource
   returnInspectionId       String?             @unique
   returnInspection         ReturnInspection?   @relation(fields: [returnInspectionId], references: [id], onDelete: Restrict)
@@ -1025,6 +1046,38 @@ model MaintenanceRequest {
   @@index([status, priority, createdAt])
   @@index([storageUnitId, createdAt])
   @@index([assignedStaffUserId, status])
+  @@index([commonAreaFacilityId, createdAt])
+}
+
+enum IncidentRentalImpact {
+  NO_IMPACT
+  AFFECTED
+  UNKNOWN
+}
+
+model IncidentUnitBlock {
+  id                   String             @id @default(cuid())
+  maintenanceRequestId String
+  maintenanceRequest   MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Restrict)
+  storageUnitId         String
+  storageUnit           StorageUnit        @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  createdAt             DateTime           @default(now())
+  releasedAt            DateTime?
+
+  @@index([storageUnitId, releasedAt])
+  @@index([maintenanceRequestId, releasedAt])
+}
+
+model MaintenancePhoto {
+  id                   String             @id @default(cuid())
+  maintenanceRequestId String
+  maintenanceRequest   MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  mimeType              String
+  bytes                 Bytes
+  digest                String
+  position              Int
+
+  @@unique([maintenanceRequestId, position])
 }
 
 model Invoice {
@@ -1076,6 +1129,7 @@ model Invoice {
 }
 
 model SupportRequest {
+  customerWaitReason String?
   earlyReturnFinancialReview Json?
   transferRequestedStartAt DateTime?
   transferRequestedEndAt   DateTime?
@@ -1441,4 +1495,30 @@ model BusinessRule {
   createdById String
   createdAt DateTime @default(now())
   @@index([key, facilityId, storageTypeId, effectiveFrom])
+}
+
+enum StaffShiftStatus {
+  SCHEDULED
+  CANCELLED
+  ON_LEAVE
+  ABSENT
+}
+
+model StaffShift {
+  id           String           @id @default(cuid())
+  facilityId   String
+  staffUserId  String
+  startsAt     DateTime
+  endsAt       DateTime
+  status       StaffShiftStatus @default(SCHEDULED)
+  checkedInAt  DateTime?
+  checkedOutAt DateTime?
+  reason       String?
+  revision     Int              @default(0)
+  createdAt    DateTime         @default(now())
+  facility     Facility         @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  staff        User             @relation(fields: [staffUserId], references: [id], onDelete: Restrict)
+
+  @@index([facilityId, startsAt])
+  @@index([staffUserId, status, startsAt])
 }

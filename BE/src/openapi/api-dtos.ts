@@ -329,13 +329,31 @@ export class RefundDepositRequestDto {
 }
 
 export class CreateMaintenanceRequestDto {
-  @ApiProperty({ example: 'storage-unit-id', description: 'Database id của StorageUnit AVAILABLE.' })
-  storageUnitId!: string;
+  @ApiPropertyOptional({ example: 'storage-unit-id', description: 'Ô kho cụ thể, có thể ở bất kỳ trạng thái nào.' })
+  storageUnitId?: string;
 
-  @ApiProperty({ enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], example: 'FACILITY_EQUIPMENT' })
+  @ApiPropertyOptional({ description: 'Bắt buộc khi báo sự cố khu vực chung.' })
+  facilityId?: string;
+
+  @ApiPropertyOptional({ enum: ['CORRIDOR', 'ENTRANCE', 'SECURITY', 'UTILITIES', 'OTHER'] })
+  commonArea?: string;
+
+  @ApiPropertyOptional({ enum: ['NO_IMPACT', 'AFFECTED', 'UNKNOWN'], description: 'Nếu bỏ trống, ô kho cụ thể được tạm chặn để xác minh.' })
+  rentalImpact?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Các ô chịu ảnh hưởng của khu vực chung. Với multipart, gửi dưới dạng chuỗi JSON.' })
+  affectedUnitIds?: string[];
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  locationNote?: string;
+
+  @ApiPropertyOptional({ type: 'array', items: { type: 'string', format: 'binary' }, maxItems: 5, description: 'Ảnh JPG, PNG hoặc WebP gửi bằng multipart/form-data, tối đa 5 MB mỗi ảnh.' })
+  photos?: string[];
+
+  @ApiProperty({ enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'ACCESS_CREDENTIAL', 'FACILITY_EQUIPMENT', 'UTILITIES', 'SECURITY', 'OTHER'], example: 'FACILITY_EQUIPMENT' })
   category!: string;
 
-  @ApiPropertyOptional({ enum: ['LOW', 'MEDIUM', 'HIGH'], example: 'HIGH', default: 'MEDIUM' })
+  @ApiPropertyOptional({ enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], example: 'HIGH', default: 'MEDIUM' })
   priority?: string;
 
   @ApiProperty({ example: 'Climate control is not functioning.', minLength: 3, maxLength: 4000 })
@@ -348,7 +366,7 @@ export class AssignMaintenanceRequestDto {
 }
 
 export class UpdateMaintenancePriorityDto {
-  @ApiProperty({ enum: ['LOW', 'MEDIUM', 'HIGH'], example: 'HIGH' })
+  @ApiProperty({ enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], example: 'HIGH' })
   priority!: string;
 }
 

@@ -38,6 +38,7 @@ function setup(status = 'CONFIRMED') {
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
     handoverAppointment: { findUnique: vi.fn().mockResolvedValue(row), update },
     maintenanceRequest: { count: vi.fn().mockResolvedValue(0) },
+    incidentUnitBlock: { count: vi.fn().mockResolvedValue(0) },
     rentalContract: { count: vi.fn().mockResolvedValue(0) },
   };
   const prisma = {

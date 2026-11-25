@@ -14,24 +14,27 @@ const rentalCosts = [
 ]
 
 export function StorageDetailPage() {
-  const { getStorageListing, getStorageSize } = useCatalog()
+  const { getFacility, getStorageListing, getStorageSize } = useCatalog()
   const { id } = useParams()
   const { search } = useLocation()
   const unit = getStorageListing(id)
   if (!unit) return <Navigate to="/storage" replace />
 
   const size = storageSpecifications(unit, getStorageSize(unit.sizeId)!)
+  const facility = getFacility(unit.facilityId)
   const hasPrice = typeof unit.monthlyPrice === 'number' && Number.isFinite(unit.monthlyPrice)
   const facts = [
     ['Kích thước', size.dimensions],
     ['Thể tích', size.volume],
     ['Loại kho', unit.condition === 'climate' ? 'Có điều hòa' : 'Tiêu chuẩn'],
-    ['Vị trí', unit.floor || 'Xem khi xác nhận'],
-    ['Truy cập kho', unit.access || 'Theo thỏa thuận khi bàn giao'],
+    ['Cơ sở', facility?.name],
+    ['Địa chỉ cơ sở', facility?.address],
+    ['Giờ vào kho', facility?.accessHours],
+    ['Lối tiếp cận', unit.access],
     ['Kỳ thuê tối thiểu', unit.minRentalDays ? unit.minRentalDays + ' ngày' : 'Xem trong báo giá'],
     ['Tiền đặt cọc', typeof unit.depositMonths === 'number' ? unit.depositMonths + ' tháng tiền thuê' : 'Xem trong báo giá'],
     ['Thời hạn thuê', unit.allowDailyRental ? 'Theo tháng hoặc ngày' : 'Theo tháng'],
-  ]
+  ].filter(([, value]) => value?.trim())
 
   return <div className="public-storage-detail">
     <header className="public-page-intro"><Container>
@@ -46,7 +49,6 @@ export function StorageDetailPage() {
         </figure>
         <div className="storage-detail-panel">
           <header className="storage-detail-summary">
-            <span className={unit.status === 'limited' ? 'status-warning' : 'status-success'}>{unit.status === 'limited' ? 'Số lượng hạn chế' : 'Nhận yêu cầu'}</span>
             <small>{unit.code}</small>
           </header>
           <dl className="storage-detail-facts">

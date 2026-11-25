@@ -101,6 +101,8 @@ it('preserves two contracts / one initial invoice; OTP, submission, partial paym
  await billing.recordPayment(invoice.id,{amount:Number(rest.balanceDue),method:'CASH'},key(),users.managerA);
  expect(notice.status).toBe('PENDING_VERIFICATION');
  const a=await appointments.createCustomerAppointment(users.customer,{reservationId:r.id,scheduledAt:new Date(Date.now()+60000).toISOString()},key());
+ expect(a.status).toBe('REQUESTED');
+ await appointments.adjustAppointment(a.id,{action:'CONFIRM_EXCEPTION',expectedScheduledAt:a.scheduledAt,note:'Checked staffing availability'},users.managerA);
  await expect(appointments.assignAppointment(a.id,{staffUserId:'staffB',expectedAssignedStaffUserId:null},users.managerA)).rejects.toThrow();
  await appointments.assignAppointment(a.id,{staffUserId:'staffA',expectedAssignedStaffUserId:null},users.managerA);
  await appointments.assignAppointment(a.id,{staffUserId:'staffA2',expectedAssignedStaffUserId:'staffA'},users.managerA);
@@ -136,6 +138,7 @@ async function activateRental(){
  const invoice=await db.invoice.findFirstOrThrow({where:{reservationId:r.id}});
  await billing.recordPayment(invoice.id,{amount:Number(invoice.balanceDue),method:'CASH'},key(),users.managerA);
  const ap=await appointments.createCustomerAppointment(users.customer,{reservationId:r.id,scheduledAt:new Date(Date.now()+60000).toISOString()},key());
+ await appointments.adjustAppointment(ap.id,{action:'CONFIRM_EXCEPTION',expectedScheduledAt:ap.scheduledAt,note:'Checked staffing availability'},users.managerA);
  await appointments.assignAppointment(ap.id,{staffUserId:'staffA',expectedAssignedStaffUserId:null},users.managerA);
  await appointments.completeHandover(ap.id,{handoverReport:{condition:'Kho sạch và trống',accessItemCount:1,identityVerified:true,unitInspected:true,accessDelivered:true}},users.staffA);
  return {r,contract:await db.rentalContract.findFirstOrThrow({where:{reservationId:r.id}})};
@@ -333,7 +336,8 @@ it('enforces identity-only Admin, BOM-only policies and facility-scoped operatio
  await expect(maintenance.createManual(report,key(),users.staffA2)).rejects.toThrow();
  const issue=await maintenance.createManual(report,key(),users.staffB);
  expect((await db.maintenanceRequest.findUniqueOrThrow({where:{id:issue.id}})).assignedStaffUserId).toBeNull();
- expect((await db.storageUnit.findUniqueOrThrow({where:{id:vacant.id}})).status).toBe('MAINTENANCE');
+ expect((await db.storageUnit.findUniqueOrThrow({where:{id:vacant.id}})).status).toBe('AVAILABLE');
+ expect(await db.incidentUnitBlock.count({where:{storageUnitId:vacant.id,releasedAt:null}})).toBe(1);
  await expect(maintenance.getManager(issue.id,users.managerA)).rejects.toThrow();
  expect((await maintenance.listManager({page:1,limit:100},users.managerB)).items.some(row=>row.id===issue.id)).toBe(true);
  const claims=new DamageClaimsService(db);

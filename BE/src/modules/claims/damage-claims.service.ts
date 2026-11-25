@@ -1,3 +1,4 @@
+import { workPhase } from '../dispatch/work-phase.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
 import { customerPhotos } from '../../customer-photos.js';
@@ -296,7 +297,7 @@ export class DamageClaimsService {
       ...(rentalContract ? { rentalContract: { contractCode: rentalContract.contractCode } } : {}),
       ...(['FACILITY_STAFF','FACILITY_MANAGER'].includes(role) && rentalContract?.reservation?.facility ? { facility: rentalContract.reservation.facility } : {}),
       ...(role !== 'STORAGE_CUSTOMER' ? { staffEvidenceLinks: this.staffEvidence(history) } : {}),
-      ...(role === 'STORAGE_CUSTOMER' ? {} : { assignedStaffId, reviewedById }),
+      ...(role === 'STORAGE_CUSTOMER' ? {} : { assignedStaffId, reviewedById, coordination: workPhase('damage-claims', { ...row, assignedStaffUserId: assignedStaffId }) }),
       estimatedValue: row.estimatedValue === null ? null : Number(row.estimatedValue),
       discoveredOn: row.discoveredOn.toISOString().slice(0, 10),
       createdAt: row.createdAt.toISOString(),

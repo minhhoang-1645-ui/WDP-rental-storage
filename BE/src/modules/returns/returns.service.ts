@@ -1,3 +1,4 @@
+import { workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
@@ -289,7 +290,7 @@ export class ReturnsService {
         where: { activeKey: { in: unitIds.map(id => `MAINTENANCE:${id}`) } },
         select: { id: true, storageUnitId: true, returnInspectionId: true },
       });
-      const repairsByUnit = new Map(openRepairs.map(repair => [repair.storageUnitId, repair]));
+      const repairsByUnit = new Map(openRepairs.flatMap(repair => repair.storageUnitId ? [[repair.storageUnitId, repair] as const] : []));
       const blockedUnits = new Set([...issueUnitIds, ...repairsByUnit.keys()]);
       const passUnitIds = unitIds.filter(id => !blockedUnits.has(id));
       const availableUnits = await tx.storageUnit.updateMany({
@@ -801,7 +802,8 @@ export class ReturnsService {
     const operational = {
       ...base,
       requestedBy: record.requestedBy,
-      assignedStaff: record.assignedStaff,
+      inspectionScheduledAt: record.inspectionScheduledAt?.toISOString() ?? null,
+      coordination: workPhase('returns', { ...record, scheduledAt: record.inspectionScheduledAt }), assignedStaff: record.assignedStaff,
       inspectionStartedBy: record.inspectionStartedBy,
       physicallyReturnedBy: record.physicallyReturnedBy,
       completedBy: record.completedBy,

@@ -56,6 +56,8 @@ import { StaffReservationDetailPage } from '../staff/StaffReservationDetailPage'
 import { StaffAppointmentDetailPage } from '../staff/StaffAppointmentDetailPage';
 import { StaffOperationDetails } from '../staff/StaffOperationDetails';
 import { staffRecordIdentity } from '../staff/staff-work';
+import { incidentArea } from '../../utils/maintenance-incident';
+import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
@@ -85,7 +87,9 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
     : `/manager/operations/${resource}`;
   const [params] = useSearchParams();
   const reviewReturn = user?.role === 'FACILITY_MANAGER' ? managerReviewReturn(params) : null;
-  const returnPath = useInternalListReturn(reviewReturn ?? listPath);
+  const savedReturnPath = useInternalListReturn(reviewReturn ?? listPath);
+  const reportReturn = isStaff && resource === 'maintenance' && params.get('from') === 'report-issue';
+  const returnPath = reportReturn ? '/staff/report-issue' : savedReturnPath;
   useStaffProcessingTarget(isStaff && Boolean(data.data));
   if (!config) return <Empty title="Không tìm thấy trang" />;
   const row = isStaff && data.status !== null && [401, 403, 404].includes(data.status) ? null : data.data;
@@ -95,7 +99,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
   const service = resource === 'support-requests' || resource === 'maintenance';
   const rentalTitle = resource === 'rentals' && identity && [identity.typeName || identity.location || 'Kho đang thuê', identity.person && `Khách ${identity.person}`].filter(Boolean).join(' · ');
   const serviceTitle = service && row && (resource === 'maintenance'
-    ? ['Bảo trì kho', identity?.location].filter(Boolean).join(' ')
+    ? ['Sự cố và bảo trì', incidentArea(row.commonArea) || identity?.location].filter(Boolean).join(' · ')
     : identity?.person ? `Hỗ trợ khách ${identity.person}` : first(row, 'subject') || 'Hỗ trợ khách hàng');
   const staffTitle = isStaff && identity?.person && !identity.title.includes(identity.person) ? `${identity.title === reference ? config.title : identity.title} · ${identity.person}` : '';
   const operationTitle = staffOperation && [
@@ -132,7 +136,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
       <Link className="booking-back" to={returnPath}>
         <ArrowLeft size={16} />
-        {reviewReturn ? 'Về hồ sơ cần xử lý' : returnPath.startsWith('/manager/assignments') ? 'Về phân công' : isStaff ? 'Về danh sách' : resource === 'reservations' ? 'Quay lại' : config.title}
+        {reportReturn ? 'Về báo cáo sự cố' : reviewReturn ? 'Về hồ sơ cần xử lý' : returnPath.startsWith('/manager/assignments') ? 'Về phân công' : isStaff ? 'Về danh sách' : resource === 'reservations' ? 'Quay lại' : config.title}
       </Link>
       {!row && !data.loading && (
         <PageHeader title={config.title} />
@@ -188,6 +192,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
+              {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
               {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
@@ -279,7 +284,12 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
   return <section className="manager-section">
     <h2>{maintenance ? 'Nội dung sự cố' : 'Nội dung khách gửi'}</h2>
     <Facts items={[
+      ...(maintenance && first(row, 'facility.name') ? [['Cơ sở', first(row, 'facility.name')] as [string, string]] : []),
+      ...(maintenance && incidentArea(row.commonArea) ? [['Khu vực chung', [incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(unitCode ? [['Kho', [unitCode, location].filter(Boolean).join(' · ')] as [string, string]] : []),
+      ...(maintenance ? [['Khóa đặt thuê của phiếu', row.blocksUnit === true
+        ? rows(row.affectedUnits).map(item => first(item, 'unitCode')).filter(Boolean).join(', ') || 'Đang tạm chặn'
+        : 'Không còn chặn'] as [string, string]] : []),
       ...(row.category ? [['Vấn đề', label(row.category)] as [string, string]] : []),
       ...(row.priority ? [['Ưu tiên', label(row.priority)] as [string, string]] : []),
       ...(includeAssignee ? serviceAssignee(row) : []),
@@ -288,6 +298,25 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
       {Boolean(row.subject) && <strong>{first(row, 'subject')}</strong>}
       {Boolean(row.description) && <p>{first(row, 'description')}</p>}
     </div>}
+    {maintenance && <MaintenancePhotoGallery record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />}
+  </section>;
+}
+
+function AffectedBookingWarning({ bookings }: { bookings: Row[] }) {
+  if (!bookings.length) return null;
+  return <section className="manager-section" aria-labelledby="incident-affected-bookings">
+    <div className="booking-alert is-warning">
+      <h2 id="incident-affected-bookings">Đơn đặt và lịch bàn giao bị ảnh hưởng</h2>
+      <p>Kiểm tra các hồ sơ dưới đây trước khi bàn giao. Đơn đặt và lịch hiện tại vẫn được giữ.</p>
+    </div>
+    <ul className="record-note">{bookings.map(booking => <li key={first(booking, 'reservationId')}>
+      <Link to={`/manager/reservations/${encodeURIComponent(first(booking, 'reservationId'))}`}>{first(booking, 'reservationReference')}</Link>
+      {Array.isArray(booking.unitCodes) && ` · Ô ${booking.unitCodes.join(', ')}`}
+      {rows(booking.appointments).map(appointment => <div key={first(appointment, 'id')}>
+        <Link to={`/manager/operations/appointments/${encodeURIComponent(first(appointment, 'id'))}`}>{first(appointment, 'appointmentCode')}</Link>
+        {' · '}{date(appointment.scheduledAt, true)}{' · '}<Status value={appointment.status} />
+      </div>)}
+    </li>)}</ul>
   </section>;
 }
 

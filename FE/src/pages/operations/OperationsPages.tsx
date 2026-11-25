@@ -1,3 +1,4 @@
+import '../../styles/staff-shifts.css';
 import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
@@ -8,12 +9,14 @@ import { useConfirmation } from '../../components/workspace/ConfirmationProvider
 const businessTime=(value:string)=>new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
 const businessDateTime=(value:FormDataEntryValue|null)=>new Date(String(value)+'+07:00').toISOString();
 const versionStatus:Record<string,string>={EFFECTIVE:'Đang áp dụng',SCHEDULED:'Chưa đến ngày áp dụng',HISTORICAL:'Lịch sử'};
-type Facility={id:string;code:string;name:string;address:string;officeHours:string;accessHours:string;bookingEnabled:boolean;operationalStatus:string;updatedAt:string};
+type ServiceWindow = { weekday: number; starts: string; ends: string; capacity: number };
+type Facility={serviceSchedule?: ServiceWindow[];id:string;code:string;name:string;address:string;officeHours:string;accessHours:string;bookingEnabled:boolean;operationalStatus:string;updatedAt:string};
 export function OperationsFacilities() {
  const requestConfirmation = useConfirmation();
  const saving = useRef(false);
  const {user}=useAuth();const data=useApiResource<Facility[]>('/operations/facilities',user?.id);
  const [selected,setSelected]=useState<Facility|null>();const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[search,setSearch]=useState('');const[filter,setFilter]=useState('');
+ const [schedule, setSchedule] = useState<ServiceWindow[]>([]);
  const {items,pagination}=useListPagination((data.data??[]).filter(f=>(f.name+' '+f.code+' '+f.address).toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi'))&&(!filter||filter==='CLOSED'&&f.operationalStatus==='CLOSED'||filter==='OPEN'&&f.bookingEnabled||filter==='SUSPENDED'&&f.operationalStatus==='OPEN'&&!f.bookingEnabled)));
  async function save(e:FormEvent<HTMLFormElement>){
   e.preventDefault();
@@ -21,7 +24,7 @@ export function OperationsFacilities() {
   const f = new FormData(e.currentTarget);
   const bookingEnabled = f.get('bookingEnabled') === 'on';
   const operationalStatus = f.get('operationalStatus');
-  const body = {code:f.get('code'),name:f.get('name'),address:f.get('address'),officeHours:f.get('officeHours'),accessHours:f.get('accessHours'),bookingEnabled,operationalStatus,...(selected?{expectedUpdatedAt:selected.updatedAt}:{})};
+  const body = {code:f.get('code'),name:f.get('name'),address:f.get('address'),officeHours:f.get('officeHours'),accessHours:f.get('accessHours'),serviceSchedule:schedule,bookingEnabled,operationalStatus,...(selected?{expectedUpdatedAt:selected.updatedAt}:{})};
   saving.current = true;
   try {
    if (selected && (selected.bookingEnabled !== bookingEnabled || selected.operationalStatus !== operationalStatus)) {
@@ -36,13 +39,30 @@ export function OperationsFacilities() {
   } catch(err){setError(err instanceof Error?err.message:'Chưa lưu được cơ sở.');}
   finally{saving.current=false;setBusy(false);}
  }
- return <section className="operations-page"><header><h1>Cơ sở</h1><button onClick={()=>{setSelected(null);setError('');}}>Thêm cơ sở</button></header>
+ return <section className="operations-page"><header><h1>Cơ sở</h1><button onClick={()=>{setSelected(null);setSchedule([]);setError('');}}>Thêm cơ sở</button></header>
  {data.loading?<p role="status">Đang tải…</p>:null}{data.error?<p role="alert">{data.error}<button onClick={data.refresh}>Thử lại</button></p>:null}
  <input aria-label="Tìm cơ sở" placeholder="Tìm tên hoặc mã cơ sở" value={search} onChange={e=>setSearch(e.target.value)}/>
  <select aria-label="Trạng thái cơ sở" value={filter} onChange={e=>setFilter(e.target.value)}><option value="">Tất cả trạng thái</option><option value="OPEN">Nhận đặt kho</option><option value="SUSPENDED">Tạm dừng nhận đặt kho</option><option value="CLOSED">Đóng cửa</option></select>
- <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Cơ sở</th><th>Địa chỉ</th><th>Hoạt động</th><th>Nhận đặt kho</th><th>Thao tác</th></tr></thead><tbody>{items.map(f=><tr key={f.id}><td><strong>{f.name}</strong><small>{f.code}</small></td><td>{f.address}</td><td>{f.operationalStatus==='CLOSED'?'Đóng cửa':'Mở cửa'}</td><td>{f.bookingEnabled?'Đang nhận':'Tạm dừng'}</td><td><button onClick={()=>{setSelected(f);setError('');}}>Chỉnh sửa</button> <Link to={`/operations/reports?facilityId=${encodeURIComponent(f.id)}`}>Hiệu quả cơ sở</Link></td></tr>)}</tbody></table></div>{!data.loading&&!items.length&&<p>Không có cơ sở phù hợp.</p>}{pagination}
+ <div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Cơ sở</th><th>Địa chỉ</th><th>Hoạt động</th><th>Nhận đặt kho</th><th>Thao tác</th></tr></thead><tbody>{items.map(f=><tr key={f.id}><td><strong>{f.name}</strong><small>{f.code}</small></td><td>{f.address}</td><td>{f.operationalStatus==='CLOSED'?'Đóng cửa':'Mở cửa'}</td><td>{f.bookingEnabled?'Đang nhận':'Tạm dừng'}</td><td><button onClick={()=>{setSelected(f);setSchedule(f.serviceSchedule ?? []);setError('');}}>Chỉnh sửa</button> <Link to={`/operations/reports?facilityId=${encodeURIComponent(f.id)}`}>Hiệu quả cơ sở</Link></td></tr>)}</tbody></table></div>{!data.loading&&!items.length&&<p>Không có cơ sở phù hợp.</p>}{pagination}
  {selected!==undefined?<form key={selected?.id??'new'} onSubmit={save}><h2>{selected?'Chỉnh cơ sở':'Thêm cơ sở'}</h2>
- {[['code','Mã cơ sở'],['name','Tên cơ sở'],['address','Địa chỉ'],['officeHours','Giờ làm việc'],['accessHours','Giờ khách ra vào']].map(([key,label])=><label key={key}>{label}<input name={key} required maxLength={key==='address'?500:120} readOnly={key==='code'&&Boolean(selected)} defaultValue={String(selected?.[key as keyof Facility]??'')}/></label>)}
+ {[['code','Mã cơ sở'],['name','Tên cơ sở'],['address','Địa chỉ'],['officeHours','Giờ văn phòng'],['accessHours','Giờ khách ra vào']].map(([key,label])=><label key={key}>{label}<input name={key} required maxLength={key==='address'?500:120} readOnly={key==='code'&&Boolean(selected)} defaultValue={String(selected?.[key as keyof Facility]??'')}/></label>)}
+ <fieldset>
+  <legend>Khung phục vụ bàn giao kho</legend>
+  <p>Giờ Việt Nam. Nếu chưa có khung phù hợp, lịch hẹn sẽ chờ quản lý xác nhận.</p>
+  {schedule.map((window, index) => {
+    const update = (patch: Partial<ServiceWindow>) => setSchedule(previous => previous.map((row, i) => i === index ? { ...row, ...patch } : row));
+    return <div className="shifts-toolbar" key={index}>
+      <label>Ngày<select value={window.weekday} onChange={e => update({ weekday: Number(e.target.value) })}>
+        {['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}
+      </select></label>
+      <label>Từ giờ<input type="time" required value={window.starts} onChange={e => update({ starts: e.target.value })} /></label>
+      <label>Đến giờ<input type="time" required value={window.ends} onChange={e => update({ ends: e.target.value })} /></label>
+      <label>Số lịch nhận trong khung<input type="number" required min={1} step={1} value={window.capacity || ''} onChange={e => update({ capacity: Number(e.target.value) })} /></label>
+      <button type="button" onClick={() => setSchedule(previous => previous.filter((_, i) => i !== index))}>Bỏ khung</button>
+    </div>;
+  })}
+  <button type="button" onClick={() => setSchedule(previous => [...previous, { weekday: 1, starts: '', ends: '', capacity: 0 }])}>Thêm khung</button>
+ </fieldset>
  <label>Hoạt động<select name="operationalStatus" defaultValue={selected?.operationalStatus??'OPEN'}><option value="OPEN">Mở cửa</option><option value="CLOSED">Đóng cửa</option></select></label>
  <label><input type="checkbox" name="bookingEnabled" disabled={!selected} defaultChecked={selected?.bookingEnabled??false}/>Nhận đặt kho mới</label>
  <p>Tạm dừng nhận đặt kho không làm dừng các hợp đồng đang sử dụng.</p>{error?<p role="alert">{error}</p>:null}<button disabled={busy}>{busy?'Đang lưu…':'Lưu cơ sở'}</button><button type="button" disabled={busy} onClick={()=>setSelected(undefined)}>Hủy</button></form>:null}</section>;

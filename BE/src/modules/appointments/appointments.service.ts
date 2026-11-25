@@ -1,3 +1,5 @@
+import { assessHandoverWindow } from '../dispatch/service-schedule.js';
+import { workPhase } from '../dispatch/work-phase.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskExecution, assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
@@ -91,6 +93,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (await tx.handoverAppointment.findFirst({ where: { reservationId: reservation.id, status: 'COMPLETED' }, select: { id: true } })) throw new ConflictException('Đã hoàn tất bàn giao chìa khóa cho đơn này. Hệ thống sẽ kích hoạt khi đến ngày thuê.');
         const existingActive = await tx.handoverAppointment.findUnique({ where: { activeKey: this.activeKey(reservation.id) } });
         if (existingActive) throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
+        const decision = await assessHandoverWindow(tx, reservation.facilityId, parsed.scheduledAt);
+        const confirmed = decision === 'CONFIRMED';
         const sequence = await tx.handoverAppointment.count({ where: { reservationId: reservation.id } }) + 1;
         const created = await tx.handoverAppointment.create({
           data: {
@@ -99,8 +103,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
             scheduledAt: parsed.scheduledAt,
             handoverLeadDays,
             requestedByUserId: customer.id,
-            status: 'CONFIRMED',
-            confirmedAt: new Date(),
+            status: confirmed ? 'CONFIRMED' : 'REQUESTED',
+            confirmedAt: confirmed ? new Date() : null,
+            ...(!confirmed ? { handoverReport: { scheduleException: decision } } : {}),
             note: parsed.note,
             activeKey: this.activeKey(reservation.id),
             idempotencyKey: parsed.idempotencyKey,
@@ -108,7 +113,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           include: this.appointmentInclude(),
         });
         return this.toAppointment(created, false);
-      }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+      }, { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 });
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const duplicate = await this.prisma.handoverAppointment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.appointmentInclude() });
@@ -172,7 +177,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const action = input.action;
     const note = typeof input.note === 'string' ? input.note.trim() : '';
     const expected = typeof input.expectedScheduledAt === 'string' ? Date.parse(input.expectedScheduledAt) : NaN;
-    if ((action !== 'RESCHEDULE' && action !== 'NO_SHOW') || note.length < 3 || note.length > 1000 || !Number.isFinite(expected)) {
+    if ((action !== 'RESCHEDULE' && action !== 'NO_SHOW' && action !== 'CONFIRM_EXCEPTION') || note.length < 3 || note.length > 1000 || !Number.isFinite(expected)) {
       throw new BadRequestException('Cần thao tác, lý do và lịch hẹn hiện tại.');
     }
     const value = typeof input.scheduledAt === 'string' ? input.scheduledAt : '';
@@ -191,6 +196,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       }
       const now = new Date();
       const leadDays = await this.appointmentLeadDays(current, tx);
+      if (action === 'CONFIRM_EXCEPTION') {
+        if (current.status !== 'REQUESTED' || !current.handoverReport || !this.scheduleException(current.handoverReport)) {
+          throw new ConflictException('Lịch này không chờ xác nhận ngoại lệ.');
+        }
+        if (current.scheduledAt <= now) throw new ConflictException('Lịch đã qua. Hãy đổi sang giờ phù hợp.');
+        this.assertHandoverReady(current.reservation);
+        await this.assertAppointmentDate(current.reservation, current.scheduledAt, leadDays);
+      }
       if (action === 'NO_SHOW' && current.scheduledAt >= now) throw new ConflictException('Chỉ ghi nhận khách không đến sau giờ hẹn.');
       if (action === 'RESCHEDULE') {
         if (scheduledAt <= now || scheduledAt.getTime() === expected) throw new BadRequestException('Chọn một thời điểm mới trong tương lai.');
@@ -206,7 +219,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         managerId: actor.id, managerName: actor.fullName, at: now.toISOString(),
       };
       const updated = await tx.handoverAppointment.update({ where: { id: current.id }, data: {
-        ...(action === 'NO_SHOW' ? { status: 'CANCELLED', cancelledAt: now, activeKey: null } : { scheduledAt, handoverLeadDays: leadDays }),
+        ...(action === 'NO_SHOW' ? { status: 'CANCELLED', cancelledAt: now, activeKey: null }
+          : action === 'CONFIRM_EXCEPTION' ? { status: 'CONFIRMED', confirmedAt: now, confirmedByUserId: actor.id }
+          : { scheduledAt, handoverLeadDays: leadDays }),
         handoverReport: { ...report, scheduleHistory: [...history, adjustment] },
       }, include: this.appointmentInclude() });
       return this.toAppointment(updated, true);
@@ -248,6 +263,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
         } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
         if (current.status === 'CONFIRMED') return this.toAppointment(current, true);
+        if (this.scheduleException(current.handoverReport)) throw new ConflictException('Lịch này cần quản lý xác nhận ngoại lệ.');
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
         await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
@@ -403,7 +419,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (units.some(unit => ['MAINTENANCE', 'OCCUPIED'].includes(unit.status))) {
       throw new ConflictException('Có kho đang bảo trì hoặc đang được sử dụng.');
     }
-    if (await db.maintenanceRequest.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, activeKey: { not: null } } })) {
+    if (await db.maintenanceRequest.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, activeKey: { not: null } } })
+      || await db.incidentUnitBlock.count({ where: { storageUnitId: { in: units.map(unit => unit.id) }, releasedAt: null } })) {
       throw new ConflictException('Có kho đang chờ xử lý bảo trì. Hãy kiểm tra lại trước khi bàn giao.');
     }
     const otherActive = await db.rentalContract.count({
@@ -630,6 +647,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     return {
       ...(includeCustomer && record.reservation.facility ? { facility: record.reservation.facility } : {}),
       ...(includeCustomer ? {
+        coordination: workPhase('appointments', {
+          ...record, handoverStarted: Boolean(draft?.unitProgress.length),
+          bookingReady: ['REQUESTED', 'CONFIRMED'].includes(record.status) ? this.handoverBookingReadiness(record.reservation).bookingReady : undefined,
+        }),
         assignedStaff: record.assignedStaff ?? null,
         assignedBy: record.assignedBy ?? null,
         assignedAt: record.assignedAt?.toISOString() ?? null,
@@ -653,6 +674,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       id: record.id,
       appointmentCode: record.appointmentCode,
       status: record.status,
+      ...(record.status === 'REQUESTED' && this.scheduleException(record.handoverReport) ? { schedulePendingManager: true } : {}),
       usageStatus: historical ? null : record.status === 'COMPLETED' && record.reservation.contracts.some((contract: any) => contract.status === 'READY_FOR_HANDOVER') ? 'WAITING_FOR_RENTAL_START' : record.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE') ? 'ACTIVE' : null,
       scheduledAt: record.scheduledAt.toISOString(),
       reservation: {
@@ -684,6 +706,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
+  }
+
+  private scheduleException(value: unknown) {
+    return value && typeof value === 'object' && 'scheduleException' in value && typeof value.scheduleException === 'string';
   }
 
   private createInput(input: Record<string, unknown>, idempotencyKey: string | undefined) {

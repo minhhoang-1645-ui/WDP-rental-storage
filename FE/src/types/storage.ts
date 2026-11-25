@@ -38,6 +38,7 @@ export interface StorageListing {
 }
 
 export interface SearchCriteria {
+  facilityId: string
   size: StorageSizeId | 'all'
   type: StorageCondition | 'all'
   date: string

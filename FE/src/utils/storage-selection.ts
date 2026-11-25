@@ -12,6 +12,8 @@ export function storageGroupSummary(products: StorageListing[], group: StorageSi
 export function storageBookingHref(product: StorageListing, search = '') {
   const params = new URLSearchParams(search)
   params.set('product', product.id)
+  if (product.facilityId) params.set('facilityId', product.facilityId)
+  else params.delete('facilityId')
   params.set('size', product.sizeId)
   params.set('type', product.condition)
   params.set('step', '1')

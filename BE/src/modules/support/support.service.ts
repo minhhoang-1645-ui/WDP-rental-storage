@@ -1,3 +1,4 @@
+import { workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
@@ -267,7 +268,7 @@ export class SupportService {
     ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, hasCommercialAppendix: Boolean(transfer.commercialSnapshot), requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     const view = { ...base, transferRequestedSchedule: transferProposalView(record) };
     if (mode === 'STORAGE_CUSTOMER') return view;
-    const operational = { ...view, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
+    const operational = { ...view, coordination: workPhase('support-requests', record), customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'FACILITY_STAFF') return {
       ...operational,
       facility: record.reservation.facility,

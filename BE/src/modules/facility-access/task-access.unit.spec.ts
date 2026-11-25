@@ -54,7 +54,7 @@ describe('Facility task authorization (offline, no database connection)',()=>{
   });
   it('permits reporting a physical incident in the authorized facility without any old unit assignment',async()=>{
     const {db}=repository();
-    await expect(assertTaskFacility(db as never,staff,{storageUnitId:'unit-a'})).resolves.toBeUndefined();
+    await expect(assertTaskFacility(db as never,staff,{storageUnitId:'unit-a'})).resolves.toBe('A');
     await expect(assertTaskFacility(db as never,staff,{storageUnitId:'unit-b'})).rejects.toBeInstanceOf(ForbiddenException);
   });
   it('requires grants for both assigning Manager and selected Staff in the actual task facility',async()=>{
@@ -68,7 +68,7 @@ describe('Facility task authorization (offline, no database connection)',()=>{
     grants.push({userId:manager.id,facilityId:'B',revokedAt:null});
     const selected={...manager,selectedFacilityId:'A'};
     expect(facilityScope(selected)).toMatchObject({id:'A',facilityAccess:{some:{userId:manager.id,revokedAt:null}}});
-    await expect(assertTaskFacility(db as never,selected,{reservationId:'reservation-a'})).resolves.toBeUndefined();
+    await expect(assertTaskFacility(db as never,selected,{reservationId:'reservation-a'})).resolves.toBe('A');
     await expect(assertTaskFacility(db as never,selected,{reservationId:'reservation-b'})).rejects.toBeInstanceOf(ForbiddenException);
     await expect(assertTaskFacility(db as never,{...selected,selectedFacilityId:'ungranted'},{reservationId:'reservation-a'})).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -104,7 +104,7 @@ describe('Maintenance reporting creates work without selecting Staff',()=>{
  function reportingRepository() {
   const {db}=repository();
   const stamp=new Date(), unit={id:'unit-a',status:'AVAILABLE',storageType:{id:'type',code:'A',name:'Kho'},reservationUnits:[]};
-  const create=vi.fn(async({data}:any)=>({...data,id:'report',status:'OPEN',storageUnit:unit,assignedStaff:null,createdAt:stamp,updatedAt:stamp}));
+  const create=vi.fn(async({data}:any)=>({...data,id:'report',status:'OPEN',storageUnit:unit,assignedStaff:null,photos:[],incidentBlocks:[],createdAt:stamp,updatedAt:stamp}));
   const tx={...db,$queryRaw:vi.fn(),storageUnit:{findUnique:vi.fn(async({where,select}:any)=>select?{storageType:{facilityId:where.id==='unit-b'?'B':'A'}}:{...unit,id:where.id}),updateMany:vi.fn().mockResolvedValue({count:1})},maintenanceRequest:{findUnique:vi.fn().mockResolvedValue(null),create}};
   const client={...tx,$transaction:vi.fn(async(fn:any)=>fn(tx))};
   return {service:new MaintenanceService(client as never),tx};
@@ -117,8 +117,9 @@ describe('Maintenance reporting creates work without selecting Staff',()=>{
  });
  it('places a valid report in OPEN with no assignee and does not grant execution to its reporter',async()=>{
   const {service,tx}=reportingRepository();
-  const result=await service.createManual({storageUnitId:'unit-a',category:'UNIT_DAMAGE',description:'Khóa bị hỏng'},'report-a',staff);
-  expect(result).toMatchObject({status:'OPEN',assignedStaff:null});
+  const result=await service.createManual({storageUnitId:'unit-a',category:'UNIT_DAMAGE',rentalImpact:'NO_IMPACT',description:'Báo lỗi biển tên trên ô'},'report-a',staff);
+  expect(result).toMatchObject({status:'OPEN',assignedStaff:null,blocksUnit:false});
+  expect(tx.storageUnit.updateMany).not.toHaveBeenCalled();
   const input=tx.maintenanceRequest.create.mock.calls[0][0].data;
   expect(input).toMatchObject({reportedByUserId:staff.id});
   expect(input).not.toHaveProperty('assignedStaffUserId');

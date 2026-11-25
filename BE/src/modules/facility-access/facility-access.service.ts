@@ -31,21 +31,22 @@ export async function facilityIds(db: Db, actor: PublicUser) {
 export async function assertFacility(db: Db, actor: PublicUser, id: string) {
   if (!(await facilityIds(db, actor)).includes(id)) throw new ForbiddenException('Bạn chưa được cấp quyền tại cơ sở này.');
 }
-async function assignmentCounts(db: Db, userId: string, closed = false) {
+async function assignmentCounts(db: Db, userId: string, closed = false, facilityId?: string) {
   const assignedStaffUserId = userId;
+  const scoped = facilityId ? { reservation: { facilityId } } : {};
   const counts = await Promise.all([
-    db.handoverAppointment.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'CONFIRMED'] } : { in: ['REQUESTED', 'CONFIRMED'] } } }),
-    db.returnRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
-    db.maintenanceRequest.count({ where: { assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
-    db.supportRequest.count({ where: { assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
-    db.transferRequest.count({ where: { assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
-    db.damageClaim.count({ where: { assignedStaffId: userId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
+    db.handoverAppointment.count({ where: { ...scoped, assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'CONFIRMED'] } : { in: ['REQUESTED', 'CONFIRMED'] } } }),
+    db.returnRequest.count({ where: { ...scoped, assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
+    db.maintenanceRequest.count({ where: { ...(facilityId ? { OR: [{ commonAreaFacilityId: facilityId }, { storageUnit: { storageType: { facilityId } } }] } : {}), assignedStaffUserId, status: closed ? 'COMPLETED' : { not: 'COMPLETED' } } }),
+    db.supportRequest.count({ where: { ...scoped, assignedStaffUserId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
+    db.transferRequest.count({ where: { ...scoped, assignedStaffUserId, status: closed ? { notIn: ['REQUESTED', 'APPROVED'] } : { in: ['REQUESTED', 'APPROVED'] } } }),
+    db.damageClaim.count({ where: { ...(facilityId ? { rentalContract: { reservation: { facilityId } } } : {}), assignedStaffId: userId, status: closed ? 'RESOLVED' : { not: 'RESOLVED' } } }),
   ]);
   return counts.reduce((total, count) => total + count, 0);
 }
 
-export async function assertNoOpenAssignments(db: Db, userId: string) {
-  if (await assignmentCounts(db, userId)) throw new ConflictException('Tài khoản còn công việc chưa hoàn tất. Quản lý cần phân công lại trước.');
+export async function assertNoOpenAssignments(db: Db, userId: string, facilityId?: string) {
+  if (await assignmentCounts(db, userId, false, facilityId)) throw new ConflictException('Tài khoản còn công việc chưa hoàn tất. Quản lý cần phân công lại trước.');
 }
 @Injectable()
 export class FacilityAccessService {
@@ -199,7 +200,7 @@ export class FacilityAccessService {
       if (!row) throw new NotFoundException('Không tìm thấy quyền cơ sở.');
       await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', row.userId);
       if (!row.revokedAt) {
-        await assertNoOpenAssignments(tx, row.userId);
+        await assertNoOpenAssignments(tx, row.userId, row.facilityId);
         await tx.facilityAccess.update({ where: { id }, data: { activeKey: null, revokedById: actor.id, revokedAt: new Date() } });
         await revokeActiveSessions(tx, { userId: row.userId }, 'FACILITY_ACCESS_REVOKED', actor.id);
         await this.audit(tx, actor, 'REVOKE_FACILITY_ACCESS', row.userId, '/admin/facility-access/:id/revoke', { facilityId: row.facilityId, accessId: id });
@@ -209,7 +210,7 @@ export class FacilityAccessService {
   }
 }
 
-export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string};
+export type AssignmentReference={reservationId?:string;rentalContractId?:string;storageUnitId?:string|null;commonAreaFacilityId?:string|null};
 export async function assertAssignmentAccess(tx:Db,actor:PublicUser,staffId:string,reference:AssignmentReference){
  if(actor.role!=='FACILITY_MANAGER')throw new ForbiddenException('Chỉ quản lý được phân công.');
  await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',actor.id,staffId);
@@ -219,6 +220,7 @@ export async function assertAssignmentAccess(tx:Db,actor:PublicUser,staffId:stri
  if(reference.reservationId)id=(await tx.reservation.findUnique({where:{id:reference.reservationId},select:{facilityId:true}}))?.facilityId;
  else if(reference.rentalContractId)id=(await tx.rentalContract.findUnique({where:{id:reference.rentalContractId},select:{reservation:{select:{facilityId:true}}}}))?.reservation.facilityId;
  else if(reference.storageUnitId)id=(await tx.storageUnit.findUnique({where:{id:reference.storageUnitId},select:{storageType:{select:{facilityId:true}}}}))?.storageType.facilityId;
+ else if(reference.commonAreaFacilityId)id=reference.commonAreaFacilityId;
  if(!id)throw new BadRequestException('Không xác định được cơ sở của công việc.');
  await assertFacility(tx,actor,id);
  if(!await tx.facilityAccess.findFirst({where:{userId:staffId,facilityId:id,revokedAt:null},select:{id:true}}))throw new ForbiddenException('Nhân viên chưa được cấp quyền tại cơ sở của công việc.');

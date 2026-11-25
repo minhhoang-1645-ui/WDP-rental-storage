@@ -116,7 +116,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         const group = (data.contracts ?? []).filter(item => activityText(item, 'reservation.id') === reservationId);
         action = group.length === Number(get('reservation.quantity')) && group.every(item => item.status === 'READY_FOR_HANDOVER' && Date.parse(`${activityText(item, 'endDate').slice(0, 10)}T00:00:00+07:00`) > Date.now());
         web = '/customer/appointments'; mobile = '/customer/contracts';
-        message = action ? 'Hợp đồng đã đủ điều kiện. Đặt lịch nhận kho; lịch hợp lệ được xác nhận tự động. Bạn có thể hẹn nhận chìa khóa sớm tối đa 3 ngày trước kỳ thuê.' : 'Bạn có thể đặt lịch sau khi toàn bộ hợp đồng của yêu cầu đủ điều kiện và còn trong kỳ thuê. Mở hồ sơ để xem thông tin.';
+        message = action ? 'Hợp đồng đã đủ điều kiện. Gửi yêu cầu đặt lịch nhận kho và theo dõi trạng thái xác nhận. Bạn có thể hẹn nhận chìa khóa sớm tối đa 3 ngày trước kỳ thuê.' : 'Bạn có thể đặt lịch sau khi toàn bộ hợp đồng của yêu cầu đủ điều kiện và còn trong kỳ thuê. Mở hồ sơ để xem thông tin.';
         if (!action) title = 'Nhận kho · Xem điều kiện bàn giao';
       }
       if (kind === 'contracts' && status === 'ACTIVE') {

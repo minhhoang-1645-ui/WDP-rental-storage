@@ -13,7 +13,7 @@ export const canOperateResource = (role: string, resource: string) => role === '
 /** Shared screens keep their resource names; requests use the authenticated role's API namespace. */
 export function operationApiPath(path: string, role: string | undefined, method = 'GET') {
   if (role !== 'FACILITY_STAFF') return path;
-  if (method === 'GET' && ['/staff/maintenance/units', '/staff/maintenance/reported-by-me'].includes(path.split('?')[0])) return path;
+  if (method === 'GET' && ['/staff/maintenance/units', '/staff/maintenance/facilities', '/staff/maintenance/reported-by-me'].includes(path.split('?')[0])) return path;
   const match = /^\/manager\/([^/?]+)(?=[/?]|$)/.exec(path);
   if (match && (isStaffWorkflow(match[1]) || (method === 'GET' && (staffLookups as readonly string[]).includes(match[1])))) return path.replace('/manager/', '/staff/management/');
   const staff = /^\/staff\/([^/?]+)(?=[/?]|$)/.exec(path);

@@ -37,12 +37,15 @@ export async function taskFacilityId(db: Prisma.TransactionClient, ref: Assignme
   if (ref.reservationId) id = (await db.reservation.findUnique({ where: { id: ref.reservationId }, select: { facilityId: true } }))?.facilityId;
   else if (ref.rentalContractId) id = (await db.rentalContract.findUnique({ where: { id: ref.rentalContractId }, select: { reservation: { select: { facilityId: true } } } }))?.reservation.facilityId;
   else if (ref.storageUnitId) id = (await db.storageUnit.findUnique({ where: { id: ref.storageUnitId }, select: { storageType: { select: { facilityId: true } } } }))?.storageType.facilityId;
+  else if (ref.commonAreaFacilityId) id = ref.commonAreaFacilityId;
   if (!id) throw new NotFoundException('Không tìm thấy cơ sở của nhiệm vụ.');
   return id;
 }
 export async function assertTaskFacility(db: Prisma.TransactionClient, actor: PublicUser, ref: AssignmentReference) {
   await db.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE',actor.id);
-  await assertFacility(db, actor, await taskFacilityId(db, ref));
+  const facilityId = await taskFacilityId(db, ref);
+  await assertFacility(db, actor, facilityId);
+  return facilityId;
 }
 export async function assertTaskExecution(db: Prisma.TransactionClient, actor: PublicUser, assignee: string | null | undefined, ref: AssignmentReference) {
   if (actor.role !== 'FACILITY_STAFF' || assignee !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới được thực hiện nhiệm vụ.');

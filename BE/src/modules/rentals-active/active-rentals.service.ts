@@ -10,12 +10,14 @@ import { deriveOverdueState } from './overdue-state.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import { returnReadiness } from '../returns/early-return-finance.js';
 import { contractReturnReadiness, recordedContractDeposit, returnInvoiceFields } from '../returns/contract-return-finance.js';
-import { hasStartedUnissuedRenewal, planEarlyReturn, summarizeEarlyReturn, PERIOD_CLOSEOUT } from '../returns/return-period-closeout.js';
+import { hasStartedUnissuedRenewal, planEarlyReturn, protectedFacilityReturn, summarizeEarlyReturn, PERIOD_CLOSEOUT } from '../returns/return-period-closeout.js';
 import { EARLY_RETURN_SUBJECT, earlyReturnScope } from '../returns/early-return-classification.js';
 import { businessToday } from '../../business-date.js';
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { staffRentalSelect, staffRentalView, staffRentalWhere } from './staff-active-rentals.js';
+import { returnNoticeRange, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
+import { calculateOccupiedOverdue } from '../returns/overdue-return.js';
 
 export interface ActiveRentalListQuery {
   page: number;
@@ -199,6 +201,8 @@ export class ActiveRentalsService {
     const effectiveEndDate = this.effectiveEndDate(active);
     const overdue = deriveOverdueState(effectiveEndDate, now);
     const snapshot = record.quoteSnapshot as Record<string, unknown>;
+    const returnNotice = (snapshot.pricingPolicy as PricingPolicySnapshot | undefined)?.returnNotice;
+    const signedReturnSettlement = Boolean((snapshot.pricingPolicy as PricingPolicySnapshot | undefined)?.earlyReturn);
     const invoices = record.invoices.map((invoice: any) => this.invoiceSummary(invoice));
     const outstanding: bigint = record.invoices.reduce((sum: bigint, invoice: any) => sum + invoice.balanceDue, 0n);
     const scheduledBalance: bigint = record.invoices.reduce((sum: bigint, invoice: any) =>
@@ -230,7 +234,13 @@ export class ActiveRentalsService {
       } : null;
       const returnReadiness = contractReturnReadiness(record.invoices, [contract.id], allContractIds);
       const cutoff = businessToday(now);
+      const terms = protectedFacilityReturn(contract.reservationUnit.storageUnit.storageType.facility) ? null :
+        calculateOccupiedOverdue(contract, record.quoteSnapshot, record.renewals, cutoff);
       const endDate = this.isoDate(contract.endDate)!;
+      const bookedDays = (+contract.endDate - +contract.startDate) / 86_400_000;
+      const returnNoticeDays = returnNotice && Number.isSafeInteger(returnNotice.value) &&
+        returnNotice.value >= returnNoticeRange.min && returnNotice.value <= returnNoticeRange.max &&
+        Number.isSafeInteger(bookedDays) && bookedDays >= 0 ? Math.min(returnNotice.value, bookedDays) : null;
       const approval = cutoff < contract.endDate ? record.supportRequests?.find((request: any) =>
         (request.rentalContractId === contract.id || (!request.rentalContractId && record.contracts.every((item: { endDate: Date }) => +item.endDate === +contract.endDate)))
         && request.lastActionIdempotencyKey === earlyReturnScope(request.id, endDate)) : null;
@@ -244,17 +254,23 @@ export class ActiveRentalsService {
       }
       let earlyReturnEstimate = null;
       if (mode === 'STORAGE_CUSTOMER' && cutoff < contract.endDate && !hasStartedUnissuedRenewal(record.renewals, contract.id, cutoff)) {
-        try { earlyReturnEstimate = summarizeEarlyReturn(planEarlyReturn(record.invoices, contract.id, allContractIds, cutoff, false, record.services), this.isoDate(cutoff)!); }
+        const facility = contract.reservationUnit.storageUnit.storageType.facility;
+        try { earlyReturnEstimate = summarizeEarlyReturn(planEarlyReturn(record.invoices, contract.id, allContractIds, cutoff, false, record.services, protectedFacilityReturn(facility)), this.isoDate(cutoff)!); }
         catch (error) { if (!(error instanceof ConflictException)) throw error; }
       }
       return {
         id: contract.id, contractCode: contract.contractCode, status: contract.status,
         startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate), activatedAt: contract.activatedAt?.toISOString() ?? null,
+        returnNoticeDays,
+        overdueOccupancy: terms ? { days: terms.overdueDays, withinGrace: terms.billableDays === 0, estimatedAmount: terms.amount,
+          managerReviewOn: this.isoDate(new Date(+contract.endDate + terms.terms.managerDays * 86_400_000)),
+          managerReview: terms.overdueDays >= terms.terms.managerDays } : null,
         returnReadiness: {
           ...returnReadiness,
           awaitingRenewalInvoices,
+          ...(signedReturnSettlement ? { requiresFullSettlement: false } : {}),
           ...(earlyApproved ? { policy: PERIOD_CLOSEOUT, requiresFullSettlement: false, earlyReturnBlockReason: pendingRenewal ? 'RENEWAL_IN_PROGRESS' : !depositVerified ? 'DEPOSIT_RECONCILIATION_REQUIRED' : null } : {}),
-          canReturn: earlyApproved ? depositVerified && !pendingRenewal : returnReadiness.canReturn && !awaitingRenewalInvoices,
+          canReturn: earlyApproved ? depositVerified && !pendingRenewal : (signedReturnSettlement ? depositVerified : returnReadiness.canReturn) && !awaitingRenewalInvoices,
         },
         pendingRenewal: pendingSummary(pendingRenewal),
         returnInProgress: contract.returnInspections.length > 0,

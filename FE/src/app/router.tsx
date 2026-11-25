@@ -3,7 +3,7 @@ import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage'
 import { OperationsLayout } from '../pages/operations/OperationsLayout';
 import { OperationsPolicies, OperationsPricing } from '../pages/operations/OperationsPages';
 import { OperationsFacilities } from '../pages/operations/OperationsFacilities';
-import { OperationsBusinessReport, OperationsAudit } from '../pages/operations/OperationsBusinessPages';
+import { OperationsBusinessReport } from '../pages/operations/OperationsBusinessPages';
 import { OperationsDashboardPage } from '../pages/operations/OperationsDashboardPage';
 import { OperationsCatalog, OperationsCatalogDetail } from '../pages/operations/OperationsCatalogPage';
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
@@ -232,7 +232,20 @@ export function AppRouter() {
           {operationalRoutes("/manager")}
         </Route>
       </Route>
-      <Route element={<RoleGuard allowedRoles={["BUSINESS_OPERATIONS_MANAGER"]} />}><Route path="operations" element={<OperationsLayout />}><Route index element={<OperationsDashboardPage />} /><Route path="facilities/:facilityId?" element={<OperationsFacilities/>}/><Route path="policies" element={<OperationsPolicies/>}/><Route path="pricing" element={<OperationsPricing/>}/><Route path="catalog" element={<OperationsCatalog/>}/><Route path="catalog/:serviceId" element={<OperationsCatalogDetail/>}/><Route path="reports" element={<OperationsBusinessReport/>}/><Route path="audit" element={<OperationsAudit/>}/><Route path="settings/:section?" element={<AccountSettingsPage/>}/><Route path="*" element={<WorkspaceNotFound/>}/></Route></Route>
+      <Route element={<RoleGuard allowedRoles={["BUSINESS_OPERATIONS_MANAGER"]} />}>
+        <Route path="operations" element={<OperationsLayout />}>
+          <Route index element={<OperationsDashboardPage />} />
+          <Route path="facilities/:facilityId?" element={<OperationsFacilities />} />
+          <Route path="policies" element={<OperationsPolicies />} />
+          <Route path="pricing" element={<OperationsPricing />} />
+          <Route path="catalog" element={<OperationsCatalog />} />
+          <Route path="catalog/:serviceId" element={<OperationsCatalogDetail />} />
+          <Route path="reports" element={<OperationsBusinessReport />} />
+          <Route path="audit" element={<Navigate to="/operations" replace />} />
+          <Route path="settings/:section?" element={<AccountSettingsPage />} />
+          <Route path="*" element={<WorkspaceNotFound />} />
+        </Route>
+      </Route>
       <Route element={<RoleGuard allowedRoles={["SYSTEM_ADMINISTRATOR"]} />}>
         <Route path="admin" element={<AdminLayout />}>
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={adminSections} />} />

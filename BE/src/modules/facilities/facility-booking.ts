@@ -6,6 +6,7 @@ export async function assertAcceptingBookings(db:Prisma.TransactionClient,storag
  if(lock)await db.$queryRawUnsafe('SELECT id FROM "Facility" WHERE id=$1 FOR SHARE',type.facilityId);
  const facility=await db.facility.findUnique({where:{id:type.facilityId},select:{bookingEnabled:true,operationalStatus:true}});
  if(!facility?.bookingEnabled||facility.operationalStatus!=='OPEN')throw new ConflictException('Cơ sở đang tạm dừng nhận đặt kho mới. Vui lòng chọn cơ sở khác.');
+ return type.facilityId;
 }
 
 export async function assertFacilityAllowsRenewal(db: Prisma.TransactionClient, facilityId: string, lock = false) {

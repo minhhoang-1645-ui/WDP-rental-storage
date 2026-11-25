@@ -54,7 +54,8 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
   const unsigned = object(invoice.signing).complete === false;
   const holdExpired = paymentWindowClosed(invoice, now);
   const scheduled = invoicePaymentBlockedBySchedule(invoice, now);
-  const supported = ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type));
+  const supported = typeof invoice.onlinePaymentSupported === 'boolean' ? invoice.onlinePaymentSupported
+    : ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type));
   const eligible = Boolean(id && payableBalance && !unsigned && !holdExpired && !scheduled && supported && bank.data?.vnpayConfigured === true);
   const blocked = submissions.loading || Boolean(submissions.error) || pendingTransfer;
   const paymentScreen = selecting && payableBalance;
@@ -83,6 +84,9 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
     <InvoiceHeader title={paymentScreen ? "Thanh toán hóa đơn" : "Chi tiết hóa đơn"} onBack={paymentScreen ? () => setSelecting(false) : undefined} />
     <ScrollView style={s.screen} contentContainerStyle={s.page}>
       <InvoiceIdentity invoice={invoice} badge />
+      {!paymentScreen && Number(text(invoice, 'overduePayment.days')) > 0 && <Text style={s.body}>
+        Đã quá hạn {text(invoice, 'overduePayment.days')} ngày{object(invoice.overduePayment).withinGrace === true ? ' · Trong thời gian ân hạn' : ''}
+      </Text>}
       <View style={[s.hero, paid ? s.greenBadge : voided ? s.grayBadge : null]}>
         <Text style={s.body}>{paymentScreen ? 'Số tiền thanh toán' : paid ? 'Tổng đã trả' : voided ? 'Giá trị hóa đơn đã hủy' : 'Còn phải trả'}</Text>
         <Text style={[s.heroAmount, paid && { color: C.success }, voided && { color: C.text }]}>
@@ -117,7 +121,8 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         </View>
         <View style={s.section}>
           <Text accessibilityRole="header" style={s.title}>Chi tiết các khoản thu</Text><View style={s.card}>
-          {([['Tiền thuê', invoice.rentalAmount], ['Tiền cọc', invoice.depositAmount], ['Dịch vụ', invoice.serviceAmount], ['Phí đã duyệt', invoice.chargeAmount]] as const)
+          {([['Tiền thuê', invoice.rentalAmount], ['Tiền cọc', invoice.depositAmount], ['Dịch vụ', invoice.serviceAmount],
+            [text(invoice, 'historicalPricing.adjustment') === 'PAYMENT_OVERDUE' ? 'Phí chậm thanh toán' : 'Phí đã duyệt', invoice.chargeAmount]] as const)
             .filter(([, value]) => typeof value === 'number' && value !== 0).map(([title, value]) => <Fact key={title} title={title} value={amount(value)} />)}
           {!voided && typeof invoice.totalAmount === 'number' ? <Fact title="Tổng hóa đơn" value={amount(invoice.totalAmount)} total /> : null}
           {!voided && typeof invoice.amountPaid === 'number' ? <Fact title="Đã thanh toán" value={amount(invoice.amountPaid)} /> : null}{!voided && <Fact title="Còn phải trả" value={amount(invoice.balanceDue)} />}</View>

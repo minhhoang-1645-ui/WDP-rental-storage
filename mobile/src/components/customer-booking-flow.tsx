@@ -236,6 +236,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
       const latest = object(check.quote);
       const fields = ['quotedTotalAmount', 'estimatedInitialAmountDue', 'paymentPlan', 'depositAmount', 'discountAmount', 'rentalAmount', 'addOnTotalAmount'] as const;
       if (fields.some(field => latest[field] !== quote[field]) || JSON.stringify(latest.services) !== JSON.stringify(quote.services) ||
+          JSON.stringify(latest.pricingPolicy) !== JSON.stringify(quote.pricingPolicy) ||
           JSON.stringify(latest.initialPaymentBreakdown) !== JSON.stringify(quote.initialPaymentBreakdown)) {
         setQuote(latest); setError('Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.'); return;
       }

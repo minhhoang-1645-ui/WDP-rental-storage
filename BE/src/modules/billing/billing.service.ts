@@ -10,7 +10,8 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
-import { invoiceSigningRequirements } from './payment-eligibility.js';
+import { invoiceSigningRequirements, supportsOnlinePayment } from './payment-eligibility.js';
+import { datedPaymentOverdue, verifiedRentDebt } from './overdue-payment.js';
 import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude, invoiceMoney, invoiceUnit, savedInvoiceBreakdown } from './invoice-breakdown.js';
 
 export interface InvoiceListQuery {
@@ -823,6 +824,9 @@ export class BillingService {
 
   private toInvoice(record: any, includeCustomer: boolean) {
     const reservation = record.reservation;
+    const now = new Date();
+    const overdue = ['INITIAL', 'RECURRING', 'RENEWAL'].includes(record.type) && ['OPEN', 'PARTIALLY_PAID'].includes(record.status) &&
+      !initialPaymentWindowClosed(record, now) ? datedPaymentOverdue(record.pricingSnapshot, record.dueAt, now) : null;
     const historicalQuote = reservation.quoteSnapshot as HistoricalQuote | null;
     const serviceUnits = new Map(Array.isArray(historicalQuote?.services)
       ? historicalQuote.services.map(item => [item.serviceId, item.physicalUnit ?? null]) : []);
@@ -830,6 +834,7 @@ export class BillingService {
       id: record.id,
       invoiceCode: record.invoiceCode,
       signing: invoiceSigningRequirements(record),
+      onlinePaymentSupported: supportsOnlinePayment(record),
       type: record.type,
       billingCycle: record.billingCycle,
       renewalCycle: record.renewalCycle,
@@ -838,7 +843,12 @@ export class BillingService {
       billingPeriodStart: this.isoDate(record.billingPeriodStart),
       billingPeriodEnd: this.isoDate(record.billingPeriodEnd),
       dueAt: this.isoDate(record.dueAt),
-      isPastDue: record.dueAt !== null && record.dueAt < new Date() && ['OPEN', 'PARTIALLY_PAID'].includes(record.status),
+      isPastDue: record.dueAt !== null && record.dueAt < businessToday(now) && ['OPEN', 'PARTIALLY_PAID'].includes(record.status),
+      ...(overdue && overdue.overdueDays > 0 ? { overduePayment: { days: overdue.overdueDays,
+        withinGrace: overdue.overdueDays <= overdue.rule.graceDays, managerReviewOn: overdue.managerReviewOn,
+        managerReview: overdue.overdueDays >= overdue.rule.managerDays,
+        ...(includeCustomer ? { rentDebtRequiresReconciliation: !verifiedRentDebt(record) } : {}),
+      } } : {}),
       status: record.status,
       voidReason: record.voidReason ?? null, voidedAt: record.voidedAt?.toISOString() ?? null,
       closeoutPaymentAllowed: closeoutPaymentAllowed(reservation, record.renewalRequest?.rentalContractId),

@@ -78,7 +78,12 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     const resume = () => { if (document.visibilityState !== 'hidden') void load(); };
     const mutation = () => { clearTimeout(timer); timer = setTimeout(() => { void load().finally(schedule); }, 400); };
     const crossTab = (event: StorageEvent) => { if (event.key === DATA_PULSE_KEY && event.newValue) mutation(); };
-    const dirty = (event: Event) => { const target = event.target; if (target instanceof Element) { const form = target.closest('form'); if (form) markFormDirty(form); } };
+    const dirty = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('[data-wdp-ignore-dirty]')) return;
+      const form = target.closest('form');
+      if (form) markFormDirty(form);
+    };
     const submit = (event: Event) => { if (event.target instanceof HTMLFormElement && event.target.dataset.wdpDraft !== 'ignore') event.target.setAttribute('data-wdp-submitting', 'true'); };
     document.addEventListener('input', dirty, true); document.addEventListener('change', dirty, true); document.addEventListener('submit', submit, true);
     document.addEventListener('visibilitychange', resume); window.addEventListener('online', resume); window.addEventListener('offline', resume); window.addEventListener('focus', resume); window.addEventListener(DATA_CHANGED, mutation); window.addEventListener('storage', crossTab);

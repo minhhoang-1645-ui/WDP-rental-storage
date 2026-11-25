@@ -17,8 +17,9 @@ export function returnSettlementAmount(row: Row) {
   return Number.isFinite(amount) && amount >= 0 ? amount : NaN;
 }
 export function returnSettlementReady(row: Row) {
-  if (text(row, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1') return object(row.returnReadiness).canReturn === true;
-  return object(row.returnReadiness).canReturn !== false && returnSettlementAmount(row) === 0;
+  const readiness = object(row.returnReadiness);
+  if (readiness.requiresFullSettlement === false) return readiness.canReturn === true;
+  return readiness.canReturn !== false && returnSettlementAmount(row) === 0;
 }
 export function handoverWindowIssue(row: Row, now: number) {
   const today = new Date(now + 25200000).toISOString().slice(0, 10);
@@ -28,7 +29,17 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   const root = `/staff/${resource}/${encodeURIComponent(idOf(row))}`, result: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], idempotent = false, description?: string) => result.push({ title, path: root + suffix, method: 'POST', fields: [...fields, confirmation()], idempotent, description });
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
-  if (resource === 'appointments' && assigned && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
+  if (resource === 'appointments' && assigned && row.canRecordCancellationRecovery === true) {
+    result.push({ title: 'Xác nhận thu hồi khi khách hủy đặt kho', method: 'POST',
+      path: '/reservations/' + encodeURIComponent(text(row, 'reservation.id')) + '/paid-cancellation',
+      fields: [note('note', 'Biên bản hoặc căn cứ kiểm tra', true, 500),
+        ...([['neverUsed', 'Đã xác minh kho chưa từng sử dụng'], ['unitEmpty', 'Đã kiểm tra kho trống'],
+          ['accessRevoked', 'Đã thu hồi toàn bộ chìa khóa, thẻ và quyền truy cập'], ['equipmentReturned', 'Đã kiểm tra thiết bị đã được thu hồi hoặc chưa giao']] as const)
+          .map(([name, title]) => ({ name, title, checkbox: true, required: true }))],
+      transform: input => ({ ...input, action: 'RECOVER' }),
+    });
+  }
+  if (resource === 'appointments' && assigned && row.cancellationPending !== true && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
     add('Hoàn tất bàn giao', '/complete-handover', [
       { name: 'recipientType', title: 'Người nhận bàn giao', required: true, initial: 'CUSTOMER', choices: [{ value: 'CUSTOMER', label: `Khách đứng tên: ${text(row, 'reservation.customer.fullName')}` }, { value: 'AUTHORIZED', label: 'Người được ủy quyền' }] },
       { name: 'recipientName', title: 'Tên người được ủy quyền', required: true, minLength: 2, maxLength: 120, visibleWhen: values => values.recipientType === 'AUTHORIZED' },
@@ -81,6 +92,11 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
           fields: [
             { name: 'unitsEmpty', title: 'Đã kiểm tra và xác nhận kho đã dọn trống', checkbox: true, required: true },
             { name: 'accessRevoked', title: 'Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập', checkbox: true, required: true },
+            ...(row.servicesConfirmationRequired === true ? [{ name: 'servicesReturned', title: 'Đã thu hồi thiết bị và đối chiếu dịch vụ', checkbox: true, required: true }] : []),
+            ...(row.overdueReturnDateRequired === true ? [
+              { name: 'physicalReturnDate', title: 'Ngày nhận kho thực tế (YYYY-MM-DD)', required: true },
+              note('physicalReturnEvidence', 'Căn cứ nếu nhận kho vào ngày trước', false, 500),
+            ] : []),
           ] });
       }
     }
@@ -117,19 +133,21 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     }
     const otherUnits = contracts.filter(item => idOf(item) !== rentalContractId).map(item => text(item, 'unit.unitCode')).filter(Boolean);
     const scope = `Kho ${unit} · Hợp đồng ${text(contract, 'contractCode')}.${otherUnits.length ? ` Kho tiếp tục thuê: ${otherUnits.join(', ')}.` : ''}`;
+    const noticeDays = typeof contract.returnNoticeDays === 'number' ? contract.returnNoticeDays : 0;
+    const returnNotice = noticeDays > 0 ? ` Báo trước ${noticeDays} ngày để NestBox bố trí lịch trả kho.` : '';
     const early = endDate > vietnamCalendarDate(now);
     const legacyApproval = early && approved && text(contract, 'returnReadiness.policy') !== 'PERIOD_CLOSEOUT_V1'
       && !text(contract, 'returnReadiness.earlyReturnBlockReason');
     if (endDate && (!early || approved) && (legacyApproval || returnSettlementReady(contract))) {
       actions.push({ title: `Trả kho ${unit}`, path: '/customer/returns', method: 'POST', idempotent: true,
         fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)], transform: input => ({ ...input, reservationId, rentalContractId }),
-        description: scope + (early ? ' Quản lý đã chấp thuận trả trước hạn.' : '') });
+        description: scope + (early ? ' Quản lý đã chấp thuận trả trước hạn.' : '') + returnNotice });
     }
     if (early && !approved && !pendingOrApproved.some(item => item.status !== 'RESOLVED')) {
       actions.push({ title: `Đề nghị trả trước hạn kho ${unit}`, path: '/customer/support-requests', method: 'POST', idempotent: true,
         fields: [note('description', 'Lý do trả trước hạn', true, 3000), confirmation()],
         transform: input => ({ ...input, reservationId, rentalContractId, category: 'OTHER', subject: EARLY_RETURN_SUBJECT }),
-        description: scope + ' Quản lý cần chấp thuận trước khi bạn gửi yêu cầu trả kho.' });
+        description: scope + ' Quản lý cần chấp thuận trước khi bạn gửi yêu cầu trả kho.' + returnNotice });
     }
   }
   actions.push(customerSupportAction(reservationId));

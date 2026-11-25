@@ -1,3 +1,6 @@
+import { DateTimePicker } from '../../components/workspace/DateTimeFields';
+import { useCurrentTime } from '../../hooks/useCurrentTime';
+import { keyCollectionStartDate, vietnamLocalMinute } from '../../utils/handover';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
@@ -60,10 +63,22 @@ export function ManagerActions({
   const problem = transferProblem(row);
   const [scheduleAction, setScheduleAction] = useState('RESCHEDULE');
   const [newSchedule, setNewSchedule] = useState('');
+  const [scheduleError, setScheduleError] = useState('');
   const [scheduleNote, setScheduleNote] = useState('');
+  const scheduleClock = useCurrentTime(resource === 'appointments' && user?.role === 'FACILITY_MANAGER');
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
   const lock = useRef(false);
   const root = `/manager/${resource}/${encodeURIComponent(id)}`;
+  const appointmentContracts = resource === 'appointments' ? rows(object(row.reservation).contracts) : [];
+  const leadDays = object(row.handoverReadiness).leadDays;
+  const firstPickup = typeof leadDays === 'number' ? appointmentContracts
+    .map(contract => keyCollectionStartDate(first(contract, 'startDate').slice(0, 10), leadDays)).filter(Boolean).sort().at(-1) : undefined;
+  const lastPickup = appointmentContracts.map(contract => first(contract, 'endDate').slice(0, 10)).filter(Boolean).sort()[0];
+  const scheduleLimit = lastPickup ? keyCollectionStartDate(lastPickup, 1) + 'T23:59' : undefined;
+  const scheduleMinimum = (time: number) => {
+    const nextMinute = vietnamLocalMinute(time + 60_000);
+    return firstPickup && firstPickup > nextMinute.slice(0, 10) ? firstPickup + 'T00:00' : nextMinute;
+  };
   const issueRows = rows(row.physicalInspections).filter(
     (item) => item.result === "ISSUE_FOUND",
   );
@@ -244,9 +259,15 @@ export function ManagerActions({
         {resource === 'appointments' && user?.role === 'FACILITY_MANAGER' && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)) &&
           <form className="portal-form" onSubmit={event => {
             event.preventDefault();
+            const scheduledAt = newSchedule + ':00+07:00';
+            if (scheduleAction === 'RESCHEDULE' &&
+              (newSchedule < scheduleMinimum(Date.now()) || (scheduleLimit && newSchedule > scheduleLimit) || Date.parse(scheduledAt) === Date.parse(first(row, 'scheduledAt')))) {
+              setScheduleError('Chọn thời điểm mới trong tương lai và trong khoảng được phép bàn giao.');
+              return;
+            }
             void run(`${root}/schedule`, 'PATCH', {
               action: scheduleAction, expectedScheduledAt: row.scheduledAt, note: scheduleNote.trim(),
-              ...(scheduleAction === 'RESCHEDULE' ? { scheduledAt: newSchedule + ':00+07:00' } : {}),
+              ...(scheduleAction === 'RESCHEDULE' ? { scheduledAt } : {}),
             });
           }}>
             {first(row, 'handoverReadiness.reason', 'bookingBlockReason') && <p role="status">
@@ -254,11 +275,11 @@ export function ManagerActions({
             </p>}
             <label className="field-label">Xử lý lịch hẹn<select value={scheduleAction} onChange={event => setScheduleAction(event.target.value)}>
               <option value="RESCHEDULE">Đổi lịch</option>
-              {Date.parse(first(row, 'scheduledAt')) < Date.now() && <option value="NO_SHOW">Khách không đến · hủy lịch</option>}
+              {Date.parse(first(row, 'scheduledAt')) < scheduleClock && <option value="NO_SHOW">Khách không đến · hủy lịch</option>}
             </select></label>
-            {scheduleAction === 'RESCHEDULE' && <label className="field-label">Lịch mới (giờ Việt Nam)
-              <input type="datetime-local" required value={newSchedule} onChange={event => setNewSchedule(event.target.value)} />
-            </label>}
+            {scheduleAction === 'RESCHEDULE' && <DateTimePicker label="Lịch mới (giờ Việt Nam)" required
+              min={scheduleMinimum(scheduleClock)} max={scheduleLimit} defaultValue={newSchedule} error={scheduleError}
+              onChange={value => { setNewSchedule(value); setScheduleError(''); }} />}
             <label className="field-label">Lý do<textarea required minLength={3} maxLength={1000} value={scheduleNote} onChange={event => setScheduleNote(event.target.value)} /></label>
             <button className="button-primary" disabled={busy || scheduleNote.trim().length < 3}>Lưu thay đổi lịch</button>
           </form>}

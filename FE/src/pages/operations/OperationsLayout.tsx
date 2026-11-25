@@ -1,4 +1,4 @@
-import { Building2, FileCheck, CircleDollarSign, ChartColumn, Landmark, Boxes, History } from 'lucide-react';
+import { Building2, FileCheck, CircleDollarSign, ChartColumn, Landmark, Boxes } from 'lucide-react';
 import { InternalPortalLayout } from '../../components/layout/InternalPortalLayout';
 import './operations.css';
 import '../../styles/workspace-theme.css';
@@ -10,6 +10,5 @@ const navigation=[
  {to:'/operations/pricing',label:'Khung giá',icon:CircleDollarSign,group:'Quản lý kinh doanh'},
  {to:'/operations/catalog',label:'Danh mục bổ trợ',icon:Boxes,group:'Quản lý kinh doanh'},
  {to:'/operations/reports',label:'Doanh thu và hiệu quả cơ sở',icon:ChartColumn,group:'Báo cáo'},
- {to:'/operations/audit',label:'Nhật ký kinh doanh',icon:History,group:'Theo dõi'},
 ];
 export function OperationsLayout(){return <InternalPortalLayout label="Điều hành kinh doanh" navigation={navigation} themed/>;}

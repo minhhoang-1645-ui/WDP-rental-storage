@@ -5,6 +5,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { earlyReturnSettlementPending, rentRefundView } from '../returns/return-period-closeout.js';
+import { businessDate } from '../../business-date.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type SettlementStatus = 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED';
@@ -297,6 +298,11 @@ export class DepositSettlementsService {
         unitCode: inspection.storageUnit.unitNumber, contractCode: inspection.rentalContract.contractCode,
       })),
       refundedAt: record.refundedAt?.toISOString() ?? null,
+      refundDueOn: record.refundDueOn?.toISOString().slice(0, 10) ?? null,
+      refundPolicyVersion: record.refundPolicyVersion ?? null,
+      refundOverdue: Boolean(record.refundDueOn && !record.refundedAt &&
+        (record.status === 'PENDING_REVIEW' || record.status === 'APPROVED' && record.refundAmount > 0n) &&
+        businessDate() > record.refundDueOn.toISOString().slice(0, 10)),
       settledAt: record.settledAt?.toISOString() ?? null,
       outstandingInvoice: record.outstandingInvoice ? {
         id: record.outstandingInvoice.id,

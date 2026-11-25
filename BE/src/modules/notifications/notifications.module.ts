@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
+import { ActiveRentalsModule } from '../rentals-active/active-rentals.module.js';
 import { AppointmentsModule } from '../appointments/appointments.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { BillingModule } from '../billing/billing.module.js';
@@ -18,7 +19,7 @@ import { NotificationsController } from './notifications.controller.js';
 
 @Module({
   imports: [
-    AuthModule, AppointmentsModule, AuditModule, BillingModule, BookingModule, ContractsModule,
+    AuthModule, ActiveRentalsModule, AppointmentsModule, AuditModule, BillingModule, BookingModule, ContractsModule,
     DamageClaimsModule, DepositSettlementsModule, MaintenanceModule, RenewalsModule,
     ReturnsModule, SupportModule, TransfersModule,
   ],

@@ -1,3 +1,4 @@
+import { chooseDate } from './browser-test.mjs';
 import { selectChoice } from './select-choice.mjs';
 // All API requests are intercepted. This test never changes the real database.
 import assert from "node:assert/strict";
@@ -765,12 +766,8 @@ try {
   assert(
     (await page.locator("main").innerText()).includes("Cần xác nhận báo giá"),
   );
-  await page
-    .getByLabel("Ngày bắt đầu kiểm tra", { exact: true })
-    .fill("2027-11-01");
-  await page
-    .getByLabel("Ngày kết thúc kiểm tra", { exact: true })
-    .fill("2027-12-01");
+  await chooseDate(page, "Ngày bắt đầu kiểm tra", "2027-11-01");
+  await chooseDate(page, "Ngày kết thúc kiểm tra", "2027-12-01");
   await page
     .getByRole("button", { name: "Kiểm tra khả dụng", exact: true })
     .click();

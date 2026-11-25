@@ -1,5 +1,6 @@
 const zoneOffset = 7 * 60 * 60 * 1000
 export function vietnamLocalMinute(time = Date.now()) { return new Date(time + zoneOffset).toISOString().slice(0, 16) }
+export function vietnamLocalSecond(time = Date.now()) { return new Date(time + zoneOffset).toISOString().slice(0, 19) }
 export function keyCollectionStartDate(value: string, daysBefore = 3) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
   const date = new Date(`${value}T00:00:00.000Z`)

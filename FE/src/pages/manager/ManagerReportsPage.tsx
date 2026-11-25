@@ -1,3 +1,4 @@
+import { DateRangePicker } from '../../components/workspace/DateTimeFields';
 import { useId, useState } from 'react';
 import { CalendarDays, ChevronDown, CircleHelp, ClipboardList, Coins, Download, Receipt, RefreshCw, Wallet, Warehouse, type LucideIcon } from 'lucide-react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -193,10 +194,10 @@ export function ManagerReportsPage() {
         changeParams({ ...draft, period: 'custom' });
       }
     }}>
-      <label className="field-label">Từ ngày<input type="date" required value={draft.from}
-        onChange={event => setPendingDates({ key: rangeKey, dates: { ...draft, from: event.target.value } })} /></label>
-      <label className="field-label">Đến ngày<input type="date" required value={draft.to}
-        onChange={event => setPendingDates({ key: rangeKey, dates: { ...draft, to: event.target.value } })} /></label>
+      <DateRangePicker from={{ label: 'Từ ngày', required: true, value: draft.from,
+        onChange: from => setPendingDates({ key: rangeKey, dates: { ...draft, from } }) }}
+        to={{ label: 'Đến ngày', required: true, value: draft.to,
+          onChange: to => setPendingDates({ key: rangeKey, dates: { ...draft, to } }) }} />
       <button className="button-secondary" type="submit" disabled={invalidDraft}>Áp dụng</button>
       {draft.from && draft.to && draft.from > draft.to && <p role="alert">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}
     </form>}

@@ -5,6 +5,7 @@ import { CalendarDays, CircleCheck, Minus, Plus } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { Button } from '@/operations/ui';
 import { operationMutate } from '@/operations/mutate';
+import { apiRequest, ApiError } from '@/services/api';
 import { idOf, rows, text, type Row } from '@/operations/model';
 import type { FormAction } from '@/operations/form';
 import { formatDate, formatMoney } from '@/utils/format';
@@ -23,6 +24,7 @@ export function CustomerRenewalForm({ action, onSaved, onClose, onBusyChange }: 
   const [plan, setPlan] = useState('PREPAID');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [quote, setQuote] = useState<Row>();
   const lock = useRef(false);
   const term = months[index];
   const end = action.renewal?.endDate ?? '';
@@ -36,8 +38,23 @@ export function CustomerRenewalForm({ action, onSaved, onClose, onBusyChange }: 
     if (lock.current || !term || !action.transform) return;
     lock.current = true; setBusy(true); onBusyChange(true); setError('');
     try {
-      onSaved(await operationMutate(action.path, action.method, action.transform({ termMonths: term, paymentPlan: plan }), true));
+      const request = action.transform({ termMonths: term, paymentPlan: plan });
+      if (!quote) {
+        const query = new URLSearchParams({
+          reservationId: text(request, 'reservationId'),
+          rentalContractId: text(request, 'rentalContractId'),
+          termMonths: String(term),
+          paymentPlan: plan,
+        });
+        setQuote(await apiRequest<Row>('/customer/renewals/quote?' + query.toString()));
+        return;
+      }
+      onSaved(await operationMutate(action.path, action.method, {
+        ...request, expectedTotalAmount: quote.totalAmount, expectedEndDate: quote.requestedEndDate,
+        expectedPricingVersion: quote.pricingVersion,
+      }, true));
     } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) setQuote(undefined);
       setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu gia hạn.');
     } finally {
       lock.current = false; setBusy(false); onBusyChange(false);
@@ -50,21 +67,27 @@ export function CustomerRenewalForm({ action, onSaved, onClose, onBusyChange }: 
     <DateCard label="Hạn thuê hiện tại" value={end} />
     <Text style={s.heading}>Thời gian gia hạn</Text>
     <View style={[s.card, s.spread]}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Giảm thời gian gia hạn" disabled={busy || index <= 0} onPress={() => setIndex(index - 1)} style={s.step}><Minus size={18} color={index <= 0 ? '#8491A5' : blue} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Giảm thời gian gia hạn" disabled={busy || index <= 0} onPress={() => { setIndex(index - 1); setQuote(undefined); }} style={s.step}><Minus size={18} color={index <= 0 ? '#8491A5' : blue} /></Pressable>
       <Text style={s.heading}>{term} tháng</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Tăng thời gian gia hạn" disabled={busy || index >= months.length - 1} onPress={() => setIndex(index + 1)} style={s.step}><Plus size={18} color={index >= months.length - 1 ? '#8491A5' : blue} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Tăng thời gian gia hạn" disabled={busy || index >= months.length - 1} onPress={() => { setIndex(index + 1); setQuote(undefined); }} style={s.step}><Plus size={18} color={index >= months.length - 1 ? '#8491A5' : blue} /></Pressable>
     </View>
     <DateCard label="Hạn thuê mới dự kiến" value={Number.isFinite(target.getTime()) ? target.toISOString().slice(0, 10) : ''} highlighted />
     <Text style={s.heading}>Kế hoạch thanh toán</Text>
     <View style={s.inline}>{['PREPAID', 'PAY_MONTHLY'].map(value =>
-      <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: plan === value }} disabled={busy} onPress={() => setPlan(value)}
+      <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: plan === value }} disabled={busy} onPress={() => { setPlan(value); setQuote(undefined); }}
         style={[s.card, s.choice, plan === value && s.selected]}>
         <Text style={[s.heading, plan === value && s.white]}>{value === 'PREPAID' ? 'Trả thẳng' : 'Trả hàng tháng'}</Text>
         <Text style={[s.muted, plan === value && s.white]}>{value === 'PREPAID' ? '1 lần' : term + ' tháng'}</Text>
       </Pressable>)}</View>
     <JourneyNotice title="Tiền cọc" message="Không thu thêm tiền cọc." success />
+    {quote && <View style={s.card}>
+      <Text style={s.heading}>Tổng phí gia hạn: {formatMoney(Number(quote.totalAmount))}</Text>
+      <Text style={s.muted}>Tiền thuê trước giảm: {formatMoney(Number(quote.baseRentalAmount))}</Text>
+      <Text style={s.muted}>Giảm giá: {formatMoney(Number(quote.discountAmount))}</Text>
+      <Text style={s.muted}>Hạn thuê mới: {formatDate(text(quote, 'requestedEndDate'))}</Text>
+    </View>}
     {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
-    <Button title={busy ? 'Đang gửi…' : 'Gửi yêu cầu gia hạn'} disabled={busy || !term} onPress={() => void submit()} />
+    <Button title={busy ? 'Đang xử lý…' : quote ? 'Xác nhận và gửi yêu cầu' : 'Xem báo giá gia hạn'} disabled={busy || !term} onPress={() => void submit()} />
     <Button title="Hủy" variant="secondary" disabled={busy} onPress={onClose} />
   </View>;
 }

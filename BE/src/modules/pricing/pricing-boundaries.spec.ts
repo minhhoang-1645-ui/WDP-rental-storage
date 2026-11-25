@@ -1,12 +1,76 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PricingService } from './pricing.service.js';
+import { BookingService } from '../booking/booking.service.js';
 import type { PricingInput } from './pricing.types.js';
+import { baselinePricingPolicy, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 
 const service = new PricingService({} as never);
 const storage = { id: 'type', name: 'Kho', sizeId: 'small', monthlyRate: new Prisma.Decimal(3000000), allowDailyRental: true, minRentalDays: 1 };
 const input: PricingInput = { storageTypeId: 'type', startDate: '2026-01-01', endDate: '2026-04-01', quantity: 1, paymentPlan: 'PAY_MONTHLY' };
+it('gates direct quotes on the group range and keeps internal bounds out of customer responses', async () => {
+  const start = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  const end = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const product = { ...storage, facilityId: 'A', bookingEnabled: true };
+  const db = { storageType: { findUnique: vi.fn().mockResolvedValue(product) },
+    facility: { findUnique: vi.fn().mockResolvedValue({ bookingEnabled: true, operationalStatus: 'OPEN' }) },
+    businessRule: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) } };
+  const pricing = new PricingService(db as never);
+  const request = { ...input, startDate: start, endDate: end };
+  await expect(pricing.quote(request)).rejects.toThrow('chưa nhận giao dịch');
+  db.businessRule.findFirst.mockResolvedValue({ value: { min: 1_000_000, max: 2_800_000 } });
+  await expect(pricing.quote(request)).rejects.toThrow('chưa nhận giao dịch');
+  db.businessRule.findFirst.mockResolvedValue({ value: { min: 1_000_000, max: 3_000_000 } });
+  const quote = await pricing.quote(request);
+  expect(quote.monthlyUnitPrice).toBe(3_000_000);
+  expect(quote).not.toHaveProperty('pricingRange');
+  db.storageType.findUnique.mockResolvedValue({ ...product, bookingEnabled: false });
+  await expect(pricing.quote(request)).rejects.toThrow('chưa nhận giao dịch');
+});
+it('lists multiple eligible types in one group and filters another site independently', async () => {
+  const type = { ...storage, facilityId: 'A', bookingEnabled: true, widthCm: 150, lengthCm: 200, heightCm: 240 };
+  const findMany = vi.fn().mockResolvedValue([
+    { ...type, id: 'a1', monthlyRate: new Prisma.Decimal(500000) },
+    { ...type, id: 'a2', monthlyRate: new Prisma.Decimal(800000) },
+    { ...type, id: 'b1', facilityId: 'B', monthlyRate: new Prisma.Decimal(800000) },
+    { ...type, id: 'a3', sizeId: 'medium', monthlyRate: new Prisma.Decimal(800000) },
+  ]);
+  const db = { storageType: { findMany }, facilityServiceOffering: { findMany: vi.fn().mockResolvedValue([]) },
+    facility: { findMany: vi.fn().mockResolvedValue([]) }, businessRule: { findMany: vi.fn().mockResolvedValue([
+      { facilityId: 'A', key: 'monthlyPriceRange:small', value: { min: 500000, max: 800000 } },
+      { facilityId: 'B', key: 'monthlyPriceRange:small', value: { min: 900000, max: 1000000 } },
+    ]) } };
+  const catalog = await new BookingService(db as never).getCatalog();
+  expect(catalog.products.map(product => [product.id, product.monthlyPrice])).toEqual([['a1', 500000], ['a2', 800000]]);
+  expect(catalog.products[0]).not.toHaveProperty('priceRange');
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ bookingEnabled: true }) }));
+});
 describe('existing pricing policy boundaries, no live database', () => {
+  it.each([
+    ['NONE', 0, 0],
+    ['FIXED_AMOUNT', 700_000, 1_400_000],
+    ['RENT_PERCENTAGE', 50, 9_000_000],
+    ['MONTHLY_RENT_MULTIPLIER', 2, 12_000_000],
+  ] as const)('applies %s once to a two-unit quote and preserves its policy version', (method, amount, depositAmount) => {
+    const policy: PricingPolicySnapshot = {
+      ...baselinePricingPolicy,
+      deposit: { version: 2, value: { ...baselinePricingPolicy.deposit.value, other: { method, amount } } },
+      prepaid: { version: 4, value: { ...baselinePricingPolicy.prepaid.value, 3: { enabled: true, percent: 20 } } },
+    };
+    const draft = { ...input, paymentPlan: 'PREPAID' as const, quantity: 2 };
+    expect(service.calculate(storage, draft, [], policy)).toMatchObject({
+      pricingPolicy: policy, depositAmount, baseRentalAmount: 18_000_000, discountAmount: 3_600_000,
+    });
+    expect(service.calculate(storage, draft, [], policy, true).depositAmount).toBe(0);
+  });
+
+  it('can disable an offer while preserving the prepaid payment plan', () => {
+    const policy = { ...baselinePricingPolicy, prepaid: {
+      version: 2, value: { ...baselinePricingPolicy.prepaid.value, 3: { enabled: false, percent: 30 } },
+    } };
+    expect(service.calculate(storage, { ...input, paymentPlan: 'PREPAID' }, [], policy))
+      .toMatchObject({ discountPercent: 0, paymentPlan: 'PREPAID', rentalAmount: 9_000_000 });
+  });
   it.each([['2026-01-31', '2026-02-28'], ['2028-01-31', '2028-02-29'], ['2026-03-31', '2026-04-30'], ['2026-04-30', '2026-05-30']])('uses a calendar month from %s to %s', (startDate, endDate) => {
     const quote = service.calculate(storage, { ...input, startDate, endDate, quantity: 2 });
     expect(quote).toMatchObject({ termMonths: 1, rentalAmount: 6000000, depositAmount: 6000000, quotedTotalAmount: 12000000 });

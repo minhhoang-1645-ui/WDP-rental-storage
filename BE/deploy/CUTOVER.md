@@ -1,6 +1,12 @@
 # NestBox five-role Backend cutover
 
 Prepared release branch: `codex/nestbox-five-role-foundation-release-20261124`.
+
+The deposit refund deadline release requires additive migration `20261125000100_deposit_refund_deadline`.
+Policy charge documents also require `20261125000200_policy_charge_invoices` before startup.
+Paid cancellations, transfer settlements and occupancy charges require `20261125000300_operational_policy_settlements`.
+Apply it through the isolated rehearsal and approved cutover below before starting the new backend.
+Existing settlements keep null deadlines. New settlements with a deposit persist the deadline and rule version at physical handover.
 Old Render Backend: `dev@2388bc5` (operator confirmed).
 No production migration or deployment is authorized by this preparation.
 

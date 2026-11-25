@@ -7,9 +7,12 @@ import { first, label, money, object, rows, type Row } from '../../components/ma
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { useOutletContext } from 'react-router-dom';
+import { priceRangeFor, priceRangeLabel, priceRangeNotice, type PriceRange } from './inventory-pricing';
 
 export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'type' | 'unit'; record?: Row; onClose: () => void; onSaved: (saved: Row) => void }) {
   const { user } = useAuth();
+  const scopeFacility = useOutletContext<string>();
   const requestConfirmation = useConfirmation();
   const options = useApiResource<Row>('/manager/storage-types', user?.id ?? '');
   const lock = useRef(false);
@@ -26,20 +29,31 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
     }
     onClose();
   };
-  const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId'));
+  const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId') || scopeFacility || '');
   const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
+  const [sizeId, setSizeId] = useState(first(record ?? {}, 'sizeId') || 'small');
+  const [price, setPrice] = useState(first(record ?? {}, 'monthlyRate'));
+  const [enabled, setEnabled] = useState<boolean | undefined>(record ? record.bookingEnabled !== false : undefined);
   const [daily, setDaily] = useState(record?.allowDailyRental === true);
   const selectedType = rows(options.data?.items).find(row => row.id === storageTypeId);
-  const facilityRanges = rows(options.data?.pricingRanges).filter(row => row.facilityId === facilityId);
-  const priceRange = object((facilityRanges.find(row => record && row.storageTypeId === record.id) ?? facilityRanges.find(row => row.storageTypeId == null))?.value);
+  const { current: priceRange, scheduled } = priceRangeFor(rows(options.data?.pricingRanges) as PriceRange[], facilityId, sizeId);
+  const bookingEnabled = enabled ?? Boolean(priceRange);
+  const changedPrice = !record || sizeId !== record.sizeId || Number(price) !== Number(record.monthlyRate);
+  const validating = changedPrice || bookingEnabled && record?.bookingEnabled === false;
+  const outside = Boolean(validating && priceRange && price && (Number(price) < priceRange.min || Number(price) > priceRange.max));
+  const priceError = outside || Boolean(validating && bookingEnabled && !priceRange);
   const locations = useApiResource<{ floors: string[]; zones: string[] }>(!type && !locked ? '/manager/unit-locations' : null, user?.id ?? '');
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || !type && !storageTypeId) return;
+    if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || (type ? priceError : !storageTypeId)) return;
     const fields = new FormData(event.currentTarget);
     const input: Row = Object.fromEntries(fields.entries());
     for (const key of type ? ['widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;
-    if (type) input.allowDailyRental = fields.get('allowDailyRental') === 'on';
+    if (type) {
+      input.allowDailyRental = fields.get('allowDailyRental') === 'on';
+      input.bookingEnabled = bookingEnabled;
+      if (record && Number(price) === Number(record.monthlyRate)) delete input.monthlyRate;
+    }
     if (record) input.expectedUpdatedAt = record.updatedAt;
     lock.current = true; setBusy(true); setError('');
     try {
@@ -63,14 +77,22 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       <fieldset disabled={busy || locked || !options.data}>
         {type ? <>
-          {record ? <label className="field-label">Cơ sở<input readOnly value={first(rows(options.data?.facilities).find(row => row.id === facilityId) ?? {}, 'name') || facilityId} /><input type="hidden" name="facilityId" value={facilityId} /></label> : <label className="field-label">Cơ sở<EntitySelect aria-label="Cơ sở" name="facilityId" value={facilityId} onValueChange={setFacilityId} required><option value="">Chọn cơ sở</option>{rows(options.data?.facilities).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'name')}</option>)}</EntitySelect></label>}
+          {record || scopeFacility ? <label className="field-label">Cơ sở<input readOnly value={first(rows(options.data?.facilities).find(row => row.id === facilityId) ?? {}, 'name') || facilityId} /><input type="hidden" name="facilityId" value={facilityId} /></label> : <label className="field-label">Cơ sở<EntitySelect aria-label="Cơ sở" name="facilityId" value={facilityId} onValueChange={setFacilityId} required><option value="">Chọn cơ sở</option>{rows(options.data?.facilities).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'name')}</option>)}</EntitySelect></label>}
           <label className="field-label">Mã loại kho<input name="code" defaultValue={first(record ?? {}, 'code')} required readOnly={Boolean(record)} maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_-]*$/.source} /></label>
           {field('name', 'Tên loại kho')}
-          <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" defaultValue={first(record ?? {}, 'sizeId') || 'small'}>{[['locker', 'Tủ lưu trữ'], ['small', 'Kho nhỏ'], ['medium', 'Kho vừa'], ['large', 'Kho lớn']].map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
+          <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" value={sizeId} onChange={event => setSizeId(event.target.value)}>{Object.entries(object(options.data?.groups)).map(([value, title]) => <option key={value} value={value}>{String(title)}</option>)}</select></label>
           <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
           {field('widthCm', 'Rộng (cm)', true)}{field('lengthCm', 'Dài (cm)', true)}{field('heightCm', 'Cao (cm)', true)}
-          {field('monthlyRate', 'Giá tháng (VND)', true, true, 9999999999)}
-          {typeof priceRange.min === 'number' && typeof priceRange.max === 'number' && <small>Khung giá BOM: {money(priceRange.min)} – {money(priceRange.max)} / tháng.</small>}
+          <label className="field-label">Giá tháng (VND)<input name="monthlyRate" type="number" min={1} max={9999999999} step={1}
+            required={!record || record.monthlyRate !== null} value={price} aria-invalid={outside} aria-describedby={formId + '-price'}
+            onChange={event => setPrice(event.target.value)} /></label>
+          <div id={formId + '-price'}>
+            <small>{priceRange ? 'Khung giá do BOM quy định: ' + priceRangeLabel(priceRange) : 'Nhóm kho này chưa được BOM thiết lập khung giá.'}</small>
+            {outside && <p className="booking-alert is-error" role="alert">Giá tháng đang nằm ngoài khung cho phép.</p>}
+            {scheduled && <small className="inventory-price-next">{priceRangeNotice(scheduled)}</small>}
+          </div>
+          <label><input type="checkbox" checked={bookingEnabled} disabled={!priceRange && !bookingEnabled}
+            onChange={event => setEnabled(event.target.checked)} /> Bật kinh doanh loại kho</label>
           <label><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
           {daily && field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, true, 30)}
           <label className="field-label">URL ảnh (tùy chọn)<input name="image" defaultValue={first(record ?? {}, 'image')} maxLength={2000} /></label>
@@ -101,7 +123,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
             {field('row', 'Hàng', true, false)}{field('position', 'Vị trí trong hàng', true, false)}
           </div>
         </>}
-        {type && <button className="button-primary" type="submit">{busy ? 'Đang lưu…' : 'Lưu'}</button>}
+        {type && <button className="button-primary" type="submit" disabled={busy || priceError}>{busy ? 'Đang lưu…' : 'Lưu'}</button>}
       </fieldset>
     </form>}
   </Modal>;

@@ -1,3 +1,4 @@
+import { groupPriceKey, groupPriceKeys, lockPriceRange, priceBounds, priceInRange, priceVersionStatus, resolveMonthlyRange, sizeGroups, type SizeGroup } from '../pricing/monthly-price-range.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import {
   BadRequestException,
@@ -11,6 +12,11 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { randomUUID } from 'node:crypto';
 import { analyticsPeriod } from '../manager/manager-analytics.service.js';
 import { CLOSURE_BOOKING_REFUND_PENDING, CLOSURE_BOOKING_REFUND_RECORDED } from '../transfers/closure-booking.js';
+function confirmedRefundAmount(value: unknown) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
+    throw new ConflictException('Cần đối soát số tiền hoàn đã ghi nhận.');
+  return BigInt(value);
+}
 const fields = [
   'code',
   'name',
@@ -220,103 +226,61 @@ export class OperationsService {
   }
   async ranges(actor: PublicUser) {
     await assertActiveRole(this.prisma, actor, 'BUSINESS_OPERATIONS_MANAGER');
-    const [items, types] = await Promise.all([this.prisma.businessRule.findMany({
-        where: { key: 'monthlyPriceRange' },
-        orderBy: [{version:'desc'},{createdAt:'desc'}],
-      }),this.prisma.storageType.findMany({select:{id:true,facilityId:true,name:true,code:true,monthlyRate:true},orderBy:{name:'asc'}})]);
-    const now=new Date();
-    const active=items.filter(r=>r.effectiveFrom<=now&&(!r.effectiveTo||r.effectiveTo>now));
-    return {items:items.map(r=>({...r,status:r.effectiveFrom>now?'SCHEDULED':r.effectiveTo&&r.effectiveTo<=now?'HISTORICAL':'EFFECTIVE'})),types:types.map(t=>{const range=active.find(r=>r.facilityId===t.facilityId&&r.storageTypeId===t.id)??active.find(r=>r.facilityId===t.facilityId&&!r.storageTypeId);const price=t.monthlyRate===null?null:Number(t.monthlyRate);const bounds=range?.value as {min:number;max:number}|undefined; return {...t,monthlyRate:price,range:bounds??null,outsideRange:price!==null&&!!bounds&&(price<bounds.min||price>bounds.max)};})};
+    const [items, types] = await Promise.all([
+      this.prisma.businessRule.findMany({ where: { key: { in: ['monthlyPriceRange', ...groupPriceKeys] } },
+        orderBy: [{ version: 'desc' }, { createdAt: 'desc' }] }),
+      this.prisma.storageType.findMany({ select: { id: true, facilityId: true, sizeId: true, name: true, code: true, monthlyRate: true }, orderBy: { name: 'asc' } }),
+    ]);
+    const authorIds = [...new Set(items.map(item => item.createdById))];
+    const authors = await this.prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, fullName: true } });
+    const names = new Map(authors.map(author => [author.id, author.fullName]));
+    const now = new Date();
+    return { groups: sizeGroups, items: items.map(item => ({
+      ...item, sizeId: item.key === 'monthlyPriceRange' ? null : item.key.split(':')[1],
+      legacy: item.key === 'monthlyPriceRange', status: priceVersionStatus(item, now), author: names.get(item.createdById) ?? null,
+    })), types: types.map(type => ({ ...type, monthlyRate: type.monthlyRate === null ? null : Number(type.monthlyRate) })) };
   }
+
   async saveRange(body: Record<string, unknown>, actor: PublicUser) {
-    if (
-      Object.keys(body).some(
-        (k) =>
-          ![
-            'facilityId',
-            'storageTypeId',
-            'min',
-            'max',
-            'effectiveFrom',
-            'expectedVersion',
-          ].includes(k),
-      )
-    )
+    if (Object.keys(body).some(key => !['facilityId', 'sizeId', 'min', 'max', 'effectiveFrom', 'expectedVersion'].includes(key)))
       throw new BadRequestException('Trường khung giá không hợp lệ.');
-    const facilityId =
-      typeof body.facilityId === 'string' ? body.facilityId : null;
-    const storageTypeId =
-      typeof body.storageTypeId === 'string' && body.storageTypeId
-        ? body.storageTypeId
-        : null;
-    const min = body.min,
-      max = body.max;
-    if (
-      !facilityId ||
-      typeof min !== 'number' ||
-      typeof max !== 'number' ||
-      !Number.isSafeInteger(min) ||
-      !Number.isSafeInteger(max) ||
-      min < 0 ||
-      max < min
-    )
-      throw new BadRequestException('Chọn cơ sở và nhập khung giá hợp lệ.');
-    if (typeof body.effectiveFrom !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(body.effectiveFrom))
+    const { facilityId, sizeId } = body;
+    const bounds = priceBounds(body);
+    if (typeof facilityId !== 'string' || !facilityId || typeof sizeId !== 'string' || !Object.hasOwn(sizeGroups, sizeId) || !bounds)
+      throw new BadRequestException('Chọn cơ sở, nhóm kho và nhập khung giá hợp lệ.');
+    if (typeof body.effectiveFrom !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(body.effectiveFrom))
       throw new BadRequestException('Ngày áp dụng không hợp lệ.');
     const effectiveFrom = new Date(body.effectiveFrom);
-    if (
-      !Number.isFinite(effectiveFrom.getTime()) ||
-      effectiveFrom.getTime() < Date.now() - 60000
-    )
-      throw new BadRequestException('Ngày áp dụng phải từ hiện tại trở đi.');
-    return this.prisma.$transaction(async (tx) => {
+    const day = body.effectiveFrom.slice(0, 10);
+    const calendar = new Date(day + 'T00:00:00Z');
+    if (!Number.isFinite(+effectiveFrom) || !Number.isFinite(+calendar) || calendar.toISOString().slice(0, 10) !== day)
+      throw new BadRequestException('Ngày áp dụng không hợp lệ.');
+    return this.prisma.$transaction(async tx => {
       await assertActiveRole(tx, actor, 'BUSINESS_OPERATIONS_MANAGER');
-      await tx.$queryRawUnsafe(
-        'SELECT 1 FROM pg_advisory_xact_lock(hashtext($1))',
-        'price-range:' + facilityId,
-      );
-      if (
-        !(await tx.facility.findUnique({
-          where: { id: facilityId },
-          select: { id: true },
-        }))
-      )
-        throw new BadRequestException('Cơ sở không tồn tại.');
-      if (
-        storageTypeId &&
-        !(await tx.storageType.findFirst({
-          where: { id: storageTypeId, facilityId },
-          select: { id: true },
-        }))
-      )
-        throw new BadRequestException('Loại kho không thuộc cơ sở.');
-      const last = await tx.businessRule.findFirst({
-        where: { key: 'monthlyPriceRange', facilityId, storageTypeId },
-        orderBy: { version: 'desc' },
-      });
-      if ((last?.version ?? 0) !== body.expectedVersion)
-        throw new ConflictException(
-          'Khung giá đã thay đổi. Tải lại trước khi lưu.',
-        );
-      if (last && last.effectiveFrom >= effectiveFrom)
-        throw new ConflictException('Ngày áp dụng phải sau phiên bản trước.');
-      if (last)
-        await tx.businessRule.update({
-          where: { id: last.id },
-          data: { effectiveTo: effectiveFrom },
-        });
-      return tx.businessRule.create({
-        data: {
-          id: randomUUID(),
-          key: 'monthlyPriceRange',
-          facilityId,
-          storageTypeId,
-          version: (last?.version ?? 0) + 1,
-          value: { min, max },
-          effectiveFrom,
-          createdById: actor.id,
-        },
-      });
+      await lockPriceRange(tx, facilityId);
+      const now = new Date();
+      if (effectiveFrom <= now) throw new BadRequestException('Ngày áp dụng phải ở tương lai.');
+      const facility = await tx.facility.findUnique({ where: { id: facilityId }, select: { name: true } });
+      if (!facility) throw new BadRequestException('Cơ sở không tồn tại.');
+      const key = groupPriceKey(sizeId);
+      const last = await tx.businessRule.findFirst({ where: { key, facilityId, storageTypeId: null }, orderBy: { version: 'desc' } });
+      if ((last?.version ?? 0) !== body.expectedVersion) throw new ConflictException('Khung giá đã thay đổi. Tải lại trước khi lưu.');
+      if (last && last.effectiveFrom >= effectiveFrom) throw new ConflictException('Ngày áp dụng phải sau phiên bản trước.');
+      const previous = last ? priceBounds(last.value) : null;
+      if (last) await tx.businessRule.update({ where: { id: last.id }, data: { effectiveTo: effectiveFrom } });
+      const saved = await tx.businessRule.create({ data: { id: randomUUID(), key, facilityId, version: (last?.version ?? 0) + 1,
+        value: bounds, effectiveFrom, createdById: actor.id } });
+      const types = await tx.storageType.findMany({ where: { facilityId, sizeId }, select: { name: true, monthlyRate: true }, orderBy: { name: 'asc' } });
+      const affected = types.filter(item => !priceInRange(bounds, Number(item.monthlyRate))).map(item => item.name);
+      await tx.auditEvent.create({ data: {
+        actorId: actor.id, actorRole: actor.role, category: 'ACTIVITY', outcome: 'SUCCESS',
+        resource: 'pricing-rules', resourceId: facilityId, action: 'PUBLISH_GROUP_PRICE_RANGE',
+        method: 'POST', route: '/operations/pricing-rules', httpStatus: 201,
+        metadata: { facilityId, facilityName: facility.name, sizeId, groupName: sizeGroups[sizeId as SizeGroup],
+          oldRange: previous, newRange: bounds, effectiveFrom: effectiveFrom.toISOString(), affected, version: saved.version },
+      } });
+      if (+effectiveFrom <= Date.now()) throw new BadRequestException('Thời điểm hiệu lực đã qua. Hãy chọn lại.');
+      return saved;
     });
   }
   async report(actor: PublicUser) {
@@ -349,6 +313,11 @@ export class OperationsService {
   async performance(input:Record<string,unknown>,actor:PublicUser) {
     await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
     const {range,...period}=analyticsPeriod(input);
+    // Both workflows store refund timestamps as UTC ISO strings in their settlement JSON.
+    const refundDate = [
+      ...(range.gte ? [{ path: ['refundedAt'], gte: range.gte.toISOString() }] : []),
+      ...(range.lt ? [{ path: ['refundedAt'], lt: range.lt.toISOString() }] : []),
+    ];
     const facilityId=input.facilityId;
     if(facilityId!==undefined&&typeof facilityId!=='string')throw new BadRequestException('Cơ sở không hợp lệ.');
     const facilities=await this.prisma.facility.findMany({where:facilityId?{id:facilityId}:{},select:{id:true,code:true,name:true,bookingEnabled:true,operationalStatus:true},orderBy:{code:'asc'}});
@@ -359,7 +328,7 @@ export class OperationsService {
       const returnSite: Prisma.ReturnRequestWhereInput = { OR: [
         {inspections:{some:{},every:{storageUnit:{storageType:reservation}}}}, {inspections:{none:{}},reservation},
       ] };
-      const [units,activeContracts,newReservations,invoices,receivable,payments,refunds,rentRefunds,handovers,returns,bookingRefunds]=await Promise.all([
+      const [units,activeContracts,newReservations,invoices,receivable,payments,refunds,rentRefunds,handovers,returns,closureRefunds,cancellationRefunds,transferRefunds]=await Promise.all([
         this.prisma.storageUnit.groupBy({by:['status'],where:unitWhere,_count:{_all:true}}),
         this.prisma.rentalContract.count({where:{reservationUnit:{releasedAt:null,storageUnit:{storageType:reservation}},status:'ACTIVE'}}),
         this.prisma.reservation.count({where:{...reservation,createdAt:range}}),
@@ -371,16 +340,25 @@ export class OperationsService {
         this.prisma.handoverAppointment.count({where:{reservation,status:'COMPLETED',completedAt:{not:null,...range}}}),
         this.prisma.returnRequest.count({where:{...returnSite,physicallyReturnedAt:{not:null,...range}}}),
         this.prisma.supportRequest.findMany({where:{reservation,closurePlanId:{not:null},lastAction:CLOSURE_BOOKING_REFUND_RECORDED,status:'RESOLVED',resolvedAt:{not:null,...range}},select:{earlyReturnFinancialReview:true}}),
+        this.prisma.reservation.findMany({where:{...reservation,paidCancellation:{path:['state'],equals:'REFUNDED'},
+          AND:refundDate.map(filter=>({paidCancellation:filter}))},select:{paidCancellation:true}}),
+        this.prisma.transferRequest.findMany({where:{status:'COMPLETED',closurePlanId:null,fromStorageUnit:unitWhere,
+          commercialSettlement:{path:['refundState'],equals:'REFUNDED'},
+          AND:refundDate.map(filter=>({commercialSettlement:filter}))},select:{commercialSettlement:true}}),
       ]);
       const counts=Object.fromEntries(units.map(u=>[u.status,u._count._all]));
       const total=units.reduce((sum,u)=>sum+u._count._all,0);
       const rentRefunded=rentRefunds.reduce((sum,r)=>{const amount=(r.earlyReturnCloseout as {refundAmount?:unknown}|null)?.refundAmount;if(typeof amount!=='number'||!Number.isSafeInteger(amount)||amount<0)throw new ConflictException('Hồ sơ hoàn tiền thuê cần được đối chiếu trước khi tổng hợp.');return sum+BigInt(amount);},0n);
-      const bookingRefunded = bookingRefunds.reduce((sum,row)=>{
+      const closureRefunded = closureRefunds.reduce((sum,row)=>{
         const amount = (row.earlyReturnFinancialReview as {refundAmount?:unknown} | null)?.refundAmount;
         if (typeof amount !== 'string' || !/^[1-9]\d*$/.test(amount)) throw new ConflictException('Cần đối soát số tiền hoàn đơn chưa bàn giao.');
         return sum + BigInt(amount);
       },0n);
-      return {...facility,units:{total,occupied:counts.OCCUPIED??0,available:counts.AVAILABLE??0,reserved:counts.RESERVED??0,maintenance:counts.MAINTENANCE??0},activeContracts,newReservations,handovers,returns,rent:String(invoices._sum.rentalAmount??0n),services:String(invoices._sum.serviceAmount??0n),fees:String(invoices._sum.chargeAmount??0n),deposit:String(invoices._sum.depositAmount??0n),billed:String(invoices._sum.totalAmount??0n),debt:String(receivable._sum.balanceDue??0n),received:String(payments._sum.amount??0n),depositRefunded:String(refunds._sum.refundAmount??0n),rentRefunded:String(rentRefunded),bookingRefunded:String(bookingRefunded)};
+      const bookingRefunded = cancellationRefunds.reduce((sum,row)=>
+        sum + confirmedRefundAmount((row.paidCancellation as {quote?:{total?:unknown}} | null)?.quote?.total), closureRefunded);
+      const transferRefunded = transferRefunds.reduce((sum,row)=>
+        sum + confirmedRefundAmount((row.commercialSettlement as {refundAmount?:unknown} | null)?.refundAmount), 0n);
+      return {...facility,units:{total,occupied:counts.OCCUPIED??0,available:counts.AVAILABLE??0,reserved:counts.RESERVED??0,maintenance:counts.MAINTENANCE??0},activeContracts,newReservations,handovers,returns,rent:String(invoices._sum.rentalAmount??0n),services:String(invoices._sum.serviceAmount??0n),fees:String(invoices._sum.chargeAmount??0n),deposit:String(invoices._sum.depositAmount??0n),billed:String(invoices._sum.totalAmount??0n),debt:String(receivable._sum.balanceDue??0n),received:String(payments._sum.amount??0n),depositRefunded:String(refunds._sum.refundAmount??0n),rentRefunded:String(rentRefunded),bookingRefunded:String(bookingRefunded),transferRefunded:String(transferRefunded)};
     }));
     return {period,asOf:new Date().toISOString(),items};
   }
@@ -392,45 +370,4 @@ export class OperationsService {
     const [total,items]=await Promise.all([this.prisma.auditEvent.count({where}),this.prisma.auditEvent.findMany({where,select:{id:true,actorName:true,action:true,outcome:true,resource:true,resourceId:true,createdAt:true},orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(page-1)*limit,take:limit})]);
     return {page,limit,total,items};
   }
-}
-export async function assertMonthlyRange(
-  tx: Prisma.TransactionClient,
-  facilityId: string,
-  storageTypeId: string,
-  amount: number,
-) {
-  const now = new Date();
-  const rows = await tx.businessRule.findMany({
-    where: {
-      key: 'monthlyPriceRange',
-      facilityId,
-      OR: [{ storageTypeId }, { storageTypeId: null }],
-      effectiveFrom: { lte: now },
-      AND: [{ OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] }],
-    },
-    orderBy: { version: 'desc' },
-  });
-  const rule =
-    rows.find((r) => r.storageTypeId === storageTypeId) ??
-    rows.find((r) => r.storageTypeId === null);
-  if (!rule) return; // Existing facilities retain their current behavior until BOM configures a range.
-  const range = rule.value as { min: number; max: number };
-  if (
-    !range ||
-    !Number.isSafeInteger(range.min) ||
-    !Number.isSafeInteger(range.max) ||
-    range.min < 0 ||
-    range.max < range.min
-  )
-    throw new ConflictException(
-      'Khung giá đang lưu không hợp lệ; cần BOM đối chiếu trước khi đổi giá.',
-    );
-  if (amount < range.min || amount > range.max)
-    throw new BadRequestException(
-      'Giá tháng phải nằm trong khung ' +
-        range.min +
-        ' – ' +
-        range.max +
-        ' đ do điều hành quy định.',
-    );
 }

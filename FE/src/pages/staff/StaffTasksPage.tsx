@@ -1,3 +1,4 @@
+import { DatePicker, DateRangePicker } from '../../components/workspace/DateTimeFields';
 import { RefreshCw } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -115,10 +116,10 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
       <label className="field-label">Cơ sở<select value={facilities.has(facility) ? facility : ''} onChange={event => change('facility', event.target.value)}>
         <option value="">Tất cả cơ sở</option>{[...facilities].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select></label>
-      <label className="field-label">Ngày hẹn<input type="date" value={scheduledDay} onChange={event => change('date', event.target.value)} /></label>
+      <DatePicker label="Ngày hẹn" value={scheduledDay} onChange={value => change('date', value)} />
       {scheduled && <>
-        <label className="field-label">Từ ngày<input type="date" value={from} max={through || undefined} onChange={event => change('from', event.target.value)} /></label>
-        <label className="field-label">Đến ngày<input type="date" value={through} min={from || undefined} onChange={event => change('through', event.target.value)} /></label>
+        <DateRangePicker from={{ label: 'Từ ngày', value: from, onChange: value => change('from', value) }}
+          to={{ label: 'Đến ngày', value: through, onChange: value => change('through', value) }} />
       </>}
       {!completed && <label className="field-label">Tiến độ<select value={phase} onChange={event => change('phase', event.target.value)}>
         <option value="">Tất cả</option><option value="pending">Chờ thực hiện</option><option value="progress">Đang thực hiện</option>

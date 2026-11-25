@@ -1,5 +1,5 @@
 import { assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
-import { assertMonthlyRange } from '../operations/operations.service.js';
+import { assertPriceWithin, groupPriceKeys, lockPriceRange, maxMonthlyPrice, missingPriceRange, priceBounds, priceVersionStatus, resolveMonthlyRange, sizeGroups as groups } from '../pricing/monthly-price-range.js';
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -9,8 +9,8 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { unitHistoryCounts, unitMetadataLocked } from './unit-edit-policy.js';
 import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-location.js';
 
-const groups: Record<string, string> = { locker: 'Tủ lưu trữ', small: 'Kho nhỏ', medium: 'Kho vừa', large: 'Kho lớn' };
-const typeFields = ['facilityId', 'code', 'name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'allowDailyRental', 'minRentalDays', 'image', 'imageAlt', 'expectedUpdatedAt'];
+const groupLabels: Record<string, string> = groups;
+const typeFields = ['facilityId', 'code', 'name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'allowDailyRental', 'minRentalDays', 'image', 'imageAlt', 'bookingEnabled', 'expectedUpdatedAt'];
 const unitFields = ['unitNumber', 'storageTypeId', 'floor', 'zone', 'row', 'position', 'expectedUpdatedAt'];
 
 @Injectable()
@@ -20,19 +20,28 @@ export class InventoryManagementService {
   async listTypes(actor: PublicUser) {
     this.manager(actor);
     const ids = await facilityIds(this.prisma, actor);
+    const now = new Date();
     const [items, facilities, rules] = await Promise.all([
-      this.prisma.storageType.findMany({ where: { facilityId: { in: ids } }, orderBy: { code: 'asc' } }),
+      this.prisma.storageType.findMany({ where: { facilityId: { in: ids } }, include: { facility: { select: { bookingEnabled: true, operationalStatus: true } } }, orderBy: { code: 'asc' } }),
       this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, code: true }, orderBy: { code: 'asc' } }),
-      this.prisma.businessRule.findMany({where:{key:'monthlyPriceRange',facilityId:{in:ids},effectiveFrom:{lte:new Date()},OR:[{effectiveTo:null},{effectiveTo:{gt:new Date()}}]},orderBy:{version:'desc'},select:{facilityId:true,storageTypeId:true,value:true}}),
+      this.prisma.businessRule.findMany({ where: { key: { in: groupPriceKeys }, facilityId: { in: ids }, storageTypeId: null,
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] }, orderBy: { effectiveFrom: 'asc' } }),
     ]);
-    return { items: items.map(item => this.typeView(item)), facilities, pricingRanges: rules, total: items.length, page: 1, limit: Math.max(1, items.length) };
+    const pricingRanges = rules.map(rule => ({ facilityId: rule.facilityId, sizeId: rule.key.split(':')[1], value: priceBounds(rule.value),
+      effectiveFrom: rule.effectiveFrom, status: priceVersionStatus(rule, now) }));
+    return { items: items.map(item => this.typeView(item)), facilities, pricingRanges, groups, total: items.length, page: 1, limit: Math.max(1, items.length) };
   }
 
   async saveType(id: string | undefined, input: Record<string, unknown>, actor: PublicUser) {
     this.manager(actor); this.body(input, typeFields);
     return this.write(async tx => {
+      const scope = id ? await tx.storageType.findUnique({ where: { id }, select: { facilityId: true } }) : null;
+      if (id && !scope) throw new NotFoundException('Không tìm thấy loại kho.');
+      const scopedFacility = scope?.facilityId ?? this.text(input.facilityId, 'Cơ sở', 100);
+      await assertFacility(tx, actor, scopedFacility);
+      await lockPriceRange(tx, scopedFacility);
       const current = id ? await this.lockType(tx, id) : null;
-      if (current) { await assertFacility(tx, actor, current.facilityId); this.version(current.updatedAt, input.expectedUpdatedAt); }
+      if (current) this.version(current.updatedAt, input.expectedUpdatedAt);
       const value = { ...current, ...input };
       const data = {
         facilityId: this.text(value.facilityId, 'Cơ sở', 100),
@@ -42,19 +51,25 @@ export class InventoryManagementService {
         widthCm: this.integer(value.widthCm, 'Chiều rộng', 1, 100000),
         lengthCm: this.integer(value.lengthCm, 'Chiều dài', 1, 100000),
         heightCm: this.integer(value.heightCm, 'Chiều cao', 1, 100000),
-        monthlyRate: this.integer(value.monthlyRate, 'Giá tháng (VND)', 1, 9999999999),
+        monthlyRate: current && !Object.hasOwn(input, 'monthlyRate') ? current.monthlyRate
+          : this.integer(value.monthlyRate, 'Giá tháng (VND)', 1, maxMonthlyPrice),
         allowDailyRental: value.allowDailyRental,
         minRentalDays: value.allowDailyRental === true ? this.integer(value.minRentalDays, 'Số ngày thuê tối thiểu', 1, 30) : current?.minRentalDays ?? null,
         image: this.image(value.image), imageAlt: this.optionalText(value.imageAlt, 'Mô tả ảnh', 300) ?? '',
       };
-      await assertFacility(tx, actor, data.facilityId);
-      await assertMonthlyRange(tx, data.facilityId, id ?? '', data.monthlyRate);
       if (!Object.hasOwn(groups, data.sizeId)) throw new BadRequestException('Nhóm kho không hợp lệ.');
+      if (input.bookingEnabled !== undefined && typeof input.bookingEnabled !== 'boolean') throw new BadRequestException('Trạng thái kinh doanh không hợp lệ.');
+      if (current && (data.code !== current.code || data.facilityId !== current.facilityId)) throw new ConflictException('Không đổi mã hoặc cơ sở của loại kho đã tạo.');
+      const range = await resolveMonthlyRange(tx, data.facilityId, data.sizeId);
+      const bookingEnabled = (input.bookingEnabled as boolean | undefined) ?? current?.bookingEnabled ?? Boolean(range);
+      const changedPrice = !current || Number(data.monthlyRate) !== Number(current.monthlyRate) || data.sizeId !== current.sizeId;
+      const activating = bookingEnabled && !current?.bookingEnabled;
+      if (!range && bookingEnabled && (changedPrice || activating)) throw new ConflictException(missingPriceRange);
+      if (range && (changedPrice || activating)) assertPriceWithin(range, Number(data.monthlyRate));
       if (!['STANDARD', 'AIR_CONDITIONED'].includes(data.condition)) throw new BadRequestException('Điều kiện kho không hợp lệ.');
       if (typeof data.allowDailyRental !== 'boolean') throw new BadRequestException('allowDailyRental phải là boolean.');
       if (!await tx.facility.findUnique({ where: { id: data.facilityId }, select: { id: true } })) throw new BadRequestException('Cơ sở không tồn tại.');
       if (current) {
-        if (data.code !== current.code || data.facilityId !== current.facilityId) throw new ConflictException('Không đổi mã hoặc cơ sở của loại kho đã tạo.');
         const structural = ['name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'allowDailyRental', 'minRentalDays'] as const;
         if (structural.some(field => data[field] !== current[field])) {
           await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "storageTypeId" = ${current.id} FOR UPDATE`);
@@ -72,13 +87,13 @@ export class InventoryManagementService {
           if (history.some(count => count > 0)) throw new ConflictException('Loại kho đã có hồ sơ. Chỉ cập nhật giá hoặc ảnh; hãy tạo loại mới nếu đổi kích thước/điều kiện thuê.');
         }
         // Only the catalog row changes. Never update historical quotes, contracts or invoices.
-        return this.typeView(await tx.storageType.update({ where: { id: current.id }, data: { ...data, sizeName: groups[data.sizeId] } }));
+        return this.typeView(await tx.storageType.update({ where: { id: current.id }, data: { ...data, bookingEnabled, sizeName: groupLabels[data.sizeId] } }));
       }
       return this.typeView(await tx.storageType.create({ data: {
-        ...data, id: `type-${randomUUID()}`, sizeName: groups[data.sizeId],
+        ...data, bookingEnabled, id: `type-${randomUUID()}`, sizeName: groupLabels[data.sizeId],
         kicker: '', roomEquivalent: '', capacity: '', boxCount: '', suitableItems: [], features: [], floor: '', access: '',
       } }));
-    });
+    }, 'ReadCommitted');
   }
 
   async listUnitLocations(actor: PublicUser) {
@@ -174,8 +189,8 @@ export class InventoryManagementService {
     if (!/^https:\/\/[^\s]+$/i.test(result) && !/^\/(?!\/)[^\s]*$/.test(result)) throw new BadRequestException('Ảnh phải là URL HTTPS hoặc đường dẫn ảnh nội bộ.');
     return result;
   }
-  private async write<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>) {
-    try { return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 }); }
+  private async write<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, isolationLevel: 'ReadCommitted' | 'Serializable' = 'Serializable') {
+    try { return await this.prisma.$transaction(operation, { isolationLevel, maxWait: 10000, timeout: 20000 }); }
     catch (error) {
       const code = typeof error === 'object' && error ? (error as { code?: string }).code : undefined;
       if (code === 'P2002') throw new ConflictException('Mã kho hoặc mã loại kho đã tồn tại.');

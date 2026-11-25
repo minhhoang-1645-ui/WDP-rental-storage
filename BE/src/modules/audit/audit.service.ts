@@ -31,6 +31,20 @@ export class AuditService {
   private readonly logger = new Logger(AuditService.name);
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  async priceRangeNotices(actor: PublicUser, { page, limit }: { page: number; limit: number }) {
+    if (actor.role !== 'FACILITY_MANAGER') return [];
+    const ids = await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
+    if (!ids.length) return [];
+    const where: Prisma.AuditEventWhereInput = { resource: 'pricing-rules', action: 'PUBLISH_GROUP_PRICE_RANGE', outcome: 'SUCCESS',
+      resourceId: { in: ids } };
+    const [total, items] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({ where, select: { id: true, resourceId: true, createdAt: true, metadata: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * limit, take: limit }),
+    ]);
+    return { items, total, limit };
+  }
+
   async catalogNotices(actor: PublicUser, query: { page: number; limit: number }) {
     if (actor.role !== 'FACILITY_MANAGER') return [];
     const ids = await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });

@@ -1,0 +1,1 @@
+ALTER TABLE "StorageType" ADD COLUMN "bookingEnabled" BOOLEAN NOT NULL DEFAULT true;

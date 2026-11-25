@@ -1,3 +1,4 @@
+import { chooseDate, openCalendar } from './browser-test.mjs';
 // Browser regression: every API/SSE request is mocked, no shared database access.
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
@@ -80,7 +81,7 @@ await context.route('**/*', async route => {
     listQueries.push({ path, page, limit, status });
     return route.fulfill({ json: { page, limit, total: items.length, items: items.slice((page - 1) * limit, page * limit) } });
   };
-  if (path === 'auth/me') return route.fulfill({ json: { id: 'manager', fullName: 'Quản lý kiểm thử', email: 'manager@example.test', role: 'MANAGER' } });
+  if (path === 'auth/me') return route.fulfill({ json: { id: 'manager', fullName: 'Quản lý kiểm thử', email: 'manager@example.test', role: 'FACILITY_MANAGER' } });
   if (path === 'manager/dashboard/analytics') {
     queries.push(Object.fromEntries(url.searchParams));
     if (snapshotFailed) return route.fulfill({ status: 503, json: { message: 'Không thể tải tổng hợp hiện tại.' } });
@@ -213,11 +214,10 @@ try {
   }
   assert.equal(queries.filter(query => !query.report).length, snapshotCalls, 'Changing period must not refetch filtered current balances');
   await period.selectOption('custom');
-  await page.getByLabel('Từ ngày', { exact: true }).fill(reportDate);
-  await page.getByLabel('Đến ngày', { exact: true }).fill('2026-11-09');
-  await page.getByRole('alert').filter({ hasText: 'Ngày bắt đầu phải trước' }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Áp dụng', exact: true }).isDisabled(), true);
-  await page.getByLabel('Đến ngày', { exact: true }).fill(reportDate);
+  await chooseDate(page, 'Từ ngày', reportDate);
+  const endCalendar = await openCalendar(page, 'Đến ngày', reportDate);
+  assert(await endCalendar.getByRole('button', { name: '09/11/2026' }).isDisabled());
+  await endCalendar.getByRole('button', { name: '10/11/2026' }).click();
   await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();
   await metric('Tiền đã nhận').getByText(/1\.000\.000/).waitFor();
   assert.match(await metric('Công nợ hiện tại').innerText(), /600\.000/);
@@ -304,7 +304,7 @@ try {
   await page.goto(`${base}/manager/reports/details?from=${reportDate}&to=${reportDate}&group=day&typeId=small`);
   await page.waitForURL(url => url.pathname === '/manager/reports' && url.searchParams.get('tab') === 'operations');
   await page.getByRole('rowheader', { name: 'Kho nhỏ B12' }).waitFor();
-  assert.equal(await page.getByLabel('Từ ngày', { exact: true }).inputValue(), reportDate);
+  assert.equal(await page.getByRole('button', { name: 'Từ ngày', exact: true }).innerText(), '10/11/2026');
   assert.equal(await page.getByLabel('Lọc loại kho báo cáo').inputValue(), 'small');
   await tabs('Tài chính').click();
   await page.getByText('Chi tiết tài chính', { exact: true }).click();
@@ -316,8 +316,8 @@ try {
   for await (const chunk of await invoiceFile.createReadStream()) invoiceChunks.push(chunk);
   assert.match(Buffer.concat(invoiceChunks).toString('utf8'), /INV-TEST/);
   assert(queries.some(query => query.invoiceCsv && query.typeId === 'small' && query.from === reportDate && query.to === reportDate));
-  await page.getByLabel('Từ ngày', { exact: true }).fill('2026-01-01');
-  await page.getByLabel('Đến ngày', { exact: true }).fill('2026-01-01');
+  await chooseDate(page, 'Từ ngày', '2026-01-01');
+  await chooseDate(page, 'Đến ngày', '2026-01-01');
   let finishReport;
   releaseReport = new Promise(resolve => { finishReport = resolve; });
   await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();

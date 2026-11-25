@@ -19,6 +19,8 @@ function TransferOrder({ id }: { id: string }) {
   const snapshot = object(object(row?.commercial).snapshot);
   const review = object(snapshot.financialReview);
   const payment = object(row?.commercialPayment);
+  const settled = object(row?.commercialSettlement);
+  const adjustment = Object.keys(settled).length ? settled : object(snapshot.adjustmentTerms);
   const dueInvoices = rows(payment.dueInvoices);
   const dueAmount = dueInvoices.reduce((total, invoice) => total + Number(invoice.balanceDue), 0);
   const leaseEnd = text(review, 'leaseEnd') || text(row ?? {}, 'contract.endDate');
@@ -47,13 +49,23 @@ function TransferOrder({ id }: { id: string }) {
               {snapshot.financialReview ? <Facts values={[
                 ['Đã trả khi lập phụ lục', formatMoney(Number(review.paidAmount))],
                 ['Tổng còn phải trả khi lập phụ lục', formatMoney(Number(review.outstandingAmount))],
-                ['Cọc giữ nguyên', formatMoney(Number(review.depositAmount))],
+                ['Tiền cọc đang giữ', formatMoney(Number(adjustment.currentDeposit ?? review.depositAmount))],
                 ['Điều chỉnh tiền thuê kỳ sau', formatMoney(Number(review.futureRentIncrease) - Number(review.futureRentReduction))],
               ]} /> : null}
               {dueInvoices.map(invoice => <Navigation key={text(invoice, 'id')} title={`Hóa đơn ${text(invoice, 'code')}`}
                 description={formatMoney(Number(invoice.balanceDue))} path={'/customer/invoices/' + encodeURIComponent(text(invoice, 'id'))} />)}
             </Disclosure>}
           </Panel>
+          {typeof adjustment.amountDue === 'number' && <Panel title={status === 'COMPLETED' ? 'Quyết toán chuyển kho' : 'Quyết toán dự kiến khi bàn giao'}>
+            <Facts values={[
+              ['Phí chuyển kho', adjustment.fee === 0 ? 'Miễn phí' : formatMoney(Number(adjustment.fee))],
+              ['Chênh lệch tiền thuê còn lại', formatMoney(Number(adjustment.rentalAdjustment))],
+              ['Điều chỉnh cọc', formatMoney(Number(adjustment.depositAdjustment))],
+              ['Khoản thu thêm', formatMoney(adjustment.amountDue)],
+              [settled.refundState === 'REFUNDED' ? 'Đã hoàn' : 'Khoản hoàn', formatMoney(Number(adjustment.refundAmount))],
+            ]} />
+            {typeof settled.invoiceId === 'string' && <Navigation title="Xem hóa đơn quyết toán" path={'/customer/invoices/' + encodeURIComponent(settled.invoiceId)} />}
+          </Panel>}
           {status === 'APPROVED' || accepted ? <DocumentAcceptance row={row} resource="transfer-orders" onSaved={source.refresh} />
             : <Text>Phụ lục chưa khả dụng để ký.</Text>}
         </> : <EmptyState title="Không tìm thấy phụ lục chuyển kho" message="" />}

@@ -1,3 +1,4 @@
+import { DateRangePicker } from '../../components/workspace/DateTimeFields';
 import { DetailRow } from '../../components/workspace/DetailRow';
 import { internalPageSize } from '../../utils/internal-pagination';
 import { RefreshCw } from 'lucide-react';
@@ -114,8 +115,8 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
       <label className="field-label">Kết quả<select value={params.get('outcome') ?? ''} onChange={event => changeFilter('outcome', event.target.value)}>
         <option value="">Tất cả</option><option value="SUCCESS">Thành công</option><option value="FAILURE">Thất bại</option>
       </select></label>
-      <label className="field-label">Từ ngày<input type="date" name="from" value={from} onChange={event => changeFilter('from', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
-      <label className="field-label">Đến ngày<input type="date" name="to" value={to} onChange={event => changeFilter('to', event.target.value)} aria-invalid={invalidRange || undefined} aria-describedby={invalidRange ? 'audit-date-error' : undefined} /></label>
+      <DateRangePicker from={{ label: 'Từ ngày', value: from, onChange: value => changeFilter('from', value) }}
+        to={{ label: 'Đến ngày', value: to, onChange: value => changeFilter('to', value) }} />
       <button type="button" className="button-secondary" onClick={clearFilters}>Xóa bộ lọc</button>
     </div>
     {invalidRange && <p id="audit-date-error" className="booking-alert is-error" role="alert">Ngày kết thúc phải từ ngày bắt đầu trở đi.</p>}

@@ -53,6 +53,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
             await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "HandoverAppointment" WHERE "id" = ${item.id} FOR UPDATE`);
             const current = await tx.handoverAppointment.findUnique({ where: { id: item.id }, select: { status: true, completedAt:true, handoverReport:true, reservation: { include: this.reservationReadinessInclude() } } });
             if (!current || current.status !== 'COMPLETED' || current.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE')) return;
+            const cancellation = current.reservation.paidCancellation as { state?: string; verification?: unknown } | null;
+            if (cancellation?.state === 'REQUESTED' && cancellation.verification) return;
             this.assertHandoverReady(current.reservation);
             if (current.reservation.contracts.some((contract: any) => this.vietnamDate(new Date()) < this.isoDate(contract.startDate) || this.vietnamDate(new Date()) >= this.isoDate(contract.endDate))) return;
             const report = current.handoverReport as {unitChecks?: {unitId?:string;inspected?:boolean}[]} | null;
@@ -252,6 +254,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
           await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
         } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+        if ((current.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') {
+          throw new ConflictException('Đơn đang được xem xét hủy. Cần xử lý yêu cầu hủy trước khi bàn giao.');
+        }
         if (current.status === 'CONFIRMED') return this.toAppointment(current, true);
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
@@ -290,6 +295,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       if (previous?.condition === condition) return this.toAppointment(current, true);
       if (previous) throw new ConflictException('Kho này đã được ghi nhận. Hãy tải lại biên bản bàn giao.');
       if (current.status !== 'CONFIRMED') throw new ConflictException('Chỉ ghi nhận từng kho khi lịch đã xác nhận và đang chờ bàn giao.');
+      if ((current.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') throw new ConflictException('Đơn đang được xem xét hủy.');
       this.assertHandoverReady(current.reservation);
       await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
       const now = new Date();
@@ -320,6 +326,9 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if(current.status==='COMPLETED' && !current.assignedStaffUserId && current.completedByUserId===actor.id) {
           await assertTaskFacility(tx,actor,{reservationId:current.reservationId});
         } else await assertTaskExecution(tx,actor,current.assignedStaffUserId,{reservationId:current.reservationId});
+        if ((current.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') {
+          throw new ConflictException('Đơn đang được xem xét hủy. Cần xử lý yêu cầu hủy trước khi bàn giao.');
+        }
         if (current.status === 'COMPLETED') {
           if (await this.deliverProducts(tx, current, input.deliveredPurchaseIds, actor)) {
             const updated = await tx.handoverAppointment.findUniqueOrThrow({ where: { id: current.id }, include: this.appointmentInclude() });
@@ -630,12 +639,15 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private toAppointment(record: any, includeCustomer: boolean, staff = false) {
+    const cancellation = record.reservation.paidCancellation;
     const draft = record.status === 'CONFIRMED' ? readUnitHandoverDraft(record.handoverReport) : null;
     const historical = staff && ['COMPLETED', 'CANCELLED'].includes(record.status);
     const reportChecks: unknown = record.handoverReport?.unitChecks;
     const historicalUnits = (Array.isArray(reportChecks) ? reportChecks : []).flatMap(check =>
       typeof check?.unitId === 'string' && typeof check.unitCode === 'string' ? [{ unitId: check.unitId, unitCode: check.unitCode }] : []);
     return {
+      ...(includeCustomer ? { cancellationPending: cancellation?.state === 'REQUESTED',
+        canRecordCancellationRecovery: cancellation?.state === 'REQUESTED' && cancellation.quote?.requiresRecovery === true && !cancellation.verification } : {}),
       ...(includeCustomer && record.reservation.facility ? { facility: record.reservation.facility } : {}),
       ...(includeCustomer ? {
         assignedStaff: record.assignedStaff ?? null,

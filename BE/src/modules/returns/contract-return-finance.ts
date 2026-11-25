@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { savedInvoiceBreakdown } from '../billing/invoice-breakdown.js';
 import { returnReadiness } from './early-return-finance.js';
+import { PERIOD_CLOSEOUT } from './early-return-classification.js';
 
 export const returnInvoiceFields = {
   id: true, reservationId: true, invoiceCode: true, type: true, status: true, totalAmount: true, amountPaid: true, balanceDue: true,
@@ -33,6 +34,13 @@ export function contractReturnReadiness(invoices: ReturnInvoice[], targetIds: st
   for (const invoice of invoices) {
     if (invoice.status === 'VOID' || invoice.balanceDue === 0n) continue;
     if (invoice.type === 'SETTLEMENT') {
+      const adjustment = invoice.pricingSnapshot as { adjustment?: string; rentalContractId?: string; contracts?: string[] } | null;
+      const related = adjustment?.adjustment === 'RETURN_OVERDUE' ? adjustment.contracts
+        : [PERIOD_CLOSEOUT, 'TRANSFER_FINANCE', 'TRANSFER_RETURN_BALANCE'].includes(adjustment?.adjustment ?? '') && adjustment?.rentalContractId ? [adjustment.rentalContractId] : undefined;
+      if (Array.isArray(related) && related.length && related.every(id => allIds.has(id))) {
+        if (targetIds.some(id => related.includes(id))) collected.push(invoice);
+        continue;
+      }
       const links = invoice.depositSettlement?.returnRequest.inspections;
       if ((!links?.length || links.some(link => !allIds.has(link.rentalContractId))) && targetIds.length < allIds.size) return unresolvedReturnDebt();
       if (links?.length && !links.some(link => targetIds.includes(link.rentalContractId))) continue;

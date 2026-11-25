@@ -37,13 +37,14 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
   const choices = units.filter(unit => (showUnavailable || unit.eligible === true) && (!floor || unit.floor === floor) && (!zone || unit.zone === zone)
     && normalize([first(unit, 'unitCode'), first(unit, 'storageType.name'), first(unit, 'floor'), first(unit, 'zone')].join(' ')).includes(normalize(search.trim())))
     .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true));
-  const preview = useApiResource<{ sameType: boolean; reviewHash?: string; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; smaller: boolean; financialReview?: FinancialReview } }>(selected && otherTypes ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
+  const preview = useApiResource<{ sameType: boolean; reviewHash?: string; snapshot?: { effectiveFrom: string; currentRate: number; newRate: number; smaller: boolean; financialReview?: FinancialReview;
+    adjustmentTerms?: { fee: number; rentalAdjustment: number; depositAdjustment: number; targetDeposit: number; currentDeposit: number; amountDue: number; refundAmount: number } } }>(selected ? `/manager/transfers/${encodeURIComponent(transferId)}/commercial-preview?destination=${encodeURIComponent(value)}` : null, user?.id);
   const terms = preview.data?.snapshot;
   const finance = terms?.financialReview;
   const rentAdjustment = finance ? finance.futureRentIncrease - finance.futureRentReduction : 0;
   useEffect(() => {
     const reviewed = selected && preview.data && !preview.loading && !preview.refreshing && !preview.error;
-    onReady(Boolean(selected && (!otherTypes || reviewed)));
+    onReady(Boolean(reviewed));
     onReviewed(reviewed ? preview.data?.reviewHash ?? '' : '');
   }, [selected, otherTypes, preview.data, preview.loading, preview.refreshing, preview.error, onReady, onReviewed]);
   const floors = [...new Set(units.map(unit => first(unit, 'floor')).filter(Boolean))];
@@ -118,12 +119,13 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
     {(preview.loading || preview.refreshing) && <p role="status">Đang tính giá thuê kho mới…</p>}
     {preview.error && <div className="transfer-destination-notice" role="alert"><strong>Chưa thể lập phụ lục đổi loại</strong><p>{preview.error}</p><button type="button" className="button-secondary" disabled={disabled} onClick={preview.refresh}>Kiểm tra lại</button></div>}
     {terms && <div className="transfer-destination-notice transfer-price-review">
-      <strong>Đổi loại kho · {first(source, 'unitCode')} → {first(selected ?? {}, 'unitCode')}</strong>
+      <strong>Phụ lục chuyển kho · {first(source, 'unitCode')} → {first(selected ?? {}, 'unitCode')}</strong>
       <dl className="transfer-price-rates">
         <div><dt>Giá hiện tại</dt><dd>{money(terms.currentRate)}/tháng</dd></div>
         <div><dt>{finance && terms.effectiveFrom >= finance.leaseEnd ? 'Giá nếu gia hạn tiếp' : 'Giá mới từ ' + date(terms.effectiveFrom)}</dt><dd>{money(terms.newRate)}/tháng</dd></div>
       </dl>
-      {finance && <p>{rentAdjustment ? `Tiền thuê kỳ sau ${rentAdjustment > 0 ? 'tăng' : 'giảm'} ${money(Math.abs(rentAdjustment))}. ` : 'Không đổi tiền thuê trong kỳ hiện tại. '}Không thu phí chuyển kho.</p>}
+      {terms.adjustmentTerms && <p>{terms.adjustmentTerms.fee === 0 ? 'Miễn phí chuyển kho' : `Phí chuyển ${money(terms.adjustmentTerms.fee)}`} · Chênh lệch thuê {money(terms.adjustmentTerms.rentalAdjustment)} · Điều chỉnh cọc {money(terms.adjustmentTerms.depositAdjustment)} · Thu thêm dự kiến {money(terms.adjustmentTerms.amountDue)} · Hoàn dự kiến {money(terms.adjustmentTerms.refundAmount)}</p>}
+      {finance && rentAdjustment !== 0 && <p>Tiền thuê kỳ sau {rentAdjustment > 0 ? 'tăng' : 'giảm'} {money(Math.abs(rentAdjustment))}.</p>}
       <p><strong>Khách cần ký phụ lục</strong>{finance && finance.dueAmount > 0 ? ` và trả ${money(finance.dueAmount)} đến hạn` : ''} trước khi nhân viên nhận việc.</p>
       {terms.smaller && <p>Kho mới nhỏ hơn. Khách cần kiểm tra hàng có vừa kho.</p>}
       {finance && <details key={transferId + ':' + value}>
@@ -131,7 +133,7 @@ export function TransferDestinationPicker({ transferId, source, value, onChange,
         <dl className="transfer-price-rates">
           <div><dt>Đã trả</dt><dd>{money(finance.paidAmount)}</dd></div>
           <div><dt>Còn phải trả theo hóa đơn</dt><dd>{money(finance.outstandingAmount)}</dd></div>
-          <div><dt>Cọc giữ nguyên</dt><dd>{money(finance.depositAmount)}</dd></div>
+          <div><dt>Tiền cọc hiện có</dt><dd>{money(terms.adjustmentTerms?.currentDeposit ?? finance.depositAmount)}</dd></div>
         </dl>
         <p>Thời hạn thuê giữ nguyên đến trước {date(finance.leaseEnd)}.</p>
         {finance.renewals.length > 0 && <><p>Giữ nguyên giá đã ký cho các kỳ gia hạn.</p><ul>{finance.renewals.map(item => <li key={item.code}>{item.appendixCode} · {date(item.start)} đến trước {date(item.end)}</li>)}</ul></>}

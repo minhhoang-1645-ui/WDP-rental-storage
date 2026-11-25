@@ -1,31 +1,136 @@
-import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Download, RefreshCw } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
+import { Empty, LoadState, PageHeader, RefreshStatus } from '../../components/manager/PortalUi';
+import { DateRangePicker } from '../../components/workspace/DateTimeFields';
 import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
-import { PageHeader, LoadState } from '../../components/manager/PortalUi';
+import { vietnamCalendarDate } from '../../utils/business-date';
+import { isReportDay } from '../../utils/reporting';
+import { ReportComparison, ReportFinances, ReportMetrics, ReportTrend, ReportTrendTable } from './OperationsReportSections';
+import { displayDate, periods, reportPreset, reportTrendGroup, type Facility, type Period, type PerformanceReport, type Trend } from './operations-report-data';
+import './operations-report.css';
 
-const vnd=(value:string|number|bigint)=>BigInt(value).toLocaleString('vi-VN')+' đ';
-const time=(value:string)=>new Date(value).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
-type Facility={id:string;name:string;code:string};
-type Performance={id:string;code:string;name:string;bookingEnabled:boolean;operationalStatus:string;units:{total:number;occupied:number;available:number;reserved:number;maintenance:number};activeContracts:number;newReservations:number;handovers:number;returns:number;rent:string;services:string;fees:string;deposit:string;billed:string;debt:string;received:string;depositRefunded:string;rentRefunded:string;bookingRefunded?:string};
-type PerformanceReport={asOf:string;period:{from:string|null;to:string|null};items:Performance[]};
-type Trend={times:{date:string;rent:number;received:number;bookings:number}[]};
-export function OperationsBusinessReport({dashboard=false}:{dashboard?:boolean}){
- const {user}=useAuth();const [params,setParams]=useSearchParams();const facilityId=params.get('facilityId')??'',from=params.get('from')??'',to=params.get('to')??'';
- const [exportError,setExportError]=useState(''),[exporting,setExporting]=useState(false);
- const facilities=useApiResource<Facility[]>('/operations/facilities',user?.id);const query=new URLSearchParams({...(facilityId?{facilityId}:{}),...(from?{from}:{}),...(to?{to}:{})}).toString();
- const data=useApiResource<PerformanceReport>('/operations/reports/performance?'+query,user?.id,true);const trend=useApiResource<Trend>(dashboard?null:'/operations/reports/financial?'+query,user?.id,true);
- function change(key:string,value:string){setParams(old=>{const next=new URLSearchParams(old);if(value)next.set(key,value);else next.delete(key);return next;},{replace:true});}
- const rows=data.data?.items??[],sum=(key:'rent'|'services'|'fees'|'deposit'|'billed'|'debt'|'received'|'depositRefunded'|'rentRefunded'|'bookingRefunded')=>rows.reduce((n,r)=>n+BigInt(r[key]??0),0n),units=rows.reduce((n,r)=>n+r.units.total,0),occupied=rows.reduce((n,r)=>n+r.units.occupied,0);
- async function download(){setExporting(true);try{const blob=await apiRequest<Blob>('/operations/reports/invoices.csv?'+query,{responseType:'blob'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='nestbox-hoa-don.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setExportError(e instanceof Error?e.message:'Không xuất được báo cáo.');}finally{setExporting(false);}}
- return <section className="operations-page"><PageHeader title={dashboard?'Tổng quan kinh doanh':'Báo cáo hiệu quả cơ sở'}><button className="button-secondary" onClick={()=>{data.refresh();trend.refresh();}}>Làm mới</button>{!dashboard&&<button className="button-secondary" disabled={exporting} onClick={()=>void download()}>Xuất hóa đơn CSV</button>}</PageHeader><div className="portal-toolbar"><label>Cơ sở<select value={facilityId} onChange={e=>change('facilityId',e.target.value)}><option value="">Tất cả cơ sở</option>{facilities.data?.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label><label>Từ ngày<input type="date" value={from} onChange={e=>change('from',e.target.value)}/></label><label>Đến ngày<input type="date" value={to} onChange={e=>change('to',e.target.value)}/></label></div>
- <LoadState loading={data.loading} error={data.error||facilities.error||exportError} retry={data.refresh}/>{data.data&&<><p>Thời kỳ: {from||'Từ đầu'} – {to||'Hiện tại'} (UTC+7). Cập nhật {time(data.data.asOf)}.</p><div className="internal-kpis operations-kpis">{[['Cơ sở đang mở',rows.filter(r=>r.operationalStatus==='OPEN').length],['Tỷ lệ sử dụng hiện tại',units?`${(occupied/units*100).toFixed(1)}%`:'—'],['Tiền thuê đã lập hóa đơn',vnd(sum('rent'))],['Công nợ hiện tại',vnd(sum('debt'))]].map(([label,value])=><div className="internal-kpi" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
- <section className="manager-section"><h2>Tài chính trong kỳ</h2><div className="operations-metrics">{([['Tiền dịch vụ','services'],['Phí khác','fees'],['Cọc trên hóa đơn','deposit'],['Tổng hóa đơn','billed'],['Tiền đã thu (gồm cọc)','received'],['Tiền cọc đã hoàn khi trả kho','depositRefunded'],['Tiền thuê và dịch vụ đã hoàn khi trả kho','rentRefunded'],['Tiền đã hoàn đơn chưa bàn giao','bookingRefunded']] as const).map(([label,key])=><div key={key}><small>{label}</small><strong>{vnd(sum(key))}</strong></div>)}</div><p>Hóa đơn được tính theo ngày phát hành. Tiền đã thu được tính theo ngày nhận tiền. Các khoản hoàn được tính theo ngày xác nhận hoàn thực tế.</p></section>
- <section className="manager-section"><h2>So sánh cơ sở</h2><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Cơ sở</th><th>Kho sử dụng / tổng</th><th>Trống / giữ / bảo trì</th><th>Hợp đồng hoạt động</th><th>Đơn mới</th><th>Bàn giao / trả</th><th>Tiền thuê</th><th>Thực thu</th><th>Dư nợ</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><Link to={`/operations/reports?${new URLSearchParams({...Object.fromEntries(params),facilityId:r.id})}`}>{r.name}</Link><small>{r.operationalStatus==='CLOSED'?'Đóng cửa':r.bookingEnabled?'Nhận đặt kho':'Tạm dừng đặt kho'}</small></td><td>{r.units.occupied}/{r.units.total}{r.units.total>0&&<><small>{(r.units.occupied/r.units.total*100).toFixed(1)}%</small><progress aria-label={`Tỷ lệ sử dụng ${r.name}`} value={r.units.occupied} max={r.units.total}/></>}</td><td>{r.units.available} / {r.units.reserved} / {r.units.maintenance}</td><td>{r.activeContracts}</td><td>{r.newReservations}</td><td>{r.handovers} / {r.returns}</td><td>{vnd(r.rent)}</td><td>{vnd(r.received)}</td><td>{vnd(r.debt)}</td></tr>)}</tbody></table></div><small>Tình trạng kho, hợp đồng hoạt động và dư nợ là tại thời điểm hiện tại, không phải số liệu lịch sử.</small></section>
- {dashboard?<Link className="button-secondary" to="/operations/reports">Xem báo cáo chi tiết</Link>:<section className="manager-section"><h2>Xu hướng theo tháng</h2><LoadState loading={trend.loading} error={trend.error} retry={trend.refresh}/><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Tháng</th><th>Tiền thuê lập hóa đơn</th><th>Thực thu</th><th>Đơn mới</th></tr></thead><tbody>{trend.data?.times.map(r=><tr key={r.date}><td>{r.date}</td><td>{vnd(r.rent)}</td><td>{vnd(r.received)}</td><td>{r.bookings}</td></tr>)}</tbody></table></div></section>}</>}
- </section>;
+const updatedAt = new Intl.DateTimeFormat('vi-VN', {
+  timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+export function OperationsBusinessReport() {
+  const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const facilityId = params.get('facilityId') ?? '';
+  const today = vietnamCalendarDate();
+  const preset = params.get('period');
+  const hasDates = params.has('from') || params.has('to');
+  const period = preset && Object.hasOwn(periods, preset) ? preset as Period : hasDates ? 'custom' : 'month';
+  const { from, to } = hasDates ? { from: params.get('from') ?? '', to: params.get('to') ?? '' } : reportPreset(period, today);
+  const valid = (!from || isReportDay(from)) && (!to || isReportDay(to)) && (!from || !to || from <= to);
+  const query = new URLSearchParams();
+  if (facilityId) query.set('facilityId', facilityId);
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const report = useApiResource<PerformanceReport>(valid ? '/operations/reports/performance?' + query : null, user?.id);
+  const group = reportTrendGroup(period, from, to);
+  const trend = useApiResource<Trend>(valid ? '/operations/reports/financial?' + new URLSearchParams({ ...Object.fromEntries(query), group }) : null, user?.id);
+  const facilities = useApiResource<Facility[]>('/operations/facilities', user?.id);
+  const [exportError, setExportError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const exportLock = useRef(false);
+  const updating = report.refreshing || trend.refreshing;
+  const timestamp = Date.parse(report.data?.asOf ?? '');
+  const items = report.data?.items ?? [];
+
+  function change(values: Record<string, string>) {
+    setExportError('');
+    setParams(previous => {
+      const next = new URLSearchParams(previous);
+      Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+      return next;
+    }, { replace: true, preventScrollReset: true });
+  }
+
+  function selectPeriod(value: Period) {
+    change({ period: value, ...(value === 'custom' ? { from, to } : reportPreset(value, today)) });
+  }
+  function refresh() {
+    report.refresh();
+    trend.refresh();
+    if (facilities.error) facilities.refresh();
+  }
+
+  async function download() {
+    if (!valid || exportLock.current) return;
+    exportLock.current = true;
+    setExporting(true);
+    setExportError('');
+    try {
+      const blob = await apiRequest<Blob>('/operations/reports/invoices.csv?' + query, { responseType: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'nestbox-hoa-don.csv';
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Không thể xuất hóa đơn CSV.');
+    } finally {
+      exportLock.current = false;
+      setExporting(false);
+    }
+  }
+
+  const facilityKnown = facilities.data?.some(item => item.id === facilityId);
+  const rangeLabel = from && to ? (from === to ? displayDate(from) : displayDate(from) + ' – ' + displayDate(to))
+    : from ? 'Từ ' + displayDate(from) : to ? 'Đến ' + displayDate(to) : 'Tất cả thời gian';
+
+  return <section className="bom-report">
+    <PageHeader title="Doanh thu và hiệu quả cơ sở">
+      <button type="button" className="button-secondary" disabled={!valid || updating || report.loading || trend.loading} onClick={refresh}>
+        <RefreshCw size={16} aria-hidden="true" />Làm mới
+      </button>
+      <button type="button" className="button-primary" disabled={!valid || exporting} onClick={() => void download()}>
+        <Download size={16} aria-hidden="true" />{exporting ? 'Đang xuất CSV…' : 'Xuất hóa đơn CSV'}
+      </button>
+    </PageHeader>
+
+    <div className="portal-toolbar bom-report-filters" role="group" aria-label="Bộ lọc báo cáo">
+      <label className="field-label">Cơ sở
+        <select aria-label="Cơ sở" value={facilityId} onChange={event => change({ facilityId: event.target.value })}>
+          <option value="">Tất cả cơ sở</option>
+          {facilityId && !facilityKnown && <option value={facilityId}>{report.data?.items[0]?.name ?? (facilities.loading ? 'Đang tải cơ sở…' : 'Cơ sở đã chọn')}</option>}
+          {facilities.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      <label className="field-label">Kỳ báo cáo
+        <select aria-label="Kỳ báo cáo" value={period} onChange={event => selectPeriod(event.target.value as Period)}>
+          {Object.entries(periods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+      </label>
+      <DateRangePicker
+        from={{ label: 'Từ ngày', value: from, onChange: value => change({ period: 'custom', from: value, to }) }}
+        to={{ label: 'Đến ngày', value: to, onChange: value => change({ period: 'custom', from, to: value }) }} />
+    </div>
+
+    <div className="bom-report-period">
+      {valid ? <span><strong>{rangeLabel}</strong> · UTC+7</span>
+        : <span role="alert" className="bom-report-error">Chọn ngày hợp lệ. Từ ngày phải trước hoặc bằng Đến ngày.</span>}
+      <div>{Number.isFinite(timestamp) && <span>Cập nhật {updatedAt.format(timestamp)}</span>}<RefreshStatus active={updating} /></div>
+    </div>
+    <LoadState loading={false} error={facilities.error} retry={facilities.refresh} />
+    {exportError && <div className="booking-alert is-error" role="alert">{exportError}</div>}
+    <LoadState loading={false} error={report.error} retry={report.refresh} />
+    {(report.loading || items.length > 0) && <>
+      <ReportMetrics items={items} loading={report.loading} />
+      <ReportFinances items={items} invoiceCount={trend.data?.invoiceCount} loading={report.loading} />
+      <section className="bom-report-panel">
+        <h2>Xu hướng tài chính theo {group === 'day' ? 'ngày' : 'tháng'}</h2>
+        <LoadState loading={false} error={trend.error} retry={trend.refresh} />
+        <ReportTrend trend={trend.data} group={group} loading={trend.loading} />
+      </section>
+      <ReportComparison items={items} />
+      <ReportTrendTable trend={trend.data} group={group} loading={trend.loading} />
+    </>}
+    {report.data && !items.length && <Empty title="Không có cơ sở phù hợp" description="Chọn lại phạm vi cơ sở để xem báo cáo." />}
+  </section>;
 }
-
-type Audit={id:string;actorName:string|null;action:string;outcome:string;resource:string;resourceId:string|null;createdAt:string};
-export function OperationsAudit(){const {user}=useAuth();const[page,setPage]=useState(1);const data=useApiResource<{items:Audit[];total:number}>('/operations/audit?page='+page+'&limit=20',user?.id);return <section className="operations-page"><PageHeader title="Nhật ký hoạt động kinh doanh"><button className="button-secondary" onClick={data.refresh}>Làm mới</button></PageHeader><LoadState loading={data.loading} error={data.error} retry={data.refresh}/><div className="manager-table-wrap"><table className="manager-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Thao tác</th><th>Đối tượng</th><th>Kết quả</th></tr></thead><tbody>{data.data?.items.map(r=><tr key={r.id}><td>{time(r.createdAt)}</td><td>{r.actorName??'—'}</td><td>{r.action==='CREATE'?'Tạo mới':r.action==='UPDATE'?'Cập nhật':r.action}</td><td>{r.resource}<small>{r.resourceId}</small></td><td>{r.outcome==='SUCCESS'?'Thành công':'Không thành công'}</td></tr>)}</tbody></table></div>{!data.loading&&!data.data?.items.length&&<p>Chưa có hoạt động được ghi nhận.</p>}<button disabled={page===1} onClick={()=>setPage(p=>p-1)}>Trang trước</button> <span>Trang {page}</span> <button disabled={page*20>=(data.data?.total??0)} onClick={()=>setPage(p=>p+1)}>Trang sau</button></section>}

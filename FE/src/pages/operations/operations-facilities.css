@@ -15,18 +15,35 @@
   flex-wrap: wrap;
 }
 
-.bom-facility-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+.workspace-themed[data-workspace-role] .bom-facility-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 19rem) minmax(0, 13rem);
   align-items: end;
+  gap: 6px 12px;
+  padding: 10px 12px;
 }
 
 .bom-facilities .bom-facility-toolbar .field-label {
-  flex: 0 1 18rem;
+  gap: 4px;
   min-width: 0;
 }
 
-.bom-facility-toolbar .portal-search,
+.bom-facility-search {
+  position: relative;
+  display: block;
+}
+
+.bom-facility-search svg {
+  position: absolute;
+  inset-inline-start: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--workspace-muted);
+  pointer-events: none;
+}
+
+.workspace-themed[data-workspace-role] .bom-facility-search input { padding-inline-start: 34px; }
+
 .bom-facility-toolbar input,
 .bom-facility-toolbar select {
   width: 100%;
@@ -38,8 +55,31 @@
 }
 
 .bom-facility-table table {
-  min-width: 690px;
+  min-width: 665px;
+  table-layout: fixed;
 }
+
+.bom-facility-table th:nth-child(1) { width: 25%; }
+.bom-facility-table th:nth-child(2) { width: 30%; }
+.bom-facility-table th:nth-child(3) { width: 21%; }
+.bom-facility-table th:nth-child(4) { width: 15%; }
+.bom-facility-table th:nth-child(5) { width: 9%; }
+.manager-shell .bom-facility-table .manager-table :is(th, td):last-child { padding-inline: 5px; text-align: center; }
+.bom-facility-table td { overflow-wrap: anywhere; }
+.workspace-themed[data-workspace-role] .bom-facility-table .staff-table-trigger {
+  display: inline-grid; place-items: center; min-width: 34px; min-height: 34px; margin: 0; padding: 4px;
+}
+.workspace-themed[data-workspace-role] .bom-facility-menu { padding: 5px; }
+.workspace-themed[data-workspace-role] .bom-facility-menu > :is(a, button) {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px;
+  margin: 0; padding: 5px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--workspace-text); font: inherit; text-align: start;
+}
+.bom-facility-menu svg { color: var(--workspace-muted); flex: none; }
+.workspace-themed[data-workspace-role] .bom-facility-menu > :is(a, button):hover { background: var(--workspace-hover); }
+.bom-booking-state { display: inline-flex; align-items: baseline; gap: 6px; color: var(--workspace-muted); }
+.bom-booking-state::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.bom-booking-state[data-accepting="true"] { color: var(--workspace-success); }
 
 .bom-facility-name,
 .bom-facility-back {
@@ -81,17 +121,19 @@
   grid-column: 1 / -1;
 }
 
+.bom-facility-info .manager-facts > div:first-child { grid-column: 1 / -1; }
+.bom-facility-info .manager-facts dd { overflow-wrap: anywhere; }
+
 .bom-facility-switch {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  border: 1px solid var(--workspace-border);
-  border-radius: 10px;
-  padding: 12px 14px;
+  min-width: 0;
 }
 
 .bom-facility-switch p,
+.bom-facility-closure p,
 .bom-facility-options small {
   color: var(--workspace-muted);
   font-size: .875rem;
@@ -107,13 +149,32 @@
   margin-top: 14px;
 }
 
-.workspace-themed .portal-dialog.bom-facility-dialog {
-  width: min(700px, calc(100vw - 24px));
+.bom-facility-closure {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--workspace-border);
 }
+.bom-facility-closure h3 { margin: 0; font-size: .9rem; }
+.bom-facility-closure button { margin: 0; }
+
+.workspace-themed .portal-dialog.bom-facility-dialog {
+  width: min(620px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+}
+.workspace-themed .portal-dialog.bom-facility-editor { width: min(780px, calc(100vw - 24px)); }
+.workspace-themed .portal-dialog.portal-dialog-framed.bom-facility-dialog > header { flex: none; padding: 10px 16px; }
+.bom-facility-dialog .portal-dialog-body { padding: 10px 16px; }
+.bom-facility-dialog .portal-dialog-footer { padding: 9px 16px; }
 
 .bom-facility-form {
   display: grid;
-  gap: 16px;
+  gap: 8px;
+}
+.bom-facility-fields { gap: 8px 12px; }
+.workspace-themed[data-workspace-role] .bom-facility-form .field-label { gap: 4px; }
+.bom-facility-editor .bom-facility-switch { padding-top: 7px; border-top: 1px solid var(--workspace-border); }
+@media (min-width: 561px) {
+  .workspace-themed[data-workspace-role] .bom-facility-fields > .field-label input { min-height: 38px; padding-block: 6px; }
+  .workspace-themed[data-workspace-role] .bom-facility-dialog > header .icon-button { width: 36px; height: 36px; min-height: 36px; }
 }
 
 .bom-facility-form :is(input:not([type='radio']), textarea) {
@@ -144,14 +205,19 @@
   font-weight: 650;
 }
 
-.bom-facility-options label {
-  display: flex;
+.workspace-themed[data-workspace-role] .bom-facility-options label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   border: 1px solid var(--workspace-border);
   border-radius: 10px;
   padding: 10px 12px;
   cursor: pointer;
+}
+
+.workspace-themed[data-workspace-role] .bom-facility-options input[type='radio'] {
+  width: 16px; height: 16px; min-width: 0; min-height: 0; margin: 3px 0 0; padding: 0; accent-color: var(--workspace-primary);
 }
 
 .bom-facility-options label:has(input:checked) {
@@ -176,12 +242,34 @@
   color: var(--workspace-text);
 }
 
-@media (max-width: 850px) {
+.bom-facility-warning {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0; padding: 9px 10px; border-radius: 8px; font-size: .875rem;
+  color: var(--workspace-warning); background: var(--workspace-warning-bg);
+}
+.bom-facility-warning svg { flex: none; margin-top: 2px; }
+
+.manager-shell.internal-web #portal-main:has(.bom-facilities):focus-visible,
+.manager-shell.internal-web .bom-facility-dialog:focus-visible,
+.manager-shell.internal-web .bom-facility-dialog .portal-dialog-heading:focus-visible,
+.manager-shell.internal-web:has(.bom-facilities) .workspace-confirmation:focus-visible,
+.manager-shell.internal-web:has(.bom-facilities) .workspace-confirmation .portal-dialog-heading:focus-visible { outline: none; }
+.manager-shell.internal-web :is(.bom-facilities, .bom-facility-dialog) :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--workspace-primary); outline-offset: 2px;
+}
+.manager-shell.internal-web .bom-facility-menu :is(a, button):focus-visible { outline-offset: -2px; }
+.manager-shell.internal-web:has(.bom-facilities) :is(.manager-sidebar, .portal-mobile-nav) nav a:focus-visible {
+  outline: 2px solid var(--workspace-primary); outline-offset: -2px;
+}
+.manager-shell.internal-web:has(.bom-facilities) :is(.manager-sidebar, .portal-mobile-nav) nav a.active:focus-visible { box-shadow: none; }
+
+@media (max-width: 960px) {
   .bom-facility-panels { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 480px) {
   .bom-facility-fields { grid-template-columns: minmax(0, 1fr); }
-  .bom-facilities .bom-facility-toolbar .field-label { flex: 1 1 100%; }
+  .workspace-themed[data-workspace-role] .bom-facility-toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); }
+  .bom-facility-toolbar select { text-overflow: ellipsis; }
   .bom-facility-actions { justify-content: flex-start; }
 }

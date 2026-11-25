@@ -1,3 +1,4 @@
+import { chooseDate, openCalendar } from './browser-test.mjs';
 // Browser-only regression; ALL fetch/xhr traffic is mocked, no shared database writes.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -26,7 +27,7 @@ await context.route('**/*', async route => {
   const url = new URL(req.url()), path = url.pathname.replace(/^\/(?:api\/)?/, '');
   if (req.method() === 'OPTIONS') return route.fulfill({ status: 204 });
   if (req.method() !== 'GET') mutations.push(path);
-  if (path === 'auth/me') return route.fulfill({ json: { id: 'admin', fullName: 'Fixture Admin', email: 'admin@example.test', role: 'ADMIN' } });
+  if (path === 'auth/me') return route.fulfill({ json: { id: 'admin', fullName: 'Fixture Admin', email: 'admin@example.test', role: 'SYSTEM_ADMINISTRATOR' } });
   if (path === 'admin/users') {
     if (req.method() === 'POST') {
       const body = req.postDataJSON();
@@ -123,13 +124,12 @@ try {
   assert.equal(await auditTable.getByText('Fixture Disabled', { exact: true }).count(), 0);
   assert.equal(await page.getByRole('button', { name: 'Lọc nhật ký', exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Kết quả', { exact: true }).count(), 0);
-  const fromDate = page.getByLabel('Từ ngày', { exact: true });
-  const toDate = page.getByLabel('Đến ngày', { exact: true });
-  await Promise.all([waitForAuditQuery(params => params.get('from') === '2026-11-03'), fromDate.fill('2026-11-03')]);
-  await toDate.fill('2026-11-02');
-  await page.getByRole('alert').getByText('Ngày kết thúc phải từ ngày bắt đầu trở đi.', { exact: true }).waitFor();
-  assert.equal(await toDate.getAttribute('aria-invalid'), 'true');
-  await Promise.all([waitForAuditQuery(params => params.get('to') === '2026-11-03'), toDate.fill('2026-11-03')]);
+  const fromDate = page.getByRole('button', { name: 'Từ ngày', exact: true });
+  await Promise.all([waitForAuditQuery(params => params.get('from') === '2026-11-03'), chooseDate(page, 'Từ ngày', '2026-11-03')]);
+  const toCalendar = await openCalendar(page, 'Đến ngày', '2026-11-02');
+  assert(await toCalendar.getByRole('button', { name: '02/11/2026' }).isDisabled());
+  await Promise.all([waitForAuditQuery(params => params.get('to') === '2026-11-03'),
+    toCalendar.getByRole('button', { name: '03/11/2026' }).click()]);
   assert(queries.some(query => query.category === 'LOGIN' && !('outcome' in query) && query.from === '2026-11-03' && query.to === '2026-11-03' && query.search === 'attempt@example.test'));
   assert(!queries.some(query => query.from === '2026-11-03' && query.to === '2026-11-02'));
   await Promise.all([page.waitForResponse(response => response.url().includes('audit-events') && response.url().includes('page=2')), page.getByRole('button', { name: 'Trang sau', exact: true }).click()]);
@@ -143,7 +143,7 @@ try {
   assert.equal(await auditSearch.inputValue(), 'attempt@example.test');
   await Promise.all([waitForAuditQuery(params => params.get('category') === 'LOGIN' && params.get('page') === '1' && !params.has('search')), page.getByRole('button', { name: 'Xóa bộ lọc', exact: true }).click()]);
   assert.equal(await auditSearch.inputValue(), '');
-  assert.equal(await fromDate.inputValue(), '');
+  assert.equal(await fromDate.innerText(), 'dd/MM/yyyy');
   await page.getByRole('link', { name: 'Hoạt động', exact: true }).click();
   await page.getByRole('heading', { name: 'Nhật ký hoạt động', exact: true }).waitFor();
   await auditTable.getByText('Khóa tài khoản', { exact: true }).waitFor();

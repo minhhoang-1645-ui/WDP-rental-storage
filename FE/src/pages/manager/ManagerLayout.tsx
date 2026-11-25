@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 export function ManagerLayout() {
   const { user } = useAuth();
   const { pathname, search } = useLocation();
-  const targetFacility = pathname === '/manager/catalog/additional-services'
+  const targetFacility = ['/manager/catalog', '/manager/catalog/additional-services'].includes(pathname)
     ? new URLSearchParams(search).get('facilityId') : null;
   const facilities = useApiResource<{ id: string; name: string; code: string }[]>('/manager/staff/facilities', user?.id, true);
   const [selected, setSelected] = useState('');

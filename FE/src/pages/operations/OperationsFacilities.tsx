@@ -1,9 +1,11 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Ellipsis, Plus, Search } from 'lucide-react';
+import { ArrowLeft, ChartNoAxesColumn, Ellipsis, Eye, Pencil, Plus, Search, TriangleAlert } from 'lucide-react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { Empty, Facts, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { DatePicker } from '../../components/workspace/DateTimeFields';
+import { WorkingHoursPicker } from '../../components/workspace/WorkingHoursPicker';
 import { TablePopover } from '../../components/workspace/StaffTaskTable';
 import { useListPagination } from '../../components/workspace/useListPagination';
 import { apiRequest } from '../../services/api';
@@ -27,6 +29,8 @@ type Facility = {
 type Dialog = { kind: 'create' } | { kind: 'edit' | 'plan' | 'reopen'; facility: Facility };
 const report = (id: string) => '/operations/reports?' + new URLSearchParams({ facilityId: id });
 const booking = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 'Không tiếp nhận' : facility.bookingEnabled ? 'Đang nhận' : 'Tạm dừng';
+const bookingDescription = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 'Cơ sở hiện không tiếp nhận khách thuê mới.'
+  : facility.bookingEnabled ? 'Đang tiếp nhận khách thuê mới.' : 'Đang tạm dừng nhận khách thuê mới.';
 const textOrFallback = (text?: string | null) => text?.trim() || 'Chưa thiết lập';
 const formatDate = (value?: string | null, includeTime = false) => value
   ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', ...(includeTime ? { timeStyle: 'short' } : {}), timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value))
@@ -107,29 +111,30 @@ export function OperationsFacilities() {
           <button className="button-primary" disabled={busy || resource.refreshing} onClick={() => open({ kind: 'edit', facility })}>Chỉnh sửa</button>
         </PageHeader>
         <div className="bom-facility-panels">
-          <section className="manager-section">
+          <section className="manager-section bom-facility-info">
             <h2>Thông tin cơ sở</h2>
             <Facts items={[
-              ['Mã cơ sở', facility.code], ['Tên cơ sở', facility.name], ['Địa chỉ', textOrFallback(facility.address)],
+              ['Địa chỉ', textOrFallback(facility.address)],
               ['Giờ làm việc', textOrFallback(facility.officeHours)], ['Giờ khách ra vào', textOrFallback(facility.accessHours)],
             ]} />
           </section>
           <section className="manager-section">
             <h2>Trạng thái kinh doanh</h2>
-            <Facts items={[[ 'Hoạt động', statusBadge(facility.operationalStatus) ], [ 'Nhận đặt kho', booking(facility) ]]} />
             <BookingSwitch enabled={facility.operationalStatus === 'OPEN' && facility.bookingEnabled}
               disabled={facility.operationalStatus !== 'OPEN' || busy || resource.refreshing}
-              description={facility.operationalStatus === 'OPEN' ? 'Tạm dừng đặt kho mới vẫn giữ nguyên các hợp đồng hiện tại.' : 'Chỉ có thể bật khi cơ sở đang hoạt động.'}
+              description={bookingDescription(facility)}
               onToggle={() => void save({ bookingEnabled: !facility.bookingEnabled }, facility.bookingEnabled ? 'Đã tạm dừng nhận đặt kho.' : 'Đã bật nhận đặt kho.', facility, {
                 title: facility.bookingEnabled ? 'Tạm dừng nhận đặt kho' : 'Bật nhận đặt kho',
                 description: facility.bookingEnabled ? 'Khách hiện tại vẫn sử dụng kho theo hợp đồng.' : 'Khách có thể đặt kho mới tại cơ sở này.',
                 confirmLabel: facility.bookingEnabled ? 'Tạm dừng nhận' : 'Bật nhận đặt kho',
               })} />
-            {facility.operationalStatus !== 'CLOSING' && <div className="portal-actions bom-facility-actions">
-              <button className="button-secondary" disabled={busy || resource.refreshing} onClick={() => facility.operationalStatus === 'OPEN' ? open({ kind: 'plan', facility }) : reopen(facility)}>
+            <div className="bom-facility-closure">
+              <div><h3>Ngừng kinh doanh</h3><p>{facility.operationalStatus === 'OPEN' ? 'Lập kế hoạch kết thúc phục vụ tại cơ sở.'
+                : facility.operationalStatus === 'CLOSING' ? 'Theo dõi kế hoạch và các hồ sơ bên dưới.' : 'Có thể mở lại khi cơ sở đủ điều kiện.'}</p></div>
+              {facility.operationalStatus !== 'CLOSING' && <button type="button" className="button-secondary" disabled={busy || resource.refreshing} onClick={() => facility.operationalStatus === 'OPEN' ? open({ kind: 'plan', facility }) : reopen(facility)}>
                 {facility.operationalStatus === 'OPEN' ? 'Bắt đầu ngừng kinh doanh' : 'Mở lại cơ sở'}
-              </button>
-            </div>}
+              </button>}
+            </div>
           </section>
         </div>
         {(facility.operationalStatus === 'CLOSING' || facility.closureMode) && <section className="manager-section">
@@ -162,10 +167,10 @@ export function OperationsFacilities() {
       : <>
         <div className="portal-toolbar bom-facility-toolbar">
           <label className="field-label">Tìm cơ sở
-            <span className="portal-search"><Search size={17} aria-hidden="true" /><input value={search} placeholder="Tên hoặc mã cơ sở" onChange={event => setSearch(event.target.value)} /></span>
+            <span className="bom-facility-search"><Search size={17} aria-hidden="true" /><input type="search" value={search} placeholder="Tên hoặc mã cơ sở" onChange={event => setSearch(event.target.value)} /></span>
           </label>
           <label className="field-label">Trạng thái hoạt động
-            <select value={filter} onChange={event => setFilter(event.target.value)}>
+            <select aria-label="Trạng thái hoạt động" value={filter} onChange={event => setFilter(event.target.value)}>
               <option value="">Tất cả trạng thái</option>
               {Object.entries(states).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
@@ -175,11 +180,12 @@ export function OperationsFacilities() {
           <thead><tr><th>Cơ sở</th><th>Địa chỉ</th><th>Trạng thái hoạt động</th><th>Nhận đặt kho</th><th>Thao tác</th></tr></thead>
           <tbody>{items.map(item => <tr key={item.id}>
             <td><Link className="bom-facility-name" to={detailsUrl(item.id, urlSearch)}>{item.name}</Link><small>{item.code}</small></td>
-            <td>{textOrFallback(item.address)}</td><td>{statusBadge(item.operationalStatus)}</td><td>{booking(item)}</td>
-            <td><TablePopover name={'Thao tác ' + item.name} trigger={<Ellipsis size={18} aria-hidden="true" />}>
-              <Link to={detailsUrl(item.id, urlSearch)} onClick={dismissMenu}>Xem chi tiết</Link>
-              <button type="button" onClick={event => { dismissMenu(event); open({ kind: 'edit', facility: item }); }}>Chỉnh sửa</button>
-              <Link to={report(item.id)} onClick={dismissMenu}>Hiệu quả cơ sở</Link>
+            <td>{textOrFallback(item.address)}</td><td>{statusBadge(item.operationalStatus)}</td>
+            <td><span className="bom-booking-state" data-accepting={item.operationalStatus === 'OPEN' && item.bookingEnabled}>{booking(item)}</span></td>
+            <td><TablePopover name={'Thao tác ' + item.name} panelClassName="bom-facility-menu" trigger={<Ellipsis size={18} aria-hidden="true" />}>
+              <Link to={detailsUrl(item.id, urlSearch)} onClick={dismissMenu}><Eye size={16} aria-hidden="true" /> Xem chi tiết</Link>
+              <button type="button" onClick={event => { dismissMenu(event); open({ kind: 'edit', facility: item }); }}><Pencil size={16} aria-hidden="true" /> Chỉnh sửa</button>
+              <Link to={report(item.id)} onClick={dismissMenu}><ChartNoAxesColumn size={16} aria-hidden="true" /> Hiệu quả cơ sở</Link>
             </TablePopover></td>
           </tr>)}</tbody>
         </table></div>{pagination}</> : <Empty title={resource.data?.length ? 'Không có cơ sở phù hợp' : 'Chưa có cơ sở'}
@@ -206,9 +212,8 @@ const fields = [
   { key: 'code', label: 'Mã cơ sở', max: 80, example: 'NB-02' },
   { key: 'name', label: 'Tên cơ sở', max: 120, example: 'NestBox Long Bình' },
   { key: 'address', label: 'Địa chỉ', max: 500, example: 'Số nhà, đường, phường, thành phố' },
-  { key: 'officeHours', label: 'Giờ làm việc', max: 200, example: '08:00–18:00, Thứ Hai–Thứ Bảy' },
-  { key: 'accessHours', label: 'Giờ khách ra vào', max: 200, example: '07:00–21:00 hằng ngày' },
 ] as const;
+const hourFields = [['officeHours', 'Giờ làm việc'], ['accessHours', 'Giờ khách ra vào']] as const;
 
 function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   dialog: Dialog; busy: boolean; error: string; onClose: () => void;
@@ -241,9 +246,15 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
     if (creating || editing) {
       const values = Object.fromEntries(fields.flatMap(field => {
         if (editing && field.key === 'code') return [];
-        if (editing && (field.key === 'accessHours' || field.key === 'officeHours') && !facility?.[field.key] && !read(field.key)) return [];
         return [[field.key, required(field.key, field.label, field.max)]];
       }));
+      for (const [key, label] of hourFields) {
+        const changed = read(key + 'Changed');
+        if (!creating && !changed) continue;
+        if (read(key + 'Partial')) { next[key] = 'Chọn một khung giờ hợp lệ.'; continue; }
+        if (!creating && !facility?.[key] && !read(key)) continue;
+        values[key] = required(key, label, 200);
+      }
       body = creating ? { ...values, operationalStatus: 'OPEN', bookingEnabled: false } : values;
     } else if (planning) {
       body = {
@@ -255,23 +266,32 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
     }
     setIssues(next);
     const first = Object.keys(next)[0];
-    if (first) { (form.elements.namedItem(first) as HTMLElement | null)?.focus(); return; }
+    if (first) {
+      const field = form.querySelector<HTMLElement>('[data-hours-field="' + first + '"] button') ??
+        form.elements.namedItem(first) as HTMLElement | null;
+      field?.focus();
+      return;
+    }
     const message = creating ? 'Đã thêm cơ sở.' : editing ? 'Đã cập nhật thông tin cơ sở.' : planning ? 'Đã lưu kế hoạch ngừng kinh doanh.' : 'Cơ sở đã hoạt động trở lại.';
     void onSave(body, message, facility);
   }
 
   const issue = (key: string) => issues[key] && <small id={id + '-' + key} className="bom-facility-field-error">{issues[key]}</small>;
   const validation = (key: string) => ({ 'aria-invalid': !!issues[key], 'aria-describedby': issues[key] ? id + '-' + key : undefined });
-  return <Modal title={title} className="bom-facility-dialog" busy={busy} onClose={onClose} focusTitle
+  return <Modal title={title} className={'bom-facility-dialog' + (creating || editing ? ' bom-facility-editor' : '')} busy={busy} onClose={onClose} focusTitle
     footer={<><button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-      <button type="submit" form={id} className="button-primary" disabled={busy}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
+      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
     <form id={id} className="bom-facility-form" onSubmit={submit} noValidate>
       {(creating || editing) && <div className="bom-facility-fields">
         {fields.map(field => <label className={'field-label' + (field.key === 'address' ? ' bom-facility-span' : '')} key={field.key}>
-          {field.label}<input name={field.key} maxLength={field.max} placeholder={field.example} defaultValue={facility?.[field.key] ?? ''}
-            readOnly={editing && field.key === 'code'} required={creating || !['officeHours', 'accessHours'].includes(field.key)} {...validation(field.key)} />
+          <span>{field.label}{(!editing || field.key !== 'code') && <span aria-hidden="true"> *</span>}</span>
+          <input name={field.key} maxLength={field.max} placeholder={field.example} defaultValue={facility?.[field.key] ?? ''}
+            readOnly={editing && field.key === 'code'} required={!editing || field.key !== 'code'} {...validation(field.key)} />
           {issue(field.key)}
         </label>)}
+        {hourFields.map(([key, label]) => <div className="bom-facility-span" key={key}><WorkingHoursPicker name={key} label={label}
+          original={facility?.[key] ?? ''} required={creating || Boolean(facility?.[key])} error={issues[key]}
+          onEdit={() => { if (issues[key]) setIssues(previous => ({ ...previous, [key]: '' })); }} /></div>)}
       </div>}
       {creating && <BookingSwitch enabled={false} disabled description="Có thể bật nhận đặt kho sau khi cơ sở đủ điều kiện vận hành." />}
       {planning && <>
@@ -285,13 +305,13 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
               : 'Hỗ trợ khách di dời hoặc thống nhất phương án thay thế.'}</small></span>
           </label>)}
         </fieldset>
-        <label className="field-label">Lý do ngừng kinh doanh<textarea name="closureReason" required maxLength={500} rows={3} defaultValue={facility?.closureReason ?? ''} {...validation('closureReason')} />{issue('closureReason')}</label>
-        <label className="field-label">Ngày dự kiến ngừng phục vụ<input name="closureExpectedAt" type="date" defaultValue={facility?.closureExpectedAt?.slice(0, 10) ?? ''} /></label>
-        <p className="bom-facility-notice">Dừng nhận đặt kho, gia hạn và dịch vụ mới. Các nghĩa vụ đã cam kết được giữ nguyên.</p>
+        <label className="field-label"><span>Lý do ngừng kinh doanh <span aria-hidden="true">*</span></span><textarea name="closureReason" required maxLength={500} rows={2} defaultValue={facility?.closureReason ?? ''} {...validation('closureReason')} />{issue('closureReason')}</label>
+        <DatePicker label="Ngày dự kiến ngừng phục vụ" name="closureExpectedAt" defaultValue={facility?.closureExpectedAt?.slice(0, 10) ?? ''} />
+        <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />Dừng nhận đặt kho, gia hạn và dịch vụ mới. Các nghĩa vụ đã cam kết được giữ nguyên.</p>
       </>}
       {dialog.kind === 'reopen' && <>
         <p>Nhận đặt kho mới vẫn tạm dừng sau khi mở lại.</p>
-        <label className="field-label">Căn cứ xác nhận an toàn<textarea name="reopeningSafetyEvidence" required maxLength={500} rows={3} {...validation('reopeningSafetyEvidence')} />{issue('reopeningSafetyEvidence')}</label>
+        <label className="field-label"><span>Căn cứ xác nhận an toàn <span aria-hidden="true">*</span></span><textarea name="reopeningSafetyEvidence" required maxLength={500} rows={3} {...validation('reopeningSafetyEvidence')} />{issue('reopeningSafetyEvidence')}</label>
       </>}
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
     </form>

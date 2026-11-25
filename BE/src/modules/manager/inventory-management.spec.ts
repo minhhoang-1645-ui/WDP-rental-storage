@@ -10,14 +10,15 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 const actor = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 const version = '2026-11-03T00:00:00.000Z';
-const type = { id: 'type', facilityId: 'facility', code: 'SM-A', name: 'Kho nhỏ', sizeId: 'small', condition: 'STANDARD', widthCm: 100, lengthCm: 200, heightCm: 240, monthlyRate: new Prisma.Decimal(1500000), allowDailyRental: false, minRentalDays: null, image: '', imageAlt: '', updatedAt: new Date(version) };
+const type = { id: 'type', facilityId: 'facility', code: 'SM-A', name: 'Kho nhỏ', sizeId: 'small', condition: 'STANDARD', bookingEnabled: true, widthCm: 100, lengthCm: 200, heightCm: 240, monthlyRate: new Prisma.Decimal(1500000), allowDailyRental: false, minRentalDays: null, image: '', imageAlt: '', updatedAt: new Date(version) };
 const unit = { id: 'unit', unitNumber: 'SM-A-001', storageTypeId: 'type', storageType: { facilityId: 'facility' }, floor: 'Trệt', zone: 'A', row: 1, position: 1, status: 'AVAILABLE', updatedAt: new Date(version), _count: { reservationUnits: 0, maintenanceRequests: 0, supportRequests: 0, outgoingTransfers: 0, incomingTransfers: 0, returnInspections: 0, staffAssignments: 0 } };
 function fixture() {
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     user: { findFirst: vi.fn().mockResolvedValue({ id: 'manager' }) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
-    businessRule: { findMany: vi.fn().mockResolvedValue([]) },
+    businessRule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue({ value: { min: 1000000, max: 2000000 } }) },
     storageType: { findUnique: vi.fn().mockResolvedValue(type), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
     facility: { findUnique: vi.fn().mockResolvedValue({ id: 'facility' }), findMany: vi.fn().mockResolvedValue([{ id: 'facility', name: 'Cơ sở' }]) },
     storageUnit: { groupBy: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => data) },
@@ -61,7 +62,7 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
     expect(tx.storageType.update).toHaveBeenCalledOnce();
     expect(tx.storageUnit.update).not.toHaveBeenCalled();
     expect(tx.reservation.count).not.toHaveBeenCalled();
-    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ isolationLevel: 'Serializable' }));
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ isolationLevel: 'ReadCommitted' }));
   });
   it.each([null, 0, -1, 1.5, [12], 'invalid'])('rejects invalid monthly price %j', async monthlyRate => {
     const { service, tx } = fixture();
@@ -73,6 +74,21 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
     const { id: _id, updatedAt: _updatedAt, ...input } = type;
     expect(await service.saveType(undefined, { ...input, code: 'NEW', monthlyRate: 2000000 }, actor)).toMatchObject({ code: 'NEW', sizeName: 'Kho nhỏ', monthlyRate: 2000000 });
     expect(tx.storageType.update).not.toHaveBeenCalled();
+  });
+  it('requires the selected group range for new prices and activation, while preserving an inactive type', async () => {
+    const { service, tx } = fixture();
+    const { id: _id, updatedAt: _updatedAt, bookingEnabled: _enabled, ...input } = type;
+    tx.businessRule.findFirst.mockResolvedValue(null);
+    await expect(service.saveType(undefined, { ...input, code: 'DRAFT' }, actor)).resolves.toMatchObject({ bookingEnabled: false });
+    await expect(service.saveType(undefined, { ...input, code: 'ON', bookingEnabled: true }, actor)).rejects.toThrow('chưa được BOM');
+    tx.storageType.findUnique.mockResolvedValue({ ...type, bookingEnabled: false });
+    tx.businessRule.findFirst.mockImplementation(async ({ where }) =>
+      where.key === 'monthlyPriceRange:large' ? { value: { min: 3000000, max: 5000000 } } : { value: { min: 1000000, max: 2000000 } });
+    await expect(service.saveType('type', { sizeId: 'large', expectedUpdatedAt: version }, actor)).rejects.toThrow('phải nằm trong khung');
+    await expect(service.saveType('type', { monthlyRate: 1000000, expectedUpdatedAt: version }, actor)).resolves.toMatchObject({ bookingEnabled: false });
+    await expect(service.saveType('type', { bookingEnabled: true, expectedUpdatedAt: version }, actor)).resolves.toMatchObject({ bookingEnabled: true });
+    tx.businessRule.findFirst.mockResolvedValue({ value: { min: 1700000, max: 2000000 } });
+    await expect(service.saveType('type', { imageAlt: 'Ảnh mới', expectedUpdatedAt: version }, actor)).resolves.toMatchObject({ monthlyRate: 1500000, imageAlt: 'Ảnh mới' });
   });
   it('preserves legacy monthly minimums when editing only the price', async () => {
     const { service, tx } = fixture();

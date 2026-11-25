@@ -7,7 +7,7 @@
 .operations-page input:not([type=checkbox]),.operations-page select{padding:10px 12px;border:1px solid var(--workspace-border);background:var(--workspace-input);color:var(--workspace-text);border-radius:8px;min-height:44px}
 .operations-page button:not([class]){min-height:40px;padding:8px 16px;border-radius:8px;border:1px solid var(--workspace-border);background:var(--workspace-surface);color:var(--workspace-text);justify-self:start}
 .operations-page [role=alert]{color:var(--workspace-error)}.operations-page button:disabled{opacity:.55}.operations-page small{color:var(--workspace-muted)}.operations-page details{margin:10px 0}
-.operations-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}.operations-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px}.operations-metrics>div{display:grid;gap:6px;padding:12px;background:var(--workspace-table);border-radius:8px}.operations-metrics strong{font-size:1.08rem}.operations-page .manager-table-wrap{max-width:100%;overflow:auto}
+.operations-page .manager-table-wrap{max-width:100%;overflow:auto}
 .operations-catalog{grid-template-columns:minmax(0,1fr)}
 .operations-catalog-filters{display:grid;grid-template-columns:minmax(180px,1fr) repeat(3,max-content);gap:8px}
 .operations-catalog-filters input,.operations-catalog-filters select{min-width:0;width:100%;max-width:100%}

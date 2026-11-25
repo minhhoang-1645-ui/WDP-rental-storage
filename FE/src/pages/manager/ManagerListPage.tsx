@@ -1,3 +1,4 @@
+import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { useApiResource } from '../../services/useApiResource';
 import { DetailRow } from '../../components/workspace/DetailRow';
 import { ManagerTaskTable } from '../../components/manager/ManagerTaskTable';
@@ -286,15 +287,8 @@ export function ManagerListPage({ resource }: { resource: string }) {
           </label>
         )}
         {["appointments", "returns"].includes(resource) && (
-          <label className="field-label">
-            {staffTable === 'returns' ? 'Ngày gửi yêu cầu' : 'Ngày'}
-            <input
-              type="date"
-              value={filterDate}
-              lang={staffAppointments ? 'vi-VN' : undefined}
-              onChange={(event) => change("date", event.target.value)}
-            />
-          </label>
+          <DatePicker label={staffTable === 'returns' ? 'Ngày gửi yêu cầu' : 'Ngày'} value={filterDate}
+            onChange={value => change('date', value)} />
         )}
         {resource === "units" && (
           <>

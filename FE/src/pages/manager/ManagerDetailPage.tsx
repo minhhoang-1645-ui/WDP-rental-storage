@@ -56,6 +56,7 @@ import { StaffReservationDetailPage } from '../staff/StaffReservationDetailPage'
 import { StaffAppointmentDetailPage } from '../staff/StaffAppointmentDetailPage';
 import { StaffOperationDetails } from '../staff/StaffOperationDetails';
 import { staffRecordIdentity } from '../staff/staff-work';
+import { PolicySettlementActions } from '../../components/manager/PolicySettlementActions';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
@@ -168,6 +169,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             </button>
             <RefreshStatus active={data.refreshing} />
           </PageHeader>
+          {user?.role === 'FACILITY_MANAGER' && <PolicySettlementActions resource={resource} row={row} id={id} refresh={data.refresh} />}
           {resource === 'appointments' && first(row, 'scheduleAdjustment.note') && <p role="status">
             {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
           </p>}
@@ -743,6 +745,11 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
                 `${date(row.billingPeriodStart)} → ${date(row.billingPeriodEnd)}`,
               ],
               ["Hạn thanh toán", first(row, "type") === "INITIAL" && first(row, "reservation.expiresAt") ? date(first(row, "reservation.expiresAt"), true) : date(row.dueAt)],
+              ...(Number(first(row, 'overduePayment.days')) > 0 ? [
+                ['Quá hạn', `${first(row, 'overduePayment.days')} ngày`],
+                ['Mốc quản lý xử lý', date(first(row, 'overduePayment.managerReviewOn'))],
+                ...(object(row.overduePayment).rentDebtRequiresReconciliation === true ? [['Phân bổ tiền thuê', 'Cần đối soát khoản đã thu']] : []),
+              ] as [string, string][] : []),
               ["Tiền thuê", money(row.rentalAmount)],
               ["Tiền cọc", money(row.depositAmount)],
               ["Dịch vụ bổ sung", money(row.serviceAmount)],
@@ -784,12 +791,14 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
       {resource === "deposit-settlements" && (
         <section className="manager-section">
           <h2>Hoàn tiền cọc</h2>
+          {row.refundOverdue === true && <p role="alert">Hồ sơ hoàn cọc đã quá hạn xử lý.</p>}
           <Facts
             items={[
               ["Tiền cọc", money(row.depositAmount)],
               ["Tổng phí được duyệt", money(row.totalApprovedCharges)],
               ["Khấu trừ cọc", money(row.deductionAmount)],
               ["Tiền cọc hoàn lại", money(row.refundAmount)],
+              ...(first(row, "refundDueOn") ? [["Hạn xử lý hoàn cọc (UTC+7)", first(row, "refundDueOn")] as [string, string]] : []),
               ["Thu thêm", money(row.outstandingAmount)],
               ["Phương thức hoàn", label(row.refundMethod)],
               ...(first(row, "refundReference") ? [["Tham chiếu hoàn", first(row, "refundReference")] as [string, string]] : []),

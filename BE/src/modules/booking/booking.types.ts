@@ -45,6 +45,7 @@ export interface AvailabilityResult {
 }
 
 export interface PendingReservation extends ReservationDraft {
+  paidCancellation?: { state: string; total: number; refundDueOn?: string };
   rentalSummary?: {
     rentalPeriod: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['rentalPeriod'];
     paymentDetails: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['paymentDetails'];

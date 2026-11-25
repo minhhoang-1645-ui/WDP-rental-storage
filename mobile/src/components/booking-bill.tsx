@@ -30,6 +30,11 @@ export function BookingBill({ quote }: { quote: Row }) {
     : undefined;
   const deposit = initial.depositAmount ?? quote.depositAmount;
   const depositNote = 'Được đối chiếu khi trả kho theo điều khoản hợp đồng.';
+  const early = object(object(object(quote.pricingPolicy).earlyReturn).value);
+  const earlyFee = early.feeMethod === 'FIXED_AMOUNT' ? formatMoney(Number(early.feeAmount))
+    : early.feeMethod === 'UNUSED_RENT_PERCENTAGE' ? `${early.feeAmount}% tiền thuê chưa sử dụng` : 'Miễn phí';
+  const earlyRefund = early.refundMode === 'NONE' ? 'Không hoàn tiền thuê trả trước'
+    : early.refundMode === 'ORIGINAL_DISCOUNT' ? 'Hoàn theo giá đã giảm' : 'Tính lại theo bảng ưu đãi đã cam kết';
   return <View style={s.group}>
     <View style={s.breakdown}>
     <Text style={s.title}>Chi tiết chi phí</Text>
@@ -77,6 +82,10 @@ export function BookingBill({ quote }: { quote: Row }) {
           <Line title="Tiền cọc" value={quote.depositAmount} />
           {rows(quote.services).map((item, index) => <Line key={index} title={text(item, 'name') + (item.quantity ? ' × ' + String(item.quantity) : '')} value={item.amount} />)}
           <Line title="Tổng thiết bị và vật tư" value={quote.addOnTotalAmount} />
+          {typeof early.feeMethod === 'string' && <>
+            <Line title="Phí chủ động trả kho trước hạn" value={earlyFee} />
+            <Line title="Hoàn tiền thuê trả trước" value={earlyRefund} />
+          </>}
           <View style={s.panel}><Text style={s.strong}>Tổng dự kiến thanh toán (gồm cọc)</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
           {Number(quote.depositAmount) > 0 ? <View style={[s.panel, s.notice]}><Info size={18} color={blue} />
             <View style={s.noticeText}><Text style={s.strong}>Tiền cọc được đối chiếu khi trả kho</Text><Text style={s.label}>Hoàn cọc theo điều khoản trong hợp đồng.</Text></View></View> : null}

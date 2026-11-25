@@ -169,6 +169,8 @@ beforeAll(async () => {
         address: 'Isolated HTTP test',
       },
     });
+    await db.businessRule.create({ data: { key: 'monthlyPriceRange:small', facilityId: identity(f), version: 1,
+      value: { min: 1000000, max: 2400000 }, effectiveFrom: new Date('2000-01-01Z'), createdById: identity('bom') } });
     await db.storageType.create({
       data: {
         id: identity('type-' + f),
@@ -729,10 +731,11 @@ it('enforces BOM pricing boundaries and pauses only new bookings without changin
     'bom',
     {
       facilityId: identity('A'),
+      sizeId: 'small',
       min: 1000000,
       max: 2000000,
-      effectiveFrom: new Date().toISOString(),
-      expectedVersion: 0,
+      effectiveFrom: new Date(Date.now() + 60_000).toISOString(),
+      expectedVersion: 1,
     },
     201,
   );
@@ -1069,4 +1072,129 @@ it('creates facility offerings with category-specific quantities and a catalog v
     const detail = await api('get', catalog + '/' + item.id, 'bom');
     expect(detail.body).toMatchObject({ configuredFacilityCount: 1, offeringFacilityCount: 1 });
   }
+});
+
+it('verifies the facility-group price range lifecycle through BOM, Manager and Customer HTTP', async () => {
+  const facilityId = identity('A'), typeId = identity('type-A');
+  const priceRules = '/operations/pricing-rules';
+  const catalog = async () => (await api('get', '/booking/catalog?facilityId=' + facilityId)).body.products;
+  const draft = (productId = typeId) => ({
+    productId, startDate: today(), periodMode: 'duration', durationMonths: 1, quantity: 1,
+    paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
+  });
+  const availability = async (productId = typeId, status = 201) =>
+    (await api('post', '/booking/availability', undefined, draft(productId), status)).body;
+  const inventory = async () => (await api('get', '/manager/storage-types?scopeFacilityId=' + facilityId, 'managerA')).body;
+  const update = async (type: string, fields: Record<string, unknown>, status = 200) => {
+    const { updatedAt } = await db.storageType.findUniqueOrThrow({ where: { id: type } });
+    return (await api('patch', '/manager/storage-types/' + type, 'managerA',
+      { expectedUpdatedAt: updatedAt.toISOString(), ...fields }, status)).body;
+  };
+
+  const prepared = (await api('post', '/manager/storage-types', 'managerA', {
+    facilityId, sizeId: 'medium', code: 'HTTP-MEDIUM-DRAFT', name: 'Kho nháp chưa có khung',
+    condition: 'STANDARD', widthCm: 200, lengthCm: 250, heightCm: 250, monthlyRate: 900000, allowDailyRental: false,
+  }, 201)).body;
+  expect(prepared.bookingEnabled).toBe(false);
+  await update(prepared.id, { bookingEnabled: true }, 409);
+  await db.storageUnit.create({ data: { unitNumber: 'HTTP-PRICING-DRAFT-UNIT', storageTypeId: prepared.id } });
+  // Existing rows receive bookingEnabled=true from the migration, even without a price range.
+  await db.storageType.update({ where: { id: prepared.id }, data: { bookingEnabled: true } });
+  expect((await catalog()).some((item: { id: string }) => item.id === prepared.id)).toBe(false);
+  await availability(prepared.id, 409);
+  await api('post', '/reservations', 'customer', draft(prepared.id), 409);
+
+  const committed = await reserve('A');
+  await sign(committed.id);
+  const snapshot = async () => ({
+    reservation: await db.reservation.findUniqueOrThrow({ where: { id: committed.id } }),
+    contracts: await db.rentalContract.findMany({ where: { reservationId: committed.id }, orderBy: { id: 'asc' } }),
+    invoices: await db.invoice.findMany({ where: { reservationId: committed.id }, orderBy: { id: 'asc' } }),
+  });
+  const saved = await snapshot();
+  expect(saved.reservation.status).toBe('CONFIRMED');
+  expect(saved.contracts[0].signedSnapshot).not.toBeNull();
+  expect(saved.invoices[0].rentalAmount).toBe(1500000n);
+  const before = await availability();
+  expect(before.quote.monthlyUnitPrice).toBe(1500000);
+  await update(typeId, { monthlyRate: 2500000 }, 400);
+
+  const effectiveFrom = new Date(Date.now() + 10_000);
+  await api('post', priceRules, 'bom', {
+    facilityId, sizeId: 'small', min: 2000000, max: 2400000, expectedVersion: 1, effectiveFrom: effectiveFrom.toISOString(),
+  }, 201);
+  const versions = (await api('get', priceRules, 'bom')).body.items
+    .filter((rule: { facilityId: string; sizeId: string }) => rule.facilityId === facilityId && rule.sizeId === 'small');
+  expect(versions.map((rule: { version: number; status: string }) => [rule.version, rule.status]))
+    .toEqual([[2, 'SCHEDULED'], [1, 'EFFECTIVE']]);
+  expect((await inventory()).pricingRanges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ sizeId: 'small', status: 'EFFECTIVE', value: { min: 1000000, max: 2400000 } }),
+    expect.objectContaining({ sizeId: 'small', status: 'SCHEDULED', value: { min: 2000000, max: 2400000 } }),
+  ]));
+  expect((await availability()).quote.monthlyUnitPrice).toBe(1500000);
+  const managerNotices = (await api('get', '/notifications?kind=price-range-changes', 'managerA')).body.items;
+  expect(managerNotices).toEqual([expect.objectContaining({ title: 'BOM đã công bố khung giá thuê', summary: expect.stringContaining('HTTP Kho A') })]);
+  expect((await api('get', '/notifications?kind=price-range-changes', 'managerB')).body.items).toEqual([]);
+
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, +effectiveFrom - Date.now()) + 100));
+  expect((await inventory()).pricingRanges).toEqual([
+    expect.objectContaining({ sizeId: 'small', status: 'EFFECTIVE', value: { min: 2000000, max: 2400000 } }),
+  ]);
+  expect((await catalog()).some((item: { id: string }) => item.id === typeId)).toBe(false);
+  await availability(typeId, 409);
+  await api('post', '/reservations', 'customer', draft(), 409);
+  expect((await availability(identity('type-B'))).quote.monthlyUnitPrice).toBe(1500000);
+
+  const corrected = await update(typeId, { monthlyRate: 2000000 });
+  expect(corrected.bookingEnabled).toBe(true);
+  const after = await availability();
+  expect(after.quote.monthlyUnitPrice).toBe(2000000);
+  await api('post', '/reservations', 'customer', { ...draft(), expectedServiceQuoteVersion: before.serviceQuoteVersion }, 409);
+  const newBooking = await api('post', '/reservations', 'customer', { ...draft(), expectedServiceQuoteVersion: after.serviceQuoteVersion }, 201);
+  expect(newBooking.body.status).toBe('CONFIRMED');
+  await update(typeId, { bookingEnabled: false });
+  await update(typeId, { monthlyRate: 2400000 });
+  await api('post', '/reservations', 'customer', { ...draft(), note: 'Yêu cầu mới sau khi tắt kinh doanh' }, 409);
+  expect(await snapshot()).toEqual(saved);
+});
+
+it('publishes BOM pricing policy and applies it to a new multi-unit quote', async () => {
+  const catalog = (await api('get', '/operations/business-policies', 'bom')).body;
+  const policies = catalog.pricing;
+  const scheduled = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  for (const [policyKey, value] of [['depositRefundDays', 12], ['transferFee', { method: 'FIXED_AMOUNT', amount: 35_000 }]] as const) {
+    const query = { where: { key: policyKey }, orderBy: { version: 'asc' as const } };
+    const history = await db.businessRule.findMany(query);
+    expect([...catalog.items, ...policies].some((rule: { key: string }) => rule.key === policyKey)).toBe(false);
+    await api('patch', '/operations/business-policies/' + policyKey, 'bom', { expectedUpdatedAt: null, value }, 400);
+    await api('patch', '/operations/business-policies/' + policyKey, 'bom', { expectedUpdatedAt: null, value, effectiveFrom: scheduled }, 400);
+    expect(await db.businessRule.findMany(query)).toEqual(history);
+  }
+  const deposit = policies.find((rule: { key: string }) => rule.key === 'deposit');
+  const prepaid = policies.find((rule: { key: string }) => rule.key === 'prepaid');
+  const input = {
+    storageTypeId: identity('type-A'), quantity: 2, paymentPlan: 'PREPAID',
+    startDate: '2090-01-01', endDate: '2090-04-01',
+  };
+  const before = (await api('post', '/pricing/quote', undefined, input, 201)).body;
+  const depositUpdate = {
+    expectedUpdatedAt: deposit.updatedAt,
+    value: { ...deposit.value, other: { method: 'FIXED_AMOUNT', amount: 250_000 } },
+  };
+  await denied('patch', '/operations/business-policies/deposit', 'managerA', depositUpdate);
+  const published = (await api('patch', '/operations/business-policies/deposit', 'bom', depositUpdate)).body;
+  await api('patch', '/operations/business-policies/deposit', 'bom', depositUpdate, 409);
+  await api('patch', '/operations/business-policies/prepaid', 'bom', {
+    expectedUpdatedAt: prepaid.updatedAt, effectiveFrom: scheduled,
+    value: { ...prepaid.value, 3: { enabled: false, percent: 5 } },
+  });
+  const after = (await api('post', '/pricing/quote', undefined, input, 201)).body;
+  expect(after).toMatchObject({
+    depositAmount: 500_000, rentalAmount: before.rentalAmount,
+    discountPercent: before.discountPercent,
+    pricingPolicy: { deposit: { version: published.version }, prepaid: { version: before.pricingPolicy.prepaid.version } },
+  });
+  const listed = (await api('get', '/operations/business-policies', 'bom')).body.pricing;
+  expect(listed.find((rule: { key: string }) => rule.key === 'prepaid').history)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ effectiveFrom: scheduled, status: 'SCHEDULED' })]));
 });

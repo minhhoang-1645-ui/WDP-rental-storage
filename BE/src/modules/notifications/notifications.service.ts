@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { buildNotices, noticeKinds, noticeSearch, type Notice } from './notification-content.js';
 import { customerMobileNotices } from './notification-mobile-content.js';
 import { NotificationSources } from './notification-sources.js';
+import { BusinessPolicyService } from '../policies/business-policy.service.js';
 
 const views = ['all', 'unread', 'action'];
 const pageSizes = [5, 10, 20, 50];
@@ -28,14 +29,26 @@ function item(notice: Notice, read: Set<string>) {
 export class NotificationsService {
   private readonly pending = new Map<string, Promise<Notice[]>>();
 
-  constructor(private readonly prisma: PrismaService, private readonly sources: NotificationSources) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sources: NotificationSources,
+    private readonly policies: BusinessPolicyService = new BusinessPolicyService(prisma),
+  ) {}
 
   private snapshot(actor: PublicUser, mobile = false) {
     const key = `${actor.role}:${actor.id}:${mobile}`;
     const running = this.pending.get(key);
     if (running) return running;
-    const request = this.sources.load(actor).then(data => {
+    const request = this.sources.load(actor).then(async data => {
       const now = Date.now();
+      if (actor.role === 'STORAGE_CUSTOMER' && data.contracts?.length) {
+        const days = await this.policies.value('renewalReminderDays', this.prisma, new Date(now));
+        data = { ...data, 'contract-expiry': data.contracts.map(row => ({ ...row, reminderDays: days })) };
+      }
+      if (actor.role === 'STORAGE_CUSTOMER' && data.invoices?.length) {
+        const days = await this.policies.value('paymentReminderDays', this.prisma, new Date(now));
+        data = { ...data, 'payment-due-reminder': data.invoices.map(row => ({ ...row, reminderDays: days })) };
+      }
       const notices = buildNotices(actor, data, now);
       return mobile ? customerMobileNotices(notices, data, now) : notices;
     })

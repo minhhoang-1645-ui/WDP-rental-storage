@@ -38,7 +38,7 @@ export function StaffAppointmentDetailPage() {
   const row = denied ? null : data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
   const readiness = object(row?.handoverReadiness);
   const assigned = Boolean(user && row && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
-  const canAct = assigned && row?.bookingReady !== false && readiness.allowed === true;
+  const canAct = assigned && row?.cancellationPending !== true && row?.bookingReady !== false && readiness.allowed === true;
   useStaffProcessingTarget(Boolean(row && ['REQUESTED', 'CONFIRMED'].includes(String(row.status))));
 
   return <section className="record-detail-page staff-appointment-detail">
@@ -49,13 +49,15 @@ export function StaffAppointmentDetailPage() {
       <RefreshStatus active={data.refreshing} />
       {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
+      {row.canRecordCancellationRecovery === true && (assigned || first(row, 'completedBy.id') === user?.id) &&
+        <CancellationRecovery reservationId={first(row, 'reservation.id')} refresh={data.refresh} />}
       {first(row, 'scheduleAdjustment.note') && <p role="status">
         {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Quản lý đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
       </p>}
       <Fragment key={formRevision}>
       {row.status === 'COMPLETED' && <>
         <HandoverResult row={row} />
-        {rows(row.purchasedProducts).length > 0 && <RemainingProducts row={row} id={id}
+        {row.cancellationPending !== true && rows(row.purchasedProducts).length > 0 && <RemainingProducts row={row} id={id}
           allowed={assigned || (!first(row, 'assignedStaff.id') && first(row, 'completedBy.id') === user?.id)}
           onSuccess={result => { setSubmitted(result); setNotice('Đã ghi nhận bàn giao sản phẩm.'); data.refresh(); }} />}
       </>}
@@ -71,13 +73,43 @@ export function StaffAppointmentDetailPage() {
       {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Chưa thể xử lý bàn giao</h2>
         <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.'
-          : first(readiness, 'reason') || first(row, 'bookingBlockReason') || (row.bookingReady === false
+          : row.cancellationPending === true ? 'Đơn đang được xem xét hủy.' : first(readiness, 'reason') || first(row, 'bookingBlockReason') || (row.bookingReady === false
             ? 'Đơn đặt kho chưa đủ điều kiện bàn giao.' : 'Làm mới hồ sơ để kiểm tra điều kiện bàn giao.')}</p>
       </section>}
       </Fragment>
       <HandoverNotes row={row} />
       <AppointmentHistory row={row} />
     </>}
+  </section>;
+}
+
+function CancellationRecovery({ reservationId, refresh }: { reservationId: string; refresh: () => void }) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const checks = [['neverUsed', 'Kho chưa từng được sử dụng'], ['unitEmpty', 'Đã kiểm tra kho trống'],
+    ['accessRevoked', 'Đã thu hồi chìa khóa, thẻ và quyền truy cập'], ['equipmentReturned', 'Đã kiểm tra thiết bị thu hồi hoặc chưa giao']] as const;
+  return <section className="manager-section"><h2>Thu hồi quyền truy cập khi hủy đặt kho</h2>
+    <form className="portal-form" onSubmit={async event => {
+      event.preventDefault();
+      if (lock.current) return;
+      const form = new FormData(event.currentTarget);
+      lock.current = true;
+      setBusy(true);
+      setError('');
+      try {
+        await mutate(`/reservations/${encodeURIComponent(reservationId)}/paid-cancellation`, 'POST', {
+          action: 'RECOVER', note: form.get('note'), ...Object.fromEntries(checks.map(([name]) => [name, form.has(name)])),
+        });
+        refresh();
+      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Chưa lưu được xác nhận.'); }
+      finally { lock.current = false; setBusy(false); }
+    }}><fieldset disabled={busy}>
+      {checks.map(([name, label]) => <label key={name} className="portal-checkbox"><input name={name} type="checkbox" required />{label}</label>)}
+      <label>Biên bản hoặc căn cứ kiểm tra<input name="note" minLength={3} maxLength={500} required /></label>
+      <button className="button-primary">Xác nhận đã thu hồi</button>
+    </fieldset></form>
+    {error && <p role="alert">{error}</p>}
   </section>;
 }
 

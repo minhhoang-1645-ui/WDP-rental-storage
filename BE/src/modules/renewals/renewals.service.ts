@@ -1,3 +1,4 @@
+import { assertListedPrice, lockPriceRange } from '../pricing/monthly-price-range.js';
 import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
 import { renewalTaskScope } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import { loadPricingPolicy, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 import { snapshotHash, validateSignature } from '../contracts/signature.js';
 import { SigningOtpService, signedDocument, signedEnvelope, signatureVerification } from '../signing/signing-otp.service.js';
 import { DocumentPolicy } from '../documents/document-policy.js';
@@ -32,6 +34,7 @@ export interface RenewalListQuery {
 }
 
 type RenewalSnapshot = {
+  pricingPolicy?: PricingPolicySnapshot;
   facilityId?: string;
   scope?: { reservationId: string; rentalContractId: string; contractCode: string; reservationUnitId: string; storageUnitId: string; unitCode: string };
   currency: 'VND';
@@ -171,14 +174,18 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
         const contract = this.customerContract(reservation, parsed.rentalContractId);
         const rental = this.assertActiveRental(reservation, contract.id);
-        await assertFacilityAllowsRenewal(tx, contract.reservationUnit.storageUnit.storageType.facilityId, true);
+        const type = contract.reservationUnit.storageUnit.storageType;
+        await assertFacilityAllowsRenewal(tx, type.facilityId, true);
+        await lockPriceRange(tx, type.facilityId, true);
+        await tx.$queryRaw`SELECT id FROM "StorageType" WHERE id = ${type.id} FOR SHARE`;
         await this.lockUnits(tx, rental.unitIds);
         const requestedEndDate = this.addCalendarMonths(contract.endDate, parsed.termMonths);
         await this.assertNoAllocationConflict(tx, rental.contracts, contract.endDate, requestedEndDate);
         await this.assertNoOperationalConflict(tx, reservation, rental.contracts);
-        const snapshot = this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
+        const snapshot = await this.contractQuote(tx, reservation, contract, parsed.termMonths, parsed.paymentPlan, true);
         if (input.expectedTotalAmount !== undefined && input.expectedTotalAmount !== snapshot.totalAmount
-            || input.expectedEndDate !== undefined && input.expectedEndDate !== snapshot.requestedEndDate) {
+            || input.expectedEndDate !== undefined && input.expectedEndDate !== snapshot.requestedEndDate
+            || input.expectedPricingVersion !== undefined && input.expectedPricingVersion !== this.quoteVersion(snapshot)) {
           throw new ConflictException({ code: 'RENEWAL_QUOTE_CHANGED', message: 'Giá hoặc hạn thuê đã thay đổi. Vui lòng tải lại báo giá.' });
         }
         const created = await tx.renewalRequest.create({
@@ -214,9 +221,12 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
     const contract = this.customerContract(reservation, parsed.rentalContractId);
-    this.assertActiveRental(reservation, contract.id);
+    const rental = this.assertActiveRental(reservation, contract.id);
     await assertFacilityAllowsRenewal(this.prisma, contract.reservationUnit.storageUnit.storageType.facilityId);
-    return this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
+    const quote = await this.contractQuote(this.prisma, reservation, contract, parsed.termMonths, parsed.paymentPlan);
+    await this.assertNoAllocationConflict(this.prisma, rental.contracts, rental.endDate, this.addCalendarMonths(rental.endDate, parsed.termMonths));
+    await this.assertNoOperationalConflict(this.prisma, reservation, rental.contracts);
+    return { ...quote, pricingVersion: this.quoteVersion(quote) };
   }
 
   listCustomerRenewals(customerId: string, page: number, limit: number) {
@@ -521,35 +531,60 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     return { contracts, endDate, unitIds: contracts.map(contract => contract.reservationUnit.storageUnitId) };
   }
 
-  private contractQuote(reservation: RenewalRental, contract: RenewalContract, termMonths: number, paymentPlan: PaymentPlan): RenewalSnapshot {
+  private async contractQuote(db: DbClient, reservation: RenewalRental, contract: RenewalContract, termMonths: number, paymentPlan: PaymentPlan, lockVersion = false): Promise<RenewalSnapshot> {
+    const now = new Date();
+    const policy = await loadPricingPolicy(db, now);
     const start = contract.endDate;
     const end = this.addCalendarMonths(start, termMonths);
+    const renewalPolicy = policy.renewal.value;
+    const daysBeforeEnd = (+start - +businessToday(now)) / 86_400_000;
+    if (daysBeforeEnd <= 0 || daysBeforeEnd < renewalPolicy.closesDaysBefore || daysBeforeEnd > renewalPolicy.opensDaysBefore) {
+      throw new ConflictException({ code: 'RENEWAL_WINDOW_CLOSED', message: 'Hợp đồng đang ngoài thời gian cho phép gửi yêu cầu gia hạn.' });
+    }
     const original = reservation.quoteSnapshot as { monthlyUnitPrice?: unknown };
     const effective = contract.rateEffectiveFrom;
-    if (effective && effective > start && effective < end) {
+    if (renewalPolicy.priceMode === 'CONTRACT_RATE' && effective && effective > start && effective < end) {
       throw new ConflictException('Đơn giá thay đổi giữa kỳ đề nghị gia hạn. Cần đối soát báo giá.');
     }
     const allocation = contract.reservationUnit;
     const unit = allocation.storageUnit;
     const product = unit.storageType;
-    const rate = effective ? effective <= start ? Number(contract.currentMonthlyRate) : original.monthlyUnitPrice : Number(product.monthlyRate);
-    if (!Number.isSafeInteger(rate) || Number(rate) <= 0 || contract.currentMonthlyRate !== null && !effective) {
+    const previousRenewal = renewalPolicy.priceMode === 'CONTRACT_RATE' ? await db.renewalRequest.findFirst({
+      where: {
+        reservationId: reservation.id, status: 'COMPLETED', previousEndDate: { lte: start },
+        OR: [{ rentalContractId: contract.id }, { rentalContractId: null }],
+      },
+      orderBy: [{ previousEndDate: 'desc' }, { id: 'desc' }],
+      select: { previousEndDate: true, quoteSnapshot: true },
+    }) : null;
+    const transferRateEffective = Boolean(effective && effective <= start);
+    const renewalRate = (previousRenewal?.quoteSnapshot as { monthlyUnitPrice?: unknown } | undefined)?.monthlyUnitPrice;
+    const contractRate = previousRenewal && (!transferRateEffective || previousRenewal.previousEndDate >= effective!)
+      ? renewalRate : transferRateEffective ? Number(contract.currentMonthlyRate) : original.monthlyUnitPrice;
+    const rate = renewalPolicy.priceMode === 'CURRENT_LIST_PRICE' ? Number(product.monthlyRate) : contractRate;
+    if (renewalPolicy.priceMode === 'CURRENT_LIST_PRICE') await assertListedPrice(db, product, lockVersion);
+    if (!Number.isSafeInteger(rate) || Number(rate) <= 0 ||
+        renewalPolicy.priceMode === 'CONTRACT_RATE' && contract.currentMonthlyRate !== null && !effective) {
       throw new ConflictException('Chưa xác định được đơn giá hiệu lực của hợp đồng.');
     }
     const startDate = this.isoDate(start);
     const endDate = this.isoDate(end);
     const quote = this.pricing.calculate({ ...product, monthlyRate: new Prisma.Decimal(Number(rate)) }, {
       storageTypeId: product.id, quantity: 1, startDate, endDate, paymentPlan,
-    });
+    }, [], policy, true);
     if (quote.billingMode !== 'MONTHLY' || quote.termMonths !== termMonths) throw new ConflictException('Không thể lập báo giá gia hạn theo tháng.');
     return {
       scope: { reservationId: reservation.id, rentalContractId: contract.id, contractCode: contract.contractCode,
         reservationUnitId: allocation.id, storageUnitId: unit.id, unitCode: unit.unitNumber },
-      currency: 'VND', storageTypeId: product.id, storageTypeName: product.name, quantity: 1, facilityId: product.facilityId,
+      currency: 'VND', pricingPolicy: policy, storageTypeId: product.id, storageTypeName: product.name, quantity: 1, facilityId: product.facilityId,
       previousEndDate: startDate, renewalStartDate: startDate, requestedEndDate: endDate, termMonths, paymentPlan,
       monthlyUnitPrice: quote.monthlyUnitPrice, baseRentalAmount: quote.baseRentalAmount, discountPercent: quote.discountPercent,
       discountAmount: quote.discountAmount, rentalAmount: quote.rentalAmount, depositAmount: 0, totalAmount: quote.rentalAmount,
     };
+  }
+
+  private quoteVersion(snapshot: RenewalSnapshot) {
+    return snapshotHash(snapshot);
   }
 
   private async assertNoOperationalConflict(tx: Prisma.TransactionClient, reservation: RenewalRental, contracts: RenewalContract[], renewalId?: string) {

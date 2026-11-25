@@ -1,3 +1,4 @@
+import { chooseDate, openCalendar } from './browser-test.mjs';
 // All business API calls intercepted; no shared database reads or writes.
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -67,11 +68,10 @@ try {
       const csv = Buffer.concat(chunks).toString('utf8');
       assert.match(csv, /Tiền thuê VND/); assert.match(csv, /Tiền cọc VND/);
       assert.match(csv, /INV-S/); assert(!csv.includes('INV-M')); assert(!csv.includes('VOID'));
-      await page.getByLabel('Từ ngày', { exact: true }).fill('2026-12-02');
-      await page.getByLabel('Đến ngày', { exact: true }).fill('2026-11-02');
-      await page.getByRole('alert').filter({ hasText: 'Ngày bắt đầu phải trước' }).waitFor();
-      assert.equal(await page.locator('.portal-metrics').count(), 0);
-      assert(await page.getByRole('button', { name: 'Xuất hóa đơn CSV', exact: true }).isDisabled());
+      await chooseDate(page, 'Từ ngày', '2026-11-03');
+      const calendar = await openCalendar(page, 'Đến ngày', '2026-11-03');
+      assert(await calendar.getByRole('button', { name: '02/11/2026' }).isDisabled());
+      await page.keyboard.press('Escape');
     }
     await app.context.close(); checks.push(`Web ${width}px: period/type/group/sort filters, charts, VOID and money`);
   }

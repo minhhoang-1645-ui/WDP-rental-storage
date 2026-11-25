@@ -500,6 +500,7 @@ model StorageType {
   kicker               String
   condition            StorageCondition
   catalogStatus        CatalogStatus         @default(AVAILABLE)
+  bookingEnabled       Boolean               @default(true)
   widthCm              Int
   lengthCm             Int
   heightCm             Int
@@ -637,6 +638,7 @@ model GuestBookingRequest {
 }
 
 model Reservation {
+  paidCancellation Json?
   id                   String                @id @default(cuid())
   reservationCode      String                @unique
   customerId           String
@@ -938,6 +940,7 @@ model StockMovementLine {
 }
 
 model ReturnRequest {
+  overdueSettlement Json?
   earlyReturnCloseout    Json?
   rentRefundApprovedAt   DateTime?
   rentRefundApprovedById String?
@@ -1139,6 +1142,7 @@ model SupportRequest {
 }
 
 model TransferRequest {
+  commercialSettlement Json?
   serviceHandling Json?
   closurePlanId String?
   receivingStaffId String?
@@ -1217,6 +1221,8 @@ model DepositSettlement {
   refundNote           String?
   refundIdempotencyKey String?                  @unique
   refundedAt           DateTime?
+  refundDueOn          DateTime?                @db.Date
+  refundPolicyVersion  Int?
   settledByUserId      String?
   settledBy            User?                    @relation("DepositSettlementCompleter", fields: [settledByUserId], references: [id], onDelete: Restrict)
   settledAt            DateTime?

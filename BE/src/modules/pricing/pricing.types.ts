@@ -1,3 +1,5 @@
+import type { PricingPolicySnapshot } from '../policies/pricing-policy.js';
+
 export type PaymentPlan = 'PAY_MONTHLY' | 'PREPAID';
 export type BillingMode = 'DAILY' | 'MONTHLY';
 
@@ -11,6 +13,7 @@ export interface PricingInput {
 }
 
 export interface PricingQuote {
+  pricingPolicy?: PricingPolicySnapshot;
   currency: 'VND';
   storageTypeId: string;
   storageTypeName: string;

@@ -17,8 +17,12 @@ export const noticeKinds: Record<string, string> = {
   returns: 'Trả kho', 'early-returns': 'Trả trước hạn', 'deposit-settlements': 'Tiền cọc',
   'support-requests': 'Hỗ trợ', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa',
   users: 'Tài khoản', 'catalog-changes': 'Danh mục bổ trợ',
+  'price-range-changes': 'Khung giá thuê',
   'facility-lifecycle': 'Hoạt động cơ sở',
   'closure-relocations': 'Hỗ trợ di dời',
+  'contract-expiry': 'Hợp đồng sắp hết hạn',
+  'payment-due-reminder': 'Hóa đơn sắp đến hạn',
+  'rental-overdue': 'Quá hạn trả kho',
 };
 
 function read(row: NotificationRow, path: string): unknown {
@@ -95,6 +99,48 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const id = get('id');
   if (!id || !Object.hasOwn(noticeKinds, source)) return;
   const key = `${source}:${id}`;
+  if (source === 'rental-overdue') {
+    if (actor.role !== 'FACILITY_MANAGER' || read(row, 'overdueOccupancy.managerReview') !== true || !get('reservationId')) return;
+    const date = get('overdueOccupancy.managerReviewOn');
+    const at = Date.parse(date + 'T00:00:00+07:00');
+    if (Number.isFinite(at)) return { key, token: hash([key, date]), kind: source, title: 'Kho quá hạn cần quản lý xử lý',
+      summary: get('contractCode'), code: get('contractCode'), important: true, at: new Date(at).toISOString(),
+      actionLabel: 'Xem kho đang thuê', target: `/manager/operations/rentals/${encodeURIComponent(get('reservationId'))}` };
+    return;
+  }
+  if (source === 'contract-expiry') {
+    if (actor.role !== 'STORAGE_CUSTOMER' || row.status !== 'ACTIVE' ||
+        [get('customerId'), get('reservation.customerId'), get('reservation.customer.id')].some(owner => owner && owner !== actor.id)) return;
+    const endDate = get('endDate').slice(0, 10);
+    const end = Date.parse(endDate + 'T00:00:00+07:00');
+    const start = end - Number(row.reminderDays) * 86_400_000;
+    if (!Number.isFinite(start) || now < start || now >= end) return;
+    return {
+      key, token: hash([key, endDate]), kind: source, at: new Date(start).toISOString(),
+      code: get('contractCode'), title: 'Hợp đồng sắp hết hạn', important: true,
+      summary: [get('contractCode'), `Hạn thuê ${endDate}`].filter(Boolean).join(' · '),
+      actionLabel: 'Xem hợp đồng', target: queryPath('/customer/contracts', { contract: id }),
+    };
+  }
+  if (source === 'payment-due-reminder') {
+    if (actor.role !== 'STORAGE_CUSTOMER' ||
+        [get('customerId'), get('reservation.customerId'), get('reservation.customer.id')].some(owner => owner && owner !== actor.id) ||
+        !['OPEN', 'PARTIALLY_PAID'].includes(get('status')) || !(Number(row.balanceDue) > 0) ||
+        ['CANCELLED', 'EXPIRED', 'REJECTED'].includes(get('reservation.status'))) return;
+    const reservationDeadline = row.type === 'INITIAL' ? Date.parse(get('reservation.expiresAt')) : NaN;
+    const dateOnly = get('dueAt').slice(0, 10);
+    const due = Number.isFinite(reservationDeadline) ? reservationDeadline : Date.parse(dateOnly + 'T00:00:00+07:00');
+    const start = due - Number(row.reminderDays) * 86_400_000;
+    if (!Number.isFinite(start) || now < start || now >= due ||
+        row.type === 'RENEWAL' && Number(row.renewalCycle) > 1 && row.closeoutPaymentAllowed !== true ||
+        data['payment-submissions']?.some(item => text(item, 'invoice.id') === id && item.status === 'PENDING_VERIFICATION')) return;
+    const dueAt = new Date(due).toISOString();
+    return {
+      key, token: hash([key, dueAt]), kind: source, at: new Date(start).toISOString(),
+      code: get('invoiceCode'), title: 'Hóa đơn sắp đến hạn thanh toán', important: true,
+      summary: get('invoiceCode'), actionLabel: 'Xem hóa đơn', target: queryPath('/customer/payments', { invoice: id }),
+    };
+  }
   if (actor.role === 'SYSTEM_ADMINISTRATOR') {
     const action = get('action'), target = get('targetUserId') || (row.resource === 'users' ? get('resourceId') : ''), at = get('createdAt');
     if (source !== 'users' || row.outcome !== 'SUCCESS' || !target || (action.startsWith('REVOKE_SESSION') && row.metadata && typeof row.metadata === 'object' && 'count' in row.metadata && row.metadata.count === 0) || !Object.hasOwn(auditTitles, action) || !Number.isFinite(Date.parse(at))) return;
@@ -140,6 +186,23 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
           : 'Tiếp tục hỗ trợ khách đang thuê đến hết hạn và xử lý các hồ sơ còn mở.' : ''].filter(Boolean).join(' · '),
     };
   }
+  if (source === 'price-range-changes') {
+    if (actor.role !== 'FACILITY_MANAGER') return;
+    const facilityId = get('resourceId'), effective = Date.parse(get('metadata.effectiveFrom'));
+    if (!facilityId || !Number.isFinite(effective)) return;
+    const bounds = (path: string) => {
+      const min = read(row, path + '.min'), max = read(row, path + '.max');
+      return typeof min === 'number' && typeof max === 'number' ? `${min.toLocaleString('vi-VN')}–${max.toLocaleString('vi-VN')} đ/tháng` : 'Chưa thiết lập';
+    };
+    const affected = Array.isArray(read(row, 'metadata.affected')) ? (read(row, 'metadata.affected') as unknown[])
+      .filter((name): name is string => typeof name === 'string') : [];
+    const date = new Date(effective).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' });
+    return { key, token: hash([key]), kind: source, at: get('createdAt'), code: get('metadata.groupName'),
+      title: 'BOM đã công bố khung giá thuê',
+      summary: [get('metadata.facilityName'), get('metadata.groupName'), bounds('metadata.oldRange') + ' → ' + bounds('metadata.newRange'),
+        'Hiệu lực ' + date + ' (UTC+7)', affected.length ? 'Cần kiểm tra giá: ' + affected.join(', ') : 'Giá hiện tại phù hợp tại thời điểm công bố.'].join(' · '),
+      target: '/manager/catalog?' + new URLSearchParams({ facilityId }), actionLabel: 'Xem loại kho & đơn giá', important: affected.length > 0 };
+  }
   if (source === 'catalog-changes') {
     if (actor.role !== 'FACILITY_MANAGER' || !get('facilityId') || !get('resourceId')) return;
     const fields: Record<string, string> = {
@@ -180,7 +243,44 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   if (staff && source === 'appointments' && staffActionable.appointments.includes(status) && row.bookingReady === false) return;
   if (staff && linkedTransfer && data.transfers?.some(item => item.id === linkedTransfer.id && text(item, 'assignedStaff.id') === actor.id)) return;
   if (customer && ['customerId', 'customerUserId', 'customer.id', 'reservation.customerId', 'reservation.customer.id'].map(get).some(owner => owner && owner !== actor.id)) return;
+  if (source === 'reservations' && get('paidCancellation.state')) {
+    const state = get('paidCancellation.state');
+    const manager = actor.role === 'FACILITY_MANAGER';
+    const dueDate = get('paidCancellation.refundDueOn');
+    const due = Date.parse(dueDate + 'T00:00:00+07:00') + 86_400_000;
+    const late = manager && state === 'REFUND_PENDING' && Number.isFinite(due) && now >= due;
+    const title = late ? 'Quá hạn hoàn tiền hủy đơn' : state === 'REQUESTED' ? 'Có yêu cầu hủy đơn đã thanh toán'
+      : state === 'REFUNDED' ? 'Đã hoàn tiền hủy đơn' : state === 'REFUND_PENDING' ? 'Đơn đã hủy, chờ hoàn tiền' : 'Đã xử lý yêu cầu hủy đơn';
+    const at = late ? new Date(due).toISOString() : get('updatedAt') || get('createdAt');
+    if (at) return { key, token: hash([key, state, late ? dueDate : '']), kind: source, at, title, code: get('reference') || id,
+      summary: dueDate ? `Hạn hoàn tiền ${dueDate}` : get('reference'), actionLabel: 'Xem yêu cầu hủy', important: state === 'REQUESTED' || late,
+      target: manager ? `/manager/reservations/${encoded}` : `/customer/reservations/${encoded}` };
+  }
+  if (actor.role === 'FACILITY_MANAGER' && source === 'deposit-settlements' && row.refundOverdue === true) {
+    const dueDate = get('refundDueOn');
+    const due = Date.parse(dueDate + 'T00:00:00+07:00');
+    if (Number.isFinite(due)) return {
+      key, token: hash([key, 'refund-overdue', dueDate]), kind: source, at: new Date(due + 86_400_000).toISOString(),
+      code: get('settlementCode'), title: 'Hồ sơ hoàn cọc quá hạn', important: true,
+      summary: [get('settlementCode'), `Hạn xử lý ${dueDate}`].filter(Boolean).join(' · '),
+      actionLabel: 'Xử lý hoàn cọc', target: `/manager/operations/deposit-settlements/${encoded}`,
+    };
+  }
   const kind = early ? 'early-returns' : transfer ? 'transfers' : source;
+  if (actor.role === 'FACILITY_MANAGER' && source === 'invoices' && read(row, 'overduePayment.managerReview') === true) {
+    const reviewOn = get('overduePayment.managerReviewOn');
+    const at = Date.parse(reviewOn + 'T00:00:00+07:00');
+    if (Number.isFinite(at)) return { key, token: hash([key, 'payment-overdue-review', reviewOn]), kind: source,
+      at: new Date(at).toISOString(), code: get('invoiceCode'), title: 'Công nợ quá hạn cần quản lý xử lý', important: true,
+      summary: get('invoiceCode'), actionLabel: 'Kiểm tra công nợ', target: `/manager/operations/invoices/${encoded}` };
+  }
+  if (customer && source === 'invoices' && Number(read(row, 'overduePayment.days')) > 0) {
+    const dueDate = get('dueAt');
+    const at = Date.parse(dueDate + 'T00:00:00+07:00') + 86_400_000;
+    if (Number.isFinite(at)) return { key, token: hash([key, 'payment-overdue', dueDate]), kind: source,
+      at: new Date(at).toISOString(), code: get('invoiceCode'), title: 'Hóa đơn quá hạn thanh toán', important: true,
+      summary: get('invoiceCode'), actionLabel: 'Xem hóa đơn', target: `/customer/invoices/${encoded}` };
+  }
   const label = noticeKinds[kind];
   let title = `${label} ${states[status] ?? 'đã cập nhật'}`;
   if (source === 'appointments' && status === 'COMPLETED') title = 'Bàn giao đã hoàn tất';

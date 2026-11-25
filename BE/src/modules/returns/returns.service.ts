@@ -15,9 +15,13 @@ import { contractDeposit, contractReturnReadiness, recordedContractDeposit, retu
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { BillingService } from '../billing/billing.service.js';
-import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, rentRefundView, summarizeEarlyReturn } from './return-period-closeout.js';
+import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, protectedFacilityReturn, rentRefundView, summarizeEarlyReturn } from './return-period-closeout.js';
+import type { PricingPolicySnapshot } from '../policies/pricing-policy.js';
+import { applyOccupiedOverdue, calculateOccupiedOverdue } from './overdue-return.js';
+import { transferredDepositDelta } from '../transfers/transfer-finance.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
+const DEPOSIT_REFUND_DAYS = 7;
 type ViewMode = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER' | 'FACILITY_STAFF';
 type ReturnStatus = 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED';
 type IssueType = 'NORMAL_WEAR' | 'FACILITY_FAULT' | 'CUSTOMER_DAMAGE' | 'CLEANING_REQUIRED' | 'LOST_KEY_OR_ACCESS_ITEM' | 'OTHER';
@@ -32,7 +36,9 @@ export interface ReturnListQuery {
 
 type ReturnContract = {
   id: string; contractCode: string; status: string; endDate: Date; reservationUnitId: string;
-  reservationUnit: { id: string; reservationId: string; storageUnitId: string; releasedAt: Date | null; storageUnit: { status: string; unitNumber: string } };
+  reservationUnit: { id: string; reservationId: string; storageUnitId: string; releasedAt: Date | null; storageUnit: {
+    status: string; unitNumber: string; storageType?: { facility: { operationalStatus: string; closureMode: string | null } };
+  } };
 };
 type ReturnRental = { id: string; quantity: number; status: string; contracts: ReturnContract[] };
 type ReturnApproval = { id: string; rentalContractId: string | null; status: string; lastAction: string | null; lastActionIdempotencyKey: string | null; earlyReturnFinancialReview?: Prisma.JsonValue; resolvedBy?: { role: string } | null };
@@ -40,7 +46,11 @@ type CloseoutApproval = Prisma.JsonObject & { policy?: string; agreementReferenc
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly renewalBilling?: RenewalsService, @Optional() private readonly billing?: BillingService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly renewalBilling?: RenewalsService,
+    @Optional() private readonly billing?: BillingService,
+  ) {}
 
   async createCustomerReturn(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
     if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được gửi yêu cầu trả kho qua endpoint này.');
@@ -262,14 +272,21 @@ export class ReturnsService {
       if (input.unitsEmpty !== true || input.accessRevoked !== true) {
         throw new BadRequestException('Cần kiểm tra kho đã trống và xác nhận thu hồi chìa khóa, thẻ hoặc quyền truy cập trước khi nhận kho.');
       }
-      if (!periodCloseout) this.assertDebt(current.reservation.invoices, contractIds, allContractIds, false, legacy);
+      if (!periodCloseout && (legacy || !this.hasSignedReturnPolicy(current.reservation.quoteSnapshot))) {
+        this.assertDebt(current.reservation.invoices, contractIds, allContractIds, false, legacy);
+      }
       this.assertRenewalsSettled(current.reservation.renewals, contractIds, periodCloseout);
       await this.assertNoConflictingWork(tx, contractIds);
       const previousCredit = await tx.returnInspection.findFirst({ where: {
         rentalContractId: { in: contractIds }, returnRequestId: { not: current.id }, returnRequest: { depositSettlement: { isNot: null } },
       }, select: { id: true } });
       if (previousCredit) throw new ConflictException('Tiền cọc của hợp đồng đã được ghi nhận trong một quyết toán khác.');
-      const depositAmount = contractDeposit(current.reservation.invoices, contractIds, allContractIds, current.reservation.quoteSnapshot, legacy);
+      const historicalDeposit = contractDeposit(current.reservation.invoices, contractIds, allContractIds, current.reservation.quoteSnapshot, legacy);
+      let depositAmount = historicalDeposit;
+      if (!legacy && (current.reservation.quoteSnapshot as { pricingPolicy?: PricingPolicySnapshot } | null)?.pricingPolicy?.transferFee) {
+        for (const contractId of contractIds) depositAmount += await transferredDepositDelta(tx, current.reservationId, contractId, { returnId: current.id, now });
+        if (depositAmount < 0n) throw new ConflictException('Số dư cọc sau chuyển kho chưa khớp. Cần đối soát.');
+      }
       const lastContract = current.reservation.contracts.every(contract => contract.status !== 'ACTIVE' || contractIds.includes(contract.id));
       const unsettledServices = lastContract ? current.reservation.services.filter(service =>
         service.serviceKindSnapshot === 'RENTAL' && service.fulfillmentStatus !== 'RELEASED'
@@ -292,16 +309,26 @@ export class ReturnsService {
         const invoices = await tx.invoice.findMany({ where: { reservationId: current.reservationId, status: { not: 'VOID' } }, select: returnInvoiceFields, orderBy: { id: 'asc' } });
         const faultReference = observedFault ? approval.facilityFaultReference : null;
         const services = await tx.reservationService.findMany({ where: { reservationId: current.reservationId }, select: { id: true, serviceStartDate: true, serviceEndDate: true, fulfillmentStatus: true } });
-        const plan = planEarlyReturn(invoices, contractIds[0], allContractIds, cutoff, Boolean(faultReference), services);
+        const protectedReturn = current.inspections.some(inspection => protectedFacilityReturn(inspection.storageUnit.storageType.facility));
+        const plan = planEarlyReturn(invoices, contractIds[0], allContractIds, cutoff, Boolean(faultReference), services, protectedReturn);
         const undelivered = unsettledServices.filter(service => service.serviceKindSnapshot === 'PURCHASE');
         if (undelivered.some(service => plan.reduce((amount, entry) => amount + (entry.solo
           ? BigInt(entry.breakdown?.sharedServices.find(line => line.id === service.id && line.billingUnit === 'ONE_TIME')?.amount ?? 0) : 0n), 0n) !== service.amountSnapshot))
           throw new ConflictException('Hóa đơn sản phẩm chưa bàn giao cần được đối soát đầy đủ trước khi giải phóng số lượng đã giữ.');
         const summary = summarizeEarlyReturn(plan, businessDate(now));
-        const refundSources = await applyEarlyReturn(tx, plan, contractIds[0], current.returnCode, now);
+        const refundSources = await applyEarlyReturn(tx, plan, contractIds[0], current.returnCode, now, current.id);
         closeout = { ...approval, ...summary, supportRequestId: approval.supportRequestId ?? null, depositAmount: Number(depositAmount), refundSources, agreementReference: approval.agreementReference ?? null,
           facilityFaultReference: faultReference ?? null, accessRevoked: true, appliedAt: now.toISOString(), appliedBy: actor.id };
       }
+      const overdueContracts = current.reservation.contracts.filter(contract => contractIds.includes(contract.id));
+      const relocation = current.inspections.some(inspection => protectedFacilityReturn(inspection.storageUnit.storageType.facility));
+      const faultObserved = current.inspections.some(inspection => inspection.issueType === 'FACILITY_FAULT');
+      const overdueDecision = current.overdueSettlement as { decisionBy?: string } | null;
+      if (!relocation && faultObserved && !overdueDecision?.decisionBy && overdueContracts.some(contract => calculateOccupiedOverdue(contract, current.reservation.quoteSnapshot, current.reservation.renewals, businessToday(now)))) {
+        throw new ConflictException('Quản lý cần xác minh lỗi cơ sở để quyết định phí quá hạn trước khi chốt hồ sơ.');
+      }
+      const overdueSettlement = await applyOccupiedOverdue(tx, current, overdueContracts, current.reservation.quoteSnapshot,
+        current.reservation.renewals, actor.id, now, input, relocation, current.inspections[0]?.storageUnit.storageType.facility?.id);
       if (unsettledServices.length) await tx.reservationService.updateMany({ where: { id: { in: unsettledServices.map(service => service.id) } }, data: { fulfillmentStatus: 'RELEASED' } });
       const contracts = await tx.rentalContract.updateMany({
         where: { id: { in: current.inspections.map((inspection) => inspection.rentalContractId) }, reservationId: current.reservationId, status: 'ACTIVE' },
@@ -368,6 +395,8 @@ export class ReturnsService {
       const allPass = issueUnitIds.length === 0;
       const autoSettled = allPass && depositAmount === 0n;
       const returnComplete = autoSettled && !closeout;
+      const refundDueOn = depositAmount > 0n ? businessToday(now) : null;
+      if (refundDueOn) refundDueOn.setUTCDate(refundDueOn.getUTCDate() + DEPOSIT_REFUND_DAYS);
       await tx.depositSettlement.create({
         data: {
           settlementCode: `${current.returnCode}-DS01`,
@@ -378,6 +407,7 @@ export class ReturnsService {
           deductionAmount: 0n,
           refundAmount: allPass ? depositAmount : 0n,
           outstandingAmount: 0n,
+          ...(refundDueOn ? { refundDueOn, refundPolicyVersion: 0 } : {}),
           ...(autoSettled ? { settledByUserId: actor.id, settledAt: now } : {}),
         },
       });
@@ -388,6 +418,7 @@ export class ReturnsService {
           physicallyReturnedAt: now,
           physicallyReturnedById: actor.id,
           ...(closeout ? { earlyReturnCloseout: closeout } : {}),
+          ...(overdueSettlement ? { overdueSettlement } : {}),
           ...(returnComplete ? { completedAt: now, completedByUserId: actor.id, activeKey: null } : {}),
         },
         include: this.include(),
@@ -456,6 +487,16 @@ export class ReturnsService {
       if (!record) throw new NotFoundException('Không tìm thấy hồ sơ trả kho.');
       await assertTaskFacility(tx,actor,{returnRequestId:record.id});
       const review = this.closeoutForReturn(record);
+      const ids = record.inspections.map(item => item.rentalContractId);
+      const overdue = record.reservation.contracts.some(contract => ids.includes(contract.id) &&
+        calculateOccupiedOverdue(contract, record.reservation.quoteSnapshot, record.reservation.renewals, businessToday()));
+      if (overdue && !record.physicallyReturnedAt && record.inspections.some(inspection => inspection.issueType === 'FACILITY_FAULT')) {
+        const decision = { waived: input.approved === true, decisionBy: actor.id, reason: reference, decisionAt: new Date().toISOString() };
+        await tx.returnRequest.update({ where: { id }, data: { overdueSettlement: decision } });
+        await tx.auditEvent.create({ data: { action: 'OVERDUE_RETURN_FACILITY_REVIEW', category: 'ACTIVITY', outcome: 'SUCCESS', actorId: actor.id,
+          actorRole: actor.role, resource: 'returns', resourceId: id, method: 'POST', route: '/returns/:id/facility-review', httpStatus: 201, metadata: decision } });
+        return { decision: input.approved ? 'APPROVED' : 'REJECTED' };
+      }
       if (review?.policy !== PERIOD_CLOSEOUT || record.physicallyReturnedAt || !record.inspections.some(inspection => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT')) {
         throw new ConflictException('Cần kết quả kiểm tra lỗi cơ sở trước khi xác minh và trước khi bàn giao.');
       }
@@ -550,7 +591,8 @@ export class ReturnsService {
     if (!returned?.physicallyReturnedAt && targets.length === 1 && hasStartedUnissuedRenewal(reservation.renewals ?? [], targets[0].id, asOf)) {
       estimateIssue = 'Có kỳ gia hạn chưa lập hóa đơn tại ngày dự kiến. Số tiền sẽ được chốt khi nhận lại kho.';
     } else if (!returned?.physicallyReturnedAt && targets.length === 1) {
-      try { estimate = summarizeEarlyReturn(planEarlyReturn(invoices, targets[0].id, contractIds, asOf, false, reservation.services), this.isoDate(asOf)!); }
+      const facility = targets[0].reservationUnit.storageUnit.storageType?.facility;
+      try { estimate = summarizeEarlyReturn(planEarlyReturn(invoices, targets[0].id, contractIds, asOf, false, reservation.services, protectedFacilityReturn(facility)), this.isoDate(asOf)!); }
       catch (error) { if (!(error instanceof ConflictException)) throw error; estimateIssue = error.message; }
     }
     const resolutionNote = request.lastAction === 'EARLY_RETURN_APPROVED'
@@ -575,8 +617,12 @@ export class ReturnsService {
       financialSummary: { outstandingAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.balanceDue), 0), paidAmount: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.amountPaid), 0), invoicedDeposit: invoices.reduce((sum: number, invoice: any) => sum + Number(invoice.depositAmount), 0) } };
   }
 
+  private hasSignedReturnPolicy(quote: unknown) {
+    return Boolean((quote as { pricingPolicy?: PricingPolicySnapshot } | null)?.pricingPolicy?.earlyReturn);
+  }
+
   private assertReturnEligible(reservation: (ReturnRental & {
-    customerId: string; invoices: Prisma.InvoiceGetPayload<{ select: typeof returnInvoiceFields }>[];
+    customerId: string; quoteSnapshot: unknown; invoices: Prisma.InvoiceGetPayload<{ select: typeof returnInvoiceFields }>[];
     supportRequests?: ReturnApproval[];
     renewals: Parameters<typeof hasUnissuedRenewalInstallments>[0];
   }) | null, customerId: string, now: Date, contractRef: string | null) {
@@ -591,7 +637,9 @@ export class ReturnsService {
     if (early && !closeout) throw new ConflictException({ code: 'EARLY_RETURN_APPROVAL_REQUIRED', message: 'Quản lý cần chấp thuận đề nghị trả kho trước hạn.' });
     this.assertRenewalsSettled(reservation.renewals, [target.id], Boolean(closeout));
     const allContractIds = reservation.contracts.map(contract => contract.id);
-    if (!closeout) this.assertDebt(reservation.invoices, [target.id], allContractIds, true);
+    if (this.hasSignedReturnPolicy(reservation.quoteSnapshot)) {
+      contractDeposit(reservation.invoices, [target.id], allContractIds, reservation.quoteSnapshot, false);
+    } else if (!closeout) this.assertDebt(reservation.invoices, [target.id], allContractIds, true);
     return { endDate, contractId: target.id, unitIds: [target.reservationUnit.storageUnitId], closeout };
   }
 
@@ -659,7 +707,9 @@ export class ReturnsService {
     return {
       invoices: { where: { status: { not: 'VOID' as const } }, select: returnInvoiceFields },
       units: { where: { releasedAt: null }, include: { storageUnit: true } },
-      contracts: { include: { reservationUnit: { include: { storageUnit: true } } }, orderBy: { contractCode: 'asc' as const } },
+      contracts: { include: { reservationUnit: { include: { storageUnit: { include: { storageType: { select: {
+        facility: { select: { operationalStatus: true, closureMode: true } },
+      } } } } } } }, orderBy: { contractCode: 'asc' as const } },
       renewals: { where: { status: { not: 'REJECTED' as const } }, select: {
         rentalContractId: true, status: true, termMonths: true, paymentPlan: true, previousEndDate: true,
         invoices: { select: { renewalCycle: true, status: true } },
@@ -703,6 +753,7 @@ export class ReturnsService {
         contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } } } } }, orderBy: { contractCode: 'asc' as const } },
         invoices: { where: { status: { not: 'VOID' as const } }, select: returnInvoiceFields, orderBy: { issuedAt: 'asc' as const } },
         renewals: { select: { id: true, renewalCode: true, rentalContractId: true, status: true, previousEndDate: true, requestedEndDate: true,
+          quoteSnapshot: true, appendixAcceptedAt: true,
           termMonths: true, paymentPlan: true, invoices: { select: { renewalCycle: true, status: true } },
         }, orderBy: { createdAt: 'desc' as const } },
       } },
@@ -779,14 +830,27 @@ export class ReturnsService {
       : contractReturnReadiness(record.reservation.invoices, ids, allIds);
     const closeout = this.closeoutForReturn(record);
     const periodCloseout = closeout?.policy === PERIOD_CLOSEOUT;
-    const facilityFaultReviewRequired = periodCloseout && !record.physicallyReturnedAt && closeout.reason === 'FACILITY_ISSUE'
+    const overdue = !record.physicallyReturnedAt && !record.inspections.some((inspection: any) => protectedFacilityReturn(inspection.storageUnit.storageType?.facility)) &&
+      record.reservation.contracts.some((contract: Parameters<typeof calculateOccupiedOverdue>[0]) => ids.includes(contract.id) &&
+      calculateOccupiedOverdue(contract, record.reservation.quoteSnapshot, record.reservation.renewals, businessToday()));
+    const overdueReview = overdue && !record.overdueSettlement?.decisionBy &&
+      record.inspections.some((inspection: { issueType?: string | null }) => inspection.issueType === 'FACILITY_FAULT');
+    const earlyFaultReview = periodCloseout && !record.physicallyReturnedAt && closeout.reason === 'FACILITY_ISSUE'
       && !closeout.facilityFaultReference && !closeout.facilityFaultDecision
       && record.inspections.some((inspection: { result: string; issueType?: string | null }) => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT');
+    const facilityFaultReviewRequired = overdueReview || earlyFaultReview;
     const awaitingRenewalInvoices = !periodCloseout && !record.physicallyReturnedAt && hasUnissuedRenewalInstallments(record.reservation.renewals, ids);
-    const readiness = { ...debt, policy: periodCloseout ? PERIOD_CLOSEOUT : debt.policy, requiresFullSettlement: !periodCloseout, awaitingRenewalInvoices, canReturn: periodCloseout ? !facilityFaultReviewRequired : debt.canReturn && !awaitingRenewalInvoices };
+    const requiresFullSettlement = !periodCloseout && (wholeOrder || !this.hasSignedReturnPolicy(record.reservation.quoteSnapshot));
+    const readiness = { ...debt, policy: periodCloseout ? PERIOD_CLOSEOUT : debt.policy, requiresFullSettlement, awaitingRenewalInvoices,
+      canReturn: !facilityFaultReviewRequired && !awaitingRenewalInvoices && (!requiresFullSettlement || debt.canReturn) };
     const facility = record.inspections[0]?.storageUnit.storageType?.facility ?? record.reservation.facility;
     const base = {
       id: record.id,
+      overdueReturnDateRequired: Boolean(overdue),
+      ...(mode === 'FACILITY_MANAGER' ? { overdueFacilityReview: Boolean(overdueReview), overdueSettlement: record.overdueSettlement ?? null } :
+        mode === 'STORAGE_CUSTOMER' && record.overdueSettlement?.physicalReturnDate ? { overdueSettlement: {
+          amount: record.overdueSettlement.amount, physicalReturnDate: record.overdueSettlement.physicalReturnDate,
+        } } : {}),
       rentalContractId: ids.length === 1 ? ids[0] : null,
       timing: businessDate(record.requestedAt) < this.isoDate(effectiveEndDate)! ? 'EARLY' : 'ON_OR_AFTER_END',
       ...(mode === 'FACILITY_STAFF' ? {} : { remainingUnitCount: record.reservation.contracts.filter((contract: ReturnContract) => !ids.includes(contract.id) && contract.status === 'ACTIVE' && contract.reservationUnit.releasedAt === null).length }),
@@ -796,7 +860,7 @@ export class ReturnsService {
         blockingReasons: [
           ...(facilityFaultReviewRequired ? ['Chờ quản lý xác minh lỗi cơ sở.'] : []),
           ...(awaitingRenewalInvoices ? ['Chờ phát hành hóa đơn gia hạn liên quan.'] : []),
-          ...(!periodCloseout && !debt.canReturn ? [debt.totalOutstanding === null
+          ...(requiresFullSettlement && !debt.canReturn ? [debt.totalOutstanding === null
             ? 'Chờ quản lý đối soát các hóa đơn liên quan.' : 'Hóa đơn liên quan chưa được thanh toán đủ.'] : []),
         ],
       } : readiness,
@@ -806,6 +870,7 @@ export class ReturnsService {
         effectiveDate: closeout.effectiveDate, appliedAt: closeout.appliedAt, outstandingAmount: closeout.outstandingAmount,
         waivedAmount: closeout.waivedAmount, refundAmount: closeout.refundAmount, facilityFaultCredit: closeout.facilityFaultCredit,
         rentalAmount: closeout.rentalAmount, serviceAmount: closeout.serviceAmount, penaltyAmount: closeout.penaltyAmount,
+        additionalCharge: closeout.additionalCharge ?? 0,
       },
       rentRefund: mode === 'FACILITY_STAFF' || !record.physicallyReturnedAt ? null : rentRefundView(record),
       ...(mode !== 'STORAGE_CUSTOMER' && facility ? { facility:{id:facility.id,name:facility.name}, relocationSafetyRequired:facility.operationalStatus==='CLOSING' && facility.closureMode==='REQUIRED_RELOCATION', relocationSafetyConfirmed:!!facility.closurePlanId && this.authorizedClosurePlan(record)===facility.closurePlanId } : {}),

@@ -36,6 +36,27 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const primary=confirmed&&ready&&!expired?(flow.unsigned?{title:'Xem hợp đồng',path:'/customer/contracts?reservationId='+encodeURIComponent(text(row??{},'id')||id)}:flow.next):undefined;
   const [cancelOpen,setCancelOpen]=useState(false), [cancelBusy,setCancelBusy]=useState(false), [cancelError,setCancelError]=useState(''), [cancelled,setCancelled]=useState(false);
   const cancelLock=useRef(false);
+  const [paidQuote, setPaidQuote] = useState<Row>();
+  const cancellation = object(row?.paidCancellation);
+  const paidPath = '/reservations/' + encodeURIComponent(id) + '/paid-cancellation';
+  const paidEligible = confirmed && !cancellation.state && bills.some(item => item.type === 'INITIAL' && item.status === 'PAID') &&
+    documents.length > 0 && documents.every(item => item.status === 'READY_FOR_HANDOVER') && Boolean(object(quotePolicy(row)).cancellation);
+  async function paidAction(send: boolean) {
+    if (cancelLock.current) return;
+    cancelLock.current = true;
+    setCancelBusy(true);
+    setCancelError('');
+    try {
+      const response = await apiRequest<Row>(paidPath, send ? { method: 'POST', body: JSON.stringify({
+        action: 'REQUEST', confirmed: true, confirmation: paidQuote?.confirmation,
+      }) } : {});
+      if (response.state === 'QUOTE') setPaidQuote(object(response.quote));
+      else { setPaidQuote(undefined); source.refresh(); }
+    } catch (error) {
+      if (send) setPaidQuote(undefined);
+      setCancelError(error instanceof Error ? error.message : 'Không thể tải hồ sơ hủy đơn.');
+    } finally { setCancelBusy(false); cancelLock.current = false; }
+  }
   const canCancel=ready && !cancelled && (row?.status==='PENDING' || confirmed) &&
     documents.every(item=>item.status==='PENDING_PAYMENT'&&!text(item,'terms.acceptedAt')) &&
     bills.every(item=>!['PAID','PARTIALLY_PAID'].includes(String(item.status)) && !pendingIds.has(idOf(item)) && Number(item.amountPaid ?? 0)===0) &&
@@ -102,6 +123,21 @@ export function CustomerBookingDetail({id}:{id:string}) {
           <Text accessibilityRole="header" style={s.section}>Chi phí đơn đặt</Text>
           <CustomerInfoGrid values={charges} />
         </View>}
+        {(paidEligible || Boolean(cancellation.state)) && <View style={{gap: 8, padding: 12, borderWidth: 1, borderColor: C.divider, borderRadius: 12}}>
+          <Text style={s.section}>Hủy đơn đã thanh toán</Text>
+          {cancellation.state ? <Text style={s.body}>{({ REQUESTED: 'Đang chờ quản lý xử lý', REFUND_PENDING: 'Đã hủy, chờ hoàn tiền', REFUNDED: 'Đã hoàn tiền', COMPLETED: 'Đã hủy đơn', REJECTED: 'Yêu cầu bị từ chối' })[String(cancellation.state)]}
+            {typeof cancellation.total === 'number' ? ' · ' + bookingAmount(cancellation.total) : ''}
+            {typeof cancellation.refundDueOn === 'string' ? ' · Hạn ' + formatDate(cancellation.refundDueOn) : ''}</Text> : null}
+          {paidQuote ? <>
+            <CustomerInfoGrid values={[[`Tiền thuê hoàn (${paidQuote.percent}%)`, bookingAmount(paidQuote.rent)], ['Hoàn tiền cọc', bookingAmount(paidQuote.deposit)],
+              ...rows(paidQuote.services).map(item => [text(item, 'name'), bookingAmount(item.amount)] as [string, string]), ['Tổng dự kiến hoàn', bookingAmount(paidQuote.total)]]} />
+            {paidQuote.requiresRecovery === true && <Text style={s.secondary}>Nhân viên sẽ đối chiếu kho và thu hồi chìa khóa, thẻ, thiết bị trước khi quản lý duyệt.</Text>}
+            <Pressable accessibilityRole="button" disabled={cancelBusy} onPress={() => void paidAction(true)}><Text style={s.body}>Xác nhận gửi yêu cầu hủy</Text></Pressable>
+          </> : paidEligible && <Pressable accessibilityRole="button" disabled={cancelBusy} onPress={() => void paidAction(false)}><Text style={s.body}>{cancelBusy ? 'Đang tải…' : 'Xem khoản hoàn trước khi hủy'}</Text></Pressable>}
+          {cancelError && paidEligible ? <Text accessibilityRole="alert" style={s.secondary}>{cancelError}</Text> : null}
+        </View>}
+        {confirmed && !cancellation.state && bills.some(item => item.type === 'INITIAL' && item.status === 'PARTIALLY_PAID') &&
+          <CustomerActionRow title="Yêu cầu đối soát để hủy đơn" path={'/customer/support-requests/new?reservationId=' + encodeURIComponent(id)} />}
         {confirmed&&sources.slice(1).some(item=>item.loading)&&<LoadingState layout="compact"/>}
         {sources.slice(1).filter(item=>item.error).map((item,index)=><ErrorState key={index} message={item.error!} onRetry={item.refresh}/>)}
         {confirmed && status==='CONFIRMED' ? <Text style={s.section}>Các bước cần hoàn tất</Text> : null}
@@ -141,3 +177,5 @@ export function CustomerBookingDetail({id}:{id:string}) {
     </Modal>
   </View>;
 }
+
+function quotePolicy(row?: Row) { return object(row?.quote).pricingPolicy; }

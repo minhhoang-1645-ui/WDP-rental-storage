@@ -25,7 +25,7 @@ function setup() {
     facility: { findUniqueOrThrow: vi.fn().mockResolvedValue(sourceFacility) },
     transferRequest: { findUnique: vi.fn().mockResolvedValue(row), update: vi.fn(async ({ data }) => Object.assign(row, data)) },
     storageUnit: { findUnique: vi.fn(async ({ where }) => where.id === source.id ? source : destination), update: vi.fn() },
-    rentalContract: { update: vi.fn() }, reservationUnit: { update: vi.fn() },
+    rentalContract: { update: vi.fn() }, reservationUnit: { update: vi.fn() }, invoice: { create: vi.fn() },
     maintenanceRequest: { count: vi.fn().mockResolvedValue(0) }, reservationService: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
     supportRequest: { update: vi.fn() }, auditEvent: { create: vi.fn() },
   };
@@ -54,6 +54,7 @@ describe('Closure relocation handover', () => {
     await service.handover(row.id, receivingStaff, handover('destination'));
     expect(tx.rentalContract.update).toHaveBeenCalledExactlyOnceWith({ where: { id: row.rentalContractId }, data: { reservationUnitId: 'new-allocation' } });
     expect(row.status).toBe('COMPLETED');
+    expect(tx.invoice.create).not.toHaveBeenCalled();
     await service.handover(row.id, receivingStaff, handover('destination'));
     expect(tx.rentalContract.update).toHaveBeenCalledTimes(1);
   });

@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { PublicUser } from '../auth/auth.types.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -13,6 +13,7 @@ import { ReturnsService } from '../returns/returns.service.js';
 import { SupportService } from '../support/support.service.js';
 import { TransfersService } from '../transfers/transfers.service.js';
 import type { NotificationData, NotificationRow } from './notification-content.js';
+import { ActiveRentalsService } from '../rentals-active/active-rentals.service.js';
 
 type Query = { page: number; limit: number };
 type Page = { items: readonly object[]; total: number; limit: number };
@@ -45,6 +46,7 @@ export class NotificationSources {
     private readonly returns: ReturnsService,
     private readonly support: SupportService,
     private readonly transfers: TransfersService,
+    @Optional() private readonly activeRentals?: ActiveRentalsService,
   ) {}
 
   private sources(actor: PublicUser): Record<string, Source> {
@@ -76,9 +78,20 @@ export class NotificationSources {
     };
     return {
       ...operational,
+      ...(this.activeRentals ? { 'rental-overdue': async (q: Query) => {
+        const page = await this.activeRentals!.listManagerRentals(q, actor);
+        return { ...page, items: page.items.flatMap(row => (row.contracts as NotificationRow[])
+          .filter(contract => (contract.overdueOccupancy as { managerReview?: boolean } | null)?.managerReview === true)
+          .map(contract => ({ id: contract.id, contractCode: contract.contractCode, overdueOccupancy: contract.overdueOccupancy, reservationId: row.reservationId }))) };
+      } } : {}),
       'catalog-changes': q => this.audit.catalogNotices(actor, q),
+      'price-range-changes': q => this.audit.priceRangeNotices(actor, q),
       'facility-lifecycle': q => this.audit.facilityLifecycleNotices(actor, q),
       returns: q => this.returns.listManagerReturns(q,actor),
+      reservations: async q => {
+        const page = await this.booking.listManagerReservations(q.page, q.limit, actor);
+        return { ...page, items: page.items.filter(item => 'paidCancellation' in item && item.paidCancellation) };
+      },
       maintenance: q => this.maintenance.listManager(q,actor),
       'support-requests': q => this.support.listManager(q,actor),
       transfers: q => this.transfers.list(q,actor),

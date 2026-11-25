@@ -8,7 +8,8 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { roleNamespace,userRoles } from '../../role-names.js';
 import { assertFacility, assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
 import { assertAcceptingBookings, assertFacilityAllowsRenewal } from '../facilities/facility-booking.js';
-import { assertMonthlyRange, OperationsService } from './operations.service.js';
+import { OperationsService } from './operations.service.js';
+import { assertListedPrice, resolveMonthlyRange } from '../pricing/monthly-price-range.js';
 import { BusinessPolicyService } from '../policies/business-policy.service.js';
 const actor=(role:PublicUser['role']):PublicUser=>({id:'u',fullName:'User',email:'u@example.test',phone:'',role});
 describe('five role namespaces',()=>{
@@ -43,10 +44,20 @@ it('booking checks facility state without changing existing contracts',async()=>
  db.facility.findUnique.mockResolvedValue({bookingEnabled:false,operationalStatus:'CLOSING'});
  await expect(assertFacilityAllowsRenewal(db as never,'A')).rejects.toThrow('không nhận yêu cầu gia hạn');
 });
-it('type range takes precedence over facility range and cannot change historic amounts',async()=>{
- const db={businessRule:{findMany:vi.fn().mockResolvedValue([{storageTypeId:null,value:{min:10,max:100},version:9},{storageTypeId:'T',value:{min:20,max:30},version:1}])}};
- await expect(assertMonthlyRange(db as never,'A','T',40)).rejects.toThrow('khung');
- await expect(assertMonthlyRange(db as never,'A','T',25)).resolves.toBeUndefined();
+it('resolves a group only within its facility and switches versions at the effective instant',async()=>{
+ const start = new Date('2026-11-25T08:00:00Z');
+ const findFirst = vi.fn(async ({where}) => where.facilityId === 'B' ? { value: { min: 60, max: 60 } }
+  : where.effectiveFrom.lte < start ? { value: { min: 20, max: 30 } } : { value: { min: 40, max: 60 } });
+ const db={businessRule:{findFirst}};
+ await expect(resolveMonthlyRange(db as never,'A','small', new Date(+start - 1))).resolves.toEqual({ min: 20, max: 30 });
+ await expect(resolveMonthlyRange(db as never,'A','small', start)).resolves.toEqual({ min: 40, max: 60 });
+ await expect(resolveMonthlyRange(db as never,'B','small', start)).resolves.toEqual({ min: 60, max: 60 });
+ expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({where: expect.objectContaining({ key: 'monthlyPriceRange:small', storageTypeId: null, OR: [{effectiveTo:null},{effectiveTo:{gt:start}}] })}));
+ findFirst.mockResolvedValue({value:{min:20,max:30}});
+ await expect(assertListedPrice(db as never,{facilityId:'A',sizeId:'small',monthlyRate:20})).resolves.toBeUndefined();
+ await expect(assertListedPrice(db as never,{facilityId:'A',sizeId:'small',monthlyRate:30})).resolves.toBeUndefined();
+ await expect(assertListedPrice(db as never,{facilityId:'A',sizeId:'small',monthlyRate:40})).rejects.toThrow('chưa nhận giao dịch');
+ await expect(assertListedPrice(db as never,{facilityId:'A',sizeId:'small',monthlyRate:20,bookingEnabled:false})).rejects.toThrow('chưa nhận giao dịch');
 });
 it('policy version conflicts do not mutate history',async()=>{
  const tx={user:{findFirst:vi.fn().mockResolvedValue({id:'u'})},$queryRawUnsafe:vi.fn(),businessPolicy:{findUnique:vi.fn().mockResolvedValue(null)},businessRule:{findFirst:vi.fn().mockResolvedValue({createdAt:new Date('2026-01-01'),version:1}),create:vi.fn(),update:vi.fn()}};
@@ -54,6 +65,41 @@ it('policy version conflicts do not mutate history',async()=>{
  const policy=new BusinessPolicyService(db as unknown as PrismaService);
  await expect(policy.save('reservationHoldMinutes',{value:60,expectedUpdatedAt:null},actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('vừa thay đổi');
  expect(tx.businessRule.create).not.toHaveBeenCalled();expect(tx.businessRule.update).not.toHaveBeenCalled();
+});
+it('publishes one future facility-group version and records a scoped notification event', async () => {
+ const active = { id: 'old', version: 3, value: { min: 20, max: 30 }, effectiveFrom: new Date('2000-01-01Z') };
+ const tx = {
+  user: { findFirst: vi.fn().mockResolvedValue({id:'u'}) }, $queryRawUnsafe: vi.fn(),
+  facility: { findUnique: vi.fn().mockResolvedValue({ name: 'Cơ sở A' }) },
+  businessRule: { findFirst: vi.fn().mockResolvedValue(active), update: vi.fn(), create: vi.fn(async ({data}) => data) },
+  storageType: { findMany: vi.fn().mockResolvedValue([{ name: 'Kho 2m²', monthlyRate: 25 }, { name: 'Kho 3m²', monthlyRate: 35 }]) },
+  auditEvent: { create: vi.fn() },
+ };
+ const db={$transaction:async(fn:(t:unknown)=>unknown)=>fn(tx)};
+ const service = new OperationsService(db as never);
+ const effective = new Date(Date.now() + 10 * 60_000).toISOString();
+ const input = { facilityId: 'A', sizeId: 'small', min: 35, max: 35, expectedVersion: 3, effectiveFrom: effective };
+ await expect(service.saveRange({ ...input, storageTypeId: 'legacy' }, actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('không hợp lệ');
+ await expect(service.saveRange(input, actor('FACILITY_MANAGER'))).rejects.toThrow(ForbiddenException);
+ await expect(service.saveRange({ ...input, effectiveFrom: '2026-02-30T10:00:00+07:00' }, actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('không hợp lệ');
+ await expect(service.saveRange({ ...input, expectedVersion: 2 }, actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('đã thay đổi');
+ expect(tx.businessRule.update).not.toHaveBeenCalled();
+ await expect(service.saveRange(input, actor('BUSINESS_OPERATIONS_MANAGER'))).resolves.toMatchObject({ key:'monthlyPriceRange:small', facilityId:'A', version:4 });
+ expect(tx.businessRule.update).toHaveBeenCalledWith({ where:{id:'old'}, data:{effectiveTo:new Date(effective)} });
+ expect(tx.auditEvent.create).toHaveBeenCalledOnce();
+ expect(tx.auditEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+  resourceId: 'A', action: 'PUBLISH_GROUP_PRICE_RANGE', metadata: expect.objectContaining({ facilityName:'Cơ sở A', groupName:'Kho nhỏ',
+   oldRange: {min:20,max:30}, newRange: {min:35,max:35}, affected:['Kho 2m²'], effectiveFrom:effective }),
+ }) });
+ const { buildNotices } = await import('../notifications/notification-content.js');
+ const event = { id:'published', resourceId:'A', createdAt:effective, metadata:tx.auditEvent.create.mock.calls[0][0].data.metadata };
+ expect(buildNotices(actor('FACILITY_MANAGER'), { 'price-range-changes':[event,event] })).toEqual([expect.objectContaining({target:'/manager/catalog?facilityId=A'})]);
+ expect(buildNotices(actor('FACILITY_STAFF'), { 'price-range-changes':[event] })).toEqual([]);
+ const { AuditService } = await import('../audit/audit.service.js');
+ const reads = {user:tx.user, facilityAccess:{findMany:vi.fn().mockResolvedValue([{facilityId:'B'}])},
+  auditEvent:{count:vi.fn().mockResolvedValue(0), findMany:vi.fn().mockResolvedValue([])}};
+ await new AuditService(reads as never).priceRangeNotices(actor('FACILITY_MANAGER'), {page:1,limit:10});
+ expect(reads.auditEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({resourceId:{in:['B']}})}));
 });
 it('only approved policy keys can be saved',async()=>{
  const policy=new BusinessPolicyService({} as PrismaService);
@@ -122,4 +168,44 @@ it('reporting SQL ignores caller-supplied scope and binds database-backed facili
  const sql=query.mock.calls[0][0];
  expect(sql.values).toContain('REAL-A');expect(sql.values).not.toContain('FORGED-B');
  expect(sql.sql).toContain('COALESCE(i."facilityIdSnapshot",r."facilityId") IN');
+});
+it('reports actual booking and transfer refunds in the facility and Vietnam reporting period', async () => {
+ const result = vi.fn().mockResolvedValue({ _sum: {} });
+ const db = {
+  user: { findFirst: vi.fn().mockResolvedValue({ id: 'u' }) },
+  facility: { findMany: vi.fn().mockResolvedValue([{ id: 'A', operationalStatus: 'CLOSED' }]) },
+  storageUnit: { groupBy: vi.fn().mockResolvedValue([{ status: 'OCCUPIED', _count: { _all: 2 } }]) },
+  rentalContract: { count: vi.fn().mockResolvedValue(2) },
+  reservation: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([{ paidCancellation: { quote: { total: 70 } } }]) },
+  invoice: { aggregate: result },
+  payment: { aggregate: vi.fn().mockResolvedValue({ _sum: { amount: 160n } }) },
+  depositSettlement: { aggregate: vi.fn().mockResolvedValue({ _sum: { refundAmount: 25n } }) },
+  returnRequest: { findMany: vi.fn().mockResolvedValue([{ earlyReturnCloseout: { refundAmount: 30 } }]), count: vi.fn().mockResolvedValue(0) },
+  handoverAppointment: { count: vi.fn().mockResolvedValue(0) },
+  supportRequest: { findMany: vi.fn().mockResolvedValue([{ earlyReturnFinancialReview: { refundAmount: '40' } }]) },
+  transferRequest: { findMany: vi.fn().mockResolvedValue([{ commercialSettlement: { refundAmount: 50 } }]) },
+ };
+ const service = new OperationsService(db as never);
+ const query = { facilityId: 'A', from: '2026-11-04', to: '2026-11-04' };
+ const report = await service.performance(query, actor('BUSINESS_OPERATIONS_MANAGER'));
+ const period = [
+  { path: ['refundedAt'], gte: '2026-11-03T17:00:00.000Z' },
+  { path: ['refundedAt'], lt: '2026-11-04T17:00:00.000Z' },
+ ];
+ expect(report.items).toEqual([expect.objectContaining({
+  id: 'A', operationalStatus: 'CLOSED', bookingRefunded: '110', transferRefunded: '50',
+  depositRefunded: '25', rentRefunded: '30', received: '160',
+ })]);
+ expect(db.reservation.findMany).toHaveBeenCalledWith({
+  where: { facilityId: 'A', paidCancellation: { path: ['state'], equals: 'REFUNDED' },
+   AND: period.map(filter => ({ paidCancellation: filter })) },
+  select: { paidCancellation: true },
+ });
+ expect(db.transferRequest.findMany).toHaveBeenCalledWith({
+  where: { status: 'COMPLETED', closurePlanId: null, fromStorageUnit: { storageType: { facilityId: 'A' } },
+   commercialSettlement: { path: ['refundState'], equals: 'REFUNDED' },
+   AND: period.map(filter => ({ commercialSettlement: filter })) },
+  select: { commercialSettlement: true },
+ });
+ expect(result).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { not: 'VOID' } }) }));
 });

@@ -1,5 +1,5 @@
 {
-  "release": "nestbox-facility-closure-relocation-20261124",
+  "release": "nestbox-business-policy-finance-20261125",
   "previousBackend": {
     "branch": "dev",
     "commit": "2388bc5",
@@ -24,7 +24,10 @@
     "20261124000300_auth_session_history",
     "20261124000300_offering_configuration_review",
     "20261124000400_facility_closure_relocation",
-    "20261124000400_live_reservation_unit_uniqueness"
+    "20261124000400_live_reservation_unit_uniqueness",
+    "20261125000100_deposit_refund_deadline",
+    "20261125000200_policy_charge_invoices",
+    "20261125000300_operational_policy_settlements"
   ],
   "migrations": [
     {
@@ -411,6 +414,28 @@
         "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
         "0f4aa6c5fa6a3f0c6e9d23c3ca287374703428c565e823eaa852ff9b50df6477"
       ]
+    },
+    {
+      "name": "20261125000100_deposit_refund_deadline",
+      "checksums": [
+        "7d056e293c11563c3c21fe6dd7e98297818fc4abe809a31e28a59b0dfd849f39",
+        "4117a7798bb27c4d9460d8117515ee2bfe6604fead828006652f51676bc8ca1a"
+      ]
+    },
+    {
+      "name": "20261125000200_policy_charge_invoices",
+      "checksums": [
+        "e89fd94fba48bf03eaabc9609dde6c0058bae44f27c3fc5d8c6ddb4b6fdb7152",
+        "c27c6a20080d8f977c044f052738f80ef661d85a33f37603d3dfedcaa6555679"
+      ]
+    },
+    {
+      "name": "20261125000300_operational_policy_settlements",
+      "checksums": ["543af5c599b4117d624cef7181af17df246eee52f1876770cd0bcd8b6477f3fc", "5bf4670f1ec0726981bf5fb88939d4eb92d3eabd36b706fd1fa723439dfbe7bf"]
+    },
+    {
+      "name": "20261125000400_storage_type_booking_activation",
+      "checksums": ["25e41f3f30f6911ecea90bf6db8c2d0ab1d902895187f0e9812c47a8f005cf4b", "10eb105f5bee9b7efca29dcf8748d146dd23135451f19e1c4b61c708a9ebf434"]
     }
   ],
   "historicalException": {

@@ -13,6 +13,7 @@ import { NotificationSources } from './notification-sources.js';
 import { buildNotices, type NotificationData } from './notification-content.js';
 import { customerMobileNotices } from './notification-mobile-content.js';
 import { AuditService } from '../audit/audit.service.js';
+import { BusinessPolicyService } from '../policies/business-policy.service.js';
 
 const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: id, email: id + '@example.test', phone: '' });
 const staff = actor('staff-a', 'FACILITY_STAFF');
@@ -24,6 +25,36 @@ const accounts = [staff, customer, other, manager, admin];
 const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
 const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
+
+it('shows one customer reminder per rental period using the Vietnam calendar', () => {
+  const row = { id: 'contract-1', customerId: customer.id, contractCode: 'HD1', status: 'ACTIVE', endDate: '2026-11-28', reminderDays: 7 };
+  const data = { 'contract-expiry': [row] };
+  expect(buildNotices(customer, data, Date.parse('2026-11-20T16:59:59Z'))).toEqual([]);
+  const now = Date.parse('2026-11-20T17:00:00Z');
+  const [notice] = buildNotices(customer, data, now);
+  expect(notice).toMatchObject({ title: 'Hợp đồng sắp hết hạn', important: true });
+  expect(customerMobileNotices([notice], data, now)[0].target).toBe('/customer/contracts/contract-1');
+  expect(buildNotices(customer, { 'contract-expiry': [{ ...row, reminderDays: 8 }] }, now)[0].token).toBe(notice.token);
+  expect(buildNotices(customer, data, Date.parse('2026-11-27T17:00:00Z'))).toEqual([]);
+  expect(buildNotices(other, data, now)).toEqual([]);
+});
+
+it('reminds only for a payable invoice within the configured lead period', () => {
+  const now = Date.parse('2026-11-25T17:00:00Z');
+  const row = { id: 'invoice', customerId: customer.id, invoiceCode: 'INV1', status: 'OPEN', balanceDue: 500, dueAt: '2026-11-29', reminderDays: 3 };
+  const data = { 'payment-due-reminder': [row] };
+  const notice = buildNotices(customer, data, now)[0];
+  expect(customerMobileNotices([notice], data, now)[0].target).toBe('/customer/invoices/invoice');
+  expect(buildNotices(customer, { ...data, 'payment-submissions': [{ invoice: { id: 'invoice' }, status: 'PENDING_VERIFICATION' }] }, now)).toEqual([]);
+  expect(buildNotices(customer, { 'payment-due-reminder': [{ ...row, status: 'PAID' }] }, now)).toEqual([]);
+});
+
+it('keeps one overdue refund receipt token through managerial review changes', () => {
+  const row = { id: 'refund', settlementCode: 'DS1', status: 'PENDING_REVIEW', refundDueOn: '2026-11-18', refundOverdue: true };
+  const [notice] = buildNotices(manager, { 'deposit-settlements': [row] });
+  expect(notice).toMatchObject({ title: 'Hồ sơ hoàn cọc quá hạn', at: '2026-11-18T17:00:00.000Z', important: true });
+  expect(buildNotices(manager, { 'deposit-settlements': [{ ...row, status: 'APPROVED' }] })[0].token).toBe(notice.token);
+});
 
 it('queries closure notices by the customer recipient and opens current rentals on mobile', async () => {
   const event = { id: 'closure', createdAt: at, metadata: { status: 'CLOSING', facilityName: 'Cơ sở A', closureReason: 'Lý do nội bộ' } };
@@ -82,6 +113,7 @@ describe('notification HTTP API', () => {
         NotificationsService, AuthGuard, RolesGuard,
         { provide: AuthService, useValue: { getUserByToken: (token: string) => accounts.find(user => user.id === token) } },
         { provide: NotificationSources, useValue: { load: (user: PublicUser) => Promise.resolve(data[user.id]) } },
+        { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7) } },
         { provide: PrismaService, useValue: { notificationReceipt: {
           findMany: ({ where }: { where: { userId: string; token: { in: string[] } } }) =>
             where.token.in.filter(token => receipts.get(where.userId)?.has(token)).map(token => ({ token })),

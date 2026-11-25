@@ -17,6 +17,7 @@ function setup(balance = 0n, endDate = '2030-05-17') {
   };
   const row = { id: 'return', activeKey: 'RETURN:reservation', status: 'INSPECTION_IN_PROGRESS', assignedStaffUserId: staff.id, reservationId: reservation.id, returnCode: 'RETURN', reservation, inspections: [{ id: 'inspection', result: 'PASS', issueType: null, storageUnitId: 'unit', rentalContractId: 'contract', storageUnit: { storageType: { facilityId: 'facility' } } }] };
   const tx = {
+    businessRule: { findFirst: vi.fn().mockResolvedValue(null) },
     $queryRawUnsafe: vi.fn(),
     user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },

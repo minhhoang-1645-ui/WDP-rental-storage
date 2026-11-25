@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { invoiceSigningRequirements } from './payment-eligibility.js';
+import { invoiceSigningRequirements, supportsOnlinePayment } from './payment-eligibility.js';
 
 describe('invoice signing guidance', () => {
   const signed = { id: 'one', contractCode: 'C01', termsAcceptedAt: new Date() };
@@ -20,4 +20,11 @@ describe('invoice signing guidance', () => {
   it('does not require a new signature for recurring or settlement invoices', () => {
     for (const type of ['RECURRING', 'SETTLEMENT']) expect(invoiceSigningRequirements({ type, reservation: { quantity: 1, contracts: [unsigned] } })).toMatchObject({ required: false, complete: true });
   });
+});
+
+it('allows online payment of policy charges with a source while preserving deposit settlement payment rules', () => {
+  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE', sourceInvoiceId: 'base' } })).toBe(true);
+  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PERIOD_CLOSEOUT_V1', returnRequestId: 'return' } })).toBe(true);
+  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE' } })).toBe(false);
+  expect(supportsOnlinePayment({ type: 'SETTLEMENT', depositSettlementId: 'deposit' })).toBe(false);
 });

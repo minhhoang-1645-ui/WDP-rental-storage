@@ -156,6 +156,9 @@ function SettlementDetails({ row }: { row: Row }) {
       <Fact title="Tiền cọc đã nộp" value={currency(row.depositAmount)} />
       <Fact title="Các khoản khấu trừ" value={approved ? currency(row.deductionAmount) : 'Chờ đối chiếu'} />
       <Fact title="Số tiền được hoàn" value={refundAmount} highlight={approved} />
+      {text(row, 'refundDueOn') && row.status !== 'SETTLED' && row.status !== 'AWAITING_OUTSTANDING_PAYMENT' &&
+        <Fact title="Hạn xử lý hoàn cọc" value={formatDate(text(row, 'refundDueOn'))} />}
+      {row.refundOverdue === true && <Notice>Hồ sơ đã quá hạn xử lý. Bạn có thể theo dõi tình trạng hoàn cọc tại đây.</Notice>}
       {payable !== undefined && payable > 0 && <Fact title="Cần thanh toán bổ sung" value={currency(payable)} />}
     </View>
     <View style={s.actions}>

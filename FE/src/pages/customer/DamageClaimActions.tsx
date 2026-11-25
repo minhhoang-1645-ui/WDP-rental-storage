@@ -3,9 +3,12 @@ import { Banknote, ClipboardCheck, UserRoundPlus } from 'lucide-react';
 import { useAuth } from '../../auth/auth-context';
 import { Facts, Modal, Status } from '../../components/manager/PortalUi';
 import { StaffPicker } from '../../components/manager/StaffPicker';
+import { DateTimePicker } from '../../components/workspace/DateTimeFields';
+import { useCurrentTime } from '../../hooks/useCurrentTime';
 import { money } from '../../components/manager/portal-data';
 import { ApiError } from '../../services/api';
 import { mutate } from '../../services/portal';
+import { vietnamLocalSecond } from '../../utils/handover';
 import { claimDate, type Claim, type ClaimRole } from './damage-claims-model';
 
 type Action = 'assign' | 'inspect' | 'decide' | 'notify' | 'resolve' | 'handover' | 'amend-decision' | 'amend-resolution';
@@ -86,6 +89,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
   const [compensate, setCompensate] = useState(false);
   const [amount, setAmount] = useState('');
   const [handedOverAt, setHandedOverAt] = useState('');
+  const handoverClock = useCurrentTime(action === 'handover', 1000);
   const [deliveredBy, setDeliveredBy] = useState(user?.fullName ?? '');
   const [receivedBy, setReceivedBy] = useState(claim.customer?.fullName ?? '');
   const [confirmed, setConfirmed] = useState(false);
@@ -96,6 +100,7 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
   const supportsCompensation = Boolean(claim.compensation);
   const showAmount = decision === 'APPROVED' && supportsCompensation && compensate;
   const approvedAmount = claim.compensation?.approvedCompensationAmount ?? 0;
+  const approvedAt = Date.parse(claim.compensation?.approvedAt ?? '');
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -161,7 +166,9 @@ function ClaimActionDialog({ action, claim, path, saved, reload, close }: Action
         {action === 'handover' && <>
           <div className="claims-fields">
             <label className="field-label">Số tiền đã giao<input readOnly value={money(approvedAmount)} /></label>
-            <label className="field-label">Ngày giờ bàn giao (giờ Việt Nam)<input type="datetime-local" required step={1} value={handedOverAt} onChange={event => { setHandedOverAt(event.target.value); setConfirmed(false); }} /></label>
+            <DateTimePicker label="Ngày giờ bàn giao (giờ Việt Nam)" required withSeconds
+              min={Number.isFinite(approvedAt) ? vietnamLocalSecond(Math.ceil(approvedAt / 1000) * 1000) : undefined}
+              max={vietnamLocalSecond(handoverClock)} onChange={value => { setHandedOverAt(value); setConfirmed(false); }} />
             <label className="field-label">Người giao<input required minLength={2} maxLength={120} value={deliveredBy} onChange={event => { setDeliveredBy(event.target.value); setConfirmed(false); }} /></label>
             <label className="field-label">Người nhận<input required minLength={2} maxLength={120} value={receivedBy} onChange={event => { setReceivedBy(event.target.value); setConfirmed(false); }} /></label>
           </div>

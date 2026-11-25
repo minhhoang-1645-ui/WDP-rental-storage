@@ -17,13 +17,13 @@ export class GuestBookingService {
     const parsed = this.parse(input);
     await this.onboarding.limit('verification-email', parsed.email, 5);
     const key = this.key(keyInput);
+    let record = await this.prisma.guestBookingRequest.findUnique({ where: { idempotencyKey: key }, include: { storageType: true, services: true } });
+    if (record && !this.sameRequest(record, parsed)) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', message: 'Idempotency-Key đã dùng cho yêu cầu khác.' });
+    if (record && record.status !== 'PENDING_VERIFICATION') return this.view(record);
     const availability = await this.booking.checkAvailability({ productId: parsed.storageTypeId, startDate: parsed.startDate, endDate: parsed.endDate, periodMode: 'dates', quantity: parsed.quantity, adjacencyPreference: false, services: parsed.services, addonIds: [], paymentChoice: 'pay-later', paymentPlan: parsed.paymentPlan });
     if (!availability.available) throw new ConflictException({ code: 'REQUESTED_STORAGE_NOT_AVAILABLE', message: availability.message, availability });
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + this.tokenTtlMinutes() * 60_000);
-    let record = await this.prisma.guestBookingRequest.findUnique({ where: { idempotencyKey: key }, include: { storageType: true, services: true } });
-    if (record && !this.sameRequest(record, parsed)) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', message: 'Idempotency-Key đã dùng cho yêu cầu khác.' });
-    if (record && record.status !== 'PENDING_VERIFICATION') return this.view(record);
     if (record) {
       record = await this.prisma.guestBookingRequest.update({ where: { id: record.id }, data: { claimTokenHash: this.hash(token), claimTokenExpiresAt: expiresAt }, include: { storageType: true, services: true } });
     } else {

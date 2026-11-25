@@ -100,6 +100,7 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
   const action = mode === 'normal' ? normal : early;
   const newPolicy = contract && text(contract, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1';
   const estimate = object(contract?.earlyReturnEstimate);
+  const overdue = object(contract?.overdueOccupancy);
   const approved = contract && (newPolicy || proposals.some(row => text(row, 'reservation.id') === targetId &&
     (!text(row, 'contract.id') || text(row, 'contract.id') === contractId) &&
     isCurrentEarlyReturnApproval(row, text(contract, 'endDate'))));
@@ -120,6 +121,9 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
       selected={idOf(row) === contractId} onPress={() => { setSelectedContract(idOf(row)); setEditing(false); }} />)}
     {contract && <View style={[s.card, s.selected]}><Box size={22} color={blue} /><View style={s.grow}><Text style={s.title}>{text(contract, 'unit.unitCode') || title(item)}</Text>
       <Text style={s.muted}>Hết hạn thuê: {formatDate(text(contract, 'endDate'))}</Text></View></View>}
+    {typeof overdue.days === 'number' && <JourneyNotice title={`Quá hạn trả kho ${overdue.days} ngày`}
+      message={overdue.withinGrace === true ? 'Đang trong thời gian ân hạn. Bạn vẫn có thể yêu cầu trả kho.'
+        : `Phí sử dụng đến hôm nay dự kiến ${formatMoney(Number(overdue.estimatedAmount))}. Số chính thức tính đến ngày nhận kho thực tế.`} />}
     {fromApproval ? <JourneyNotice title={approved ? 'Đề nghị trả trước hạn đã được duyệt' : 'Đề nghị trả trước hạn'}
       message={normal ? 'Gửi yêu cầu để NestBox kiểm tra và tiếp nhận bàn giao. Tiền thuê được chốt khi nhận lại kho.' : blockedMessage} /> : <View style={s.options}>
       <Choice title="Đúng hạn" selected={mode === 'normal'} onPress={() => { setMode('normal'); setEditing(false); }} />
@@ -127,6 +131,8 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
     </View>}
     <JourneyNotice title="Trước khi bàn giao" message={earlyJourney ? 'Lấy hết hàng và chuẩn bị chìa khóa hoặc thẻ. Các kỳ chưa bắt đầu được miễn sau khi bàn giao kho.' : 'Kiểm tra công nợ, lấy hết hàng và chuẩn bị chìa khóa hoặc thẻ để bàn giao cho nhân viên.'} />
     {mode === 'normal' && typeof debt === 'number' && Number.isFinite(debt) && debt > 0 ? <Text style={s.muted}>{earlyJourney ? 'Nếu trả hôm nay, còn phải thanh toán ' : 'Còn phải thanh toán '}{formatMoney(debt)}.</Text> : null}
+    {(mode === 'early' || earlyJourney) && Number(estimate.penaltyAmount) > 0 && <Text style={s.muted}>Phí trả kho trước hạn dự kiến · {formatMoney(Number(estimate.penaltyAmount))}</Text>}
+    {(mode === 'early' || earlyJourney) && Number(estimate.refundAmount) > 0 && <Text style={s.muted}>Tiền thuê và dịch vụ hoàn dự kiến · {formatMoney(Number(estimate.refundAmount))}</Text>}
     <Navigation compact title="Xem hóa đơn" path="/customer/invoices" />
     <Navigation compact title="Tiền cọc" path="/customer/deposit-settlements" />
     {fromApproval && !normal && <Button title="Làm mới hồ sơ" variant="secondary" onPress={refresh} />}
@@ -147,6 +153,7 @@ function ReturnDetail({ row }: { row: Row }) {
   const complete = returnStatus(row) === 'Đã bàn giao';
   const closeout = object(row.earlyReturnCloseout);
   const refund = object(row.rentRefund);
+  const overdue = object(row.overdueSettlement);
   const steps = [
     ['Đã gửi yêu cầu', text(row, 'requestedAt')],
     ['Bắt đầu kiểm tra', text(row, 'inspectionStartedAt')],
@@ -166,7 +173,14 @@ function ReturnDetail({ row }: { row: Row }) {
       <Text style={s.muted}>{typeof closeout.outstandingAmount === 'number' ? 'Còn phải trả khi bàn giao · ' + formatMoney(closeout.outstandingAmount) : 'Cần đối soát số dư hóa đơn chung'}</Text>
       <Text style={s.muted}>Hóa đơn được giảm · {formatMoney(Number(closeout.waivedAmount))}</Text>
       {Number(closeout.refundAmount) > 0 && <Text style={s.muted}>{refund.refundedAt ? 'Đã chuyển tiền hoàn' : refund.approvedAt ? 'Đã duyệt, chờ chuyển tiền' : 'Tiền thuê dự kiến hoàn'} · {formatMoney(Number(closeout.refundAmount))}</Text>}
+      {Number(closeout.penaltyAmount) > 0 && <Text style={s.muted}>Phí trả kho trước hạn · {formatMoney(Number(closeout.penaltyAmount))}</Text>}
+      {Number(closeout.additionalCharge) > 0 && <Text style={s.muted}>Khoản quyết toán trên hóa đơn · {formatMoney(Number(closeout.additionalCharge))}</Text>}
       {text(refund, 'refundedAt') ? <Text style={s.muted}>{formatDate(text(refund, 'refundedAt'), true)} · {text(refund, 'reference')}</Text> : null}
+    </View></View>}
+    {typeof overdue.amount === 'number' && <View style={s.card}><View style={s.grow}>
+      <Text style={s.title}>Phí sử dụng kho quá hạn</Text>
+      <Text style={s.muted}>Ngày nhận kho thực tế · {formatDate(text(overdue, 'physicalReturnDate'))}</Text>
+      <Text style={s.muted}>{formatMoney(overdue.amount)}</Text>
     </View></View>}
     {Boolean(closeout.appliedAt) && <Navigation compact title="Theo dõi quyết toán tiền cọc" path="/customer/deposit-settlements" />}
     {!complete && <JourneyNotice title="Chuẩn bị trước khi bàn giao" message="Lấy hết hàng, chuẩn bị chìa khóa hoặc thẻ và phối hợp với nhân viên kiểm tra kho." />}

@@ -11,6 +11,7 @@ import { BillingService } from './billing.service.js';
 import { VnpayService } from './vnpay.service.js';
 
 import { ONLINE_PAYMENT_TTL_MS } from './online-payment-policy.js';
+import { supportsOnlinePayment } from './payment-eligibility.js';
 
 @Injectable()
 export class OnlinePaymentService {
@@ -43,7 +44,7 @@ export class OnlinePaymentService {
       if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
       await this.billing.assertSignedBeforePayment(tx, invoice);
       assertInvoiceReceivable(invoice);
-      if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
+      if (!supportsOnlinePayment(invoice)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
       if (invoice.status === 'PAID' || invoice.balanceDue <= 0n) throw new ConflictException({ code: 'INVOICE_ALREADY_PAID', message: 'Hóa đơn đã được thanh toán đủ.' });
       const paymentCutoff = new Date(Date.now() - ONLINE_PAYMENT_TTL_MS);
       await tx.onlinePaymentTransaction.updateMany({

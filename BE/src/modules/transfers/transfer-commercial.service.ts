@@ -2,11 +2,16 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { businessToday } from '../../business-date.js';
 import { DocumentPolicy } from '../documents/document-policy.js';
-import { invoiceBreakdown, invoiceUnit, savedInvoiceBreakdown } from '../billing/invoice-breakdown.js';
+import { invoiceBreakdown, invoiceMoney, invoiceUnit, savedInvoiceBreakdown } from '../billing/invoice-breakdown.js';
+import { loadPricingPolicy, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
+import { transferAmounts, transferCharge, transferredDepositDelta } from './transfer-finance.js';
+
+type SourceQuote = { pricingPolicy?: PricingPolicySnapshot; monthlyUnitPrice?: number; baseRentalAmount?: number; billingMode?: string; termMonths?: number };
 
 export function transferDebtWhere(today = businessToday()): Prisma.InvoiceWhereInput {
-  return { type: { in: ['INITIAL', 'RECURRING', 'RENEWAL'] }, status: { not: 'VOID' }, balanceDue: { gt: 0 },
-    OR: [{ dueAt: null }, { dueAt: { lte: today } }] };
+  return { status: { not: 'VOID' }, balanceDue: { gt: 0 },
+    AND: [{ OR: [{ type: { in: ['INITIAL', 'RECURRING', 'RENEWAL'] } }, { pricingSnapshot: { path: ['adjustment'], equals: transferCharge } }] },
+      { OR: [{ dueAt: null }, { dueAt: { lte: today } }] }] };
 }
 
 @Injectable()
@@ -54,6 +59,38 @@ export class TransferCommercialService {
     if (revised.some(invoice => invoice.amountPaid !== 0n || invoice.status !== 'OPEN')) throw new ConflictException('Có kỳ tương lai đã thu tiền. Cần đối chiếu khoản đã thu trước khi lập phương án đổi giá.');
     await this.assertNoPendingPayment(tx, revised.map(invoice => invoice.id));
     const due = invoices.filter(invoice => invoice.balanceDue > 0n && (!invoice.dueAt || invoice.dueAt <= today));
+    const originalQuote = reservation.quoteSnapshot as SourceQuote;
+    let adjustmentTerms: (ReturnType<typeof transferAmounts> & { invoiceId: string; depositVersion: number }) | undefined;
+    if (originalQuote.pricingPolicy?.transferFee && transfer.reason === 'OTHER' && !transfer.closurePlanId) {
+      const current = invoices.find(invoice => invoice.billingPeriodStart && invoice.billingPeriodEnd && invoice.billingPeriodStart <= today && today < invoice.billingPeriodEnd);
+      const initial = invoices.find(invoice => invoice.type === 'INITIAL');
+      const signedInvoice = current && savedInvoiceBreakdown(current.pricingSnapshot, current);
+      const sourceUnit = signedInvoice?.units.find(unit => unit.contractId === contract.id);
+      if (!current?.billingPeriodStart || !current.billingPeriodEnd || !sourceUnit || !initial || initial.status !== 'PAID') {
+        throw new ConflictException('Cần đối soát kỳ thuê hiện tại và hóa đơn cọc trước khi lập phụ lục.');
+      }
+      if (await tx.transferRequest.count({ where: { rentalContractId: contract.id, status: 'COMPLETED',
+        commercialSettlement: { path: ['sourceInvoiceId'], equals: current.id } } })) {
+        throw new ConflictException('Kỳ hiện tại đã quyết toán một lần chuyển kho. Cần đối soát trước khi tiếp tục.');
+      }
+      const { deposit } = await loadPricingPolicy(tx);
+      const daily = originalQuote.billingMode === 'DAILY';
+      const rule = deposit.value[type.sizeId === 'locker' ? 'locker' : daily && type.sizeId === 'small' ? 'smallDaily' : 'other'];
+      const basis = BigInt(originalQuote.baseRentalAmount ?? 0) * BigInt(rate);
+      const oldBasisRate = BigInt(originalQuote.monthlyUnitPrice ?? 0);
+      if (rule.method === 'RENT_PERCENTAGE' && (!oldBasisRate || !basis)) throw new ConflictException('Thiếu tiền thuê gốc để xác định cọc mục tiêu.');
+      const targetDeposit = rule.method === 'FIXED_AMOUNT' ? BigInt(rule.amount) : rule.method === 'MONTHLY_RENT_MULTIPLIER' ? BigInt(rate) * BigInt(rule.amount)
+        : rule.method === 'RENT_PERCENTAGE' ? (basis * BigInt(rule.amount) + oldBasisRate * 50n) / (oldBasisRate * 100n) : 0n;
+      const heldDeposit = invoiceMoney(initial.depositAmount + await transferredDepositDelta(tx, reservation.id, contract.id));
+      // Preserve the current billed discount ratio when deriving the new rate for the same period.
+      const oldRental = BigInt(sourceUnit.rentalAmount);
+      const bookedRate = BigInt(sourceUnit.monthlyRate);
+      if (!bookedRate) throw new ConflictException('Thiếu đơn giá kỳ hiện tại để quyết toán phần còn lại.');
+      const newRental = (oldRental * BigInt(rate) + bookedRate / 2n) / bookedRate;
+      adjustmentTerms = { ...transferAmounts({ moveDate: today.toISOString().slice(0, 10), periodStart: current.billingPeriodStart.toISOString().slice(0, 10),
+        periodEnd: current.billingPeriodEnd.toISOString().slice(0, 10), oldRate: invoiceMoney(oldRental), newRate: invoiceMoney(newRental),
+        fee: 0, currentDeposit: heldDeposit, targetDeposit: invoiceMoney(targetDeposit) }), invoiceId: current.id, depositVersion: deposit.version };
+    }
     const sum = (amount: (invoice: (typeof invoices)[number]) => bigint) => Number(invoices.reduce((total, invoice) => total + amount(invoice), 0n));
     const adjustment = revised.reduce((total, invoice) => total + rate - Number(invoice.rentalAmount), 0);
     const financialReview = {
@@ -67,7 +104,7 @@ export class TransferCommercialService {
       futureRentIncrease: Math.max(0, adjustment), futureRentReduction: Math.max(0, -adjustment),
     };
     const unit = (row: any, storageType: any) => ({ id: row.id, code: row.unitNumber, typeId: storageType.id, typeName: storageType.name, widthCm: storageType.widthCm, lengthCm: storageType.lengthCm, heightCm: storageType.heightCm });
-    return { version: 'NESTBOX-TRANSFER-COMMERCIAL-V2', code: `${transfer.transferCode}-PL01`, issuer: this.policy.issuer(), customerId: reservation.customerId, customer: reservation.customer, reservationId: reservation.id, contractCode: contract.contractCode, from: unit(transfer.fromStorageUnit, source), to: unit(destination, type), currentRate: oldRate, newRate: rate, differencePerMonth: rate - oldRate, effectiveFrom: effectiveFrom.toISOString().slice(0, 10), smaller: type.widthCm * type.lengthCm < source.widthCm * source.lengthCm, currentPeriodUnchanged: true, depositUnchanged: true, fitGuaranteed: false, futureInvoices: revised.map(invoice => ({ id: invoice.id, updatedAt: invoice.updatedAt.toISOString(), cycle: invoice.billingCycle, previousRental: Number(invoice.rentalAmount), newRental: rate, difference: rate - Number(invoice.rentalAmount) })), financialReview, generatedAt: new Date().toISOString() };
+    return { version: 'NESTBOX-TRANSFER-COMMERCIAL-V2', code: `${transfer.transferCode}-PL01`, issuer: this.policy.issuer(), customerId: reservation.customerId, customer: reservation.customer, reservationId: reservation.id, contractCode: contract.contractCode, from: unit(transfer.fromStorageUnit, source), to: unit(destination, type), currentRate: oldRate, newRate: rate, differencePerMonth: rate - oldRate, effectiveFrom: effectiveFrom.toISOString().slice(0, 10), smaller: type.widthCm * type.lengthCm < source.widthCm * source.lengthCm, currentPeriodUnchanged: !adjustmentTerms, depositUnchanged: !adjustmentTerms || adjustmentTerms.depositAdjustment === 0, fitGuaranteed: false, futureInvoices: revised.map(invoice => ({ id: invoice.id, updatedAt: invoice.updatedAt.toISOString(), cycle: invoice.billingCycle, previousRental: Number(invoice.rentalAmount), newRental: rate, difference: rate - Number(invoice.rentalAmount) })), financialReview, ...(adjustmentTerms ? { adjustmentTerms } : {}), generatedAt: new Date().toISOString() };
   }
   async apply(tx: Prisma.TransactionClient, transfer: any) {
     const snapshot = transfer.commercialSnapshot as any;
@@ -118,10 +155,27 @@ export class TransferCommercialService {
         : null;
       // Keep original monetary fields and its entire evidence. Only void its outstanding claim.
       await tx.invoice.update({ where: { id: invoice.id }, data: { status: 'VOID', balanceDue: 0n, billingCycle: null } });
-      await tx.invoice.create({ data: { invoiceCode: `${invoice.invoiceCode}-${transfer.transferCode}`, reservationId: invoice.reservationId, facilityIdSnapshot: invoice.facilityIdSnapshot, type: invoice.type, billingCycle: row.cycle, billingPeriodStart: invoice.billingPeriodStart, billingPeriodEnd: invoice.billingPeriodEnd, dueAt: invoice.dueAt, status: 'OPEN', rentalAmount: rental, depositAmount: invoice.depositAmount, serviceAmount: invoice.serviceAmount, chargeAmount: invoice.chargeAmount, totalAmount: total, amountPaid: 0n, balanceDue: total, currency: invoice.currency, replacesInvoiceId: invoice.id, storageTypeIdSnapshot: snapshot.to.typeId, pricingSnapshot: { currency: invoice.currency, storageTypeId: snapshot.to.typeId, storageTypeName: snapshot.to.typeName, monthlyUnitPrice: snapshot.newRate, quantity: 1, rentalAmount: Number(rental), depositAmount: Number(invoice.depositAmount), addOnTotalAmount: Number(invoice.serviceAmount), quotedTotalAmount: Number(total), transferCode: transfer.transferCode, effectiveFrom: snapshot.effectiveFrom, ...(breakdown ? { breakdown } : {}) } } });
+      await tx.invoice.create({ data: { invoiceCode: `${invoice.invoiceCode}-${transfer.transferCode}`, reservationId: invoice.reservationId, facilityIdSnapshot: invoice.facilityIdSnapshot, type: invoice.type, billingCycle: row.cycle, billingPeriodStart: invoice.billingPeriodStart, billingPeriodEnd: invoice.billingPeriodEnd, dueAt: invoice.dueAt, status: 'OPEN', rentalAmount: rental, depositAmount: invoice.depositAmount, serviceAmount: invoice.serviceAmount, chargeAmount: invoice.chargeAmount, totalAmount: total, amountPaid: 0n, balanceDue: total, currency: invoice.currency, replacesInvoiceId: invoice.id, storageTypeIdSnapshot: snapshot.to.typeId, pricingSnapshot: { ...(invoice.pricingSnapshot as Prisma.JsonObject | null), currency: invoice.currency, storageTypeId: snapshot.to.typeId, storageTypeName: snapshot.to.typeName, monthlyUnitPrice: snapshot.newRate, quantity: 1, rentalAmount: Number(rental), depositAmount: Number(invoice.depositAmount), addOnTotalAmount: Number(invoice.serviceAmount), quotedTotalAmount: Number(total), transferCode: transfer.transferCode, effectiveFrom: snapshot.effectiveFrom, breakdown } } });
     }
     await tx.rentalContract.update({ where: { id: transfer.rentalContractId }, data: { currentMonthlyRate: BigInt(snapshot.newRate), rateEffectiveFrom: effectiveFrom } });
     await tx.reservation.update({ where: { id: transfer.reservationId }, data: { storageTypeId: snapshot.to.typeId } });
+    if (snapshot.adjustmentTerms) {
+      // Complete the agreed addendum, including fees recorded before transfers became free.
+      const terms = snapshot.adjustmentTerms;
+      const amounts = transferAmounts({ ...terms, moveDate: today.toISOString().slice(0, 10) });
+      const invoice = await tx.invoice.findUniqueOrThrow({ where: { id: terms.invoiceId } });
+      const paid = await tx.payment.aggregate({ where: { invoiceId: invoice.id }, _sum: { amount: true } });
+      if (invoice.reservationId !== transfer.reservationId || invoice.status !== 'PAID' || invoice.balanceDue || paid._sum.amount !== invoice.totalAmount) {
+        throw new ConflictException('Kỳ hiện tại cần thanh toán và đối soát đầy đủ trước khi chuyển.');
+      }
+      const source = { adjustment: transferCharge, transferId: String(transfer.id), rentalContractId: String(transfer.rentalContractId),
+        sourceInvoiceId: invoice.id, ...amounts };
+      const charge = BigInt(amounts.amountDue);
+      const generated = charge ? await tx.invoice.create({ data: { invoiceCode: `${transfer.transferCode}-FINANCE`, reservationId: transfer.reservationId,
+        type: 'SETTLEMENT', billingCycle: null, rentalAmount: 0n, depositAmount: 0n, serviceAmount: 0n, chargeAmount: charge,
+        totalAmount: charge, balanceDue: charge, dueAt: today, facilityIdSnapshot: invoice.facilityIdSnapshot, pricingSnapshot: source } }) : null;
+      return { ...source, invoiceId: generated?.id ?? null, refundState: amounts.refundAmount ? 'PENDING' : 'NONE' };
+    }
   }
 
   private async assertNoPendingPayment(tx: Prisma.TransactionClient, ids: string[]) {

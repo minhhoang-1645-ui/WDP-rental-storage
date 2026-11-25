@@ -14,7 +14,8 @@ import type {
 } from './pricing.types.js';
 import { localizeService } from '../additional-services/additional-service-labels.js';
 import { businessDate } from '../../business-date.js';
-import { assertMonthlyRange } from '../operations/operations.service.js';
+import { assertListedPrice } from './monthly-price-range.js';
+import { baselinePricingPolicy, loadPricingPolicy, prepaidTerms, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 
 type PricedStorageType = {
   id: string;
@@ -37,7 +38,6 @@ type PricedService = {
 };
 
 const paymentPlans = ['PAY_MONTHLY', 'PREPAID'] as const;
-export const prepaidDiscounts: Readonly<Record<number, number>> = { 3: 5, 6: 10, 12: 15 };
 
 @Injectable()
 export class PricingService {
@@ -54,18 +54,20 @@ export class PricingService {
         message: 'Không tìm thấy loại kho.',
       });
     await assertAcceptingBookings(this.prisma, storageType.id);
-    if (storageType.monthlyRate !== null) await assertMonthlyRange(this.prisma, storageType.facilityId, storageType.id, Number(storageType.monthlyRate));
+    await assertListedPrice(this.prisma, storageType);
     const services = await this.loadServices(
       parsed.serviceSelections ?? [],
       storageType.facilityId,
     );
-    return this.calculate(storageType, parsed, services);
+    return this.calculate(storageType, parsed, services, await loadPricingPolicy(this.prisma));
   }
 
   calculate(
     storageType: PricedStorageType,
     input: PricingInput,
     services: PricedService[] = [],
+    policy: PricingPolicySnapshot = baselinePricingPolicy,
+    depositAlreadyHeld = false,
   ): PricingQuote {
     if (storageType.id !== input.storageTypeId)
       throw new BadRequestException({
@@ -118,8 +120,9 @@ export class PricingService {
       });
     }
 
-    const prepaidDiscountPercent =
-      termMonths !== null ? (prepaidDiscounts[termMonths] ?? 0) : 0;
+    const prepaidTerm = prepaidTerms.find(term => term === termMonths);
+    const prepaid = prepaidTerm === undefined ? undefined : policy.prepaid.value[prepaidTerm];
+    const prepaidDiscountPercent = prepaid?.enabled ? prepaid.percent : 0;
     const discountPercent =
       input.paymentPlan === 'PREPAID' ? prepaidDiscountPercent : 0;
     const discount = this.roundDivide(
@@ -127,12 +130,18 @@ export class PricingService {
       100n,
     );
     const rental = baseRental - discount;
-    const deposit =
-      storageType.sizeId === 'locker'
-        ? 0n
-        : billingMode === 'DAILY' && storageType.sizeId === 'small'
-          ? rental
-          : monthlyPrice * BigInt(input.quantity);
+    const depositGroup = storageType.sizeId === 'locker' ? 'locker'
+      : billingMode === 'DAILY' && storageType.sizeId === 'small' ? 'smallDaily' : 'other';
+    const depositRule = policy.deposit.value[depositGroup];
+    const depositRate = BigInt(depositRule.amount);
+    let deposit = 0n;
+    if (!depositAlreadyHeld) {
+      switch (depositRule.method) {
+        case 'FIXED_AMOUNT': deposit = depositRate * BigInt(input.quantity); break;
+        case 'RENT_PERCENTAGE': deposit = this.roundDivide(baseRental * depositRate, 100n); break;
+        case 'MONTHLY_RENT_MULTIPLIER': deposit = monthlyPrice * depositRate * BigInt(input.quantity); break;
+      }
+    }
     const selectedServices = this.priceServices(
       input.serviceSelections ?? [],
       services,
@@ -189,6 +198,7 @@ export class PricingService {
         : `${billableDays} ngày`;
     return {
       currency: 'VND',
+      pricingPolicy: policy,
       storageTypeId: storageType.id,
       storageTypeName: storageType.name,
       quantity: input.quantity,
@@ -261,10 +271,11 @@ export class PricingService {
         {
           code: 'deposit',
           label: 'Tiền đặt cọc',
-          basis:
-            storageType.sizeId === 'locker'
-              ? 'Không áp dụng cho tủ lưu trữ'
-              : 'Không áp dụng chiết khấu',
+          basis: depositAlreadyHeld ? 'Giữ nguyên tiền cọc đang có'
+            : depositRule.method === 'NONE' ? 'Không đặt cọc'
+            : depositRule.method === 'FIXED_AMOUNT' ? `${depositRule.amount} đ mỗi ô kho`
+            : depositRule.method === 'RENT_PERCENTAGE' ? `${depositRule.amount}% tiền thuê trước giảm giá`
+            : `${depositRule.amount} tháng tiền thuê mỗi ô kho`,
           amount: depositAmount,
           status: 'INCLUDED',
         },

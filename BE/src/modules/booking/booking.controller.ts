@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { BookingAvailabilityRequestDto, GuestInquiryRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -94,6 +94,26 @@ export class BookingController {
   @Roles('STORAGE_CUSTOMER')
   cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.bookingService.cancelCustomerReservation(request.user!, id);
+  }
+
+  @Get('reservations/:id/paid-cancellation')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
+  cancellation(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.bookingService.handlePaidCancellation(request.user!, id, 'GET');
+  }
+
+  @Post('reservations/:id/paid-cancellation')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER', 'FACILITY_STAFF')
+  cancellationAction(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() input: Record<string, unknown>) {
+    const actor = request.user!;
+    const action = input.action;
+    if (actor.role === 'STORAGE_CUSTOMER' && action === 'REQUEST' || actor.role === 'FACILITY_STAFF' && action === 'RECOVER' ||
+        actor.role === 'FACILITY_MANAGER' && (action === 'APPROVE' || action === 'REJECT' || action === 'REFUND')) {
+      return this.bookingService.handlePaidCancellation(actor, id, action, input);
+    }
+    throw new BadRequestException('Thao tác hủy không hợp lệ cho vai trò hiện tại.');
   }
 
   @Get('inquiries/:id')

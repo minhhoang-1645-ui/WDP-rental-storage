@@ -39,6 +39,10 @@ export class ManagerTransfersController {
   reviewProblem(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
     return this.transfers.reviewProblem(id, body, req.user!);
   }
+  @ManagerAssignment() @Post(':id/commercial-refund')
+  commercialRefund(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
+    return this.transfers.confirmCommercialRefund(id, body, req.user!);
+  }
   @ManagerAssignment() @Post(':id/reject') @ApiOperation({ summary: 'Từ chối Transfer REQUESTED' })
   reject(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.reject(id, req.user!, body); }
 }

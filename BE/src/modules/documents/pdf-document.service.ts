@@ -176,6 +176,29 @@ export class PdfDocumentService {
     if (total !== undefined) this.rows(pdf, [['Tổng cả kỳ, gồm cọc nếu có', money(total)]]);
     const initial = quote.initialPaymentBreakdown?.totalAmount ?? quote.estimatedInitialAmountDue ?? quote.initialInvoiceEstimate?.totalAmount ?? quote.initialInvoiceEstimate?.amountDue;
     if (initial !== undefined) this.rows(pdf, [['Dự kiến thanh toán lần đầu', money(initial)]]);
+    const notice = quote.pricingPolicy?.returnNotice?.value;
+    if (Number.isSafeInteger(notice) && notice > 0 && notice <= 30) {
+      this.paragraph(pdf, `Báo trước tối đa ${notice} ngày để bố trí lịch trả kho, giới hạn theo thời hạn thuê. Trả kho đúng hạn không phát sinh phí do báo muộn.`);
+    }
+    const early = quote.pricingPolicy?.earlyReturn?.value;
+    if (early) {
+      const fee = early.feeMethod === 'FIXED_AMOUNT' ? money(early.feeAmount)
+        : early.feeMethod === 'UNUSED_RENT_PERCENTAGE' ? `${early.feeAmount}% tiền thuê chưa sử dụng` : 'miễn phí';
+      const refund = early.refundMode === 'NONE' ? 'không hoàn tiền thuê trả trước'
+        : early.refundMode === 'ORIGINAL_DISCOUNT' ? 'hoàn tiền thuê chưa sử dụng theo giá đã giảm'
+        : 'quyết toán ưu đãi theo bảng đã cam kết và số kỳ đã sử dụng';
+      this.paragraph(pdf, `Khách chủ động trả kho trước hạn: ${fee}, ${refund}. Không áp dụng phí trả sớm hoặc thu hồi ưu đãi khi NestBox phải thu hồi kho.`);
+    }
+    const late = quote.pricingPolicy?.paymentOverdue?.value;
+    const cancellation = quote.pricingPolicy?.cancellation?.value;
+    if (cancellation) this.paragraph(pdf, `Tiền thuê đã thanh toán được hoàn ${cancellation.farPercent}% nếu gửi yêu cầu trước ít nhất ${cancellation.farDays} ngày, ${cancellation.middlePercent}% từ ${cancellation.nearDays} đến dưới ${cancellation.farDays} ngày, ${cancellation.nearPercent}% sát ngày thuê, hoặc ${cancellation.startedPercent}% từ ngày thuê khi chưa sử dụng kho. Cọc và dịch vụ được đối soát riêng. Hạn hoàn ${cancellation.refundDays} ngày sau khi duyệt.`);
+    const overdueReturn = quote.pricingPolicy?.returnOverdue?.value;
+    if (overdueReturn) this.paragraph(pdf, `Trả kho quá hạn: sau ${overdueReturn.graceDays} ngày ân hạn, phí sử dụng mỗi ngày bằng giá thuê tháng chia 30 nhân ${overdueReturn.multiplier}%. Số ngày tính đến ngày nhận kho thực tế.`);
+    if (late) {
+      const fee = late.feeMethod === 'FIXED_AMOUNT' ? money(late.feeAmount)
+        : late.feeMethod === 'RENT_DEBT_PERCENTAGE' ? `${late.feeAmount}% tiền thuê còn nợ có căn cứ đối soát` : 'miễn phí';
+      this.paragraph(pdf, `Ân hạn thanh toán ${late.graceDays} ngày. Sau ân hạn, phí chậm thanh toán của hóa đơn định kỳ hoặc gia hạn đủ điều kiện được tính một lần: ${fee}.`);
+    }
     this.paragraph(pdf, 'Số cần thanh toán thực tế theo từng hóa đơn và số dư còn lại tại thời điểm trả tiền. Dịch vụ tính theo lần/ngày/tháng theo đơn vị đã ghi trong báo giá.');
   }
   private signature(pdf: PDFKit.PDFDocument, terms: any) {

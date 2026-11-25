@@ -23,9 +23,13 @@
     "20261124000200_shared_service_catalog",
     "20261124000300_auth_session_history",
     "20261124000300_offering_configuration_review",
+    "20261124000400_facility_closure_relocation",
     "20261124000400_live_reservation_unit_uniqueness",
+    "20261125000100_deposit_refund_deadline",
     "20261125000100_maintenance_incident_reports",
     "20261125000200_incident_booking_blocks",
+    "20261125000200_policy_charge_invoices",
+    "20261125000300_operational_policy_settlements",
     "20261125000300_staff_shifts",
     "20261125000400_facility_service_schedule",
     "20261125000500_return_inspection_schedule",
@@ -404,10 +408,24 @@
       ]
     },
     {
+      "name": "20261124000400_facility_closure_relocation",
+      "checksums": [
+        "026b11dc1a98dcf75cb2455aacccff837a39b6eae82891b5ffa4e3fec428e5dd",
+        "c187b0faddd0bf3800b5e5a47e1e45698ebdb8f26b5ef4a00138c58a5f5c738c"
+      ]
+    },
+    {
       "name": "20261124000400_live_reservation_unit_uniqueness",
       "checksums": [
         "15ba71094e6735b0a5471a694c02242b4cb1fb71ec3c2de9e5eef80391800a2e",
         "0f4aa6c5fa6a3f0c6e9d23c3ca287374703428c565e823eaa852ff9b50df6477"
+      ]
+    },
+    {
+      "name": "20261125000100_deposit_refund_deadline",
+      "checksums": [
+        "7d056e293c11563c3c21fe6dd7e98297818fc4abe809a31e28a59b0dfd849f39",
+        "4117a7798bb27c4d9460d8117515ee2bfe6604fead828006652f51676bc8ca1a"
       ]
     },
     {
@@ -422,6 +440,20 @@
       "checksums": [
         "b70318974ed3008b13678c95a43707047a24d5b9e2ca930d0dced451871e6534",
         "1a3f97b0dd4096da656c137fcf7c73870bec89bef07565b805a69c378817bbb4"
+      ]
+    },
+    {
+      "name": "20261125000200_policy_charge_invoices",
+      "checksums": [
+        "e89fd94fba48bf03eaabc9609dde6c0058bae44f27c3fc5d8c6ddb4b6fdb7152",
+        "c27c6a20080d8f977c044f052738f80ef661d85a33f37603d3dfedcaa6555679"
+      ]
+    },
+    {
+      "name": "20261125000300_operational_policy_settlements",
+      "checksums": [
+        "543af5c599b4117d624cef7181af17df246eee52f1876770cd0bcd8b6477f3fc",
+        "5bf4670f1ec0726981bf5fb88939d4eb92d3eabd36b706fd1fa723439dfbe7bf"
       ]
     },
     {

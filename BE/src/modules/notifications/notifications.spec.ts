@@ -40,6 +40,9 @@ it('announces effective policies to Managers and Customers with role-specific li
   expect(buildNotices(customer, data, now + 60_000)[0].token).toBe(customerNotice.token);
   expect(buildNotices(customer, data, now - 1)).toEqual([]);
   for (const viewer of [staff, admin]) expect(buildNotices(viewer, data, now)).toEqual([]);
+  const staffData = { 'policy-effective': [{ ...rule, staffOperational: true }] };
+  expect(buildNotices(staff, staffData, now)[0]).toMatchObject({ target: '/staff/policies', kind: 'policy-effective' });
+  expect(buildNotices(staff, staffData, now - 1)).toEqual([]);
 });
 
 it('keeps concurrent Manager inbox requests scoped to the selected facility', async () => {
@@ -164,7 +167,9 @@ describe('notification HTTP API', () => {
         NotificationsService, AuthGuard, RolesGuard,
         { provide: AuthService, useValue: { getUserByToken: (token: string) => accounts.find(user => user.id === token) } },
         { provide: NotificationSources, useValue: { load: (user: PublicUser) => Promise.resolve(data[user.id]) } },
-        { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7) } },
+        { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7),
+          staffApplied: async () => ({ updates: policyVersions.filter(row => row.key === 'returnNoticeDays')
+            .map(row => ({ ...row, title: 'Báo trước khi trả kho', scheduled: row.effectiveFrom.getTime() > Date.now() })) }) } },
         { provide: PrismaService, useValue: { user: { findFirst: () => ({ id: manager.id }) }, facilityAccess: { findMany: () => [{ facilityId: 'facility-1' }] }, businessRule: { findMany: () => policyVersions }, notificationReceipt: {
           findMany: ({ where }: { where: { userId: string; token: { in: string[] } } }) =>
             where.token.in.filter(token => receipts.get(where.userId)?.has(token)).map(token => ({ token })),
@@ -190,6 +195,20 @@ describe('notification HTTP API', () => {
   const patch = (user: PublicUser, path: string) => request(app.getHttpServer()).patch('/notifications/' + path).set('Authorization', 'Bearer ' + user.id);
   const open = (user: PublicUser, token: string) => request(app.getHttpServer()).post('/notifications/' + token + '/open').set('Authorization', 'Bearer ' + user.id);
 
+  it('sends Staff only effective operational updates and records a read', async () => {
+    policyVersions.push(
+      { id: 'staff-effective', key: 'returnNoticeDays', version: 2, effectiveFrom: new Date(Date.now() - 1000) },
+      { id: 'staff-scheduled', key: 'returnNoticeDays', version: 3, effectiveFrom: new Date(Date.now() + 86_400_000) },
+      { id: 'financial', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) },
+    );
+    const query = '?kind=policy-effective&view=unread';
+    const before = await get(staff, query).expect(200);
+    expect(before.body.items).toHaveLength(1);
+    expect(before.body.items[0].summary).toContain('Báo trước khi trả kho');
+    const result = await open(staff, before.body.items[0].token).expect(200);
+    expect(result.body.target).toBe('/staff/policies');
+    expect((await get(staff, query).expect(200)).body.items).toEqual([]);
+  });
   it('opens an informational policy update in the Customer mobile inbox and tracks reads per account', async () => {
     policyVersions.push({ id: 'effective-rule', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) });
     const query = '?client=mobile&kind=policy-effective';

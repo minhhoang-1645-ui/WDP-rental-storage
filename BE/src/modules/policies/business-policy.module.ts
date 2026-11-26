@@ -22,10 +22,13 @@ class LegacyBusinessPolicyController {
 }
 @Controller('business-policies/applied')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
+@Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER', 'FACILITY_STAFF')
 class AppliedBusinessPolicyController {
   constructor(private readonly policies: BusinessPolicyService) {}
-  @Get() list(@Req() request: AuthenticatedRequest) { return this.policies.applied(request.user!); }
+  @Get() list(@Req() request: AuthenticatedRequest) {
+    const actor = request.user!;
+    return actor.role === 'FACILITY_STAFF' ? this.policies.staffApplied(actor) : this.policies.applied(actor);
+  }
 }
 
 @Global()

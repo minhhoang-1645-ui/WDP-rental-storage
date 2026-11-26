@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, Check, Clock, Coins, CreditCard, Handshake, Info, Landmark, Layers, RefreshCw, Users } from 'lucide-react';
+import { Bell, CalendarDays, Check, Clock, Coins, CreditCard, Handshake, Info, Landmark, Layers, RefreshCw } from 'lucide-react';
 import { useContext, useEffect } from 'react';
 import { useAuth } from '../../auth/auth-context';
 import { ManagerFacility } from '../manager/operations-workspace';
@@ -24,17 +24,17 @@ export function AppliedPoliciesPage() {
   const { user } = useAuth();
   const facility = useContext(ManagerFacility);
   const manager = user?.role === 'FACILITY_MANAGER';
-  const staff = user?.role === 'FACILITY_STAFF';
-  const internal = manager || staff;
+
+
   const resource = useApiResource<AppliedCatalog>(user ? '/business-policies/applied' : null, [user?.id, user?.role, facility?.id].join(':'), true);
   const { refresh } = resource;
   useEffect(() => {
-    if (!user || staff) return;
+    if (!user) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') refresh();
     }, 60_000);
     return () => window.clearInterval(timer);
-  }, [user, staff, refresh]);
+  }, [user, refresh]);
   const policies = new Map([...(resource.data?.items ?? []), ...(resource.data?.pricing ?? [])].map(policy => [policy.key, policy] as const));
   const hold = resource.data?.items.find(policy => policy.key === 'reservationHoldMinutes');
   const holdHours = hold?.unit === 'phút' && hold.value % 60 === 0 ? hold.value / 60 + ' giờ' : '';
@@ -45,25 +45,22 @@ export function AppliedPoliciesPage() {
     { icon: Clock, label: 'Giữ đơn chưa thanh toán', value: holdHours || (hold ? hold.value + ' ' + hold.unit : '—'), detail: holdHours && hold ? '(' + hold.value + ' ' + hold.unit + ')' : '' },
     { icon: CalendarDays, label: 'Báo trước khi trả kho', value: days(notice?.value) },
     { icon: Coins, label: 'Ân hạn thanh toán', value: days(overdue?.value.graceDays) },
-    ...(internal ? [{ icon: RefreshCw, label: 'Mở yêu cầu gia hạn', value: days(renewal?.value.opensDaysBefore) }] : []),
+    ...(manager ? [{ icon: RefreshCw, label: 'Mở yêu cầu gia hạn', value: days(renewal?.value.opensDaysBefore) }] : []),
   ];
   const versioned = [...policies.values()].filter(policy => policy.effectiveVersion > 0);
 
   return <section className="applied-policy">
     <header>
       <div className="applied-policy-heading">
-        <h1>{internal ? 'Chính sách áp dụng' : 'Chính sách thuê kho'}</h1>
+        <h1>{manager ? 'Chính sách áp dụng' : 'Chính sách thuê kho'}</h1>
         {policies.size > 0 && <span className="applied-policy-badge"><Check size={15} />Đang áp dụng</span>}
-        {staff && <span className="applied-policy-badge">Chỉ tra cứu – Không có quyền chỉnh sửa</span>}
       </div>
       <p>{manager ? 'Các điều khoản đang áp dụng tại cơ sở. Hồ sơ đã lập tuân theo chính sách tại thời điểm xác nhận.'
-        : staff ? 'Tra cứu các điều khoản thuê kho phục vụ công việc được phân công.'
         : 'Xem đơn đặt kho, hợp đồng hoặc hóa đơn để biết điều khoản áp dụng cho hồ sơ của bạn.'}</p>
     </header>
     {resource.loading && <p role="status">Đang tải chính sách…</p>}
     {resource.error && <div className="applied-policy-card" role="alert">
-      <p>{staff && resource.status === 403 ? 'Tài khoản Staff hiện chưa được cấp quyền đọc chính sách. Vui lòng liên hệ Quản lý cơ sở để tra cứu.'
-        : resource.status === 404 ? 'Máy chủ chưa cung cấp mục chính sách.'
+      <p>{resource.status === 404 ? 'Máy chủ chưa cung cấp mục chính sách.'
         : 'Hiện chưa tải được chính sách. Vui lòng thử lại.'}</p>
       {resource.status !== 403 && <button type="button" className="button-secondary" disabled={resource.refreshing} onClick={resource.refresh}>Thử lại</button>}
     </div>}
@@ -74,7 +71,7 @@ export function AppliedPoliciesPage() {
         <div><strong>{value}</strong><span>{label}</span>{detail && <span>{detail}</span>}</div>
       </div>)}
     </div>}
-    {(policies.size > 0 || staff) && <div className={'applied-policy-grid' + (internal ? ' applied-policy-grid-internal' : '')}>
+    {policies.size > 0 && <div className={'applied-policy-grid' + (manager ? ' applied-policy-grid-internal' : '')}>
       {policies.size > 0 && <div className="applied-policy-groups">
         {groups.map(({ title, icon: Icon, keys }) => {
           const items = keys.flatMap(key => policies.get(key) ?? []);
@@ -85,7 +82,7 @@ export function AppliedPoliciesPage() {
               <tbody>{items.map(policy => <tr key={policy.key}>
                 <th scope="row">{policy.title}<small>{policy.description}</small></th>
                 <td>{'unit' in policy ? policy.value + ' ' + policy.unit
-                  : pricingPolicySummary(policy.key, policy.value, internal && 'managerDays' in policy.value).split(policy.key === 'renewal' || policy.key === 'prepaid' ? ' · ' : '\n').map(line => <div key={line}>{line}</div>)}</td>
+                  : pricingPolicySummary(policy.key, policy.value, manager && 'managerDays' in policy.value).split(policy.key === 'renewal' || policy.key === 'prepaid' ? ' · ' : '\n').map(line => <div key={line}>{line}</div>)}</td>
                 <td>{policy.effectiveFrom ? <time dateTime={policy.effectiveFrom}>{dateTime.format(new Date(policy.effectiveFrom))} (UTC+7)</time>
                   : policy.effectiveVersion === 0 ? <span className="applied-policy-base">Giá trị cơ sở</span> : null}
                   {policy.effectiveVersion > 0 && <small>Phiên bản {policy.effectiveVersion}</small>}
@@ -95,7 +92,7 @@ export function AppliedPoliciesPage() {
           </section>;
         })}
       </div>}
-      {internal && <aside className="applied-policy-aside">
+      {manager && <aside className="applied-policy-aside">
         {policies.size > 0 && <section className="applied-policy-card">
           <h2><span className="applied-policy-icon"><Info size={19} /></span>Thông tin hiệu lực</h2>
           <dl>
@@ -106,12 +103,6 @@ export function AppliedPoliciesPage() {
           </dl>
           <p className="applied-policy-note"><Info size={16} />{snapshotNote}</p>
         </section>}
-        <section className="applied-policy-card">
-          <h2><span className="applied-policy-icon"><Users size={19} /></span>Dành cho Staff</h2>
-          {manager && <span className="applied-policy-badge">Chỉ tra cứu – Không có quyền chỉnh sửa</span>}
-          <p>Tra cứu điều khoản để tư vấn khách hàng, hỗ trợ thanh toán, gia hạn, bàn giao và trả kho theo phân công.</p>
-          <p>Liên hệ Quản lý cơ sở hoặc người có thẩm quyền khi cần xử lý ngoại lệ, hoàn tiền, miễn giảm phí hoặc thay đổi điều khoản.</p>
-        </section>
       </aside>}
     </div>}
   </section>;

@@ -65,3 +65,7 @@
 :root[data-workspace-theme="dark"] .applied-policy thead th { background: var(--workspace-table); }
 :root[data-workspace-theme="dark"] .applied-policy :is(tbody th, tbody td, dl div) { border-color: var(--policy-border); }
 :root[data-workspace-theme="dark"] .applied-policy-milestone strong { color: #82d8c5; }
+.staff-policy-group summary { cursor: pointer; font-size: 1.1rem; }
+.staff-policy-list { padding: 0; list-style: none; }
+.staff-policy-list li { padding: 9px 0; border-bottom: 1px solid var(--policy-border); }
+.staff-policy-list li p { margin: 3px 0 0; }

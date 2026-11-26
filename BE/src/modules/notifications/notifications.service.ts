@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { PublicUser } from '../auth/auth.types.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { buildNotices, noticeKinds, noticeSearch, type Notice } from './notification-content.js';
@@ -59,6 +59,14 @@ export class NotificationsService {
           select: { id: true, key: true, version: true, effectiveFrom: true },
         });
         data = { ...data, 'policy-effective': effective.map(row => ({ ...row, title: policyDefinitions[row.key as keyof typeof policyDefinitions]?.title ?? pricingDefinitions[row.key as keyof typeof pricingDefinitions]?.title, effectiveFrom: row.effectiveFrom.toISOString() })) };
+      }
+      if (actor.role === 'FACILITY_STAFF') {
+        const catalog = await this.policies.staffApplied(actor).catch((error: unknown) => {
+          if (error instanceof ForbiddenException) return null;
+          throw error;
+        });
+        if (catalog) data = { ...data, 'policy-effective': catalog.updates.filter(update => !update.scheduled)
+          .map(({ key, title, version, effectiveFrom }) => ({ staffOperational: true, id: key + ':' + version, title, version, effectiveFrom: effectiveFrom.toISOString() })) };
       }
       const notices = buildNotices(actor, data, now);
       return mobile ? customerMobileNotices(notices, data, now) : notices;

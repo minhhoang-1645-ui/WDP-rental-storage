@@ -203,6 +203,9 @@ function AppointmentSummary({ row }: { row: Row }) {
   if (first(row, 'facility.name')) facts.push(['Cơ sở', first(row, 'facility.name')]);
   const startDates = [...new Set(rows(row.allocatedUnits).map(unit => first(unit, 'contractStartDate')).filter(Boolean))];
   if (startDates.length) facts.push(['Ngày bắt đầu thuê', startDates.map(value => date(value)).join(' · ')]);
+  if (typeof row.handoverLeadDays === 'number') {
+    facts.push(['Mốc nhận chìa khóa theo hồ sơ', row.handoverLeadDays + ' ngày trước ngày thuê']);
+  }
   const pickup = first(row, 'earliestPickupDate');
   if (pickup) facts.push(['Nhận chìa khóa sớm nhất', date(pickup) + ' · Quyền sử dụng bắt đầu từ ngày thuê']);
   if (row.bookingReady === true) facts.push(['Điều kiện đơn thuê', 'Đã ký hợp đồng và thanh toán hóa đơn ban đầu']);

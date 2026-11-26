@@ -70,7 +70,7 @@ try {
       return route.fulfill({ json: account ?? { items: [], total: 0 } });
     });
     await page.goto(base + '/admin/facility-access');
-    await page.locator(`[data-workspace-theme="${theme}"]`).waitFor();
+    await page.locator(`[data-workspace-role="admin"][data-workspace-theme="${theme}"]`).waitFor();
     await page.getByRole('heading', { name: 'Chọn một tài khoản' }).waitFor().catch(async error => {
       console.error(page.url(), errors, (await page.locator('body').innerText()).slice(0, 1500));
       throw error;
@@ -109,6 +109,10 @@ try {
     await historyTab.press('ArrowLeft');
     await current.waitFor();
     assert(await noHorizontalOverflow(current));
+    assert(await current.evaluate(table => {
+      const heading = table.closest('[role="tabpanel"]').querySelector('.admin-detail-heading');
+      return table.getBoundingClientRect().top - heading.getBoundingClientRect().bottom >= 12;
+    }), 'The facility table should have space below the action header');
     await page.getByRole('button', { name: 'Điều chuyển cơ sở', exact: true }).click();
     const relocate = page.getByRole('dialog', { name: 'Điều chuyển cơ sở', exact: true });
     assert(await relocate.getByRole('radio', { name: /Cơ sở Đông/ }).isDisabled());

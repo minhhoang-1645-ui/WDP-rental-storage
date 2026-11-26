@@ -29,8 +29,19 @@ async function workspace(role, mobile = false) {
     if (['manager/staff/facilities', 'staff/maintenance/facilities'].includes(path)) return send([{ id: 'a', name: 'NestBox Thủ Đức' }]);
     if (path === 'business-policies/applied') {
       policyRequests.push([route.request().method(), url.search]);
-      if (role === 'FACILITY_STAFF') return send({ message: 'Forbidden' }, 403);
+
       if (responseStatus !== 200) return send({ message: 'Unavailable' }, responseStatus);
+      if (role === 'FACILITY_STAFF') return send({
+        facilities: ['NestBox Thủ Đức'],
+        entries: [
+          item('handoverLeadDays', 'Nhận chìa khóa trước ngày thuê', 3),
+          item('returnNoticeDays', 'Báo trước khi trả kho', 7),
+          item('renewal', 'Gia hạn hợp đồng', { opensDaysBefore: 30, closesDaysBefore: 1, priceMode: 'CURRENT_LIST_PRICE' }),
+          item('paymentOverdue', 'Quá hạn thanh toán', { graceDays: 5, managerDays: 15 }),
+        ],
+        updates: [{ key: 'returnNoticeDays', title: 'Báo trước khi trả kho', version: 2,
+          effectiveFrom, scheduled: true, oldValue: 7, value: 11 }],
+      });
       return send({
         items: [
           item('reservationHoldMinutes', 'Thời hạn giữ đơn chưa thanh toán', changed ? 95 : 1440, 'phút'),
@@ -93,14 +104,23 @@ try {
   await staff.page.getByRole('heading', { name: 'Tổng quan', exact: true }).waitFor();
   await staff.page.getByRole('link', { name: 'Công việc của tôi', exact: true }).click();
   await staff.page.getByRole('link', { name: 'Tra cứu chính sách', exact: true }).click();
-  await staff.page.getByRole('alert').getByText(/chưa được cấp quyền đọc chính sách/).waitFor();
+  await staff.page.getByText('Nhận kho và bàn giao', { exact: true }).waitFor();
+  await staff.page.getByText(/Báo quản lý sau 15 ngày/).waitFor();
+  await staff.page.getByText(/Sắp có hiệu lực/).waitFor();
+  assert.equal(await staff.page.getByText(/Phí một lần|Đặt cọc khi thuê kho/).count(), 0);
   await staff.page.getByRole('link', { name: 'Chính sách áp dụng', exact: true }).waitFor();
   await staff.page.getByText('Chỉ tra cứu – Không có quyền chỉnh sửa', { exact: true }).waitFor();
   await staff.page.goto(base + '/staff/policies?facilityId=outside');
-  await staff.page.getByRole('alert').getByText(/chưa được cấp quyền đọc chính sách/).waitFor();
+  await staff.page.getByText('Nhận kho và bàn giao', { exact: true }).waitFor();
+  await staff.page.getByText(/Báo quản lý sau 15 ngày/).waitFor();
+  await staff.page.getByText(/Sắp có hiệu lực/).waitFor();
+  assert.equal(await staff.page.getByText(/Phí một lần|Đặt cọc khi thuê kho/).count(), 0);
   assert.ok(staff.policyRequests.every(([method, query]) => method === 'GET' && !query));
   if (screenshots) await staff.page.screenshot({ path: join(screenshots, 'staff.png'), fullPage: true });
   assert.equal(await staff.page.locator('.applied-policy table, .applied-policy button, .applied-policy select').count(), 0);
+  staff.setStatus(403);
+  await staff.page.reload();
+  await staff.page.getByRole('alert').getByText(/quyền truy cập cơ sở đang hiệu lực/).waitFor();
 
   const customer = await workspace('STORAGE_CUSTOMER');
   customer.setStatus(503);
@@ -134,7 +154,7 @@ try {
     console.log('PASS: Expo Web policy accordion and timed refresh of all three Customer milestones.');
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: Manager policy table and responsive layout, single-facility scope, Staff denied read-only flow, and Customer API refresh.');
+  console.log('PASS: Manager policy table and responsive layout, single-facility scope, Staff scoped read-only flow, and Customer API refresh.');
 } finally {
   await browser.close();
 }

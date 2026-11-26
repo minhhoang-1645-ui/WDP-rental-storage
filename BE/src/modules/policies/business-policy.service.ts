@@ -62,8 +62,59 @@ export class BusinessPolicyService {
    })),
   };
  }
+ async staffApplied(actor: PublicUser) {
+  await assertActiveRole(this.prisma, actor, 'FACILITY_STAFF');
+  const grants = await this.prisma.facilityAccess.findMany({
+   where: { userId: actor.id, revokedAt: null },
+   select: { facility: { select: { name: true } } },
+  });
+  if (!grants.length) throw new ForbiddenException('Bạn chưa có quyền truy cập cơ sở đang hiệu lực.');
+  const now = new Date();
+  const numericKeys = ['handoverLeadDays', 'returnNoticeDays', 'renewalReminderDays', 'paymentReminderDays'] as const;
+  const pricingKeys = ['renewal', 'paymentOverdue', 'returnOverdue'] as const;
+  const keys = [...numericKeys, ...pricingKeys];
+  const [rules, legacyHandover] = await Promise.all([this.prisma.businessRule.findMany({
+   where: { key: { in: keys }, facilityId: null, storageTypeId: null },
+   orderBy: { effectiveFrom: 'asc' },
+   select: { key: true, version: true, value: true, effectiveFrom: true, effectiveTo: true },
+  }), this.prisma.businessPolicy.findUnique({ where: { key: 'handoverLeadDays' } })]);
+  function operationalValue(key: string, value: unknown) {
+   if (key in policyDefinitions) return validatePolicy(key, value);
+   if (key === 'renewal') {
+    const { opensDaysBefore, closesDaysBefore, priceMode } = pricingPolicyValidators.renewal(value);
+    return { opensDaysBefore, closesDaysBefore, priceMode };
+   }
+   const { graceDays, managerDays } = key === 'paymentOverdue'
+    ? pricingPolicyValidators.paymentOverdue(value) : pricingPolicyValidators.returnOverdue(value);
+   return { graceDays, managerDays };
+  }
+  const entries = keys.map(key => {
+   const numeric = key in policyDefinitions ? policyDefinitions[key as keyof typeof policyDefinitions] : undefined;
+   const title = numeric?.title ?? pricingDefinitions[key as PricingPolicyKey].title;
+   const versions = rules.filter(rule => rule.key === key);
+   const current = versions.filter(rule => rule.effectiveFrom <= now && (!rule.effectiveTo || rule.effectiveTo > now)).at(-1);
+   const baseline = key === 'handoverLeadDays' && legacyHandover && legacyHandover.updatedAt <= now
+    ? legacyHandover.value : numeric?.defaultValue ?? pricingPolicyDefaults[key as PricingPolicyKey];
+   return { key, title, value: operationalValue(key, current?.value ?? baseline),
+    effectiveVersion: current?.version ?? 0, effectiveFrom: current?.effectiveFrom ?? null };
+  });
+  const updates = entries.flatMap(entry => {
+   const versions = rules.filter(rule => rule.key === entry.key);
+   return versions.flatMap((rule, index) => {
+    if (rule.version !== entry.effectiveVersion && rule.effectiveFrom <= now) return [];
+    const previous = versions[index - 1];
+    const baseline = previous?.value ?? (entry.key in pricingPolicyDefaults ? pricingPolicyDefaults[entry.key as PricingPolicyKey] : null);
+    const oldValue = baseline === null ? null : operationalValue(entry.key, baseline);
+    const value = operationalValue(entry.key, rule.value);
+    if (oldValue !== null && JSON.stringify(oldValue) === JSON.stringify(value)) return [];
+    return [{ key: entry.key, title: entry.title, version: rule.version,
+     effectiveFrom: rule.effectiveFrom, scheduled: rule.effectiveFrom > now, oldValue, value }];
+   });
+  });
+  return { entries, updates, facilities: grants.map(grant => grant.facility.name) };
+ }
  private async catalog(includeHistory = true) {
-  const now=new Date();
+  const now = new Date();
   const legacy=await this.prisma.businessPolicy.findMany();
   const history=await this.prisma.businessRule.findMany({where:{key:{in:[...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)]},facilityId:null,storageTypeId:null,
    ...(includeHistory ? {} : {effectiveFrom:{lte:now},OR:[{effectiveTo:null},{effectiveTo:{gt:now}}]})},orderBy:{version:'desc'}});

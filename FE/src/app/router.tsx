@@ -1,3 +1,4 @@
+import { StaffAppliedPoliciesPage } from '../components/workspace/StaffAppliedPoliciesPage';
 import { AppliedPoliciesPage } from "../components/workspace/AppliedPoliciesPage";
 import { ServiceCalendarPage } from '../pages/operations/ServiceCalendarPage';
 import { AdminRolesPage } from '../pages/admin/AccountRole';
@@ -204,7 +205,7 @@ export function AppRouter() {
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
           <Route path="tasks" element={<StaffTasksPage />} />
-          <Route path="policies" element={<AppliedPoliciesPage />} />
+          <Route path="policies" element={<StaffAppliedPoliciesPage />} />
           <Route path="schedule" element={<StaffTasksPage view="schedule" />} />
           <Route path="history" element={<StaffTasksPage view="history" />} />
           <Route path="report-issue" element={<StaffIssueReportPage />} />

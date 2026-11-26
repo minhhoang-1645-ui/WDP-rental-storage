@@ -127,6 +127,11 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ['Ngày gửi yêu cầu', dateField('requestedAt', true)],
         ['Người phụ trách', assigned],
       ]} note={first(row, 'note')} />
+      <section className="manager-section">
+        <h2>Hướng dẫn tiếp nhận trả kho</h2>
+        <p>Đối chiếu ngày khách gửi yêu cầu và hạn thuê trong hồ sơ trước khi bố trí lịch. Chuyển Quản lý cơ sở xử lý quyết toán, phí hoặc hoàn tiền.</p>
+        <Link to="/staff/policies#returnNoticeDays">Tra cứu thời hạn báo trước hiện hành</Link>
+      </section>
       {actions}
       {hasResults && <section className="manager-section">
         <h2>Kết quả kiểm tra</h2>

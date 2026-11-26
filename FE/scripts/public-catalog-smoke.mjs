@@ -118,16 +118,17 @@ try {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     if (process.env.WDP_SCREENSHOTS_DIR) await page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/nestbox-booking-${width}.png`, fullPage: true });
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
-    await page.locator('.landing-size-card').first().waitFor();
+    await page.locator('.landing-product').first().waitFor();
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
     await page.getByRole('button', { name: 'Chuyển sang giao diện sáng' }).click();
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'light');
     assert.equal(await page.locator('.wdp-public').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(246, 248, 252)');
-    assert.equal(await page.locator('.landing-size-card').count(), catalog.sizes.length);
-    assert.equal(await page.locator('.landing-steps li').count(), 4);
-    assert.equal(await page.locator('.landing-feature-grid article').count(), 4);
+    assert.equal(await page.locator('.landing-product').count(), catalog.products.length);
+    assert.equal(await page.locator('.landing-timeline li').count(), 4);
+    assert.equal(await page.locator('.landing-perks > div').count(), 4);
     assert.equal(await page.locator('.public-footer-grid > div').count(), 4);
-    await page.waitForFunction(() => document.querySelector('.landing-hero img')?.naturalWidth > 200);
+    await page.waitForFunction(() => document.querySelector('.landing-hero-media img')?.naturalWidth > 0);
+    await page.waitForFunction(() => document.querySelector('.public-brand-mark img')?.naturalWidth > 0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.getByRole('link', { name: 'Tìm kho phù hợp', exact: true }).click();
     await page.waitForURL(url => url.hash === '#find-storage');
@@ -136,8 +137,30 @@ try {
       assert(await page.getByRole('navigation', { name: 'Điều hướng di động' }).getByRole('link', { name: 'Hỗ trợ', exact: true }).isVisible());
       await page.getByRole('button', { name: 'Đóng menu' }).click();
     }
+    for (const summary of await page.locator('#faq summary').all()) {
+      await summary.click();
+      assert.equal(await summary.locator('..').getAttribute('open'), '');
+      await summary.click();
+    }
+    if (width < 1024) await page.getByRole('button', { name: 'Mở menu' }).click();
+    await page.locator('.public-header').getByRole('link', { name: 'Đặt kho nhanh', exact: true }).filter({ visible: true }).click();
+    await page.waitForURL(url => url.pathname === '/booking' && url.searchParams.get('mode') === 'quick');
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.locator('.landing-product').first().waitFor();
+    const clearComparison = page.getByRole('button', { name: 'Bỏ chọn tất cả' });
+    if (await clearComparison.isVisible()) await clearComparison.click();
+    const cardsToCompare = page.locator('.landing-product input[type=checkbox]');
+    await cardsToCompare.nth(0).check();
+    await cardsToCompare.nth(1).check();
+    await page.getByRole('link', { name: 'So sánh ngay', exact: true }).click();
+    await page.waitForURL(url => url.pathname === '/size-guide' && url.searchParams.get('compare')?.split(',').length === 2);
+    await page.getByRole('region', { name: 'Bảng so sánh kho đã chọn' }).waitFor();
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.locator('.landing-product').first().waitFor();
+    await page.getByRole('button', { name: 'Bỏ chọn tất cả' }).click();
     assert(!/Test room|Test capacity|Test only/.test(await page.locator('main').innerText()));
-    await page.getByRole('link', { name: 'Xem các cơ sở' }).click();
+    await page.getByRole('link', { name: 'Xem toàn bộ cơ sở', exact: true }).click();
+    await page.getByRole('heading', { name: 'Cơ sở NestBox', exact: true }).waitFor();
     assert.equal(await page.locator('.facility-directory-card').count(), (raw.facilities?.length ?? 0) + 1);
     await page.getByText('Địa chỉ kiểm thử B', { exact: true }).waitFor();
     await page.getByText('07:00–20:00', { exact: true }).waitFor();

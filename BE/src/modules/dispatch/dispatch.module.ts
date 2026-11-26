@@ -1,16 +1,12 @@
-import { AutoDispatchService } from './auto-dispatch.service.js';
 import { ServiceCalendarService } from './service-calendar.service.js';
 import { AssignmentQueueService } from './assignment-queue.service.js';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
-import { AppointmentsModule } from '../appointments/appointments.module.js';
-import { ReturnsModule } from '../returns/returns.module.js';
-import { StaffShiftsController } from './staff-shifts.controller.js';
-import { StaffShiftsService } from './staff-shifts.service.js';
+import { DispatchController } from './dispatch.controller.js';
 
 @Module({
-  imports: [AuthModule, AppointmentsModule, ReturnsModule],
-  controllers: [StaffShiftsController],
-  providers: [StaffShiftsService, AssignmentQueueService, ServiceCalendarService, AutoDispatchService],
+  imports: [AuthModule],
+  controllers: [DispatchController],
+  providers: [AssignmentQueueService, ServiceCalendarService],
 })
 export class DispatchModule {}

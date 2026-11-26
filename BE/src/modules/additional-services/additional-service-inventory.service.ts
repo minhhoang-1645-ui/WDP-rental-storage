@@ -160,6 +160,7 @@ export class AdditionalServiceInventoryService {
           actor,
           typeof input.facilityId === 'string' ? input.facilityId : undefined,
         );
+        await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', actor.id);
         await assertFacility(tx, actor, item.facilityId);
         await tx.$queryRaw(
           Prisma.sql`SELECT id FROM "FacilityServiceOffering" WHERE id=${item.inventory.id} FOR UPDATE`,

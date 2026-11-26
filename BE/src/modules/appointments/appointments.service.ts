@@ -174,6 +174,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{reservation:reservationScope(actor)}, { OR: [{ id }, { appointmentCode: id }] }, actor.role === 'FACILITY_STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
     const view = this.toAppointment(appointment, true, actor.role === 'FACILITY_STAFF');
+    const recoveryStaffId = (appointment.reservation.paidCancellation as { recoveryStaffId?: string } | null)?.recoveryStaffId;
+    if (actor.role === 'FACILITY_STAFF' && recoveryStaffId === actor.id && view.canRecordCancellationRecovery) return view;
     if (!['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
     const leadDays = await this.appointmentLeadDays(appointment);
     try {
@@ -192,7 +194,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private staffScope(staffId: string): Prisma.HandoverAppointmentWhereInput {
-    return { OR: [{ assignedStaffUserId: staffId }, { assignedStaffUserId: null, status: 'COMPLETED', completedByUserId: staffId }] };
+    return { OR: [
+      { assignedStaffUserId: staffId },
+      { assignedStaffUserId: null, status: 'COMPLETED', completedByUserId: staffId },
+      { status: { in: ['CONFIRMED', 'COMPLETED'] }, reservation: { AND: [
+        { paidCancellation: { path: ['state'], equals: 'REQUESTED' } },
+        { paidCancellation: { path: ['recoveryStaffId'], equals: staffId } },
+      ] } },
+    ] };
   }
 
   rescheduleCustomerAppointment(id: string, input: Record<string, unknown>, customer: PublicUser) {
@@ -224,7 +233,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       const leadDays = await this.appointmentLeadDays(current, tx);
       await this.assertAppointmentDate(current.reservation, scheduledAt, leadDays);
       if (await assessHandoverWindow(tx, current.reservation.facilityId, scheduledAt, { appointmentId: current.id }) !== 'CONFIRMED') {
-        throw new ConflictException('Chọn giờ phục vụ còn chỗ và có ca làm phù hợp.');
+        throw new ConflictException('Chọn giờ phục vụ còn chỗ.');
       }
       const previous = this.appointmentScheduleHistory(current.handoverReport).scheduleHistory ?? [];
       const updated = await tx.handoverAppointment.update({ where: { id: row.id }, data: {
@@ -239,22 +248,6 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       }
       return this.toAppointment(updated, false);
     }, 'Lịch bàn giao vừa thay đổi. Vui lòng tải lại.', 'ReadCommitted');
-  }
-
-  async dispatchEligible(tx: Prisma.TransactionClient, id: string, now: Date) {
-    const row = await tx.handoverAppointment.findUnique({ where: { id }, include: this.appointmentInclude() });
-    if (!row || row.status !== 'CONFIRMED' || row.scheduledAt > now || row.assignedStaffUserId
-      || readUnitHandoverDraft(row.handoverReport).unitProgress.length) return false;
-    try {
-      this.assertHandoverReady(row.reservation);
-      if ((row.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') return false;
-      await this.assertHandoverExecutionTime(row.reservation, now, await this.appointmentLeadDays(row, tx));
-      await this.assertHandoverUnitsAvailable(tx, row.reservation);
-      return true;
-    } catch (error) {
-      if (error instanceof ConflictException || error instanceof ForbiddenException) return false;
-      throw error;
-    }
   }
 
   async adjustAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -741,7 +734,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         orderBy: { id: 'asc' as const },
       },
       units: { select: { id: true, storageUnitId: true, releasedAt: true } },
-      contracts: { include: { reservationUnit: { include: { storageUnit: { select: { ...handoverUnitSafety, id: true, unitNumber: true, floor: true, zone: true } } } } }, orderBy: { contractCode: 'asc' as const } },
+      contracts: { include: { reservationUnit: { include: { storageUnit: { select: { ...handoverUnitSafety, id: true, unitNumber: true, floor: true, zone: true, storageType: { select: { facilityId: true } } } } } } }, orderBy: { contractCode: 'asc' as const } },
     };
   }
 
@@ -749,18 +742,25 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     const cancellation = record.reservation.paidCancellation;
     const draft = record.status === 'CONFIRMED' ? readUnitHandoverDraft(record.handoverReport) : null;
     const historical = staff && ['COMPLETED', 'CANCELLED'].includes(record.status);
+    const visibleContracts = (record.reservation.contracts ?? []).filter((contract: {
+      reservationUnit?: { storageUnit?: { storageType?: { facilityId: string } } };
+    }) => {
+      const facilityId = contract.reservationUnit?.storageUnit?.storageType?.facilityId;
+      return !includeCustomer || !facilityId || facilityId === record.reservation.facilityId;
+    });
     const reportChecks: unknown = record.handoverReport?.unitChecks;
     const historicalUnits = (Array.isArray(reportChecks) ? reportChecks : []).flatMap(check =>
       typeof check?.unitId === 'string' && typeof check.unitCode === 'string' ? [{ unitId: check.unitId, unitCode: check.unitCode }] : []);
     return {
       ...(includeCustomer ? { cancellationPending: cancellation?.state === 'REQUESTED',
+        recoveryStaffId: cancellation?.recoveryStaffId ?? null,
         canRecordCancellationRecovery: cancellation?.state === 'REQUESTED' && cancellation.quote?.requiresRecovery === true && !cancellation.verification } : {}),
       ...(includeCustomer && record.reservation.facility ? { facility: record.reservation.facility } : {}),
       ...(includeCustomer ? {
         coordination: workPhase('appointments', {
           ...record, handoverStarted: Boolean(draft?.unitProgress.length),
           bookingReady: ['REQUESTED', 'CONFIRMED'].includes(record.status) ? this.handoverBookingReadiness(record.reservation).bookingReady : undefined,
-          safetyBlocked: handoverSafetyBlocked((record.reservation.contracts ?? []).flatMap((contract: { reservationUnit?: { storageUnit?: { status: string } } }) =>
+          safetyBlocked: handoverSafetyBlocked(visibleContracts.flatMap((contract: { reservationUnit?: { storageUnit?: { status: string } } }) =>
             contract.reservationUnit?.storageUnit ? [contract.reservationUnit.storageUnit] : [])),
         }),
         assignedStaff: record.assignedStaff ?? null,
@@ -787,7 +787,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       appointmentCode: record.appointmentCode,
       status: record.status,
       ...(record.status === 'REQUESTED' && this.scheduleException(record.handoverReport) ? { schedulePendingManager: true } : {}),
-      usageStatus: historical ? null : record.status === 'COMPLETED' && record.reservation.contracts.some((contract: any) => contract.status === 'READY_FOR_HANDOVER') ? 'WAITING_FOR_RENTAL_START' : record.reservation.contracts.every((contract: any) => contract.status === 'ACTIVE') ? 'ACTIVE' : null,
+      usageStatus: historical ? null : record.status === 'COMPLETED' && visibleContracts.some((contract: any) => contract.status === 'READY_FOR_HANDOVER') ? 'WAITING_FOR_RENTAL_START' : visibleContracts.length && visibleContracts.every((contract: any) => contract.status === 'ACTIVE') ? 'ACTIVE' : null,
       scheduledAt: record.scheduledAt.toISOString(),
       handoverLeadDays: record.handoverLeadDays ?? null,
       earliestPickupDate: Number.isInteger(record.handoverLeadDays)
@@ -797,10 +797,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       reservation: {
         id: record.reservation.id,
         reference: record.reservation.reservationCode,
-        ...(!historical ? { status: record.reservation.status, quantity: record.reservation.quantity, contractCount: record.reservation.contracts.length } : {}),
+        ...(!historical ? { status: record.reservation.status, quantity: record.reservation.quantity, contractCount: visibleContracts.length } : {}),
         ...(includeCustomer ? { customer: historical ? { fullName: record.reservation.customer.fullName } : record.reservation.customer } : {}),
       },
-      allocatedUnits: historical ? historicalUnits : record.reservation.contracts.map((contract: any) => ({
+      allocatedUnits: historical ? historicalUnits : visibleContracts.map((contract: any) => ({
         contractCode: contract.contractCode,
         contractStatus: contract.status,
         contractStartDate: this.isoDate(contract.startDate),
@@ -876,8 +876,12 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       try {
         return await this.prisma.$transaction(operation, { isolationLevel, maxWait: 10000, timeout: 20000 });
       } catch (error) {
-        if (this.isPrismaCode(error, 'P2034') && attempt < 2) continue;
-        if (this.isPrismaCode(error, 'P2034')) throw new ConflictException(conflictMessage);
+        const meta = this.isPrismaCode(error, 'P2010') ? (error as Prisma.PrismaClientKnownRequestError).meta : undefined;
+        const adapter = meta?.driverAdapterError as { cause?: { originalCode?: string } } | undefined;
+        const sqlState = adapter?.cause?.originalCode ?? meta?.code;
+        const concurrent = this.isPrismaCode(error, 'P2034') || sqlState === '40001' || sqlState === '40P01';
+        if (concurrent && attempt < 2) continue;
+        if (concurrent) throw new ConflictException(conflictMessage);
         throw error;
       }
     }

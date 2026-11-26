@@ -499,6 +499,13 @@
         "c68b30ea586cb82cde3bbf685200c156fc8beaf3cec4ecf9b4d695d1a8b924f6",
         "b0c6857e1a80d89fb772850c26403fa422058c1bde15092672db38abdaab2245"
       ]
+    },
+    {
+      "name": "20261126000100_single_facility_and_relocation_decision",
+      "checksums": [
+        "cb8f50a52e90c69d8be700d1d6263bd0324b6cf5090d611559ee96f71a2629d1",
+        "ef83f439022b70efa365ca2a7e5a17235bfd3fef0ed2eb5e92dea2a9db0467d1"
+      ]
     }
   ],
   "historicalException": {

@@ -26,7 +26,7 @@ async function workspace(role, mobile = false) {
     const send = (json, status = 200) => route.fulfill({ json, status });
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204 });
     if (path === 'auth/me') return send({ id: role, role, fullName: 'Tài khoản kiểm thử', email: 'policy@example.test', accountStatus: 'ACTIVE' });
-    if (path === 'manager/staff/facilities') return send([{ id: 'a', name: 'NestBox Thủ Đức' }, { id: 'b', name: 'NestBox Quận 7' }]);
+    if (['manager/staff/facilities', 'staff/maintenance/facilities'].includes(path)) return send([{ id: 'a', name: 'NestBox Thủ Đức' }]);
     if (path === 'business-policies/applied') {
       policyRequests.push([route.request().method(), url.search]);
       if (role === 'FACILITY_STAFF') return send({ message: 'Forbidden' }, 403);
@@ -82,10 +82,10 @@ try {
     assert.ok(await manager.locator('.applied-policy').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'Layout at ' + width);
   }
   await manager.setViewportSize({ width: 1440, height: 1000 });
-  await manager.getByRole('combobox', { name: 'Cơ sở đang quản lý' }).selectOption('b');
-  await manager.locator('.applied-policy-aside').getByText('NestBox Quận 7').waitFor();
+  await manager.locator('.applied-policy-aside').getByText('NestBox Thủ Đức').waitFor();
+  assert.equal(await manager.getByRole('combobox', { name: 'Cơ sở đang quản lý' }).count(), 0);
   assert.match(manager.url(), /\/manager\/policies$/);
-  assert.ok(policyRequests.length >= 2);
+  assert.ok(policyRequests.length >= 1);
   assert.ok(policyRequests.every(([method, query]) => method === 'GET' && !query));
 
   const staff = await workspace('FACILITY_STAFF');
@@ -134,7 +134,7 @@ try {
     console.log('PASS: Expo Web policy accordion and timed refresh of all three Customer milestones.');
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: Manager policy table and responsive layout, facility selection, Staff denied read-only flow, and Customer API refresh.');
+  console.log('PASS: Manager policy table and responsive layout, single-facility scope, Staff denied read-only flow, and Customer API refresh.');
 } finally {
   await browser.close();
 }

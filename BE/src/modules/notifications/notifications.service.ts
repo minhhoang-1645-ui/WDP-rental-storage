@@ -38,7 +38,8 @@ export class NotificationsService {
 
   private snapshot(actor: PublicUser, mobile = false) {
     const key = `${actor.role}:${actor.id}:${actor.selectedFacilityId ?? ''}:${mobile}`;
-    const running = this.pending.get(key);
+    const sharePending = actor.role !== 'FACILITY_STAFF' && actor.role !== 'FACILITY_MANAGER';
+    const running = sharePending ? this.pending.get(key) : undefined;
     if (running) return running;
     const request = this.sources.load(actor).then(async data => {
       const now = Date.now();
@@ -62,8 +63,8 @@ export class NotificationsService {
       const notices = buildNotices(actor, data, now);
       return mobile ? customerMobileNotices(notices, data, now) : notices;
     })
-      .finally(() => this.pending.delete(key));
-    this.pending.set(key, request);
+      .finally(() => { if (sharePending) this.pending.delete(key); });
+    if (sharePending) this.pending.set(key, request);
     return request;
   }
 

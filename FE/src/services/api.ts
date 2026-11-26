@@ -1,4 +1,4 @@
-import { safeLocalStorage, safeSessionStorage } from './browser-storage';
+import { safeLocalStorage } from './browser-storage';
 import { AUTH_TOKEN_KEY } from "../data/booking";
 import { userMessage } from '../utils/user-message';
 import { notifyDataChanged } from './live-events';
@@ -65,9 +65,8 @@ export async function apiRequest<T>(
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const role = token && /^\/(manager|staff)\//.test(path) ? await verifiedRole(token) : token ? verifiedRoles.get(token) : undefined;
     if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
-    let apiPath = operationApiPath(path, role, request.method ?? 'GET');
-    const facility = role === 'FACILITY_MANAGER' && apiPath.startsWith('/manager/') && !apiPath.startsWith('/manager/staff/facilities') ? safeSessionStorage.getItem('nestbox-manager-facility') : null;
-    if (facility) apiPath += `${apiPath.includes('?') ? '&' : '?'}scopeFacilityId=${encodeURIComponent(facility)}`;
+    const apiPath = operationApiPath(path, role, request.method ?? 'GET');
+
     const response = await fetch(`${API_URL.replace(/\/$/, "")}${apiPath}`, { ...request, signal: controller.signal, headers });
     const payload = response.ok && responseType === 'blob' ? await response.blob() : response.status === 204 ? null : await response.json().catch((error: unknown) => {
       if (controller.signal.aborted) throw error;

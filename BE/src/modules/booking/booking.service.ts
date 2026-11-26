@@ -450,7 +450,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
+        include: { customer: true, storageType: true, units: { include: { storageUnit: true },
+          where: { storageUnit: { storageType: { facility: facilityScope(actor!) } } }, orderBy: { createdAt: 'asc' } } },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
@@ -461,9 +462,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async getManagerReservation(id: string, actor?: PublicUser) {
     const record = await this.prisma.reservation.findFirst({
       where: { AND: [{ OR: [{ id }, { reservationCode: id }] }, this.reservationReadScope(actor)] },
-      include: actor?.role === 'FACILITY_STAFF' ? { ...reservationDetailInclude, appointments: {
-        ...reservationDetailInclude.appointments, where: this.staffHandoverScope(actor.id),
-      } } : reservationDetailInclude,
+      include: { ...reservationDetailInclude,
+        units: { ...reservationDetailInclude.units, where: { storageUnit: { storageType: { facility: facilityScope(actor!) } } } },
+        contracts: { ...reservationDetailInclude.contracts, where: { reservationUnit: { storageUnit: { storageType: { facility: facilityScope(actor!) } } } } },
+        ...(actor?.role === 'FACILITY_STAFF' ? { appointments: {
+          ...reservationDetailInclude.appointments, where: this.staffHandoverScope(actor.id),
+        } } : {}),
+      },
     });
     if (!record) throw new NotFoundException('Không tìm thấy reservation.');
     const workflow = reservationWorkflow(record, actor);
@@ -489,8 +494,14 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           include: { customer: true, storageType: true, units: { include: { storageUnit: true }, orderBy: { createdAt: 'asc' } } },
         });
         if (!current) throw new NotFoundException('Không tìm thấy reservation.');
-        await assertTaskFacility(tx,manager,{reservationId:current.id});
-        if (current.status === targetStatus) return this.toManagerReservation(current);
+        const facilityId = await assertTaskFacility(tx, manager, { reservationId: current.id });
+        if (current.status === targetStatus) {
+          const units = await tx.reservationUnit.findMany({
+            where: { reservationId: current.id, storageUnit: { storageType: { facilityId } } },
+            include: { storageUnit: true }, orderBy: { createdAt: 'asc' },
+          });
+          return this.toManagerReservation({ ...current, units });
+        }
         const allowed = reservationTransitions[current.status as ManagerReservationStatus] ?? [];
         if (!allowed.includes(targetStatus)) {
           throw new ConflictException(`Không thể chuyển reservation từ ${current.status} sang ${targetStatus}.`);
@@ -558,11 +569,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const internalNotes = typeof input.internalNotes === 'string' ? input.internalNotes.trim().slice(0, 2000) : undefined;
     const currentInquiry = await this.prisma.contactInquiry.findFirst({ where: { facility:managerReservationScope(manager).facility, OR: [{ id }, { inquiryCode: id }] } });
     if (currentInquiry) {
-      await assertFacility(this.prisma,manager,currentInquiry.facilityId);
       if (!managerInquiryStatuses.includes(status as (typeof managerInquiryStatuses)[number])) {
         throw new BadRequestException('Trạng thái Inquiry không hợp lệ.');
       }
-      const record = await this.prisma.contactInquiry.update({
+      const record = await this.prisma.$transaction(async tx => {
+        await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', manager.id);
+        await assertFacility(tx, manager, currentInquiry.facilityId);
+        return tx.contactInquiry.update({
         where: { id: currentInquiry.id },
         data: {
           status: status as (typeof managerInquiryStatuses)[number],
@@ -571,6 +584,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           ...(status === 'CONTACTED' && !currentInquiry.contactedAt ? { contactedAt: new Date() } : {}),
         },
         include: { storageType: true, processedBy: true },
+        });
       });
       return this.toManagerInquiry(record);
     }

@@ -4,10 +4,11 @@ import { useState, type ReactNode } from 'react';
 import { useActivity } from '../../activity/context';
 import { useAuth } from '../../auth/auth-context';
 import { date } from '../../components/manager/portal-data';
-import { LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
 import { DashboardSkeleton } from '../../components/LoadingSkeleton';
 import { staffDay, staffDayAfter } from './staff-resources';
-import { staffActivityReady, staffActivitySources, staffWorkItems, staffWorkPhase } from './staff-work';
+import { staffFacilityMessage, useStaffFacility } from './staff-facility';
+import { missedScheduleHelp, staffActivityReady, staffActivitySources, staffWorkItems, staffWorkPhase } from './staff-work';
 import { handoverStatusText } from './staff-appointment';
 
 const taskPath = '/staff/tasks';
@@ -40,11 +41,13 @@ function WorkRow({ to, title, details, time, status, action, onOpen }: {
 export function StaffOperationsPage() {
   const activity = useActivity();
   const { user } = useAuth();
-  const loading = activity.loading && activity.checking;
+  const scope = useStaffFacility(user?.id);
+  const facilityId = scope.facility?.id;
+  const loading = scope.loading || activity.loading && activity.checking;
   const complete = staffActivitySources.every(source => staffActivityReady(activity, source.kind));
   const failedSources = activity.failed;
-  const tasks = staffWorkItems(activity, user?.id);
-  const recent = staffWorkItems(activity, user?.id, true).filter(task => task.processed)
+  const tasks = staffWorkItems(activity, user?.id).filter(task => facilityId && task.facilityId === facilityId);
+  const recent = staffWorkItems(activity, user?.id, true).filter(task => facilityId && task.facilityId === facilityId && task.processed)
     .sort((a, b) => (Date.parse(b.finishedAt) || 0) - (Date.parse(a.finishedAt) || 0)).slice(0, previewSize);
   const [openedAt] = useState(Date.now);
   const today = staffDay(activity.checkedAt || openedAt);
@@ -66,7 +69,7 @@ export function StaffOperationsPage() {
     { title: 'Chờ thực hiện', value: complete ? tasks.filter(task => staffWorkPhase(task) === 'pending').length : '—', icon: ClipboardList, to: taskPath + '?phase=pending' },
     { title: 'Có lịch hôm nay', value: complete ? todayTasks.length : '—', icon: CalendarClock, to: todayPath },
     { title: 'Đang thực hiện', value: complete ? tasks.filter(task => staffWorkPhase(task) === 'progress').length : '—', icon: Play, to: taskPath + '?phase=progress' },
-    { title: 'Quá giờ', value: complete ? tasks.filter(task => task.overdue).length : '—', icon: ClockAlert, to: taskPath + '?timing=overdue' },
+    { title: 'Qua giờ hẹn', help: missedScheduleHelp, value: complete ? tasks.filter(task => task.overdue).length : '—', icon: ClockAlert, to: taskPath + '?timing=overdue' },
   ];
 
   return <section className="staff-dashboard">
@@ -76,13 +79,18 @@ export function StaffOperationsPage() {
       </button>
       <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>
+    <LoadState loading={scope.loading} error={scope.error} retry={scope.refresh} />
+    {staffFacilityMessage(scope) && <Empty title={staffFacilityMessage(scope)} description="Liên hệ quản trị viên để kiểm tra quyền cơ sở." />}
+    {scope.facility && <>
+    <p className="staff-facility-label">{scope.facility.name}</p>
     <LoadState loading={false} error={failedSources.length ? `Chưa tải được ${failedSources.join(', ')}.` : ''} retry={activity.refresh} />
     <div className="staff-metrics" aria-label="Chỉ số công việc" aria-busy={loading}>
-      {metrics.map(({ title, value, icon: Icon, to }) => loading ?
+      {metrics.map(({ title, value, icon: Icon, to, help }) => loading ?
         <DashboardSkeleton key={title} variant="metric" cardClass="staff-metric" /> :
         <Link className="staff-metric" to={to} key={title}>
           <span className="staff-metric-heading"><span>{title}</span><Icon size={19} aria-hidden="true" /></span>
           <strong>{value}</strong>
+          {help && <small>{help}</small>}
         </Link>)}
     </div>
     <div className="staff-dashboard-panels">
@@ -90,7 +98,7 @@ export function StaffOperationsPage() {
         {priority.slice(0, previewSize).map(task => <WorkRow key={task.entry.id} to={task.entry.web}
           title={[task.customer, task.unit].filter(Boolean).join(' · ') || task.title}
           details={task.customer || task.unit ? task.title : ''} time={task.timestamp ? date(task.timestamp, true) : undefined}
-          status={task.blocked ? <Status value={task.status} text="Chưa đủ điều kiện bàn giao" /> : task.waiting ? <Status value={task.status} text="Chờ quản lý xử lý" /> : task.overdue ? <Status value="OVERDUE" text="Đã quá giờ" /> :
+          status={task.blocked ? <Status value={task.status} text="Chưa đủ điều kiện bàn giao" /> : task.waiting ? <Status value={task.status} text="Chờ quản lý xử lý" /> : task.overdue ? <Status value="OVERDUE" text="Qua giờ hẹn" /> :
             <Status value={task.status} text={task.entry.kind === 'appointments' ? handoverStatusText(task.status) : undefined} />}
           action="Xem công việc" onOpen={() => activity.markRead([task.entry.token])} />)}
       </WorkPanel>
@@ -108,5 +116,6 @@ export function StaffOperationsPage() {
         status={<Status value={task.status} text={task.entry.kind === 'appointments' ? handoverStatusText(task.status) : undefined} />}
         action="Xem kết quả" />)}
     </WorkPanel>
+    </>}
   </section>;
 }

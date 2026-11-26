@@ -100,11 +100,20 @@ export class AuditService {
     if (!customer && !['FACILITY_MANAGER', 'FACILITY_STAFF'].includes(actor.role)) return [];
     const ids = customer ? [] : await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
     if (!customer && !ids.length) return [];
+    const staffLinks = actor.role === 'FACILITY_STAFF' ? await Promise.all([
+      this.prisma.transferRequest.findMany({ where: { closurePlanId: { not: null }, OR: [
+        { assignedStaffUserId: actor.id, fromStorageUnit: { storageType: { facilityId: { in: ids } } } },
+        { receivingStaffId: actor.id, toStorageUnit: { storageType: { facilityId: { in: ids } } } },
+      ] }, select: { id: true } }),
+      this.prisma.supportRequest.findMany({ where: { closurePlanId: { not: null }, assignedStaffUserId: actor.id,
+        storageUnit: { storageType: { facilityId: { in: ids } } } }, select: { id: true } }),
+    ]) : null;
     const scope: Prisma.AuditEventWhereInput = customer
-      ? { metadata: { path: ['customerId'], equals: actor.id } }
+      ? { metadata: { path: ['customerId'], equals: actor.id }, action: { notIn: ['RELOCATION_PROPOSED', 'RELOCATION_DESTINATION_REJECTED'] } }
       : { AND: [
         { OR: ids.flatMap(id => ['sourceFacilityId','destinationFacilityId'].map(field => ({ metadata: { path: [field], equals: id } }))) },
-        ...(actor.role === 'FACILITY_STAFF' ? [{ metadata: { path: ['staffRecipientIds'], array_contains: [actor.id] } }] : []),
+        ...(staffLinks ? [{ resourceId: { in: staffLinks.flat().map(row => row.id) } },
+          { metadata: { path: ['staffRecipientIds'], array_contains: [actor.id] } }] : []),
       ] };
     const where: Prisma.AuditEventWhereInput = { resource: 'relocation', outcome: 'SUCCESS', ...scope };
     const [total, items] = await Promise.all([

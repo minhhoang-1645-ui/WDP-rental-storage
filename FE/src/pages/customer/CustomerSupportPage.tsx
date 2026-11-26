@@ -25,7 +25,6 @@ import { ApiError } from "../../services/api";
 import { useApiResource } from "../../services/useApiResource";
 import { isTransferRequest } from '../../utils/transfer-request';
 import { useScopedSelection } from '../../components/customer/useScopedSelection';
-import type { StoredItem } from '../../types/stock';
 import type {
   CustomerInvoice,
   CustomerRental,
@@ -371,7 +370,6 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
             <div className="customer-card-list">
               {visibleRequests.map((item) => {
                 const transfer = isTransferRequest(item) ? item.transfers?.[0] : undefined;
-                const transferContractId = transfer?.contractId || item.contract?.id;
                 const transferLabel = transfer ? ({ REQUESTED: 'Chờ quản lý xem xét', APPROVED: transfer.requiresAcceptance ? 'Đã duyệt · Chờ ký phụ lục' : 'Đã duyệt · Chờ chuyển thực tế', COMPLETED: 'Đã chuyển kho', REJECTED: 'Chuyển kho chưa được chấp thuận' } as Record<string, string>)[transfer.status] : undefined;
                 return (
                 <DetailCard
@@ -404,8 +402,8 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
                   <details className="customer-request-disclosure" open={focused ? true : undefined}><summary>Chi tiết và phản hồi</summary>
                   <p>{item.description}</p>
                   {transfer && <div className="customer-inline-notice"><strong>{transfer.transferCode} · {transferLabel}</strong><p>Kho nguồn: {transfer.fromUnit.unitCode} → Kho đích: {transfer.toUnit?.unitCode || 'Đang lựa chọn'}.</p>{transfer.status === 'APPROVED' && transfer.requiresAcceptance && <Link to={`/customer/transfers?transfer=${encodeURIComponent(transfer.id)}`}>Xem và ký phụ lục</Link>}{transfer.rejectionReason && <p><strong>Lý do từ chối: </strong>{transfer.rejectionReason}</p>}{transfer.completedAt && <><p>Hoàn tất: {formatPortalDate(transfer.completedAt, true)}. Kho đang dùng và hợp đồng đã được cập nhật.</p><Link className="portal-text-button" to={`/customer/contracts?contract=${encodeURIComponent(transfer.contractId || item.contract?.id || '')}`}>Xem hợp đồng và biên bản chuyển kho</Link></>}</div>}
-                  {focused && transfer?.status === 'APPROVED' && transferContractId &&
-                    <TransferInventoryNotice contractId={transferContractId} unitCode={transfer.fromUnit.unitCode} />}
+                  {transfer?.status === 'APPROVED' && transfer.customerMoveAction &&
+                    <CustomerTransferMoveAction key={transfer.id} transfer={transfer} onReported={requests.refresh} />}
                   {item.earlyReturnDecision === 'APPROVED' && <EarlyReturnFinancialNotice review={item.earlyReturnFinancialReview} />}
                   {item.resolutionNote && (
                     <p className="customer-inline-notice">
@@ -424,21 +422,43 @@ export function CustomerSupportPage({ transferOnly = false }: { transferOnly?: b
   );
 }
 
-function TransferInventoryNotice({ contractId, unitCode }: { contractId: string; unitCode: string }) {
-  const { user } = useAuth();
-  const query = new URLSearchParams({ rentalContractId: contractId });
-  const inventory = useApiResource<StoredItem[]>('/customer/stored-items?' + query, user?.id, true);
-  const count = (inventory.data ?? []).filter(item => item.balance > 0).length;
-  if (inventory.loading) return <p role="status">Đang kiểm tra hàng còn lưu ở kho nguồn…</p>;
-  if (inventory.error) return <p role="status">Chưa kiểm tra được hàng còn lưu. <button type="button" className="portal-text-button" onClick={inventory.refresh}>Thử lại</button></p>;
-  if (!count) return null;
+function CustomerTransferMoveAction({ transfer, onReported }: {
+  transfer: NonNullable<CustomerSupportRequest['transfers']>[number];
+  onReported: () => void;
+}) {
+  const sending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [error, setError] = useState('');
 
+  async function reportReady() {
+    if (sending.current || reported || transfer.customerMoveAction !== 'READY_TO_REPORT') return;
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await mutate('/customer/transfer-orders/' + encodeURIComponent(transfer.id) + '/move-ready', 'POST');
+      setReported(true);
+      onReported();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Chưa gửi được thông báo. Vui lòng thử lại.');
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+
+  if (transfer.customerMoveAction === 'WAITING_FOR_DESTINATION') {
+    return <p>Chờ nhân viên bàn giao quyền truy cập kho mới trước khi chuyển đồ.</p>;
+  }
+  if (transfer.customerMoveAction === 'REPORTED' || reported) {
+    return <p role="status">Đã báo NestBox. Nhân viên sẽ kiểm tra kho cũ và thu hồi quyền truy cập.</p>;
+  }
   return <div className="customer-inline-notice">
-    <strong>Còn {count} mặt hàng tại kho {unitCode}</strong>
-    <p>Gửi phiếu xuất và phối hợp với nhân viên lấy hết hàng ra trước khi bàn giao kho cũ.</p>
-    <div className="portal-actions">
-      <Link className="button-secondary" to={'/customer/stored-items?' + query}>Xem hàng đang lưu</Link>
-      <Link className="button-secondary" to={'/customer/stock-movements?' + new URLSearchParams({ rentalContractId: contractId, type: 'OUT', create: '1' })}>Tạo phiếu xuất hàng</Link>
-    </div>
+    <p>Sau khi tự chuyển đồ và dọn trống kho cũ, báo NestBox để nhân viên đến kiểm tra.</p>
+    <button type="button" className="button-secondary" disabled={busy} onClick={() => void reportReady()}>
+      {busy ? 'Đang gửi…' : 'Tôi đã chuyển đồ xong'}
+    </button>
+    {error && <p role="alert">{error}</p>}
   </div>;
 }

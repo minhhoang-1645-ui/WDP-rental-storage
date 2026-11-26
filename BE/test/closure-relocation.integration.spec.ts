@@ -15,8 +15,10 @@ import { businessToday } from '../src/business-date.js';
 import type { PublicUser } from '../src/modules/auth/auth.types.js';
 
 const url = 'postgresql://relocation_test@127.0.0.1:55491/relocation_test';
-const enabled = process.env.NESTBOX_RELOCATION_TEST === '1';
-if (enabled && (process.env.DATABASE_URL !== url || process.env.DIRECT_URL !== url)) throw new Error('Relocation integration requires the isolated local database.');
+const foundation = process.env.NESTBOX_ISOLATED_TEST === '1';
+const enabled = foundation || process.env.NESTBOX_RELOCATION_TEST === '1';
+const target = foundation ? 'postgresql://nestbox_test@127.0.0.1:55439/nestbox_foundation_test' : url;
+if (enabled && (process.env.DATABASE_URL !== target || process.env.DIRECT_URL !== target)) throw new Error('Relocation integration requires the isolated local database.');
 const suite = enabled ? it : it.skip;
 let db: PrismaService;
 let app: INestApplication;
@@ -45,12 +47,15 @@ suite('moves an active contract and service through both facilities without movi
   const [source, destination] = await Promise.all([facility('source'), facility('destination')]);
   for (const [person, site] of [[sourceManager, source], [destinationManager, destination], [sourceStaff, source], [receivingStaff, destination]] as const)
     await db.facilityAccess.create({ data: { userId: person.id, facilityId: site.id, grantedById: bom.id, activeKey: person.id + ':' + site.id } });
-  await db.facilityAccess.create({data:{userId:sourceStaff.id,facilityId:destination.id,grantedById:bom.id,activeKey:sourceStaff.id+':'+destination.id}});
   const type = async (site: typeof source, suffix: string) => db.storageType.create({ data: {
     id: prefix + suffix, code: prefix + suffix, facilityId: site.id, name: 'Small', sizeId: 'small', sizeName: 'Small', kicker: 'Test', condition: 'STANDARD',
     widthCm: 150, lengthCm: 200, heightCm: 240, roomEquivalent: 'Test', capacity: 'Test', boxCount: 'Test', suitableItems: [], image: '', imageAlt: '', floor: 'Ground', access: 'Test', features: [], monthlyRate: 1500000,
   } });
   const [fromType, toType] = await Promise.all([type(source, '-from'), type(destination, '-to')]);
+  await db.businessRule.create({ data: {
+    key: 'monthlyPriceRange:small', facilityId: destination.id, version: 1,
+    value: { min: 1000000, max: 2000000 }, effectiveFrom: new Date('2000-01-01Z'), createdById: bom.id,
+  } });
   const [from, to] = await Promise.all([
     db.storageUnit.create({ data: { storageTypeId: fromType.id, unitNumber: prefix + '-S', status: 'OCCUPIED' } }),
     db.storageUnit.create({ data: { storageTypeId: toType.id, unitNumber: prefix + '-D', status: 'AVAILABLE' } }),
@@ -91,7 +96,7 @@ suite('moves an active contract and service through both facilities without movi
     expect(response.status,method+' '+path+': '+JSON.stringify(response.body)).toBe(status);
     return response.body;
   };
-  expect((await request(app.getHttpServer()).get('/api/health')).body).toMatchObject({release:'nestbox-facility-closure-relocation-20261124'});
+  expect((await request(app.getHttpServer()).get('/api/health')).body).toMatchObject({status:'ok'});
   expect((await request(app.getHttpServer()).get('/api/health/ready')).status).toBe(200);
   await api('patch','/operations/facilities/'+source.id,bom,{ expectedUpdatedAt: source.updatedAt.toISOString(), operationalStatus: 'CLOSING', closureMode: 'REQUIRED_RELOCATION', closureReason: 'Isolated safety test', bookingEnabled: false });
   const closing = await db.facility.findUniqueOrThrow({where:{id:source.id}});
@@ -128,9 +133,28 @@ suite('moves an active contract and service through both facilities without movi
   await expect(relocation.destinations(task.id, receivingStaff)).rejects.toThrow();
   const offered = await relocation.destinations(task.id, sourceStaff);
   expect(offered.some(unit => unit.id === to.id)).toBe(true);
+  const incident = await db.maintenanceRequest.create({ data: {
+    maintenanceCode: prefix + '-INCIDENT', createIdempotencyKey: prefix + '-INCIDENT', storageUnitId: to.id, category: 'SECURITY',
+    source: 'MANUAL', description: 'Destination safety hold', reportedByUserId: receivingStaff.id,
+  } });
+  const blockDestination = () => db.incidentUnitBlock.create({ data: { maintenanceRequestId: incident.id, storageUnitId: to.id } });
+  const releaseBlock = (id: string) => db.incidentUnitBlock.update({ where: { id }, data: { releasedAt: new Date() } });
+  const preProposal = await blockDestination();
+  expect((await relocation.destinations(task.id, sourceStaff)).some(unit => unit.id === to.id)).toBe(false);
+  await api('post','/relocations/tasks/'+task.id+'/propose',sourceStaff,{destinationId:to.id},409);
+  await releaseBlock(preProposal.id);
   const proposal = await api('post','/relocations/tasks/'+task.id+'/propose',sourceStaff,{destinationId:to.id});
   await expect(relocation.consent(proposal.id, other, { agreed: true, destinationId: to.id })).rejects.toThrow();
+  expect((await relocation.records(customer)).some(row => row.id === proposal.id)).toBe(false);
+  await api('post','/relocations/'+proposal.id+'/consent',customer,{agreed:true,destinationId:to.id},409);
+  const decide = '/relocations/'+proposal.id+'/destination-decision';
+  await api('post',decide,sourceManager,{decision:'ACCEPT',destinationId:to.id,note:'Cross-site denial'},403);
+  await api('post',decide,destinationManager,{decision:'ACCEPT',destinationId:to.id,note:'Destination confirmed availability'});
   expect((await relocation.records(customer)).some(row => row.id === proposal.id)).toBe(true);
+  const preHold = await blockDestination();
+  await api('post','/relocations/'+proposal.id+'/consent',customer,{agreed:true,destinationId:to.id},409);
+  expect(await db.reservationUnit.count({where:{reservationId:reservation.id,storageUnitId:to.id}})).toBe(0);
+  await releaseBlock(preHold.id);
   await api('post','/relocations/'+proposal.id+'/consent',customer,{agreed:true,destinationId:to.id});
   await api('post','/relocations/'+proposal.id+'/consent',customer,{agreed:true,destinationId:to.id});
   expect(await db.reservationUnit.count({where:{reservationId:reservation.id,storageUnitId:to.id}})).toBe(1);
@@ -142,6 +166,11 @@ suite('moves an active contract and service through both facilities without movi
   await api('post','/relocations/'+proposal.id+'/services',destinationManager,{evidence:'Source equipment returned, destination replacements agreed with customer'});
   await api('post','/relocations/'+proposal.id+'/handover',sourceStaff,handover('source'));
   await expect(relocation.handover(proposal.id, sourceStaff, handover('destination'))).rejects.toThrow();
+  const hold = await blockDestination();
+  await api('post','/relocations/'+proposal.id+'/handover',receivingStaff,handover('destination'),409);
+  expect(await db.transferRequest.findUniqueOrThrow({ where: { id: proposal.id } })).toMatchObject({ status: 'APPROVED', destinationHandover: null });
+  expect(await db.reservationUnit.findUniqueOrThrow({ where: { id: allocation.id } })).toMatchObject({ releasedAt: null });
+  await releaseBlock(hold.id);
   await api('post','/relocations/'+proposal.id+'/report-exception',receivingStaff,{side:'destination',note:'Need manager coordination before releasing access'});
   await api('post','/relocations/'+proposal.id+'/handover',receivingStaff,handover('destination'),409);
   await api('post','/relocations/'+proposal.id+'/cancel',sourceManager,{note:'Cannot cancel physically started transfer'},409);
@@ -172,6 +201,8 @@ suite('moves an active contract and service through both facilities without movi
   expect((await rentals.getCustomerRental(customer.id,reservation.id)).contracts[0].unit.id).toBe(to.id);
   expect((await rentals.getManagerRental(reservation.id,destinationManager)).contracts[0].unit.id).toBe(to.id);
   await expect(rentals.getManagerRental(reservation.id,sourceManager)).rejects.toThrow();
+  const oldBooking = await api('get','/manager/reservations/' + reservation.id,sourceManager);
+  expect(oldBooking.allocatedUnits.map((unit: { unitId: string }) => unit.unitId)).not.toContain(to.id);
   expect((await rentals.getStaffRental(receivingStaff,reservation.id)).contracts[0].unit.id).toBe(to.id);
   await expect(rentals.getStaffRental(sourceStaff,reservation.id)).rejects.toThrow();
   const contracts = new ContractsService(db);

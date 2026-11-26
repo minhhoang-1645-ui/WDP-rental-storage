@@ -42,6 +42,7 @@ if(process.env.NESTBOX_ISOLATED_TEST!=='1'||process.env.DATABASE_URL!==isolatedU
 const db=new PrismaService(), access=new FacilityAccessService(db),policies=new BusinessPolicyService(db),ops=new OperationsService(db),managerService=new ManagerService(db);
 const users:Record<string,PublicUser>={};
 let otp='';
+let temporaryDepositRule: { id: string; previous: { id: string; effectiveTo: Date | null } | null } | undefined;
 const signing=new SigningOtpService({signatureDeliveryConfigured:()=>true,sendSignatureOtp:async(input:{code:string})=>{otp=input.code;}} as unknown as EmailService,db);
 const contracts=new ContractsService(db,signing,new DocumentPolicy(new ConfigService({})));
 const billing=new BillingService(db), booking=new BookingService(db,undefined,contracts,billing,undefined,policies),appointments=new AppointmentsService(db,undefined,undefined,policies),support=new SupportService(db),transfers=new TransfersService(db),returns=new ReturnsService(db),deposits=new DepositSettlementsService(db);
@@ -73,7 +74,19 @@ beforeAll(async()=>{
   for(const who of ['manager'+id,'staff'+id,...(id==='A'?['staffA2']:[])])await access.grant(users.admin,{userId:who,facilityId:id});
  }
 });
-afterAll(async()=>{await db.$disconnect();});
+afterAll(async () => {
+ try {
+   if (temporaryDepositRule) {
+     const { id, previous } = temporaryDepositRule;
+     await db.$transaction(async tx => {
+       await tx.businessRule.delete({ where: { id } });
+       if (previous) await tx.businessRule.update({ where: { id: previous.id }, data: { effectiveTo: previous.effectiveTo } });
+     });
+   }
+ } finally {
+   await db.$disconnect();
+ }
+});
 it('assesses one overdue rent charge across workers and keeps it in the billing facility', async () => {
  const reservation = await reserve('B');
  const now = new Date();
@@ -218,6 +231,9 @@ it('transfers and physically returns a unit without forcing personal-goods stock
  const destination=(await transfers.destinations(transfer.id,{},users.managerA)).items.find(x=>x.eligible)!;
  await transfers.approve(transfer.id,{toStorageUnitId:destination.id,staffUserId:'staffA'},users.managerA);
  expect((await db.transferRequest.findUniqueOrThrow({where:{id:transfer.id}})).assignedStaffUserId).toBe('staffA');
+ await transfers.advanceMove(transfer.id,users.staffA,'DELIVER_DESTINATION',{destinationReady:true,accessDelivered:true});
+ await transfers.advanceMove(transfer.id,users.customer,'CUSTOMER_READY');
+ await transfers.advanceMove(transfer.id,users.staffA,'START_SOURCE');
  await transfers.complete(transfer.id,users.staffA,{destinationReady:true,oldKeysReturned:true,newKeysDelivered:true,goodsMoved:true,recipientName:users.customer.fullName,returnedKeyCount:1,deliveredKeyCount:1});
  const moved=await db.rentalContract.findUniqueOrThrow({where:{id:contract.id}});
  expect(moved.signedSnapshot).toEqual(original.signedSnapshot);
@@ -462,8 +478,13 @@ it('issues separate invoices for signed transfer terms and actual late occupancy
  const { r, contract } = await activateRental(customer);
  const original = await db.invoice.findFirstOrThrow({ where: { reservationId: r.id, type: 'INITIAL' } });
  const depositPolicy = (await policies.list(users.bom)).pricing.find(policy => policy.key === 'deposit');
- await policies.save('deposit', { value: { ...pricingPolicyDefaults.deposit, other: { method: 'FIXED_AMOUNT', amount: Number(original.depositAmount) + 100_000 } },
+ const previous = await db.businessRule.findFirst({
+   where: { key: 'deposit', facilityId: null, storageTypeId: null },
+   orderBy: { version: 'desc' }, select: { id: true, effectiveTo: true },
+ });
+ const published = await policies.save('deposit', { value: { ...pricingPolicyDefaults.deposit, other: { method: 'FIXED_AMOUNT', amount: Number(original.depositAmount) + 100_000 } },
    expectedUpdatedAt: depositPolicy?.updatedAt ?? null }, users.bom);
+ temporaryDepositRule = { id: published.id, previous };
  const service = new TransfersService(db, new TransferCommercialService(new DocumentPolicy(new ConfigService({}))), signing);
  const proposal = await support.createCustomer(customer, { reservationId: r.id, rentalContractId: contract.id, category: 'OTHER',
    subject: 'Yêu cầu chuyển kho', description: 'Muốn chuyển tới ô thuận tiện hơn.' }, key());

@@ -422,3 +422,65 @@ a.staff-metric:hover {
 .maintenance-evidence { display: grid; gap: 8px; margin-top: 14px; }
 .maintenance-evidence h3 { font-weight: 700; }
 @media (max-width: 560px) { .incident-two-fields { grid-template-columns: 1fr; } }
+
+.workspace-themed[data-workspace-role="staff"] .workspace-nav-heading {
+  margin-block: 10px 9px;
+}
+.staff-facility-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  color: var(--workspace-secondary);
+  font-weight: 600;
+}
+.staff-filter-help { margin: -4px 0 14px; color: var(--workspace-secondary); font-size: 14px; }
+.incident-location-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.staff-incident-page .incident-location-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.staff-incident-page .incident-location-options label:has(:checked) {
+  color: var(--workspace-primary);
+  border-color: var(--workspace-primary);
+  background: color-mix(in srgb, var(--workspace-primary) 10%, transparent);
+}
+.staff-incident-page :is(.incident-location-options, .incident-unit-options) input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  accent-color: var(--workspace-primary);
+}
+.incident-location-options svg { flex: 0 0 auto; }
+.incident-upload { display: grid; gap: 8px; }
+.incident-upload > div, .incident-report-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.incident-upload small, .incident-booking-clear { color: var(--workspace-secondary); }
+.incident-report-search { align-items: end; margin-block: 0 14px; }
+.incident-report-search .field-label { flex: 1 1 190px; max-width: 340px; }
+.incident-detail-link { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.incident-booking-hold { font-weight: 650; }
+.staff-incident-page .manager-table th:last-child { min-width: 132px; }
+@media (max-width: 420px) {
+  .incident-location-options { grid-template-columns: 1fr; }
+}

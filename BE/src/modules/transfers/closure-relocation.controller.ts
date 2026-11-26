@@ -32,6 +32,8 @@ export class ClosureRelocationController {
   @Roles('FACILITY_STAFF', 'STORAGE_CUSTOMER')
   @Post(':id/consent') consent(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.relocation.consent(id, req.user!, body); }
   @Roles('FACILITY_MANAGER')
+  @Post(':id/destination-decision') destinationDecision(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.relocation.decideDestination(id, req.user!, body); }
+  @Roles('FACILITY_MANAGER')
   @Post(':id/receiving-staff') receiving(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.relocation.assignReceiving(id, req.user!, body); }
   @Roles('FACILITY_MANAGER')
   @Post(':id/safety') safety(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.relocation.safety(id, req.user!, body); }

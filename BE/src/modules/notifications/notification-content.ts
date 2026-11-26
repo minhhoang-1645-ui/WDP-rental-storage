@@ -186,7 +186,9 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     const action = get('action');
     const titles: Record<string, string> = {
       RELOCATION_ASSIGNED: 'Đã phân công hỗ trợ di dời',
-      RELOCATION_PROPOSED: 'Đã có phương án kho mới',
+      RELOCATION_PROPOSED: 'Có phương án chờ cơ sở đích xem xét',
+      RELOCATION_DESTINATION_ACCEPTED: 'Cơ sở đích đã xác nhận tiếp nhận',
+      RELOCATION_DESTINATION_REJECTED: 'Cơ sở đích đã từ chối phương án',
       RELOCATION_RESERVED: 'Đã xác nhận và giữ kho mới',
       RELOCATION_RECEIVING_ASSIGNED: 'Đã phân công tiếp nhận kho mới',
       RELOCATION_DECLINED: 'Khách đã từ chối phương án',

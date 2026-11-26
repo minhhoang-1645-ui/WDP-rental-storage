@@ -1,4 +1,4 @@
-import { assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
+import { assertManagerCoverage, assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -207,7 +207,8 @@ export class PrismaUserRepository extends UserRepository {
       if (!target) return null;
       if (target.accountStatus === accountStatus) return { ...target, phone: target.phone ?? '', statusChanged: false };
       await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', id);
-      if(accountStatus==='DISABLED')await assertNoOpenAssignments(tx,id);
+      if (accountStatus === 'DISABLED' && target.role === 'FACILITY_MANAGER') await assertManagerCoverage(tx, id);
+      if (accountStatus === 'DISABLED' && target.role === 'FACILITY_STAFF') await assertNoOpenAssignments(tx, id);
       const updated = await tx.user.update({ where: { id }, data: { accountStatus } });
       // Also close unmarked legacy sessions before reopening a disabled account.
       await revokeActiveSessions(tx, { userId: id }, 'ACCOUNT_DISABLED', actorId);

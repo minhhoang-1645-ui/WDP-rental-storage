@@ -144,6 +144,8 @@ beforeAll(async () => {
     staffA2: 'FACILITY_STAFF',
     staffB: 'FACILITY_STAFF',
     incidentReporter: 'FACILITY_STAFF',
+    movingStaff: 'FACILITY_STAFF',
+    admin2: 'SYSTEM_ADMINISTRATOR',
     managerA: 'FACILITY_MANAGER',
     managerA2: 'FACILITY_MANAGER',
     managerB: 'FACILITY_MANAGER',
@@ -295,8 +297,8 @@ it('reports incidents without mutating rentals and secures photo evidence throug
   const reportGrant = (await api('post', '/admin/facility-access', 'admin', {
     userId: identity('incidentReporter'), facilityId: identity('A'),
   }, 201)).body;
-  await api('post', '/admin/facility-access', 'admin', { userId: identity('incidentReporter'), facilityId: identity('B') }, 201);
-  expect((await getFacilities('incidentReporter')).map((item: { id: string }) => item.id)).toEqual([identity('A'), identity('B')]);
+  await api('post', '/admin/facility-access', 'admin', { userId: identity('incidentReporter'), facilityId: identity('B') }, 409);
+  expect((await getFacilities('incidentReporter')).map((item: { id: string }) => item.id)).toEqual([identity('A')]);
   await api('get', '/staff/maintenance/units?facilityId=' + identity('B'), 'staffA', undefined, 403);
 
   const financialCounts = () => Promise.all([db.reservation.count(), db.reservationUnit.count(), db.rentalContract.count(),
@@ -351,12 +353,23 @@ it('reports incidents without mutating rentals and secures photo evidence throug
   expect((await api('get', '/staff/maintenance/reported-by-me', 'incidentReporter')).body.items)
     .toEqual(expect.arrayContaining([expect.objectContaining({ id, unitCode: null, commonArea: 'CORRIDOR' })]));
   expect(await financialCounts()).toEqual(before);
+  const reportList = '/staff/maintenance/reported-by-me';
+  const search = (facilityId: string, term: string) => reportList + '?' + new URLSearchParams({ facilityId, search: term });
+  const withCode = await api('get', search(identity('A'), String(created.body.maintenanceCode).toLowerCase()), 'incidentReporter');
+  expect(withCode.body).toMatchObject({ total: 1, items: [expect.objectContaining({ id, assignedStaff: { fullName: 'HTTP staffA' } })] });
+  const unit = await db.storageUnit.findUniqueOrThrow({ where: { id: unitIds[0] } });
+  const withUnit = await api('get', search(identity('A'), unit.unitNumber), 'incidentReporter');
+  expect(withUnit.body).toMatchObject({ total: 1, items: [expect.objectContaining({ unitCode: unit.unitNumber })] });
+  await api('get', search(identity('B'), unit.unitNumber), 'incidentReporter', undefined, 403);
+  expect((await api('get', search(identity('A'), unit.unitNumber), 'staffA')).body.total).toBe(0);
+  await api('get', search(identity('A'), unit.unitNumber), 'staffB', undefined, 403);
   await api('patch', '/admin/facility-access/' + reportGrant.id + '/revoke', 'admin', {});
   await api('get', staffTask + '/photos/' + photos[0].id, 'incidentReporter', undefined, 401);
   const newSession = await api('post', '/auth/login', undefined, { email: identity('incidentReporter') + '@foundation.test', password }, 200);
   tokens.incidentReporter = newSession.body.token;
   await denied('get', staffTask, 'incidentReporter');
   await denied('get', staffTask + '/photos/' + photos[0].id, 'incidentReporter');
+  await api('post', '/admin/facility-access', 'admin', { userId: identity('incidentReporter'), facilityId: identity('B') }, 201);
   await denied('post', '/staff/maintenance', 'incidentReporter', {
     facilityId: identity('A'), commonArea: 'CORRIDOR', description: 'Báo tin sau thu hồi quyền', category: 'SECURITY', rentalImpact: 'NO_IMPACT',
   });
@@ -471,6 +484,11 @@ it('rechecks a stale Customer Web quote even when no specific unit was selected'
 });
 
 it('uses persisted bearer sessions and keeps the five role capabilities separate over HTTP', async () => {
+  const range = '?from=2099-01-01T00:00:00Z&to=2099-01-02T00:00:00Z';
+  await api('get', '/manager/shifts' + range, 'managerA', undefined, 404);
+  await api('get', '/staff/shifts' + range, 'staffA', undefined, 404);
+  await api('get', '/manager/service-calendar' + range, 'managerA');
+
   await api('get', '/manager/invoices', undefined, undefined, 401);
   await api('get', '/admin/users', 'admin');
   await api('get', '/operations/facilities', 'bom');
@@ -781,6 +799,18 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
       expect(allocation.releasedAt).toBeInstanceOf(Date);
       cancelledHistory = { transferId: cancelled.id, allocationId: allocation.id, releasedAt: allocation.releasedAt! };
     } else {
+      await api('post', staffPath + '/destination-handover', 'staffA2', {
+        destinationReady: true, accessDelivered: true,
+      }, 201);
+      const supportPath = '/customer/support-requests/' + request.body.id;
+      expect((await api('get', supportPath, 'customer')).body.transfers)
+        .toEqual([expect.objectContaining({ id: transfer.id, customerMoveAction: 'READY_TO_REPORT' })]);
+      await api('post', '/customer/transfer-orders/' + transfer.id + '/move-ready', 'customer', {}, 201);
+      expect((await api('get', supportPath, 'customer')).body.transfers)
+        .toEqual([expect.objectContaining({ id: transfer.id, customerMoveAction: 'REPORTED' })]);
+      await api('post', staffPath + '/start-source-inspection', 'staffA2', {}, 201);
+      expect(await db.reservationUnit.findUniqueOrThrow({ where: { id: contract.reservationUnitId } }))
+        .toMatchObject({ releasedAt: null, actualVacatedAt: null });
       const incident = await api('post', '/staff/maintenance', 'staffA2', {
         storageUnitId: unitId, category: 'LOCK_OR_ACCESS', description: 'Cần sửa khóa kho đích đang giữ.',
       }, 201);
@@ -808,10 +838,20 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
       await api('post', '/manager/maintenance/' + issueId + '/verify', 'managerA', {}, 201);
       expect((await db.storageUnit.findUniqueOrThrow({ where: { id: unitId } })).status).toBe('RESERVED');
       await api('post', staffPath + '/complete', 'staffA2', {
-        recipientName: 'HTTP customer', returnedKeyCount: 1, deliveredKeyCount: 1,
+        recipientName: 'HTTP customer', returnedKeyCount: 1, deliveredKeyCount: 1, note: 'Kho nguồn trống, cửa và khóa nguyên trạng.',
         destinationReady: true, goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true,
       }, 201);
       expect((await db.storageUnit.findUniqueOrThrow({ where: { id: unitId } })).status).toBe('OCCUPIED');
+      const completed = await db.transferRequest.findUniqueOrThrow({ where: { id: transfer.id } });
+      expect(completed).toMatchObject({ status: 'COMPLETED', handoverReport: {
+        goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, note: 'Kho nguồn trống, cửa và khóa nguyên trạng.',
+        destinationAccessDeliveredAt: expect.any(String), customerMoveReadyAt: expect.any(String),
+        sourceInspectionStartedAt: expect.any(String),
+      } });
+      expect(await db.rentalContract.findUniqueOrThrow({ where: { id: contract.id } }))
+        .toMatchObject({ reservationUnitId: completed.toReservationUnitId });
+      expect(await db.reservationUnit.findUniqueOrThrow({ where: { id: contract.reservationUnitId } }))
+        .toMatchObject({ releasedAt: expect.any(Date), actualVacatedAt: expect.any(Date) });
       expect(cancelledHistory).toBeDefined();
       const history = cancelledHistory!;
       expect(await db.transferRequest.findUniqueOrThrow({ where: { id: history.transferId } })).toMatchObject({
@@ -939,6 +979,51 @@ it('allows only authorized Staff to report facility issues and prevents executio
   ).toBeNull();
 });
 
+it('serializes conflicting grants and protects the last Manager', async () => {
+  const userId = identity('movingStaff');
+  const grant = (facilityId: string, who: string) => request(app.getHttpServer()).post('/api/admin/facility-access')
+    .set('Authorization', 'Bearer ' + tokens[who]).send({ userId, facilityId });
+  const results = await Promise.all([grant(identity('A'), 'admin'), grant(identity('B'), 'admin2')]);
+  expect(results.map(result => result.status).sort()).toEqual([201, 409]);
+  const current = results.find(result => result.status === 201)!.body;
+  expect((await grant(current.facilityId, 'admin2')).body.id).toBe(current.id);
+  const facilityId = current.facilityId === identity('A') ? identity('B') : identity('A');
+  await expect(db.facilityAccess.create({ data: { userId, facilityId, grantedById: identity('admin'), activeKey: userId + ':' + facilityId } })).rejects.toMatchObject({ code: 'P2002' });
+  const oldSide = current.facilityId === identity('A') ? 'A' : 'B';
+  const manager = 'manager' + oldSide;
+  const unit = await db.storageUnit.findFirstOrThrow({ where: { storageTypeId: identity('type-' + oldSide) } });
+  const issue = await db.maintenanceRequest.create({ data: {
+    maintenanceCode: identity('access-race'), createIdempotencyKey: identity('access-race'), storageUnitId: unit.id,
+    source: 'MANUAL', category: 'LOCK_OR_ACCESS', description: 'Kiểm thử phân công đồng thời khi điều chuyển.',
+    reportedByUserId: identity(manager),
+  } });
+  const accessPath = '/admin/facility-access/users/' + userId + '/relocate';
+  const relocationInput = { expectedAccessId: current.id, facilityId };
+  const patch = (path: string, actor: string, body: object) => request(app.getHttpServer()).patch('/api' + path)
+    .set('Authorization', 'Bearer ' + tokens[actor]).send(body);
+  const [assignment, relocation] = await Promise.all([
+    patch('/manager/maintenance/' + issue.id + '/assign', manager, { staffUserId: userId, expectedAssignedStaffUserId: null }),
+    patch(accessPath, 'admin', relocationInput),
+  ]);
+  let moved = relocation;
+  if (assignment.status === 200) {
+    expect(relocation.status).toBe(409);
+    await api('patch', '/manager/assignments/maintenance/' + issue.id + '/release', manager,
+      { expectedAssignedStaffUserId: userId, reason: 'Bàn giao nhiệm vụ trước khi điều chuyển.' });
+    moved = await api('patch', accessPath, 'admin', relocationInput);
+  } else {
+    expect([400, 403, 409]).toContain(assignment.status);
+    expect(relocation.status).toBe(200);
+  }
+  expect((await db.maintenanceRequest.findUniqueOrThrow({ where: { id: issue.id } })).assignedStaffUserId).toBeNull();
+  await api('get', '/staff/appointments', 'movingStaff', undefined, 401);
+  expect(await db.facilityAccess.findMany({ where: { userId, revokedAt: null }, select: { facilityId: true } })).toEqual([{ facilityId }]);
+  await api('patch', '/admin/facility-access/' + moved.body.id + '/revoke', 'admin', {});
+  const last = await db.facilityAccess.findFirstOrThrow({ where: { userId: identity('managerB'), revokedAt: null } });
+  await api('patch', '/admin/facility-access/' + last.id + '/revoke', 'admin', {}, 409);
+  await api('patch', '/admin/users/' + identity('managerB') + '/status', 'admin', { accountStatus: 'DISABLED' }, 409);
+});
+
 it('revokes existing sessions when facility access is removed and never grants operational rights to Admin/BOM', async () => {
   const grant = await db.facilityAccess.findFirstOrThrow({
     where: {
@@ -1000,20 +1085,7 @@ it('enforces BOM pricing boundaries and pauses only new bookings without changin
     },
   });
   const before = contract.signedSnapshot;
-  await api(
-    'post',
-    '/operations/pricing-rules',
-    'bom',
-    {
-      facilityId: identity('A'),
-      sizeId: 'small',
-      min: 1000000,
-      max: 2000000,
-      effectiveFrom: new Date(Date.now() + 60_000).toISOString(),
-      expectedVersion: 1,
-    },
-    201,
-  );
+  // The pricing lifecycle test covers publication on this shared facility.
   const type = await db.storageType.findUniqueOrThrow({
     where: { id: identity('type-A') },
   });
@@ -1065,6 +1137,17 @@ it('enforces BOM pricing boundaries and pauses only new bookings without changin
     (await db.rentalContract.findUniqueOrThrow({ where: { id: contract.id } }))
       .status,
   ).toBe('ACTIVE');
+  const changedType = await db.storageType.findUniqueOrThrow({ where: { id: type.id } });
+  expect(Number(changedType.monthlyRate)).toBe(1700000);
+  await api('patch', '/manager/storage-types/' + type.id, 'managerA', {
+    monthlyRate: Number(type.monthlyRate),
+    expectedUpdatedAt: changedType.updatedAt.toISOString(),
+  });
+  const pausedFacility = await db.facility.findUniqueOrThrow({ where: { id: facility.id } });
+  await api('patch', '/operations/facilities/' + facility.id, 'bom', {
+    bookingEnabled: facility.bookingEnabled,
+    expectedUpdatedAt: pausedFacility.updatedAt.toISOString(),
+  });
 });
 
 it('verifies and claims Guest bookings through the real email-token and ownership flow', async () => {
@@ -1321,6 +1404,46 @@ it('keeps early key handover distinct from activation until the rental start dat
 });
 
 
+it('requires assigned Staff to verify access recovery after early handover', async () => {
+  const start = new Date(+businessToday() + 2 * 86400000).toISOString().slice(0, 10);
+  const reservation = await reserve('A', 1, start);
+  await sign(reservation.id);
+  const invoice = await db.invoice.findFirstOrThrow({ where: { reservationId: reservation.id, type: 'INITIAL' } });
+  await api('post', '/manager/invoices/' + invoice.id + '/payments', 'managerA',
+    { amount: Number(invoice.totalAmount), method: 'CASH' }, 201);
+  const appointment = (await api('post', '/customer/appointments', 'customer', {
+    reservationId: reservation.id, scheduledAt: new Date(Date.now() + 60000).toISOString(),
+  }, 201)).body;
+  const managerPath = '/manager/appointments/' + appointment.id;
+  await api('patch', managerPath + '/schedule', 'managerA', {
+    action: 'CONFIRM_EXCEPTION', expectedScheduledAt: appointment.scheduledAt, note: 'Confirmed Staff coverage.',
+  });
+  await api('patch', managerPath + '/assign', 'managerA', {
+    staffUserId: identity('staffA'), expectedAssignedStaffUserId: null,
+  });
+  const allocation = await db.reservationUnit.findFirstOrThrow({ where: { reservationId: reservation.id } });
+  await api('post', '/staff/appointments/' + appointment.id + '/complete-handover', 'staffA', {
+    handoverReport: { condition: 'Kho sạch', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true,
+      unitChecks: [{ unitId: allocation.storageUnitId, condition: 'Tốt', inspected: true }] },
+  }, 201);
+  const path = '/reservations/' + reservation.id + '/paid-cancellation';
+  const { quote } = (await api('get', path, 'customer')).body;
+  expect(quote.requiresRecovery).toBe(true);
+  await api('post', path, 'customer', { action: 'REQUEST', confirmed: true, confirmation: quote.confirmation }, 201);
+  await api('post', path, 'managerA', { action: 'APPROVE', note: 'Chưa đủ chứng cứ.' }, 409);
+  await api('post', path, 'managerA', {
+    action: 'ASSIGN_RECOVERY', staffUserId: identity('staffA2'), expectedAssignedStaffUserId: null, note: 'Bàn giao nhiệm vụ thu hồi.',
+  }, 201);
+  const recovery = { action: 'RECOVER', neverUsed: true, unitEmpty: true, accessRevoked: true, equipmentReturned: true,
+    note: 'Đã kiểm tra ô trống và thu hồi chìa khóa.' };
+  await api('post', path, 'staffA', recovery, 403);
+  await api('post', path, 'staffA2', recovery, 201);
+  await api('post', path, 'staffA', recovery, 403);
+  const record = await db.reservation.findUniqueOrThrow({ where: { id: reservation.id } });
+  expect(record.paidCancellation).toMatchObject({ verification: { staffId: identity('staffA2') } });
+  expect((await db.handoverAppointment.findUniqueOrThrow({ where: { id: appointment.id } })).assignedStaffUserId).toBe(identity('staffA'));
+});
+
 it('creates facility offerings with category-specific quantities and a catalog version header', async () => {
   const facilityId = identity('A');
   await db.facility.update({ where: { id: facilityId }, data: { bookingEnabled: true, operationalStatus: 'OPEN' } });
@@ -1399,7 +1522,12 @@ it('verifies the facility-group price range lifecycle through BOM, Manager and C
   const saved = await snapshot();
   expect(saved.reservation.status).toBe('CONFIRMED');
   expect(saved.contracts[0].signedSnapshot).not.toBeNull();
-  expect(saved.invoices[0].rentalAmount).toBe(1500000n);
+  const quote = { termMonths: 1, quantity: 1, paymentPlan: 'PAY_MONTHLY', monthlyUnitPrice: 1500000,
+    baseRentalAmount: 1500000, rentalAmount: 1500000, depositAmount: 1500000, discountAmount: 0, addOnTotalAmount: 0 };
+  expect(saved.reservation.quoteSnapshot).toMatchObject(quote);
+  expect(saved.contracts[0].signedSnapshot).toMatchObject({ document: { pricing: quote } });
+  expect(saved.invoices[0]).toMatchObject({ rentalAmount: 1500000n, depositAmount: 1500000n,
+    serviceAmount: 0n, chargeAmount: 0n, totalAmount: 3000000n, pricingSnapshot: quote });
   const before = await availability();
   expect(before.quote.monthlyUnitPrice).toBe(1500000);
   await update(typeId, { monthlyRate: 2500000 }, 400);
@@ -1458,7 +1586,7 @@ it('publishes BOM pricing policy and applies it to a new multi-unit quote', asyn
   const deposit = policies.find((rule: { key: string }) => rule.key === 'deposit');
   const prepaid = policies.find((rule: { key: string }) => rule.key === 'prepaid');
   const input = {
-    storageTypeId: identity('type-A'), quantity: 2, paymentPlan: 'PREPAID',
+    storageTypeId: identity('type-B'), quantity: 2, paymentPlan: 'PREPAID',
     startDate: '2090-01-01', endDate: '2090-04-01',
   };
   const before = (await api('post', '/pricing/quote', undefined, input, 201)).body;

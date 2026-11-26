@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { ArrowRight, ImagePlus, MapPin, Warehouse } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { SESSION_ENDED_EVENT } from '../../auth/session-end';
@@ -8,8 +9,8 @@ import { apiRequest, ApiError } from '../../services/api';
 import { allPages } from '../../services/portal';
 import { useApiResource } from '../../services/useApiResource';
 import { incidentArea, incidentAreas, incidentCategories, rentalImpacts } from '../../utils/maintenance-incident';
+import { staffFacilityMessage, useStaffFacility } from './staff-facility';
 
-type Facility = { id: string; name: string };
 type Unit = { id: string; unitCode: string; status: string };
 type Preview = { file: File; url: string };
 type IncidentDraft = { description: string; category: string; areaMode: boolean; priority: string; impact: string; files: File[] };
@@ -26,13 +27,8 @@ export function StaffIssueReportPage() {
 function IssueReport({ userId }: { userId: string }) {
   const [draft, setDraft] = useState(() => pendingDrafts.get(userId));
   const formRef = useRef<HTMLFormElement>(null);
-  const facilities = useApiResource<Facility[]>('/staff/maintenance/facilities', userId);
-  const sessionKey = 'nestbox-staff-incident-facility:' + userId;
-  const [facilityId, setFacility] = useState(() => {
-    try { return sessionStorage.getItem(sessionKey) ?? ''; } catch { return ''; }
-  });
-  const list = facilities.data ?? [];
-  const selected = (list.length === 1 ? list[0] : list.find(item => item.id === facilityId))?.id ?? '';
+  const facilities = useStaffFacility(userId);
+  const selected = facilities.facility?.id ?? '';
   const [areaMode, setAreaMode] = useState(draft?.areaMode ?? false);
   const [area, setArea] = useState('');
   const [priority, setPriority] = useState(draft?.priority ?? 'MEDIUM');
@@ -42,7 +38,11 @@ function IssueReport({ userId }: { userId: string }) {
   const [revision, setRevision] = useState(0);
   const [formVersion, setFormVersion] = useState(0);
   const [page, setPage] = useState(1);
-  const reports = useApiResource<Page<Row>>('/staff/maintenance/reported-by-me?page=' + page + '&limit=10', userId, true);
+  const [search, setSearch] = useState('');
+  const [reportQuery, setReportQuery] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
+  const reportParams = new URLSearchParams({ page: String(page), limit: '10', facilityId: selected, search: reportQuery });
+  const reports = useApiResource<Page<Row>>(selected ? '/staff/maintenance/reported-by-me?' + reportParams : null, userId, true);
   const [units, setUnits] = useState<{ facility: string; items: Unit[]; error: string }>();
   const currentUnits = units?.facility === selected ? units : undefined;
   const [photos, setPhotos] = useState<Preview[]>([]);
@@ -91,14 +91,6 @@ function IssueReport({ userId }: { userId: string }) {
     return () => controller.abort();
   }, [selected, areaMode, needsAreaScope, revision]);
 
-  function changeFacility(value: string) {
-    setFacility(value);
-    setArea('');
-    setAffectedUnits([]);
-    setUnits(undefined);
-    try { sessionStorage.setItem(sessionKey, value); } catch { /* Selection remains available on this page. */ }
-  }
-
   function addPhotos(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
@@ -142,6 +134,7 @@ function IssueReport({ userId }: { userId: string }) {
       setError('Chọn vị trí, loại sự cố và nhập mô tả có ít nhất 3 ký tự.');
       return;
     }
+    data.delete('locationMode');
     data.set('description', description);
     data.set('facilityId', selected);
     if (needsAreaScope) data.set('affectedUnitIds', JSON.stringify(affectedUnits));
@@ -184,22 +177,17 @@ function IssueReport({ userId }: { userId: string }) {
   return <section className="staff-incident-page">
     <PageHeader title="Báo cáo sự cố" />
     <LoadState loading={facilities.loading} error={facilities.error} retry={facilities.refresh} />
-    {!facilities.loading && !facilities.error && list.length === 0 && <Empty title="Bạn chưa có quyền tại cơ sở nào"
-      description="Liên hệ quản trị viên để kiểm tra quyền cơ sở." />}
-    {(list.length > 0 || error || draft) && <section className="manager-section">
+    {staffFacilityMessage(facilities) && <Empty title={staffFacilityMessage(facilities)} description="Liên hệ quản trị viên để kiểm tra quyền cơ sở." />}
+    {(selected || error || draft) && <section className="manager-section">
       {draft && <p className="booking-alert">Nội dung từ phiên trước đã được giữ. Chọn lại vị trí theo quyền cơ sở hiện tại.</p>}
       <form key={formVersion} ref={formRef} className="portal-form" onSubmit={submit} aria-busy={busy}>
         <fieldset className="portal-action-fieldset" disabled={busy}>
-          {list.length === 1 ? <label className="field-label">Cơ sở<input value={list[0].name} readOnly /></label>
-            : <label className="field-label">Cơ sở<select aria-label="Cơ sở" value={selected} onChange={event => changeFacility(event.target.value)} required>
-              <option value="">Chọn cơ sở</option>
-              {list.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select></label>}
+          <p className="staff-facility-label"><MapPin size={17} aria-hidden="true" />{facilities.facility?.name ?? 'Cơ sở chưa xác định'}</p>
           <div className="incident-location">
             <h2>Vị trí xảy ra sự cố</h2>
-            <div className="incident-choice" role="group" aria-label="Vị trí xảy ra sự cố">
-              <label><input name="locationMode" value="unit" type="radio" checked={!areaMode} onChange={() => setAreaMode(false)} /> Ô kho cụ thể</label>
-              <label><input name="locationMode" value="area" type="radio" checked={areaMode} onChange={() => { setArea(''); setAreaMode(true); }} /> Khu vực chung</label>
+            <div className="incident-location-options" role="radiogroup" aria-label="Vị trí xảy ra sự cố">
+              <label><input name="locationMode" value="unit" type="radio" checked={!areaMode} onChange={() => { setAffectedUnits([]); setAreaMode(false); }} /><Warehouse size={19} aria-hidden="true" />Ô kho cụ thể</label>
+              <label><input name="locationMode" value="area" type="radio" checked={areaMode} onChange={() => { setArea(''); setAreaMode(true); }} /><MapPin size={19} aria-hidden="true" />Khu vực chung</label>
             </div>
             {areaMode ? <>
               <label className="field-label">Khu vực chung<select aria-label="Khu vực chung" key={selected} name="commonArea" required value={selected ? area : ''} onChange={event => setArea(event.target.value)}>
@@ -248,37 +236,49 @@ function IssueReport({ userId }: { userId: string }) {
           <small>Chọn Khẩn cấp khi có nguy hiểm tức thời như cháy, rò điện hoặc đe dọa an toàn.</small>
           {priority === 'URGENT' && <p className="booking-alert" role="alert">Giữ khoảng cách an toàn, báo ngay cho quản lý tại cơ sở và gọi lực lượng khẩn cấp khi cần. Gửi phiếu sau khi đã xử lý nguy cơ tức thời.</p>}
           <label className="field-label">Mô tả sự cố<textarea name="description" minLength={3} maxLength={4000} rows={4} required defaultValue={draft?.description ?? ''}
-            placeholder="Ví dụ: Khóa cửa ô LG-02 bị kẹt, không thể mở bằng chìa khóa. Phát hiện lúc 14:30." /></label>
-          <label className="field-label">Hình ảnh sự cố (tùy chọn)<input type="file" accept={fileTypes.join(',')} multiple onChange={addPhotos} />
-            <small>Tối đa 5 ảnh JPG, PNG hoặc WebP, mỗi ảnh không quá 5 MB.</small></label>
+            placeholder="Mô tả hiện trạng và thời điểm phát hiện" /></label>
+          <div className="incident-upload">
+            <strong>Ảnh sự cố <small>(tùy chọn)</small></strong>
+            <input ref={fileInput} hidden type="file" accept={fileTypes.join(',')} multiple onChange={addPhotos} />
+            <div><button type="button" className="button-secondary" disabled={photos.length >= 5} onClick={() => fileInput.current?.click()}>
+              <ImagePlus size={17} aria-hidden="true" /> Thêm ảnh
+            </button> <small>{photos.length}/5 ảnh · JPG, PNG hoặc WebP · Tối đa 5 MB/ảnh</small></div>
+          </div>
           {photoError && <p className="booking-alert is-error" role="alert">{photoError}</p>}
           {photos.length > 0 && <ul className="incident-photos">{photos.map(({ file, url }, index) => <li key={url}>
             <img src={url} alt={'Ảnh sự cố ' + (index + 1)} />
             <button type="button" className="button-secondary" aria-label={'Xóa ảnh ' + file.name} onClick={() => removePhoto(url)}>Xóa ảnh</button>
           </li>)}</ul>}
           <button type="submit" className="button-primary" disabled={!selected || facilities.loading || facilities.refreshing || Boolean(facilities.error) || !areaMode && !currentUnits?.items.length}>
-            {busy ? photos.length ? 'Đang tải ảnh và gửi báo cáo…' : 'Đang gửi báo cáo…' : error ? 'Thử gửi lại' : 'Gửi báo cáo sự cố'}
+            {busy ? 'Đang gửi…' : 'Gửi báo cáo'}
           </button>
         </fieldset>
       </form>
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
-      {receipt && <p className="portal-success" role="status">Đã gửi {first(receipt, 'maintenanceCode')} · Chờ quản lý phân công. {Boolean(receipt.blocksUnit) && 'Đã tạm chặn đặt thuê các ô bị ảnh hưởng. '}<Link to={detailHref(receipt)}>Xem chi tiết</Link></p>}
+      {receipt && <p className="portal-success" role="status">Đã gửi {first(receipt, 'maintenanceCode')} · Chờ quản lý phân công. {Boolean(receipt.blocksUnit) && 'Đã tạm chặn đặt thuê các ô bị ảnh hưởng. '}<Link className="button-secondary incident-detail-link" to={detailHref(receipt)}>Xem chi tiết <ArrowRight size={15} aria-hidden="true" /></Link></p>}
     </section>}
-    <section className="manager-section">
+    {selected && <section className="manager-section">
       <PageHeader title="Sự cố tôi đã báo"><button className="button-secondary" type="button" disabled={reports.loading || reports.refreshing} onClick={reports.refresh}>Làm mới</button></PageHeader>
+      <form className="incident-report-search" onSubmit={event => { event.preventDefault(); setPage(1); setReportQuery(search.trim()); }}>
+        <label className="field-label">Tìm phiếu sự cố<input type="search" placeholder="Mã phiếu hoặc mã ô kho" value={search} maxLength={100}
+          onChange={event => { setSearch(event.target.value); if (!event.target.value) { setPage(1); setReportQuery(''); } }} /></label>
+        <button type="submit" className="button-secondary">Tìm kiếm</button>
+        {reportQuery && <button type="button" className="button-secondary" onClick={() => { setSearch(''); setReportQuery(''); setPage(1); }}>Xóa tìm kiếm</button>}
+      </form>
       <LoadState loading={reports.loading} error={reports.error} retry={reports.refresh} />
-      {reports.data?.items.length === 0 && <Empty title="Chưa có sự cố đã báo" />}
+      {reports.data?.items.length === 0 && <Empty title={reportQuery ? 'Không tìm thấy phiếu sự cố phù hợp' : 'Bạn chưa báo sự cố nào tại cơ sở này'} />}
       {Boolean(reports.data?.items.length) && <div className="manager-table-wrap"><table className="manager-table" aria-label="Sự cố tôi đã báo">
-        <thead><tr><th>Phiếu sự cố</th><th>Cơ sở và vị trí</th><th>Ngày báo</th><th>Ưu tiên</th><th>Trạng thái</th><th>Người xử lý</th><th>Chi tiết</th></tr></thead>
+        <thead><tr><th>Phiếu sự cố</th><th>Cơ sở và vị trí</th><th>Ngày báo</th><th>Ưu tiên</th><th>Tiến độ</th><th>Nhận đặt kho</th><th>Nhân viên được giao</th><th>Thao tác</th></tr></thead>
         <tbody>{reports.data?.items.map(row => <tr key={first(row, 'id')}>
           <td><strong>{first(row, 'maintenanceCode')}</strong><br />{label(row.category)}</td>
           <td>{[first(row, 'facility.name'), first(row, 'unitCode') || incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ')}</td>
-          <td>{date(row.createdAt, true)}</td><td>{label(row.priority)}</td><td><Status value={row.status} />
-            {row.blocksUnit === true && <div><small>Có ô đang tạm ngừng nhận đặt</small></div>}</td>
-          <td>{first(row, 'assignedStaff.fullName') || 'Chưa phân công'}</td><td><Link to={detailHref(row)}>Xem chi tiết</Link></td>
+          <td>{date(row.createdAt, true)}</td><td>{label(row.priority)}</td><td><Status value={row.status} text={row.status === 'OPEN' ? (first(row, 'assignedStaff.fullName') ? 'Chờ xử lý' : 'Chờ phân công') : undefined} /></td>
+          <td>{row.blocksUnit === true ? <span className="incident-booking-hold">Tạm dừng nhận đặt</span> : <span className="incident-booking-clear">Không chặn đặt</span>}</td>
+          <td>{first(row, 'assignedStaff.fullName') || 'Chờ quản lý giao việc'}</td>
+          <td><Link className="button-secondary incident-detail-link" to={detailHref(row)}>Xem chi tiết <ArrowRight size={15} aria-hidden="true" /></Link></td>
         </tr>)}</tbody>
       </table></div>}
       {reports.data && <Pagination page={page} limit={10} total={reports.data.total} onChange={setPage} />}
-    </section>
+    </section>}
   </section>;
 }

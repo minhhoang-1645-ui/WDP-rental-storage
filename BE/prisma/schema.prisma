@@ -1019,6 +1019,7 @@ model ReturnInspection {
 }
 
 model MaintenanceRequest {
+  /// Historical automatic-assignment readiness.
   dispatchReadyAt DateTime?
   rentalImpact             IncidentRentalImpact?
   reportedAffectedUnitIds  String[]            @default([])
@@ -1202,6 +1203,7 @@ model TransferRequest {
   receivingStaffId String?
   consentEvidence Json?
   sourceHandover Json?
+  destinationDecision Json?
   destinationHandover Json?
   relocationException String?
   safetyEvidence Json?
@@ -1536,6 +1538,7 @@ enum StaffShiftStatus {
   ABSENT
 }
 
+/// Historical shift records. The application no longer schedules or assigns work from shifts.
 model StaffShift {
   id           String           @id @default(cuid())
   facilityId   String

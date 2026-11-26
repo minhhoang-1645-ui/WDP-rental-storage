@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { apiRequest } from '../../services/api';
-import { safeSessionStorage } from '../../services/browser-storage';
 import { StaffPicker } from './StaffPicker';
 import { useAuth } from '../../auth/auth-context';
 
@@ -10,7 +9,7 @@ type Contract = { id: string; code: string; customer: string; endDate: string; u
 type Affected = Contract & { task: { id: string; status: string; assignedStaffUserId: string } | null };
 type PendingBooking = { id: string; reservationCode: string; customer: string; facility: Unit['facility']; status: string; signed: boolean; paid: boolean; handoverRecorded: boolean; refund: { refundAmount: string } | null };
 type Task = { id: string; status: string; contract: Contract; transfer: { id: string; status: string } | null };
-type RecordView = { id: string; code: string; status: string; contract: Contract; source: Unit; destination: Unit; consent: boolean; assignedStaffId: string; receivingStaffId: string | null; safetyConfirmed: boolean; servicesApproved: boolean; sourceHandover: boolean; destinationHandover: boolean; exception: string | null };
+type RecordView = { id: string; code: string; status: string; contract: Omit<Contract, 'unit'>; source: Unit; destination: Unit; destinationAccepted: boolean; consent: boolean; assignedStaffId: string; receivingStaffId: string | null; safetyConfirmed: boolean; servicesApproved: boolean; sourceHandover: boolean; destinationHandover: boolean; exception: string | null };
 
 function unitLabel(unit: Unit) { return unit.facility.name + ' · ' + unit.code; }
 const pending = (status: string) => ['REQUESTED', 'APPROVED'].includes(status);
@@ -19,7 +18,8 @@ const statusName = (status: string) => ({ REQUESTED: 'Chờ khách xác nhận',
 export function ClosureRelocations({ revision }: { revision: number }) {
   const { user } = useAuth();
   const manager = user?.role === 'FACILITY_MANAGER';
-  const scope = manager ? safeSessionStorage.getItem('nestbox-manager-facility') : null;
+  const activeFacility = useOutletContext<string | null>();
+  const scope = manager ? activeFacility : null;
   const [affected, setAffected] = useState<Affected[]>([]);
   const [pendingBookings, setPendingBookings] = useState<PendingBooking[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -98,7 +98,7 @@ export function ClosureRelocations({ revision }: { revision: number }) {
       <h3>{item.customer} · {item.code}</h3>
       <p>{unitLabel(item.unit)} · {item.task ? statusName(item.task.status) : 'Chưa phân công'}</p>
       {item.task?.status !== 'RESOLVED' && <button className="button-secondary" onClick={() => choose(item.id)}>Phân công hỗ trợ</button>}
-      {selected === item.id && <div className="portal-form"><StaffPicker value={staff} onChange={setStaff} disabled={busy}/><button className="button-primary" disabled={!staff || busy} onClick={() => void action('/contracts/' + item.id + '/assign', { staffUserId: staff })}>Giao việc</button></div>}
+      {selected === item.id && <div className="portal-form"><StaffPicker task={{ kind: 'relocation-source', id: item.id }} value={staff} onChange={setStaff} disabled={busy}/><button className="button-primary" disabled={!staff || busy} onClick={() => void action('/contracts/' + item.id + '/assign', { staffUserId: staff, expectedAssignedStaffUserId: item.task?.assignedStaffUserId ?? null, handoverConfirmed: customerAgreed, handoverNote: note })}>Giao việc</button>{item.task?.assignedStaffUserId && <><label><input type="checkbox" checked={customerAgreed} onChange={event => setCustomerAgreed(event.target.checked)} /> Đã bàn giao trách nhiệm thực tế</label>{noteField('Ghi chú chuyển giao')}</>}</div>}
       {item.task?.status === 'ESCALATED' && selected === item.id && <div className="portal-form">
         {noteField('Căn cứ xử lý ngoại lệ')}
         <button className="button-secondary" disabled={busy || note.trim().length < 3} onClick={() => void action('/tasks/' + item.task!.id + '/resolve-exception', { action: 'RETRY', note })}>Tiếp tục hỗ trợ</button>
@@ -118,20 +118,25 @@ export function ClosureRelocations({ revision }: { revision: number }) {
     </div>)}
     {records.map(row => <div key={row.id} className="manager-section">
       <h3>{row.contract.customer} · {row.code}</h3>
-      <p>{unitLabel(row.source)} → {unitLabel(row.destination)} · {statusName(row.status)}</p>
+      <p>{unitLabel(row.source)} → {unitLabel(row.destination)} · {row.status === 'REQUESTED' && !row.destinationAccepted ? 'Chờ cơ sở đích xác nhận' : statusName(row.status)}</p>
       <p>Khách {row.consent ? 'đã đồng ý' : 'chưa đồng ý'} · Kho cũ {row.sourceHandover ? 'đã giao' : 'chờ giao'} · Kho mới {row.destinationHandover ? 'đã nhận' : 'chờ nhận'}</p>
       {row.exception && <p role="alert">{row.exception}</p>}
       {pending(row.status) && <button className="button-secondary" onClick={() => choose(row.id)}>Xử lý hồ sơ</button>}
       {selected === row.id && <div className="portal-form">
         {manager ? <>
-          {row.status === 'APPROVED' && (!scope || row.destination.facility.id === scope) && <><StaffPicker value={staff} onChange={setStaff}/><button className="button-primary" disabled={!staff || busy || row.destinationHandover} onClick={() => void action('/' + row.id + '/receiving-staff', { staffUserId: staff })}>Phân công tiếp nhận</button>
+          {row.status === 'REQUESTED' && !row.destinationAccepted && scope === row.destination.facility.id && <>
+            {noteField('Căn cứ quyết định tiếp nhận')}
+            <button type="button" className="button-primary" disabled={busy || note.trim().length < 3} onClick={() => void action('/' + row.id + '/destination-decision', { decision: 'ACCEPT', destinationId: row.destination.id, note })}>Xác nhận tiếp nhận</button>
+            <button type="button" className="button-secondary" disabled={busy || note.trim().length < 3} onClick={() => void action('/' + row.id + '/destination-decision', { decision: 'REJECT', destinationId: row.destination.id, note })}>Từ chối phương án</button>
+          </>}
+          {row.status === 'APPROVED' && (!scope || row.destination.facility.id === scope) && <><StaffPicker task={{ kind: 'relocation-destination', id: row.id }} value={staff} onChange={setStaff}/><button className="button-primary" disabled={!staff || busy || row.destinationHandover} onClick={() => void action('/' + row.id + '/receiving-staff', { staffUserId: staff, expectedAssignedStaffUserId: row.receivingStaffId })}>Phân công tiếp nhận</button>
           {!row.sourceHandover && <>{noteField('Căn cứ phối hợp dịch vụ, thiết bị và sự đồng ý của khách')}<button className="button-secondary" disabled={busy || note.trim().length < 3} onClick={() => void action('/' + row.id + '/services', { evidence: note })}>{row.servicesApproved ? 'Đối chiếu lại dịch vụ' : 'Xác nhận phương án dịch vụ'}</button></>}</>}
           {(!scope || row.source.facility.id === scope) && <>{noteField('Căn cứ an toàn hoặc lý do hủy')}
             {row.status === 'APPROVED' && <button className="button-secondary" disabled={busy || note.trim().length < 3 || row.sourceHandover} onClick={() => void action('/' + row.id + '/safety', { evidence: note })}>Xác nhận an toàn di dời</button>}
             <button className="button-secondary" disabled={busy || note.trim().length < 3 || row.sourceHandover} onClick={() => void action('/' + row.id + '/cancel', { note })}>Hủy phương án</button></>}
         </> : <>
           {noteField(row.status === 'REQUESTED' ? 'Căn cứ xác nhận của khách về kho đích' : 'Ghi nhận bàn giao và quyền truy cập')}
-          {row.status === 'REQUESTED' && row.assignedStaffId === user?.id && <>
+          {row.status === 'REQUESTED' && row.destinationAccepted && row.assignedStaffId === user?.id && <>
             <button className="button-primary" disabled={busy || note.trim().length < 3} onClick={() => void action('/' + row.id + '/consent', { agreed: true, evidence: note, destinationId: row.destination.id })}>Ghi nhận khách đồng ý và giữ kho</button>
             <button className="button-secondary" disabled={busy || note.trim().length < 3} onClick={() => void action('/' + row.id + '/consent', { agreed: false, evidence: note, destinationId: row.destination.id })}>Ghi nhận khách từ chối</button></>}
           {row.status === 'APPROVED' && !row.exception && <>

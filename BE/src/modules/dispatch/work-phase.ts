@@ -31,7 +31,6 @@ type Work = {
   problemPending?: boolean;
   awaitingCustomer?: boolean;
   customerWaitReason?: string | null;
-  dispatchReadyAt?: Date | null;
 };
 
 export function workPhase(kind: WorkKind, work: Work, now = new Date()): { phase: WorkPhase; waitReason?: WaitReason } {
@@ -43,8 +42,7 @@ export function workPhase(kind: WorkKind, work: Work, now = new Date()): { phase
   if (kind === 'appointments' && work.status === 'REQUESTED'
     || kind === 'transfers' && (work.status === 'REQUESTED' || work.problemPending)
     || kind === 'support-requests' && work.status === 'ESCALATED'
-    || kind === 'maintenance' && (work.status === 'AWAITING_VERIFICATION'
-      || work.status === 'OPEN' && !work.assignedStaffUserId && work.dispatchReadyAt === null)) return { phase: 'WAITING', waitReason: 'MANAGER' };
+    || kind === 'maintenance' && work.status === 'AWAITING_VERIFICATION') return { phase: 'WAITING', waitReason: 'MANAGER' };
   if (work.awaitingCustomer || work.customerWaitReason) return { phase: 'WAITING', waitReason: 'CUSTOMER' };
   if ((kind === 'appointments' || kind === 'returns' && work.status === 'REQUESTED') && !work.handoverStarted && work.scheduledAt && work.scheduledAt > now) {
     return { phase: 'WAITING', waitReason: 'SCHEDULE' };
@@ -111,10 +109,6 @@ export function transferWork(row: { handoverReport: Prisma.JsonValue | null; com
 export async function assertCanStartDirectWork(tx: Prisma.TransactionClient, staffId: string, kind: WorkKind, id: string) {
   await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${staffId} FOR UPDATE`;
   const now = new Date();
-  if (await tx.staffShift.findFirst({ where: { staffUserId: staffId, status: 'SCHEDULED', startsAt: { lte: now },
-    endsAt: { gt: now }, checkedOutAt: null, breakStartedAt: { not: null } }, select: { id: true } })) {
-    throw new ConflictException('Kết thúc tạm nghỉ trước khi tiếp tục công việc.');
-  }
   if ((await staffDirectWork(tx, staffId, now)).some(task => task.phase === 'IN_PROGRESS' && (task.id !== id || task.kind !== kind))) {
     throw new ConflictException('Bạn đang thực hiện công việc khác. Hãy hoàn thành hoặc chuyển giao trước.');
   }

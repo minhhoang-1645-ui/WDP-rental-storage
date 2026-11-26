@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/auth-context';
 import { label } from '../../components/manager/portal-data';
 import { DateTimePicker } from '../../components/workspace/DateTimeFields';
 import { mutate } from '../../services/portal';
-import '../../styles/staff-shifts.css';
+import '../../styles/service-calendar.css';
 
 const timeZone = 'Asia/Ho_Chi_Minh';
 const localDate = (date: Date) => new Intl.DateTimeFormat('sv-SE', { timeZone }).format(date);
@@ -51,9 +51,9 @@ export function ServiceCalendarPage() {
       setSaving(false);
     }
   }
-  return <section className="shifts-page">
+  return <section className="service-calendar-page">
     <h1>Lịch phục vụ</h1>
-    <div className="shifts-toolbar">
+    <div className="service-calendar-toolbar">
       <label>Từ ngày<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
       <label>Phạm vi<select value={span} onChange={event => setSpan(Number(event.target.value))}><option value={1}>Một ngày</option><option value={7}>Một tuần</option></select></label>
       <button className="button-secondary" onClick={data.refresh}>Làm mới</button>
@@ -67,12 +67,12 @@ export function ServiceCalendarPage() {
       <button className="button-primary" disabled={saving || !scheduledAt}>{saving ? 'Đang lưu…' : 'Lưu lịch bàn giao'}</button>
     </form>}
     {data.loading ? <p role="status">Đang tải lịch…</p> : data.error ? <p role="alert">{data.error}</p>
-      : !data.data?.items.length ? <p>Chưa có lịch trong khoảng ngày đã chọn.</p> : <ul className="shifts-list">
+      : !data.data?.items.length ? <p>Chưa có lịch trong khoảng ngày đã chọn.</p> : <ul className="service-calendar-list">
         {data.data.items.map(row => <li key={row.type + ':' + row.id}><div>
           <Link to={`/manager/operations/${row.type}/${encodeURIComponent(row.id)}`}><strong>{titles[row.type]} · {row.code}</strong></Link>
           <p>{formatTime(row.scheduledAt)}{row.proposed ? ' · Giờ khách đề xuất' : ''}</p>
           <small>{label(row.status)} · {row.assignedStaff?.fullName ?? 'Chưa phân công'}</small>
-          {row.warning && <p className="shifts-warning" role="status">{row.warning}. Cần quản lý xem xét lịch hẹn.</p>}
+          {row.warning && <p className="service-calendar-warning" role="status">{row.warning}. Cần quản lý xem xét lịch hẹn.</p>}
         </div></li>)}
       </ul>}
   </section>;

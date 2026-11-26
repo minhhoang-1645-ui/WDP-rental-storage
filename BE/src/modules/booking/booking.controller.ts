@@ -110,7 +110,7 @@ export class BookingController {
     const actor = request.user!;
     const action = input.action;
     if (actor.role === 'STORAGE_CUSTOMER' && action === 'REQUEST' || actor.role === 'FACILITY_STAFF' && action === 'RECOVER' ||
-        actor.role === 'FACILITY_MANAGER' && (action === 'APPROVE' || action === 'REJECT' || action === 'REFUND')) {
+        actor.role === 'FACILITY_MANAGER' && (action === 'APPROVE' || action === 'REJECT' || action === 'REFUND' || action === 'ASSIGN_RECOVERY')) {
       return this.bookingService.handlePaidCancellation(actor, id, action, input);
     }
     throw new BadRequestException('Thao tác hủy không hợp lệ cho vai trò hiện tại.');

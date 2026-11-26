@@ -1,6 +1,5 @@
 import { AppliedPoliciesPage } from "../components/workspace/AppliedPoliciesPage";
 import { ServiceCalendarPage } from '../pages/operations/ServiceCalendarPage';
-import { StaffShiftsPage } from '../pages/operations/StaffShiftsPage';
 import { AdminRolesPage } from '../pages/admin/AccountRole';
 import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
 import { OperationsLayout } from '../pages/operations/OperationsLayout';
@@ -219,8 +218,6 @@ export function AppRouter() {
           <Route path="operations/rentals/*" element={<Navigate to="/staff/tasks" replace />} />
           <Route path="operations/:resource" element={<ManagerResourcePage />} />
           <Route path="operations/:resource/:id" element={<ManagerResourceDetailPage />} />
-          <Route path="check-in" element={<Navigate to="/staff/shifts" replace />} />
-          <Route path="shifts" element={<StaffShiftsPage />} />
           <Route path="*" element={<WorkspaceNotFound />} />
         </Route>
       </Route>
@@ -230,7 +227,6 @@ export function AppRouter() {
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
-          <Route path="shifts" element={<StaffShiftsPage manager />} />
           <Route path="service-calendar" element={<ServiceCalendarPage />} />
           <Route path="staff" element={<ManagerStaffPage />} />
           <Route path="stored-items/*" element={<Navigate to="/manager/units" replace />} />

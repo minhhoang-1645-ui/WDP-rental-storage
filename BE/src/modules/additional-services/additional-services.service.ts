@@ -265,6 +265,7 @@ export class AdditionalServicesService {
       throw new BadRequestException('Trạng thái cung cấp không hợp lệ.');
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', actor.id);
         await assertFacility(tx, actor, facilityId);
         // Read the definition after locking it so a new offering cannot use an outdated category.
         await tx.$queryRawUnsafe(

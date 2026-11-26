@@ -15,6 +15,15 @@ export function assertAssignmentVersion(input: Record<string, unknown>, current:
   }
 }
 
+export function physicalHandoff(input: Record<string, unknown>, inProgress: boolean) {
+  if (!inProgress) return undefined;
+  const note = typeof input.handoverNote === 'string' ? input.handoverNote.trim() : '';
+  if (input.handoverConfirmed !== true || note.length < 3 || note.length > 1000) {
+    throw new ConflictException('Xác nhận đã chuyển giao thực tế và ghi chú trước khi đổi người phụ trách.');
+  }
+  return { handoverConfirmed: true, handoverNote: note };
+}
+
 export function assertTaskAssignee(actor: PublicUser, assignedStaffUserId: string | null | undefined) {
   if (actor.role !== 'FACILITY_STAFF' || assignedStaffUserId !== actor.id) {
     throw new ForbiddenException('Chỉ nhân viên được giao mới có thể xử lý công việc này.');

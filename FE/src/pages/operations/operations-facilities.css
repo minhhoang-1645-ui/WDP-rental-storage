@@ -273,3 +273,7 @@
   .bom-facility-toolbar select { text-overflow: ellipsis; }
   .bom-facility-actions { justify-content: flex-start; }
 }
+.bom-service-windows { min-width: 0; display: grid; gap: 8px; }
+.bom-service-windows p { margin: 0; }
+.bom-service-window { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.bom-service-window input[type="number"] { width: 7rem; }

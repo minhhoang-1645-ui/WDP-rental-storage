@@ -69,7 +69,11 @@ export class AssignmentQueueService {
       }
       case 'transfers': {
         const row = await tx.transferRequest.findUniqueOrThrow({ where: { id } });
-        const previous = this.valid(input, row.assignedStaffUserId, ['REQUESTED', 'APPROVED'].includes(row.status) && !row.handoverReport);
+        const report = row.handoverReport;
+        const markerOnly = report && typeof report === 'object' && !Array.isArray(report)
+          && report.stagedHandover === true && Object.keys(report).length === 1;
+        const previous = this.valid(input, row.assignedStaffUserId,
+          !row.closurePlanId && ['REQUESTED', 'APPROVED'].includes(row.status) && (!report || !!markerOnly));
         await tx.transferRequest.update({ where: { id }, data: { assignedStaffUserId: null } });
         return previous;
       }

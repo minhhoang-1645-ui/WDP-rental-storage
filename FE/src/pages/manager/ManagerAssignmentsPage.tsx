@@ -5,7 +5,7 @@ import type { StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useLiveRefresh } from '../../services/live-events';
 import { RefreshCw } from "lucide-react";
-import { useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import {
@@ -30,6 +30,8 @@ import { staffFromWork } from '../../utils/staff';
 import { assignmentNeedsAttention, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { normalizeSearch } from '../../utils/notification-tools';
+import { useApiResource } from '../../services/useApiResource';
+import { vietnamCalendarDate } from '../../utils/business-date';
 
 const workNames = {
   'support-requests': 'Hỗ trợ',
@@ -86,6 +88,13 @@ export function ManagerAssignmentsPage() {
     error?: string;
   }>();
   const key = user?.id ?? '';
+  const facilityId = useOutletContext<string | undefined>();
+  const start = new Date(vietnamCalendarDate() + 'T00:00:00+07:00');
+  const shiftQuery = new URLSearchParams({ from: start.toISOString(), to: new Date(+start + 86400000).toISOString() });
+  if (facilityId) shiftQuery.set('facilityId', facilityId);
+  const staffing = useApiResource<{ items: { staffUserId: string; facilityId: string; availability: string; pendingHandover: { id: string; type: string }[] }[] }>(
+    user ? '/manager/shifts?' + shiftQuery : null, key,
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -176,13 +185,20 @@ export function ManagerAssignmentsPage() {
     }, { replace: true });
   };
   const statuses = [...new Set(allTasks.map(task => first(task.row, 'status')).filter(Boolean))];
+  const shiftRows = staffing.data?.items ?? [];
+  const pendingHandover = new Set(shiftRows.flatMap(shift => shift.pendingHandover ?? []).map(task => task.type + ':' + task.id));
   const columns: StaffColumn<Task>[] = [
     { key: 'task', label: 'Công việc', cell: ({ kind, row }) => <><strong>{first(row, 'subject') || workName(kind)}</strong><CopyRecordCode value={code(row)} />{kind === 'appointments' && <small>Hẹn: {date(row.scheduledAt, true)}</small>}</> },
     { key: 'customer', label: 'Khách hàng / Kho', cell: ({ row }) => <><strong>{first(customer(row), 'fullName') || relatedUnit(row)}</strong>{first(customer(row), 'fullName') && <small>{relatedUnit(row)}</small>}<small>{first(row, 'facility.name', 'reservation.facility.name')}</small></> },
     { key: 'staff', label: 'Nhân viên phụ trách', cell: task => {
       const assigned = first(task.row, 'assignedStaff.fullName');
+      const id = first(task.row, 'id');
+      const site = first(task.row, 'facility.id', 'reservation.facility.id') || facilityId;
+      const noAvailableStaff = Boolean(site && staffing.data && !shiftRows.some(shift => shift.facilityId === site && shift.availability === 'AVAILABLE'));
       return <><strong>{assigned || 'Chưa phân công'}</strong>
         {assigned && assignmentNeedsAttention(task.kind, task.row) && <small>Cần đổi nhân viên</small>}
+        {assigned && pendingHandover.has(task.kind + ':' + id) && <small>Cần xử lý chuyển giao ca</small>}
+        {!assigned && phase(task) === 'UNASSIGNED' && noAvailableStaff && <small>Chưa có Staff khả dụng tại cơ sở</small>}
         {canAssign(task) && <button type="button" className="portal-text-button manager-assign-trigger" onClick={() => setSelected(task)}>{assigned ? 'Đổi nhân viên' : 'Phân công'}</button>}
       </>;
     } },
@@ -196,7 +212,7 @@ export function ManagerAssignmentsPage() {
   return (
     <section className="manager-assignments">
       <PageHeader title="Phân công nhân viên">
-        {<button type="button" className="button-secondary" disabled={!current || refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>}
+        {<button type="button" className="button-secondary" disabled={!current || refreshing} onClick={() => { refresh(); staffing.refresh(); }}><RefreshCw size={16} /> Làm mới</button>}
       </PageHeader>
       <>
       {notice && (
@@ -266,6 +282,8 @@ function AssignmentDetail({
   const currentStaffName = first(task.row, 'assignedStaff.fullName');
   const formId = useId();
   const [queueReason, setQueueReason] = useState('');
+  const requiresHandoff = Boolean(currentStaffId && (['appointments', 'returns', 'maintenance'].includes(task.kind) && phase(task) === 'IN_PROGRESS'
+    || task.kind === 'transfers' && first(task.row, 'handoverReport.destinationAccessDeliveredAt')));
   const [staffId, setStaffId] = useState('');
   const assignable = canAssign(task);
   const [busy, setBusy] = useState(false);
@@ -279,6 +297,7 @@ function AssignmentDetail({
   const assign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current || stale || !assignable || !staffId || staffId === currentStaffId) return;
+    const handoff = new FormData(event.currentTarget);
     lock.current = true;
     setBusy(true);
     setError("");
@@ -286,7 +305,8 @@ function AssignmentDetail({
       await mutate(
         `/manager/${task.kind}/${encodeURIComponent(id)}/assign`,
         "PATCH",
-        { staffUserId: staffId.trim(), expectedAssignedStaffUserId: currentStaffId || null },
+        { staffUserId: staffId.trim(), expectedAssignedStaffUserId: currentStaffId || null,
+          ...(requiresHandoff ? { handoverConfirmed: handoff.get('handoverConfirmed') === 'on', handoverNote: handoff.get('handoverNote') } : {}) },
         true,
       );
       onAssigned();
@@ -348,8 +368,12 @@ function AssignmentDetail({
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
         <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); if (!stale) setError(''); }} workloads={workloads} disabled={busy || stale} />
+        {requiresHandoff && <>
+          <label className="portal-checkbox"><input name="handoverConfirmed" type="checkbox" required />Đã chuyển giao công việc thực tế cho người mới</label>
+          <label className="field-label">Ghi chú chuyển giao<textarea name="handoverNote" required minLength={3} maxLength={1000} /></label>
+        </>}
       </form>}
-      {currentStaffId && ['ASSIGNED', 'WAITING'].includes(phase(task)) && <details>
+      {currentStaffId && !requiresHandoff && ['ASSIGNED', 'WAITING'].includes(phase(task)) && <details>
         <summary>Đưa về hàng chờ</summary>
         <form className="portal-form" onSubmit={release}>
           <label className="field-label">Lý do<input required maxLength={500} value={queueReason} onChange={event => setQueueReason(event.target.value)} /></label>

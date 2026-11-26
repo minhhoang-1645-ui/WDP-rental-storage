@@ -11,4 +11,7 @@ export class CustomerTransferOrdersController {
   @Get(':id') get(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.transfers.getCustomerOrder(request.user!, id); }
   @Post(':id/signature-otp') otp(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.requestCommercialOtp(request.user!, id, body); }
   @Post(':id/accept') accept(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.transfers.acceptCommercial(request.user!, id, body); }
+  @Post(':id/move-ready') moveReady(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.transfers.advanceMove(id, request.user!, 'CUSTOMER_READY');
+  }
 }

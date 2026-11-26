@@ -1,5 +1,6 @@
 import { assessHandoverWindow } from '../dispatch/service-schedule.js';
-import { workPhase } from '../dispatch/work-phase.js';
+import { handoverSafetyBlocked, handoverUnitSafety, workPhase } from '../dispatch/work-phase.js';
+import { physicalHandoff } from '../facility-access/operational-assignment.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskExecution, assertTaskFacility, reservationScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
@@ -80,17 +81,31 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
 
   async createCustomerAppointment(customer: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
     if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được yêu cầu lịch bàn giao qua endpoint này.');
+    return this.createAppointment(customer, input, idempotencyKey);
+  }
+
+  createManagerAppointment(actor: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý cơ sở được đặt lịch thay khách.');
+    return this.createAppointment(actor, input, idempotencyKey);
+  }
+
+  private async createAppointment(actor: PublicUser, input: Record<string, unknown>, idempotencyKey: string | undefined) {
+    const manager = actor.role === 'FACILITY_MANAGER';
     const parsed = this.createInput(input, idempotencyKey);
-    const reservationIdentity = await this.prisma.reservation.findFirst({ where: { OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }], customerId: customer.id }, select: { id: true } });
+    const reservationIdentity = await this.prisma.reservation.findFirst({ where: {
+      OR: [{ id: parsed.reservationId }, { reservationCode: parsed.reservationId }],
+      ...(manager ? reservationScope(actor) : { customerId: actor.id }),
+    }, select: { id: true } });
     if (!reservationIdentity) throw new NotFoundException('Không tìm thấy Reservation.');
 
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Reservation" WHERE "id" = ${reservationIdentity.id} FOR UPDATE`);
+        if (manager) await assertTaskFacility(tx, actor, { reservationId: reservationIdentity.id });
         const duplicate = await tx.handoverAppointment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.appointmentInclude() });
         if (duplicate) {
           this.assertMatchingAppointmentRetry(duplicate, reservationIdentity.id, parsed);
-          return this.toAppointment(duplicate, false);
+          return this.toAppointment(duplicate, manager);
         }
         const reservation = await tx.reservation.findUnique({ where: { id: reservationIdentity.id }, include: this.reservationReadinessInclude() });
         if (!reservation) throw new NotFoundException('Không tìm thấy Reservation.');
@@ -109,7 +124,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
             reservationId: reservation.id,
             scheduledAt: parsed.scheduledAt,
             handoverLeadDays,
-            requestedByUserId: customer.id,
+            requestedByUserId: actor.id,
+            confirmedByUserId: confirmed && manager ? actor.id : null,
             status: confirmed ? 'CONFIRMED' : 'REQUESTED',
             confirmedAt: confirmed ? new Date() : null,
             ...(!confirmed ? { handoverReport: { scheduleException: decision } } : {}),
@@ -119,14 +135,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           },
           include: this.appointmentInclude(),
         });
-        return this.toAppointment(created, false);
+        return this.toAppointment(created, manager);
       }, { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 });
     } catch (error) {
       if (this.isPrismaCode(error, 'P2002')) {
         const duplicate = await this.prisma.handoverAppointment.findUnique({ where: { idempotencyKey: parsed.idempotencyKey }, include: this.appointmentInclude() });
         if (duplicate) {
           this.assertMatchingAppointmentRetry(duplicate, reservationIdentity.id, parsed);
-          return this.toAppointment(duplicate, false);
+          return this.toAppointment(duplicate, manager);
         }
         throw new ConflictException('Reservation đã có một lịch bàn giao đang hoạt động.');
       }
@@ -179,6 +195,68 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     return { OR: [{ assignedStaffUserId: staffId }, { assignedStaffUserId: null, status: 'COMPLETED', completedByUserId: staffId }] };
   }
 
+  rescheduleCustomerAppointment(id: string, input: Record<string, unknown>, customer: PublicUser) {
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ khách thuê được đổi lịch của mình.');
+    const expected = typeof input.expectedScheduledAt === 'string' ? Date.parse(input.expectedScheduledAt) : NaN;
+    const value = typeof input.scheduledAt === 'string' ? input.scheduledAt : '';
+    const scheduledAt = new Date(value);
+    if (!/(?:Z|[+-]\d\d:\d\d)$/.test(value) || !Number.isFinite(+scheduledAt) || !Number.isFinite(expected)) {
+      throw new BadRequestException('Cần giờ hẹn hiện tại và giờ hẹn mới có múi giờ.');
+    }
+    return this.serializable(async tx => {
+      const row = await tx.handoverAppointment.findFirst({ where: {
+        OR: [{ id }, { appointmentCode: id }], reservation: { customerId: customer.id },
+      }, select: { id: true } });
+      if (!row) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
+      await tx.$queryRaw`SELECT id FROM "HandoverAppointment" WHERE id = ${row.id} FOR UPDATE`;
+      const current = await tx.handoverAppointment.findUniqueOrThrow({ where: { id: row.id }, include: this.appointmentInclude() });
+      if (!['REQUESTED', 'CONFIRMED'].includes(current.status) || readUnitHandoverDraft(current.handoverReport).unitProgress.length) {
+        throw new ConflictException('Lịch này không còn đổi giờ được.');
+      }
+      const now = new Date();
+      if (current.scheduledAt <= now || scheduledAt <= now) throw new ConflictException('Chỉ đổi lịch chưa đến giờ sang thời điểm trong tương lai.');
+      if (+current.scheduledAt === +scheduledAt) return this.toAppointment(current, false);
+      if (+current.scheduledAt !== expected) throw new ConflictException('Lịch bàn giao vừa thay đổi. Vui lòng tải lại.');
+      if ((current.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') {
+        throw new ConflictException('Đơn đang được xem xét hủy.');
+      }
+      this.assertHandoverReady(current.reservation);
+      const leadDays = await this.appointmentLeadDays(current, tx);
+      await this.assertAppointmentDate(current.reservation, scheduledAt, leadDays);
+      if (await assessHandoverWindow(tx, current.reservation.facilityId, scheduledAt, { appointmentId: current.id }) !== 'CONFIRMED') {
+        throw new ConflictException('Chọn giờ phục vụ còn chỗ và có ca làm phù hợp.');
+      }
+      const previous = this.appointmentScheduleHistory(current.handoverReport).scheduleHistory ?? [];
+      const updated = await tx.handoverAppointment.update({ where: { id: row.id }, data: {
+        scheduledAt, status: 'CONFIRMED', confirmedAt: now, confirmedByUserId: null, handoverLeadDays: leadDays,
+        assignedStaffUserId: null, assignedAt: null, assignedByUserId: null,
+        handoverReport: { scheduleHistory: [...previous, { action: 'CUSTOMER_RESCHEDULE',
+          previousScheduledAt: current.scheduledAt.toISOString(), scheduledAt: scheduledAt.toISOString(), at: now.toISOString() }] },
+      }, include: this.appointmentInclude() });
+      if (current.assignedStaffUserId) {
+        await recordAssignment(tx, customer, 'appointments', current.id, current.assignedStaffUserId, null,
+          { reason: 'CUSTOMER_RESCHEDULE', facilityId: current.reservation.facilityId });
+      }
+      return this.toAppointment(updated, false);
+    }, 'Lịch bàn giao vừa thay đổi. Vui lòng tải lại.', 'ReadCommitted');
+  }
+
+  async dispatchEligible(tx: Prisma.TransactionClient, id: string, now: Date) {
+    const row = await tx.handoverAppointment.findUnique({ where: { id }, include: this.appointmentInclude() });
+    if (!row || row.status !== 'CONFIRMED' || row.scheduledAt > now || row.assignedStaffUserId
+      || readUnitHandoverDraft(row.handoverReport).unitProgress.length) return false;
+    try {
+      this.assertHandoverReady(row.reservation);
+      if ((row.reservation.paidCancellation as { state?: string } | null)?.state === 'REQUESTED') return false;
+      await this.assertHandoverExecutionTime(row.reservation, now, await this.appointmentLeadDays(row, tx));
+      await this.assertHandoverUnitsAvailable(tx, row.reservation);
+      return true;
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof ForbiddenException) return false;
+      throw error;
+    }
+  }
+
   async adjustAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
     if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xử lý ngoại lệ lịch bàn giao.');
     const action = input.action;
@@ -203,6 +281,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       }
       const now = new Date();
       const leadDays = await this.appointmentLeadDays(current, tx);
+      let scheduleDecision: Awaited<ReturnType<typeof assessHandoverWindow>> | undefined;
       if (action === 'CONFIRM_EXCEPTION') {
         if (current.status !== 'REQUESTED' || !current.handoverReport || !this.scheduleException(current.handoverReport)) {
           throw new ConflictException('Lịch này không chờ xác nhận ngoại lệ.');
@@ -210,15 +289,19 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (current.scheduledAt <= now) throw new ConflictException('Lịch đã qua. Hãy đổi sang giờ phù hợp.');
         this.assertHandoverReady(current.reservation);
         await this.assertAppointmentDate(current.reservation, current.scheduledAt, leadDays);
+        scheduleDecision = await assessHandoverWindow(tx, current.reservation.facilityId, current.scheduledAt, { appointmentId: current.id });
       }
       if (action === 'NO_SHOW' && current.scheduledAt >= now) throw new ConflictException('Chỉ ghi nhận khách không đến sau giờ hẹn.');
       if (action === 'RESCHEDULE') {
         if (scheduledAt <= now || scheduledAt.getTime() === expected) throw new BadRequestException('Chọn một thời điểm mới trong tương lai.');
         this.assertHandoverReady(current.reservation);
         await this.assertAppointmentDate(current.reservation, scheduledAt, leadDays);
+        scheduleDecision = await assessHandoverWindow(tx, current.reservation.facilityId, scheduledAt, { appointmentId: current.id });
       }
+      if (scheduleDecision === 'CAPACITY_REACHED') throw new ConflictException('Khung giờ đã đủ lịch hẹn. Hãy chọn giờ khác.');
       const report = current.handoverReport && typeof current.handoverReport === 'object' && !Array.isArray(current.handoverReport)
         ? current.handoverReport : {};
+      const { scheduleException, ...scheduleReport } = report;
       const history = Array.isArray(report.scheduleHistory) ? report.scheduleHistory : [];
       const adjustment = {
         action, note, previousScheduledAt: current.scheduledAt.toISOString(),
@@ -228,11 +311,14 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       const updated = await tx.handoverAppointment.update({ where: { id: current.id }, data: {
         ...(action === 'NO_SHOW' ? { status: 'CANCELLED', cancelledAt: now, activeKey: null }
           : action === 'CONFIRM_EXCEPTION' ? { status: 'CONFIRMED', confirmedAt: now, confirmedByUserId: actor.id }
-          : { scheduledAt, handoverLeadDays: leadDays }),
-        handoverReport: { ...report, scheduleHistory: [...history, adjustment] },
+          : { scheduledAt, handoverLeadDays: leadDays,
+            ...(scheduleDecision === 'CONFIRMED' ? { status: 'CONFIRMED', confirmedAt: now, confirmedByUserId: actor.id }
+              : { status: 'REQUESTED', confirmedAt: null, confirmedByUserId: null }) }),
+        handoverReport: { ...scheduleReport, scheduleHistory: [...history, adjustment],
+          ...(action === 'RESCHEDULE' && scheduleDecision && scheduleDecision !== 'CONFIRMED' ? { scheduleException: scheduleDecision } : {}) },
       }, include: this.appointmentInclude() });
       return this.toAppointment(updated, true);
-    }, 'Lịch bàn giao vừa thay đổi. Vui lòng tải lại.');
+    }, 'Lịch bàn giao vừa thay đổi. Vui lòng tải lại.', 'ReadCommitted');
   }
 
   async assignAppointment(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -248,7 +334,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Nhân viên phải là FACILITY_STAFF đang hoạt động.');
       if (current.assignedStaffUserId === staff.id) return this.toAppointment(current, true);
       if ((current.assignedStaffUserId ?? null) !== input.expectedAssignedStaffUserId) throw new ConflictException('Phân công vừa thay đổi. Tải lại trước khi giao lịch.');
-      await recordAssignment(tx,actor,"appointments",current.id,current.assignedStaffUserId,staff.id);
+      await recordAssignment(tx,actor,"appointments",current.id,current.assignedStaffUserId,staff.id,
+        physicalHandoff(input, Boolean(current.assignedStaffUserId && readUnitHandoverDraft(current.handoverReport).unitProgress.length)));
       return this.toAppointment(await tx.handoverAppointment.update({ where: { id: current.id }, data: { assignedStaffUserId: staff.id, assignedByUserId: actor.id, assignedAt: new Date() }, include: this.appointmentInclude() }), true);
     }, 'Lịch bàn giao vừa được phân công bởi yêu cầu khác. Vui lòng tải lại.');
   }
@@ -277,13 +364,16 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể xác nhận lịch ở trạng thái ${current.status}.`);
         this.assertHandoverReady(current.reservation);
         await this.assertAppointmentDate(current.reservation, current.scheduledAt,await this.appointmentLeadDays(current,tx));
+        if (await assessHandoverWindow(tx, current.reservation.facilityId, current.scheduledAt, { appointmentId: current.id }) !== 'CONFIRMED') {
+          throw new ConflictException('Lịch này cần quản lý kiểm tra khung phục vụ hoặc đổi giờ hẹn.');
+        }
         const updated = await tx.handoverAppointment.update({
           where: { id: current.id },
           data: { status: 'CONFIRMED', confirmedByUserId: actor.id, confirmedAt: new Date() },
           include: this.appointmentInclude(),
         });
         return this.toAppointment(updated, true);
-      }, 'Lịch bàn giao vừa được cập nhật. Vui lòng tải lại.');
+      }, 'Lịch bàn giao vừa được cập nhật. Vui lòng tải lại.', 'ReadCommitted');
   }
 
   async recordUnitHandover(id: string, unitId: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -651,7 +741,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         orderBy: { id: 'asc' as const },
       },
       units: { select: { id: true, storageUnitId: true, releasedAt: true } },
-      contracts: { include: { reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true, floor: true, zone: true } } } } }, orderBy: { contractCode: 'asc' as const } },
+      contracts: { include: { reservationUnit: { include: { storageUnit: { select: { ...handoverUnitSafety, id: true, unitNumber: true, floor: true, zone: true } } } } }, orderBy: { contractCode: 'asc' as const } },
     };
   }
 
@@ -670,6 +760,8 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
         coordination: workPhase('appointments', {
           ...record, handoverStarted: Boolean(draft?.unitProgress.length),
           bookingReady: ['REQUESTED', 'CONFIRMED'].includes(record.status) ? this.handoverBookingReadiness(record.reservation).bookingReady : undefined,
+          safetyBlocked: handoverSafetyBlocked((record.reservation.contracts ?? []).flatMap((contract: { reservationUnit?: { storageUnit?: { status: string } } }) =>
+            contract.reservationUnit?.storageUnit ? [contract.reservationUnit.storageUnit] : [])),
         }),
         assignedStaff: record.assignedStaff ?? null,
         assignedBy: record.assignedBy ?? null,
@@ -773,10 +865,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
   }
 
-  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, conflictMessage: string) {
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, conflictMessage: string,
+    isolationLevel: Prisma.TransactionIsolationLevel = 'Serializable') {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
+        return await this.prisma.$transaction(operation, { isolationLevel, maxWait: 10000, timeout: 20000 });
       } catch (error) {
         if (this.isPrismaCode(error, 'P2034') && attempt < 2) continue;
         if (this.isPrismaCode(error, 'P2034')) throw new ConflictException(conflictMessage);

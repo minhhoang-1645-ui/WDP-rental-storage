@@ -34,7 +34,8 @@
     "20261125000400_facility_service_schedule",
     "20261125000400_storage_type_booking_activation",
     "20261125000500_return_inspection_schedule",
-    "20261125000600_work_dispatch_fields"
+    "20261125000600_work_dispatch_fields",
+    "20261125000700_staff_shift_break"
   ],
   "migrations": [
     {
@@ -490,6 +491,13 @@
       "checksums": [
         "5721e6c771c63cc85f2e927e2283fae65192da293034cbed84366502fe960397",
         "3508dbe2a8d2d3df11846a0e4fd849ae95bc6547d22bd0e578fd8bb931652cc1"
+      ]
+    },
+    {
+      "name": "20261125000700_staff_shift_break",
+      "checksums": [
+        "c68b30ea586cb82cde3bbf685200c156fc8beaf3cec4ecf9b4d695d1a8b924f6",
+        "b0c6857e1a80d89fb772850c26403fa422058c1bde15092672db38abdaab2245"
       ]
     }
   ],

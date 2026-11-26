@@ -16,7 +16,11 @@ export function TransferHandoverForm({ busy, onSubmit, onProblem }: { busy: bool
     <label className="field-label">Ghi chú bàn giao<textarea name="note" rows={3} maxLength={2000} placeholder="Nếu không dùng chìa khóa/thẻ vật lý, ghi rõ cách thu hồi mã cũ và cấp mã mới." /></label>
     <button className="button-primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Hoàn tất chuyển kho'}</button>
   </form>
-  <details className="manager-section"><summary>Báo vướng mắc cho quản lý</summary>
+  <TransferProblemForm busy={busy} onProblem={onProblem} /></>;
+}
+
+export function TransferProblemForm({ busy, onProblem }: { busy: boolean; onProblem: (note: string) => void }) {
+  return <details className="manager-section"><summary>Báo vướng mắc cho quản lý</summary>
     <form className="portal-form" onSubmit={event => {
       event.preventDefault();
       onProblem(String(new FormData(event.currentTarget).get('problem') ?? '').trim());
@@ -24,5 +28,5 @@ export function TransferHandoverForm({ busy, onSubmit, onProblem }: { busy: bool
       <label className="field-label">Vướng mắc<textarea name="problem" minLength={3} maxLength={2000} required rows={3} /></label>
       <button className="button-secondary" disabled={busy}>Gửi vướng mắc</button>
     </form>
-  </details></>;
+  </details>;
 }

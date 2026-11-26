@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CreateHandoverAppointmentRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -48,6 +48,11 @@ export class CustomerAppointmentsController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.appointments.getCustomerAppointment(request.user!.id, id);
+  }
+
+  @Patch(':id/reschedule')
+  reschedule(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.appointments.rescheduleCustomerAppointment(id, body, request.user!);
   }
 
   private pagination(pageInput: string, limitInput: string) {

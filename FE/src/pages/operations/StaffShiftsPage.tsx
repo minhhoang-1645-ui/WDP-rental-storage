@@ -14,6 +14,8 @@ type Shift = {
   endsAt: string;
   status: string;
   attendance: string;
+  availability?: string;
+  pendingHandover?: Affected[];
   checkedInAt?: string;
   checkedOutAt?: string;
   reason?: string;
@@ -32,6 +34,8 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const attendanceLabel: Record<string, string> = {
   NOT_CHECKED_IN: 'Chưa vào ca', PRESENT: 'Đang trong ca', CHECKED_OUT: 'Đã kết thúc',
   ENDED: 'Đã hết giờ', CANCELLED: 'Đã hủy', ON_LEAVE: 'Nghỉ', ABSENT: 'Vắng mặt',
+  ON_BREAK: 'Tạm nghỉ', AVAILABLE: 'Sẵn sàng nhận việc', BUSY: 'Đang có việc trực tiếp',
+  UNAVAILABLE: 'Tài khoản hoặc quyền cơ sở không còn hiệu lực',
 };
 const affectedLabel: Record<string, string> = {
   appointments: 'Bàn giao', transfers: 'Chuyển kho', returns: 'Trả kho', 'support-requests': 'Hỗ trợ',
@@ -161,7 +165,8 @@ export function StaffShiftsPage({ manager = false }: { manager?: boolean }) {
           <div>
             <strong>{manager ? row.staff.fullName : row.facility.name}</strong>
             <p>{formatTime(row.startsAt)} – {formatTime(row.endsAt)}</p>
-            <small>{attendanceLabel[row.attendance]}{row.reason ? ` · ${row.reason}` : ''}</small>
+            <small>{attendanceLabel[row.attendance]}{manager && row.availability && row.availability !== row.attendance ? ` · ${attendanceLabel[row.availability]}` : ''}{row.reason ? ` · ${row.reason}` : ''}</small>
+            {!!row.pendingHandover?.length && <p role="status">Cần xử lý chuyển giao: {row.pendingHandover.map(task => task.code).join(', ')}</p>}
           </div>
           <div className="shifts-actions">
             {manager && row.status === 'SCHEDULED' && row.attendance !== 'CHECKED_OUT' && <>
@@ -175,7 +180,11 @@ export function StaffShiftsPage({ manager = false }: { manager?: boolean }) {
             </>}
             {!manager && row.attendance === 'NOT_CHECKED_IN' && Date.parse(row.startsAt) <= serverTime && Date.parse(row.endsAt) > serverTime &&
               <button className="button-primary" disabled={busy} onClick={() => void save(`/staff/shifts/${row.id}/check-in`, 'PATCH')}>Xác nhận vào ca</button>}
-            {!manager && row.status === 'SCHEDULED' && (row.attendance === 'PRESENT' || row.attendance === 'ENDED' && row.checkedInAt && !row.checkedOutAt) &&
+            {!manager && row.attendance === 'PRESENT' &&
+              <button className="button-secondary" disabled={busy} onClick={() => void save(`/staff/shifts/${row.id}/start-break`, 'PATCH', { revision: row.revision })}>Bắt đầu tạm nghỉ</button>}
+            {!manager && row.attendance === 'ON_BREAK' &&
+              <button className="button-primary" disabled={busy} onClick={() => void save(`/staff/shifts/${row.id}/end-break`, 'PATCH', { revision: row.revision })}>Quay lại làm việc</button>}
+            {!manager && row.status === 'SCHEDULED' && (['PRESENT', 'ON_BREAK'].includes(row.attendance) || row.attendance === 'ENDED' && row.checkedInAt && !row.checkedOutAt) &&
               <button className="button-secondary" disabled={busy} onClick={() => void save(`/staff/shifts/${row.id}/check-out`, 'PATCH')}>Kết thúc ca</button>}
           </div>
         </li>)}

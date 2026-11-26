@@ -4,6 +4,14 @@ import { EscalateSupportRequestDto, ResolveSupportRequestDto } from '../../opena
 @Controller('staff/support-requests') @UseGuards(AuthGuard, RolesGuard) @ApiTags('Staff Support') @ApiBearerAuth('bearerAuth')
 export class StaffSupportController {
   constructor(private readonly support: SupportService) {}
+  @Post(':id/wait-customer') @Roles('FACILITY_STAFF')
+  waitCustomer(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.support.customerWait(id, body, key, req.user!);
+  }
+  @Post(':id/resume') @Roles('FACILITY_STAFF')
+  resume(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Headers('idempotency-key') key: string | undefined) {
+    return this.support.customerWait(id, {}, key, req.user!, true);
+  }
   @Get() @Roles('FACILITY_STAFF') @ApiOperation({ summary: 'Danh sách Support Request vận hành' }) @ApiQuery({ name: 'page', required: false }) @ApiQuery({ name: 'limit', required: false }) @ApiQuery({ name: 'status', required: false, enum: ['OPEN','ASSIGNED','IN_PROGRESS','ESCALATED','RESOLVED'] }) @ApiQuery({ name: 'category', required: false, enum: ['UNIT_ISSUE','LOCK_OR_KEY_ISSUE','ACCESS_CODE_ISSUE','FACILITY_EQUIPMENT_FAILURE','PAYMENT_SUPPORT','STORED_ITEM_CONCERN','OTHER'] }) @ApiQuery({ name: 'priority', required: false, enum: ['LOW','MEDIUM','HIGH'] }) @ApiQuery({ name: 'assignedToMe', required: false, type: Boolean }) @ApiQuery({ name: 'search', required: false }) @ApiOkResponse({ description: 'Operational context, không có pricing history.' })
   list(@Req() req: AuthenticatedRequest, @Query() q: Record<string, unknown>) { return this.support.listStaff(parseSupportQuery(q), req.user!); }
   @Get(':id') @Roles('FACILITY_STAFF') @ApiOperation({ summary: 'Chi tiết Support Request cho vận hành' }) @ApiParam({ name: 'id' }) @ApiNotFoundResponse({ description: 'Không tìm thấy.' }) get(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.support.getStaff(id, req.user!); }

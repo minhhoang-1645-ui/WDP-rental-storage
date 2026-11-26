@@ -4,13 +4,21 @@ export async function affectedWork(tx: Prisma.TransactionClient, previous: Staff
   const { staffUserId, facilityId } = previous;
   const assigned = { assignedStaffUserId: staffUserId };
   const reservation = { facilityId };
+  const storageUnit = { storageType: { facilityId } };
   const [appointments, transfers, returns, support, maintenance, claims] = await Promise.all([
     tx.handoverAppointment.findMany({ where: { ...assigned, reservation, status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: previous.startsAt, lt: previous.endsAt } }, select: { id: true, appointmentCode: true, scheduledAt: true } }),
-    tx.transferRequest.findMany({ where: { ...assigned, reservation, status: { in: ['REQUESTED', 'APPROVED'] } }, select: { id: true, transferCode: true, supportRequest: { select: { transferRequestedStartAt: true } } } }),
-    tx.returnRequest.findMany({ where: { ...assigned, reservation, physicallyReturnedAt: null, status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] } }, select: { id: true, returnCode: true, inspectionScheduledAt: true } }),
-    tx.supportRequest.findMany({ where: { ...assigned, reservation, status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'] } }, select: { id: true, supportCode: true } }),
+    tx.transferRequest.findMany({ where: { OR: [
+      { ...assigned, fromStorageUnit: storageUnit }, { receivingStaffId: staffUserId, toStorageUnit: storageUnit },
+    ], status: { in: ['REQUESTED', 'APPROVED'] } }, select: { id: true, transferCode: true, supportRequest: { select: { transferRequestedStartAt: true } } } }),
+    tx.returnRequest.findMany({ where: { ...assigned, OR: [
+      { inspections: { some: {}, every: { storageUnit } } }, { inspections: { none: {} }, reservation },
+    ], physicallyReturnedAt: null, status: { in: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'] } }, select: { id: true, returnCode: true, inspectionScheduledAt: true } }),
+    tx.supportRequest.findMany({ where: { ...assigned, OR: [
+      { storageUnit }, { storageUnitId: null, rentalContract: { reservationUnit: { storageUnit } } },
+      { storageUnitId: null, rentalContractId: null, reservation },
+    ], status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'] } }, select: { id: true, supportCode: true } }),
     tx.maintenanceRequest.findMany({ where: { ...assigned, status: { in: ['OPEN', 'IN_PROGRESS'] }, OR: [{ commonAreaFacilityId: facilityId }, { storageUnit: { storageType: { facilityId } } }] }, select: { id: true, maintenanceCode: true } }),
-    tx.damageClaim.findMany({ where: { assignedStaffId: staffUserId, rentalContract: { reservation }, status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null }, select: { id: true, claimCode: true } }),
+    tx.damageClaim.findMany({ where: { assignedStaffId: staffUserId, rentalContract: { reservationUnit: { storageUnit } }, status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null }, select: { id: true, claimCode: true } }),
   ]);
   const relevant = (date?: Date | null) => {
     if (!date) return true;

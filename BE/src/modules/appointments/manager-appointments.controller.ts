@@ -1,5 +1,5 @@
 import { StaffWorkflow, ManagerAssignment } from '../auth/operation-access.js';
-import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -16,6 +16,12 @@ const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 @ApiBearerAuth('bearerAuth')
 export class ManagerAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
+
+  @ManagerAssignment()
+  @Post()
+  create(@Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest, @Headers('idempotency-key') key?: string) {
+    return this.appointments.createManagerAppointment(request.user!, body, key);
+  }
 
   @Get()
   @ApiOperation({ summary: 'Danh sách lịch bàn giao cho nhân viên' })

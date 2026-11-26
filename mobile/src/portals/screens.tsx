@@ -36,7 +36,7 @@ import { RenewalReview } from '@/operations/renewal-review';
 import { useResource } from '@/operations/use-resource';
 import { Button, Disclosure, Facts, Field, Navigation, Panel, styles } from '@/operations/ui';
 import { formatDate, formatMoney } from '@/utils/format';
-import { customerAppointmentAction, customerRentalActions, customerSupportAction, handoverWindowIssue, returnSettlementAmount, staffMaintenanceCreate, staffRecordActions } from './actions';
+import { customerAppointmentAction, customerAppointmentReschedule, customerRentalActions, customerSupportAction, handoverWindowIssue, returnSettlementAmount, staffMaintenanceCreate, staffRecordActions } from './actions';
 import { portalResource, type PortalRole } from './resources';
 import { InvoicePayment } from './invoice-payment';
 import { WorkflowHint } from '@/components/workspace-hub';
@@ -140,6 +140,10 @@ function Detail({ role, resource, id }: { role: PortalRole; resource: string; id
     if (row.status === 'ACTIVE') actions.push(customerSupportAction(text(row, 'reservation.id'), { contractId: idOf(row) }));
   }
   if (!config) return <View style={styles.page}><EmptyState title="Không tìm thấy hồ sơ" message="Mở lại danh sách tương ứng." /><Navigation title="Về tổng quan" path={root} /></View>;
+  if (role === 'STORAGE_CUSTOMER' && resource === 'appointments' && row) {
+    const appointment = customerAppointmentReschedule(row, clock);
+    if (appointment) actions.push(appointment);
+  }
   if (role === 'STORAGE_CUSTOMER' && resource === 'reservations' && row) actions.push(customerSupportAction(idOf(row), { operational: false }));
   const refresh = () => { data.refresh(); sources.forEach(item => item.refresh()); };
   return <ScrollView refreshControl={role==='STORAGE_CUSTOMER'&&resource!=='invoices'?<RefreshControl refreshing={data.loading&&Boolean(row)} onRefresh={()=>{if(!action)refresh();}}/>:undefined} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="automatic" contentContainerStyle={role==='STORAGE_CUSTOMER'?customerStyles.page:styles.page}>

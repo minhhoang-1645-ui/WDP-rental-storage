@@ -365,13 +365,18 @@ export function StaffActions({
                 Bắt đầu hỗ trợ
               </button>
             )}
-            {assigned && row.status === 'IN_PROGRESS' && (
+            {assigned && row.status === 'IN_PROGRESS' && row.customerWaitReason && <div className="portal-form">
+              <p>Chờ khách phản hồi · {String(row.customerWaitReason)}</p>
+              <button className="button-primary" disabled={busy} onClick={() => void run('/resume', 'POST', undefined, true)}>Tiếp tục xử lý</button>
+            </div>}
+            {assigned && row.status === 'IN_PROGRESS' && !row.customerWaitReason && (
               <form className="portal-form" onSubmit={event => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
                 const note = String(data.get('supportNote') ?? '').trim();
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
-                if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
+                if (supportOption === 'wait-customer') void run('/wait-customer', 'POST', { reason: note }, true);
+                else if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
                 else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note }, true);
               }}>
                 <label className="field-label">Hướng xử lý
@@ -380,16 +385,17 @@ export function StaffActions({
                     {row.category !== 'PAYMENT_SUPPORT' && ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
                       <option key={value} value={value}>{label(value)}</option>)}
                     <option value="escalate">Cần quản lý xem xét</option>
+                    <option value="wait-customer">Chờ khách phản hồi</option>
                   </select>
                 </label>
                 <label className="field-label">
-                  {supportOption === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
-                  <textarea name="supportNote" required minLength={3} maxLength={4000} rows={3}
+                  {supportOption === 'wait-customer' ? 'Lý do chờ khách' : supportOption === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
+                  <textarea name="supportNote" required minLength={3} maxLength={supportOption === 'wait-customer' ? 1000 : 4000} rows={3}
                     value={supportOption === 'escalate' ? escalationDraft : resolutionDraft}
                     onChange={event => (supportOption === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
                 </label>
                 <button className="button-primary" disabled={busy || !supportOption}>
-                  {busy ? 'Đang lưu…' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
+                  {busy ? 'Đang lưu…' : supportOption === 'wait-customer' ? 'Ghi nhận chờ khách' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>
               </form>
             )}

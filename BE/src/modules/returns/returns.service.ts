@@ -1,11 +1,11 @@
-import { workPhase } from '../dispatch/work-phase.js';
+import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, assertTaskExecution, returnTaskScope, supportTaskScope, supportTaskReference } from '../facility-access/task-access.js';
 import { Optional } from '@nestjs/common';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { assertActiveAssignee, assertAssignmentVersion, managerAssignmentInput, operationalAssignee } from '../facility-access/operational-assignment.js';
+import { assertActiveAssignee, assertAssignmentVersion, managerAssignmentInput, operationalAssignee, physicalHandoff } from '../facility-access/operational-assignment.js';
 import { EARLY_RETURN_APPROVAL_MESSAGE, EARLY_RETURN_SUBJECT, earlyReturnApprovalNote, earlyReturnScope } from './early-return-classification.js';
 import { businessDate, businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -155,7 +155,8 @@ export class ReturnsService {
       await assertActiveAssignee(tx, staffId, actor, {returnRequestId:current.id});
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staffId) return this.toReturn(current, 'FACILITY_MANAGER');
-      await recordAssignment(tx,actor,"returns",current.id,current.assignedStaffUserId,staffId);
+      await recordAssignment(tx,actor,"returns",current.id,current.assignedStaffUserId,staffId,
+        physicalHandoff(input, Boolean(current.assignedStaffUserId && current.inspectionStartedAt && !current.physicallyReturnedAt)));
       return this.toReturn(await tx.returnRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }), 'FACILITY_MANAGER');
     }, 'Phân công vừa thay đổi. Vui lòng tải lại.');
   }
@@ -180,6 +181,26 @@ export class ReturnsService {
     }, 'Hồ sơ vừa thay đổi. Vui lòng tải lại.');
   }
 
+  async dispatchEligible(tx: Prisma.TransactionClient, id: string, now: Date) {
+    const row = await tx.returnRequest.findUnique({ where: { id }, include: this.include() });
+    if (!row || row.status !== 'REQUESTED' || row.assignedStaffUserId || row.physicallyReturnedAt
+      || !row.inspectionScheduledAt || row.inspectionScheduledAt > now) return false;
+    try {
+      await this.assertInspectionReady(tx, row);
+      return true;
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof ForbiddenException) return false;
+      throw error;
+    }
+  }
+
+  private async assertInspectionReady(tx: Prisma.TransactionClient, row: Parameters<ReturnsService['requestContracts']>[0] & {
+    earlyReturnCloseout?: Prisma.JsonValue;
+  }) {
+    this.requestContracts(row);
+    await assertRoutineAccess(tx, row.inspections.map(item => item.storageUnitId), this.authorizedClosurePlan(row));
+  }
+
   async startInspection(id: string, actor: PublicUser) {
     this.assertOperational(actor);
     const identity = await this.identity(id);
@@ -190,8 +211,8 @@ export class ReturnsService {
       await assertTaskExecution(tx,actor,current.assignedStaffUserId,{returnRequestId:current.id});
       if (current.status === 'INSPECTION_IN_PROGRESS') return this.toReturn(current, 'FACILITY_STAFF');
       if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể bắt đầu kiểm tra ở trạng thái ${current.status}.`);
-      this.requestContracts(current);
-      await assertRoutineAccess(tx, current.inspections.map(item => item.storageUnitId), this.authorizedClosurePlan(current));
+      await assertCanStartDirectWork(tx, actor.id, 'returns', current.id);
+      await this.assertInspectionReady(tx, current);
       const updated = await tx.returnRequest.update({
         where: { id: current.id },
         data: { status: 'INSPECTION_IN_PROGRESS', inspectionStartedAt: new Date(), inspectionStartedById: actor.id },

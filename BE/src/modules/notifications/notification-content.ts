@@ -289,6 +289,14 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   let actionLabel = '';
   let important = row.priority === 'HIGH' || status === 'ISSUE_FOUND';
   let version = '';
+  if (customer && linkedTransfer?.customerMoveAction === 'READY_TO_REPORT') {
+    title = 'Đã bàn giao kho mới';
+    actionLabel = 'Xem tiến độ chuyển kho';
+    version = 'destination-ready';
+  } else if (customer && linkedTransfer?.customerMoveAction === 'REPORTED') {
+    title = 'Đã nhận thông báo chuyển đồ';
+    version = 'customer-move-reported';
+  }
   const affectedBookingCount = actor.role === 'FACILITY_MANAGER' && source === 'maintenance' ? Number(row.affectedBookingCount) || 0 : 0;
   const affectedAppointmentCount = affectedBookingCount ? Number(row.affectedAppointmentCount) || 0 : 0;
   if (customer && source === 'returns' && get('earlyReturnCloseout.appliedAt')) {
@@ -306,12 +314,18 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   if (staff) {
     const commercialReady = !row.commercial || Boolean(get('commercial.acceptedAt'));
     const actionable = staffActionable[source]?.includes(status)
-      && (source !== 'transfers' || commercialReady) && (source !== 'damage-claims' || !row.staffFacts);
+      && (source !== 'transfers' || commercialReady) && (source !== 'damage-claims' || !row.staffFacts)
+      && get('coordination.phase') !== 'WAITING';
     if (actionable) actionLabel = ({
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       returns: 'Kiểm tra kho trả', maintenance: 'Xử lý bảo trì',
       'support-requests': 'Xử lý hỗ trợ', transfers: 'Bàn giao kho chuyển', 'damage-claims': 'Ghi nhận sự cố',
     } as Record<string, string>)[source] ?? '';
+    if (source === 'transfers' && status === 'APPROVED' && get('handoverReport.customerMoveReadyAt')) {
+      title = 'Khách đã báo chuyển đồ xong';
+      actionLabel = 'Kiểm tra kho nguồn';
+      version = get('handoverReport.customerMoveReadyAt');
+    }
   }
   if (!customer && !staff) {
     const needsAssignment = !early && !transfer && managerAssignable[source]?.includes(status)

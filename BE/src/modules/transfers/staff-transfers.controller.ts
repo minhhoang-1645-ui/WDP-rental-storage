@@ -38,6 +38,16 @@ export class StaffTransfersController {
     return this.transfers.reportStaffProblem(id, req.user!, input.note);
   }
 
+  @Post(':id/destination-handover')
+  deliverDestination(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() input: Record<string, unknown>) {
+    return this.transfers.advanceMove(id, req.user!, 'DELIVER_DESTINATION', input);
+  }
+
+  @Post(':id/start-source-inspection')
+  startSourceInspection(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.transfers.advanceMove(id, req.user!, 'START_SOURCE');
+  }
+
   @Post(':id/complete')
   @ApiOperation({ summary: 'Hoàn tất chuyển unit vật lý', description: 'Atomically: allocation cũ được giữ và release, unit cũ → MAINTENANCE, unit mới → OCCUPIED, Contract giữ nguyên record.' })
   @ApiConflictResponse({ description: 'Transfer/unit state không còn hợp lệ.' })

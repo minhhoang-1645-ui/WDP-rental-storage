@@ -1,4 +1,4 @@
-import { workPhase } from '../dispatch/work-phase.js';
+import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
@@ -174,14 +174,37 @@ export class SupportService {
   start(id: string, key: string | undefined, actor: PublicUser) {
     return this.transition(id, key, 'START', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'ASSIGNED') throw new ConflictException('Chỉ Support Request ASSIGNED mới có thể bắt đầu.');
+      await assertCanStartDirectWork(tx, actor.id, 'support-requests', current.id);
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'IN_PROGRESS', startedAt: new Date(), lastAction: 'START', lastActionIdempotencyKey: safeKey }, include: this.include() });
+    });
+  }
+
+  customerWait(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser, resume = false) {
+    const reason = resume ? null : this.text(input.reason, 1000, 'reason');
+    const action = resume ? 'RESUME' : 'WAIT_CUSTOMER';
+    return this.transition(id, key, action, actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${actor.id} FOR UPDATE`;
+      const facilityId = await assertTaskFacility(tx, actor, supportTaskReference(current));
+      if (current.status !== 'IN_PROGRESS' || Boolean(current.customerWaitReason) !== resume) {
+        throw new ConflictException('Trạng thái chờ của công việc đã thay đổi.');
+      }
+      if (resume) await assertCanStartDirectWork(tx, actor.id, 'support-requests', current.id);
+      await tx.auditEvent.create({ data: {
+        category: 'ACTIVITY', action, outcome: 'SUCCESS', resource: 'support-requests', resourceId: current.id,
+        route: '/staff/support-requests/' + current.id + (resume ? '/resume' : '/wait-customer'), method: 'POST', httpStatus: 201,
+        actorId: actor.id, actorName: actor.fullName, actorEmail: actor.email, actorRole: actor.role,
+        metadata: { facilityId, reason: reason ?? current.customerWaitReason },
+      } });
+      return tx.supportRequest.update({ where: { id: current.id }, data: {
+        customerWaitReason: reason, lastAction: action, lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
     });
   }
 
   resolveAssignedRequest(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const parsed = this.resolutionInput(input, staffResolutions);
     return this.transition(id, key, 'STAFF_RESOLVE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
-      if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được Staff resolve.');
+      if (current.status !== 'IN_PROGRESS' || current.customerWaitReason) throw new ConflictException('Tiếp tục xử lý trước khi ghi kết quả hỗ trợ.');
       if (current.category === 'PAYMENT_SUPPORT') throw new ConflictException('Chuyển yêu cầu thanh toán cho quản lý xem xét.');
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
@@ -191,7 +214,7 @@ export class SupportService {
     const reason = this.text(input.reason, 4000, 'reason');
     return this.transition(id, key, 'ESCALATE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được escalate.');
-      return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'ESCALATED', escalatedAt: new Date(), escalatedByUserId: actor.id, escalationReason: reason, lastAction: 'ESCALATE', lastActionIdempotencyKey: safeKey }, include: this.include() });
+      return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'ESCALATED', customerWaitReason: null, escalatedAt: new Date(), escalatedByUserId: actor.id, escalationReason: reason, lastAction: 'ESCALATE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
 
@@ -244,7 +267,7 @@ export class SupportService {
   }
 
   private include(mode: ViewMode = 'FACILITY_MANAGER'): Prisma.SupportRequestInclude { return {
-    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, ...(mode === 'STORAGE_CUSTOMER' ? {} : { assignedStaffUserId: true }), rentalContractId: true, customerAcceptedAt: true, commercialSnapshot: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
+    transferRequests: { orderBy: { createdAt: 'desc' }, select: { id: true, transferCode: true, status: true, rejectionReason: true, ...(mode === 'STORAGE_CUSTOMER' ? {} : { assignedStaffUserId: true }), rentalContractId: true, customerAcceptedAt: true, commercialSnapshot: true, handoverReport: true, createdAt: true, approvedAt: true, completedAt: true, fromStorageUnit: { select: { id: true, unitNumber: true } }, toStorageUnit: { select: { id: true, unitNumber: true } } } },
     customer: { select: { id: true, fullName: true, email: true, phone: true } },
     reservation: { select: { id: true, reservationCode: true, status: true, ...(mode !== 'STORAGE_CUSTOMER' ? { facility: { select: { id: true, name: true } } } : {}), ...(mode === 'STORAGE_CUSTOMER' ? { _count: { select: { contracts: true } } } : {}) } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true } },
@@ -268,10 +291,14 @@ export class SupportService {
       : record.resolutionNote;
     const base = { id: record.id, supportCode: record.supportCode, category: record.category, priority: record.priority, status: record.status, subject: record.subject, description: record.description, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, status: record.reservation.status }, contract: record.rentalContract, unit: record.storageUnit ? { id: record.storageUnit.id, unitCode: record.storageUnit.unitNumber, status: record.storageUnit.status, floor: record.storageUnit.floor, zone: record.storageUnit.zone, row: record.storageUnit.row, position: record.storageUnit.position, storageType: record.storageUnit.storageType } : null, invoice: record.invoice, startedAt: record.startedAt?.toISOString() ?? null, resolvedAt: record.resolvedAt?.toISOString() ?? null, resolutionType: record.resolutionType, resolutionNote, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(), earlyReturnFinancialReview: record.earlyReturnFinancialReview ?? null, earlyReturnDecision, earlyReturnForEndDate: record.lastActionIdempotencyKey?.startsWith('early-return:') ? record.lastActionIdempotencyKey.slice(-10) : null, transfers: (record.transferRequests ?? []).filter((transfer: { status: string; assignedStaffUserId: string | null }) =>
       mode !== 'FACILITY_STAFF' || Boolean(record.assignedStaffUserId && transfer.assignedStaffUserId === record.assignedStaffUserId && ['APPROVED', 'COMPLETED'].includes(transfer.status)),
-    ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, hasCommercialAppendix: Boolean(transfer.commercialSnapshot), requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt), fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
+    ).map((transfer: any) => ({ id: transfer.id, transferCode: transfer.transferCode, status: transfer.status, rejectionReason: transfer.rejectionReason ?? null, contractId: transfer.rentalContractId, hasCommercialAppendix: Boolean(transfer.commercialSnapshot), requiresAcceptance: Boolean(transfer.commercialSnapshot && !transfer.customerAcceptedAt),
+      customerMoveAction: transfer.status !== 'APPROVED' || transfer.handoverReport?.stagedHandover !== true ? null
+        : transfer.handoverReport.customerMoveReadyAt ? 'REPORTED'
+        : transfer.handoverReport.destinationAccessDeliveredAt ? 'READY_TO_REPORT' : 'WAITING_FOR_DESTINATION',
+      fromUnit: { id: transfer.fromStorageUnit.id, unitCode: transfer.fromStorageUnit.unitNumber }, toUnit: transfer.toStorageUnit ? { id: transfer.toStorageUnit.id, unitCode: transfer.toStorageUnit.unitNumber } : null, createdAt: transfer.createdAt.toISOString(), approvedAt: transfer.approvedAt?.toISOString() ?? null, completedAt: transfer.completedAt?.toISOString() ?? null })) };
     const view = { ...base, transferRequestedSchedule: transferProposalView(record) };
-    if (mode === 'STORAGE_CUSTOMER') return view;
-    const operational = { ...view, coordination: workPhase('support-requests', record), customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
+    if (mode === 'STORAGE_CUSTOMER') return { ...view, waitingForCustomer: Boolean(record.customerWaitReason) };
+    const operational = { ...view, coordination: workPhase('support-requests', record), customerWaitReason: record.customerWaitReason, customer: record.customer, assignedStaff: record.assignedStaff, escalatedAt: record.escalatedAt?.toISOString() ?? null, escalationReason: record.escalationReason, escalatedBy: record.escalatedBy, resolvedBy: record.resolvedBy };
     if (mode === 'FACILITY_STAFF') return {
       ...operational,
       facility: record.reservation.facility,

@@ -1,6 +1,6 @@
 import { ServiceCalendarService } from './service-calendar.service.js';
 import { AssignmentQueueService } from './assignment-queue.service.js';
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
@@ -69,5 +69,19 @@ export class StaffShiftsController {
   @Roles('FACILITY_STAFF')
   checkOut(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.shifts.attend(req.user!, id, 'CHECK_OUT');
+  }
+
+  @Patch('staff/shifts/:id/start-break')
+  @Roles('FACILITY_STAFF')
+  startBreak(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body('revision') revision: unknown) {
+    if (!Number.isSafeInteger(revision)) throw new BadRequestException('Cần phiên bản ca làm hiện tại.');
+    return this.shifts.attend(req.user!, id, 'START_BREAK', revision);
+  }
+
+  @Patch('staff/shifts/:id/end-break')
+  @Roles('FACILITY_STAFF')
+  endBreak(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body('revision') revision: unknown) {
+    if (!Number.isSafeInteger(revision)) throw new BadRequestException('Cần phiên bản ca làm hiện tại.');
+    return this.shifts.attend(req.user!, id, 'END_BREAK', revision);
   }
 }

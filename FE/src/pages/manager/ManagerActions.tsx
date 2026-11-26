@@ -18,7 +18,7 @@ import {
 } from "../../components/manager/portal-data";
 import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
 import { IncidentBookingImpact } from '../../components/manager/IncidentBookingImpact';
-import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
+import { TransferHandoverForm, TransferProblemForm } from '../../components/manager/TransferHandoverForm';
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
@@ -195,9 +195,29 @@ export function ManagerActions({
       )}
       <fieldset disabled={busy}>
         {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && first(row, 'assignedStaff.id') === user.id && row.status === 'APPROVED' && !row.commercial && !problem.pending &&
-          <TransferHandoverForm busy={busy}
+          (object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.destinationAccessDeliveredAt')
+            ? <form className="portal-form" onSubmit={event => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              void run(`/staff/transfers/${encodeURIComponent(id)}/destination-handover`, 'POST', {
+                destinationReady: data.get('destinationReady') === 'on', accessDelivered: data.get('accessDelivered') === 'on',
+              });
+            }}>
+              <label className="portal-checkbox"><input name="destinationReady" type="checkbox" required />Đã kiểm tra kho đích an toàn</label>
+              <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao quyền truy cập kho đích</label>
+              <button className="button-primary">Ghi nhận bàn giao kho đích</button>
+            </form>
+            : object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.customerMoveReadyAt')
+              ? <p role="status">Chờ khách tự chuyển tài sản và báo sẵn sàng kiểm tra kho nguồn.</p>
+              : object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.sourceInspectionStartedAt')
+                ? <button className="button-primary" type="button" onClick={() => void run(`/staff/transfers/${encodeURIComponent(id)}/start-source-inspection`, 'POST', {})}>Bắt đầu kiểm tra kho cũ</button>
+                : <TransferHandoverForm busy={busy}
             onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }}
-            onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />}
+            onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />)}
+        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && first(row, 'assignedStaff.id') === user.id
+          && row.status === 'APPROVED' && !row.commercial && !problem.pending && object(row.handoverReport).stagedHandover === true
+          && !first(row, 'handoverReport.sourceInspectionStartedAt') &&
+          <TransferProblemForm busy={busy} onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />}
         {resource === "reservations" && user?.role === 'FACILITY_MANAGER' &&
           (row.status === "PENDING" ? (
             <form
@@ -675,6 +695,15 @@ export function ManagerActions({
           row.resolutionType === "TRANSFER_RECOMMENDED" && (
             <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
           )}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.status === 'OPEN' && !first(row, 'assignedStaff.id') &&
+          <form className="portal-form" onSubmit={event => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            void run(`${root}/dispatch-ready`, 'PATCH', { ready: !row.dispatchReadyAt, reason: String(data.get('dispatchReason') ?? '').trim() }, true);
+          }}>
+            <label className="field-label">Lý do đánh giá khả năng thực hiện<input name="dispatchReason" required maxLength={500} /></label>
+            <button className="button-secondary">{row.dispatchReadyAt ? 'Tạm giữ phiếu ngoài hàng chờ tự động' : 'Xác nhận Staff có thể thực hiện'}</button>
+          </form>}
         {["maintenance", "support-requests"].includes(resource) &&
           !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
             <DetailDisclosure title="Đổi mức ưu tiên">
@@ -713,12 +742,18 @@ export function ManagerActions({
             event.preventDefault();
             void run(`${root}/review-problem`, 'POST', {
               decision: problemDecision, note: problemNote.trim(), expectedProblemCount: problem.count,
+              destinationAccessRevoked: new FormData(event.currentTarget).get('destinationAccessRevoked') === 'on',
+              destinationEmpty: new FormData(event.currentTarget).get('destinationEmpty') === 'on',
             });
           }}>
             <label className="field-label">Xử lý vướng mắc<select value={problemDecision} onChange={event => setProblemDecision(event.target.value)}>
               <option value="CONTINUE">Cho tiếp tục bàn giao</option><option value="CANCEL">Hủy chuyển kho</option>
             </select></label>
             <label className="field-label">Kết quả xử lý<textarea required minLength={3} maxLength={2000} value={problemNote} onChange={event => setProblemNote(event.target.value)} /></label>
+            {problemDecision === 'CANCEL' && first(row, 'handoverReport.destinationAccessDeliveredAt') && <>
+              <label className="portal-checkbox"><input type="checkbox" name="destinationEmpty" required />Đã xác nhận kho đích trống</label>
+              <label className="portal-checkbox"><input type="checkbox" name="destinationAccessRevoked" required />Đã thu hồi quyền truy cập kho đích</label>
+            </>}
             <button className="button-primary" disabled={busy || problemNote.trim().length < 3}>Lưu quyết định</button>
           </form>}
         {resource === "transfers" && user?.role === 'FACILITY_MANAGER' &&
@@ -728,7 +763,7 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!target || !transferDestinationReady || !transferStaff) return;
+                  if (!target || !transferDestinationReady || transferReviewHash && !transferStaff) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
                     staffUserId: transferStaff,
@@ -746,9 +781,9 @@ export function ManagerActions({
                   disabled={busy}
                 />
                 <StaffPicker task={{kind:"transfers",id}} list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
-                <p>Chọn kho cùng loại và nhân viên thực hiện trước khi duyệt.</p>
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || !transferStaff}>
-                  {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
+                <p>Có thể duyệt chuyển kho nội bộ rồi đưa vào hàng chờ. Hồ sơ có phụ lục cần chọn người phụ trách.</p>
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || Boolean(transferReviewHash && !transferStaff)}>
+                  {busy ? 'Đang lưu…' : transferStaff ? 'Duyệt và phân công' : 'Duyệt vào hàng chờ'}
                 </button>
               </form>
               <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>

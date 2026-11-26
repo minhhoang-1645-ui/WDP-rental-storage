@@ -175,3 +175,22 @@ export function customerAppointmentAction(contract: Row, contracts: Row[], appoi
     if (value.slice(0, 10) < pickupStart || value.slice(0, 10) >= end) return 'Chỉ đặt sớm tối đa 3 ngày trước kỳ thuê và trước ngày kết thúc.';
   }, transform: input => ({ ...input, reservationId: id, scheduledAt: new Date(`${String(input.scheduledAt).replace(' ', 'T')}+07:00`).toISOString() }) };
 }
+
+export function customerAppointmentReschedule(row: Row, now: number): FormAction | undefined {
+  const id = idOf(row), expectedScheduledAt = text(row, 'scheduledAt');
+  if (!id || !['REQUESTED', 'CONFIRMED'].includes(String(row.status)) || !(Date.parse(expectedScheduledAt) > now)) return;
+  const timestamp = (value: unknown) => String(value ?? '').replace(' ', 'T');
+  return {
+    title: 'Đổi lịch nhận kho', method: 'PATCH', path: '/customer/appointments/' + encodeURIComponent(id) + '/reschedule',
+    description: 'Giờ Việt Nam (UTC+7). Lịch hiện tại được giữ nếu khung giờ mới không còn chỗ.',
+    fields: [{ name: 'scheduledAt', title: 'Giờ hẹn mới (YYYY-MM-DD HH:mm)', minLength: 16, maxLength: 16, required: true }],
+    validateValues(input) {
+      const value = timestamp(input.scheduledAt), instant = Date.parse(value + '+07:00');
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) || !Number.isFinite(instant)
+        || new Date(instant + 25200000).toISOString().slice(0, 16) !== value || instant <= Date.now()) {
+        return 'Nhập ngày giờ hợp lệ trong tương lai theo định dạng YYYY-MM-DD HH:mm.';
+      }
+    },
+    transform: input => ({ scheduledAt: timestamp(input.scheduledAt) + '+07:00', expectedScheduledAt }),
+  };
+}

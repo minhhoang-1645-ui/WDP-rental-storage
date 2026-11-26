@@ -90,6 +90,7 @@ export async function inspectFoundationDatabase(
       'Facility.serviceSchedule',
       'ReturnRequest.inspectionScheduledAt',
       'SupportRequest.customerWaitReason',
+      'StaffShift.breakStartedAt',
       'Facility.closurePlanId',
       'Facility.closureMode',
       'Facility.closureReason',

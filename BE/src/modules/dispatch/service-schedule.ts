@@ -21,30 +21,43 @@ export function readServiceSchedule(raw: unknown): ServiceWindow[] {
   return windows;
 }
 
-export async function assessHandoverWindow(tx: Prisma.TransactionClient, facilityId: string, appointmentAt: Date): Promise<ScheduleDecision> {
-  // BOM edits this same row. All requests competing for capacity within this facility serialize here.
-  await tx.$queryRawUnsafe('SELECT id FROM "Facility" WHERE id=$1 FOR UPDATE', facilityId);
-  const facility = await tx.facility.findUniqueOrThrow({ where: { id: facilityId }, select: { serviceSchedule: true } });
+export function serviceWindow(windows: ServiceWindow[], appointmentAt: Date) {
   const local = new Date(+appointmentAt + 7 * 60 * 60 * 1000);
   const localStamp = local.toISOString();
   const time = localStamp.slice(11, 16);
-  const window = readServiceSchedule(facility.serviceSchedule).find(row =>
-    row.weekday === (local.getUTCDay() || 7) && row.starts <= time && time < row.ends);
+  const window = windows.find(row => row.weekday === (local.getUTCDay() || 7) && row.starts <= time && time < row.ends);
+  if (!window) return null;
+  const day = localStamp.slice(0, 10);
+  const start = new Date(day + 'T' + window.starts + ':00+07:00');
+  const end = window.ends === '24:00'
+    ? new Date(Date.parse(day + 'T00:00:00+07:00') + 86400000)
+    : new Date(day + 'T' + window.ends + ':00+07:00');
+  return { start, end, capacity: window.capacity };
+}
+
+export async function assessHandoverWindow(tx: Prisma.TransactionClient, facilityId: string, appointmentAt: Date,
+  exclude: { appointmentId?: string; returnId?: string } = {}): Promise<ScheduleDecision> {
+  // BOM edits this same row. All requests competing for capacity within this facility serialize here.
+  await tx.$queryRawUnsafe('SELECT id FROM "Facility" WHERE id=$1 FOR UPDATE', facilityId);
+  const facility = await tx.facility.findUniqueOrThrow({ where: { id: facilityId }, select: { serviceSchedule: true } });
+  const window = serviceWindow(readServiceSchedule(facility.serviceSchedule), appointmentAt);
   if (!window) return 'NO_SERVICE_WINDOW';
   const planned = await tx.staffShift.count({ where: {
     facilityId, status: 'SCHEDULED', startsAt: { lte: appointmentAt }, endsAt: { gt: appointmentAt },
     OR: [{ checkedOutAt: null }, { checkedOutAt: { gt: appointmentAt } }],
     staff: { role: 'FACILITY_STAFF', accountStatus: 'ACTIVE', facilityAccess: { some: { facilityId, revokedAt: null } } },
   } });
-  if (!planned) return 'NO_PLANNED_STAFF';
-
-  const day = localStamp.slice(0, 10);
-  const start = new Date(day + 'T' + window.starts + ':00+07:00');
-  const end = window.ends === '24:00'
-    ? new Date(Date.parse(day + 'T00:00:00+07:00') + 86400000)
-    : new Date(day + 'T' + window.ends + ':00+07:00');
-  const reserved = await tx.handoverAppointment.count({ where: {
-    reservation: { facilityId }, status: { in: ['CONFIRMED', 'COMPLETED'] }, scheduledAt: { gte: start, lt: end },
-  } });
-  return reserved < window.capacity ? 'CONFIRMED' : 'CAPACITY_REACHED';
+  const span = { gte: window.start, lt: window.end };
+  const unit = { storageType: { facilityId } };
+  const [handovers, returns] = await Promise.all([
+    tx.handoverAppointment.count({ where: {
+      ...(exclude.appointmentId && { id: { not: exclude.appointmentId } }),
+      reservation: { facilityId }, status: { in: ['CONFIRMED', 'COMPLETED'] }, scheduledAt: span,
+    } }),
+    tx.returnRequest.count({ where: {
+      ...(exclude.returnId && { id: { not: exclude.returnId } }), inspectionScheduledAt: span,
+      OR: [{ inspections: { some: {}, every: { storageUnit: unit } } }, { inspections: { none: {} }, reservation: { facilityId } }],
+    } }),
+  ]);
+  return handovers + returns >= window.capacity ? 'CAPACITY_REACHED' : planned ? 'CONFIRMED' : 'NO_PLANNED_STAFF';
 }

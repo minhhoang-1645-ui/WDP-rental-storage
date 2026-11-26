@@ -1,9 +1,9 @@
-import { workPhase } from '../dispatch/work-phase.js';
+import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { businessToday } from '../../business-date.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
-import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
+import { assertAssignmentVersion, physicalHandoff } from '../facility-access/operational-assignment.js';
 import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 import { validateMaintenancePhotos, type MaintenanceUpload } from './maintenance-photo.js';
@@ -187,12 +187,29 @@ export class MaintenanceService {
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staff.id) return current;
-      await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id);
+      await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id,
+        physicalHandoff(input, Boolean(current.assignedStaffUserId && current.status === 'IN_PROGRESS')));
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { assignedStaffUserId: staff.id, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  setDispatchReady(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const ready = input.ready;
+    if (typeof ready !== 'boolean') throw new BadRequestException('Cần xác nhận trạng thái sẵn sàng thực hiện.');
+    const reason = this.requiredText(input.reason, 500, 'reason');
+    return this.transition(id, key, 'DISPATCH_READY', async (tx, current, safeKey) => {
+      if (current.status !== 'OPEN' || current.assignedStaffUserId) {
+        throw new ConflictException('Chỉ điều chỉnh hàng chờ khi phiếu đang mở và chưa giao.');
+      }
+      const dispatchReadyAt = ready ? current.dispatchReadyAt ?? new Date() : null;
+      await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_DISPATCH_READY', { ready, reason });
+      return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
+        dispatchReadyAt, lastAction: 'DISPATCH_READY', lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
     }, actor, 'FACILITY_MANAGER');
   }
 
@@ -280,6 +297,7 @@ export class MaintenanceService {
       if (!current.assignedStaffUserId) throw new ConflictException({ code: 'MAINTENANCE_ASSIGNMENT_REQUIRED', message: 'Manager phải giao Staff trước khi bắt đầu.' });
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể bắt đầu công việc này.');
       this.assertUnitMaintenance(current);
+      await assertCanStartDirectWork(tx, actor.id, 'maintenance', current.id);
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { status: 'IN_PROGRESS', startedAt: new Date(), lastAction: 'START', lastActionIdempotencyKey: safeKey },
@@ -486,6 +504,7 @@ export class MaintenanceService {
     const base = {
       facility: record.commonAreaFacility ?? record.storageUnit?.storageType.facility,
       id: record.id, maintenanceCode: record.maintenanceCode, status: record.status, priority: record.priority, category: record.category,
+      dispatchReadyAt: record.dispatchReadyAt?.toISOString() ?? null,
       source: record.source, description: record.description, commonArea: record.commonArea, locationNote: record.locationNote,
       rentalImpact: record.rentalImpact,
       blocksUnit: Boolean(record.activeKey || record.incidentBlocks.length),

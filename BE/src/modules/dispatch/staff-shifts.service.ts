@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertAssignmentAccess, assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
 import { affectedWork } from './shift-impact.js';
+import { staffDirectWork } from './work-phase.js';
 
 type Db = Prisma.TransactionClient;
 const details = {
@@ -45,15 +46,22 @@ export class StaffShiftsService {
         ...(actor.role === 'FACILITY_STAFF' ? { staffUserId: actor.id } : {}),
         startsAt: { lt: endsAt }, endsAt: { gt: startsAt },
       },
-      include: details,
+      include: { ...details, staff: { select: { ...details.staff.select, role: true, accountStatus: true,
+        facilityAccess: { where: { revokedAt: null }, select: { facilityId: true } } } } },
       orderBy: [{ startsAt: 'asc' }, { staffUserId: 'asc' }, { id: 'asc' }],
     });
     return {
       serverTime: now,
-      items: items.map(item => ({
-        ...item,
-        attendance: item.status !== 'SCHEDULED' ? item.status : item.checkedOutAt ? 'CHECKED_OUT'
-          : item.endsAt <= now ? 'ENDED' : item.checkedInAt ? 'PRESENT' : 'NOT_CHECKED_IN',
+      items: await Promise.all(items.map(async item => {
+        const attendance = item.status !== 'SCHEDULED' ? item.status : item.checkedOutAt ? 'CHECKED_OUT'
+          : item.endsAt <= now ? 'ENDED' : !item.checkedInAt ? 'NOT_CHECKED_IN' : item.breakStartedAt ? 'ON_BREAK' : 'PRESENT';
+        const authorized = item.staff.role === 'FACILITY_STAFF' && item.staff.accountStatus === 'ACTIVE'
+          && item.staff.facilityAccess.some(grant => grant.facilityId === item.facilityId);
+        const work = authorized && attendance === 'PRESENT' ? await staffDirectWork(this.prisma, item.staffUserId, now) : [];
+        return { ...item, staff: { id: item.staff.id, fullName: item.staff.fullName }, attendance,
+          availability: !authorized ? 'UNAVAILABLE' : attendance === 'PRESENT' ? work.length ? 'BUSY' : 'AVAILABLE' : attendance,
+          pendingHandover: actor.role === 'FACILITY_MANAGER' && (!authorized || ['ENDED', 'CHECKED_OUT', 'ON_LEAVE', 'ABSENT'].includes(attendance))
+            ? await affectedWork(this.prisma, item) : [] };
       })),
     };
   }
@@ -109,7 +117,7 @@ export class StaffShiftsService {
       const updated = await tx.staffShift.update({
         where: { id }, data: {
           status, reason, revision: { increment: 1 },
-          ...(current.checkedInAt ? { checkedOutAt: new Date() } : {}),
+          ...(current.checkedInAt ? { checkedOutAt: new Date(), breakStartedAt: null } : {}),
         }, include: details,
       });
       const affected = await affectedWork(tx, current);
@@ -118,7 +126,7 @@ export class StaffShiftsService {
     });
   }
 
-  attend(actor: PublicUser, id: string, action: 'CHECK_IN' | 'CHECK_OUT') {
+  attend(actor: PublicUser, id: string, action: 'CHECK_IN' | 'CHECK_OUT' | 'START_BREAK' | 'END_BREAK', revision?: unknown) {
     return this.prisma.$transaction(async tx => {
       await this.lockUsers(tx, [actor.id]);
       const current = await this.find(tx, id);
@@ -135,10 +143,22 @@ export class StaffShiftsService {
         }, select: { id: true } });
         if (active) throw new ConflictException('Bạn đang có ca làm chưa kết thúc.');
       } else if (!current.checkedInAt) throw new ConflictException('Bạn chưa xác nhận vào ca này.');
+      if (action === 'START_BREAK' || action === 'END_BREAK') {
+        if (current.checkedOutAt || now >= current.endsAt) throw new ConflictException('Ca này đã kết thúc.');
+        if ((action === 'START_BREAK') === Boolean(current.breakStartedAt)) return current;
+        if (revision !== undefined) this.checkRevision(current, revision);
+        if (action === 'START_BREAK' && (await staffDirectWork(tx, actor.id, now)).some(task => task.phase === 'IN_PROGRESS'
+          && ['appointments', 'transfers', 'returns', 'maintenance', 'damage-claims'].includes(task.kind))) {
+          throw new ConflictException('Hoàn thành bước đang thực hiện hoặc chuyển giao cho quản lý trước khi tạm nghỉ.');
+        }
+      }
       const updated = await tx.staffShift.update({ where: { id }, data: {
-        ...(action === 'CHECK_IN' ? { checkedInAt: now } : { checkedOutAt: now }), revision: { increment: 1 },
+        ...(action === 'CHECK_IN' ? { checkedInAt: now } : action === 'CHECK_OUT' ? { checkedOutAt: now, breakStartedAt: null }
+          : { breakStartedAt: action === 'START_BREAK' ? now : null }),
+        revision: { increment: 1 },
       } });
-      await this.audit(tx, actor, action, updated, current);
+      const affected = action === 'CHECK_OUT' ? await affectedWork(tx, current) : [];
+      await this.audit(tx, actor, action, updated, current, affected.map(item => item.id));
       return updated;
     });
   }
@@ -160,7 +180,8 @@ export class StaffShiftsService {
   private async audit(tx: Db, actor: PublicUser, action: string, shift: StaffShift, before?: StaffShift, affected: string[] = []) {
     const snapshot = (value: StaffShift) => ({
       staffUserId: value.staffUserId, status: value.status, startsAt: value.startsAt.toISOString(), endsAt: value.endsAt.toISOString(),
-      checkedInAt: value.checkedInAt?.toISOString() ?? null, checkedOutAt: value.checkedOutAt?.toISOString() ?? null, reason: value.reason,
+      checkedInAt: value.checkedInAt?.toISOString() ?? null, checkedOutAt: value.checkedOutAt?.toISOString() ?? null,
+      breakStartedAt: value.breakStartedAt?.toISOString() ?? null, reason: value.reason,
     });
     await tx.auditEvent.create({ data: {
       category: 'ACTIVITY', action, resource: 'staff-shifts', resourceId: shift.id,

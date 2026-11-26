@@ -19,7 +19,7 @@ const groups = [
 
 function operationalValue(value: OperationalValue) {
   if (typeof value === 'number') return value + ' ngày';
-  if ('graceDays' in value) return `${value.graceDays ? `Ân hạn ${value.graceDays} ngày` : 'Không có thời gian ân hạn'} · Báo quản lý sau ${value.managerDays} ngày quá hạn`;
+  if ('graceDays' in value) return `${value.graceDays ? `Cho phép quá hạn ${value.graceDays} ngày` : 'Không có thời gian cho phép quá hạn'} · Báo quản lý sau ${value.managerDays} ngày quá hạn`;
   return `Mở trước ngày hết hạn ${value.opensDaysBefore} ngày · Đóng trước ngày hết hạn ${value.closesDaysBefore} ngày · ${value.priceMode === 'CONTRACT_RATE' ? 'Giá hợp đồng' : 'Giá niêm yết hiện hành'}`;
 }
 
@@ -42,7 +42,7 @@ export function StaffAppliedPoliciesPage() {
   const milestones = [
     { icon: Handshake, label: 'Nhận chìa khóa trước ngày thuê', days: entriesByKey.get('handoverLeadDays')?.value },
     { icon: CalendarDays, label: 'Báo trước khi trả kho', days: entriesByKey.get('returnNoticeDays')?.value },
-    { icon: Clock, label: 'Ân hạn thanh toán', days: typeof overdue === 'object' && 'graceDays' in overdue ? overdue.graceDays : undefined },
+    { icon: Clock, label: 'Số ngày cho phép quá hạn thanh toán', days: typeof overdue === 'object' && 'graceDays' in overdue ? overdue.graceDays : undefined },
     { icon: RefreshCw, label: 'Mở yêu cầu gia hạn', days: typeof renewal === 'object' && 'opensDaysBefore' in renewal ? renewal.opensDaysBefore : undefined },
   ];
 

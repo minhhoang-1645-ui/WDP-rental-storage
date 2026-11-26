@@ -39,7 +39,7 @@ export function AppliedPoliciesPage() {
   const overdue = resource.data?.pricing.find(policy => policy.key === 'paymentOverdue');
   const renewal = resource.data?.pricing.find(policy => policy.key === 'renewal');
   const milestones = [
-    { icon: Clock, label: 'Giữ đơn chưa thanh toán', value: holdHours || (hold ? hold.value + ' ' + hold.unit : '—'), detail: !manager && holdHours && hold ? '(' + hold.value + ' ' + hold.unit + ')' : '' },
+    { icon: Clock, label: 'Giữ đơn chưa thanh toán', value: holdHours || (hold ? hold.value + ' ' + hold.unit : '—') },
     { icon: CalendarDays, label: 'Báo trước khi trả kho', value: days(notice?.value) },
     { icon: Coins, label: 'Ân hạn thanh toán', value: days(overdue?.value.graceDays) },
     ...(manager ? [{ icon: RefreshCw, label: 'Mở yêu cầu gia hạn', value: days(renewal?.value.opensDaysBefore) }] : []),
@@ -62,9 +62,9 @@ export function AppliedPoliciesPage() {
     </div>}
     {resource.data && policies.size === 0 && <p role="status">Chưa có chính sách để hiển thị.</p>}
     {policies.size > 0 && <div className="applied-policy-milestones" aria-label="Những mốc quan trọng">
-      {milestones.map(({ icon: Icon, label, value, detail }) => <div className="applied-policy-card applied-policy-milestone" key={label}>
+      {milestones.map(({ icon: Icon, label, value }) => <div className="applied-policy-card applied-policy-milestone" key={label}>
         <span className="applied-policy-icon"><Icon size={21} /></span>
-        <div><strong>{value}</strong><span>{label}</span>{detail && <span>{detail}</span>}</div>
+        <div><strong>{value}</strong><span>{label}</span></div>
       </div>)}
     </div>}
     {policies.size > 0 && <div className="applied-policy-grid">
@@ -77,12 +77,12 @@ export function AppliedPoliciesPage() {
               <thead><tr><th scope="col">Chính sách</th><th scope="col">Giá trị hiện hành</th><th scope="col">Hiệu lực</th></tr></thead>
               <tbody>{items.map(policy => <tr key={policy.key}>
                 <th scope="row">{policy.title}<small>{policy.description}</small></th>
-                <td>{'unit' in policy ? (manager && policy.key === 'reservationHoldMinutes' && holdHours ? holdHours : policy.value + ' ' + policy.unit)
+                <td>{'unit' in policy ? (policy.key === 'reservationHoldMinutes' && holdHours ? holdHours : policy.value + ' ' + policy.unit)
                   : pricingPolicySummary(policy.key, policy.value, manager && 'managerDays' in policy.value).split(policy.key === 'renewal' || policy.key === 'prepaid' ? ' · ' : '\n').map(line => <div key={line}>{line}</div>)}</td>
-                <td>{policy.effectiveFrom ? <time dateTime={policy.effectiveFrom}>Áp dụng từ {dateTime.format(new Date(policy.effectiveFrom))} (UTC+7)</time>
+                <td><div className={manager ? undefined : "applied-policy-effective"}>{policy.effectiveFrom ? <time dateTime={policy.effectiveFrom}>Áp dụng từ {dateTime.format(new Date(policy.effectiveFrom))} (UTC+7)</time>
                   : policy.effectiveVersion === 0 ? <span className="applied-policy-base">Đang dùng thiết lập ban đầu</span> : null}
                   {policy.effectiveVersion > 0 && <small>Phiên bản {policy.effectiveVersion} đang áp dụng</small>}
-                </td>
+                </div></td>
               </tr>)}</tbody>
             </table>
           </section>;

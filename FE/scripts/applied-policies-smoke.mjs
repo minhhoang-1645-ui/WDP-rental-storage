@@ -132,6 +132,7 @@ try {
   customer.setStatus(200);
   await customer.page.getByRole('button', { name: 'Thử lại' }).click();
   await customer.page.locator('.applied-policy-milestone').getByText('24 giờ').waitFor();
+  assert.equal(await customer.page.locator('.applied-policy').getByText(/1440 phút/).count(), 0);
   customer.update();
   await customer.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await customer.page.locator('.applied-policy-milestone').getByText('95 phút').waitFor();
@@ -145,10 +146,13 @@ try {
     await milestones.getByText('24 giờ', { exact: true }).waitFor();
     await milestones.getByText('7 ngày', { exact: true }).waitFor();
     await milestones.getByText('5 ngày', { exact: true }).waitFor();
+    assert.equal(await mobile.page.getByText(/1440 phút/).count(), 0);
+    await mobile.page.getByText('Đang dùng thiết lập ban đầu', { exact: true }).first().waitFor();
     await mobile.page.getByRole('button', { name: 'Hợp đồng và bàn giao', exact: true }).click();
     await mobile.page.getByText('Gia hạn hợp đồng', { exact: true }).waitFor();
     await mobile.page.getByRole('button', { name: 'Quá hạn và nhắc nhở', exact: true }).click();
     await mobile.page.getByText('Quá hạn thanh toán', { exact: true }).waitFor();
+    await mobile.page.getByText('Phiên bản 1 đang áp dụng', { exact: true }).waitFor();
     mobile.update();
     await mobile.page.clock.fastForward(61_000);
     for (const value of ['95 phút', '11 ngày', '8 ngày']) await milestones.getByText(value, { exact: true }).waitFor();

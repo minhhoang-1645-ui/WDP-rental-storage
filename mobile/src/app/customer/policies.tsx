@@ -121,7 +121,6 @@ function PolicyRow({ policy, last }: { policy: Row; last: boolean }) {
         </View>
         {badge ? <View style={s.badge}>
           <Text style={s.badgeText}>{badge}</Text>
-          {hold.endsWith(' giờ') ? <Text style={s.meta}>({String(policy.value)} phút)</Text> : null}
         </View> : null}
       </View>
       {key === 'deposit' && values.length > 0 ? <View style={s.table}>
@@ -143,9 +142,16 @@ function PolicyRow({ policy, last }: { policy: Row; last: boolean }) {
       </View> : null}
       {!badge && key !== 'deposit' && key !== 'prepaid'
         ? values.map(line => <Text key={line} style={s.value}>{line}</Text>) : null}
-      {Number.isFinite(effectiveFrom) ? <Text style={s.meta}>
-        Áp dụng từ {formatter.format(effectiveFrom)} (UTC+7){Number(version) > 0 ? ' · Phiên bản ' + version + ' đang áp dụng' : ''}
-      </Text> : version === '0' ? <Text style={s.meta}>Đang dùng thiết lập ban đầu</Text> : null}
+      {(Number.isFinite(effectiveFrom) || version === '0') && <View style={s.effectivity}>
+        <View style={s.effectivityHeader}>
+          <CalendarDays size={15} color={blue} />
+          <Text style={s.effectivityLabel}>Hiệu lực</Text>
+        </View>
+        {Number.isFinite(effectiveFrom) ? <>
+          <Text style={s.effectivityValue}>Áp dụng từ {formatter.format(effectiveFrom)} (UTC+7)</Text>
+          {Number(version) > 0 && <Text style={s.effectivityVersion}>Phiên bản {version} đang áp dụng</Text>}
+        </> : <Text style={s.effectivityValue}>Đang dùng thiết lập ban đầu</Text>}
+      </View>}
     </View>
   </View>;
 }
@@ -253,6 +259,11 @@ const s = StyleSheet.create({
   icon: { width: 34, height: 34, borderRadius: 10, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' },
   title: { color: ink, fontSize: 14, fontWeight: '800' },
   copy: { color: muted, fontSize: 12, lineHeight: 17 },
+  effectivity: { backgroundColor: '#F4F8FD', borderWidth: 1, borderColor: border, borderRadius: 9, padding: 9, marginTop: 6, gap: 4 },
+  effectivityHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  effectivityLabel: { color: blue, fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  effectivityValue: { color: ink, fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  effectivityVersion: { color: muted, fontSize: 12, lineHeight: 17 },
   meta: { color: muted, fontSize: 11, lineHeight: 15 },
   value: { color: ink, fontSize: 12, lineHeight: 17 },
   badge: { alignItems: 'center', maxWidth: '40%', backgroundColor: tint, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 5 },

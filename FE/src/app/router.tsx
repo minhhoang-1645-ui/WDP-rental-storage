@@ -195,6 +195,7 @@ export function AppRouter() {
           <Route path="sections/:section" element={<WorkspaceSectionPage sections={staffSections} />} />
           <Route index element={<StaffOperationsPage />} />
           <Route path="tasks" element={<StaffTasksPage />} />
+          <Route path="policies" element={<AppliedPoliciesPage />} />
           <Route path="schedule" element={<StaffTasksPage view="schedule" />} />
           <Route path="history" element={<StaffTasksPage view="history" />} />
           <Route path="report-issue" element={<StaffIssueReportPage />} />

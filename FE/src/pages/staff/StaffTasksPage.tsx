@@ -105,6 +105,7 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
   const hasFilters = Boolean(type || status || search || params.has('sort') || priority || overdue || facility || scheduledDay || phase || from || through);
   return <section>
     <PageHeader title={title}>
+      <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>
       <button type="button" className="button-secondary" disabled={activity.checking} onClick={() => { activity.refresh(); }}><RefreshCw size={16} />Làm mới</button>
       <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>

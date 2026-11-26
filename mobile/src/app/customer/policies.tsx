@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Stack } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Stack, useFocusEffect } from 'expo-router';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Bell, CalendarDays, ChevronDown, ChevronUp, Clock, Coins, CreditCard, FileText, Handshake, KeyRound, ShieldCheck, Tag, Warehouse, type LucideIcon } from 'lucide-react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { CustomerReveal } from '@/components/customer-flow';
@@ -154,7 +154,14 @@ export default function CustomerPolicies() {
   const { width, fontScale } = useWindowDimensions();
   const compact = width < 350 || fontScale > 1.25;
   const [openGroups, setOpenGroups] = useState([true, false, false]);
-  const resource = useResource<Row>('/business-policies/applied');
+  const resource = useResource<Row>('/business-policies/applied', false, true);
+  const { refresh } = resource;
+  useFocusEffect(useCallback(() => {
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') refresh();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [refresh]));
   const policies = new Map([...rows(resource.data?.items), ...rows(resource.data?.pricing)]
     .filter(policy => icons[text(policy, 'key')] && text(policy, 'title'))
     .map(policy => [text(policy, 'key'), policy] as const));

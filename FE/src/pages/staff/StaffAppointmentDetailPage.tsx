@@ -185,6 +185,7 @@ function AppointmentHeader({ row, refresh, discardAndRefresh, refreshing }: { ro
     meta={<>{handoverCustomer(row) && <span>{handoverCustomer(row)}</span>}
       <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" />
       {scheduled && <time dateTime={first(row, 'scheduledAt')}>{scheduled}</time>}</>}>
+    <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>
     <button className="button-secondary" type="button" onClick={() => window.print()}><Printer size={16} />In hồ sơ</button>
     <button className="button-secondary" type="button" onClick={() => void refreshRecord()} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
   </PageHeader>;

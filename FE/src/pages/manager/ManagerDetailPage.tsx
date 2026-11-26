@@ -159,6 +159,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             ? status === 'REQUESTED' ? 'Chờ duyệt' : status === 'APPROVED' && row.commercial && !first(row, 'commercial.acceptedAt') ? 'Chờ ký phụ lục' : status === 'APPROVED' && isStaff ? 'Chờ bàn giao' : undefined
             : undefined} /> : undefined}
             meta={resource !== 'customers' && reference ? <CopyRecordCode value={reference} /> : undefined}>
+            {isStaff && staffOperation && <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>}
             {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <button className="button-secondary" onClick={() => window.print()}>
               <Printer size={16} />

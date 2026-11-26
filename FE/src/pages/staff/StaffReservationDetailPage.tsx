@@ -106,6 +106,7 @@ export function StaffReservationDetailPage() {
     {backLink}
     {load}
     <PageHeader title={title} meta={<><CopyRecordCode value={code(row)} /><Status value={row.status} /></>}>
+      <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>
       <button type="button" className="button-secondary" onClick={() => window.print()}><Printer size={16} aria-hidden="true" />In hồ sơ</button>
       <button type="button" className="button-secondary" disabled={data.refreshing} onClick={data.refresh}><RefreshCw size={16} aria-hidden="true" />Làm mới</button>
       <RefreshStatus active={data.refreshing} />

@@ -1,4 +1,4 @@
-import { CalendarClock, ClipboardList, History, ShieldAlert } from 'lucide-react';
+import { CalendarClock, ClipboardList, FileText, History, ShieldAlert } from 'lucide-react';
 import { InternalPortalLayout, type InternalNavItem } from '../../components/layout/InternalPortalLayout';
 import { staffNavigation } from '../../components/manager/operations-navigation';
 import { OperationsWorkspace } from '../../components/manager/operations-workspace';
@@ -23,6 +23,7 @@ const menu: InternalNavItem[] = [
   { to: '/staff/schedule', label: 'Lịch công việc', icon: CalendarClock, group: 'Tổng quan' },
   { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Tổng quan' },
   { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Tổng quan' },
+  { to: '/staff/policies', label: 'Chính sách áp dụng', icon: FileText, group: 'Tra cứu' },
 ];
 
 export function StaffLayout() {

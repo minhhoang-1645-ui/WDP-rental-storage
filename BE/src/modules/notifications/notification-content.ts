@@ -22,7 +22,8 @@ export const noticeKinds: Record<string, string> = {
   'closure-relocations': 'Hỗ trợ di dời',
   'contract-expiry': 'Hợp đồng sắp hết hạn',
   'payment-due-reminder': 'Hóa đơn sắp đến hạn',
-  'rental-overdue': 'Quá hạn trả kho',
+  'policy-effective': 'Chính sách kinh doanh',
+  'rental-overdue': 'Nhắc trả kho và quá hạn',
 };
 
 function read(row: NotificationRow, path: string): unknown {
@@ -99,7 +100,39 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const id = get('id');
   if (!id || !Object.hasOwn(noticeKinds, source)) return;
   const key = `${source}:${id}`;
+  if (source === 'policy-effective') {
+    const at = get('effectiveFrom');
+    const customer = actor.role === 'STORAGE_CUSTOMER';
+    if ((!customer && actor.role !== 'FACILITY_MANAGER') || !Number.isFinite(Date.parse(at)) || Date.parse(at) > now) return;
+    if (customer) return { key, token: hash([key]), kind: source, at, code: '', title: 'Chính sách thuê kho đã cập nhật',
+      summary: get('title') + ' · Phiên bản ' + get('version') + ' đã có hiệu lực.',
+      important: false, actionLabel: '', target: '/customer/policies' };
+    return { key, token: hash([key]), kind: source, at, code: '', title: 'Chính sách kinh doanh có phiên bản mới',
+      summary: get('title') + ' · Phiên bản ' + get('version') + ' đã có hiệu lực. Xem quy định áp dụng trong mục Chính sách áp dụng.',
+      important: false, actionLabel: 'Xem chính sách', target: '/manager/policies' };
+  }
   if (source === 'rental-overdue') {
+    if (actor.role === 'STORAGE_CUSTOMER' && get('reservationId')) {
+      const contractEnd = get('endDate').slice(0, 10);
+      const end = Date.parse(contractEnd + 'T00:00:00+07:00');
+      const target = queryPath('/customer/rentals', { reservation: get('reservationId') });
+      const overdue = Number(read(row, 'overdueOccupancy.days')) > 0;
+      if (!overdue) {
+        const days = read(row, 'returnNoticeDays');
+        if (typeof days !== 'number' || days <= 0) return;
+        const at = end - days * 86_400_000;
+        if (!Number.isFinite(at) || at > now || now > end + 86_400_000 - 1) return;
+        return { key, token: hash([key, contractEnd, 'return-reminder']), kind: source,
+          title: 'Nhắc báo trước khi trả kho', summary: get('contractCode') + ' · Liên hệ NestBox để bố trí lịch trả kho.',
+          code: get('contractCode'), important: true, at: new Date(at).toISOString(), actionLabel: 'Xem kho đang thuê', target };
+      }
+      const at = end + 86_400_000;
+      if (!Number.isFinite(at) || at > now) return;
+      return { key, token: hash([key, contractEnd]), kind: source, title: 'Kho đã quá hạn trả',
+        summary: get('contractCode') + ' · Quá hạn ' + get('overdueOccupancy.days') + ' ngày',
+        code: get('contractCode'), important: true, at: new Date(at).toISOString(),
+        actionLabel: 'Xem kho đang thuê', target };
+    }
     if (actor.role !== 'FACILITY_MANAGER' || read(row, 'overdueOccupancy.managerReview') !== true || !get('reservationId')) return;
     const date = get('overdueOccupancy.managerReviewOn');
     const at = Date.parse(date + 'T00:00:00+07:00');
@@ -137,7 +170,7 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     const dueAt = new Date(due).toISOString();
     return {
       key, token: hash([key, dueAt]), kind: source, at: new Date(start).toISOString(),
-      code: get('invoiceCode'), title: 'Hóa đơn sắp đến hạn thanh toán', important: true,
+      code: get('invoiceCode'), title: Number.isFinite(reservationDeadline) ? 'Đơn đặt kho sắp hết hạn giữ' : 'Hóa đơn sắp đến hạn thanh toán', important: true,
       summary: get('invoiceCode'), actionLabel: 'Xem hóa đơn', target: queryPath('/customer/payments', { invoice: id }),
     };
   }
@@ -275,6 +308,13 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     if (Number.isFinite(at)) return { key, token: hash([key, 'payment-overdue-review', reviewOn]), kind: source,
       at: new Date(at).toISOString(), code: get('invoiceCode'), title: 'Công nợ quá hạn cần quản lý xử lý', important: true,
       summary: get('invoiceCode'), actionLabel: 'Kiểm tra công nợ', target: `/manager/operations/invoices/${encoded}` };
+  }
+  if (customer && source === 'invoices' && get('historicalPricing.adjustment') === 'PAYMENT_OVERDUE'
+      && ['OPEN', 'PARTIALLY_PAID'].includes(status) && Number(row.balanceDue) > 0) {
+    const at = get('historicalPricing.assessedAt') || get('issuedAt');
+    if (Number.isFinite(Date.parse(at))) return { key, token: hash([key, 'payment-late-fee']), kind: source,
+      at, title: 'Đã phát sinh phí thanh toán quá hạn', code: get('invoiceCode'), important: true,
+      summary: get('invoiceCode'), actionLabel: 'Xem hóa đơn', target: queryPath('/customer/payments', { invoice: id }) };
   }
   if (customer && source === 'invoices' && Number(read(row, 'overduePayment.days')) > 0) {
     const dueDate = get('dueAt');

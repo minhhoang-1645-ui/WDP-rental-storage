@@ -1,4 +1,5 @@
-import { LogIn, Menu, Moon, Sun, Warehouse, X } from "lucide-react";
+import { PublicBrandMark } from './PublicBrandMark'
+import { LogIn, Menu, Moon, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -50,10 +51,7 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
           className="public-brand flex items-center gap-2 text-lg font-bold tracking-tight"
           aria-label="NestBox Storage - Trang chủ"
         >
-          <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
-            <Warehouse size={19} />
-          </span>
-          <span className="public-wordmark">NestBox <em>Storage</em></span>
+          <PublicBrandMark />
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"

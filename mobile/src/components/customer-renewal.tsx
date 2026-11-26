@@ -6,7 +6,7 @@ import { useResource } from '@/operations/use-resource';
 import { Button } from '@/operations/ui';
 import { operationMutate } from '@/operations/mutate';
 import { apiRequest, ApiError } from '@/services/api';
-import { idOf, rows, text, type Row } from '@/operations/model';
+import { idOf, object, rows, text, type Row } from '@/operations/model';
 import type { FormAction } from '@/operations/form';
 import { formatDate, formatMoney } from '@/utils/format';
 import { JourneyNotice, JourneyScreen } from './customer-journey-ui';
@@ -28,7 +28,10 @@ export function CustomerRenewalForm({ action, onSaved, onClose, onBusyChange }: 
   const lock = useRef(false);
   const term = months[index];
   const end = action.renewal?.endDate ?? '';
+  const policy = useResource<Row>(end ? '/business-policies/applied' : null);
+  const renewalRule = object(rows(policy.data?.pricing).find(item => item.key === 'renewal')?.value);
   const date = new Date(end);
+  const fromEnd = (days: number) => new Date(+date - days * 86_400_000).toISOString().slice(0, 10);
   const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + term, 1));
   if (Number.isFinite(target.getTime())) {
     const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
@@ -65,6 +68,10 @@ export function CustomerRenewalForm({ action, onSaved, onClose, onBusyChange }: 
     <View style={s.inline}><Text style={s.heading}>{action.renewal?.name || 'Kho đang thuê'}</Text><StatusBadge status="Đang hoạt động" tone="success" /></View>
     {Number(action.renewal?.quantity) > 1 ? <Text style={s.muted}>Áp dụng cho toàn bộ {action.renewal?.quantity} ô kho của đơn thuê.</Text> : null}
     <DateCard label="Hạn thuê hiện tại" value={end} />
+    {Number.isFinite(+date) && typeof renewalRule.opensDaysBefore === 'number' && typeof renewalRule.closesDaysBefore === 'number' && <Text style={s.muted}>
+      Có thể gửi yêu cầu từ {formatDate(fromEnd(renewalRule.opensDaysBefore))} đến {formatDate(fromEnd(Math.max(1, renewalRule.closesDaysBefore)))}.
+      Đơn giá kỳ mới theo {renewalRule.priceMode === 'CONTRACT_RATE' ? 'giá hợp đồng' : 'giá niêm yết hiện hành'}.
+    </Text>}
     <Text style={s.heading}>Thời gian gia hạn</Text>
     <View style={[s.card, s.spread]}>
       <Pressable accessibilityRole="button" accessibilityLabel="Giảm thời gian gia hạn" disabled={busy || index <= 0} onPress={() => { setIndex(index - 1); setQuote(undefined); }} style={s.step}><Minus size={18} color={index <= 0 ? '#8491A5' : blue} /></Pressable>

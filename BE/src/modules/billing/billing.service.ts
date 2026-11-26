@@ -845,7 +845,7 @@ export class BillingService {
       dueAt: this.isoDate(record.dueAt),
       isPastDue: record.dueAt !== null && record.dueAt < businessToday(now) && ['OPEN', 'PARTIALLY_PAID'].includes(record.status),
       ...(overdue && overdue.overdueDays > 0 ? { overduePayment: { days: overdue.overdueDays,
-        withinGrace: overdue.overdueDays <= overdue.rule.graceDays, managerReviewOn: overdue.managerReviewOn,
+        withinGrace: overdue.overdueDays <= overdue.rule.graceDays, graceDays: overdue.rule.graceDays, managerReviewOn: overdue.managerReviewOn,
         managerReview: overdue.overdueDays >= overdue.rule.managerDays,
         ...(includeCustomer ? { rentDebtRequiresReconciliation: !verifiedRentDebt(record) } : {}),
       } } : {}),

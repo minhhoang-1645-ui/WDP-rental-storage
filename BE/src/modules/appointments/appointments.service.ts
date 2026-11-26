@@ -789,6 +789,11 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       ...(record.status === 'REQUESTED' && this.scheduleException(record.handoverReport) ? { schedulePendingManager: true } : {}),
       usageStatus: historical ? null : record.status === 'COMPLETED' && visibleContracts.some((contract: any) => contract.status === 'READY_FOR_HANDOVER') ? 'WAITING_FOR_RENTAL_START' : visibleContracts.length && visibleContracts.every((contract: any) => contract.status === 'ACTIVE') ? 'ACTIVE' : null,
       scheduledAt: record.scheduledAt.toISOString(),
+      handoverLeadDays: record.handoverLeadDays ?? null,
+      earliestPickupDate: Number.isInteger(record.handoverLeadDays)
+        ? (record.reservation.contracts ?? []).map((contract: { startDate: Date }) =>
+          this.keyPickupStartDate(contract.startDate, record.handoverLeadDays)).sort().at(-1) ?? null
+        : null,
       reservation: {
         id: record.reservation.id,
         reference: record.reservation.reservationCode,

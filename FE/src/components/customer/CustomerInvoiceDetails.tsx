@@ -24,6 +24,9 @@ export function CustomerInvoiceDetails({ invoice }: { invoice: CustomerInvoice }
         <div><dt>Ngày lập</dt><dd>{formatPortalDate(invoice.issuedAt)}</dd></div>
         <div><dt>Hạn thanh toán</dt><dd>{invoice.dueAt ? formatPortalDate(invoice.dueAt) : '—'}</dd></div>
       </dl>
+      {invoice.overduePayment && <p className="customer-inline-notice">Đã quá hạn {invoice.overduePayment.days} ngày.
+        {typeof invoice.overduePayment.graceDays === 'number' && ' Ân hạn theo điều khoản: ' + invoice.overduePayment.graceDays + ' ngày.'}
+        {invoice.overduePayment.withinGrace ? ' Đang trong thời gian ân hạn.' : ' Đã hết thời gian ân hạn.'}</p>}
       {invoice.status === 'VOID' && invoice.voidReason && <p className="customer-inline-notice">{invoice.voidReason}</p>}
     </section>
 

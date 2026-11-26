@@ -121,7 +121,11 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
       selected={idOf(row) === contractId} onPress={() => { setSelectedContract(idOf(row)); setEditing(false); }} />)}
     {contract && <View style={[s.card, s.selected]}><Box size={22} color={blue} /><View style={s.grow}><Text style={s.title}>{text(contract, 'unit.unitCode') || title(item)}</Text>
       <Text style={s.muted}>Hết hạn thuê: {formatDate(text(contract, 'endDate'))}</Text></View></View>}
-    {typeof overdue.days === 'number' && <JourneyNotice title={`Quá hạn trả kho ${overdue.days} ngày`}
+    {typeof contract?.returnNoticeDays === 'number' && <JourneyNotice title="Báo trước khi trả kho"
+      message={contract.returnNoticeDays > 0
+        ? `Nên báo trước ${contract.returnNoticeDays} ngày để cơ sở bố trí lịch. Báo muộn không phát sinh phí khi trả đúng hạn.`
+        : 'Điều khoản của kho này không yêu cầu báo trước.'} />}
+    {typeof overdue.days === 'number' && overdue.days > 0 && <JourneyNotice title={`Quá hạn trả kho ${overdue.days} ngày`}
       message={overdue.withinGrace === true ? 'Đang trong thời gian ân hạn. Bạn vẫn có thể yêu cầu trả kho.'
         : `Phí sử dụng đến hôm nay dự kiến ${formatMoney(Number(overdue.estimatedAmount))}. Số chính thức tính đến ngày nhận kho thực tế.`} />}
     {fromApproval ? <JourneyNotice title={approved ? 'Đề nghị trả trước hạn đã được duyệt' : 'Đề nghị trả trước hạn'}

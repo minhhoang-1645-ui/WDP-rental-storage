@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { AppState } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
-import { apiAllPages, apiRequest } from '@/services/api';
+import { ApiError, apiAllPages, apiRequest } from '@/services/api';
 import { hasDraft, useLiveRefresh } from '@/services/live-events';
 
 export function useResource<T>(path: string | null, paginated = false, retainWhileRefreshing = false) {
   const { user } = useAuth();
   const [revision, setRevision] = useState(0);
-  const [result, setResult] = useState<{ key: string; scope: string; data?: T; error?: string }>();
+  const [result, setResult] = useState<{ key: string; scope: string; data?: T; error?: string; status?: number }>();
   const scope = `${user?.id ?? ''}:${path}:${paginated}`;
   const key = `${scope}:${revision}`;
   const refresh = useCallback(() => setRevision(value => value + 1), []);
@@ -27,9 +27,9 @@ export function useResource<T>(path: string | null, paginated = false, retainWhi
     const controller = new AbortController();
     const request = paginated ? apiAllPages<T>(path, controller.signal) : apiRequest<T>(path, { signal: controller.signal });
     request.then(data => { if (!controller.signal.aborted) setResult({ key, scope, data }); })
-      .catch(error => { if (!controller.signal.aborted) setResult({ key, scope, error: error instanceof Error ? error.message : 'Không tải được dữ liệu.' }); });
+      .catch(error => { if (!controller.signal.aborted) setResult({ key, scope, status: error instanceof ApiError ? error.status : undefined, error: error instanceof Error ? error.message : 'Không tải được dữ liệu.' }); });
     return () => controller.abort();
   }, [key, scope, path, paginated]);
   const current = result?.key === key || (retainWhileRefreshing && result?.scope === scope && result.data !== undefined) ? result : undefined;
-  return { data: current?.data, error: current?.error, loading: Boolean(path && !current), refresh };
+  return { data: current?.data, error: current?.error, status: current?.status, loading: Boolean(path && !current), refresh };
 }

@@ -72,6 +72,11 @@ export function CustomerRenewalsPage() {
     aliases: [contract.contractCode, ...(rental.contracts.length === 1 ? [rental.reservationId, rental.reservationReference] : [])],
   })));
   const selected = choices.find(item => item.contract.id === contractId);
+  const currentRules = useApiResource<{ pricing: { key: string; value: { opensDaysBefore: number; closesDaysBefore: number; priceMode: string } }[] }>(
+    selected && !renewalFilter ? '/business-policies/applied' : null, user?.id ?? '',
+  );
+  const renewalRule = currentRules.data?.pricing.find(rule => rule.key === 'renewal')?.value;
+  const fromEnd = (days: number) => selected ? new Date(Date.parse(selected.contract.endDate) - days * 86_400_000).toISOString().slice(0, 10) : '';
   const quote = useApiResource<RenewalQuote>(selected && !renewalFilter ? '/customer/renewals/quote?' + new URLSearchParams({
     reservationId: selected.rental.reservationId, rentalContractId: contractId, termMonths, paymentPlan,
   }) : null, user?.id ?? '');
@@ -204,6 +209,8 @@ export function CustomerRenewalsPage() {
                 <option value="PAY_MONTHLY">Thanh toán hàng tháng</option>
               </select>
             </label>
+            {renewalRule && selected && <p className="customer-inline-notice">Có thể gửi yêu cầu từ {formatPortalDate(fromEnd(renewalRule.opensDaysBefore))} đến {formatPortalDate(fromEnd(Math.max(1, renewalRule.closesDaysBefore)))}.
+              Đơn giá kỳ mới theo {renewalRule.priceMode === 'CONTRACT_RATE' ? 'giá hợp đồng' : 'giá niêm yết hiện hành'}. Số tiền được xác nhận trong báo giá.</p>}
             {quote.loading && <p role="status">Đang tính giá gia hạn…</p>}
             {quote.error && <PortalError message={quote.error} onRetry={quote.refresh} />}
             {quote.data && <dl className="customer-record-facts" aria-label="Báo giá gia hạn">

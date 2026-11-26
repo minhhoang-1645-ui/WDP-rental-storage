@@ -2,7 +2,7 @@ import { BookingHeader, BookingTabs } from './booking-header';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { ArrowRight, Calculator, CalendarDays, Check, CircleCheck, CreditCard, FileText, Info, Minus, Plus, Warehouse } from 'lucide-react-native';
+import { ArrowRight, Calculator, CalendarDays, Check, CircleCheck, CreditCard, FileText, Info, Map as MapIcon, Minus, Plus, Warehouse, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/use-auth';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
@@ -18,7 +18,9 @@ import { formatDate, formatMoney } from '@/utils/format';
 import { profileContactIssue } from '@/utils/profile-contact';
 import { serviceSelectionIssue } from '@/utils/service-period';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '@/types/additional-service';
-import { FloorPlanViewer, type FloorPlanUnit } from './floor-plan-viewer';
+import type { FloorPlanUnit } from './floor-plan-viewer';
+import { StorageFloorPlan, floorPlanStatuses } from './storage-floor-plan';
+import { storageFloorPlan } from '@/utils/rental-floor-plan';
 import type { StoragePreviewSize } from './storage-architectural-viewer';
 import { ServiceCatalog } from './service-catalog';
 import { quotePaymentSummary } from '@/utils/quote-payment-summary';
@@ -34,12 +36,6 @@ import { useBookingFacility } from './booking-facility-context';
 type UnitMap = {productId: string; startDate: string; endDateExclusive: string; units: FloorPlanUnit[]};
 const monthEnd = (start: string, months: number) => {if(!isCalendarDate(start) || !Number.isInteger(months) || months<1)return '';const date=new Date(start+'T00:00:00Z');const result=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+months,1));result.setUTCDate(Math.min(date.getUTCDate(),new Date(Date.UTC(result.getUTCFullYear(),result.getUTCMonth()+1,0)).getUTCDate()));return result.toISOString().slice(0,10);};
 
-const unitStatus: Record<FloorPlanUnit['status'], { label: string; background: string }> = {
-  AVAILABLE: { label: 'Còn trống', background: '#DCF4E6' },
-  RESERVED: { label: 'Đã giữ', background: '#FFF0CF' },
-  OCCUPIED: { label: 'Đang sử dụng', background: '#EDF0F4' },
-  MAINTENANCE: { label: 'Bảo trì', background: '#FBE4E6' },
-};
 
 export function CustomerBookingFlow() {
   const catalog = usePublicCatalog(undefined, true, true);
@@ -171,7 +167,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   function assertUnitMap(map: UnitMap) {
     if (map?.productId !== productId || map.startDate !== start || map.endDateExclusive !== end || !Array.isArray(map.units) ||
         map.units.some(unit => !unit || typeof unit.id !== 'string' || typeof unit.code !== 'string' ||
-          typeof unit.available !== 'boolean' || !Object.prototype.hasOwnProperty.call(unitStatus, unit.status) ||
+          typeof unit.available !== 'boolean' || !Object.prototype.hasOwnProperty.call(floorPlanStatuses, unit.status) || String(unit.status) === "UNAVAILABLE" ||
           (unit.available && unit.status !== 'AVAILABLE'))) {
       throw new Error('Không thể xác minh các ô kho phù hợp. Vui lòng thử lại.');
     }
@@ -262,9 +258,13 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   }
   const floors=[...new Set(units.map(unit=>unit.floor??''))], zones=[...new Set(units.filter(unit=>(unit.floor??'')===floor).map(unit=>unit.zone??''))];
   const visible=units.filter(unit=>(unit.floor??'')===floor && (unit.zone??'')===zone);
-  const detailUnits = [...units].sort((a, b) => (a.floor ?? '').localeCompare(b.floor ?? '')
-    || (a.zone ?? '').localeCompare(b.zone ?? '') || (a.row ?? 0) - (b.row ?? 0)
-    || (a.position ?? 0) - (b.position ?? 0) || a.code.localeCompare(b.code));
+  const map = step === 3 ? storageFloorPlan(visible) : null;
+  const selectedUnits = units.filter(unit => unit.available && selected.includes(unit.id));
+  const unmapped = step === 3 ? visible.filter(unit => !map?.cells.some(cell => cell.id === unit.id)) : [];
+  const choices = new Map(visible.map(unit => [unit.id, {
+    status: unit.available ? 'AVAILABLE' as const : unit.status === 'AVAILABLE' ? 'UNAVAILABLE' as const : unit.status,
+    disabled: busy || !unit.available || (!selected.includes(unit.id) && Number(quantity) > 1 && selected.length >= Number(quantity)),
+  }]));
   const toggle=(unit:FloorPlanUnit)=>{if(busy || request.current || !unit.available)return;setError('');setQuote(undefined);setSelected(previous=>previous.includes(unit.id)?previous.filter(id=>id!==unit.id):Number(quantity)===1?[unit.id]:previous.length<Number(quantity)?[...previous,unit.id]:previous);};
   const webOrigin=process.env.EXPO_PUBLIC_WEB_URL || (__DEV__ ? new URL(apiUrl).origin.replace(/:\d+$/,':5173') : '');
   const image=text(product??{},'image')||text(size??{},'image');
@@ -284,12 +284,12 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   const selectedCodes = units.filter(unit => selected.includes(unit.id)).map(unit => unit.code).join(', ');
   const editLink = (title:string,target:number) => <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>setStep(target)} style={{minHeight:44,paddingHorizontal:4,justifyContent:'center'}}><Text style={{fontSize:14,fontWeight:'600',color:'#315D99'}}>{title}</Text></Pressable>;
   const primaryDisabled = busy || catalog.loading || Boolean(catalog.error) || wrongScope || !product
-    || (step === 3 && selected.length !== Number(quantity))
+    || (step === 3 && selectedUnits.length !== Number(quantity))
     || (step === 5 && (!quoteReady || selected.length !== Number(quantity) || Boolean(profileContactIssue(user?.fullName ?? '', user?.phone ?? ''))));
   const primary=step===1?'Chọn thời gian thuê':step===2?busy?'Đang kiểm tra kho…':'Kiểm tra ô còn trống':step===3?busy?'Đang kiểm tra ô kho…':'Chọn thiết bị thêm':busy?'Đang gửi yêu cầu…':'Xác nhận & tiếp tục';
-  return <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1,backgroundColor:C.surface}}><Stack.Screen options={{headerShown:false}}/>
+  return <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1,backgroundColor:step === 3 ? "#F7F9FC" : C.surface}}><Stack.Screen options={{headerShown:false}}/>
     <View style={{paddingTop:insets.top}}><BookingHeader step={step + 1} busy={busy} onBack={back} /></View>
-    {!createdBooking && <View style={[booking.summary, { marginHorizontal: 15, marginTop: 3 }]}>
+    {!createdBooking && <View style={[booking.summary, { marginHorizontal: 16, marginTop: 3 }, step === 3 && locationStyles.facility]}>
       <View style={booking.summaryIcon}><Warehouse size={20} color={blue} /></View>
       <View style={{ flex: 1 }}><Text style={booking.label}>{facility.name}</Text>
         {facility.address ? <Text style={booking.muted}>{facility.address}</Text> : null}</View>
@@ -315,7 +315,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         else router.replace('/customer/reservations');
       }} />
       <Button title="Về trang chủ" variant="secondary" onPress={() => router.dismissTo('/customer')} />
-    </ScrollView> : step===4 ? <ServiceCatalog bookingSummary={[previewSize.name, selectedCodes, formatDate(start) + ' → ' + formatDate(end)].filter(Boolean).join(' · ')} services={services} selections={selections} start={start} end={end} loading={addons.loading} error={serviceScopeMismatch ? 'Danh mục dịch vụ không khớp cơ sở đã chọn.' : addons.error} continueError={error} retry={addons.refresh} quoteInput={payload()} busy={busy} onChange={value=>{clearQuote();setSelections(value);}} onContinue={skip=>void availability(5,true,plan,skip)}/> : <ScrollView key={step} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{paddingHorizontal:15,paddingTop:9,gap:8,paddingBottom:16}}>
+    </ScrollView> : step===4 ? <ServiceCatalog bookingSummary={[previewSize.name, selectedCodes, formatDate(start) + ' → ' + formatDate(end)].filter(Boolean).join(' · ')} services={services} selections={selections} start={start} end={end} loading={addons.loading} error={serviceScopeMismatch ? 'Danh mục dịch vụ không khớp cơ sở đã chọn.' : addons.error} continueError={error} retry={addons.refresh} quoteInput={payload()} busy={busy} onChange={value=>{clearQuote();setSelections(value);}} onContinue={skip=>void availability(5,true,plan,skip)}/> : <ScrollView key={step} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{paddingHorizontal:16,paddingTop:9,gap:9,paddingBottom:16}}>
       {catalog.loading && !catalog.data ? <LoadingState/> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh}/> : wrongScope ? <ErrorState message="Catalog không khớp cơ sở đã chọn." onRetry={catalog.refresh}/> : !product ? <Text style={styles.copy}> {filtered ? 'Hiện chưa có loại kho đủ diện tích ước tính.' : 'Chưa có loại kho để chọn.'}</Text> : <CustomerReveal key={step}>
       {step===1 && <>
         <View style={booking.utilities}>
@@ -366,34 +366,44 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         {soldOut && <View style={booking.utilities}><Text accessibilityRole="alert" style={[styles.error,{flex:1}]}>Không đủ ô trống cho số kho và thời gian bạn chọn.</Text>{editLink('Đổi loại kho',1)}</View>}
       </>}
       {step===3 && <>
-        <Pressable accessibilityRole="button" accessibilityLabel="Sửa thời gian thuê" onPress={()=>setStep(2)} style={[booking.summary,{backgroundColor:pale}]}>
-          <Warehouse size={18} color={blue}/><Text style={[booking.label,{flex:1}]}>{previewSize.name} · {formatDate(start)} – {formatDate(end)} · {quantity} ô</Text><ArrowRight size={16} color={blue}/>
+        <Pressable accessibilityRole="button" accessibilityLabel="Sửa thời gian thuê" disabled={busy} onPress={()=>setStep(2)} style={[booking.summary, locationStyles.period]}>
+          <View style={booking.summaryIcon}><Warehouse size={20} color="#175CD3" /></View>
+          <View style={locationStyles.copy}><Text style={booking.label}>{[previewSize.name, areaLabel, quantity + ' ô'].filter(Boolean).join(' · ')}</Text>
+            <View style={locationStyles.row}><CalendarDays size={14} color="#667085" /><Text style={[booking.muted, locationStyles.copy]}>{formatDate(start)} – {formatDate(end)}</Text></View>
+          </View><ArrowRight size={17} color="#175CD3" />
         </Pressable>
         {floors.length>1 && <BookingOptions value={floor} options={floors.map(value=>({value,label:value ? (/^tầng/i.test(value)?value:'Tầng '+value) : 'Tầng chưa ghi nhận'}))}
           onChange={value=>{setFloor(value);setZone(units.find(unit=>(unit.floor??'')===value)?.zone??'');}}/>}
         {zones.length>1 && <BookingOptions value={zone} options={zones.map(value=>({value,label:value ? (/^khu/i.test(value)?value:'Khu '+value) : 'Khu chưa ghi nhận'}))} onChange={setZone}/>}
-        <View style={booking.legend}>{[...Object.values(unitStatus).map(item => [item.label, item.background]), ['Đã chọn', blue]].map(([label,color])=><View key={label} style={booking.legendItem}>
-          <View style={{width:12,height:12,borderRadius:3,backgroundColor:color}}/><Text style={booking.muted}>{label}</Text>
-        </View>)}</View>
-        {visible.some(unit => Number.isInteger(unit.row) && Number.isInteger(unit.position)) && <FloorPlanViewer compact key={floor + ':' + zone}
-          units={visible.filter(unit => Number.isInteger(unit.row) && Number.isInteger(unit.position))} selectedIds={selected} onPress={toggle} />}
-        {detailUnits.length ? <><Text style={booking.label}>Thông tin ô kho ({detailUnits.length})</Text><View style={booking.grid}>{detailUnits.map(unit=>{
-          const active=selected.includes(unit.id);
-          const disabled=busy || !unit.available || (!active && Number(quantity)>1 && selected.length>=Number(quantity));
-          const status = unitStatus[unit.status];
-          const color = active ? blue : C.text;
-          const statusLabel = unit.status === 'AVAILABLE' && !unit.available ? 'Không khả dụng' : status?.label ?? unit.status;
-          return <Pressable key={unit.id} accessibilityRole="checkbox" accessibilityLabel={unit.code+' · '+statusLabel}
-            accessibilityState={{checked:active,disabled}} disabled={disabled} onPress={()=>toggle(unit)}
-            style={[booking.unit,{backgroundColor:active ? pale : 'white', borderColor:active ? blue : C.border}]}>
-            {active && <Check size={14} color={color}/>}
-            <Text style={[booking.label,{color,textAlign:'center'}]}>{unit.code}</Text>
-            {!!areaLabel && <Text style={[booking.muted,{color}]}>{areaLabel}</Text>}
-            <Text style={[booking.muted,{color:active ? blue : unit.available ? "#14734F" : C.muted}]}>{active ? "Đã chọn" : statusLabel}</Text>
-          </Pressable>;
-        })}</View></> : <Text style={booking.muted}>Chưa có ô kho trong khu này.</Text>}
-        <View style={booking.legendItem}><Info size={15} color={blue}/><Text style={[booking.muted,{flex:1}]}>Kiểm tra ô trống chưa giữ chỗ. Kho chỉ được giữ khi hệ thống xác nhận đơn.</Text></View>
-        {selectedCodes ? <Text style={booking.label}>Ô đã chọn · {selectedCodes}</Text> : null}
+        <View style={locationStyles.card}>
+          <View style={locationStyles.row}><MapIcon size={23} color="#175CD3" /><Text accessibilityRole="header" style={[locationStyles.title, locationStyles.copy]}>Sơ đồ kho</Text>
+            {map && <Text style={locationStyles.badge}>Sơ đồ minh họa</Text>}
+          </View>
+          {map ? <StorageFloorPlan key={facility.id + ':' + productId + ':' + floor + ':' + zone} plan={map}
+            selection={{ ids: selected, states: choices, onToggle: id => { const unit = visible.find(item => item.id === id); if (unit) toggle(unit); } }} />
+            : <Text style={booking.muted}>Chưa có sơ đồ cho khu này.</Text>}
+          {unmapped.length > 0 && <View style={locationStyles.unmapped}>
+            <Text style={booking.muted}>Ô chưa có tọa độ trên sơ đồ</Text>
+            <View style={locationStyles.chips}>{unmapped.map(unit => {
+              const checked = selected.includes(unit.id);
+              const state = choices.get(unit.id)!;
+              return <Pressable key={unit.id} accessibilityRole="checkbox" accessibilityState={{ checked, disabled: state.disabled }}
+                accessibilityLabel={unit.code + ' · ' + floorPlanStatuses[state.status].label} disabled={state.disabled} onPress={() => toggle(unit)}
+                style={[locationStyles.chip, { backgroundColor: checked ? '#175CD3' : floorPlanStatuses[state.status].fill }]}>
+                {checked && <Check size={15} color="white" />}<Text style={{ color: checked ? 'white' : '#101828' }}>{unit.code}</Text>
+              </Pressable>;
+            })}</View>
+          </View>}
+          {!visible.some(unit => unit.available) && <Text style={booking.muted}>Khu này không có ô trống trong kỳ thuê đã chọn.</Text>}
+        </View>
+        {selectedUnits.map(unit => <View key={unit.id} style={[locationStyles.card, locationStyles.row]}>
+          <View style={booking.summaryIcon}><Warehouse size={20} color="#175CD3" /></View>
+          <View style={locationStyles.copy}><Text style={locationStyles.title}>{unit.code}</Text>
+            <Text style={booking.muted}>{[previewSize.name, areaLabel, unit.floor?.replace(/^ground(?: floor)?$/i, 'Tầng trệt'), unit.zone].filter(Boolean).join(' · ')}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={'Bỏ chọn ' + unit.code} disabled={busy} onPress={() => toggle(unit)} style={locationStyles.remove}><X color="#667085" size={20} /></Pressable>
+        </View>)}
+        <View style={locationStyles.row}><Info size={15} color="#175CD3" /><Text style={[booking.muted, locationStyles.copy]}>Ô kho chỉ được giữ khi hệ thống xác nhận đơn.</Text></View>
       </>}
       {step===5 && <>
         <View style={booking.productCard}>
@@ -430,14 +440,28 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
     </ScrollView>}
     {!createdBooking && step!==4 && <View style={{paddingHorizontal:16,paddingTop:12,paddingBottom:Math.max(insets.bottom,12),borderTopWidth:1,borderColor:'#E4E7EC',backgroundColor:'white',gap:8}}>
 
-      {step===3&&<Text style={{fontSize:14,lineHeight:20,color:C.muted}}>{selected.length ? 'Đã chọn '+selected.length+'/'+quantity+' ô kho' : 'Chọn ô còn trống để tiếp tục'}</Text>}
-      <Pressable accessibilityRole="button" accessibilityLabel={primary} accessibilityState={{busy,disabled:primaryDisabled}} disabled={primaryDisabled} onPress={()=>{setError('');if(step===1){setProduct(productId);setStep(2);}else if(step===2)void availability(3);else if(step===3)void availability(4,true);else void submit();}} style={({pressed})=>({minHeight:52,borderRadius:12,paddingHorizontal:18,paddingVertical:14,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,backgroundColor:primaryDisabled?'#E4E7EC':pressed?'#0847AE':'#0758DC'})}>
+      {step===3&&<Text style={{fontSize:14,lineHeight:20,color:C.muted}}>Đã chọn <Text style={locationStyles.count}>{selectedUnits.length}/{quantity}</Text> ô kho</Text>}
+      <Pressable accessibilityRole="button" accessibilityLabel={primary} accessibilityState={{busy,disabled:primaryDisabled}} disabled={primaryDisabled} onPress={()=>{setError('');if(step===1){setProduct(productId);setStep(2);}else if(step===2)void availability(3);else if(step===3)void availability(4,true);else void submit();}} style={({pressed})=>({minHeight:52,borderRadius:12,paddingHorizontal:18,paddingVertical:14,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,backgroundColor:primaryDisabled?'#E4E7EC':pressed?'#0847AE':step===3?'#175CD3':'#0758DC'})}>
         {busy&&<ActivityIndicator size="small" color="white"/>}<Text style={{fontSize:16,lineHeight:24,fontWeight:'600',textAlign:'center',flexShrink:1,color:primaryDisabled?'#667085':'white'}}>{primary}</Text>{!busy&&<ArrowRight size={20} color={primaryDisabled?'#667085':'white'}/>}
       </Pressable>
     </View>}
   </KeyboardAvoidingView>;
 }
 
+const locationStyles = StyleSheet.create({
+  card: { padding: 11, gap: 8, borderRadius: 15, borderWidth: 1, borderColor: '#E4E7EC', backgroundColor: 'white' },
+  facility: { backgroundColor: 'white', borderRadius: 15, padding: 10 },
+  period: { backgroundColor: '#EEF4FF', borderRadius: 15, padding: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  copy: { flex: 1, minWidth: 0 },
+  title: { fontSize: 17, fontWeight: '800', color: '#101828' },
+  badge: { color: '#475467', backgroundColor: '#F2F4F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, fontSize: 12 },
+  unmapped: { gap: 5 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { minHeight: 44, borderRadius: 9, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  remove: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  count: { color: '#175CD3', fontWeight: '800' },
+});
 const blue = '#0758DC';
 const pale = '#EAF1FD';
 const booking = StyleSheet.create({
@@ -459,10 +483,7 @@ const booking = StyleSheet.create({
   typeTile:{width:"32%",minHeight:72,borderWidth:1,borderColor:C.border,borderRadius:12,alignItems:'center',justifyContent:'center',gap:5,padding:7},
   typeActive:{borderColor:blue,backgroundColor:pale},
   summary:{flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:C.border,borderRadius:10,paddingHorizontal:10,paddingVertical:6,minHeight:44},
-  legend:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',gap:8},
-  legendItem:{flexDirection:'row',alignItems:'center',gap:5},
   grid:{flexDirection:'row',flexWrap:'wrap',gap:'2%',rowGap:8},
-  unit:{width:'32%',minHeight:72,borderWidth:1,borderRadius:10,padding:5,alignItems:'center',justifyContent:'center',gap:3},
   pill:{flex:1,minWidth:96,minHeight:44,borderWidth:1,borderColor:C.border,borderRadius:24,alignItems:'center',justifyContent:'center',padding:6},
   stepper:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
   counter:{flexDirection:'row',alignItems:'center',borderRadius:24,backgroundColor:pale},

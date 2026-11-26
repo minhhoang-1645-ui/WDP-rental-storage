@@ -1,3 +1,4 @@
+import { AppliedPoliciesPage } from "../components/workspace/AppliedPoliciesPage";
 import { ServiceCalendarPage } from '../pages/operations/ServiceCalendarPage';
 import { AdminRolesPage } from '../pages/admin/AccountRole';
 import { AdminFacilityAccessPage } from '../pages/admin/AdminFacilityAccessPage';
@@ -160,6 +161,7 @@ export function AppRouter() {
         />
       </Route>
       <Route path="customer" element={<CustomerLayout />}>
+        <Route path="policies" element={<AppliedPoliciesPage />} />
         <Route path="sections/:section" element={<WorkspaceSectionPage sections={customerSections} />} />
         <Route index element={<CustomerDashboardPage />} />
         <Route path="notifications" element={<ActivityInboxPage />} />
@@ -220,6 +222,7 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["FACILITY_MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
+          <Route path="policies" element={<AppliedPoliciesPage />} />
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />

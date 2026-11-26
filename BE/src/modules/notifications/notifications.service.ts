@@ -4,7 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { buildNotices, noticeKinds, noticeSearch, type Notice } from './notification-content.js';
 import { customerMobileNotices } from './notification-mobile-content.js';
 import { NotificationSources } from './notification-sources.js';
-import { BusinessPolicyService } from '../policies/business-policy.service.js';
+import { facilityIds } from '../facility-access/facility-access.service.js';
+import { BusinessPolicyService, policyDefinitions, pricingDefinitions } from '../policies/business-policy.service.js';
 
 const views = ['all', 'unread', 'action'];
 const pageSizes = [5, 10, 20, 50];
@@ -36,7 +37,7 @@ export class NotificationsService {
   ) {}
 
   private snapshot(actor: PublicUser, mobile = false) {
-    const key = `${actor.role}:${actor.id}:${mobile}`;
+    const key = `${actor.role}:${actor.id}:${actor.selectedFacilityId ?? ''}:${mobile}`;
     const sharePending = actor.role !== 'FACILITY_STAFF' && actor.role !== 'FACILITY_MANAGER';
     const running = sharePending ? this.pending.get(key) : undefined;
     if (running) return running;
@@ -49,6 +50,15 @@ export class NotificationsService {
       if (actor.role === 'STORAGE_CUSTOMER' && data.invoices?.length) {
         const days = await this.policies.value('paymentReminderDays', this.prisma, new Date(now));
         data = { ...data, 'payment-due-reminder': data.invoices.map(row => ({ ...row, reminderDays: days })) };
+      }
+      if (actor.role === 'STORAGE_CUSTOMER' || (actor.role === 'FACILITY_MANAGER' && (await facilityIds(this.prisma, actor)).length)) {
+        const effective = await this.prisma.businessRule.findMany({
+          where: { facilityId: null, storageTypeId: null,
+            key: { in: [...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)] },
+            effectiveFrom: { lte: new Date(now) }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date(now) } }] },
+          select: { id: true, key: true, version: true, effectiveFrom: true },
+        });
+        data = { ...data, 'policy-effective': effective.map(row => ({ ...row, title: policyDefinitions[row.key as keyof typeof policyDefinitions]?.title ?? pricingDefinitions[row.key as keyof typeof pricingDefinitions]?.title, effectiveFrom: row.effectiveFrom.toISOString() })) };
       }
       const notices = buildNotices(actor, data, now);
       return mobile ? customerMobileNotices(notices, data, now) : notices;

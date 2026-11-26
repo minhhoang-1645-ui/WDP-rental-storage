@@ -26,6 +26,7 @@ const managerNavigation: InternalNavItem[] = [
 export function operationsNavigation(): InternalNavItem[] {
   return [
     { to: '/manager', label: 'Tổng quan', icon: Landmark, end: true, group: 'Tổng quan' },
+    { to: '/manager/policies', label: 'Chính sách áp dụng', icon: FileText, group: 'Tổng quan' },
     { to: '/manager/reviews', label: 'Việc cần xử lý', icon: ClipboardCheck, group: 'Tổng quan' },
     { to: '/manager/assignments', label: 'Phân công công việc', icon: Users, group: 'Vận hành' },
     { to: '/manager/reservations', label: 'Đặt kho', icon: ClipboardList, group: 'Vận hành', match: ['/manager/operations/reservations'] },

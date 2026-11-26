@@ -26,6 +26,41 @@ const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
 const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
 
+it('announces effective policies to Managers and Customers with role-specific links and stable tokens', () => {
+  const now = Date.parse(at);
+  const rule = { id: 'rule-v2', title: 'Báo trước khi trả kho', version: 2, effectiveFrom: at };
+  const data = { 'policy-effective': [rule] };
+  const [notice] = buildNotices(manager, data, now);
+  expect(notice).toMatchObject({ target: '/manager/policies', kind: 'policy-effective' });
+  expect(buildNotices(manager, data, now + 60_000)[0].token).toBe(notice.token);
+  expect(buildNotices(manager, data, now - 1)).toEqual([]);
+  const [customerNotice] = buildNotices(customer, data, now);
+  expect(customerNotice).toMatchObject({ target: '/customer/policies', actionLabel: '' });
+  expect(customerMobileNotices([customerNotice], data, now)[0].target).toBe('/customer/policies');
+  expect(buildNotices(customer, data, now + 60_000)[0].token).toBe(customerNotice.token);
+  expect(buildNotices(customer, data, now - 1)).toEqual([]);
+  for (const viewer of [staff, admin]) expect(buildNotices(viewer, data, now)).toEqual([]);
+});
+
+it('keeps concurrent Manager inbox requests scoped to the selected facility', async () => {
+  const rules = vi.fn().mockResolvedValue([{ id: 'rule', key: 'returnNoticeDays', version: 2, effectiveFrom: new Date(at) }]);
+  const db = {
+    user: { findFirst: vi.fn().mockResolvedValue({ id: manager.id }) },
+    facilityAccess: { findMany: vi.fn(async ({ where }) => where.facilityId === 'allowed' ? [{ facilityId: 'allowed' }] : []) },
+    businessRule: { findMany: rules },
+    notificationReceipt: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+  const sources = { load: vi.fn().mockResolvedValue({}) };
+  const service = new NotificationsService(db as never, sources as never);
+  const [allowed, denied] = await Promise.all([
+    service.list({ ...manager, selectedFacilityId: 'allowed' }, {}),
+    service.list({ ...manager, selectedFacilityId: 'denied' }, {}),
+  ]);
+  expect(allowed.items).toHaveLength(1);
+  expect(denied.items).toEqual([]);
+  expect(rules).toHaveBeenCalledTimes(1);
+});
+
 it('shows one customer reminder per rental period using the Vietnam calendar', () => {
   const row = { id: 'contract-1', customerId: customer.id, contractCode: 'HD1', status: 'ACTIVE', endDate: '2026-11-28', reminderDays: 7 };
   const data = { 'contract-expiry': [row] };
@@ -37,6 +72,20 @@ it('shows one customer reminder per rental period using the Vietnam calendar', (
   expect(buildNotices(customer, { 'contract-expiry': [{ ...row, reminderDays: 8 }] }, now)[0].token).toBe(notice.token);
   expect(buildNotices(customer, data, Date.parse('2026-11-27T17:00:00Z'))).toEqual([]);
   expect(buildNotices(other, data, now)).toEqual([]);
+});
+
+it('reminds the customer to arrange a return based on the contract notice period', () => {
+  const row = { id: 'return-contract', reservationId: 'booking', contractCode: 'HD1', endDate: '2026-11-28', returnNoticeDays: 7 };
+  const data = { 'rental-overdue': [row] };
+  const now = Date.parse('2026-11-20T17:00:00Z');
+  expect(buildNotices(customer, data, now - 1)).toEqual([]);
+  const [reminder] = buildNotices(customer, data, now);
+  expect(reminder).toMatchObject({ title: 'Nhắc báo trước khi trả kho', target: '/customer/rentals?reservation=booking' });
+  expect(customerMobileNotices([reminder], data, now)[0].target).toBe('/customer/rentals?rentalContractId=return-contract');
+  const overdueAt = Date.parse('2026-11-28T17:00:00Z');
+  const [overdue] = buildNotices(customer, { 'rental-overdue': [{ ...row, overdueOccupancy: { days: 1 } }] }, overdueAt);
+  expect(overdue.title).toBe('Kho đã quá hạn trả');
+  expect(overdue.token).not.toBe(reminder.token);
 });
 
 it('reminds only for a payable invoice within the configured lead period', () => {
@@ -87,8 +136,10 @@ describe('notification HTTP API', () => {
   let app: INestApplication;
   let receipts: Map<string, Set<string>>;
   let data: Record<string, NotificationData>;
+  let policyVersions: { id: string; key: string; version: number; effectiveFrom: Date }[];
 
   beforeEach(async () => {
+    policyVersions = [];
     receipts = new Map();
     const inbox = (id: string, name: string) => Array.from({ length: 131 }, (_, index) => ({
       id: `${id}-${index}`, status: 'RESOLVED', supportCode: `SUP-${index}`,
@@ -114,7 +165,7 @@ describe('notification HTTP API', () => {
         { provide: AuthService, useValue: { getUserByToken: (token: string) => accounts.find(user => user.id === token) } },
         { provide: NotificationSources, useValue: { load: (user: PublicUser) => Promise.resolve(data[user.id]) } },
         { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7) } },
-        { provide: PrismaService, useValue: { notificationReceipt: {
+        { provide: PrismaService, useValue: { user: { findFirst: () => ({ id: manager.id }) }, facilityAccess: { findMany: () => [{ facilityId: 'facility-1' }] }, businessRule: { findMany: () => policyVersions }, notificationReceipt: {
           findMany: ({ where }: { where: { userId: string; token: { in: string[] } } }) =>
             where.token.in.filter(token => receipts.get(where.userId)?.has(token)).map(token => ({ token })),
           createMany: ({ data }: { data: { userId: string; token: string }[] }) => {
@@ -138,6 +189,19 @@ describe('notification HTTP API', () => {
   const get = (user: PublicUser, query = '') => request(app.getHttpServer()).get('/notifications' + query).set('Authorization', 'Bearer ' + user.id);
   const patch = (user: PublicUser, path: string) => request(app.getHttpServer()).patch('/notifications/' + path).set('Authorization', 'Bearer ' + user.id);
   const open = (user: PublicUser, token: string) => request(app.getHttpServer()).post('/notifications/' + token + '/open').set('Authorization', 'Bearer ' + user.id);
+
+  it('opens an informational policy update in the Customer mobile inbox and tracks reads per account', async () => {
+    policyVersions.push({ id: 'effective-rule', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) });
+    const query = '?client=mobile&kind=policy-effective';
+    const response = await get(customer, query + '&view=unread').expect(200);
+    expect(response.body.items).toHaveLength(1);
+    const [notice] = response.body.items;
+    expect(notice).toMatchObject({ title: 'Chính sách thuê kho đã cập nhật', canOpen: true, actionLabel: '' });
+    expect((await get(customer, query + '&view=action').expect(200)).body.items).toEqual([]);
+    expect((await open(customer, notice.token).query({ client: 'mobile' }).expect(200)).body.target).toBe('/customer/policies');
+    expect((await get(customer, query + '&view=unread').expect(200)).body.items).toEqual([]);
+    expect((await get(other, query + '&view=unread').expect(200)).body.items).toHaveLength(1);
+  });
 
   it('uses complete totals and deterministic server pages with filters and five recent entries', async () => {
     const seen = new Set<string>();

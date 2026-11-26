@@ -133,12 +133,5 @@ export function LandingPage() {
         </details>)}</div>
       </div>
     </Container></section>
-
-    <section className="landing-section" aria-labelledby="landing-final-title"><Container>
-      <div className="landing-banner">
-        <div><h2 id="landing-final-title">Sẵn sàng tạo thêm không gian?</h2><p>Tìm kho phù hợp với nhu cầu lưu trữ của bạn.</p></div>
-        <Link className="button-primary" to="/storage?duration=flexible">Tìm kho ngay <ArrowRight size={17} aria-hidden="true" /></Link>
-      </div>
-    </Container></section>
   </div>
 }

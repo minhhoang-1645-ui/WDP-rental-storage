@@ -14,6 +14,7 @@ import { managerRefundTitle, managerSections } from '../../utils/manager-section
 import { hasLinkedTransfer } from '../../utils/work-queue';
 import { isCustomerTransferSubject } from '../../utils/transfer-request';
 import { transferProblem } from '../../utils/transfer-problem';
+import { financeReviewTypes, managerFinanceReviewPath } from '../../utils/manager-finance-review';
 const queuePaths = {
   deposits: '/manager/deposit-settlements',
   maintenance: '/manager/maintenance',
@@ -22,8 +23,8 @@ const queuePaths = {
   damage: '/manager/damage-claims',
   transfers: '/manager/transfers',
   renewals: '/manager/renewals',
-  payments: '/manager/payment-submissions',
-  reconciliation: '/manager/online-payment-reconciliations',
+  payments: financeReviewTypes.submissions.api,
+  reconciliation: financeReviewTypes.reconciliation.api,
 } as const;
 
 type Queue = keyof typeof queuePaths;
@@ -58,7 +59,7 @@ const fullLists: Record<Queue, string> = {
   support: '/manager/operations/support-requests', early: '/manager/early-returns', damage: queuePaths.damage,
   transfers: '/manager/operations/transfers',
   renewals: '/manager/operations/renewals',
-  payments: queuePaths.payments, reconciliation: queuePaths.reconciliation,
+  payments: managerFinanceReviewPath('submissions'), reconciliation: managerFinanceReviewPath('reconciliation'),
 };
 
 function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): Task | null {
@@ -101,25 +102,23 @@ function toTask(queue: Queue, row: Row, from: string, legacyTransfer = false): T
       search.set('claim', id);
       break;
     case 'payments':
-      if (status !== 'PENDING_VERIFICATION') return null;
-      search.set('record', id);
+    case 'reconciliation': {
+      if (!queueStates[queue].includes(status)) return null;
+      to = managerFinanceReviewPath(queue === 'payments' ? 'submissions' : 'reconciliation', id,
+        first(row, 'invoice.id', 'transaction.invoice.id'), from);
       break;
-    case 'reconciliation':
-      if (!['PENDING_REVIEW', 'REFUND_REQUIRED'].includes(status)) return null;
-      search.set('record', id);
-      search.set('status', status);
-      break;
+    }
   }
   return {
     queue, row, status: state, statusText: queue === 'damage' && first(row, 'compensation.status') === 'AWAITING_HANDOVER' ? 'Chờ giao tiền' : statusNames[state],
     created: first(row, 'createdAt'),
     reference: first(row, 'claimCode', 'submissionCode', 'reconciliationCode') || code(row),
-    person: first(customer(row), 'fullName'),
+    person: first(customer(row), 'fullName') || first(row, 'transaction.invoice.reservation.customer.fullName'),
     unit: first(row, 'unit.unitCode', 'unitCodeSnapshot', 'fromUnit.unitCode') ||
       rows(row.physicalInspections).map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ') ||
       rows(row.contracts).map(item => first(item, 'unitCode')).filter(Boolean).join(', ') ||
-      first(row, 'reservation.storageType.name', 'invoice.invoiceCode'),
-    to: to + '?' + search,
+      first(row, 'reservation.storageType.name', 'invoice.invoiceCode', 'transaction.invoice.invoiceCode'),
+    to: queue === 'payments' || queue === 'reconciliation' ? to : to + '?' + search,
   };
 }
 

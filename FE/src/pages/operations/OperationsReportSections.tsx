@@ -57,9 +57,8 @@ export function ReportFinances({ items, invoiceCount, loading }: { items: Perfor
     : !reconciled ? 'Số liệu hóa đơn chưa khớp.' : '';
   const amountLabel = (value: bigint | null) => loading ? '—' : displayMoney(value);
 
-  return <div className="bom-report-finances">
-    <section className="bom-report-panel">
-      <h2>Cơ cấu hóa đơn trong kỳ</h2>
+  return <section className="bom-report-panel" aria-labelledby="bom-report-invoice-title">
+      <h2 id="bom-report-invoice-title">Cơ cấu hóa đơn trong kỳ</h2>
       <div className="bom-report-composition">
         <div className="bom-report-donut-area">
           <div className="bom-report-donut" aria-hidden="true"
@@ -76,17 +75,11 @@ export function ReportFinances({ items, invoiceCount, loading }: { items: Perfor
           <div className="bom-report-total"><dt>Tổng giá trị hóa đơn</dt><dd>{amountLabel(total)}</dd></div>
         </dl>
       </div>
-    </section>
-    <section className="bom-report-panel bom-report-refunds" aria-labelledby="bom-report-refund-title">
-      <h2 id="bom-report-refund-title">Hoàn tiền trong kỳ</h2>
-      <dl className="bom-report-ledger">
-        <div><dt>Tiền thuê và dịch vụ đã hoàn khi trả kho</dt><dd>{amountLabel(sumMoney(items, 'rentRefunded'))}</dd></div>
-        {totalRefunded !== null && <div className="bom-report-total"><dt>Tổng tiền đã hoàn (bao gồm cọc)</dt>
-          <dd>{displayMoney(totalRefunded)}</dd></div>}
-      </dl>
-      <p className="bom-report-note">Tính theo ngày xác nhận đã hoàn tiền.</p>
-    </section>
-  </div>;
+      {!loading && totalRefunded !== null && <dl className="bom-report-refund-summary">
+        <dt>Tổng tiền đã hoàn (bao gồm cọc)</dt>
+        <dd>{displayMoney(totalRefunded)}</dd>
+      </dl>}
+    </section>;
 }
 
 function chartStep(max: bigint) {

@@ -11,7 +11,7 @@ import { OperationsCatalog, OperationsCatalogDetail } from '../pages/operations/
 import { DamageClaimsPage } from '../pages/customer/DamageClaimsPage';
 import { OverstayPage } from '../pages/manager/OverstayPage';
 import { CustomerBookingHistoryPage } from '../pages/customer/CustomerBookingHistoryPage';
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { RoleGuard } from "../components/layout/RoleGuard";
 import { CustomerBookingGuard } from "../components/layout/CustomerBookingGuard";
 import { PublicLayout } from "../components/layout/PublicLayout";
@@ -36,7 +36,7 @@ import { ManagerReservationDetailPage } from "../pages/manager/ManagerReservatio
 import { ManagerReportsPage, ManagerReportsRedirect } from "../pages/manager/ManagerReportsPage";
 import { ManagerDashboardPage } from "../pages/manager/ManagerDashboardPage";
 import { ManagerAssignmentsPage } from "../pages/manager/ManagerAssignmentsPage";
-import { ManagerPaymentReviewPage } from '../pages/manager/ManagerPaymentReviewPage';
+import { managerFinanceReviewPath, type FinanceReviewType } from '../utils/manager-finance-review';
 import { ManagerStaffPage } from '../pages/manager/ManagerStaffPage';
 import { ManagerEarlyReturnsPage } from '../pages/manager/ManagerEarlyReturnsPage';
 import { ManagerResourcePage } from "../pages/manager/ManagerResourcePage";
@@ -76,6 +76,14 @@ import { StockMovementsPage, StoredItemsPage } from '../pages/stock/StockMovemen
 import { ActivityInboxPage } from '../activity/ActivityCenter';
 import { ManagerSectionPage } from '../pages/manager/ManagerSectionPage';
 
+function LegacyFinanceRedirect({ kind }: { kind: FinanceReviewType }) {
+  const [params] = useSearchParams();
+  const { '*': pathRecord } = useParams();
+  const { state } = useLocation();
+  const record = params.get('record') || pathRecord || '';
+  return <Navigate replace to={managerFinanceReviewPath(kind, record, params.get('invoiceId') ?? '', params.get('from') ?? '')} state={state} />;
+}
+
 function operationalRoutes(base: string) {
   return (
     <>
@@ -85,9 +93,11 @@ function operationalRoutes(base: string) {
       <Route path="rental-records" element={<ManagerSectionPage section="rental-records" />} />
       <Route path="facility" element={<ManagerSectionPage section="facility" />} />
       <Route path="notifications" element={<ActivityInboxPage />} />
-      <Route path="payment-submissions/*" element={<ManagerPaymentReviewPage key="submissions" />} />
+      <Route path="payment-submissions/*" element={<LegacyFinanceRedirect kind="submissions" />} />
+      <Route path="operations/payment-submissions/*" element={<LegacyFinanceRedirect kind="submissions" />} />
       <Route path="early-returns" element={<ManagerEarlyReturnsPage />} />
-      <Route path="online-payment-reconciliations/*" element={<ManagerPaymentReviewPage key="reconciliation" reconciliation />} />
+      <Route path="online-payment-reconciliations/*" element={<LegacyFinanceRedirect kind="reconciliation" />} />
+      <Route path="operations/online-payment-reconciliations/*" element={<LegacyFinanceRedirect kind="reconciliation" />} />
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />

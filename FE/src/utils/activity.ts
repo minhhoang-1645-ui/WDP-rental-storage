@@ -1,3 +1,4 @@
+import { managerFinanceReviewPath } from './manager-finance-review';
 import { roleNamespace } from '../role-names';
 import { paymentWindowClosed } from './payment-state';
 import { workflowGuide } from './workflow-guide';
@@ -168,7 +169,8 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
         action = managerNeedsAction(kind, row);
         if (kind === 'payment-submissions' || kind === 'online-payment-reconciliations') {
           action = kind === 'payment-submissions' ? status === 'PENDING_VERIFICATION' : ['PENDING_REVIEW','REFUND_REQUIRED'].includes(status);
-          web = `/manager/${kind}?status=${encodeURIComponent(status)}&record=${encodeURIComponent(id)}`;
+          web = managerFinanceReviewPath(kind === 'payment-submissions' ? 'submissions' : 'reconciliation', id,
+            get('invoice.id') || get('transaction.invoice.id'));
           mobile = web;
         }
         if (kind === 'invoices' && (!['OPEN', 'PARTIALLY_PAID'].includes(status) || Number(row.balanceDue) <= 0)) continue;

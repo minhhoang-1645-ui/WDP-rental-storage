@@ -1,3 +1,4 @@
+import { ManagerFinanceReview } from '../../components/manager/ManagerFinanceReview';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
@@ -195,6 +196,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
+              {resource === 'invoices' && user?.role === 'FACILITY_MANAGER' && <ManagerFinanceReview invoice={row} onSaved={data.refresh} />}
               {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
               {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (

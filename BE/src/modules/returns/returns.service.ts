@@ -503,7 +503,7 @@ export class ReturnsService {
         const decision = { waived: input.approved === true, decisionBy: actor.id, reason: reference, decisionAt: new Date().toISOString() };
         await tx.returnRequest.update({ where: { id }, data: { overdueSettlement: decision } });
         await tx.auditEvent.create({ data: { action: 'OVERDUE_RETURN_FACILITY_REVIEW', category: 'ACTIVITY', outcome: 'SUCCESS', actorId: actor.id,
-          actorRole: actor.role, resource: 'returns', resourceId: id, method: 'POST', route: '/returns/:id/facility-review', httpStatus: 201, metadata: decision } });
+          actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email, resource: 'returns', resourceId: id, method: 'POST', route: '/returns/:id/facility-review', httpStatus: 201, metadata: decision } });
         return { decision: input.approved ? 'APPROVED' : 'REJECTED' };
       }
       if (review?.policy !== PERIOD_CLOSEOUT || record.physicallyReturnedAt || !record.inspections.some(inspection => inspection.result === 'ISSUE_FOUND' && inspection.issueType === 'FACILITY_FAULT')) {

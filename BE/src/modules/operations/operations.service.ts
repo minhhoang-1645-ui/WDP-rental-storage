@@ -1,5 +1,7 @@
 import { groupPriceKey, groupPriceKeys, lockPriceRange, priceBounds, priceInRange, priceVersionStatus, resolveMonthlyRange, sizeGroups, type SizeGroup } from '../pricing/monthly-price-range.js';
 import { readServiceSchedule } from '../dispatch/service-schedule.js';
+import { scheduleIssues } from './facility-hours.js';
+import { facilityScheduleImpact } from './facility-schedule-impact.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
 import {
   BadRequestException,
@@ -32,6 +34,7 @@ const fields = [
   'closureExpectedAt',
   'reopeningSafetyEvidence',
   'expectedUpdatedAt',
+  'scheduleImpactToken',
 ];
 @Injectable()
 export class OperationsService {
@@ -74,7 +77,7 @@ export class OperationsService {
         throw new ConflictException(
           'Cơ sở vừa thay đổi. Tải lại trước khi lưu.',
         );
-      const value = { ...old, ...body };
+      const value = { operationalStatus: 'OPEN', bookingEnabled: false, ...old, ...body };
       const text = (key: string, max: number) => {
         const v = value[key as keyof typeof value];
         if (typeof v !== 'string' || !v.trim() || v.length > max)
@@ -115,6 +118,24 @@ export class OperationsService {
       if (value.operationalStatus !== 'OPEN' && bookingEnabled)
         throw new BadRequestException('Cơ sở đóng cửa không thể nhận đặt kho.');
       if (!old && value.bookingEnabled) throw new BadRequestException('Cơ sở mới cần được cấu hình kho vật lý và giá trước khi mở nhận đặt kho.');
+      const enabling = Boolean(old && bookingEnabled && !old.bookingEnabled);
+      const readHours = (key: 'officeHours' | 'accessHours') => {
+        if (!Object.hasOwn(body, key)) return old?.[key] ?? '';
+        const input = body[key];
+        if (typeof input !== 'string' || input.length > 200) throw new BadRequestException('Giờ hoạt động không hợp lệ.');
+        return input.trim();
+      };
+      const officeHours = readHours('officeHours');
+      const accessHours = readHours('accessHours');
+      const editsSchedule = Object.hasOwn(body, 'serviceSchedule');
+      const editsHours = !old || Object.hasOwn(body, 'officeHours') || Object.hasOwn(body, 'accessHours') || editsSchedule;
+      const windows = editsHours || enabling
+        ? readServiceSchedule(editsSchedule ? body.serviceSchedule : old?.serviceSchedule ?? [])
+        : undefined;
+      if (windows) {
+        const errors = scheduleIssues(officeHours, accessHours, windows, bookingEnabled);
+        if (Object.keys(errors).length) throw new BadRequestException({ message: Object.values(errors)[0], fields: errors });
+      }
       if (old && bookingEnabled && !old.bookingEnabled) {
         const [configured, staff] = await Promise.all([
           tx.storageType.count({where:{facilityId:id,catalogStatus:'AVAILABLE',monthlyRate:{gt:0},widthCm:{gt:0},lengthCm:{gt:0},heightCm:{gt:0},units:{some:{status:'AVAILABLE',maintenanceRequests:{none:{activeKey:{not:null}}}}}}}),
@@ -163,15 +184,9 @@ export class OperationsService {
         code: text('code', 80),
         name: text('name', 120),
         address: text('address', 500),
-        officeHours:
-          old && body.officeHours === undefined
-            ? old.officeHours
-            : text('officeHours', 200),
-        accessHours:
-          old && body.accessHours === undefined
-            ? old.accessHours
-            : text('accessHours', 200),
-        ...(body.serviceSchedule !== undefined ? { serviceSchedule: readServiceSchedule(body.serviceSchedule) } : {}),
+        officeHours,
+        accessHours,
+        ...(editsSchedule ? { serviceSchedule: windows } : {}),
         bookingEnabled,
         operationalStatus: value.operationalStatus,
         ...(planChanged ? {
@@ -187,10 +202,24 @@ export class OperationsService {
       if (old && old.code !== data.code)
         throw new ConflictException('Không đổi mã cơ sở đã tạo.');
       if (!old && await tx.facility.findUnique({where:{code:data.code}})) throw new ConflictException('Mã cơ sở đã tồn tại.');
+      const impact = old && windows && editsHours
+        && (officeHours !== old.officeHours || accessHours !== old.accessHours || editsSchedule)
+        ? await facilityScheduleImpact(tx, old.id, { officeHours, accessHours, schedule: windows, officeChanged: officeHours !== old.officeHours })
+        : null;
+      if (impact && body.scheduleImpactToken !== impact.token) {
+        throw new ConflictException({ code: 'FACILITY_SCHEDULE_IMPACT', ...impact,
+          message: `Thay đổi ảnh hưởng ${impact.appointments} lịch hẹn và ${impact.shifts} ca Staff. Các lịch hiện tại sẽ được giữ để Manager xử lý.` });
+      }
       const facility = id
         ? tx.facility.update({ where: { id }, data })
         : tx.facility.create({ data });
       const saved = await facility;
+      if (impact) await tx.auditEvent.create({ data: {
+        category: 'ACTIVITY', action: 'FACILITY_SCHEDULE_IMPACT', outcome: 'SUCCESS',
+        actorId: actor.id, actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email,
+        resource: 'facility', resourceId: saved.id, method: 'PATCH', route: '/operations/facilities/' + saved.id, httpStatus: 200,
+        metadata: { facilityName: saved.name, facilityCode: saved.code, facilityId: saved.id, appointments: impact.appointments, shifts: impact.shifts },
+      } });
       if (reopening && old?.closurePlanId) {
         await tx.supportRequest.updateMany({ where: { closurePlanId: old.closurePlanId, status: { not: 'RESOLVED' },
           OR:[{lastAction:null},{lastAction:{not:CLOSURE_BOOKING_REFUND_PENDING}}], transferRequests: { none: { status: { in: ['REQUESTED','APPROVED'] } } } },
@@ -276,7 +305,7 @@ export class OperationsService {
       const types = await tx.storageType.findMany({ where: { facilityId, sizeId }, select: { name: true, monthlyRate: true }, orderBy: { name: 'asc' } });
       const affected = types.filter(item => !priceInRange(bounds, Number(item.monthlyRate))).map(item => item.name);
       await tx.auditEvent.create({ data: {
-        actorId: actor.id, actorRole: actor.role, category: 'ACTIVITY', outcome: 'SUCCESS',
+        actorId: actor.id, actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email, category: 'ACTIVITY', outcome: 'SUCCESS',
         resource: 'pricing-rules', resourceId: facilityId, action: 'PUBLISH_GROUP_PRICE_RANGE',
         method: 'POST', route: '/operations/pricing-rules', httpStatus: 201,
         metadata: { facilityId, facilityName: facility.name, sizeId, groupName: sizeGroups[sizeId as SizeGroup],

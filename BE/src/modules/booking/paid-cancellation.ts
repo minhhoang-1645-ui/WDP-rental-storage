@@ -152,7 +152,7 @@ export async function paidCancellation(tx: Prisma.TransactionClient, actor: Publ
   await tx.reservation.update({ where: { id }, data: { paidCancellation: entry as Prisma.InputJsonValue,
     ...(action === 'APPROVE' ? { status: 'CANCELLED' } : {}) } });
   await tx.auditEvent.create({ data: { action: `BOOKING_CANCELLATION_${action}`, category: 'ACTIVITY', outcome: 'SUCCESS', actorId: actor.id,
-    actorRole: actor.role, resource: 'reservations', resourceId: id, method: 'POST', route: '/reservations/:id/paid-cancellation', httpStatus: 201,
+    actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email, resource: 'reservations', resourceId: id, method: 'POST', route: '/reservations/:id/paid-cancellation', httpStatus: 201,
     metadata: { customerId: booking.customerId, facilityId: booking.facilityId, state: entry.state, refundAmount: entry.quote.total } } });
   return result(entry);
 }

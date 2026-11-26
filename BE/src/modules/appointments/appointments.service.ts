@@ -232,14 +232,17 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       this.assertHandoverReady(current.reservation);
       const leadDays = await this.appointmentLeadDays(current, tx);
       await this.assertAppointmentDate(current.reservation, scheduledAt, leadDays);
-      if (await assessHandoverWindow(tx, current.reservation.facilityId, scheduledAt, { appointmentId: current.id }) !== 'CONFIRMED') {
-        throw new ConflictException('Chọn giờ phục vụ còn chỗ.');
+      const decision = await assessHandoverWindow(tx, current.reservation.facilityId, scheduledAt, { appointmentId: current.id });
+      const confirmed = decision === 'CONFIRMED';
+      if (!confirmed && decision !== 'MANAGER_CONFIRMATION_REQUIRED') {
+        throw new ConflictException('Chọn giờ phục vụ còn chỗ và có ca làm phù hợp.');
       }
       const previous = this.appointmentScheduleHistory(current.handoverReport).scheduleHistory ?? [];
       const updated = await tx.handoverAppointment.update({ where: { id: row.id }, data: {
-        scheduledAt, status: 'CONFIRMED', confirmedAt: now, confirmedByUserId: null, handoverLeadDays: leadDays,
+        scheduledAt, status: confirmed ? 'CONFIRMED' : 'REQUESTED', confirmedAt: confirmed ? now : null,
+        confirmedByUserId: null, handoverLeadDays: leadDays,
         assignedStaffUserId: null, assignedAt: null, assignedByUserId: null,
-        handoverReport: { scheduleHistory: [...previous, { action: 'CUSTOMER_RESCHEDULE',
+        handoverReport: { ...(!confirmed && { scheduleException: decision }), scheduleHistory: [...previous, { action: 'CUSTOMER_RESCHEDULE',
           previousScheduledAt: current.scheduledAt.toISOString(), scheduledAt: scheduledAt.toISOString(), at: now.toISOString() }] },
       }, include: this.appointmentInclude() });
       if (current.assignedStaffUserId) {
@@ -496,7 +499,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     if (!delivered.length) return false;
     await tx.auditEvent.create({ data: {
       action: 'DELIVER_PURCHASED_PRODUCTS', category: 'ACTIVITY', outcome: 'SUCCESS',
-      actorId: actor.id, actorName: actor.fullName, actorRole: actor.role,
+      actorId: actor.id, actorName: actor.fullName, actorRole: actor.role, actorEmail: actor.email,
       resource: 'appointments', resourceId: appointment.id,
       method: 'POST', route: '/staff/appointments/:id/complete-handover', httpStatus: 201,
       metadata: { reservationId: reservation.id, deliveredPurchaseIds: delivered },

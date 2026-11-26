@@ -193,7 +193,7 @@ export class AdditionalServiceInventoryService {
         });
         if (before !== value) await tx.auditEvent.create({ data: {
           category: 'ACTIVITY', outcome: 'SUCCESS', action: 'UPDATE_OFFERING_QUANTITY',
-          actorId: actor.id, actorRole: actor.role, actorName: actor.fullName,
+          actorId: actor.id, actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email,
           resource: 'facility-service-offering', resourceId: item.inventory.id,
           route: '/manager/additional-services/:id/inventory', method: 'PATCH', httpStatus: 200,
           metadata: { facilityId: item.facilityId, field, before, after: value },

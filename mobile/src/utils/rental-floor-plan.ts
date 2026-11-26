@@ -3,11 +3,9 @@ import { idOf, rows, text, type Row } from '@/operations/model';
 type Unit = { id: string; code: string; row: number; position: number };
 export type PlanCell = { id: string; code: string; x: number; y: number; side: number };
 
-export function rentalFloorPlan(rental: Row, unitId: string) {
-  if (!unitId) return null;
-  const layout = rows(rental.unitLayouts).find(item => text(item, 'unitId') === unitId);
+export function storageFloorPlan(source: unknown) {
   const units: Unit[] = [];
-  for (const item of rows(layout?.units)) {
+  for (const item of rows(source)) {
     const id = idOf(item);
     const code = text(item, 'code').trim();
     if (id && code && typeof item.row === 'number' && Number.isSafeInteger(item.row) &&
@@ -15,8 +13,8 @@ export function rentalFloorPlan(rental: Row, unitId: string) {
       units.push({ id, code, row: item.row, position: item.position });
     }
   }
-  if (!units.some(unit => unit.id === unitId)) return null;
-  units.sort((a, b) => a.row - b.row || a.position - b.position || a.code.localeCompare(b.code));
+  if (!units.length) return null;
+  units.sort((a, b) => a.row - b.row || a.position - b.position || a.code.localeCompare(b.code) || a.id.localeCompare(b.id));
   const banks: Unit[][] = [];
   for (const unit of units) {
     const bank = banks.at(-1);
@@ -30,4 +28,11 @@ export function rentalFloorPlan(rental: Row, unitId: string) {
   return { cells, width: 336, height: Math.floor((banks.length - 1) / 2) * 224 + Math.max(3, ...banks.slice(-((banks.length - 1) % 2 + 1)).map(bank => bank.length)) * 38 + 62 };
 }
 
-export type RentalFloorPlan = NonNullable<ReturnType<typeof rentalFloorPlan>>;
+export function rentalFloorPlan(rental: Row, unitId: string) {
+  if (!unitId) return null;
+  const layout = rows(rental.unitLayouts).find(item => text(item, 'unitId') === unitId);
+  const plan = storageFloorPlan(layout?.units);
+  return plan?.cells.some(cell => cell.id === unitId) ? plan : null;
+}
+
+export type RentalFloorPlan = NonNullable<ReturnType<typeof storageFloorPlan>>;

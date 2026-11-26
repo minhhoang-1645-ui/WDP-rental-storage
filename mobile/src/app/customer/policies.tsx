@@ -48,10 +48,10 @@ function details(policy: Row): string[] {
       return [fee('tiền thuê chưa sử dụng'), v.refundMode === 'NONE' ? 'Không hoàn tiền thuê trả trước' : v.refundMode === 'ORIGINAL_DISCOUNT' ? 'Hoàn theo giá đã giảm' : 'Tính lại ưu đãi theo bảng đã cam kết'];
     case 'paymentOverdue':
       if (typeof v.graceDays !== 'number' || !n('feeMethod')) return [];
-      return [`Ân hạn ${n('graceDays')} ngày`, fee('tiền thuê còn nợ')];
+      return [`Cho phép quá hạn ${n('graceDays')} ngày`, fee('tiền thuê còn nợ')];
     case 'returnOverdue':
       if (typeof v.graceDays !== 'number' || typeof v.multiplier !== 'number') return [];
-      return [`Ân hạn ${n('graceDays')} ngày · Hệ số phí ${n('multiplier')}%`];
+      return [`Cho phép quá hạn ${n('graceDays')} ngày · Hệ số phí ${n('multiplier')}%`];
     default:
       return [];
   }
@@ -177,12 +177,12 @@ export default function CustomerPolicies() {
   const milestones = [
     { icon: Clock, label: 'Giữ đơn chưa thanh toán', value: hold },
     { icon: CalendarDays, label: 'Báo trước khi trả kho', value: notice },
-    { icon: Coins, label: 'Ân hạn thanh toán', value: grace },
+    { icon: Coins, label: 'Số ngày cho phép quá hạn thanh toán', value: grace },
   ].filter(item => item.value);
   const summaries = [
     '',
     [dayLabel(policies.get('handoverLeadDays')?.value) && 'Nhận chìa khóa sớm ' + dayLabel(policies.get('handoverLeadDays')?.value), notice && 'Báo trả kho trước ' + notice].filter(Boolean).join(' · '),
-    grace ? 'Ân hạn thanh toán ' + grace : '',
+    grace ? 'Số ngày cho phép quá hạn thanh toán ' + grace : '',
   ];
 
   return <ScrollView style={s.screen} contentContainerStyle={s.page}>

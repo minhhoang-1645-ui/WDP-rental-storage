@@ -129,7 +129,7 @@ function validatePaymentOverdue(input: unknown): PaymentOverduePolicy {
   const { graceDays, managerDays, feeMethod, feeAmount } = fields(input, ['graceDays', 'managerDays', 'feeMethod', 'feeAmount']);
   const grace = integer(graceDays, 30);
   const escalation = integer(managerDays, 60);
-  if (!escalation || escalation < grace) throw new BadRequestException('Mốc chuyển quản lý phải từ 1 đến 60 ngày và không sớm hơn ân hạn.');
+  if (!escalation || escalation < grace) throw new BadRequestException('Mốc chuyển quản lý phải từ 1 đến 60 ngày và không sớm hơn mốc hết thời gian cho phép quá hạn.');
   if (feeMethod !== 'NONE' && feeMethod !== 'FIXED_AMOUNT' && feeMethod !== 'RENT_DEBT_PERCENTAGE') throw new BadRequestException('Phương thức tính phí chậm thanh toán không hợp lệ.');
   const max = feeMethod === 'NONE' ? 0 : feeMethod === 'RENT_DEBT_PERCENTAGE' ? 100 : Number.MAX_SAFE_INTEGER;
   return { graceDays: grace, managerDays: escalation, feeMethod, feeAmount: integer(feeAmount, max) };

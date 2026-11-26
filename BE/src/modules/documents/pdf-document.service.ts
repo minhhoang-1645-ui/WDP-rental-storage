@@ -193,11 +193,11 @@ export class PdfDocumentService {
     const cancellation = quote.pricingPolicy?.cancellation?.value;
     if (cancellation) this.paragraph(pdf, `Tiền thuê đã thanh toán được hoàn ${cancellation.farPercent}% nếu gửi yêu cầu trước ít nhất ${cancellation.farDays} ngày, ${cancellation.middlePercent}% từ ${cancellation.nearDays} đến dưới ${cancellation.farDays} ngày, ${cancellation.nearPercent}% sát ngày thuê, hoặc ${cancellation.startedPercent}% từ ngày thuê khi chưa sử dụng kho. Cọc và dịch vụ được đối soát riêng. Hạn hoàn ${cancellation.refundDays} ngày sau khi duyệt.`);
     const overdueReturn = quote.pricingPolicy?.returnOverdue?.value;
-    if (overdueReturn) this.paragraph(pdf, `Trả kho quá hạn: sau ${overdueReturn.graceDays} ngày ân hạn, phí sử dụng mỗi ngày bằng giá thuê tháng chia 30 nhân ${overdueReturn.multiplier}%. Số ngày tính đến ngày nhận kho thực tế.`);
+    if (overdueReturn) this.paragraph(pdf, `Trả kho quá hạn: sau ${overdueReturn.graceDays} ngày cho phép quá hạn, phí sử dụng mỗi ngày bằng giá thuê tháng chia 30 nhân ${overdueReturn.multiplier}%. Số ngày tính đến ngày nhận kho thực tế.`);
     if (late) {
       const fee = late.feeMethod === 'FIXED_AMOUNT' ? money(late.feeAmount)
         : late.feeMethod === 'RENT_DEBT_PERCENTAGE' ? `${late.feeAmount}% tiền thuê còn nợ có căn cứ đối soát` : 'miễn phí';
-      this.paragraph(pdf, `Ân hạn thanh toán ${late.graceDays} ngày. Sau ân hạn, phí chậm thanh toán của hóa đơn định kỳ hoặc gia hạn đủ điều kiện được tính một lần: ${fee}.`);
+      this.paragraph(pdf, `Cho phép quá hạn thanh toán ${late.graceDays} ngày. Sau thời gian cho phép quá hạn, phí chậm thanh toán của hóa đơn định kỳ hoặc gia hạn đủ điều kiện được tính một lần: ${fee}.`);
     }
     this.paragraph(pdf, 'Số cần thanh toán thực tế theo từng hóa đơn và số dư còn lại tại thời điểm trả tiền. Dịch vụ tính theo lần/ngày/tháng theo đơn vị đã ghi trong báo giá.');
   }

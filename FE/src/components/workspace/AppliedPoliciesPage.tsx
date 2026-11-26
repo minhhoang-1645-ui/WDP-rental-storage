@@ -41,7 +41,7 @@ export function AppliedPoliciesPage() {
   const milestones = [
     { icon: Clock, label: 'Giữ đơn chưa thanh toán', value: holdHours || (hold ? hold.value + ' ' + hold.unit : '—') },
     { icon: CalendarDays, label: 'Báo trước khi trả kho', value: days(notice?.value) },
-    { icon: Coins, label: 'Ân hạn thanh toán', value: days(overdue?.value.graceDays) },
+    { icon: Coins, label: 'Số ngày cho phép quá hạn thanh toán', value: days(overdue?.value.graceDays) },
     ...(manager ? [{ icon: RefreshCw, label: 'Mở yêu cầu gia hạn', value: days(renewal?.value.opensDaysBefore) }] : []),
   ];
 

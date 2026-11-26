@@ -171,7 +171,7 @@ function PolicyEditor({ initial, current, refreshing, refreshError, onClose, onP
       if (value.startedPercent > value.nearPercent) errors.startedPercent = 'Tỷ lệ không được cao hơn mốc trước.';
     }
     if (config?.key === 'paymentOverdue' || config?.key === 'returnOverdue') {
-      if (config.value.managerDays < config.value.graceDays) errors.managerDays = 'Mốc chuyển quản lý phải bằng hoặc sau thời gian ân hạn.';
+      if (config.value.managerDays < config.value.graceDays) errors.managerDays = 'Mốc chuyển quản lý phải bằng hoặc sau thời gian cho phép quá hạn.';
     }
     if (config?.key === 'renewal' && config.value.opensDaysBefore <= config.value.closesDaysBefore) {
       errors.opensDaysBefore = 'Phải mở gia hạn sớm hơn mốc đóng.';

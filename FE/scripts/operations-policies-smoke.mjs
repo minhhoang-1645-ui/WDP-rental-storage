@@ -21,8 +21,8 @@ const pricing = [
   group('cancellation', 'Hủy đơn đã thanh toán', 'Các mốc hoàn tiền thuê theo ngày khách gửi yêu cầu và hạn xử lý khoản hoàn.', { farDays: 7, nearDays: 3, farPercent: 100, middlePercent: 90, nearPercent: 70, startedPercent: 50, refundDays: 7 }),
   group('renewal', 'Gia hạn hợp đồng', 'Thiết lập khoảng thời gian gửi yêu cầu và đơn giá cho kỳ mới.', { opensDaysBefore: 30, closesDaysBefore: 1, priceMode: 'CURRENT_LIST_PRICE' }),
   group('earlyReturn', 'Quyết toán trả kho trước hạn', 'Quy định phí và hoàn tiền thuê khi trả trước hạn.', { feeMethod: 'NONE', feeAmount: 0, refundMode: 'ORIGINAL_DISCOUNT' }),
-  group('paymentOverdue', 'Quá hạn thanh toán', 'Ân hạn, mốc chuyển quản lý và cách tính phí chậm thanh toán.', { graceDays: 5, managerDays: 15, feeMethod: 'NONE', feeAmount: 0 }),
-  group('returnOverdue', 'Quá hạn trả kho', 'Ân hạn và hệ số phí tính đến ngày bàn giao thực tế.', { graceDays: 0, managerDays: 7, multiplier: 100 }),
+  group('paymentOverdue', 'Quá hạn thanh toán', 'Thời gian cho phép quá hạn, mốc chuyển quản lý và cách tính phí chậm thanh toán.', { graceDays: 5, managerDays: 15, feeMethod: 'NONE', feeAmount: 0 }),
+  group('returnOverdue', 'Quá hạn trả kho', 'Thời gian cho phép quá hạn và hệ số phí tính đến ngày bàn giao thực tế.', { graceDays: 0, managerDays: 7, multiplier: 100 }),
 ];
 const policy = items[0];
 const tabs = ['Đặt kho và thanh toán', 'Hợp đồng và bàn giao', 'Quá hạn và nhắc nhở'];

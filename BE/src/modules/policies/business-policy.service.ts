@@ -17,9 +17,9 @@ export const pricingDefinitions = {
  prepaid: { title: 'Giảm giá thanh toán trước', description: 'Chỉ giảm trên tiền thuê trả trước đủ điều kiện.' },
  renewal: { title: 'Gia hạn hợp đồng', description: 'Thiết lập khoảng thời gian gửi yêu cầu và đơn giá cho kỳ gia hạn mới.' },
  earlyReturn: { title: 'Quyết toán trả kho trước hạn', description: 'Áp dụng theo điều khoản trên báo giá mới. Phí tính theo mức cố định hoặc phần tiền thuê chưa sử dụng, được miễn khi NestBox phải thu hồi kho.' },
- paymentOverdue: { title: 'Quá hạn thanh toán', description: 'Ân hạn, thời điểm báo quản lý và phí một lần trên phần tiền thuê còn nợ theo điều khoản đã cam kết.' },
+ paymentOverdue: { title: 'Quá hạn thanh toán', description: 'Thời gian cho phép quá hạn, thời điểm báo quản lý và phí một lần trên phần tiền thuê còn nợ theo điều khoản đã cam kết.' },
  cancellation: { title: 'Hủy đơn đã thanh toán', description: 'Các mốc hoàn tiền thuê theo ngày khách gửi yêu cầu và hạn xử lý khoản hoàn.' },
- returnOverdue: { title: 'Quá hạn trả kho', description: 'Ân hạn và hệ số phí sử dụng đến ngày bàn giao thực tế.' },
+ returnOverdue: { title: 'Quá hạn trả kho', description: 'Thời gian cho phép quá hạn và hệ số phí sử dụng đến ngày bàn giao thực tế.' },
 };
 export function validatePolicy(key:string,value:unknown) {
  if(!Object.hasOwn(policyDefinitions,key))throw new BadRequestException('Thông số này chưa được phê duyệt để cấu hình.');
@@ -55,7 +55,7 @@ export class BusinessPolicyService {
     effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,
    })),
    pricing: catalog.pricing.map(({key,title,description,value,effectiveVersion,history}) => ({
-    key,title,description: !manager && key === 'paymentOverdue' ? 'Ân hạn và phí một lần theo điều khoản đã cam kết.' : description,
+    key,title,description: !manager && key === 'paymentOverdue' ? 'Thời gian cho phép quá hạn và phí một lần theo điều khoản đã cam kết.' : description,
     value: manager || !('managerDays' in value) ? value : Object.fromEntries(Object.entries(value).filter(([name]) => name !== 'managerDays')),
     effectiveVersion,
     effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,

@@ -156,7 +156,7 @@ try {
     mobile.update();
     await mobile.page.clock.fastForward(61_000);
     for (const value of ['95 phút', '11 ngày', '8 ngày']) await milestones.getByText(value, { exact: true }).waitFor();
-    await mobile.page.getByText('Ân hạn 8 ngày', { exact: true }).waitFor();
+    await mobile.page.getByText('Cho phép quá hạn 8 ngày', { exact: true }).waitFor();
     if (screenshots) await mobile.page.screenshot({ path: join(screenshots, 'customer-mobile-web.png'), fullPage: true });
     console.log('PASS: Expo Web policy accordion and timed refresh of all three Customer milestones.');
   }

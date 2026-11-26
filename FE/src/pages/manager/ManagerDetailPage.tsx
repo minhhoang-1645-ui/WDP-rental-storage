@@ -782,7 +782,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Hạn thanh toán", first(row, "type") === "INITIAL" && first(row, "reservation.expiresAt") ? date(first(row, "reservation.expiresAt"), true) : date(row.dueAt)],
               ...(Number(first(row, 'overduePayment.days')) > 0 ? [
                 ['Quá hạn', `${first(row, 'overduePayment.days')} ngày`],
-                ...(first(row, 'overduePayment.graceDays') ? [['Ân hạn', `${first(row, 'overduePayment.graceDays')} ngày`]] : []),
+                ...(first(row, 'overduePayment.graceDays') ? [['Số ngày cho phép quá hạn', `${first(row, 'overduePayment.graceDays')} ngày`]] : []),
                 ['Mốc quản lý xử lý', date(first(row, 'overduePayment.managerReviewOn'))],
                 ...(object(row.overduePayment).rentDebtRequiresReconciliation === true ? [['Phân bổ tiền thuê', 'Cần đối soát khoản đã thu']] : []),
               ] as [string, string][] : []),

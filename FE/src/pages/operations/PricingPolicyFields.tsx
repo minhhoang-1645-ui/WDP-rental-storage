@@ -26,7 +26,7 @@ const cancellationFields = {
   middlePercent: ['Hoàn từ mốc gần (%)', 0, 100], nearPercent: ['Hoàn sát ngày thuê (%)', 0, 100],
   startedPercent: ['Hoàn khi đã đến ngày thuê (%)', 0, 100], refundDays: ['Hạn hoàn tiền (ngày)', 1, 30],
 } as const;
-const returnOverdueFields = { graceDays: ['Ân hạn (ngày)', 0, 7], managerDays: ['Chuyển quản lý (ngày)', 1, 30], multiplier: ['Hệ số phí (%)', 100, 150] } as const;
+const returnOverdueFields = { graceDays: ['Số ngày cho phép quá hạn', 0, 7], managerDays: ['Chuyển quản lý (ngày)', 1, 30], multiplier: ['Hệ số phí (%)', 100, 150] } as const;
 type Cancellation = Record<keyof typeof cancellationFields, number>;
 type ReturnOverdue = Record<keyof typeof returnOverdueFields, number>;
 type Config = { key: 'deposit'; value: Deposits } | { key: 'prepaid'; value: Prepaid } | { key: 'renewal'; value: Renewal } |
@@ -80,12 +80,12 @@ export function pricingPolicySummary(key: Config['key'], value: Config['value'],
   }
   if (key === 'returnOverdue') {
     const v = value as ReturnOverdue;
-    return `Ân hạn ${v.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + v.managerDays + " ngày" : ""}\nHệ số phí ${v.multiplier}%`;
+    return `Cho phép quá hạn ${v.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + v.managerDays + " ngày" : ""}\nHệ số phí ${v.multiplier}%`;
   }
   if (key === 'paymentOverdue') {
     const terms = value as PaymentOverdue;
     const fee = terms.feeMethod === 'NONE' ? 'Miễn phí' : terms.feeMethod === 'FIXED_AMOUNT' ? `${numberFormat.format(terms.feeAmount)} VNĐ` : `${terms.feeAmount}% tiền thuê còn nợ`;
-    return `Ân hạn ${terms.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + terms.managerDays + " ngày" : ""}\n${fee}`;
+    return `Cho phép quá hạn ${terms.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + terms.managerDays + " ngày" : ""}\n${fee}`;
   }
   if (key === 'earlyReturn') {
     const terms = value as EarlyReturn;
@@ -212,18 +212,18 @@ function RenewalFields({ value, errors }: { value: Renewal; errors: Record<strin
 export function PricingPolicyFields({ policy, errors }: { policy: PricingPolicy; errors: Record<string, string> }) {
   if (policy.key === 'cancellation') return <CancellationFields value={policy.value} errors={errors} />;
   if (policy.key === 'returnOverdue') return <>
-    <NumberField name="graceDays" label="Thời gian ân hạn" value={policy.value.graceDays} max={7} unit="ngày" errors={errors} />
+    <NumberField name="graceDays" label="Thời gian cho phép quá hạn" value={policy.value.graceDays} max={7} unit="ngày" errors={errors} />
     <NumberField name="managerDays" label="Chuyển quản lý sau" value={policy.value.managerDays} min={1} max={30} unit="ngày" errors={errors} />
     <NumberField name="multiplier" label="Hệ số phí sử dụng kho" value={policy.value.multiplier} min={100} max={150} unit="%" errors={errors} />
     <p className="policy-span policy-muted">Mức 100% bằng phí cơ sở. Mức 120% và 150% lần lượt bằng 1,2 và 1,5 lần phí cơ sở.</p>
   </>;
   if (policy.key === 'paymentOverdue') return <>
-    <NumberField name="graceDays" label="Thời gian ân hạn" value={policy.value.graceDays} max={30} unit="ngày" errors={errors} />
+    <NumberField name="graceDays" label="Thời gian cho phép quá hạn" value={policy.value.graceDays} max={30} unit="ngày" errors={errors} />
     <NumberField name="managerDays" label="Chuyển quản lý sau" value={policy.value.managerDays} min={1} max={60} unit="ngày" errors={errors} />
     <div className="policy-field-group policy-span"><h3>Phí chậm thanh toán</h3>
       <MethodFields name="feeMethod" amountName="feeAmount" method={policy.value.feeMethod} amount={policy.value.feeAmount}
         options={overdueFees} percentMethod="RENT_DEBT_PERCENTAGE" label="Mức phí" errors={errors} />
-      <p className="policy-muted">Sau ân hạn, mỗi hóa đơn đủ điều kiện chỉ bị tính phí một lần. Khi tính theo tỷ lệ, chỉ dùng phần tiền thuê còn nợ đã xác định được.</p>
+      <p className="policy-muted">Sau thời gian cho phép quá hạn, mỗi hóa đơn đủ điều kiện chỉ bị tính phí một lần. Khi tính theo tỷ lệ, chỉ dùng phần tiền thuê còn nợ đã xác định được.</p>
     </div>
   </>;
   if (policy.key === 'earlyReturn') return <>

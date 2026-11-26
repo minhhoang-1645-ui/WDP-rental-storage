@@ -85,7 +85,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
     <ScrollView style={s.screen} contentContainerStyle={s.page}>
       <InvoiceIdentity invoice={invoice} badge />
       {!paymentScreen && Number(text(invoice, 'overduePayment.days')) > 0 && <Text style={s.body}>
-        Đã quá hạn {text(invoice, 'overduePayment.days')} ngày{object(invoice.overduePayment).withinGrace === true ? ' · Trong thời gian ân hạn' : ' · Đã hết ân hạn'}{text(invoice, 'overduePayment.graceDays') ? ' · Ân hạn ' + text(invoice, 'overduePayment.graceDays') + ' ngày' : ''}
+        Đã quá hạn {text(invoice, 'overduePayment.days')} ngày{object(invoice.overduePayment).withinGrace === true ? ' · Trong thời gian cho phép quá hạn' : ' · Đã hết thời gian cho phép quá hạn'}{text(invoice, 'overduePayment.graceDays') ? ' · Cho phép quá hạn ' + text(invoice, 'overduePayment.graceDays') + ' ngày' : ''}
       </Text>}
       <View style={[s.hero, paid ? s.greenBadge : voided ? s.grayBadge : null]}>
         <Text style={s.body}>{paymentScreen ? 'Số tiền thanh toán' : paid ? 'Tổng đã trả' : voided ? 'Giá trị hóa đơn đã hủy' : 'Còn phải trả'}</Text>

@@ -26,7 +26,7 @@ const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
 const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
 
-it('announces an effective policy only to Managers and keeps its read token stable', () => {
+it('announces effective policies to Managers and Customers with role-specific links and stable tokens', () => {
   const now = Date.parse(at);
   const rule = { id: 'rule-v2', title: 'Báo trước khi trả kho', version: 2, effectiveFrom: at };
   const data = { 'policy-effective': [rule] };
@@ -34,7 +34,12 @@ it('announces an effective policy only to Managers and keeps its read token stab
   expect(notice).toMatchObject({ target: '/manager/policies', kind: 'policy-effective' });
   expect(buildNotices(manager, data, now + 60_000)[0].token).toBe(notice.token);
   expect(buildNotices(manager, data, now - 1)).toEqual([]);
-  for (const viewer of [customer, staff, admin]) expect(buildNotices(viewer, data, now)).toEqual([]);
+  const [customerNotice] = buildNotices(customer, data, now);
+  expect(customerNotice).toMatchObject({ target: '/customer/policies', actionLabel: '' });
+  expect(customerMobileNotices([customerNotice], data, now)[0].target).toBe('/customer/policies');
+  expect(buildNotices(customer, data, now + 60_000)[0].token).toBe(customerNotice.token);
+  expect(buildNotices(customer, data, now - 1)).toEqual([]);
+  for (const viewer of [staff, admin]) expect(buildNotices(viewer, data, now)).toEqual([]);
 });
 
 it('keeps concurrent Manager inbox requests scoped to the selected facility', async () => {
@@ -131,8 +136,10 @@ describe('notification HTTP API', () => {
   let app: INestApplication;
   let receipts: Map<string, Set<string>>;
   let data: Record<string, NotificationData>;
+  let policyVersions: { id: string; key: string; version: number; effectiveFrom: Date }[];
 
   beforeEach(async () => {
+    policyVersions = [];
     receipts = new Map();
     const inbox = (id: string, name: string) => Array.from({ length: 131 }, (_, index) => ({
       id: `${id}-${index}`, status: 'RESOLVED', supportCode: `SUP-${index}`,
@@ -158,7 +165,7 @@ describe('notification HTTP API', () => {
         { provide: AuthService, useValue: { getUserByToken: (token: string) => accounts.find(user => user.id === token) } },
         { provide: NotificationSources, useValue: { load: (user: PublicUser) => Promise.resolve(data[user.id]) } },
         { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7) } },
-        { provide: PrismaService, useValue: { user: { findFirst: () => ({ id: manager.id }) }, facilityAccess: { findMany: () => [{ facilityId: 'facility-1' }] }, businessRule: { findMany: () => [] }, notificationReceipt: {
+        { provide: PrismaService, useValue: { user: { findFirst: () => ({ id: manager.id }) }, facilityAccess: { findMany: () => [{ facilityId: 'facility-1' }] }, businessRule: { findMany: () => policyVersions }, notificationReceipt: {
           findMany: ({ where }: { where: { userId: string; token: { in: string[] } } }) =>
             where.token.in.filter(token => receipts.get(where.userId)?.has(token)).map(token => ({ token })),
           createMany: ({ data }: { data: { userId: string; token: string }[] }) => {
@@ -182,6 +189,19 @@ describe('notification HTTP API', () => {
   const get = (user: PublicUser, query = '') => request(app.getHttpServer()).get('/notifications' + query).set('Authorization', 'Bearer ' + user.id);
   const patch = (user: PublicUser, path: string) => request(app.getHttpServer()).patch('/notifications/' + path).set('Authorization', 'Bearer ' + user.id);
   const open = (user: PublicUser, token: string) => request(app.getHttpServer()).post('/notifications/' + token + '/open').set('Authorization', 'Bearer ' + user.id);
+
+  it('opens an informational policy update in the Customer mobile inbox and tracks reads per account', async () => {
+    policyVersions.push({ id: 'effective-rule', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) });
+    const query = '?client=mobile&kind=policy-effective';
+    const response = await get(customer, query + '&view=unread').expect(200);
+    expect(response.body.items).toHaveLength(1);
+    const [notice] = response.body.items;
+    expect(notice).toMatchObject({ title: 'Chính sách thuê kho đã cập nhật', canOpen: true, actionLabel: '' });
+    expect((await get(customer, query + '&view=action').expect(200)).body.items).toEqual([]);
+    expect((await open(customer, notice.token).query({ client: 'mobile' }).expect(200)).body.target).toBe('/customer/policies');
+    expect((await get(customer, query + '&view=unread').expect(200)).body.items).toEqual([]);
+    expect((await get(other, query + '&view=unread').expect(200)).body.items).toHaveLength(1);
+  });
 
   it('uses complete totals and deterministic server pages with filters and five recent entries', async () => {
     const seen = new Set<string>();

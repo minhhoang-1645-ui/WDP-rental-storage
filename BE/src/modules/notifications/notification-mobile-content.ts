@@ -37,6 +37,9 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
     let { title, summary, actionLabel } = notice;
     let target = detail(notice.kind === 'transfers' && source === 'support-requests' ? 'transfers' : notice.kind, id);
     switch (source) {
+      case 'policy-effective':
+        target = notice.target;
+        break;
       case 'rental-overdue':
         target = '/customer/rentals?' + new URLSearchParams({ rentalContractId: id });
         break;

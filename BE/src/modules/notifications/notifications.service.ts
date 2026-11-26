@@ -50,7 +50,7 @@ export class NotificationsService {
         const days = await this.policies.value('paymentReminderDays', this.prisma, new Date(now));
         data = { ...data, 'payment-due-reminder': data.invoices.map(row => ({ ...row, reminderDays: days })) };
       }
-      if (actor.role === 'FACILITY_MANAGER' && (await facilityIds(this.prisma, actor)).length) {
+      if (actor.role === 'STORAGE_CUSTOMER' || (actor.role === 'FACILITY_MANAGER' && (await facilityIds(this.prisma, actor)).length)) {
         const effective = await this.prisma.businessRule.findMany({
           where: { facilityId: null, storageTypeId: null,
             key: { in: [...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)] },

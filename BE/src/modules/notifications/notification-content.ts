@@ -102,7 +102,11 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
   const key = `${source}:${id}`;
   if (source === 'policy-effective') {
     const at = get('effectiveFrom');
-    if (actor.role !== 'FACILITY_MANAGER' || !Number.isFinite(Date.parse(at)) || Date.parse(at) > now) return;
+    const customer = actor.role === 'STORAGE_CUSTOMER';
+    if ((!customer && actor.role !== 'FACILITY_MANAGER') || !Number.isFinite(Date.parse(at)) || Date.parse(at) > now) return;
+    if (customer) return { key, token: hash([key]), kind: source, at, code: '', title: 'Chính sách thuê kho đã cập nhật',
+      summary: get('title') + ' · Phiên bản ' + get('version') + ' đã có hiệu lực.',
+      important: false, actionLabel: '', target: '/customer/policies' };
     return { key, token: hash([key]), kind: source, at, code: '', title: 'Chính sách kinh doanh có phiên bản mới',
       summary: get('title') + ' · Phiên bản ' + get('version') + ' đã có hiệu lực. Xem quy định áp dụng trong mục Chính sách áp dụng.',
       important: false, actionLabel: 'Xem chính sách', target: '/manager/policies' };

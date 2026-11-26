@@ -7,7 +7,6 @@ import { WorkspaceProfileDropdown } from '../workspace/WorkspaceProfileDropdown'
 import { startTransition, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
-  Layers3,
   Home,
   LogOut,
   Menu,
@@ -136,7 +135,7 @@ export function InternalPortalLayout({
       }
     >
       <span>
-        {admin ? <Layers3 size={26} strokeWidth={1.7} /> : <Warehouse size={23} />}
+        <Warehouse size={23} />
       </span>
       <div>
         <strong>
@@ -187,10 +186,10 @@ export function InternalPortalLayout({
   );
   const account = (
     <div className="manager-account">
-      {!admin && <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>}
+      <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>
       <div>
         <strong>{user?.fullName}</strong>
-        {!admin && <small>{roleLabel(user?.role)}</small>}
+        <small>{roleLabel(user?.role)}</small>
       </div>
       <button
         className="portal-logout"

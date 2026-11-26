@@ -20,7 +20,7 @@ describe('Vietnam facility calendar boundaries, without a live database', () => 
   it('pricing and booking both reject yesterday immediately after Vietnamese midnight', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-05T17:00:00Z'));
     const product = { id: 'type', facilityId:'facility', name: 'Kho', sizeId: 'small', monthlyRate: new Prisma.Decimal(650000), allowDailyRental: true, minRentalDays: 1 };
-    const prisma = { storageType: { findUnique: vi.fn(async () => product) }, facility:{findUnique:vi.fn().mockResolvedValue({bookingEnabled:true,operationalStatus:'OPEN'})}, businessRule:{findMany:vi.fn().mockResolvedValue([])} };
+    const prisma = { storageType: { findUnique: vi.fn(async () => product) }, facility:{findUnique:vi.fn().mockResolvedValue({bookingEnabled:true,operationalStatus:'OPEN'})}, businessRule:{findMany:vi.fn().mockResolvedValue([]),findFirst:vi.fn().mockResolvedValue({ value: { min: 500_000, max: 800_000 } })} };
     const pricing = new PricingService(prisma as never), booking = new BookingService(prisma as never);
     const input = { storageTypeId: 'type', startDate: '2026-11-05', endDate: '2027-02-05', quantity: 1, paymentPlan: 'PAY_MONTHLY' };
     await expect(pricing.quote(input)).rejects.toThrow('quá khứ');

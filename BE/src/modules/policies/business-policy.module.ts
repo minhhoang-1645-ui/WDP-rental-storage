@@ -20,6 +20,14 @@ class LegacyBusinessPolicyController {
  @Get() list() { throw new GoneException('Chính sách thuộc khu vực Điều hành kinh doanh.'); }
  @Patch(':id') save() { throw new GoneException('Chính sách thuộc khu vực Điều hành kinh doanh.'); }
 }
+@Controller('business-policies/applied')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
+class AppliedBusinessPolicyController {
+  constructor(private readonly policies: BusinessPolicyService) {}
+  @Get() list(@Req() request: AuthenticatedRequest) { return this.policies.applied(request.user!); }
+}
+
 @Global()
-@Module({ imports: [AuthModule], controllers: [BusinessPolicyController, LegacyBusinessPolicyController], providers: [BusinessPolicyService], exports: [BusinessPolicyService] })
+@Module({ imports: [AuthModule], controllers: [AppliedBusinessPolicyController, BusinessPolicyController, LegacyBusinessPolicyController], providers: [BusinessPolicyService], exports: [BusinessPolicyService] })
 export class BusinessPolicyModule {}

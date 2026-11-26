@@ -41,6 +41,8 @@ export interface ReturnReadiness {
 }
 
 export interface RentalContractSummary {
+  returnNoticeDays?: number | null
+  overdueOccupancy?: { days: number; withinGrace: boolean; estimatedAmount: number } | null
   returnReadiness?: ReturnReadiness
   earlyReturnEstimate?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
   returnInProgress?: boolean
@@ -80,6 +82,7 @@ export interface CustomerRental {
 }
 
 export interface CustomerInvoice {
+  overduePayment?: { days: number; graceDays?: number; withinGrace: boolean }
   closeoutPaymentAllowed?: boolean
   voidReason?: string | null
   voidedAt?: string | null

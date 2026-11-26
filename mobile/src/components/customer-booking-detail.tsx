@@ -89,6 +89,7 @@ export function CustomerBookingDetail({id}:{id:string}) {
   const firstPayment = initialInvoiceTotal || bookingAmount(paymentSummary.first);
   const initialBalance = flow.initial?.status === 'VOID' ? '' : bookingAmount(flow.initial?.balanceDue);
   const holdUntil = cancelled ? '' : bookingHoldDeadline(row ?? {}, flow.initial);
+  const holdMinutes = holdUntil ? Math.max(0, Math.ceil((Date.parse(holdUntil) - now) / 60000)) : 0;
   const allocatedUnits = rows(object(row?.rentalSummary).currentUnits);
   const charges: [string, string][] = [
     ['Tiền thuê', bookingAmount(quote.rentalAmount)], ['Tiền cọc', bookingAmount(quote.depositAmount)],
@@ -112,6 +113,7 @@ export function CustomerBookingDetail({id}:{id:string}) {
           ['Bắt đầu thuê', term.start], ['Đến ngày', term.end],
           ['Thời gian thuê', term.length], ['Số lượng', term.quantity],
           ['Hạn giữ ô', holdUntil ? formatDate(holdUntil, true) : ''],
+          ['Thời gian còn lại', holdUntil ? (holdMinutes ? Math.floor(holdMinutes / 60) + ' giờ ' + (holdMinutes % 60) + ' phút' : 'Đã đến hạn giữ ô') : ''],
         ]} />
         {allocatedUnits.length > 0 && <View style={{gap:8,padding:12,borderWidth:1,borderColor:C.divider,borderRadius:12}}>
           <Text accessibilityRole="header" style={s.section}>Ô kho đã phân bổ</Text>

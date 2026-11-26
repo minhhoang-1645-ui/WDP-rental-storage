@@ -1,6 +1,6 @@
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertActiveRole } from '../facility-access/record-access.js';
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -12,7 +12,7 @@ export const policyDefinitions = {
  paymentReminderDays: { title:'Nhắc trước hạn thanh toán',unit:'ngày',defaultValue:3,min:1,max:30,description:'Hiển thị lời nhắc cho hóa đơn còn dư nợ và đang nhận thanh toán.' },
  returnNoticeDays: { title:'Báo trước khi trả kho',unit:'ngày',...returnNoticeRange,description:'Thông báo để bố trí lịch trả kho. Báo muộn không phát sinh phí khi trả đúng hạn.' },
 } as const;
-const pricingDefinitions = {
+export const pricingDefinitions = {
  deposit: { title: 'Đặt cọc khi thuê kho', description: 'Tính cọc theo loại kho và kỳ thuê khi lập báo giá mới.' },
  prepaid: { title: 'Giảm giá thanh toán trước', description: 'Chỉ giảm trên tiền thuê trả trước đủ điều kiện.' },
  renewal: { title: 'Gia hạn hợp đồng', description: 'Thiết lập khoảng thời gian gửi yêu cầu và đơn giá cho kỳ gia hạn mới.' },
@@ -42,10 +42,32 @@ export class BusinessPolicyService {
  }
  async list(actor:PublicUser) {
   await assertActiveRole(this.prisma,actor,'BUSINESS_OPERATIONS_MANAGER');
-  const legacy=await this.prisma.businessPolicy.findMany();
-  const history=await this.prisma.businessRule.findMany({where:{key:{in:[...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)]},facilityId:null,storageTypeId:null},orderBy:{version:'desc'}});
+  return this.catalog();
+ }
+ async applied(actor:PublicUser) {
+  if (actor.role !== 'STORAGE_CUSTOMER' && actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();
+  await assertActiveRole(this.prisma,actor,actor.role);
+  const catalog = await this.catalog(false);
+  const manager = actor.role === 'FACILITY_MANAGER';
+  return {
+   items: catalog.items.map(({key,title,description,value,unit,effectiveVersion,history}) => ({
+    key,title,description,value,unit,effectiveVersion,
+    effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,
+   })),
+   pricing: catalog.pricing.map(({key,title,description,value,effectiveVersion,history}) => ({
+    key,title,description: !manager && key === 'paymentOverdue' ? 'Ân hạn và phí một lần theo điều khoản đã cam kết.' : description,
+    value: manager || !('managerDays' in value) ? value : Object.fromEntries(Object.entries(value).filter(([name]) => name !== 'managerDays')),
+    effectiveVersion,
+    effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,
+   })),
+  };
+ }
+ private async catalog(includeHistory = true) {
   const now=new Date();
-  const authors=await this.prisma.user.findMany({where:{id:{in:[...new Set(history.map(row=>row.createdById))]}},select:{id:true,fullName:true}});
+  const legacy=await this.prisma.businessPolicy.findMany();
+  const history=await this.prisma.businessRule.findMany({where:{key:{in:[...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)]},facilityId:null,storageTypeId:null,
+   ...(includeHistory ? {} : {effectiveFrom:{lte:now},OR:[{effectiveTo:null},{effectiveTo:{gt:now}}]})},orderBy:{version:'desc'}});
+  const authors=includeHistory ? await this.prisma.user.findMany({where:{id:{in:[...new Set(history.map(row=>row.createdById))]}},select:{id:true,fullName:true}}) : [];
   const items=await Promise.all(Object.entries(policyDefinitions).map(async([key,d])=>{
    const versions=history.filter(r=>r.key===key);
    const row=legacy.find(r=>r.key===key);

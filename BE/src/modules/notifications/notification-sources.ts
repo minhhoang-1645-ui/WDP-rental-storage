@@ -67,6 +67,13 @@ export class NotificationSources {
       'deposit-settlements': q => this.deposits.listCustomer(id, q.page, q.limit),
       'support-requests': q => this.support.listCustomer(id, q),
       contracts: q => this.contracts.listCustomerContracts(id, q),
+      ...(this.activeRentals ? { 'rental-overdue': async (q: Query) => {
+        const page = await this.activeRentals!.listCustomerRentals(id, q);
+        return { ...page, items: page.items.flatMap(row => (row.contracts as NotificationRow[])
+          .filter(contract => !contract.returnInProgress)
+          .map(contract => ({ id: contract.id, contractCode: contract.contractCode, overdueOccupancy: contract.overdueOccupancy,
+            returnNoticeDays: contract.returnNoticeDays, endDate: contract.endDate, reservationId: row.reservationId }))) };
+      } } : {}),
     };
     const operational = { ...common, appointments: (q: Query) => this.appointments.listOperationalAppointments(q, actor) };
     if (role === 'FACILITY_STAFF') return {

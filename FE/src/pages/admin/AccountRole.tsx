@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { Link } from 'react-router-dom';
 import { Modal, PageHeader } from '../../components/manager/PortalUi';
-import { Building2, ChartNoAxesColumn, Check, ClipboardCheck, Eye, Info, ShieldCheck, UserRound } from 'lucide-react';
+import { Building2, ChartNoAxesColumn, Check, ClipboardCheck, Database, Eye, Info, Layers, ShieldCheck, UserRound } from 'lucide-react';
 
 const adminRoles = {
   SYSTEM_ADMINISTRATOR: {
@@ -80,16 +80,31 @@ export function AccountRole({ value }: { value: unknown }) {
 export function AccountRoleAccess({ value }: { value: unknown }) {
   const role = roleInfo(value);
   if (!role) return <p>Chưa xác định vai trò của tài khoản.</p>;
+  const icons = [Layers, ClipboardCheck, Database, ChartNoAxesColumn];
+  const cards = value === 'FACILITY_MANAGER' ? [
+    { title: 'Điều phối vận hành', copy: 'Điều phối nhân viên, theo dõi kho, khách hàng và hồ sơ thuê tại cơ sở.' },
+    { title: 'Phê duyệt nghiệp vụ', copy: 'Xử lý yêu cầu ngoại lệ, hỗ trợ khách hàng và nghiệm thu bảo trì theo thẩm quyền.' },
+    { title: 'Thu và đặt cọc', copy: 'Kiểm tra hóa đơn, khoản thu, khấu trừ và hoàn tiền đặt cọc theo hồ sơ.' },
+    { title: 'Tài chính và báo cáo', copy: 'Theo dõi đơn giá, danh mục kho, dịch vụ bổ trợ và báo cáo hoạt động cơ sở.' },
+  ] : role.access.map((copy, index) => ({
+    title: (value === 'FACILITY_STAFF' ? ['Lịch làm việc', 'Nhiệm vụ vận hành', 'Báo cáo và chuyển xử lý']
+      : value === 'SYSTEM_ADMINISTRATOR' ? ['Quản lý tài khoản', 'Quyền cơ sở và phiên', 'Nhật ký và lịch sử']
+      : value === 'BUSINESS_OPERATIONS_MANAGER' ? ['Quản lý cơ sở', 'Chính sách và khung giá', 'Dịch vụ và hiệu quả', 'Ngừng kinh doanh']
+      : ['Đặt và thuê kho', 'Dịch vụ và yêu cầu', 'Theo dõi hồ sơ'])[index],
+    copy,
+  }));
   return <div className="admin-role-access">
-    <h2>Vai trò và quyền truy cập</h2>
-    <dl className="admin-permission-facts">
-      <div><dt>Vai trò hiện tại</dt><dd><AccountRole value={value} /></dd></div>
-      <div><dt>Phạm vi quyền</dt><dd>{role.scope}</dd></div>
-    </dl>
-    <RolePermissions role={role} />
+    <h2>Quyền nghiệp vụ hiện tại</h2>
+    <div className="admin-permission-role"><AccountRole value={value} /><span>{role.scope}</span></div>
+    <ul className="admin-permission-cards">{cards.map(({ title, copy }, index) => {
+      const Icon = icons[index % icons.length];
+      return <li key={title}><span className="admin-permission-icon"><Icon size={24} aria-hidden="true" /></span>
+        <div><h3>{title}</h3><p>{copy}</p></div>
+      </li>;
+    })}</ul>
+    <details className="admin-permission-limits"><summary>Chi tiết quyền và giới hạn</summary><RolePermissions role={role} /></details>
   </div>;
 }
-
 function RolePermissions({ role, modal = false }: { role: RoleInfo; modal?: boolean }) {
   const permissions = modal ? role.access.flatMap(permission => permission.split(/(?<=\.) /)) : role.access;
   return <div className="admin-role-permissions">

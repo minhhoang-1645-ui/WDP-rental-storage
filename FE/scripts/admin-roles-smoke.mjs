@@ -137,8 +137,9 @@ try {
       await account.click();
       await page.getByRole('tab', { name: 'Phân quyền', exact: true }).click();
       const details = page.getByRole('tabpanel', { name: 'Phân quyền', exact: true });
+      await details.getByText('Chi tiết quyền và giới hạn', { exact: true }).click();
       await details.locator('.admin-role-permissions').waitFor();
-      assert.equal(await details.locator('.admin-permission-facts dd').nth(1).innerText(), scope);
+      assert.equal(await details.locator('.admin-permission-role > span').last().innerText(), scope);
       assert.equal(compactText(await details.locator('.admin-role-permissions').innerText()), compactText(permissions));
       await page.goto(base + '/admin/roles');
     }

@@ -32,7 +32,7 @@ async function workspace(role, mobile = false) {
 
       if (responseStatus !== 200) return send({ message: 'Unavailable' }, responseStatus);
       if (role === 'FACILITY_STAFF') return send({
-        facilities: ['NestBox Thủ Đức'],
+        facilities: [],
         entries: [
           item('handoverLeadDays', 'Nhận chìa khóa trước ngày thuê', 3),
           item('returnNoticeDays', 'Báo trước khi trả kho', 7),
@@ -109,6 +109,7 @@ try {
   await staff.page.getByText(/Sắp có hiệu lực/).waitFor();
   assert.equal(await staff.page.getByText(/Phí một lần|Đặt cọc khi thuê kho/).count(), 0);
   await staff.page.getByRole('link', { name: 'Chính sách áp dụng', exact: true }).waitFor();
+  await staff.page.getByText(/Chưa được phân công cơ sở/).waitFor();
   await staff.page.getByText('Chỉ tra cứu – Không có quyền chỉnh sửa', { exact: true }).waitFor();
   await staff.page.goto(base + '/staff/policies?facilityId=outside');
   await staff.page.getByText('Nhận kho và bàn giao', { exact: true }).waitFor();
@@ -120,7 +121,7 @@ try {
   assert.equal(await staff.page.locator('.applied-policy table, .applied-policy button, .applied-policy select').count(), 0);
   staff.setStatus(403);
   await staff.page.reload();
-  await staff.page.getByRole('alert').getByText(/quyền truy cập cơ sở đang hiệu lực/).waitFor();
+  await staff.page.getByRole('alert').getByText(/Tài khoản hiện không có quyền tra cứu/).waitFor();
 
   const customer = await workspace('STORAGE_CUSTOMER');
   customer.setStatus(503);

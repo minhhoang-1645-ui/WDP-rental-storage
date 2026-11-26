@@ -235,22 +235,57 @@
 .admin-detail-identity p { margin: 3px 0 8px; color: var(--workspace-secondary); }
 .admin-detail-meta { flex-wrap: wrap; }
 .admin-account-detail .manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.admin-permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
-.admin-permission-grid .manager-section { margin: 0; }
-.admin-permission-current:has(+ .admin-role-change), .admin-permission-current:has(+ .admin-access-status) { grid-column: 1 / -1; }
+.admin-account-crumb, .admin-account-crumb a, .admin-account-title, .admin-account-byline, .admin-account-byline > span {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0;
+}
+.admin-account-crumb, .admin-account-byline { color: var(--workspace-secondary); font-size: .93rem; overflow-wrap: anywhere; }
+.admin-account-crumb a, .admin-scope-links a, .admin-role-actions a {
+  display: inline-flex; align-items: center; gap: 8px; color: var(--workspace-primary); font-weight: 650;
+}
+.admin-account-crumb > span::before { content: "/"; margin-inline-end: 8px; }
+.admin-account-heading { min-width: 0; }
+.admin-account-detail .admin-detail-header { align-items: flex-start; }
+.admin-account-title h1 { margin: 0; overflow-wrap: anywhere; }
+.admin-account-byline { margin-top: 8px; }
+.admin-account-byline .admin-avatar { width: 42px; height: 42px; border-radius: 9px; }
+.admin-account-detail .admin-account-tabs { border: 0; padding: 0; background: transparent; gap: 9px; }
+.admin-account-detail .admin-account-tabs button { border: 1px solid var(--workspace-border); border-radius: 10px; }
+.admin-account-detail .admin-account-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px var(--workspace-primary); }
+
 .admin-permission-facts { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-block: 0 12px; }
 .admin-permission-facts dd { margin: 4px 0 0; }
-.admin-permission-facts dt, .admin-role-current > span:first-child { font-size: .86rem; color: var(--workspace-secondary); }
-.admin-permission-grid :is(p, ul) { margin-block: 0 12px; }
-.admin-role-current { display: grid; gap: 4px; margin-bottom: 12px; }
-.admin-role-change-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
-.admin-role-change-controls label { flex: 1 1 170px; max-width: 335px; }
-.admin-role-change-controls + p { margin-top: 10px; }
-.admin-grants-summary { list-style: none; padding: 0; }
-.admin-grants-summary > li {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
-  padding-block: 8px; border-bottom: 1px solid var(--workspace-border);
+.admin-permission-facts dt { font-size: .86rem; color: var(--workspace-secondary); }
+.admin-permission-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.admin-permission-column { display: grid; min-width: 0; gap: 16px; }
+.manager-shell.internal-web[data-workspace-role="admin"] .admin-permission-grid .manager-section { min-width: 0; margin: 0; padding: clamp(15px, 1.45vw, 24px); border-radius: 15px; box-shadow: 0 2px 4px #0f172a12; }
+.admin-permission-grid h2 { margin: 0 0 12px; letter-spacing: -.02em; }
+.admin-permission-role { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 16px; color: var(--workspace-secondary); }
+.admin-permission-role .admin-role, .admin-permission-icon, .admin-permission-work dl > div {
+  background: var(--workspace-selected); color: var(--workspace-primary);
 }
+.admin-permission-role .admin-role { padding: 8px 12px; border-radius: 8px; font-weight: 750; }
+.admin-permission-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0; list-style: none; }
+.admin-permission-cards li { display: flex; align-items: flex-start; gap: 12px; padding: 15px; border: 1px solid var(--workspace-border); border-radius: 12px; background: var(--workspace-background); }
+.admin-permission-icon { display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 10px; }
+.admin-permission-cards h3 { margin: 0; font-size: 1.08rem; font-weight: 750; }
+.admin-permission-cards p, .admin-permission-limits p, .admin-access-status p, .admin-permission-work > p { color: var(--workspace-secondary); margin: 5px 0 0; }
+.admin-permission-limits { margin-top: 12px; color: var(--workspace-secondary); }
+.admin-permission-limits summary { cursor: pointer; }
+.admin-scope-content { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 20px; }
+.admin-scope-content > div:first-child { flex: 2 1 260px; min-width: 0; }
+.admin-scope-links { display: grid; gap: 12px; padding-inline-start: 14px; border-inline-start: 1px solid var(--workspace-border); }
+.admin-grants-summary { list-style: none; padding: 0; margin: 0; }
+.admin-grants-summary > li { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding-block: 6px; }
+.admin-grants-summary > li > div { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+.admin-grants-summary small { display: block; color: var(--workspace-secondary); margin-top: 3px; }
+.admin-permission-work dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.admin-permission-work dl > div { display: flex; flex-direction: column-reverse; gap: 4px; padding: 10px 12px; border-radius: 10px; }
+.admin-permission-work dd { margin: 0; font-size: 1.55rem; font-weight: 750; line-height: 1.1; }
+.admin-permission-work dt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--workspace-text); font-weight: 650; }
+.admin-role-warning { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: 9px; background: var(--workspace-warning-bg); color: var(--workspace-warning); }
+.admin-role-warning svg { flex: none; }
+.admin-role-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 14px; }
+.admin-access-status > button { margin-top: 14px; }
 .admin-sessions .admin-detail-heading p { margin: 4px 0 0; color: var(--workspace-secondary); }
 .admin-session-toolbar { margin-bottom: 12px; }
 .workspace-themed[data-workspace-role="admin"] .admin-session-table .manager-table {
@@ -889,3 +924,17 @@
 @media (max-width: 450px) {
   .admin-overview-metrics { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 620px) {
+  .admin-permission-cards { grid-template-columns: minmax(0, 1fr); }
+  .admin-account-detail .admin-account-tabs button { font-size: .83rem; }
+  .admin-scope-links { padding-inline-start: 0; border-inline-start: 0; }
+}
+.admin-sessions .admin-session-heading { gap: 12px 20px; margin-bottom: 16px; }
+.admin-sessions .admin-session-count { display: inline-block; margin-top: 8px; padding: 5px 10px; border-radius: 8px; background: var(--workspace-selected); color: var(--workspace-primary); }
+.admin-session-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-sessions .admin-session-toolbar { padding: 12px; border: 1px solid var(--workspace-border); border-radius: 10px; background: var(--workspace-background); }
+.admin-session-toolbar label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.admin-session-empty { min-height: 145px; display: grid; justify-items: center; align-content: center; gap: 9px; padding: 20px; border: 1px dashed var(--workspace-border); border-radius: 10px; text-align: center; }
+.admin-session-empty h3, .admin-session-empty p { margin: 0; }
+.admin-session-empty p { color: var(--workspace-secondary); }

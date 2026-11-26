@@ -324,14 +324,15 @@ async function testAccounts() {
   await page.getByRole('combobox', { name: 'Vai trò', exact: true }).selectOption('FACILITY_STAFF');
   await page.getByText('Không tìm thấy tài khoản', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Xóa bộ lọc' }).click();
+  await page.waitForURL(url => !['role', 'status', 'search'].some(key => url.searchParams.has(key)));
+  await page.getByRole('table', { name: 'Danh sách tài khoản' }).waitFor();
   await search.fill('user-23@');
   await table.getByRole('link', { name: 'Fixture User 23', exact: true }).click();
   await page.waitForURL('**/admin/users/user-23');
 
   const profile = page.getByRole('tabpanel', { name: 'Thông tin tài khoản' });
   await profile.getByText('Cập nhật gần nhất', { exact: true }).waitFor();
-  await profile.getByText('Thông tin kỹ thuật', { exact: true }).click();
-  await profile.getByRole('button', { name: 'Sao chép mã tài khoản user-23' }).waitFor();
+  assert.equal(await profile.getByText('Thông tin kỹ thuật', { exact: true }).count(), 0);
   await profile.getByRole('button', { name: 'Chỉnh sửa' }).click();
   const edit = page.getByRole('dialog', { name: 'Chỉnh sửa tài khoản' });
   const save = edit.getByRole('button', { name: 'Lưu thay đổi' });
@@ -349,7 +350,7 @@ async function testAccounts() {
   failProfileUpdate = false;
   await save.click();
   await page.getByRole('heading', { name: 'Fixture Updated Staff', exact: true }).waitFor();
-  await page.getByRole('link', { name: 'Về danh sách tài khoản' }).click();
+  await page.getByRole('navigation', { name: 'Đường dẫn tài khoản' }).getByRole('link', { name: 'Quản lý tài khoản' }).click();
   assert.equal(await search.inputValue(), 'user-23@');
   await page.getByRole('button', { name: 'Thao tác tài khoản user-23@example.test' }).click();
   assert.equal(await page.getByRole('link', { name: 'Phiên đăng nhập', exact: true }).count(), 0);
@@ -412,10 +413,28 @@ async function testAccounts() {
   assert.equal(users.find(user => user.id === 'user-23').role, 'FACILITY_MANAGER');
   for (const [id, facilityRole] of [['user-22', true], ['user-3', false], ['user-5', false], ['admin', false]]) {
     await page.goto(base + '/admin/users/' + id + '?tab=permissions');
-    await permissions.getByRole('heading', { name: 'Vai trò và quyền truy cập' }).waitFor();
-    assert.equal(await permissions.getByRole('heading', { name: 'Quyền truy cập cơ sở' }).count(), Number(facilityRole));
+    await permissions.getByRole('heading', { name: 'Quyền nghiệp vụ hiện tại' }).waitFor();
+    assert.equal(await permissions.getByRole('heading', { name: 'Phạm vi cơ sở' }).count(), Number(facilityRole));
     if (facilityRole) {
       await permissions.getByText('Cơ sở Đông', { exact: true }).waitFor();
+      assert.equal(await permissions.locator('.admin-permission-cards > li').count(), 4);
+      assert.deepEqual(await permissions.locator('.admin-permission-work dd').allTextContents(), ['0', '0']);
+      assert.equal(await permissions.locator('.admin-permission-scope').getByRole('link', { name: 'Quản lý quyền cơ sở' }).getAttribute('href'), '/admin/facility-access?user=' + id);
+      assert.equal(await permissions.getByRole('link', { name: 'Lịch sử thay đổi quyền' }).getAttribute('href'), '/admin/permission-history?accountId=' + id);
+      if (process.env.WDP_ADMIN_PERMISSION_SCREENSHOTS === '1') await mkdir('artifacts/admin-accounts', { recursive: true });
+      for (const width of [1586, 1024, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        const layout = await permissions.locator('.admin-permission-grid').evaluate(el => ({
+          columns: getComputedStyle(el).gridTemplateColumns.split(' ').length,
+          fits: el.scrollWidth <= el.clientWidth + 1,
+        }));
+        assert.equal(layout.columns, width === 390 ? 1 : 2);
+        assert.ok(layout.fits, 'Permissions should fit at ' + width);
+        if (process.env.WDP_ADMIN_PERMISSION_SCREENSHOTS === '1') {
+          await page.screenshot({ path: 'artifacts/admin-accounts/permissions-' + width + '.png', fullPage: true });
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
       await permissions.getByLabel('Vai trò mới').selectOption('FACILITY_STAFF');
       assert(await changeRole.isDisabled());
     }

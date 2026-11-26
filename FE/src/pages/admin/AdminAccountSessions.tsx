@@ -122,9 +122,9 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
   }
 
   return <section className="manager-section admin-sessions">
-    <div className="admin-detail-heading">
-      <div><h2>Phiên đăng nhập</h2>{activeCount !== undefined && <p><strong>{activeCount}</strong> phiên còn hiệu lực</p>}</div>
-      <div className="portal-actions">
+    <div className="admin-detail-heading admin-session-heading">
+      <div><h2>Phiên đăng nhập</h2>{activeCount !== undefined && <p className="admin-session-count"><strong>{activeCount}</strong> phiên còn hiệu lực</p>}</div>
+      <div className="portal-actions admin-session-actions">
         <Link className="button-secondary" to={'/admin/login-history?accountId=' + encodeURIComponent(accountId)}>Xem lịch sử đăng nhập</Link>
         <button type="button" className="button-secondary" onClick={refresh} disabled={accessLoading || source.loading || source.refreshing || busy}>
           <RefreshCw size={16} aria-hidden="true" />Làm mới phiên
@@ -175,7 +175,11 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
                 }}>Thu hồi phiên</button>}
             </TablePopover></td>
           </tr>)}</tbody>
-        </table></div> : <Empty title={filter ? 'Không có phiên phù hợp' : 'Chưa có lịch sử phiên đăng nhập'} />)}
+        </table></div> : <div className="admin-session-empty">
+        <h3>{filter ? 'Không có phiên phù hợp' : 'Chưa có lịch sử phiên đăng nhập'}</h3>
+        <p>{filter ? 'Đổi bộ lọc trạng thái để xem các phiên khác.' : 'Các phiên sẽ xuất hiện sau khi tài khoản đăng nhập.'}</p>
+        {filter && <button type="button" className="button-secondary" onClick={() => { setFilter(''); setPage(1); }}>Xem tất cả phiên</button>}
+      </div>)}
       {!loadingFilter && !filterError && total > limit && <Pagination page={viewPage} limit={limit} total={total}
         onChange={setPage} disabled={source.refreshing || busy} />}
     </>}

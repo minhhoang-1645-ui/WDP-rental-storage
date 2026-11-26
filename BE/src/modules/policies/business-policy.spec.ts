@@ -11,10 +11,11 @@ import { BusinessPolicyModule } from './business-policy.module.js';
 
 it('serves the applied catalog under the production API prefix with role guards', async () => {
   const activeGrants = vi.fn();
+  const activeUser = vi.fn().mockResolvedValue({ id: 'active-user' });
   const ruleRows = vi.fn().mockResolvedValue([]);
   const module = await Test.createTestingModule({ imports: [PrismaModule, BusinessPolicyModule] })
     .overrideProvider(PrismaService).useValue({
-      user: { findFirst: vi.fn().mockResolvedValue({ id: 'active-user' }) },
+      user: { findFirst: activeUser },
       facilityAccess: { findMany: activeGrants },
       businessPolicy: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue(null) },
       businessRule: { findMany: ruleRows, findFirst: vi.fn().mockResolvedValue(null) },
@@ -38,6 +39,10 @@ it('serves the applied catalog under the production API prefix with role guards'
       await http.patch('/api/operations/business-policies/deposit').set('Authorization', 'Bearer ' + role).expect(403);
     }
     const staff = 'Bearer FACILITY_STAFF';
+    activeGrants.mockResolvedValue([]);
+    const unassigned = await http.get(path).set('Authorization', staff).expect(200);
+    expect(unassigned.body.facilities).toEqual([]);
+    expect(unassigned.body.entries).toHaveLength(7);
     activeGrants.mockResolvedValue([{ facility: { name: 'NestBox A' } }]);
     const staffView = await http.get(path).set('Authorization', staff).expect(200);
     expect(staffView.body.entries.map((entry: { key: string }) => entry.key)).toEqual(expect.arrayContaining(['handoverLeadDays', 'renewal', 'paymentOverdue', 'returnOverdue']));
@@ -47,6 +52,8 @@ it('serves the applied catalog under the production API prefix with role guards'
     activeGrants.mockResolvedValue([{ facility: { name: 'NestBox A' } }, { facility: { name: 'NestBox B' } }]);
     const multiple = await http.get(path).set('Authorization', staff).expect(200);
     expect(multiple.body.facilities).toEqual(['NestBox A', 'NestBox B']);
+    expect(multiple.body.entries).toEqual(unassigned.body.entries);
+    expect(staffView.body.entries).toEqual(unassigned.body.entries);
     const current = { id: 'active-rule', key: 'returnNoticeDays', version: 1, value: 7,
       effectiveFrom: new Date('2020-01-01Z'), effectiveTo: new Date('2099-01-01Z'), createdAt: new Date('2020-01-01Z') };
     const scheduled = { ...current, id: 'scheduled-rule', version: 2, value: 11, effectiveFrom: new Date('2099-01-01Z'), effectiveTo: null };
@@ -57,7 +64,11 @@ it('serves the applied catalog under the production API prefix with role guards'
       expect.objectContaining({ key: 'returnNoticeDays', scheduled: true, oldValue: 7, value: 11 }),
     ]));
     activeGrants.mockResolvedValue([]);
-    await http.get(path + '?facilityId=outside').set('Authorization', staff).expect(403);
+    const revoked = await http.get(path + '?facilityId=outside').set('Authorization', staff).expect(200);
+    expect(revoked.body.facilities).toEqual([]);
+    expect(revoked.body.entries).toEqual(updated.body.entries);
+    activeUser.mockResolvedValueOnce(null);
+    await http.get(path).set('Authorization', staff).expect(403);
     expect(activeGrants).toHaveBeenLastCalledWith(expect.objectContaining({ where: { userId: 'FACILITY_STAFF', revokedAt: null } }));
     await http.patch('/api/operations/business-policies/deposit').set('Authorization', staff).expect(403);
     for (const role of ['SYSTEM_ADMINISTRATOR', 'BUSINESS_OPERATIONS_MANAGER']) {

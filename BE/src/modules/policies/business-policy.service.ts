@@ -68,7 +68,7 @@ export class BusinessPolicyService {
    where: { userId: actor.id, revokedAt: null },
    select: { facility: { select: { name: true } } },
   });
-  if (!grants.length) throw new ForbiddenException('Bạn chưa có quyền truy cập cơ sở đang hiệu lực.');
+
   const now = new Date();
   const numericKeys = ['handoverLeadDays', 'returnNoticeDays', 'renewalReminderDays', 'paymentReminderDays'] as const;
   const pricingKeys = ['renewal', 'paymentOverdue', 'returnOverdue'] as const;

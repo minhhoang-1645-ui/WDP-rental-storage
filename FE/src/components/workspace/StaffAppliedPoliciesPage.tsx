@@ -41,11 +41,13 @@ export function StaffAppliedPoliciesPage() {
     <header>
       <div className="applied-policy-heading"><h1>Chính sách áp dụng</h1><span className="applied-policy-badge">Chỉ tra cứu – Không có quyền chỉnh sửa</span></div>
       <p>Tra cứu các điều khoản thuê kho phục vụ công việc được phân công.</p>
-      {catalog && <p>Cơ sở được phân công · {catalog.facilities.join(', ')}</p>}
+      {catalog && <p className="applied-policy-note">{catalog.facilities.length
+        ? 'Chính sách chung · Cơ sở được phân công: ' + catalog.facilities.join(', ')
+        : 'Chưa được phân công cơ sở. Các chính sách bên dưới áp dụng chung toàn hệ thống.'}</p>}
     </header>
     {resource.loading && <p role="status">Đang tải chính sách…</p>}
     {resource.error && <div className="applied-policy-card" role="alert">
-      <p>{resource.status === 403 ? 'Bạn cần quyền truy cập cơ sở đang hiệu lực để xem chính sách vận hành.' : 'Hiện chưa tải được chính sách.'}</p>
+      <p>{resource.status === 403 ? 'Tài khoản hiện không có quyền tra cứu chính sách.' : 'Hiện chưa tải được chính sách.'}</p>
       <button type="button" className="button-secondary" disabled={resource.refreshing} onClick={refresh}>Thử lại</button>
     </div>}
     {catalog && <>

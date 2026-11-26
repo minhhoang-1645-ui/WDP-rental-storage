@@ -1,4 +1,5 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Settings, TriangleAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useRef, useState } from 'react';
 import { Modal } from '../../components/manager/PortalUi';
 import { ApiError } from '../../services/api';
@@ -56,19 +57,20 @@ export function AccountRoleEditor({ id, currentRole, access, refreshing, onSaved
   }
   return <section className="manager-section admin-role-change">
     <h2>Thay đổi vai trò</h2>
-    <div className="admin-role-current"><span>Vai trò hiện tại</span><AccountRole value={currentRole} /></div>
-    <div className="admin-role-change-controls">
-      <label className="field-label">Vai trò mới<select value={role === currentRole ? '' : role} onChange={event => setRole(event.target.value || currentRole)} disabled={busy}>
-        <option value="">Chọn vai trò mới</option>
-        {Object.entries(roles).filter(([value]) => value !== currentRole).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select></label>
+    <label className="field-label">Vai trò mới<select value={role === currentRole ? '' : role} onChange={event => setRole(event.target.value || currentRole)} disabled={busy}>
+      <option value="">Chọn vai trò mới</option>
+      {Object.entries(roles).filter(([value]) => value !== currentRole).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+    </select></label>
+    {activeGrants && <p className="admin-role-warning"><TriangleAlert size={20} aria-hidden="true" /><span>Cần thu hồi các quyền cơ sở còn hiệu lực trước khi đổi vai trò.</span></p>}
+    {openAssignments > 0 && <p className="admin-role-warning"><TriangleAlert size={20} aria-hidden="true" /><span>{facilityRole
+      ? `Còn ${openAssignments} công việc đang mở. Cần chuyển giao trước khi đổi vai trò.`
+      : 'Cần xử lý các công việc đang mở trước khi đổi vai trò.'}</span></p>}
+    {!access && !refreshing && <p>Chưa kiểm tra được điều kiện đổi vai trò. <button type="button" className="portal-text-button" onClick={onRefresh}>Thử lại</button></p>}
+    <div className="admin-role-actions">
       <button type="button" className="button-primary" disabled={busy || blocked || refreshing || requiresRefresh || role === currentRole}
         onClick={() => { setError(''); setConfirm(true); }}>Đổi vai trò</button>
+      {facilityRole && <Link to={'/admin/facility-access?user=' + encodeURIComponent(id)}><Settings size={18} aria-hidden="true" />Quản lý quyền cơ sở</Link>}
     </div>
-    {activeGrants && <p>Thu hồi quyền cơ sở còn hiệu lực trước khi đổi vai trò.</p>}
-    {openAssignments > 0 && <p>{facilityRole ? `Còn ${openAssignments} công việc đang mở. Cần chuyển giao trước khi đổi vai trò.`
-      : 'Cần xử lý các công việc đang mở trước khi đổi vai trò.'}</p>}
-    {!access && !refreshing && <p>Chưa kiểm tra được điều kiện đổi vai trò. <button type="button" className="portal-text-button" onClick={onRefresh}>Thử lại</button></p>}
     {confirm && <Modal title="Xác nhận đổi vai trò" className="admin-confirm-dialog" busy={busy} onClose={close} footer={<>
       <button type="button" className="button-secondary" disabled={busy} onClick={close}>Hủy</button>
       {requiresRefresh ? <button type="button" className="button-primary" onClick={close}>Tải lại hồ sơ</button> : <button type="button" className="button-primary" disabled={busy || blocked}

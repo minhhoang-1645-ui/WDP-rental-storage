@@ -2,16 +2,14 @@ import { accessPath, type AccountAccess } from './AdminFacilityAccessPage';
 import { AdminAccountSessions } from './AdminAccountSessions';
 import { AdminAvatar } from './AdminAvatar';
 import { AccountRoleEditor } from './AccountRoleEditor';
-import { ArrowLeft, Pencil, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CircleCheck, History, Inbox, Lock, LockOpen, Mail, Pencil, RefreshCw, Settings, Warehouse } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { mutate } from '../../services/portal';
 import { date, first, type Row } from '../../components/manager/portal-data';
-import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { accountNameError, accountPhoneError } from './account-validation';
-import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { Facts, LoadState, Modal, Status } from '../../components/manager/PortalUi';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { AccountRole, AccountRoleAccess } from './AccountRole';
@@ -39,6 +37,8 @@ export function AdminAccountDetailPage() {
   const access = useApiResource<AccountAccess>(id && user?.id && tab !== 'profile' ? accessPath(id) : null, user?.id, true);
   const facilityRole = row?.role === 'FACILITY_MANAGER' || row?.role === 'FACILITY_STAFF';
   const grants = access.data?.history.filter(grant => !grant.revokedAt) ?? [];
+  const facilityAccessLink = '/admin/facility-access?user=' + encodeURIComponent(id);
+  const historyLink = '/admin/permission-history?accountId=' + encodeURIComponent(id);
   const next = row?.accountStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
   const canChange = Boolean(row && user?.id && id !== user.id && ['ACTIVE', 'DISABLED'].includes(String(row.accountStatus)));
 
@@ -79,16 +79,21 @@ export function AdminAccountDetailPage() {
   }
 
   return <section className="admin-account-detail record-detail-page">
-    <Link className="booking-back" to={back}><ArrowLeft size={17} aria-hidden="true" />Về danh sách tài khoản</Link>
+    <nav className="admin-account-crumb" aria-label="Đường dẫn tài khoản">
+      <Link to={back}><ArrowLeft size={16} aria-hidden="true" />Quản lý tài khoản</Link>
+      {row && <span aria-current="page">{first(row, 'fullName', 'email')}</span>}
+    </nav>
     <header className="manager-page-header admin-detail-header">
-      <div className="admin-detail-identity">
-        {row && <AdminAvatar name={first(row, 'fullName', 'email')} large />}
-        <div>
+      <div className="admin-account-heading">
+        <div className="admin-account-title">
           <h1>{first(row ?? {}, 'fullName', 'email') || 'Thông tin tài khoản'}</h1>
-          {row && <><p>{first(row, 'email')}</p><div className="admin-detail-meta">
-            <AccountRole value={row.role} /><Status value={row.accountStatus} />
-          </div></>}
+          {row && <Status value={row.accountStatus} text={row.accountStatus === 'ACTIVE' ? 'Đang hoạt động' : undefined} />}
         </div>
+        {row && <div className="admin-account-byline">
+          <AdminAvatar name={first(row, 'fullName', 'email')} />
+          <span><Mail size={16} aria-hidden="true" />{first(row, 'email')}</span>
+          <AccountRole value={row.role} />
+        </div>}
       </div>
       {tab !== 'sessions' && <button type="button" className="button-secondary"
         disabled={detail.loading || detail.refreshing || editingId === id} onClick={() => { detail.refresh(); access.refresh(); }}>
@@ -117,39 +122,62 @@ export function AdminAccountDetailPage() {
             ['Số điện thoại', first(row, 'phone') || 'Chưa cập nhật'], ['Vai trò', <AccountRole value={row.role} />],
             ['Ngày tạo', date(row.createdAt, true)], ['Cập nhật gần nhất', date(row.updatedAt, true)],
           ]} />
-          <DetailDisclosure title="Thông tin kỹ thuật"><CopyRecordCode value={id} label="Mã tài khoản" /></DetailDisclosure>
         </section>
       </div>
 
       <div role="tabpanel" id="admin-panel-permissions" aria-labelledby="admin-tab-permissions" hidden={tab !== 'permissions'}>
         <div className="admin-permission-grid">
-          <section className="manager-section admin-permission-current">
-            <AccountRoleAccess value={row.role} />
-            <Link to={'/admin/permission-history?accountId=' + encodeURIComponent(id)}>Xem lịch sử thay đổi quyền</Link>
-          </section>
-          {facilityRole && <section className="manager-section">
-            <h2>Quyền truy cập cơ sở</h2>
-            <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
-            {access.data && (grants.length ? <ul className="admin-grants-summary">
-              {grants.map(grant => <li key={grant.id}><span>{grant.facility.name}</span><Status value="ACTIVE" text="Đang cấp quyền" /></li>)}
-            </ul> : <p>Chưa được cấp quyền tại cơ sở nào.</p>)}
-            <Link to={'/admin/facility-access?user=' + encodeURIComponent(id)}>Quản lý quyền theo cơ sở</Link>
-          </section>}
-          {id !== user?.id && <AccountRoleEditor key={id + ':' + String(row.role)} id={id} currentRole={String(row.role)} access={access.data}
-            refreshing={detail.refreshing || access.loading || access.refreshing}
-            onRefresh={() => { detail.refresh(); access.refresh(); }}
-            onSaved={() => { detail.refresh(); access.refresh(); setSaved({ id, row, previous: detail.data, text: 'Đã đổi vai trò tài khoản.' }); }} />}
-          <section className="manager-section admin-access-status">
-            <div className="admin-detail-heading"><h2>Trạng thái tài khoản</h2><Status value={row.accountStatus} /></div>
-            {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>
-              <p>{next === 'DISABLED'
-                ? 'Khi khóa, người dùng không thể đăng nhập và các phiên còn hiệu lực sẽ kết thúc.'
-                : 'Khi mở khóa, người dùng có thể đăng nhập lại.'}</p>
-              <button type="button" disabled={detail.refreshing || (next === 'DISABLED' && facilityRole && (access.loading || access.refreshing))}
-                className={next === 'DISABLED' ? 'button-secondary portal-danger' : 'button-primary'}
-                onClick={showStatusConfirmation}>{next === 'DISABLED' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</button>
-            </>}
-          </section>
+          <div className="admin-permission-column">
+            <section className="manager-section admin-permission-current">
+              <AccountRoleAccess value={row.role} />
+            </section>
+            <section className="manager-section admin-permission-scope">
+              <h2>{facilityRole ? 'Phạm vi cơ sở' : 'Phạm vi truy cập'}</h2>
+              <div className="admin-scope-content">
+                <div>
+                  {facilityRole ? <>
+                    <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
+                    {access.data && (grants.length ? <ul className="admin-grants-summary">
+                      {grants.map(grant => <li key={grant.id}>
+                        <span className="admin-permission-icon"><Warehouse size={23} aria-hidden="true" /></span>
+                        <div><strong>{grant.facility.name}</strong><small>Cơ sở được cấp cho tài khoản</small></div>
+                        <Status value="ACTIVE" text="Đang được cấp quyền" />
+                      </li>)}
+                    </ul> : <p>Chưa được cấp quyền tại cơ sở nào.</p>)}
+                  </> : <p>Phạm vi truy cập được xác định theo vai trò hiện tại.</p>}
+                </div>
+                <div className="admin-scope-links">
+                  {facilityRole && <Link to={facilityAccessLink}><Settings size={18} aria-hidden="true" />Quản lý quyền cơ sở</Link>}
+                  <Link to={historyLink}><History size={18} aria-hidden="true" />Lịch sử thay đổi quyền</Link>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div className="admin-permission-column">
+            {facilityRole && <section className="manager-section admin-permission-work">
+              <h2>Công việc được giao</h2>
+              <dl>
+                <div><dt><Inbox size={17} aria-hidden="true" />Đang mở</dt><dd>{access.data?.openAssignments ?? '—'}</dd></div>
+                <div><dt><CircleCheck size={17} aria-hidden="true" />Đã đóng</dt><dd>{access.data?.closedAssignments ?? '—'}</dd></div>
+              </dl>
+              <p>Thống kê công việc được giao trên hệ thống.</p>
+            </section>}
+            {id !== user?.id && <AccountRoleEditor key={id + ':' + String(row.role)} id={id} currentRole={String(row.role)} access={access.data}
+              refreshing={detail.refreshing || access.loading || access.refreshing}
+              onRefresh={() => { detail.refresh(); access.refresh(); }}
+              onSaved={() => { detail.refresh(); access.refresh(); setSaved({ id, row, previous: detail.data, text: 'Đã đổi vai trò tài khoản.' }); }} />}
+            <section className="manager-section admin-access-status">
+              <h2>Bảo mật tài khoản</h2>
+              {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>
+                <p>{next === 'DISABLED'
+                  ? 'Khi khóa, người dùng không thể đăng nhập và các phiên còn hiệu lực sẽ kết thúc.'
+                  : 'Khi mở khóa, người dùng có thể đăng nhập lại.'}</p>
+                <button type="button" disabled={detail.refreshing || (next === 'DISABLED' && facilityRole && (access.loading || access.refreshing))}
+                  className={next === 'DISABLED' ? 'button-secondary portal-danger' : 'button-primary'}
+                  onClick={showStatusConfirmation}>{next === 'DISABLED' ? <Lock size={17} aria-hidden="true" /> : <LockOpen size={17} aria-hidden="true" />}{next === 'DISABLED' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</button>
+              </>}
+            </section>
+          </div>
         </div>
       </div>
       <div role="tabpanel" id="admin-panel-sessions" aria-labelledby="admin-tab-sessions" hidden={tab !== 'sessions'}>

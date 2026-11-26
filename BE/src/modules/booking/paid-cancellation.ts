@@ -5,6 +5,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { ONLINE_PAYMENT_TTL_MS } from '../billing/online-payment-policy.js';
 import { invoiceMoney, savedInvoiceBreakdown } from '../billing/invoice-breakdown.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { assertActiveAssignee, assertAssignmentVersion, managerAssignmentInput } from '../facility-access/operational-assignment.js';
+import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility } from '../facility-access/task-access.js';
 import { pricingPolicyValidators, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 import type { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
@@ -24,7 +26,7 @@ const include = {
 type Booking = Prisma.ReservationGetPayload<{ include: typeof include }>;
 type Cancellation = { state: 'REQUESTED' | 'REFUND_PENDING' | 'REFUNDED' | 'COMPLETED' | 'REJECTED'; requestedAt: string;
   quote: ReturnType<typeof cancellationQuote>; verification?: { at: string; staffId: string; evidence: string }; refundDueOn?: string;
-  approvedAt?: string; note?: string; refundedAt?: string; refundReference?: string };
+  recoveryStaffId?: string; approvedAt?: string; note?: string; refundedAt?: string; refundReference?: string };
 
 export function cancellationQuote(booking: Booking, now: Date) {
   const agreed = (booking.quoteSnapshot as { pricingPolicy?: PricingPolicySnapshot } | null)?.pricingPolicy?.cancellation;
@@ -67,9 +69,9 @@ export function cancellationQuote(booking: Booking, now: Date) {
   return { ...quote, confirmation: createHash('sha256').update(JSON.stringify(quote)).digest('hex') };
 }
 
-export async function paidCancellation(tx: Prisma.TransactionClient, actor: PublicUser, ref: string, action: 'GET' | 'REQUEST' | 'RECOVER' | 'APPROVE' | 'REJECT' | 'REFUND', input: Record<string, unknown>, inventory: AdditionalServiceInventoryService) {
+export async function paidCancellation(tx: Prisma.TransactionClient, actor: PublicUser, ref: string, action: 'GET' | 'REQUEST' | 'RECOVER' | 'ASSIGN_RECOVERY' | 'APPROVE' | 'REJECT' | 'REFUND', input: Record<string, unknown>, inventory: AdditionalServiceInventoryService) {
   const allowed = actor.role === 'STORAGE_CUSTOMER' ? ['GET', 'REQUEST'] : actor.role === 'FACILITY_STAFF' ? ['RECOVER']
-    : actor.role === 'FACILITY_MANAGER' ? ['GET', 'APPROVE', 'REJECT', 'REFUND'] : [];
+    : actor.role === 'FACILITY_MANAGER' ? ['GET', 'ASSIGN_RECOVERY', 'APPROVE', 'REJECT', 'REFUND'] : [];
   if (!allowed.includes(action)) throw new ForbiddenException('Không có quyền xử lý thao tác hủy đơn.');
   const identity = await tx.reservation.findFirst({ where: { OR: [{ id: ref }, { reservationCode: ref }],
     ...(actor.role === 'STORAGE_CUSTOMER' ? { customerId: actor.id } : {}) }, select: { id: true } });
@@ -110,11 +112,23 @@ export async function paidCancellation(tx: Prisma.TransactionClient, actor: Publ
       entry = { ...record, state: 'REFUNDED', refundReference: input.reference, refundedAt: at, note };
     } else {
       if (record.state !== 'REQUESTED') return result(record);
-      if (action === 'RECOVER') {
+      if (action === 'ASSIGN_RECOVERY') {
+        if (!record.quote.requiresRecovery || record.verification) throw new ConflictException('Hồ sơ không còn chờ thu hồi quyền truy cập.');
+        const staffId = managerAssignmentInput(actor, input);
+        assertAssignmentVersion(input, record.recoveryStaffId);
+        await assertActiveAssignee(tx, staffId, actor, { reservationId: id });
+        if (!booking.appointments.some(item => ['CONFIRMED', 'COMPLETED'].includes(item.status))) {
+          throw new ConflictException('Không còn lịch bàn giao để xác minh thu hồi.');
+        }
+        await recordAssignment(tx, actor, 'reservation-recovery', id, record.recoveryStaffId, staffId, { note, facilityId: booking.facilityId });
+        entry = { ...record, recoveryStaffId: staffId };
+      } else if (action === 'RECOVER') {
+        const assigned = record.recoveryStaffId ? record.recoveryStaffId === actor.id :
+          booking.appointments.some(item => (item.assignedStaffUserId === actor.id || item.completedByUserId === actor.id) &&
+            ['CONFIRMED', 'COMPLETED'].includes(item.status));
+        if (!assigned) throw new ForbiddenException('Chỉ nhân viên được giao mới được xác nhận thu hồi.');
         if (record.verification) return result(record);
-        const assigned = booking.appointments.some(item => (item.assignedStaffUserId === actor.id || item.completedByUserId === actor.id) &&
-          ['CONFIRMED', 'COMPLETED'].includes(item.status));
-        if (!assigned || !record.quote.requiresRecovery || input.neverUsed !== true || input.unitEmpty !== true || input.accessRevoked !== true || input.equipmentReturned !== true) throw new ConflictException('Nhân viên phụ trách cần xác nhận kho chưa sử dụng, đã thu hồi quyền truy cập và thiết bị.');
+        if (!record.quote.requiresRecovery || input.neverUsed !== true || input.unitEmpty !== true || input.accessRevoked !== true || input.equipmentReturned !== true) throw new ConflictException('Nhân viên phụ trách cần xác nhận kho chưa sử dụng, đã thu hồi quyền truy cập và thiết bị.');
         cancellationQuote(booking, new Date(record.requestedAt));
         entry = { ...record, verification: { at, staffId: actor.id, evidence: note } };
       } else if (action === 'REJECT') {

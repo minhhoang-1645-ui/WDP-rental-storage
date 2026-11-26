@@ -114,9 +114,16 @@ export class MaintenanceService {
 
   async listReportedByStaff(query: MaintenanceListQuery, actor: PublicUser) {
     if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được xem báo cáo của mình.');
+    const { facilityId, search } = query;
+    if (facilityId) await assertTaskFacility(this.prisma, actor, { commonAreaFacilityId: facilityId });
+    const match = search ? { contains: search, mode: 'insensitive' as const } : undefined;
     const where: Prisma.MaintenanceRequestWhereInput = {
       source: 'MANUAL', reportedByUserId: actor.id,
-      ...maintenanceFacilityScope(actor),
+      AND: [
+        maintenanceFacilityScope(actor),
+        ...(facilityId ? [{ OR: [{ commonAreaFacilityId: facilityId }, { storageUnit: { storageType: { facilityId } } }] }] : []),
+        ...(match ? [{ OR: [{ maintenanceCode: match }, { storageUnit: { unitNumber: match } }] }] : []),
+      ],
     };
     const [total, records] = await Promise.all([
       this.prisma.maintenanceRequest.count({ where }),
@@ -194,22 +201,6 @@ export class MaintenanceService {
         data: { assignedStaffUserId: staff.id, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
-    }, actor, 'FACILITY_MANAGER');
-  }
-
-  setDispatchReady(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
-    const ready = input.ready;
-    if (typeof ready !== 'boolean') throw new BadRequestException('Cần xác nhận trạng thái sẵn sàng thực hiện.');
-    const reason = this.requiredText(input.reason, 500, 'reason');
-    return this.transition(id, key, 'DISPATCH_READY', async (tx, current, safeKey) => {
-      if (current.status !== 'OPEN' || current.assignedStaffUserId) {
-        throw new ConflictException('Chỉ điều chỉnh hàng chờ khi phiếu đang mở và chưa giao.');
-      }
-      const dispatchReadyAt = ready ? current.dispatchReadyAt ?? new Date() : null;
-      await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_DISPATCH_READY', { ready, reason });
-      return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
-        dispatchReadyAt, lastAction: 'DISPATCH_READY', lastActionIdempotencyKey: safeKey,
-      }, include: this.include() });
     }, actor, 'FACILITY_MANAGER');
   }
 
@@ -504,7 +495,6 @@ export class MaintenanceService {
     const base = {
       facility: record.commonAreaFacility ?? record.storageUnit?.storageType.facility,
       id: record.id, maintenanceCode: record.maintenanceCode, status: record.status, priority: record.priority, category: record.category,
-      dispatchReadyAt: record.dispatchReadyAt?.toISOString() ?? null,
       source: record.source, description: record.description, commonArea: record.commonArea, locationNote: record.locationNote,
       rentalImpact: record.rentalImpact,
       blocksUnit: Boolean(record.activeKey || record.incidentBlocks.length),

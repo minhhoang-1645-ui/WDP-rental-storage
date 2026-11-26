@@ -17,12 +17,11 @@ export const staffSections: WorkspaceSection[] = groups.map(group => ({
   items: staffItems.filter(item => item.group === group.title),
 }));
 const menu: InternalNavItem[] = [
-  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Tổng quan', group: 'Tổng quan', match: ['/staff/operations'] })),
-  { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Tổng quan' },
-  { to: '/staff/shifts', label: 'Ca làm của tôi', icon: CalendarClock, group: 'Tổng quan' },
-  { to: '/staff/schedule', label: 'Lịch công việc', icon: CalendarClock, group: 'Tổng quan' },
-  { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Tổng quan' },
-  { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Tổng quan' },
+  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Tổng quan', group: 'Không gian làm việc', match: ['/staff/operations'] })),
+  { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Không gian làm việc' },
+  { to: '/staff/schedule', label: 'Lịch của tôi', icon: CalendarClock, group: 'Không gian làm việc' },
+  { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Không gian làm việc' },
+  { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Không gian làm việc' },
 ];
 
 export function StaffLayout() {

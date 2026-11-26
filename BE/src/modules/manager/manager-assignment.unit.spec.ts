@@ -11,6 +11,7 @@ describe('Account and facility access changes honor current assignments', () => 
       supportRequest: { count: vi.fn().mockResolvedValue(0) },
       transferRequest: { count: vi.fn().mockResolvedValue(0) },
       damageClaim: { count: vi.fn().mockResolvedValue(0) },
+      $queryRaw: vi.fn().mockResolvedValue([{ count: 0n }]),
     };
     await expect(assertNoOpenAssignments(db as never, 'staff')).resolves.toBeUndefined();
     expect(db.stockMovement.count).not.toHaveBeenCalled();

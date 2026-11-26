@@ -9,7 +9,8 @@ import { Empty, LoadState, PageHeader, RefreshStatus, Status } from '../../compo
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffTaskPagination, StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { handoverStatusText } from './staff-appointment';
-import { staffInProgress, staffSourceNames, staffWorkItems, staffWorkPhase } from './staff-work';
+import { staffFacilityMessage, useStaffFacility } from './staff-facility';
+import { missedScheduleHelp, staffInProgress, staffSourceNames, staffWorkItems, staffWorkPhase } from './staff-work';
 import { staffDay } from './staff-resources';
 import { DEFAULT_PAGE_SIZE, internalPageSize } from '../../utils/internal-pagination';
 import { normalizeSearch } from '../../utils/notification-tools';
@@ -17,6 +18,8 @@ import { normalizeSearch } from '../../utils/notification-tools';
 export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule' | 'history' }) {
   const {user}=useAuth();
   const activity = useActivity();
+  const scope = useStaffFacility(user?.id);
+  const facilityId = scope.facility?.id;
   const loading = activity.loading && activity.checking;
   const [params, setParams] = useSearchParams();
   const pendingParams = useRef(params);
@@ -26,13 +29,12 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
   const type = staffSourceNames.has(requestedType) ? requestedType : '';
   const scheduled = view === 'schedule';
   const completed = view === 'history' || (view === 'tasks' && params.get('view') === 'completed');
-  const title = scheduled ? 'Lịch công việc' : completed ? 'Lịch sử công việc' : 'Công việc của tôi';
+  const title = scheduled ? 'Lịch của tôi' : completed ? 'Lịch sử công việc' : 'Công việc của tôi';
   const status = requestedType === 'reservations' ? '' : params.get('status') ?? '';
   const sort = params.get('sort') ?? (scheduled ? 'asc' : completed ? 'desc' : '');
   const priority = params.get('priority') ?? '';
   const overdue = params.get('timing') === 'overdue';
   const phase = params.get('phase') ?? '';
-  const facility = params.get('facility') ?? '';
   const scheduledDay = params.get('date') ?? '';
   const from = scheduled ? params.get('from') ?? '' : '';
   const through = scheduled ? params.get('through') ?? '' : '';
@@ -59,19 +61,18 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
     ? [...new Map([...staffWorkItems(activity, user?.id, true), ...staffWorkItems(activity, user?.id)]
       .map(task => [task.entry.id, task])).values()]
     : staffWorkItems(activity, user?.id, completed))
-    .filter(task => !scheduled || staffDay(task.scheduledAt));
+    .filter(task => facilityId && task.facilityId === facilityId && (!scheduled || staffDay(task.scheduledAt)));
   const byType = tasks.filter(task => !type || task.entry.kind === type);
-  const facilities = new Map(tasks.filter(task => task.facilityId && task.facilityName).map(task => [task.facilityId, task.facilityName]));
   const statuses = [...new Set(byType.map(task => task.status).filter(Boolean))];
   const priorities = [...new Set(byType.map(task => task.priority).filter(Boolean))];
   const keyword = normalizeSearch(search);
   const displayedTime = (task: (typeof tasks)[number]) => completed ? task.finishedAt : scheduled ? task.scheduledAt : task.timestamp;
   const filtered = byType.filter(task => (!status || task.status === status) &&
-    (!facility || task.facilityId === facility) && (!scheduledDay || staffDay(task.scheduledAt) === scheduledDay) &&
+    (!scheduledDay || staffDay(task.scheduledAt) === scheduledDay) &&
     (!from || staffDay(task.scheduledAt) >= from) && (!through || staffDay(task.scheduledAt) <= through) &&
     (completed || !phase || staffWorkPhase(task) === phase) &&
     (!priority || task.priority === priority) && (!overdue || task.overdue) &&
-    normalizeSearch([task.entry.code, task.title, task.customer, task.unit].join(' ')).includes(keyword));
+    normalizeSearch([task.entry.code, task.title, task.customer, task.unit, task.facilityName].join(' ')).includes(keyword));
   filtered.sort((a, b) => {
     if (!sort) return Number(b.overdue) - Number(a.overdue) || a.entry.priority - b.entry.priority;
     const aDate = Date.parse(displayedTime(a)), bDate = Date.parse(displayedTime(b));
@@ -86,7 +87,7 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
       {task.blocked && task.blockingReason && <small>{task.blockingReason}</small>}</> },
     { key: 'identity', label: 'Khách hàng / Kho', cell: task => <><strong>{task.customer || task.unit || '—'}</strong>{task.customer && task.unit && <small>Kho {task.unit}</small>}</> },
     { key: 'date', label: completed ? 'Thời điểm xử lý' : scheduled ? 'Lịch hẹn' : 'Lịch / cập nhật', sort: { direction: sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none', toggle: () => change('sort', sort === 'asc' ? 'desc' : 'asc') },
-      cell: task => <><span>{date(displayedTime(task), true)}</span>{!completed && task.overdue && <small className="staff-table-overdue">Đã qua giờ</small>}</> },
+      cell: task => <><span>{date(displayedTime(task), true)}</span>{!completed && task.overdue && <small className="staff-table-overdue">Qua giờ hẹn</small>}</> },
     { key: 'status', label: 'Trạng thái', cell: task => task.status ? <Status value={task.status} text={
       task.blocked ? 'Chưa đủ điều kiện bàn giao'
         : task.waiting && !completed && task.entry.kind !== 'maintenance' ? 'Chờ quản lý xử lý'
@@ -102,22 +103,23 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
       </Link>;
     } },
   ];
-  const hasFilters = Boolean(type || status || search || params.has('sort') || priority || overdue || facility || scheduledDay || phase || from || through);
+  const hasFilters = Boolean(type || status || search || params.has('sort') || priority || overdue || scheduledDay || phase || from || through);
   return <section>
     <PageHeader title={title}>
       <button type="button" className="button-secondary" disabled={activity.checking} onClick={() => { activity.refresh(); }}><RefreshCw size={16} />Làm mới</button>
       <RefreshStatus active={activity.checking && !loading} />
     </PageHeader>
+    <LoadState loading={scope.loading} error={scope.error} retry={scope.refresh} />
+    {staffFacilityMessage(scope) && <Empty title={staffFacilityMessage(scope)} description="Liên hệ quản trị viên để kiểm tra quyền cơ sở." />}
+    {scope.facility && <>
+    <p className="staff-facility-label">{scope.facility.name}</p>
     <div className="portal-toolbar staff-table-toolbar">
       <label className="field-label portal-search">Tìm công việc<input type="search" maxLength={100} placeholder="Mã hồ sơ, khách hàng, kho…" value={search} onChange={event => change('search', event.target.value)} /></label>
       <label className="field-label">Loại công việc<select value={type} onChange={event => change('type', event.target.value)}>
         <option value="">Tất cả</option>{[...staffSourceNames].map(([key, name]) => <option key={key} value={key}>{name}</option>)}
       </select></label>
-      <label className="field-label">Cơ sở<select value={facilities.has(facility) ? facility : ''} onChange={event => change('facility', event.target.value)}>
-        <option value="">Tất cả cơ sở</option>{[...facilities].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-      </select></label>
-      <DatePicker label="Ngày hẹn" value={scheduledDay} onChange={value => change('date', value)} />
-      {scheduled && <>
+      {(!scheduled || scheduledDay) && <DatePicker label="Ngày hẹn" value={scheduledDay} onChange={value => change('date', value)} />}
+      {scheduled && !scheduledDay && <>
         <DateRangePicker from={{ label: 'Từ ngày', value: from, onChange: value => change('from', value) }}
           to={{ label: 'Đến ngày', value: through, onChange: value => change('through', value) }} />
       </>}
@@ -132,7 +134,7 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
       <label className="field-label">Ưu tiên<select value={priority} onChange={event => change('priority', event.target.value)}>
         <option value="">Tất cả</option>{priorities.map(value => <option key={value} value={value}>{label(value)}</option>)}
       </select></label>
-      {!completed && <label className="portal-checkbox"><input type="checkbox" checked={overdue} onChange={event => change('timing', event.target.checked ? 'overdue' : '')} />Quá giờ</label>}
+      {!completed && <label className="portal-checkbox"><input type="checkbox" checked={overdue} onChange={event => change('timing', event.target.checked ? 'overdue' : '')}  aria-describedby="staff-overdue-help" />Qua giờ hẹn</label>}
       {hasFilters && <button type="button" className="button-secondary" onClick={() => {
         const next = new URLSearchParams();
         if (completed && view === 'tasks') next.set('view', 'completed');
@@ -140,6 +142,7 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
         applyParams(next);
       }}>Xóa bộ lọc</button>}
     </div>
+    {!completed && <p id="staff-overdue-help" className="staff-filter-help">{missedScheduleHelp}</p>}
     <LoadState loading={false} error={activity.failed.length ? `Chưa tải được ${activity.failed.join(', ')}.` : ''} retry={activity.refresh} />
     {(loading || filtered.length > 0) && <StaffTaskTable title="Danh sách công việc" columns={columns} items={filtered.slice((page - 1) * limit, page * limit)} rowDetail={task => ({ to: task.entry.web, label: `Xem chi tiết ${task.title.toLocaleLowerCase('vi')} ${task.entry.code}` })}
       rowKey={task => task.entry.id} emphasized={task => task.overdue || task.priority === 'HIGH'} loadingRows={loading ? Math.min(limit, 6) : undefined} />}
@@ -147,5 +150,6 @@ export function StaffTasksPage({ view = 'tasks' }: { view?: 'tasks' | 'schedule'
       <StaffTaskPagination page={page} limit={limit} total={filtered.length} onChange={value => change('page', String(value))}
         onLimitChange={value => change('limit', String(value))} /> : !activity.failed.length && <Empty title={hasFilters
           ? 'Không tìm thấy công việc phù hợp' : completed ? 'Chưa có công việc đã xử lý' : scheduled ? 'Chưa có công việc có lịch hẹn' : 'Không có công việc cần xử lý'} />)}
+    </>}
   </section>;
 }

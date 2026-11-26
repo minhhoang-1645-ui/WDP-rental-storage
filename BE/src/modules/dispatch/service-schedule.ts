@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 
 type ServiceWindow = { weekday: number; starts: string; ends: string; capacity: number };
-type ScheduleDecision = 'CONFIRMED' | 'NO_SERVICE_WINDOW' | 'NO_PLANNED_STAFF' | 'CAPACITY_REACHED';
+type ScheduleDecision = 'CONFIRMED' | 'NO_SERVICE_WINDOW' | 'CAPACITY_REACHED';
 const clock = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/;
 
 export function readServiceSchedule(raw: unknown): ServiceWindow[] {
@@ -42,11 +42,6 @@ export async function assessHandoverWindow(tx: Prisma.TransactionClient, facilit
   const facility = await tx.facility.findUniqueOrThrow({ where: { id: facilityId }, select: { serviceSchedule: true } });
   const window = serviceWindow(readServiceSchedule(facility.serviceSchedule), appointmentAt);
   if (!window) return 'NO_SERVICE_WINDOW';
-  const planned = await tx.staffShift.count({ where: {
-    facilityId, status: 'SCHEDULED', startsAt: { lte: appointmentAt }, endsAt: { gt: appointmentAt },
-    OR: [{ checkedOutAt: null }, { checkedOutAt: { gt: appointmentAt } }],
-    staff: { role: 'FACILITY_STAFF', accountStatus: 'ACTIVE', facilityAccess: { some: { facilityId, revokedAt: null } } },
-  } });
   const span = { gte: window.start, lt: window.end };
   const unit = { storageType: { facilityId } };
   const [handovers, returns] = await Promise.all([
@@ -59,5 +54,5 @@ export async function assessHandoverWindow(tx: Prisma.TransactionClient, facilit
       OR: [{ inspections: { some: {}, every: { storageUnit: unit } } }, { inspections: { none: {} }, reservation: { facilityId } }],
     } }),
   ]);
-  return handovers + returns >= window.capacity ? 'CAPACITY_REACHED' : planned ? 'CONFIRMED' : 'NO_PLANNED_STAFF';
+  return handovers + returns >= window.capacity ? 'CAPACITY_REACHED' : 'CONFIRMED';
 }

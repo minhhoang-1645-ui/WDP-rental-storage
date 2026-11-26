@@ -75,10 +75,6 @@ export class ManagerMaintenanceController {
   @ApiCreatedResponse({ description: 'Priority đổi; unit status không đổi.' })
   priority(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) { return this.maintenance.updatePriority(id, body, key, request.user!); }
 
-  @ManagerAssignment() @Patch(':id/dispatch-ready')
-  dispatchReady(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
-    return this.maintenance.setDispatchReady(id, body, key, req.user!);
-  }
 
   @ManagerAssignment() @Post(':id/verify')
   @ApiOperation({ summary: 'Xác minh sửa chữa và đưa unit trở lại AVAILABLE', description: 'Thao tác Maintenance V1 duy nhất được MAINTENANCE → AVAILABLE.' })

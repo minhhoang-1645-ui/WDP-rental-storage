@@ -91,7 +91,7 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
   const grants = directoryOnly ? directory.items.filter(item => item.userId === account.id) : data.data?.history ?? [];
   const ready = Boolean(data.data || directoryOnly);
   const refreshing = data.refreshing || directoryRefreshing || profile.loading || profile.refreshing;
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState('');
   const [confirmGrant, setConfirmGrant] = useState(false);
   const [revoke, setRevoke] = useState<Grant>();
   const [busy, setBusy] = useState(false);
@@ -99,10 +99,11 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
   const [notice, setNotice] = useState('');
   const lock = useRef(false);
   const active = new Map<string, Grant>(grants.filter(item => !item.revokedAt).map(item => [item.facilityId, item] as const));
-  const toGrant = facilities.filter(item => selected.includes(item.id) && !active.has(item.id));
+  const target = facilities.find(item => item.id === selected && !active.has(item.id));
+  const current = active.size === 1 ? [...active.values()][0] : undefined;
 
   async function save() {
-    if (lock.current || !ready || refreshing || (!revoke && (accountStatus !== 'ACTIVE' || !toGrant.length))) return;
+    if (lock.current || !ready || refreshing || (!revoke && (accountStatus !== 'ACTIVE' || !target || active.size > 1))) return;
     lock.current = true;
     setBusy(true);
     setNotice('');
@@ -113,22 +114,15 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
         setNotice('Đã thu hồi quyền tại ' + revoke.facility.name + '.');
         setRevoke(undefined);
       } else {
-        const failures: string[] = [];
-        const completed: string[] = [];
-        for (const facility of toGrant) {
-          try {
-            await mutate(path, 'POST', { userId: account.id, facilityId: facility.id });
-            completed.push(facility.id);
-          } catch (caught) {
-            failures.push(facility.name + ' · ' + (caught instanceof Error ? caught.message : 'Chưa cấp được quyền.'));
-          }
+        if (!target) return;
+        if (current) {
+          await mutate(path + '/users/' + encodeURIComponent(account.id) + '/relocate', 'PATCH', { facilityId: target.id, expectedAccessId: current.id });
+        } else {
+          await mutate(path, 'POST', { userId: account.id, facilityId: target.id });
         }
-        if (completed.length) {
-          setConfirmGrant(false);
-          setNotice('Đã xác nhận quyền tại ' + completed.length + ' cơ sở.');
-        }
-        setSelected(previous => previous.filter(id => !completed.includes(id)));
-        setError(failures.join(' | '));
+        setConfirmGrant(false);
+        setNotice((current ? 'Đã điều chuyển đến ' : 'Đã cấp quyền tại ') + target.name + '.');
+        setSelected('');
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Chưa cập nhật được quyền.');
@@ -151,6 +145,8 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
       <AssignmentImpact access={data.data} />
       {accountStatus === 'DISABLED' && <p>Tài khoản đang bị khóa. Chỉ có thể cấp quyền sau khi mở khóa.</p>}
       {!profile.loading && !['ACTIVE', 'DISABLED'].includes(accountStatus ?? '') && <p role="alert">Chưa xác minh được trạng thái tài khoản. Hãy làm mới danh sách trước khi cấp quyền.</p>}
+      <p>Cơ sở hiện tại: <strong>{current?.facility.name ?? (active.size ? 'Có quyền trùng cần xử lý' : 'Chưa được cấp')}</strong></p>
+      {active.size > 1 && <p role="alert">Cấp người tiếp quản tại cơ sở liên quan và thu hồi quyền dư trước khi điều chuyển.</p>}
       <div className="manager-table-wrap"><table className="manager-table">
         <thead><tr><th>Cơ sở</th><th>Quyền</th><th>Thao tác</th></tr></thead>
         <tbody>{facilities.map(facility => {
@@ -161,17 +157,14 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
             <td>{grant ? 'Đã cấp' : revoked ? 'Đã thu hồi' : 'Chưa cấp'}</td>
             <td>{grant ? <button type="button" className="button-secondary portal-danger" disabled={busy || refreshing}
               onClick={() => { setError(''); setRevoke(grant); }}>Thu hồi</button>
-              : <label className="portal-checkbox"><input type="checkbox" checked={selected.includes(facility.id)}
-                disabled={busy || refreshing || accountStatus !== 'ACTIVE'} onChange={event => {
-                  const checked = event.target.checked;
-                  setSelected(previous => checked ? [...previous, facility.id] : previous.filter(id => id !== facility.id));
-                }} />Chọn cấp quyền tại {facility.name}</label>}</td>
+              : <label className="portal-checkbox"><input type="radio" name="targetFacility" checked={selected === facility.id}
+                disabled={busy || refreshing || active.size > 1 || accountStatus !== 'ACTIVE'} onChange={() => setSelected(facility.id)} />Chọn {facility.name}</label>}</td>
           </tr>;
         })}</tbody>
       </table></div>
       {!facilities.length && <Empty title="Chưa có cơ sở" description="Danh mục hệ thống chưa có cơ sở để cấp quyền." />}
-      <button type="button" className="button-primary" disabled={busy || refreshing || !toGrant.length || accountStatus !== 'ACTIVE'}
-        onClick={() => { setError(''); setConfirmGrant(true); }}>{busy && !revoke ? 'Đang cấp quyền…' : 'Cấp quyền cho cơ sở đã chọn'}</button>
+      <button type="button" className="button-primary" disabled={busy || refreshing || !target || active.size > 1 || accountStatus !== 'ACTIVE'}
+        onClick={() => { setError(''); setConfirmGrant(true); }}>{current ? 'Điều chuyển cơ sở' : 'Cấp quyền cơ sở'}</button>
       <h3>Lịch sử cấp và thu hồi</h3>
       {directoryOnly ? <p>Backend hiện chỉ cung cấp các quyền đang có hiệu lực.</p> : data.data?.history.length ? <div className="manager-table-wrap"><table className="manager-table">
         <thead><tr><th>Cơ sở</th><th>Cấp quyền</th><th>Thu hồi</th></tr></thead>
@@ -180,13 +173,13 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
           <td>{item.revokedAt ? <>{date(item.revokedAt, true)}<small>{item.revokedByName || item.revokedById}</small></> : 'Còn hiệu lực'}</td></tr>)}</tbody>
       </table></div> : <p>Tài khoản chưa có lịch sử quyền cơ sở.</p>}
     </>}
-    {confirmGrant && <Modal title="Xác nhận cấp quyền cơ sở" busy={busy} onClose={() => setConfirmGrant(false)} footer={<>
+    {confirmGrant && <Modal title={current ? "Xác nhận điều chuyển" : "Xác nhận cấp quyền cơ sở"} busy={busy} onClose={() => setConfirmGrant(false)} footer={<>
       <button type="button" className="button-secondary" disabled={busy} onClick={() => setConfirmGrant(false)}>Hủy</button>
-      <button type="button" className="button-primary" disabled={busy || refreshing || !toGrant.length || accountStatus !== 'ACTIVE'}
-        onClick={() => void save()}>{busy ? 'Đang cấp quyền…' : 'Xác nhận cấp quyền'}</button>
+      <button type="button" className="button-primary" disabled={busy || refreshing || !target || accountStatus !== 'ACTIVE'}
+        onClick={() => void save()}>{busy ? 'Đang lưu…' : 'Xác nhận'}</button>
     </>}>
-      <p><strong>{account.fullName}</strong> sẽ được cấp quyền tại các cơ sở đã chọn.</p>
-      <ul>{toGrant.map(facility => <li key={facility.id}>{facility.name}</li>)}</ul>
+      <p><strong>{account.fullName}</strong> {current ? 'sẽ mất quyền tại ' + current.facility.name + ' và chuyển đến ' : 'sẽ được cấp quyền tại '}{target?.name}.</p>
+      {current && <p>Quản lý cơ sở bàn giao việc còn phải thực hiện trước. Tài khoản sẽ đăng nhập lại sau khi chuyển.</p>}
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
     </Modal>}
     {revoke && <Modal title="Xác nhận thu hồi quyền cơ sở" busy={busy} onClose={() => setRevoke(undefined)} footer={<>

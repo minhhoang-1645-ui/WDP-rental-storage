@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { StaffPicker } from './StaffPicker';
 import { mutate } from '../../services/portal';
 import { date, first, money, object, type Row } from './portal-data';
 
 export function PolicySettlementActions({ resource, row, id, refresh }: { resource: string; row: Row; id: string; refresh: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [recoveryStaff, setRecoveryStaff] = useState('');
   const cancellation = object(row.paidCancellation);
   const transfer = object(row.commercialSettlement);
   const overdue = object(row.overdueSettlement);
@@ -40,7 +42,9 @@ export function PolicySettlementActions({ resource, row, id, refresh }: { resour
         const note = String(form.get('note') ?? '');
         await mutate(path, 'POST', waive ? { approved: action === 'WAIVE', reference: note } : refund
           ? { action: 'REFUND', amount, refunded: form.has('refunded'), reference: String(form.get('reference') ?? '').trim(), note }
-          : { action, note });
+          : { action, note, ...(action === 'ASSIGN_RECOVERY' ? {
+            staffUserId: recoveryStaff, expectedAssignedStaffUserId: first(cancellation, 'recoveryStaffId') || null,
+          } : {}) });
         refresh();
       } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không lưu được quyết định.'); }
       finally { setBusy(false); }
@@ -50,6 +54,8 @@ export function PolicySettlementActions({ resource, row, id, refresh }: { resour
         <label className="portal-checkbox"><input name="refunded" type="checkbox" required /> Đã chuyển đúng {money(amount)} cho khách</label>
       </>}
       {(!isTransfer || waive) && <label>Căn cứ xử lý<input name="note" minLength={3} maxLength={waive ? 200 : 500} required /></label>}
+      {review && verify && <><StaffPicker task={{ kind: 'reservation-recovery', id }} value={recoveryStaff} onChange={setRecoveryStaff} disabled={busy} />
+        <button className="button-secondary" value="ASSIGN_RECOVERY" disabled={!recoveryStaff}>Giao việc thu hồi quyền truy cập</button></>}
       {review && <><button className="button-primary" value="APPROVE" disabled={verify}>Duyệt hủy đơn</button><button className="button-secondary" value="REJECT">Từ chối yêu cầu</button></>}
       {refund && <button className="button-primary" value="REFUND">Ghi nhận đã hoàn tiền</button>}
       {waive && <><button className="button-primary" value="WAIVE">Miễn phí do lỗi cơ sở</button><button className="button-secondary" value="KEEP">Giữ phí theo điều khoản</button></>}

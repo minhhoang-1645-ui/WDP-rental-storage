@@ -49,7 +49,7 @@ export function StaffAppointmentDetailPage() {
       <RefreshStatus active={data.refreshing} />
       {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
-      {row.canRecordCancellationRecovery === true && (assigned || first(row, 'completedBy.id') === user?.id) &&
+      {row.canRecordCancellationRecovery === true && (row.recoveryStaffId ? row.recoveryStaffId === user?.id : assigned || first(row, 'completedBy.id') === user?.id) &&
         <CancellationRecovery reservationId={first(row, 'reservation.id')} refresh={data.refresh} />}
       {first(row, 'scheduleAdjustment.note') && <p role="status">
         {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Quản lý đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}

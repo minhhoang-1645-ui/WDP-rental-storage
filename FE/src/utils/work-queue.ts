@@ -58,6 +58,7 @@ export function canAssignWork(resource: string, row: WorkRow) {
 }
 
 export function isAssignedStaffWork(resource: string, row: WorkRow, userId: string) {
+  if (resource === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId && userId) return true;
   return Boolean(userId && assignee(row) === userId) &&
     !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
     (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status))
@@ -79,7 +80,8 @@ export function staffNeedsAction(
         ["PENDING_CONTACT", "CONTACTED", "IN_REVIEW"].includes(status)
       );
     case "appointments":
-      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId && row.bookingReady !== false;
+      if (row.canRecordCancellationRecovery === true && row.recoveryStaffId) return row.recoveryStaffId === userId;
+      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId && row.bookingReady !== false && row.cancellationPending !== true;
     case "transfers":
       return status === "APPROVED";
     case "returns":

@@ -38,6 +38,7 @@ export class InventoryManagementService {
       const scope = id ? await tx.storageType.findUnique({ where: { id }, select: { facilityId: true } }) : null;
       if (id && !scope) throw new NotFoundException('Không tìm thấy loại kho.');
       const scopedFacility = scope?.facilityId ?? this.text(input.facilityId, 'Cơ sở', 100);
+      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', actor.id);
       await assertFacility(tx, actor, scopedFacility);
       await lockPriceRange(tx, scopedFacility);
       const current = id ? await this.lockType(tx, id) : null;
@@ -116,6 +117,7 @@ export class InventoryManagementService {
       if (id) await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "StorageUnit" WHERE "id" = ${id} FOR UPDATE`);
       const current = id ? await tx.storageUnit.findUnique({ where: { id }, include: { _count: { select: unitHistoryCounts }, storageType: { select: { facilityId: true } } } }) : null;
       if (id && !current) throw new NotFoundException('Không tìm thấy kho vật lý.');
+      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', actor.id);
       if (current) { await assertFacility(tx, actor, current.storageType.facilityId); this.version(current.updatedAt, input.expectedUpdatedAt); }
       const value = { ...current, ...input };
       const storageTypeId = this.text(value.storageTypeId, 'Loại kho', 100);

@@ -695,15 +695,6 @@ export function ManagerActions({
           row.resolutionType === "TRANSFER_RECOMMENDED" && (
             <p>Đã ghi nhận đề nghị chuyển kho. Nhân viên tiếp nhận và thực hiện tại mục Chuyển kho.</p>
           )}
-        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.status === 'OPEN' && !first(row, 'assignedStaff.id') &&
-          <form className="portal-form" onSubmit={event => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            void run(`${root}/dispatch-ready`, 'PATCH', { ready: !row.dispatchReadyAt, reason: String(data.get('dispatchReason') ?? '').trim() }, true);
-          }}>
-            <label className="field-label">Lý do đánh giá khả năng thực hiện<input name="dispatchReason" required maxLength={500} /></label>
-            <button className="button-secondary">{row.dispatchReadyAt ? 'Tạm giữ phiếu ngoài hàng chờ tự động' : 'Xác nhận Staff có thể thực hiện'}</button>
-          </form>}
         {["maintenance", "support-requests"].includes(resource) &&
           !["COMPLETED", "RESOLVED"].includes(first(row, "status")) && (
             <DetailDisclosure title="Đổi mức ưu tiên">

@@ -181,19 +181,6 @@ export class ReturnsService {
     }, 'Hồ sơ vừa thay đổi. Vui lòng tải lại.');
   }
 
-  async dispatchEligible(tx: Prisma.TransactionClient, id: string, now: Date) {
-    const row = await tx.returnRequest.findUnique({ where: { id }, include: this.include() });
-    if (!row || row.status !== 'REQUESTED' || row.assignedStaffUserId || row.physicallyReturnedAt
-      || !row.inspectionScheduledAt || row.inspectionScheduledAt > now) return false;
-    try {
-      await this.assertInspectionReady(tx, row);
-      return true;
-    } catch (error) {
-      if (error instanceof ConflictException || error instanceof ForbiddenException) return false;
-      throw error;
-    }
-  }
-
   private async assertInspectionReady(tx: Prisma.TransactionClient, row: Parameters<ReturnsService['requestContracts']>[0] & {
     earlyReturnCloseout?: Prisma.JsonValue;
   }) {

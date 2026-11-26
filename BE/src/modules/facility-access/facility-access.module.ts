@@ -23,6 +23,7 @@ class FacilityAccessController {
  @Patch('users/:id/sessions/revoke') revokeSessions(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revokeSessions(req.user!, id); }
  @Get('facility-access') list(@Req() req:AuthenticatedRequest) { return this.access.list(req.user!); }
  @Post('facility-access') grant(@Req() req: AuthenticatedRequest, @Body() body: Record<string,unknown>) { return this.access.grant(req.user!, body); }
+ @Patch('facility-access/users/:id/relocate') relocate(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.access.relocate(req.user!, id, body); }
  @Patch('facility-access/:id/revoke') revoke(@Req() req: AuthenticatedRequest, @Param('id') id: string) { return this.access.revoke(req.user!, id); }
 }
 @Module({ imports:[AuthModule], controllers:[FacilityAccessController], providers:[FacilityAccessService] })

@@ -179,7 +179,7 @@ export interface CustomerSupportRequest {
   earlyReturnFinancialReview?: import('../components/customer/EarlyReturnFinancialNotice').EarlyReturnFinancialDecision | null
   earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
   earlyReturnForEndDate?: string | null
-  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
+  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; customerMoveAction?: 'WAITING_FOR_DESTINATION' | 'READY_TO_REPORT' | 'REPORTED' | null; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
   id: string
   supportCode: string
   category: SupportCategory

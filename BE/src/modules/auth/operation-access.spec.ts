@@ -15,7 +15,7 @@ import { ManagerUnitsController } from '../manager/manager-units.controller.js';
 import { StaffDirectoryController } from './staff-directory.controller.js';
 import { MemoryUserRepository } from '../users/user.repository.js';
 import type { AuthenticatedRequest } from './auth.types.js';
-import { MaintenanceService } from '../maintenance/maintenance.service.js';
+import { MaintenanceService, maintenanceFacilityScope } from '../maintenance/maintenance.service.js';
 import { SupportService } from '../support/support.service.js';
 import { ReturnsService } from '../returns/returns.service.js';
 
@@ -37,7 +37,7 @@ describe.each(['maintenance', 'support-requests'] as const)('%s assigned-work fi
       { id: 'other-open', assignedStaffUserId: 'staff-other', status: 'OPEN', priority: 'HIGH' },
       { id: 'unassigned', assignedStaffUserId: null, status: 'OPEN', priority: 'HIGH' },
     ].map(record => ({
-      ...record, maintenanceCode: record.id, supportCode: record.id,
+      ...record, maintenanceCode: record.id, supportCode: record.id, incidentBlocks: [], photos: [],
       assignedStaff: record.assignedStaffUserId ? { id: record.assignedStaffUserId, fullName: record.assignedStaffUserId } : null,
       storageUnit: { id: 'unit', unitNumber: 'UNIT-01', storageType: { id: 'type' }, reservationUnits: [], maintenanceRequests: [] },
       reservation: { id: 'reservation', reservationCode: 'RES-01' },
@@ -136,11 +136,15 @@ describe('Staff return and maintenance cross-links on detail reads', () => {
   it.each([staff.id, 'staff-other', null])('only exposes the linked return for matching assignment %s', async (assignee: any) => {
     const findFirst = vi.fn(async () => ({
       ...maintenance, assignedStaffUserId: staff.id, status: 'COMPLETED', verifiedAt: stamp, verificationNote: 'Checked',
-      createdAt: stamp, updatedAt: stamp, storageUnit: unit,
+      createdAt: stamp, updatedAt: stamp, storageUnit: unit, incidentBlocks: [], photos: [],
       returnInspection: { returnRequest: { ...returning, assignedStaffUserId: assignee } },
     }));
     const view = await new MaintenanceService({ maintenanceRequest: { findFirst } } as never).getStaff(maintenance.id, staff);
-    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assignedStaffUserId: staff.id }) }));
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [
+      { OR: [{ id: maintenance.id }, { maintenanceCode: maintenance.id }] },
+      maintenanceFacilityScope(staff),
+      { OR: [{ assignedStaffUserId: staff.id }, { source: 'MANUAL', reportedByUserId: staff.id }] },
+    ] } }));
     expect('returnContext' in view ? view.returnContext : undefined).toEqual(assignee === staff.id ? { returnRequest: returning } : undefined);
     expect(view).toMatchObject({ verifiedAt: stamp.toISOString(), verificationNote: 'Checked' });
   });

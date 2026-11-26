@@ -5,6 +5,8 @@ import { recordIdentity } from '../../utils/record-identity';
 import { transferProblem } from '../../utils/transfer-problem';
 import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
 
+export const missedScheduleHelp = 'Việc có lịch hẹn đã đến giờ và vẫn chờ nhân viên xử lý.';
+
 export const staffActivitySources = activitySources('FACILITY_STAFF').filter(source => needsStaffAssignment(source.kind));
 export const staffSourceNames = new Map(staffActivitySources.map(source => [source.kind, source.title]));
 export const staffInProgress = (status: string) => ['IN_PROGRESS', 'CONTACTED', 'IN_REVIEW', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'INVESTIGATING'].includes(status);
@@ -40,23 +42,24 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const row = records.get(entry.id)!;
     const identity = staffRecordIdentity(row, entry.kind);
     const status = first(row, 'status');
-    const phase = first(row, 'coordination.phase');
-    const scheduledAt = first(row, 'scheduledAt', 'inspectionScheduledAt', 'transferRequestedSchedule.startAt');
+    const recovery = entry.kind === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId;
+    const phase = recovery ? 'ASSIGNED' : first(row, 'coordination.phase');
+    const scheduledAt = recovery ? '' : first(row, 'scheduledAt', 'inspectionScheduledAt', 'transferRequestedSchedule.startAt');
     const dueAt = first(row, 'dueAt') || scheduledAt;
-    const blocked = entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
+    const blocked = !recovery && entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
       && (row.bookingReady === false || object(row.handoverReadiness).allowed === false);
     const transferPending = entry.kind === 'transfers' && transferProblem(row).pending;
     const waiting = phase === 'WAITING' || transferPending || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION';
     const actionable = !blocked && !waiting && entry.action
       && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
-    const processed = phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
+    const processed = !recovery && (phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
       || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
       || entry.kind === 'damage-claims' && Boolean(row.staffFacts)
       || entry.kind === 'transfers' && transferProblem(row).review.decision === 'CANCEL'
-      || entry.kind === 'appointments' && first(row, 'scheduleAdjustment.action') === 'NO_SHOW');
+      || entry.kind === 'appointments' && first(row, 'scheduleAdjustment.action') === 'NO_SHOW'));
     const titles: Record<string, string> = {
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       returns: status === 'REQUESTED' ? 'Tiếp nhận trả kho' : 'Kiểm tra kho trả',
@@ -67,7 +70,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     };
     return {
       entry, status, phase, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
-      title: titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
+      title: recovery ? 'Thu hồi quyền truy cập kho' : titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
       unit: identity.location || first(row, 'unitCodeSnapshot'),
       priority: first(row, 'priority'),
@@ -76,7 +79,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt',
         'handoverReport.problemReview.reviewedAt', 'scheduleAdjustment.at') || entry.at,
       timestamp: dueAt || scheduledAt || entry.at,
-      overdue: (actionable || blocked) && Boolean(dueAt) && Date.parse(dueAt) < now,
+      overdue: actionable && !processed && Date.parse(scheduledAt) < now,
     };
   }).filter(task => includeHistory ? task.processed : task.actionable || task.blocked || task.waiting);
 }

@@ -15,6 +15,13 @@ export async function assignmentReference(db:Prisma.TransactionClient,kind:strin
   case 'returns': { const row = await db.returnRequest.findFirst({where:match('returnCode'),select:{id:true}}); return row ? { returnRequestId: row.id } : null; }
   case 'support-requests': { const row = await db.supportRequest.findFirst({where:match('supportCode'),select:{reservationId:true,rentalContractId:true,storageUnitId:true}}); return row ? supportTaskReference(row) : null; }
   case 'transfers': { const row = await db.transferRequest.findFirst({where:match('transferCode'),select:{fromStorageUnitId:true}}); return row ? { storageUnitId: row.fromStorageUnitId } : null; }
+  case 'reservation-recovery': { const row = await db.reservation.findFirst({ where: match('reservationCode'), select: { id: true } }); return row ? { reservationId: row.id } : null; }
+  case 'relocation-source': return db.rentalContract.findFirst({ where: { id }, select: { id: true } })
+    .then(row => row ? { rentalContractId: row.id } : null);
+  case 'relocation-destination': {
+    const row = await db.transferRequest.findFirst({ where: { ...match('transferCode'), closurePlanId: { not: null } }, select: { toStorageUnitId: true } });
+    return row?.toStorageUnitId ? { storageUnitId: row.toStorageUnitId } : null;
+  }
   case 'maintenance': return db.maintenanceRequest.findFirst({where:match('maintenanceCode'),select:{storageUnitId:true,commonAreaFacilityId:true}});
   case 'damage-claims': return db.damageClaim.findFirst({where:match('claimCode'),select:{rentalContractId:true}});
   default: throw new BadRequestException('Loại nhiệm vụ không hợp lệ.');

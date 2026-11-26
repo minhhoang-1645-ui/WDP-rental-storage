@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessToday } from '../../business-date.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { facilityScope, assertTaskFacility, assertTaskExecution } from '../facility-access/task-access.js';
-import { assertActiveAssignee, managerAssignmentInput } from '../facility-access/operational-assignment.js';
+import { assertActiveAssignee, assertAssignmentVersion, physicalHandoff, managerAssignmentInput } from '../facility-access/operational-assignment.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTransferIntakeAvailable } from './transfer-intake.js';
 import { AdditionalServiceInventoryService } from '../additional-services/additional-service-inventory.service.js';
@@ -83,6 +83,7 @@ export class ClosureRelocationService {
   async notifyCustomers(facilityId: string, actor: PublicUser) {
     if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();
     return this.transaction(async tx => {
+      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', actor.id);
       await assertFacility(tx, actor, facilityId);
       await tx.$queryRaw`SELECT id FROM "Facility" WHERE id=${facilityId} FOR UPDATE`;
       const facility = await tx.facility.findUniqueOrThrow({where:{id:facilityId}});
@@ -118,6 +119,8 @@ export class ClosureRelocationService {
         throw new ConflictException('Mã nhiệm vụ đã được sử dụng bởi một hồ sơ khác.');
       if (existing?.status === 'RESOLVED') throw new ConflictException('Công việc đã kết thúc.');
       const openTransfer = existing ? await tx.transferRequest.findFirst({where:{supportRequestId:existing.id,status:{in:['REQUESTED','APPROVED']}}}) : null;
+      assertAssignmentVersion(input, existing?.assignedStaffUserId);
+      const handoff = physicalHandoff(input, Boolean(existing?.assignedStaffUserId && existing.assignedStaffUserId !== staffId && (existing.startedAt || openTransfer?.sourceHandover)));
       const task = await tx.supportRequest.upsert({
         where: { idempotencyKey: key },
         create: { idempotencyKey: key, supportCode: 'WDP-SUP-' + randomUUID(), closurePlanId: plan.closurePlanId,
@@ -126,9 +129,9 @@ export class ClosureRelocationService {
           assignedStaffUserId: staffId, status: 'ASSIGNED', priority: plan.closureMode === 'REQUIRED_RELOCATION' ? 'HIGH' : 'MEDIUM' },
         update: { assignedStaffUserId: staffId },
       });
-      await recordAssignment(tx, actor, 'support', task.id, existing?.assignedStaffUserId, staffId);
+      await recordAssignment(tx, actor, 'support', task.id, existing?.assignedStaffUserId, staffId, handoff);
       if (openTransfer && openTransfer.assignedStaffUserId !== staffId) {
-        await recordAssignment(tx,actor,'transfers',openTransfer.id,openTransfer.assignedStaffUserId,staffId);
+        await recordAssignment(tx,actor,'transfers',openTransfer.id,openTransfer.assignedStaffUserId,staffId,handoff);
         await tx.transferRequest.update({where:{id:openTransfer.id},data:{assignedStaffUserId:staffId}});
       }
       if (existing?.assignedStaffUserId !== staffId) await tx.auditEvent.create({ data: {
@@ -164,6 +167,7 @@ export class ClosureRelocationService {
       await tx.$queryRaw`SELECT id FROM "RentalContract" WHERE id=${contract.id} FOR UPDATE`;
       const plan = await this.activePlan(tx, contract);
       await assertTransferIntakeAvailable(tx, contract.reservationId, contract.id);
+      await tx.$queryRaw`SELECT id FROM "StorageUnit" WHERE id=${destinationId} FOR UPDATE`;
       const destination = await tx.storageUnit.findFirst({ where: { AND: [{ id: destinationId }, this.destinationWhere(contract)] } });
       if (!destination) throw new ConflictException('Kho đích không còn phù hợp hoặc không còn trống.');
       const row = await tx.transferRequest.create({ data: {
@@ -175,7 +179,7 @@ export class ClosureRelocationService {
       }, include: transferInfo });
       await tx.supportRequest.update({ where: { id: task.id }, data: { status: 'IN_PROGRESS', startedAt: new Date() } });
       await this.audit(tx, actor, row, 'RELOCATION_PROPOSED');
-      return this.view(row);
+      return this.view(row, actor);
     });
   }
 
@@ -183,6 +187,34 @@ export class ClosureRelocationService {
     const where = this.accessWhere(actor);
     const rows = await this.prisma.transferRequest.findMany({ where, include: transferInfo, orderBy: { createdAt: 'desc' } });
     return rows.map(row => this.view(row, actor));
+  }
+
+  async decideDestination(id: string, actor: PublicUser, input: Record<string, unknown>) {
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();
+    if (input.decision !== 'ACCEPT' && input.decision !== 'REJECT') throw new BadRequestException('Chọn tiếp nhận hoặc từ chối phương án.');
+    const note = requiredText(input.note, 'Căn cứ quyết định tiếp nhận');
+    return this.transaction(async tx => {
+      const row = await this.locked(tx, id);
+      if (!row.toStorageUnitId) throw new ConflictException('Chưa chọn kho đích.');
+      await assertTaskFacility(tx, actor, { storageUnitId: row.toStorageUnitId });
+      if (row.status !== 'REQUESTED' || row.destinationDecision || row.toStorageUnitId !== input.destinationId) {
+        throw new ConflictException('Phương án đã thay đổi hoặc đã được cơ sở đích xử lý.');
+      }
+      if (input.decision === 'ACCEPT') {
+        await tx.$queryRaw`SELECT id FROM "StorageUnit" WHERE id=${row.toStorageUnitId} FOR UPDATE`;
+        if (!await tx.storageUnit.findFirst({ where: { AND: [{ id: row.toStorageUnitId }, this.destinationWhere(row.rentalContract)] }, select: { id: true } })) {
+          throw new ConflictException('Kho đích không còn khả dụng. Hãy từ chối để cơ sở nguồn chọn phương án khác.');
+        }
+      }
+      const accepted = input.decision === 'ACCEPT';
+      const updated = await tx.transferRequest.update({ where: { id }, include: transferInfo, data: {
+        destinationDecision: { accepted, destinationId: row.toStorageUnitId, by: actor.id, at: new Date().toISOString(), note },
+        ...(accepted ? {} : { status: 'REJECTED', rejectionReason: note }),
+      } });
+      if (!accepted) await this.resolveTask(tx, row, actor, true, note);
+      await this.audit(tx, actor, updated, accepted ? 'RELOCATION_DESTINATION_ACCEPTED' : 'RELOCATION_DESTINATION_REJECTED');
+      return this.view(updated, actor);
+    });
   }
 
   async consent(id: string, actor: PublicUser, input: Record<string, unknown>) {
@@ -197,6 +229,8 @@ export class ClosureRelocationService {
       if (input.destinationId !== row.toStorageUnitId) throw new ConflictException('Phương án kho đã thay đổi.');
       if (row.status === 'APPROVED' && agreed && row.consentEvidence) return this.view(row, actor);
       if (row.status !== 'REQUESTED' || !row.toStorageUnitId) throw new ConflictException('Hồ sơ không còn chờ xác nhận.');
+      const decision = row.destinationDecision as { accepted?: boolean; destinationId?: string } | null;
+      if (!decision?.accepted || decision.destinationId !== row.toStorageUnitId) throw new ConflictException('Cơ sở đích chưa xác nhận tiếp nhận phương án.');
       const plan = await this.activePlan(tx, row.rentalContract, row.closurePlanId);
       if (!agreed) {
         const updated = await tx.transferRequest.update({ where: { id }, data: { status: 'REJECTED', rejectionReason: evidence, consentEvidence: { agreed, by: actor.id, at: new Date().toISOString(), evidence, destinationId: row.toStorageUnitId } }, include: transferInfo });
@@ -224,6 +258,7 @@ export class ClosureRelocationService {
       const row = await this.locked(tx, id);
       if (!row.toStorageUnitId || row.status !== 'APPROVED' || row.destinationHandover) throw new ConflictException('Chưa thể phân công tiếp nhận.');
       await assertActiveAssignee(tx, staffId, actor, { storageUnitId: row.toStorageUnitId });
+      assertAssignmentVersion(input, row.receivingStaffId);
       await recordAssignment(tx, actor, 'transfers', row.id, row.receivingStaffId, staffId);
       const updated = await tx.transferRequest.update({ where: { id }, data: { receivingStaffId: staffId }, include: transferInfo });
       if (row.receivingStaffId !== staffId) await this.audit(tx, actor, updated, 'RELOCATION_RECEIVING_ASSIGNED');
@@ -285,7 +320,12 @@ export class ClosureRelocationService {
       await tx.$queryRaw`SELECT id FROM "StorageUnit" WHERE id IN (${row.fromStorageUnitId}, ${row.toStorageUnitId}) ORDER BY id FOR UPDATE`;
       if (row.rentalContract.reservationUnitId !== row.fromReservationUnitId || row.fromStorageUnit.status !== 'OCCUPIED' || row.toStorageUnit?.status !== 'RESERVED')
         throw new ConflictException('Phân bổ kho đã thay đổi.');
-      if (await tx.maintenanceRequest.count({ where: { storageUnitId: row.toStorageUnitId, activeKey: { not: null } } })) throw new ConflictException('Kho đích đang bảo trì.');
+      const blocked = await tx.incidentUnitBlock.count({ where: { releasedAt: null, storageUnitId: {
+        in: side === 'source' ? [row.fromStorageUnitId, row.toStorageUnitId] : [row.toStorageUnitId],
+      } } });
+      if (blocked || await tx.maintenanceRequest.count({ where: { storageUnitId: row.toStorageUnitId, activeKey: { not: null } } })) {
+        throw new ConflictException('Kho đang bị chặn do sự cố hoặc bảo trì. Giữ nguyên phương án và báo quản lý xử lý.');
+      }
       const now = new Date();
       const report = { by: actor.id, at: now.toISOString(), note };
       if (side === 'source') {
@@ -390,7 +430,9 @@ export class ClosureRelocationService {
   }
 
   private accessWhere(actor: PublicUser): Prisma.TransferRequestWhereInput {
-    if (actor.role === 'STORAGE_CUSTOMER') return { closurePlanId: { not: null }, reservation: { customerId: actor.id } };
+    if (actor.role === 'STORAGE_CUSTOMER') return { closurePlanId: { not: null }, reservation: { customerId: actor.id },
+      OR: [{ consentEvidence: { not: Prisma.DbNull } }, { destinationDecision: { path: ['accepted'], equals: true } }],
+    };
     const scoped = { storageType: { facility: facilityScope(actor) } };
     return { closurePlanId: { not: null }, OR: [
       { fromStorageUnit: scoped, ...(actor.role === 'FACILITY_STAFF' ? { assignedStaffUserId: actor.id } : {}) },
@@ -424,7 +466,7 @@ export class ClosureRelocationService {
       facilityId: { not: source.facilityId }, facility: { operationalStatus: 'OPEN', bookingEnabled: true },
       catalogStatus: 'AVAILABLE', sizeId: source.sizeId, condition: source.condition,
       widthCm: { gte: source.widthCm }, lengthCm: { gte: source.lengthCm }, heightCm: { gte: source.heightCm },
-    }, maintenanceRequests: { none: { activeKey: { not: null } } },
+    }, maintenanceRequests: { none: { activeKey: { not: null } } }, incidentBlocks: { none: { releasedAt: null } },
     reservationUnits: { none: { OR: [
       { reservationId: contract.reservationId },
       { releasedAt: null, plannedStartDate: { lt: contract.endDate }, plannedEndDate: { gt: businessToday() } },
@@ -515,8 +557,20 @@ export class ClosureRelocationService {
   }
 
   private view(row: Transfer, actor?: PublicUser) {
-    return { id: row.id, code: row.transferCode, status: row.status, contract: this.contractView(row.rentalContract),
-      source: this.unitView(row.fromStorageUnit), destination: row.toStorageUnit ? this.unitView(row.toStorageUnit) : null,
+    const local = (unit: Transfer['fromStorageUnit'], source: boolean) =>
+      actor?.role === 'FACILITY_STAFF' && (source ? row.assignedStaffUserId : row.receivingStaffId) === actor.id
+      || actor?.role === 'FACILITY_MANAGER' && actor.selectedFacilityId === unit.storageType.facilityId;
+    const endpoint = (unit: Transfer['fromStorageUnit'], source: boolean) => {
+      const { id, code, facility, type, location } = this.unitView(unit);
+      return { id, code, facility: { id: facility.id, name: facility.name, ...(source ? { closureMode: facility.closureMode } : {}) },
+        ...(local(unit, source) ? { type, location } : {}) };
+    };
+    const contract = this.contractView(row.rentalContract);
+    const decision = row.destinationDecision as { accepted?: boolean } | null;
+    return { id: row.id, code: row.transferCode, status: row.status,
+      contract: { id: contract.id, code: contract.code, customer: contract.customer, endDate: contract.endDate },
+      source: endpoint(row.fromStorageUnit, true), destination: row.toStorageUnit ? endpoint(row.toStorageUnit, false) : null,
+      destinationAccepted: decision?.accepted === true,
       consent: !!row.consentEvidence && row.status !== 'REJECTED', sourceHandover: !!row.sourceHandover, destinationHandover: !!row.destinationHandover,
       safetyConfirmed: !!row.safetyEvidence, servicesApproved: !!row.serviceHandling, assignedStaffId: row.assignedStaffUserId, receivingStaffId: row.receivingStaffId,
       exception: actor?.role === 'STORAGE_CUSTOMER' ? null : row.relocationException, rejectionReason: row.rejectionReason };

@@ -75,11 +75,13 @@ async function workspace(role, mobile = false) {
 try {
   const { page: manager, policyRequests } = await workspace('FACILITY_MANAGER');
   await manager.goto(base + '/manager/policies');
-  await manager.getByRole('heading', { name: 'Thông tin hiệu lực' }).waitFor();
+  await manager.getByRole('heading', { name: 'Đặt kho và thanh toán' }).waitFor();
   assert.equal(await manager.locator('.applied-policy-milestone strong').allTextContents().then(values => values.join('|')), '24 giờ|7 ngày|5 ngày|30 ngày');
   assert.equal(await manager.locator('.applied-policy tbody tr').count(), 12);
   const cards = manager.locator('.applied-policy-groups');
-  for (const value of ['1440 phút', 'Không cọc', '100% tiền thuê', '1 tháng tiền thuê/ô', '3 tháng giảm 5%', '6 tháng giảm 10%', '12 tháng giảm 15%', '90%', '70%', '50%', '150.000', 'Phiên bản 1', '11:59', 'UTC+7', 'Giá trị cơ sở']) {
+  assert.equal(await cards.getByRole('row', { name: /Thời hạn giữ đơn chưa thanh toán/ }).locator('td').first().innerText(), '24 giờ');
+  assert.equal(await manager.locator('.applied-policy').getByText(/1440 phút/).count(), 0);
+  for (const value of ['Không cọc', '100% tiền thuê', '1 tháng tiền thuê/ô', '3 tháng giảm 5%', '6 tháng giảm 10%', '12 tháng giảm 15%', '90%', '70%', '50%', '150.000', 'Phiên bản 1 đang áp dụng', 'Áp dụng từ', '11:59', 'UTC+7', 'Đang dùng thiết lập ban đầu']) {
     assert.ok((await cards.innerText()).includes(value), value);
   }
   assert.equal(await manager.getByRole('row', { name: /Hủy đơn đã thanh toán/ }).locator('td').first().locator('div').count(), 5);
@@ -93,7 +95,7 @@ try {
     assert.ok(await manager.locator('.applied-policy').evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'Layout at ' + width);
   }
   await manager.setViewportSize({ width: 1440, height: 1000 });
-  await manager.locator('.applied-policy-aside').getByText('NestBox Thủ Đức').waitFor();
+  assert.equal(await manager.getByRole('heading', { name: 'Thông tin hiệu lực' }).count(), 0);
   assert.equal(await manager.getByRole('combobox', { name: 'Cơ sở đang quản lý' }).count(), 0);
   assert.match(manager.url(), /\/manager\/policies$/);
   assert.ok(policyRequests.length >= 1);
@@ -106,19 +108,19 @@ try {
   await staff.page.getByRole('link', { name: 'Tra cứu chính sách', exact: true }).click();
   await staff.page.getByText('Nhận kho và bàn giao', { exact: true }).waitFor();
   await staff.page.getByText(/Báo quản lý sau 15 ngày/).waitFor();
-  await staff.page.getByText(/Sắp có hiệu lực/).waitFor();
   assert.equal(await staff.page.getByText(/Phí một lần|Đặt cọc khi thuê kho/).count(), 0);
   await staff.page.getByRole('link', { name: 'Chính sách áp dụng', exact: true }).waitFor();
-  await staff.page.getByText(/Chưa được phân công cơ sở/).waitFor();
-  await staff.page.getByText('Chỉ tra cứu – Không có quyền chỉnh sửa', { exact: true }).waitFor();
   await staff.page.goto(base + '/staff/policies?facilityId=outside');
   await staff.page.getByText('Nhận kho và bàn giao', { exact: true }).waitFor();
   await staff.page.getByText(/Báo quản lý sau 15 ngày/).waitFor();
-  await staff.page.getByText(/Sắp có hiệu lực/).waitFor();
   assert.equal(await staff.page.getByText(/Phí một lần|Đặt cọc khi thuê kho/).count(), 0);
   assert.ok(staff.policyRequests.every(([method, query]) => method === 'GET' && !query));
   if (screenshots) await staff.page.screenshot({ path: join(screenshots, 'staff.png'), fullPage: true });
-  assert.equal(await staff.page.locator('.applied-policy table, .applied-policy button, .applied-policy select').count(), 0);
+  assert.equal(await staff.page.locator('.applied-policy table').count(), 4);
+  assert.equal(await staff.page.getByRole('heading', { name: 'Thông tin hiệu lực' }).count(), 0);
+  assert.equal(await staff.page.getByRole('heading', { name: 'Cập nhật chính sách' }).count(), 0);
+  assert.equal(await staff.page.getByRole('link', { name: 'Xem công việc liên quan' }).count(), 0);
+  assert.equal(await staff.page.locator('.applied-policy button, .applied-policy select').count(), 0);
   staff.setStatus(403);
   await staff.page.reload();
   await staff.page.getByRole('alert').getByText(/Tài khoản hiện không có quyền tra cứu/).waitFor();
@@ -155,7 +157,7 @@ try {
     console.log('PASS: Expo Web policy accordion and timed refresh of all three Customer milestones.');
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: Manager policy table and responsive layout, single-facility scope, Staff scoped read-only flow, and Customer API refresh.');
+  console.log('PASS: Manager policy table and responsive layout, global policy scope, Staff scoped read-only flow, and Customer API refresh.');
 } finally {
   await browser.close();
 }

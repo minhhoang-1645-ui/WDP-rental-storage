@@ -4,9 +4,8 @@ import type { WorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import type { PublicUser } from '../../types/booking';
 import '../../styles/workspace-profile.css';
 
-export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme, onProfile, onSecurity, onAppearance, onLogout, variant }: {
+export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme, onProfile, onSecurity, onAppearance, onLogout }: {
   user: PublicUser;
-  variant?: 'sidebar';
   roleLabel: string;
   theme: WorkspaceTheme;
   onToggleTheme: () => void;
@@ -41,7 +40,7 @@ export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme
   }
 
   return <div
-    className={variant === 'sidebar' ? 'workspace-profile admin-sidebar-profile' : 'workspace-profile'}
+    className="workspace-profile"
     ref={root}
     onBlur={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
@@ -57,7 +56,7 @@ export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme
       aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
       <span className="workspace-profile-initials" aria-hidden="true">{initials || <UserRound size={17} />}</span>
       <span className="workspace-profile-name" aria-hidden="true">
-        {user.fullName}{variant === 'sidebar' && <small>{roleLabel}</small>}
+        {user.fullName}
       </span>
       <ChevronDown size={14} aria-hidden="true" />
     </button>

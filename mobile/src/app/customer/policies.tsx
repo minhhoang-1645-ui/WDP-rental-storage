@@ -144,8 +144,8 @@ function PolicyRow({ policy, last }: { policy: Row; last: boolean }) {
       {!badge && key !== 'deposit' && key !== 'prepaid'
         ? values.map(line => <Text key={line} style={s.value}>{line}</Text>) : null}
       {Number.isFinite(effectiveFrom) ? <Text style={s.meta}>
-        {version ? 'Phiên bản ' + version + ' · ' : ''}Hiệu lực {formatter.format(effectiveFrom)} (UTC+7)
-      </Text> : null}
+        Áp dụng từ {formatter.format(effectiveFrom)} (UTC+7){Number(version) > 0 ? ' · Phiên bản ' + version + ' đang áp dụng' : ''}
+      </Text> : version === '0' ? <Text style={s.meta}>Đang dùng thiết lập ban đầu</Text> : null}
     </View>
   </View>;
 }

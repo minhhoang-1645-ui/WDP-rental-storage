@@ -31,7 +31,7 @@ const formatTime = (value: string) => {
 };
 const scalar = (value: number, unit: string) => unit === 'phút' && value >= 60 && value % 60 === 0 ? value / 60 + ' giờ' : value + ' ' + unit;
 const summary = (policy: Policy) => 'unit' in policy ? scalar(policy.value, policy.unit) : pricingPolicySummary(policy.key, policy.value);
-const versionLabel = (version: number) => version ? 'Phiên bản ' + version : 'Giá trị mặc định';
+const versionLabel = (version: number) => version ? 'Phiên bản ' + version + ' đang áp dụng' : 'Đang dùng thiết lập ban đầu';
 const effectiveVersion = (policy: Policy) => policy.history.find(version => version.version === policy.effectiveVersion && version.status === 'EFFECTIVE');
 const nextVersion = (policy: Policy) => policy.history.filter(version => version.status === 'SCHEDULED').sort((a, b) => Date.parse(a.effectiveFrom) - Date.parse(b.effectiveFrom))[0];
 
@@ -57,7 +57,7 @@ function Tabs({ id, label, tabs, current, onChange }: {
 function PolicyHistory({ policy }: { policy: Policy }) {
   if (!policy.history.length) return <div className="policy-empty policy-history-empty"><History size={20} aria-hidden="true" />
     <strong>Chưa có phiên bản được công bố.</strong>
-    {policy.effectiveVersion === 0 && <p>Chính sách đang sử dụng giá trị mặc định.</p>}
+    {policy.effectiveVersion === 0 && <p>Chính sách đang dùng thiết lập ban đầu.</p>}
   </div>;
   return <div className="policy-table-scroll"><table className="policy-table policy-history">
     <thead><tr><th>Phiên bản</th><th>Giá trị</th><th>Hiệu lực</th><th>Người tạo</th><th>Trạng thái</th></tr></thead>
@@ -102,9 +102,9 @@ export function OperationsPolicies() {
               return <tr key={policy.key} onClick={() => open(policy)}>
                 <th scope="row"><span>{policy.title}</span><small>{policy.description}</small></th>
                 <td className="policy-active-value">{summary(policy)}</td>
-                <td>{effective ? <time dateTime={effective.effectiveFrom}>{formatTime(effective.effectiveFrom)}</time> : versionLabel(policy.effectiveVersion)}
+                <td>{effective ? <time dateTime={effective.effectiveFrom}>Áp dụng từ {formatTime(effective.effectiveFrom)}</time> : versionLabel(policy.effectiveVersion)}
                   {effective && <small>{versionLabel(policy.effectiveVersion)}</small>}
-                  {scheduled && <small className="policy-scheduled">Lịch tiếp theo · {formatTime(scheduled.effectiveFrom)}</small>}
+                  {scheduled && <small className="policy-scheduled">Phiên bản {scheduled.version} sẽ áp dụng từ {formatTime(scheduled.effectiveFrom)}</small>}
                 </td>
                 <td><button type="button" className="button-secondary policy-edit" aria-label={'Chỉnh sửa ' + policy.title} onClick={event => { event.stopPropagation(); open(policy); }}><Pencil size={15} aria-hidden="true" />Chỉnh sửa</button></td>
               </tr>;
@@ -217,7 +217,7 @@ function PolicyEditor({ initial, current, refreshing, refreshError, onClose, onP
       onKeyDown={event => { if (event.target instanceof HTMLElement) event.target.removeAttribute('data-policy-pointer'); }}>
     <div role="tabpanel" id="policy-editor-panel-0" aria-labelledby="policy-editor-tab-0" hidden={tab !== 0}>
       <div className="policy-current"><span>Giá trị đang áp dụng</span><div className="policy-current-value">{summary(current).split('\n').map(line => <div key={line}>{line}</div>)}</div>
-        <small>{versionLabel(current.effectiveVersion)}{existing && ' · Từ ' + formatTime(existing.effectiveFrom) + ' (UTC+7)'}</small>
+        <small>{versionLabel(current.effectiveVersion)}{existing && ' · Áp dụng từ ' + formatTime(existing.effectiveFrom) + ' (UTC+7)'}</small>
         {scheduled && <small>Phiên bản {scheduled.version} đã lên lịch · {formatTime(scheduled.effectiveFrom)} (UTC+7)</small>}
       </div>
       {stale && <p className="policy-update" role="status">Đã có phiên bản mới. <button type="button" className="button-secondary" onClick={() => {

@@ -185,16 +185,12 @@ export function InternalPortalLayout({
       })}
     </nav>
   );
-  const account = admin && profileMenu ? (
-    <WorkspaceProfileDropdown user={profileMenu} roleLabel="Quản trị viên hệ thống" theme={theme} variant="sidebar"
-      onToggleTheme={toggleTheme} onProfile={() => openSettings('profile')} onSecurity={() => openSettings('security')}
-      onAppearance={() => openSettings('appearance')} onLogout={signOut} />
-  ) : (
+  const account = (
     <div className="manager-account">
-      <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>
+      {!admin && <span className="portal-account-avatar" aria-hidden="true">{user?.fullName.slice(0, 1)}</span>}
       <div>
         <strong>{user?.fullName}</strong>
-        <small>{roleLabel(user?.role)}</small>
+        {!admin && <small>{roleLabel(user?.role)}</small>}
       </div>
       <button
         className="portal-logout"

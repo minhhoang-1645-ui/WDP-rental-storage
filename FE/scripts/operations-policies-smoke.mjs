@@ -212,7 +212,7 @@ try {
     assert.deepEqual(errors, []);
     await editor.getByRole('button', { name: 'Đóng', exact: true }).click();
     await page.getByText('24 giờ', { exact: true }).waitFor();
-    await page.getByText(/Lịch tiếp theo/).waitFor();
+    await page.getByText(/Phiên bản .* sẽ áp dụng từ/).waitFor();
     await page.getByRole('button', { name: 'Chỉnh sửa ' + policy.title }).click();
     await editor.getByText(/Phiên bản 1 đã lên lịch/).waitFor();
     await editor.getByText('24 giờ', { exact: true }).waitFor();

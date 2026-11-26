@@ -345,11 +345,6 @@
 /* Admin workspace presentation. Shared portal controls retain their behavior. */
 .manager-shell.internal-web[data-workspace-role="admin"] {
   --admin-space: clamp(16px, 2.2vw, 32px);
-  --admin-rail: #153741;
-  --admin-rail-text: #e7f3f4;
-  --admin-rail-muted: #b1cbd0;
-  --admin-rail-active: #245962;
-  --admin-rail-hover: #214b54;
   --admin-kpi: #19515a;
   --admin-kpi-hover: #20626c;
   --admin-kpi-text: #fff;
@@ -363,24 +358,11 @@
   --workspace-border: #29384d;
   --workspace-text: #e2e8f0;
   --workspace-secondary: #a5b4c8;
-  --admin-rail: #101c2a;
-  --admin-rail-active: #204b53;
-  --admin-rail-hover: #1b3543;
   --admin-kpi: #16444d;
 }
 @media (min-width: 901px) {
   .manager-shell.internal-web[data-workspace-role="admin"] { grid-template-columns: 248px minmax(0, 1fr); }
   .manager-shell.internal-web[data-workspace-role="admin"].is-sidebar-collapsed { grid-template-columns: 72px minmax(0, 1fr); }
-}
-[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) {
-  color: var(--admin-rail-text);
-  --workspace-sidebar: var(--admin-rail);
-  --workspace-text: var(--admin-rail-text);
-  --workspace-secondary: var(--admin-rail-muted);
-  --workspace-muted: var(--admin-rail-muted);
-  --workspace-selected: var(--admin-rail-active);
-  --workspace-hover: var(--admin-rail-hover);
-  --workspace-primary: #a7eee4;
 }
 .manager-shell.internal-web[data-workspace-role="admin"] .manager-main {
   padding: var(--admin-space);
@@ -395,7 +377,6 @@
 }
 [data-workspace-role="admin"] .manager-page-header h1 { font-size: clamp(1.5rem, 2.6vw, 1.8rem); letter-spacing: -.025em; }
 [data-workspace-role="admin"] :is(button, a, input, select):focus-visible { outline: 2px solid var(--admin-focus); outline-offset: 3px; }
-[data-workspace-role="admin"] .manager-sidebar :focus-visible { outline-color: var(--admin-rail-text); }
 .manager-shell.internal-web[data-workspace-role="admin"] .admin-kpis a.internal-kpi {
   background: var(--admin-kpi);
   border-color: transparent;
@@ -598,14 +579,12 @@
 [data-workspace-role="admin"] .account-settings-nav { border: 1px solid var(--workspace-border); border-radius: 12px; padding: 8px; }
 [data-workspace-role="admin"] .account-settings-content { background: var(--workspace-surface); border: 1px solid var(--workspace-border); border-radius: 12px; }
 
-[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand em { color: var(--admin-rail-muted); }
 [data-workspace-role="admin"] .admin-audit-drawer .portal-dialog-body { flex: 1; min-height: 0; }
 
 /* The overview uses quiet surfaces and reserves the stronger teal for navigation and emphasis. */
 .manager-shell.internal-web[data-workspace-role="admin"]:not([data-workspace-theme="dark"]) {
   --workspace-background: #f6f8fa;
   --workspace-border: #e5eaf0;
-  --admin-rail: #17343c;
 }
 .admin-overview .admin-boundaries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
 .admin-boundaries article {
@@ -650,8 +629,6 @@
   --workspace-text: #172b3a;
   --workspace-secondary: #526177;
   --workspace-primary: #176c73;
-  --admin-rail: #102f38;
-  --admin-rail-active: #20565d;
 }
 .manager-shell.internal-web[data-workspace-role="admin"] {
   --admin-space: clamp(16px, 1.55vw, 26px);
@@ -673,55 +650,33 @@
 
 .manager-shell.internal-web[data-workspace-role="admin"] .manager-sidebar {
   padding: 16px 15px 26px;
-  isolation: isolate;
-  background: var(--admin-rail);
-  border-color: #0c252e;
-  border-inline-end: 1px solid #0c252e;
-}
-[data-workspace-role="admin"] .manager-sidebar::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: auto 0 85px 0;
-  height: 174px;
-  background: radial-gradient(ellipse at 36% 0, #1a5967 0, #173c48 42%, transparent 74%);
-  clip-path: ellipse(76% 74% at 25% 82%);
-  opacity: .6;
-  pointer-events: none;
 }
 [data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand {
   gap: 10px;
   padding: 0 11px 22px;
-  color: #fff;
 }
 [data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand > span {
   width: 46px;
   height: 49px;
   flex: none;
-  color: #eafffd;
-  background: linear-gradient(145deg, #23777e, #0d505d);
   clip-path: polygon(50% 0, 94% 23%, 100% 34%, 100% 68%, 93% 78%, 50% 100%, 7% 78%, 0 68%, 0 34%, 6% 23%);
 }
 [data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand strong {
-  color: #fff;
   font-size: 20px;
   white-space: nowrap;
 }
-[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand em { color: #f1f7f9; }
 [data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .portal-brand small { display: none; }
 [data-workspace-role="admin"] .manager-sidebar nav { margin-top: 10px; padding-right: 0; }
 .manager-shell.internal-web[data-workspace-role="admin"]:not(.is-sidebar-collapsed) .manager-sidebar .workspace-nav-group + .workspace-nav-group {
   margin-top: 32px;
 }
 .manager-shell.internal-web[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) .workspace-nav-heading {
-  color: #c7d7de;
   font-size: 13px;
   font-weight: 650;
   padding: 8px 17px 11px;
   text-transform: uppercase;
 }
 .manager-shell.internal-web[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) nav a {
-  color: #f2f7f9;
   min-height: 45px;
   gap: 19px;
   padding-inline: 18px;
@@ -729,40 +684,11 @@
   border-radius: 10px;
   font-size: 15px;
   font-weight: 500;
-  box-shadow: none;
 }
 .manager-shell.internal-web[data-workspace-role="admin"] :is(.manager-sidebar, .portal-mobile-nav) nav a.active {
-  color: #fff;
-  background: var(--admin-rail-active);
   font-weight: 650;
 }
 .manager-shell.internal-web[data-workspace-role="admin"].is-sidebar-collapsed .manager-sidebar nav a { padding-inline: 0; }
-[data-workspace-role="admin"] .admin-sidebar-profile {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #ffffff25;
-}
-[data-workspace-role="admin"] .admin-sidebar-profile .workspace-profile-trigger {
-  width: 100%;
-  text-align: left;
-  gap: 14px;
-  padding: 5px 8px;
-  color: #f3fafb;
-}
-[data-workspace-role="admin"] .admin-sidebar-profile .workspace-profile-name { display: block; max-width: none; flex: 1; }
-[data-workspace-role="admin"] .admin-sidebar-profile small { display: block; margin-top: 3px; font-size: 13px; font-weight: 400; }
-[data-workspace-role="admin"] .admin-sidebar-profile .workspace-profile-initials { width: 44px; height: 44px; background: #24616a; color: #fff; }
-[data-workspace-role="admin"] .admin-sidebar-profile .workspace-profile-panel {
-  inset: auto 0 calc(100% + 7px) auto;
-  width: min(244px, calc(100vw - 42px));
-  background: var(--admin-rail);
-  border-color: #50737c;
-  z-index: 3;
-}
-[data-workspace-role="admin"].is-sidebar-collapsed .manager-sidebar .admin-sidebar-profile :is(.workspace-profile-name, .workspace-profile-trigger > svg) { display: none; }
-[data-workspace-role="admin"].is-sidebar-collapsed .manager-sidebar .admin-sidebar-profile .workspace-profile-trigger { padding: 4px 0; justify-content: center; }
-[data-workspace-role="admin"].is-sidebar-collapsed .manager-sidebar:has(.admin-sidebar-profile [aria-expanded="true"]) { overflow: visible; z-index: 31; }
-[data-workspace-role="admin"].is-sidebar-collapsed .manager-sidebar .admin-sidebar-profile .workspace-profile-panel { inset-inline: calc(100% + 9px) auto; }
 
 .manager-shell.internal-web[data-workspace-role="admin"] .admin-search-trigger {
   width: clamp(225px, 23vw, 382px);
@@ -778,6 +704,7 @@
 }
 .admin-search-trigger > span { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-search-trigger kbd { flex: none; border-radius: 11px; padding: 3px 8px; font: inherit; background: #8394ad16; }
+.manager-shell.internal-web[data-workspace-role="admin"].is-sidebar-collapsed > .manager-sidebar .manager-account .portal-logout { display: grid; margin: 0 auto; }
 [data-workspace-role="admin"] .portal-topbar .workspace-profile-initials { width: 36px; height: 36px; }
 [data-workspace-role="admin"] .portal-topbar .workspace-profile-trigger { padding-inline-end: 0; }
 [data-workspace-role="admin"] .portal-topbar .workspace-profile-name { font-size: 14px; }

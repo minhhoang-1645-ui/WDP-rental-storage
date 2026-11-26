@@ -1,5 +1,5 @@
+import { Bell, CalendarDays, Clock, Handshake, RefreshCw } from 'lucide-react';
 import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import './applied-policies.css';
@@ -8,21 +8,19 @@ type OperationalValue = number | { opensDaysBefore: number; closesDaysBefore: nu
 type Entry = { key: string; title: string; value: OperationalValue; effectiveFrom: string | null; effectiveVersion: number };
 type StaffCatalog = {
   entries: Entry[];
-  updates: { key: string; title: string; version: number; effectiveFrom: string; scheduled: boolean; oldValue: OperationalValue | null; value: OperationalValue }[];
-  facilities: string[];
 };
-const dateTime = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Ho_Chi_Minh' });
+const dateTime = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
 const groups = [
-  { title: 'Nhận kho và bàn giao', keys: ['handoverLeadDays'], guidance: 'Đối chiếu lịch bàn giao và ngày bắt đầu thuê trong hồ sơ. Kích hoạt hợp đồng từ ngày bắt đầu thuê.', to: '/staff/tasks?type=appointments' },
-  { title: 'Gia hạn hợp đồng', keys: ['renewal', 'renewalReminderDays'], guidance: 'Đối chiếu ngày hết hạn khi tiếp nhận yêu cầu. Chuyển Quản lý cơ sở xử lý trường hợp ngoài thời hạn hoặc cần ngoại lệ.' },
-  { title: 'Trả kho', keys: ['returnNoticeDays'], guidance: 'Ghi nhận đề nghị và bố trí lịch theo hồ sơ. Chuyển Quản lý cơ sở xử lý quyết toán trả kho trước hạn, phí và hoàn tiền.', to: '/staff/tasks?type=returns' },
-  { title: 'Quá hạn và xử lý', keys: ['paymentReminderDays', 'paymentOverdue', 'returnOverdue'], guidance: 'Đối chiếu hạn trong hồ sơ, ghi nhận tình trạng và báo Quản lý cơ sở khi đến mốc chuyển xử lý.' },
+  { title: 'Nhận kho và bàn giao', icon: Handshake, keys: ['handoverLeadDays'] },
+  { title: 'Gia hạn hợp đồng', icon: RefreshCw, keys: ['renewal', 'renewalReminderDays'] },
+  { title: 'Trả kho', icon: CalendarDays, keys: ['returnNoticeDays'] },
+  { title: 'Quá hạn và xử lý', icon: Bell, keys: ['paymentReminderDays', 'paymentOverdue', 'returnOverdue'] },
 ];
 
 function operationalValue(value: OperationalValue) {
   if (typeof value === 'number') return value + ' ngày';
-  if ('graceDays' in value) return `Ân hạn ${value.graceDays} ngày · Báo quản lý sau ${value.managerDays} ngày`;
-  return `Mở trước ${value.opensDaysBefore} ngày · Đóng trước ${value.closesDaysBefore} ngày · ${value.priceMode === 'CONTRACT_RATE' ? 'Giá hợp đồng' : 'Giá niêm yết hiện hành'}`;
+  if ('graceDays' in value) return `${value.graceDays ? `Ân hạn ${value.graceDays} ngày` : 'Không có thời gian ân hạn'} · Báo quản lý sau ${value.managerDays} ngày quá hạn`;
+  return `Mở trước ngày hết hạn ${value.opensDaysBefore} ngày · Đóng trước ngày hết hạn ${value.closesDaysBefore} ngày · ${value.priceMode === 'CONTRACT_RATE' ? 'Giá hợp đồng' : 'Giá niêm yết hiện hành'}`;
 }
 
 export function StaffAppliedPoliciesPage() {
@@ -37,45 +35,53 @@ export function StaffAppliedPoliciesPage() {
   }, [refresh]);
   const catalog = resource.data;
 
+
+  const entriesByKey = new Map(catalog?.entries.map(entry => [entry.key, entry]));
+  const renewal = entriesByKey.get('renewal')?.value;
+  const overdue = entriesByKey.get('paymentOverdue')?.value;
+  const milestones = [
+    { icon: Handshake, label: 'Nhận chìa khóa trước ngày thuê', days: entriesByKey.get('handoverLeadDays')?.value },
+    { icon: CalendarDays, label: 'Báo trước khi trả kho', days: entriesByKey.get('returnNoticeDays')?.value },
+    { icon: Clock, label: 'Ân hạn thanh toán', days: typeof overdue === 'object' && 'graceDays' in overdue ? overdue.graceDays : undefined },
+    { icon: RefreshCw, label: 'Mở yêu cầu gia hạn', days: typeof renewal === 'object' && 'opensDaysBefore' in renewal ? renewal.opensDaysBefore : undefined },
+  ];
+
   return <section className="applied-policy">
-    <header>
-      <div className="applied-policy-heading"><h1>Chính sách áp dụng</h1><span className="applied-policy-badge">Chỉ tra cứu – Không có quyền chỉnh sửa</span></div>
-      <p>Tra cứu các điều khoản thuê kho phục vụ công việc được phân công.</p>
-      {catalog && <p className="applied-policy-note">{catalog.facilities.length
-        ? 'Chính sách chung · Cơ sở được phân công: ' + catalog.facilities.join(', ')
-        : 'Chưa được phân công cơ sở. Các chính sách bên dưới áp dụng chung toàn hệ thống.'}</p>}
-    </header>
+    <header><h1>Chính sách áp dụng</h1></header>
     {resource.loading && <p role="status">Đang tải chính sách…</p>}
     {resource.error && <div className="applied-policy-card" role="alert">
       <p>{resource.status === 403 ? 'Tài khoản hiện không có quyền tra cứu chính sách.' : 'Hiện chưa tải được chính sách.'}</p>
       <button type="button" className="button-secondary" disabled={resource.refreshing} onClick={refresh}>Thử lại</button>
     </div>}
     {catalog && <>
-      <p className="applied-policy-note">Khi xử lý hồ sơ, hãy đối chiếu điều khoản đã cam kết tại thời điểm xác nhận.</p>
       {!catalog.entries.length && <p role="status">Chưa có chính sách để hiển thị.</p>}
-      {catalog.updates.length > 0 && <section className="applied-policy-card">
-        <h2>Cập nhật chính sách</h2>
-        <ul className="staff-policy-list">{catalog.updates.map(update => <li key={update.key + ':' + update.version}>
-          <strong>{update.title} · Phiên bản {update.version}</strong>
-          <p>{update.scheduled ? 'Sắp có hiệu lực' : 'Đã có hiệu lực'} · {dateTime.format(new Date(update.effectiveFrom))} (UTC+7)</p>
-          {update.oldValue !== null && <p>Trước đây · {operationalValue(update.oldValue)}</p>}
-          <p>Giá trị mới · {operationalValue(update.value)}</p>
-          <p>{groups.find(group => group.keys.includes(update.key))?.guidance}</p>
-        </li>)}</ul>
-        <Link to="/staff/notifications?kind=policy-effective">Xem thông báo và đánh dấu đã đọc</Link>
-      </section>}
-      {groups.map(group => {
-        const entries = catalog.entries.filter(entry => group.keys.includes(entry.key));
-        return entries.length > 0 && <details className="applied-policy-card staff-policy-group" key={group.title} id={group.keys[0]} open>
-          <summary><strong>{group.title}</strong></summary>
-          <ul className="staff-policy-list">{entries.map(entry => <li key={entry.key}>
-            <strong>{entry.title}</strong><p>{operationalValue(entry.value)}</p>
-            <p>{entry.effectiveFrom ? `Phiên bản ${entry.effectiveVersion} · Hiệu lực ${dateTime.format(new Date(entry.effectiveFrom))} (UTC+7)` : 'Giá trị cơ sở'}</p>
-          </li>)}</ul>
-          <p>{group.guidance}</p>
-          {group.to && <Link to={group.to}>Xem công việc liên quan</Link>}
-        </details>;
-      })}
+      {catalog.entries.length > 0 && <div className="applied-policy-milestones" aria-label="Những mốc quan trọng">
+        {milestones.map(({ icon: Icon, label, days }) => typeof days === 'number' && <div className="applied-policy-card applied-policy-milestone" key={label}>
+          <span className="applied-policy-icon"><Icon size={21} /></span>
+          <div><strong>{days} ngày</strong><span>{label}</span></div>
+        </div>)}
+      </div>}
+      <div className="applied-policy-grid">
+        <div className="applied-policy-groups">
+          {groups.map(({ icon: Icon, ...group }) => {
+            const entries = group.keys.flatMap(key => entriesByKey.get(key) ?? []);
+            const headingId = 'staff-policy-' + group.keys[0];
+            return entries.length > 0 && <section className="applied-policy-card" key={group.title} id={group.keys[0]} aria-labelledby={headingId}>
+              <h2 id={headingId}><span className="applied-policy-icon"><Icon size={19} /></span>{group.title}</h2>
+              <table aria-labelledby={headingId}>
+                <thead><tr><th scope="col">Chính sách</th><th scope="col">Giá trị hiện hành</th><th scope="col">Hiệu lực</th></tr></thead>
+                <tbody>{entries.map(entry => <tr key={entry.key}>
+                  <th scope="row">{entry.title}</th>
+                  <td>{operationalValue(entry.value).split(' · ').map(line => <div key={line}>{line}</div>)}</td>
+                  <td>{entry.effectiveFrom
+                    ? <><time dateTime={entry.effectiveFrom}>Áp dụng từ {dateTime.format(new Date(entry.effectiveFrom))} (UTC+7)</time><small>Phiên bản {entry.effectiveVersion} đang áp dụng</small></>
+                    : <span className="applied-policy-base">Đang dùng thiết lập ban đầu</span>}</td>
+                </tr>)}</tbody>
+              </table>
+            </section>;
+          })}
+        </div>
+      </div>
     </>}
   </section>;
 }

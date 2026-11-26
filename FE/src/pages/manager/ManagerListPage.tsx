@@ -1,3 +1,4 @@
+import { ManagerFinanceReview } from '../../components/manager/ManagerFinanceReview';
 import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { useApiResource } from '../../services/useApiResource';
 import { DetailRow } from '../../components/workspace/DetailRow';
@@ -339,6 +340,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
           Làm mới
         </button>
       </PageHeader>
+      {resource === 'payments' && user?.role === 'FACILITY_MANAGER' && <ManagerFinanceReview onSaved={refresh} />}
       {resource === 'transfers' && !reviewOnly && <ClosureRelocations revision={revision} />}
       {managerTable === 'units' && unitCreated && <p className="portal-success" role="status">Đã thêm kho {unitCreated}.</p>}
       {staffAppointments && <div className="staff-appointment-views" role="group" aria-label="Xem lịch bàn giao">

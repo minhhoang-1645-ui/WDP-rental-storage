@@ -79,15 +79,18 @@ export class AuditService {
     const ids = customer ? [] : await facilityIds(this.prisma, { ...actor, selectedFacilityId: undefined });
     if (!customer && !ids.length) return [];
     const where: Prisma.AuditEventWhereInput = {
-      resource: 'facility', action: customer ? { in: ['FACILITY_LIFECYCLE','MANAGER_CLOSURE_NOTICE'] } : 'FACILITY_LIFECYCLE', outcome: 'SUCCESS',
+      resource: 'facility', outcome: 'SUCCESS',
       ...(customer
-        ? { metadata: { path: ['customerRecipientIds'], array_contains: [actor.id] } }
-        : { resourceId: { in: ids }, metadata: { path: ['statusChanged'], equals: true } }),
+        ? { action: { in: ['FACILITY_LIFECYCLE', 'MANAGER_CLOSURE_NOTICE'] }, metadata: { path: ['customerRecipientIds'], array_contains: [actor.id] } }
+        : { resourceId: { in: ids }, OR: [
+          { action: 'FACILITY_LIFECYCLE', metadata: { path: ['statusChanged'], equals: true } },
+          { action: 'FACILITY_SCHEDULE_IMPACT' },
+        ] }),
     };
     const [total, items] = await Promise.all([
       this.prisma.auditEvent.count({ where }),
       this.prisma.auditEvent.findMany({
-        where, select: { id: true, createdAt: true, metadata: true },
+        where, select: { id: true, action: true, createdAt: true, metadata: true },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.limit, take: query.limit,
       }),

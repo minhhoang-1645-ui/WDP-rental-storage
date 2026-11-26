@@ -19,9 +19,9 @@ export const managerSections = {
   finance: {
     title: 'Tài chính', description: 'Theo dõi hóa đơn, khoản đã thu, tiền còn thiếu và các khoản hoàn.',
     items: [
-      { title: 'Hóa đơn & khoản phải thu', description: 'Xem tiền còn thiếu và ghi nhận khoản đã nhận.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
+      { title: 'Hóa đơn', description: 'Xem số dư, khoản đã nhận và giao dịch liên quan đến hóa đơn.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
+      { title: 'Khoản thu', description: 'Tra cứu các khoản đã thu và xử lý giao dịch cần xác minh hoặc đối soát.', web: '/manager/operations/payments', mobile: '/manager/payments' },
       { title: managerRefundTitle, description: 'Xem và ghi nhận hoàn tiền cọc, tiền thuê và dịch vụ sau khi nhận lại kho.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
-      { title: 'Lịch sử thu tiền', description: 'Tra cứu các khoản thu đã ghi nhận.', web: '/manager/operations/payments', mobile: '/manager/payments' },
     ],
   },
   'rental-records': {

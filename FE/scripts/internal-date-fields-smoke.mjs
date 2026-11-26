@@ -18,7 +18,8 @@ async function chooseCompactTime(group, label, time) {
     const rect = element.getBoundingClientRect();
     return rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth;
   }));
-  await chooseTime(clock, label, time);
+  if (time === '24:00') await clock.getByRole('combobox', { name: label + ' · giờ', exact: true }).selectOption('24');
+  else await chooseTime(clock, label, time);
   await clock.getByRole('button', { name: 'Xong' }).press('Escape');
   await clock.waitFor({ state: 'hidden' });
   assert(await trigger.evaluate(element => element === document.activeElement));
@@ -48,9 +49,14 @@ try {
         return route.fulfill({ json: { items: [], total: 0 } });
       }
       const body = request.postDataJSON();
+      if (path === '/operations/facilities/legacy' && body.officeHours && !body.scheduleImpactToken) {
+        return route.fulfill({ status: 409, json: { code: 'FACILITY_SCHEDULE_IMPACT', token: 'impact-token',
+          message: 'Thay đổi ảnh hưởng 1 lịch hẹn và 1 ca Staff.' } });
+      }
       writes.push({ path, body });
       if (path === '/operations/facilities') facilities = [...facilities, { id: 'created', ...body, updatedAt: original.updatedAt }];
       if (path === '/operations/facilities/legacy') facilities = [{ ...original, ...body }, ...facilities.slice(1)];
+      if (path === '/operations/facilities/created') facilities = facilities.map(item => item.id === 'created' ? { ...item, ...body } : item);
       return route.fulfill({ json: body });
     });
     await page.goto(base + '/operations/facilities');
@@ -99,41 +105,54 @@ try {
     const add = page.getByRole('button', { name: 'Thêm cơ sở', exact: true });
     await add.click();
     const create = page.getByRole('dialog', { name: 'Thêm cơ sở', exact: true });
+    await create.getByText('Lịch hẹn do quản lý cơ sở xác nhận.', { exact: true }).waitFor();
     assert.equal(await create.locator('.portal-dialog-heading').evaluate(el => getComputedStyle(el).outlineStyle), 'none');
-    if (viewport.width > 900) assert(await create.evaluate(el => {
-      const body = el.querySelector('.portal-dialog-body');
-      return el.clientWidth >= 740 && el.clientWidth <= 800 && body.scrollHeight <= body.clientHeight + 1;
-    }));
+    if (viewport.width > 900) assert(await create.evaluate(el => el.clientWidth >= 740 && el.clientWidth <= 800));
     await create.getByLabel('Mã cơ sở').fill('NB-TEST');
     await create.getByLabel('Tên cơ sở').fill('NestBox cơ sở mới');
     await create.getByLabel('Địa chỉ').fill('Địa chỉ mới');
     const submit = create.getByRole('button', { name: 'Thêm cơ sở', exact: true });
-    await submit.click();
-    assert.equal(writes.length, 0);
-    const office = create.getByRole('group', { name: 'Giờ làm việc *', exact: true });
-    const access = create.getByRole('group', { name: 'Giờ khách ra vào *', exact: true });
+    assert(await submit.isEnabled());
+    const office = create.getByRole('group', { name: 'Giờ làm việc của cơ sở', exact: true });
+    const access = create.getByRole('group', { name: 'Giờ khách truy cập kho', exact: true });
     assert.equal(await office.getByRole('combobox').count(), 0);
     await chooseCompactTime(office, 'Từ giờ', '22:17');
-    await chooseCompactTime(office, 'Đến giờ', '06:53');
+    assert(await submit.isDisabled());
+    await chooseCompactTime(office, 'Đến giờ', '24:00');
     await office.getByRole('button', { name: 'Thứ Hai', exact: true }).click();
     await office.getByRole('button', { name: 'Thứ Bảy', exact: true }).click();
-    await office.getByText('22:17–06:53 (qua nửa đêm), Thứ Hai, Thứ Bảy').waitFor();
-    await access.getByText('24/7', { exact: true }).click();
-    assert.equal(await access.getByRole('button', { name: 'Từ giờ' }).count(), 0);
+    assert(await access.getByRole('radio', { name: '24/7' }).isDisabled());
+    assert(await access.getByRole('button', { name: 'Chủ nhật', exact: true }).isDisabled());
+    for (const day of ['Thứ Hai', 'Thứ Bảy']) await access.getByRole('button', { name: day, exact: true }).click();
+    await chooseCompactTime(access, 'Từ giờ', '22:30');
+    await chooseCompactTime(access, 'Đến giờ', '24:00');
+    await create.getByRole('button', { name: 'Thêm khung giờ' }).click();
+    const window = create.locator('.bom-service-window');
+    for (const day of ['Thứ Hai', 'Thứ Bảy']) await window.getByRole('button', { name: day, exact: true }).click();
+    await chooseCompactTime(window, 'Từ giờ', '23:00');
+    await chooseCompactTime(window, 'Đến giờ', '24:00');
+    await window.getByLabel('Số lịch hẹn tối đa mỗi khung').fill('1.5');
+    assert(await submit.isDisabled());
+    await window.getByLabel('Số lịch hẹn tối đa mỗi khung').fill('3');
+    assert(await submit.isEnabled());
     await submit.click();
     await create.waitFor({ state: 'hidden' });
-    assert.equal(writes[0].body.officeHours, '22:17–06:53 (qua nửa đêm), Thứ Hai, Thứ Bảy');
-    assert.equal(writes[0].body.accessHours, '24/7');
+    assert.equal(writes[0].body.officeHours, '22:17–24:00, Thứ Hai, Thứ Bảy');
+    assert.equal(writes[0].body.accessHours, '22:30–24:00, Thứ Hai, Thứ Bảy');
+    assert.equal(writes[0].body.bookingEnabled, false);
+    assert.deepEqual(writes[0].body.serviceSchedule, [1, 6].map(weekday => ({ weekday, starts: '23:00', ends: '24:00', capacity: 3 })));
+    await page.goto(base + '/operations/facilities/created');
+    await page.getByText('23:00–24:00 · Tối đa 3 lịch hẹn mỗi khung', { exact: true }).waitFor();
 
     await page.goto(base + '/operations/facilities/legacy');
     const editButton = page.getByRole('button', { name: 'Chỉnh sửa', exact: true });
     await page.getByRole('heading', { name: 'Thông tin cơ sở' }).waitFor();
-    assert.equal(await page.locator('.bom-facility-info dt').allTextContents().then(labels => labels.join('|')), 'Địa chỉ|Giờ làm việc|Giờ khách ra vào');
+    assert.equal(await page.locator('.bom-facility-info dt').allTextContents().then(labels => labels.join('|')), 'Địa chỉ|Giờ làm việc của cơ sở|Giờ khách truy cập kho');
     assert.equal(await page.getByRole('switch', { name: 'Nhận đặt kho mới' }).getAttribute('aria-checked'), 'false');
     await editButton.click();
     const edit = page.getByRole('dialog', { name: 'Chỉnh sửa cơ sở' });
     await edit.getByText(original.officeHours, { exact: true }).waitFor();
-    const oldAccess = edit.getByRole('group', { name: 'Giờ khách ra vào *', exact: true });
+    const oldAccess = edit.getByRole('group', { name: 'Giờ khách truy cập kho', exact: true });
     assert.equal(await oldAccess.getByRole('button', { name: 'Từ giờ' }).innerText(), '07:00');
     assert(await oldAccess.getByRole('radio', { name: 'Hằng ngày' }).isChecked());
     assert.equal(await oldAccess.getByRole('button', { name: 'Thứ Hai' }).count(), 0);
@@ -143,14 +162,22 @@ try {
     assert.equal(Object.hasOwn(writes[1].body, 'officeHours'), false);
     assert.equal(Object.hasOwn(writes[1].body, 'accessHours'), false);
     await editButton.click();
-    await edit.getByRole('button', { name: 'Thiết lập lại giờ làm việc' }).click();
-    const resetOffice = edit.getByRole('group', { name: 'Giờ làm việc *', exact: true });
+    await edit.getByRole('button', { name: 'Thiết lập lại giờ làm việc của cơ sở' }).click();
+    const resetOffice = edit.getByRole('group', { name: 'Giờ làm việc của cơ sở', exact: true });
     await resetOffice.getByText('Hằng ngày', { exact: true }).click();
-    await chooseCompactTime(resetOffice, 'Từ giờ', '08:19');
+    await chooseCompactTime(resetOffice, 'Từ giờ', '06:19');
     await chooseCompactTime(resetOffice, 'Đến giờ', '18:05');
-    await edit.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
+    const apply = edit.getByRole('button', { name: 'Lưu thay đổi', exact: true });
+    assert(await apply.isDisabled());
+    await edit.getByText('Giờ khách truy cập kho phải nằm trong giờ làm việc của cơ sở.').waitFor();
+    await chooseCompactTime(resetOffice, 'Đến giờ', '22:05');
+    await apply.click();
+    const impact = page.getByRole('dialog', { name: 'Xác nhận thay đổi lịch hoạt động' });
+    await impact.getByText('Thay đổi ảnh hưởng 1 lịch hẹn và 1 ca Staff.').waitFor();
+    await impact.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
     await edit.waitFor({ state: 'hidden' });
-    assert.equal(writes[2].body.officeHours, '08:19–18:05, Hằng ngày');
+    assert.equal(writes[2].body.officeHours, '06:19–22:05, Hằng ngày');
+    assert.equal(writes[2].body.scheduleImpactToken, 'impact-token');
 
     await page.goto(base + '/operations/pricing');
     const prices = page.getByRole('table', { name: 'Khung giá theo nhóm kho' });
@@ -197,6 +224,21 @@ try {
     await closure.waitFor({ state: 'hidden' });
     assert.equal(writes[4].body.closureExpectedAt, futureDate);
     assert.equal(writes[4].body.closureMode, 'REQUIRED_RELOCATION');
+
+    await page.goto(base + '/operations/facilities/created');
+    await editButton.click();
+    await edit.getByRole('button', { name: 'Xóa khung 1', exact: true }).click();
+    await edit.getByText('Lịch hẹn do quản lý cơ sở xác nhận.', { exact: true }).waitFor();
+    await edit.getByRole('button', { name: 'Lưu thay đổi', exact: true }).click();
+    await edit.waitFor({ state: 'hidden' });
+    await page.getByRole('heading', { name: 'Lịch phục vụ khách hàng (tùy chọn)', exact: true }).waitFor();
+    await page.getByText('Lịch hẹn do quản lý cơ sở xác nhận.', { exact: true }).waitFor();
+    const booking = page.getByRole('switch', { name: 'Nhận đặt kho mới' });
+    await booking.click();
+    await page.getByRole('dialog', { name: 'Bật nhận đặt kho' }).getByRole('button', { name: 'Bật nhận đặt kho', exact: true }).click();
+    await page.getByText('Đã bật nhận đặt kho.', { exact: true }).waitFor();
+    assert.deepEqual(writes[5].body.serviceSchedule, []);
+    assert.equal(writes[6].body.bookingEnabled, true);
 
     for (const [path, endpoint] of [['/operations?from=2025-01-01&to=2025-01-03', '/operations/dashboard'],
       ['/operations/reports?to=2025-01-03', '/operations/reports/performance']]) {

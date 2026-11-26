@@ -1,10 +1,13 @@
-import { useRef, useState } from 'react';
+import { Ellipsis, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { date } from '../../components/manager/portal-data';
-import { Facts, LoadState, Modal, Pagination } from '../../components/manager/PortalUi';
+import { Empty, Facts, LoadState, Modal, Pagination, Status } from '../../components/manager/PortalUi';
 import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
-import { AssignmentImpact, type AccountAccess } from './AdminFacilityAccessPage';
+import { allPages } from '../../services/portal';
+import { TablePopover } from '../../components/workspace/StaffTaskTable';
+import type { AccountAccess } from './AdminFacilityAccessPage';
 
 type Session = {
   id: string;
@@ -28,10 +31,21 @@ const reasonLabels: Record<string, string> = {
   PASSWORD_CHANGED: 'Đổi mật khẩu', PASSWORD_RESET: 'Đặt lại mật khẩu',
 };
 
-export function AdminAccountSessions({ accountId, accountName, adminId, access, refreshAccess }: {
-  accountId: string; accountName: string; adminId: string; access: AccountAccess | null; refreshAccess: () => void;
+type SessionFilter = '' | Session['status'];
+const sessionClock = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+function SessionTime({ value }: { value: string | null }) {
+  if (!value || !Number.isFinite(Date.parse(value))) return <span>Chưa ghi nhận</span>;
+  return <time className="admin-session-time" dateTime={value}><span>{sessionClock.format(new Date(value))}</span><small>{date(value)}</small></time>;
+}
+
+export function AdminAccountSessions({ accountId, accountName, adminId, access, accessLoading, accessError, refreshAccess }: {
+  accountId: string; accountName: string; adminId: string; access: AccountAccess | null;
+  accessLoading: boolean; accessError: string; refreshAccess: () => void;
 }) {
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<SessionFilter>('');
+  const [history, setHistory] = useState<{ source: SessionPage; items: Session[]; error: string }>();
   const [detailId, setDetailId] = useState('');
   const [confirm, setConfirm] = useState<'all' | Session>();
   const [busy, setBusy] = useState(false);
@@ -39,9 +53,36 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
   const [notice, setNotice] = useState('');
   const lock = useRef(false);
   const base = '/admin/users/' + encodeURIComponent(accountId) + '/sessions';
-  const source = useApiResource<SessionPage>(adminId && access?.sessionManagement ? base + '?page=' + page : null, adminId, true);
+  const source = useApiResource<SessionPage>(adminId && access?.sessionManagement ? base + '?page=' + (filter ? 1 : page) : null, adminId, true);
   const detail = useApiResource<Session>(detailId ? base + '/' + encodeURIComponent(detailId) : null, adminId);
-  const activeCount = source.data?.activeCount ?? 0;
+  const activeCount = source.data?.activeCount;
+  const firstPage = source.data;
+  const isRefreshing = source.refreshing;
+  const filtering = Boolean(filter);
+  useEffect(() => {
+    if (!filtering || !firstPage || isRefreshing) return;
+    const controller = new AbortController();
+    const load = firstPage.total <= firstPage.limit ? Promise.resolve(firstPage) : allPages<Session>(base, controller.signal);
+    load.then(result => {
+      if (controller.signal.aborted) return;
+      if (result.items.length !== result.total || new Set(result.items.map(session => session.id)).size !== result.total) {
+        throw new Error('Danh sách phiên vừa thay đổi. Hãy làm mới để lọc lại.');
+      }
+      setHistory({ source: firstPage, error: '', items: result.items });
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setHistory({ source: firstPage, items: [],
+        error: caught instanceof Error ? caught.message : 'Chưa lọc được danh sách phiên.' });
+    });
+    return () => controller.abort();
+  }, [base, filtering, firstPage, isRefreshing]);
+  const matchingHistory = filter && history?.source === firstPage ? history : null;
+  const matches = matchingHistory?.items.filter(session => session.status === filter) ?? [];
+  const limit = source.data?.limit ?? 20;
+  const total = filter ? matches.length : source.data?.total ?? 0;
+  const viewPage = Math.min(page, Math.max(1, Math.ceil(total / limit)));
+  const rows = filter ? matches.slice((viewPage - 1) * limit, viewPage * limit) : source.data?.items ?? [];
+  const loadingFilter = Boolean(filter && source.data && (!matchingHistory || source.refreshing));
+  const filterError = matchingHistory?.error ?? '';
   const detailSession = detail.data;
   const legacyApi = (access != null && !access.sessionManagement) || source.status === 404 && source.error.startsWith('Cannot GET /api/admin/users/');
 
@@ -74,46 +115,69 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
     }
   }
 
-  return <section className="manager-section admin-detail-panel">
-    <h2>Phiên đăng nhập</h2>
-    <div className="portal-actions">
-      <Link to={'/admin/login-history?accountId=' + encodeURIComponent(accountId)}>Xem lịch sử đăng nhập</Link>
-      <button type="button" className="button-secondary" onClick={() => { source.refresh(); refreshAccess(); }} disabled={source.loading || source.refreshing || busy}>Làm mới phiên</button>
+  function refresh() {
+    setHistory(undefined);
+    source.refresh();
+    refreshAccess();
+  }
+
+  return <section className="manager-section admin-sessions">
+    <div className="admin-detail-heading">
+      <div><h2>Phiên đăng nhập</h2>{activeCount !== undefined && <p><strong>{activeCount}</strong> phiên còn hiệu lực</p>}</div>
+      <div className="portal-actions">
+        <Link className="button-secondary" to={'/admin/login-history?accountId=' + encodeURIComponent(accountId)}>Xem lịch sử đăng nhập</Link>
+        <button type="button" className="button-secondary" onClick={refresh} disabled={accessLoading || source.loading || source.refreshing || busy}>
+          <RefreshCw size={16} aria-hidden="true" />Làm mới phiên
+        </button>
+      </div>
     </div>
-    <LoadState loading={source.loading} error={legacyApi ? '' : source.error} retry={source.refresh} />
+    <LoadState loading={accessLoading || source.loading} error={accessError || (legacyApi ? '' : source.error)} retry={refresh} />
     {legacyApi && <>
-      <p role="status">Backend hiện tại chỉ cung cấp phiên chưa hết hạn. Xem lịch sử đăng nhập để tra cứu thời điểm vào hệ thống.</p>
+      <p role="status">Dữ liệu hiện có chỉ gồm các phiên chưa hết hạn. Có thể tra cứu thêm ở lịch sử đăng nhập.</p>
       {access?.sessions.length ? <div className="manager-table-wrap"><table className="manager-table">
         <thead><tr><th>Hết hạn (UTC+7)</th><th>Trạng thái</th></tr></thead>
         <tbody>{access.sessions.map((session, index) => <tr key={session.expiresAt + ':' + index}>
-          <td>{date(session.expiresAt, true)}</td>
-          <td>{session.status === 'ACTIVE' ? 'Còn hiệu lực' : 'Đã thu hồi'}</td>
+          <td>{date(session.expiresAt, true)}</td><td><Status value={session.status} text={sessionStatus[session.status]} /></td>
         </tr>)}</tbody>
-      </table></div> : access && <p>Không có phiên nào chưa hết hạn.</p>}
-      {!access && <p>Chưa tải được thông tin phiên. <button type="button" className="button-secondary" onClick={refreshAccess}>Thử lại</button></p>}
+      </table></div> : access && <Empty title="Không có phiên nào chưa hết hạn" />}
     </>}
     {notice && <p className="portal-success" role="status">{notice}</p>}
     {source.data && <>
-      <p><strong>{activeCount}</strong> phiên còn hiệu lực</p>
-      {source.data.items.length ? <div className="manager-table-wrap"><table className="manager-table">
-        <thead><tr><th>Thiết bị</th><th>Đăng nhập (UTC+7)</th><th>Hết hạn (UTC+7)</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-        <tbody>{source.data.items.map(session => <tr key={session.id}>
-          <td>{session.device || 'Chưa ghi nhận'}</td>
-          <td>{session.createdAt ? date(session.createdAt, true) : 'Chưa ghi nhận'}</td>
-          <td>{date(session.expiresAt, true)}</td>
-          <td>{sessionStatus[session.status]}</td>
-          <td><div className="portal-actions">
-            <button type="button" className="button-secondary" onClick={() => setDetailId(session.id)}>Chi tiết</button>
-            {session.status === 'ACTIVE' && <button type="button" className="button-secondary portal-danger"
-              disabled={busy || source.refreshing || !adminId} onClick={() => openConfirmation(session)}>Thu hồi</button>}
-          </div></td>
-        </tr>)}</tbody>
-      </table></div> : <p>Tài khoản chưa có lịch sử phiên đăng nhập.</p>}
-      {source.data.total > source.data.limit && <Pagination page={page} limit={source.data.limit} total={source.data.total}
+      <div className="admin-session-toolbar">
+        <label><span>Trạng thái</span><select aria-label="Trạng thái phiên" value={filter} onChange={event => {
+          setFilter(event.target.value as SessionFilter);
+          setPage(1);
+        }}>
+          <option value="">Tất cả</option>
+          {Object.entries(sessionStatus).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select></label>
+        <button type="button" className="button-secondary portal-danger" disabled={busy || source.refreshing || !activeCount || !adminId}
+          onClick={() => openConfirmation('all')}>Thu hồi toàn bộ phiên</button>
+      </div>
+      <LoadState loading={loadingFilter} error={filterError} retry={refresh} />
+      {!loadingFilter && !filterError && (rows.length ? <div className="manager-table-wrap admin-session-table" tabIndex={0} role="region" aria-label="Danh sách phiên đăng nhập">
+        <table className="manager-table">
+          <thead><tr>{['Thiết bị', 'Thời điểm đăng nhập', 'Thời điểm hết hạn', 'Trạng thái', 'Thao tác'].map(text => <th key={text} scope="col">{text}</th>)}</tr></thead>
+          <tbody>{rows.map((session, index) => <tr key={session.id}>
+            <td>{session.device || 'Chưa ghi nhận'}</td>
+            <td><SessionTime value={session.createdAt} /></td>
+            <td><SessionTime value={session.expiresAt} /></td>
+            <td><Status value={session.status} text={sessionStatus[session.status]} /></td>
+            <td><TablePopover name={`Thao tác phiên ${(viewPage - 1) * limit + index + 1}`} trigger={<Ellipsis size={18} aria-hidden="true" />}>
+              <button type="button" onClick={event => {
+                event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
+                setDetailId(session.id);
+              }}>Xem chi tiết</button>
+              {session.status === 'ACTIVE' && adminId && <button type="button" className="admin-destructive-link"
+                disabled={busy || source.refreshing} onClick={event => {
+                  event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
+                  openConfirmation(session);
+                }}>Thu hồi phiên</button>}
+            </TablePopover></td>
+          </tr>)}</tbody>
+        </table></div> : <Empty title={filter ? 'Không có phiên phù hợp' : 'Chưa có lịch sử phiên đăng nhập'} />)}
+      {!loadingFilter && !filterError && total > limit && <Pagination page={viewPage} limit={limit} total={total}
         onChange={setPage} disabled={source.refreshing || busy} />}
-      <AssignmentImpact access={access} />
-      <div><button type="button" className="button-secondary portal-danger" disabled={busy || source.refreshing || !activeCount || !adminId}
-        onClick={() => openConfirmation('all')}>Thu hồi toàn bộ phiên</button></div>
     </>}
     {detailId && <Modal title="Chi tiết phiên đăng nhập" onClose={() => setDetailId('')}>
       <LoadState loading={detail.loading} error={detail.error} retry={detail.refresh} />
@@ -122,7 +186,6 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
         ['Tài khoản', accountName],
         ['Thiết bị', detailSession.device || 'Chưa ghi nhận'],
         ['Đăng nhập (UTC+7)', detailSession.createdAt ? date(detailSession.createdAt, true) : 'Chưa ghi nhận'],
-        ['Hoạt động gần nhất', 'Chưa ghi nhận'],
         ['Hết hạn (UTC+7)', date(detailSession.expiresAt, true)],
         ['Trạng thái', sessionStatus[detailSession.status]],
         ...(detailSession.revokedAt ? [['Thu hồi lúc', date(detailSession.revokedAt, true)] as [string, string]] : []),
@@ -137,11 +200,10 @@ export function AdminAccountSessions({ accountId, accountName, adminId, access, 
           onClick={() => void revoke()}>{busy ? 'Đang thu hồi…' : 'Thu hồi phiên'}</button>
       </>}>
       <div className="admin-confirm-target"><span>Tài khoản bị tác động</span><strong>{accountName}</strong></div>
-      {confirm === 'all' ? <p>Số phiên đang hoạt động: <strong>{activeCount}</strong></p>
+      {confirm === 'all' ? <p>Số phiên còn hiệu lực: <strong>{activeCount}</strong></p>
         : <Facts items={[[ 'Thiết bị', confirm.device || 'Chưa ghi nhận' ], [ 'Mã phiên', confirm.id ]]} />}
       {accountId === adminId && <p role="alert">Bạn đang quản lý tài khoản của mình. Nếu phiên hiện tại bị thu hồi, bạn sẽ phải đăng nhập lại.</p>}
       <p>Người dùng phải đăng nhập lại trên thiết bị có phiên bị thu hồi. Phân công hiện tại vẫn thuộc tài khoản này.</p>
-      <AssignmentImpact access={access} />
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
     </Modal>}
   </section>;

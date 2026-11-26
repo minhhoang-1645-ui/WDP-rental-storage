@@ -541,7 +541,7 @@ export class TransfersService {
       const settlement = { ...terms, refundState: 'REFUNDED', refundReference: reference, refundedAt: new Date().toISOString(), refundedBy: actor.id };
       await tx.transferRequest.update({ where: { id: current.id }, data: { commercialSettlement: settlement } });
       await tx.auditEvent.create({ data: { action: 'TRANSFER_REFUND_CONFIRMED', category: 'ACTIVITY', outcome: 'SUCCESS', actorId: actor.id,
-        actorRole: actor.role, resource: 'transfers', resourceId: current.id, method: 'POST', route: '/manager/transfers/:id/commercial-refund', httpStatus: 201,
+        actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email, resource: 'transfers', resourceId: current.id, method: 'POST', route: '/manager/transfers/:id/commercial-refund', httpStatus: 201,
         metadata: { amount: terms.refundAmount, reference } } });
       return settlement;
     }, 'Hồ sơ hoàn tiền vừa thay đổi.');

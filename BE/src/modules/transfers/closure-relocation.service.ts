@@ -95,7 +95,7 @@ export class ClosureRelocationService {
         { contracts:{some:{status:{in:['ACTIVE','PENDING_PAYMENT','READY_FOR_HANDOVER']},reservationUnit:{releasedAt:null,storageUnit:{storageType:{facilityId}}}}} },
         {facilityId,status:{in:['PENDING','CONFIRMED']},contracts:{none:{}}},
       ] }, select:{customerId:true}, distinct:['customerId'] });
-      await tx.auditEvent.create({data:{category:'ACTIVITY',action:'MANAGER_CLOSURE_NOTICE',outcome:'SUCCESS',actorId:actor.id,actorRole:actor.role,
+      await tx.auditEvent.create({data:{category:'ACTIVITY',action:'MANAGER_CLOSURE_NOTICE',outcome:'SUCCESS',actorId:actor.id,actorRole:actor.role,actorName:actor.fullName,actorEmail:actor.email,
         resource:'facility',resourceId:facilityId,method:'POST',route:'/relocations/facilities/notify',httpStatus:200,
         metadata:{closurePlanId:facility.closurePlanId,closureMode:facility.closureMode,facilityName:facility.name,facilityCode:facility.code,status:'CLOSING',
           customerRecipientIds:customers.map(customer=>customer.customerId),managerNotice:true}}});
@@ -133,7 +133,7 @@ export class ClosureRelocationService {
       }
       if (existing?.assignedStaffUserId !== staffId) await tx.auditEvent.create({ data: {
         category: 'ACTIVITY', outcome: 'SUCCESS', action: 'RELOCATION_ASSIGNED', actorId: actor.id,
-        actorRole: actor.role, resource: 'relocation', resourceId: task.id, method: 'POST', route: '/relocations/contracts/assign', httpStatus: 200,
+        actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email, resource: 'relocation', resourceId: task.id, method: 'POST', route: '/relocations/contracts/assign', httpStatus: 200,
         metadata: { staffRecipientIds: [staffId], sourceFacilityId: plan.id, code: contract.contractCode },
       } });
       return task;

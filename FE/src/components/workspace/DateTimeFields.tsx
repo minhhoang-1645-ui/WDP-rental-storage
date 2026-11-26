@@ -185,11 +185,12 @@ export function DatePicker(props: Field) {
   </div>;
 }
 
-type TimeField = Field & { parts?: [string, string]; onPartsChange?: (parts: [string, string]) => void; compact?: boolean };
+type TimeField = Field & { parts?: [string, string]; onPartsChange?: (parts: [string, string]) => void; compact?: boolean;
+  allowEndOfDay?: boolean; allowTime?: (clock: string) => boolean };
 const clockParts = (value: string): [string, string] => [value.slice(0, 2), value.slice(3, 5)];
 
 export function TimePicker(props: TimeField) {
-  const { label, name, required, disabled, min, max, parts, onPartsChange, error, compact } = props;
+  const { label, name, required, disabled, min, max, parts, onPartsChange, error, compact, allowEndOfDay, allowTime } = props;
   const [draft, setDraft] = useState(() => clockParts(props.defaultValue ?? ''));
   const [checked, setChecked] = useState(false);
   const [hour, minute] = parts ?? (props.value !== undefined ? clockParts(props.value) : draft);
@@ -200,16 +201,23 @@ export function TimePicker(props: TimeField) {
   usePickerPosition(open, panel, trigger, 230, 145);
   const value = hour && minute ? hour + ':' + minute : '';
   const problem = error || (checked && !value ? 'Hãy chọn giờ và phút.' : '');
-  const allowed = (clock: string) => (!min || clock >= min) && (!max || clock <= max);
+  const allowed = (clock: string) => (!min || clock >= min) && (!max || clock <= max)
+    && (!clock.startsWith('24:') || Boolean(allowEndOfDay && clock === '24:00')) && (!allowTime || allowTime(clock));
+  function hourAllowed(part: string) {
+    if (part === '24') return allowed('24:00');
+    if (!allowTime) return !(min && part + ':59' < min) && !(max && part + ':00' > max);
+    return Array.from({ length: 60 }, (_, index) => pad(index)).some(minute => allowed(part + ':' + minute));
+  }
   function change(index: number, part: string) {
     const next: [string, string] = index === 0 ? [part, minute] : [hour, part];
+    if (next[0] === '24') next[1] = '00';
     if (index === 0 && next[1] && !allowed(next.join(':'))) next[1] = '';
     setDraft(next);
     onPartsChange?.(next);
     props.onChange?.(next.every(Boolean) ? next.join(':') : '');
   }
   const controls = <div className="workspace-clock">
-      {[24, 60].map((count, index) => <select key={count} value={index === 0 ? hour : minute} disabled={disabled} required={required}
+      {[allowEndOfDay || hour === '24' ? 25 : 24, 60].map((count, index) => <select key={index} value={index === 0 ? hour : minute} disabled={disabled || (index === 1 && hour === '24')} required={required}
         aria-label={label + ' · ' + (index === 0 ? 'giờ' : 'phút')} aria-describedby={problem ? id + '-error' : undefined}
         aria-invalid={Boolean(problem)} onInvalid={event => {
           event.preventDefault(); setChecked(true);
@@ -219,7 +227,7 @@ export function TimePicker(props: TimeField) {
         onChange={event => change(index, event.target.value)}>
         <option value="">{index === 0 ? 'Giờ' : 'Phút'}</option>
         {Array.from({ length: count }, (_, part) => pad(part)).map(part => <option key={part} value={part}
-          disabled={index === 0 ? Boolean((min && part + ':59' < min) || (max && part + ':00' > max)) : Boolean(hour && !allowed(hour + ':' + part))}>{part}</option>)}
+          disabled={index === 0 ? !hourAllowed(part) : Boolean(hour && !allowed(hour + ':' + part))}>{part}</option>)}
       </select>)}
     </div>;
   function close() {

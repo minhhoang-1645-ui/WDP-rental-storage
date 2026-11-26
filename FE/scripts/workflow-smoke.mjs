@@ -368,10 +368,13 @@ for (const kind of ['support-requests', 'maintenance', 'stock-movements']) {
   assert(assignmentNeedsAttention(kind, row));
   assert(buildActivity('MANAGER', 'manager', { [kind]: [row] })[0].web.startsWith('/manager/assignments'));
 }
-assert.deepEqual(buildActivity('MANAGER', 'manager', {
-  'payment-submissions': [{ id: 'bank', status: 'PENDING_VERIFICATION' }],
+assert.deepEqual(buildActivity('FACILITY_MANAGER', 'manager', {
+  'payment-submissions': [{ id: 'bank', status: 'PENDING_VERIFICATION', invoice: { id: 'bill' } }],
   'online-payment-reconciliations': [{ id: 'late', status: 'REFUND_REQUIRED' }],
-}), []);
+}).map(item => item.web).sort(), [
+  '/manager/operations/invoices/bill?review=submissions&record=bank',
+  '/manager/operations/payments?review=reconciliation&record=late',
+]);
 assert(matchesSource('/staff/returns/return', ['/staff/stock-movements/movement/complete']));
 const { resolveApiBase } = await import(await moduleUrl(new URL('../../mobile/src/services/api-base.ts', import.meta.url)));
 assert.equal(resolveApiBase({ configured: 'https://api.example.org/api/', development: true, hostUri: '192.168.1.9:8081' }), 'https://api.example.org/api');

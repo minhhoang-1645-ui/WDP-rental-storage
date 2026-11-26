@@ -46,7 +46,8 @@ try {
         const items = filters.facilityId ? [filters.facilityId === 'east' ? facility : other] : [facility, other];
         const reportItems = state === 'no-facility' ? [] : items.map((item, index) => {
           if (state === 'empty') return { ...item, ...noMoney, newReservations: 0, handovers: 0, returns: 0 };
-          if (state === 'single') return { ...item, ...noMoney, rent: index === 0 ? '5000000' : '0', billed: index === 0 ? '5000000' : '0' };
+          if (state === 'single') return { ...item, ...noMoney, rent: index === 0 ? '5000000' : '0',
+            billed: index === 0 ? '5000000' : '0', depositRefunded: index === 0 ? '300000' : '0' };
           if (state === 'missing') return { ...item, billed: null, rentRefunded: null };
           return state === 'mismatch' ? { ...item, billed: '8888888', rentRefunded: '120000', transferRefunded: '80000' } : item;
         });
@@ -83,13 +84,12 @@ try {
     });
     await page.locator('.bom-report-donut').waitFor();
     assert.match(await page.locator('.bom-report-kpis').innerText(), /5\.000\.000[\s\S]*6\.000\.000[\s\S]*1\.200\.000[\s\S]*10,0%/);
-    const refunds = page.getByRole('region', { name: 'Hoàn tiền trong kỳ', exact: true });
+    const invoicePanel = page.getByRole('region', { name: 'Cơ cấu hóa đơn trong kỳ', exact: true });
+    const refunds = invoicePanel.locator('.bom-report-refund-summary');
     const refundAmounts = () => refunds.locator('dd').allTextContents();
-    assert.deepEqual(await refunds.locator('dt').allTextContents(), ['Tiền thuê và dịch vụ đã hoàn khi trả kho']);
-    assert.deepEqual(await refundAmounts(), ['0\u00a0₫']);
-    if (viewport.width > 900) {
-      assert(await refunds.evaluate(element => element.offsetHeight === element.previousElementSibling.offsetHeight));
-    }
+    assert.equal(await page.getByRole('heading', { name: 'Hoàn tiền trong kỳ', exact: true }).count(), 0);
+    assert.deepEqual(await refundAmounts(), []);
+    assert(await invoicePanel.evaluate(element => element.offsetWidth === element.parentElement.clientWidth));
     assert.match(await table.innerText(), /Đã ngừng hoạt động[\s\S]*24[\s\S]*Bảo trì/);
     assert.equal(await table.getByRole('link', { name: facility.name }).getAttribute('href'), '/operations/facilities/east');
     assert.equal(await table.getByRole('row').count(), 2);
@@ -138,7 +138,12 @@ try {
       } else {
         await buckets.first().waitFor();
         assert.match(await donut.evaluate(node => getComputedStyle(node).backgroundImage), /^conic-gradient/);
-        if (count === 1) assert.equal((await composition.locator('small').allTextContents())[0], '100,0%');
+        if (count === 1) {
+          assert.equal((await composition.locator('small').allTextContents())[0], '100,0%');
+          assert.match(await composition.locator('.bom-report-total').innerText(), /5\.000\.000/);
+          assert.deepEqual(await refundAmounts(), ['300.000\u00a0₫']);
+          assert.equal(await refunds.locator('dt').innerText(), 'Tổng tiền đã hoàn (bao gồm cọc)');
+        }
       }
       assert.equal(await buckets.count(), count);
       assert.deepEqual(await geometry(), initialGeometry);
@@ -175,19 +180,20 @@ try {
     await refresh.click();
     await page.getByText('Đang cập nhật…', { exact: true }).waitFor();
     assert(await table.isVisible());
+    assert.deepEqual(await refundAmounts(), []);
     await page.getByText('Số liệu hóa đơn chưa khớp.').waitFor();
     assert.equal(await donut.evaluate(node => getComputedStyle(node).backgroundImage), 'none');
-    assert.deepEqual(await refundAmounts(), ['120.000\u00a0₫', '950.000\u00a0₫']);
+    assert.deepEqual(await refundAmounts(), ['950.000\u00a0₫']);
     variant = 'empty';
     await refresh.click();
     await page.getByText('Không phát sinh hóa đơn trong kỳ', { exact: true }).waitFor();
     await page.getByText('Không phát sinh tiền thuê lập hóa đơn hoặc tiền đã thu trong kỳ.').waitFor();
-    assert.deepEqual(await refundAmounts(), ['0\u00a0₫', '0\u00a0₫']);
+    assert.deepEqual(await refundAmounts(), ['0\u00a0₫']);
     variant = 'missing';
     await refresh.click();
     await page.getByText('Chưa đủ số liệu hóa đơn.').waitFor();
     assert.match(await donut.innerText(), /—/);
-    assert.deepEqual(await refundAmounts(), ['Chưa có dữ liệu']);
+    assert.deepEqual(await refundAmounts(), []);
     variant = 'error';
     await refresh.click();
     const error = page.getByRole('alert').filter({ hasText: 'Chưa thể tải báo cáo kiểm thử.' });

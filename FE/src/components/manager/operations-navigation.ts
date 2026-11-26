@@ -45,7 +45,6 @@ export function operationsNavigation(): InternalNavItem[] {
     { to: '/manager/customers', label: 'Khách hàng', icon: Users, group: 'Quản lý cơ sở' },
     { to: '/manager/operations/invoices', label: 'Hóa đơn', icon: Receipt, group: 'Tài chính', match: ['/manager/finance'] },
     { to: '/manager/operations/payments', label: 'Khoản thu', icon: Wallet, group: 'Tài chính' },
-    { to: '/manager/payment-submissions', label: 'Thanh toán và đối soát', icon: Landmark, group: 'Tài chính', match: ['/manager/online-payment-reconciliations'] },
     { to: '/manager/operations/deposit-settlements', label: managerRefundTitle, icon: WalletCards, group: 'Tài chính' },
     { to: '/manager/reports', label: 'Báo cáo hoạt động cơ sở', icon: ChartColumn, group: 'Báo cáo' },
   ];

@@ -299,7 +299,7 @@ export function ManagerActions({
             </p>}
             <label className="field-label">Xử lý lịch hẹn<select value={scheduleAction} onChange={event => setScheduleAction(event.target.value)}>
               <option value="RESCHEDULE">Đổi lịch</option>
-              {row.schedulePendingManager === true && <option value="CONFIRM_EXCEPTION">Xác nhận lịch ngoại lệ</option>}
+              {row.schedulePendingManager === true && <option value="CONFIRM_EXCEPTION">Xác nhận lịch hẹn</option>}
               {Date.parse(first(row, 'scheduledAt')) < scheduleClock && <option value="NO_SHOW">Khách không đến · hủy lịch</option>}
             </select></label>
             {scheduleAction === 'RESCHEDULE' && <DateTimePicker label="Lịch mới (giờ Việt Nam)" required

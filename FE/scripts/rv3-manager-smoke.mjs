@@ -11,7 +11,6 @@ let failed = false, snapshotFailed = false, releaseReport;
 const reportDate = '2026-11-10';
 const queries = [], writes = [], errors = [], listQueries = [];
 const retiredFinance = ['payment-submissions', 'online-payment-reconciliations'];
-const retiredRequests = [];
 const reportCategories = [
   { id: 'small', code: 'SM-B12', name: 'Kho nhỏ B12', requests: 2, confirmed: 1, physicalUnits: 5, occupied: 3, rent: 7500000 },
   { id: 'medium', code: 'MD-D04', name: 'Kho vừa D04', requests: 1, confirmed: 1, physicalUnits: 10, occupied: 5, rent: 3000000 },
@@ -60,8 +59,7 @@ await context.route('**/*', async route => {
   const url = new URL(request.url()), path = url.pathname.replace(/^\/(?:api\/)?/, '');
   if (request.method() === 'OPTIONS') return route.fulfill({ status: 204 });
   if (path.startsWith('manager/') && retiredFinance.includes(path.split('/')[1])) {
-    retiredRequests.push(path);
-    return route.fulfill({ status: 404, json: { message: 'Nghiệp vụ đã bỏ khỏi Manager Web.' } });
+    return route.fulfill({ json: { items: [], page: 1, limit: 100, total: 0 } });
   }
   if (request.method() !== 'GET') {
     const body = request.postDataJSON();
@@ -416,8 +414,8 @@ async function verifyManagerWorkspace() {
   await expandSidebar.click();
   for (const resource of retiredFinance) {
     await page.goto(`${base}/manager/${resource}?record=old`);
-    await page.waitForURL(url => url.pathname === '/manager/finance' && !url.search);
-    await page.getByRole('heading', { name: 'Tài chính' }).waitFor();
+    await page.waitForURL(url => url.pathname === '/manager/operations/payments' && url.searchParams.get('record') === 'old');
+    await page.getByRole('heading', { name: 'Giao dịch cần xử lý' }).waitFor();
     assert.equal(await page.locator('main a[href*="payment-submissions"], main a[href*="online-payment-reconciliations"]').count(), 0);
   }
   await page.goto(`${base}/manager`);
@@ -640,7 +638,6 @@ async function verifyManagerWorkspace() {
   await page.waitForURL(url => url.pathname === '/manager/operations/invoices' && url.searchParams.get('search') === 'R-TEST');
   await invoiceRow.waitFor();
   assert(listQueries.some(query => query.path === 'manager/deposit-settlements' && query.page === 2 && query.limit === 10 && query.status === 'SETTLED'));
-  assert.deepEqual(retiredRequests, []);
   assert.deepEqual(errors, []);
-  console.log('PASS Manager review inbox, retired finance routes and API calls, staff assignment, deposit review and pagination, invoice/payment amounts and inventory links. All APIs mocked.');
+  console.log('PASS Manager review inbox, legacy finance redirects, staff assignment, deposit review and pagination, invoice/payment amounts and inventory links. All APIs mocked.');
 }

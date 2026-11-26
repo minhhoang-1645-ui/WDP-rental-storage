@@ -103,7 +103,7 @@ export async function resolveClosureBooking(tx: Prisma.TransactionClient, id: st
 }
 
 async function recordAudit(tx: Prisma.TransactionClient, actor: PublicUser, booking: {id:string;customerId:string;facilityId:string;reservationCode:string}, action: string, metadata: Prisma.InputJsonObject) {
-  await tx.auditEvent.create({data:{category:'ACTIVITY',action,outcome:'SUCCESS',actorId:actor.id,actorRole:actor.role,
+  await tx.auditEvent.create({data:{category:'ACTIVITY',action,outcome:'SUCCESS',actorId:actor.id,actorRole:actor.role,actorName:actor.fullName,actorEmail:actor.email,
     resource:'relocation',resourceId:booking.id,method:'POST',route:'/relocations/bookings/resolve',httpStatus:201,
     metadata:{...metadata,customerId:booking.customerId,sourceFacilityId:booking.facilityId,code:booking.reservationCode}}});
 }

@@ -21,7 +21,7 @@ import { OperationsService } from './operations.service.js';
 @Controller('operations')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles('BUSINESS_OPERATIONS_MANAGER')
-class OperationsController {
+export class OperationsController {
   constructor(
     private readonly operations: OperationsService,
     private readonly reports: ReportingService,

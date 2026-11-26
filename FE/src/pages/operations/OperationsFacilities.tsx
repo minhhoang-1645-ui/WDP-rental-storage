@@ -4,11 +4,13 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { Empty, Facts, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
-import { DatePicker, TimePicker } from '../../components/workspace/DateTimeFields';
+import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { WorkingHoursPicker } from '../../components/workspace/WorkingHoursPicker';
+import { days, hourSpans, scheduleIssues, type ServiceWindow } from '../../components/workspace/working-hours';
+import { expandGroups, FacilityServiceSchedule, groupWindows, serviceIssues, type ServiceGroup } from './FacilityServiceSchedule';
 import { TablePopover } from '../../components/workspace/StaffTaskTable';
 import { useListPagination } from '../../components/workspace/useListPagination';
-import { apiRequest } from '../../services/api';
+import { ApiError, apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import './operations-facilities.css';
 
@@ -20,12 +22,6 @@ const modes = {
 };
 type State = keyof typeof states;
 type Mode = keyof typeof modes;
-type ServiceWindow = { weekday: number; starts: string; ends: string; capacity: number };
-const clockParts = (clock: string): [string, string] => {
-  const [hour, minute = ''] = clock.split(':');
-  return [hour, minute];
-};
-const serviceClock = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 type Facility = {
   id: string; code: string; name: string; address: string; officeHours: string | null; accessHours: string | null;
   bookingEnabled: boolean; operationalStatus: State; updatedAt: string;
@@ -79,10 +75,23 @@ export function OperationsFacilities() {
     setNotice('');
     try {
       if (confirmation && !(await confirm(confirmation))) return;
-      await apiRequest(target ? base + '/' + encodeURIComponent(target.id) : base, {
-        method: target ? 'PATCH' : 'POST',
-        body: JSON.stringify({ ...body, ...(target ? { expectedUpdatedAt: target.updatedAt } : {}) }),
-      });
+      let scheduleImpactToken: string | undefined;
+      for (;;) {
+        try {
+          await apiRequest(target ? base + '/' + encodeURIComponent(target.id) : base, {
+            method: target ? 'PATCH' : 'POST',
+            body: JSON.stringify({ ...body, scheduleImpactToken, ...(target ? { expectedUpdatedAt: target.updatedAt } : {}) }),
+          });
+          break;
+        } catch (caught) {
+          const impact = caught instanceof ApiError && caught.status === 409
+            ? caught.payload as { code?: string; token?: string; message?: string } | null : null;
+          if (impact?.code !== 'FACILITY_SCHEDULE_IMPACT' || !impact.token || impact.token === scheduleImpactToken) throw caught;
+          if (!(await confirm({ title: 'Xác nhận thay đổi lịch hoạt động', description: impact.message ?? '',
+            confirmLabel: 'Lưu thay đổi' }))) return;
+          scheduleImpactToken = impact.token;
+        }
+      }
       setDialog(undefined);
       setNotice(success);
       resource.refresh();
@@ -103,6 +112,9 @@ export function OperationsFacilities() {
     });
   }
 
+  const detailSchedule = groupWindows(facility?.serviceSchedule ?? []);
+  const requiredHours = facility && scheduleIssues(facility.officeHours ?? '', facility.accessHours ?? '', [], true);
+  const scheduleWarning = Boolean(requiredHours?.officeHours || requiredHours?.accessHours);
   return <section className="bom-facilities">
     {facilityId && <Link className="bom-facility-back" to={base + urlSearch}><ArrowLeft size={16} aria-hidden="true" /> Cơ sở</Link>}
     {!facilityId && <PageHeader title="Cơ sở">
@@ -122,13 +134,23 @@ export function OperationsFacilities() {
             <h2>Thông tin cơ sở</h2>
             <Facts items={[
               ['Địa chỉ', textOrFallback(facility.address)],
-              ['Giờ làm việc', textOrFallback(facility.officeHours)], ['Giờ khách ra vào', textOrFallback(facility.accessHours)],
+              ['Giờ làm việc của cơ sở', textOrFallback(facility.officeHours)], ['Giờ khách truy cập kho', textOrFallback(facility.accessHours)],
             ]} />
+            <h3>Lịch phục vụ khách hàng (tùy chọn)</h3>
+            {detailSchedule.length ? <dl className="bom-facility-schedule-detail">
+              {detailSchedule.map(row => <div key={row.id}>
+                <dt>{row.weekdays.length === 7 ? 'Hằng ngày' : row.weekdays.map(day => days[day - 1]).join(', ')}</dt>
+                <dd>{row.starts}–{row.ends} · Tối đa {row.capacity} lịch hẹn mỗi khung</dd>
+              </div>)}
+            </dl> : <p>Lịch hẹn do quản lý cơ sở xác nhận.</p>}
+            {scheduleWarning && <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />
+              {requiredHours?.officeHours || requiredHours?.accessHours}
+            </p>}
           </section>
           <section className="manager-section">
             <h2>Trạng thái kinh doanh</h2>
             <BookingSwitch enabled={facility.operationalStatus === 'OPEN' && facility.bookingEnabled}
-              disabled={facility.operationalStatus !== 'OPEN' || busy || resource.refreshing}
+              disabled={facility.operationalStatus !== 'OPEN' || busy || resource.refreshing || Boolean(!facility.bookingEnabled && scheduleWarning)}
               description={bookingDescription(facility)}
               onToggle={() => void save({ bookingEnabled: !facility.bookingEnabled }, facility.bookingEnabled ? 'Đã tạm dừng nhận đặt kho.' : 'Đã bật nhận đặt kho.', facility, {
                 title: facility.bookingEnabled ? 'Tạm dừng nhận đặt kho' : 'Bật nhận đặt kho',
@@ -220,7 +242,7 @@ const fields = [
   { key: 'name', label: 'Tên cơ sở', max: 120, example: 'NestBox Long Bình' },
   { key: 'address', label: 'Địa chỉ', max: 500, example: 'Số nhà, đường, phường, thành phố' },
 ] as const;
-const hourFields = [['officeHours', 'Giờ làm việc'], ['accessHours', 'Giờ khách ra vào']] as const;
+const hourFields = [['officeHours', 'Giờ làm việc của cơ sở'], ['accessHours', 'Giờ khách truy cập kho']] as const;
 
 function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   dialog: Dialog; busy: boolean; error: string; onClose: () => void;
@@ -234,12 +256,24 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   const starting = planning && facility?.operationalStatus === 'OPEN';
   const cancelling = dialog.kind === 'reopen' && facility?.operationalStatus === 'CLOSING';
   const [issues, setIssues] = useState<Record<string, string>>({});
-  const [serviceSchedule, setServiceSchedule] = useState(() => facility?.serviceSchedule ?? []);
+  const [serviceSchedule, setServiceSchedule] = useState(() => groupWindows(facility?.serviceSchedule ?? []));
   const [scheduleChanged, setScheduleChanged] = useState(false);
-  const changeWindow = (index: number, value: Partial<ServiceWindow>) => {
+  const [hours, setHours] = useState<Partial<Record<(typeof hourFields)[number][0], { value: string; incomplete: boolean }>>>({});
+  const office = hours.officeHours?.value ?? facility?.officeHours ?? '';
+  const access = hours.accessHours?.value ?? facility?.accessHours ?? '';
+  const work = hourSpans(office);
+  const customer = hourSpans(access);
+  const windows = expandGroups(serviceSchedule);
+  const scheduleEditing = creating || scheduleChanged || hourFields.some(([key]) =>
+    hours[key]?.incomplete || (hours[key] && hours[key].value !== (facility?.[key] ?? '')));
+  const scheduleErrors = scheduleEditing ? scheduleIssues(office, access, windows, facility?.bookingEnabled) : {};
+  for (const [key] of hourFields) if (hours[key]?.incomplete) scheduleErrors[key] = 'Chọn đủ ngày, giờ bắt đầu và giờ kết thúc.';
+  const rowErrors = scheduleEditing ? serviceIssues(serviceSchedule, customer) : [];
+  const scheduleInvalid = Object.keys(scheduleErrors).length > 0 || rowErrors.some(Boolean);
+  function changeSchedule(groups: ServiceGroup[]) {
     setScheduleChanged(true);
-    setServiceSchedule(rows => rows.map((row, i) => i === index ? { ...row, ...value } : row));
-  };
+    setServiceSchedule(groups);
+  }
   const title = creating ? 'Thêm cơ sở' : editing ? 'Chỉnh sửa cơ sở' : planning ? starting ? 'Bắt đầu ngừng kinh doanh' : 'Chỉnh kế hoạch ngừng kinh doanh' : cancelling ? 'Hủy kế hoạch ngừng kinh doanh' : 'Mở lại cơ sở';
   const submitLabel = creating ? 'Thêm cơ sở' : starting ? 'Xác nhận ngừng kinh doanh' : dialog.kind === 'reopen' ? 'Xác nhận mở lại' : 'Lưu thay đổi';
 
@@ -257,25 +291,17 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
     };
     let body: object;
     if (creating || editing) {
+      if (scheduleInvalid) return;
       const values = Object.fromEntries(fields.flatMap(field => {
         if (editing && field.key === 'code') return [];
         return [[field.key, required(field.key, field.label, field.max)]];
       }));
-      for (const [key, label] of hourFields) {
+      for (const [key] of hourFields) {
         const changed = read(key + 'Changed');
-        if (!creating && !changed) continue;
-        if (read(key + 'Partial')) { next[key] = 'Chọn một khung giờ hợp lệ.'; continue; }
-        if (!creating && !facility?.[key] && !read(key)) continue;
-        values[key] = required(key, label, 200);
-      }
-      const sorted = [...serviceSchedule].sort((a, b) => a.weekday - b.weekday || a.starts.localeCompare(b.starts));
-      if (sorted.some((row, index) => !serviceClock.test(row.starts) || row.ends !== '24:00' && !serviceClock.test(row.ends) || row.starts >= row.ends
-        || !Number.isSafeInteger(row.capacity) || row.capacity < 1
-        || index > 0 && row.weekday === sorted[index - 1].weekday && row.starts < sorted[index - 1].ends)) {
-        next.serviceSchedule = 'Kiểm tra giờ bắt đầu, giờ kết thúc, sức chứa và các khung giờ trùng nhau.';
+        if (changed) values[key] = read(key);
       }
       body = { ...values, ...(creating ? { operationalStatus: 'OPEN', bookingEnabled: false } : {}),
-        ...(scheduleChanged ? { serviceSchedule: sorted } : {}) };
+        ...(scheduleChanged ? { serviceSchedule: windows } : {}) };
     } else if (planning) {
       body = {
         operationalStatus: 'CLOSING', bookingEnabled: false, closureMode: read('closureMode'),
@@ -300,7 +326,7 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   const validation = (key: string) => ({ 'aria-invalid': !!issues[key], 'aria-describedby': issues[key] ? id + '-' + key : undefined });
   return <Modal title={title} className={'bom-facility-dialog' + (creating || editing ? ' bom-facility-editor' : '')} busy={busy} onClose={onClose} focusTitle
     footer={<><button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
+      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy || ((creating || editing) && scheduleInvalid)}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
     <form id={id} className="bom-facility-form" onSubmit={submit} noValidate>
       {(creating || editing) && <div className="bom-facility-fields">
         {fields.map(field => <label className={'field-label' + (field.key === 'address' ? ' bom-facility-span' : '')} key={field.key}>
@@ -309,34 +335,12 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
             readOnly={editing && field.key === 'code'} required={!editing || field.key !== 'code'} {...validation(field.key)} />
           {issue(field.key)}
         </label>)}
+        <h3 className="bom-facility-span bom-facility-hours-heading">Lịch hoạt động · UTC+7</h3>
         {hourFields.map(([key, label]) => <div className="bom-facility-span" key={key}><WorkingHoursPicker name={key} label={label}
-          original={facility?.[key] ?? ''} required={creating || Boolean(facility?.[key])} error={issues[key]}
-          onEdit={() => { if (issues[key]) setIssues(previous => ({ ...previous, [key]: '' })); }} /></div>)}
-        <fieldset className="bom-facility-span bom-service-windows">
-          <legend>Giờ phục vụ và năng lực tiếp nhận</legend>
-          <p>Giờ Việt Nam (UTC+7). Sức chứa là số lịch hẹn trong mỗi khung, gồm bàn giao và kiểm tra trả kho.</p>
-          {serviceSchedule.map((row, index) => <div className="bom-service-window" key={index}>
-            <label className="field-label">Ngày
-              <select value={row.weekday} onChange={event => changeWindow(index, { weekday: Number(event.target.value) })}>
-                {['Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy', 'Chủ nhật'].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}
-              </select>
-            </label>
-            <TimePicker label="Bắt đầu" parts={clockParts(row.starts)} onPartsChange={parts => changeWindow(index, { starts: parts.join(':') })} />
-            {row.ends === '24:00' ? <span>Kết thúc lúc 24:00</span>
-              : <TimePicker label="Kết thúc" parts={clockParts(row.ends)} onPartsChange={parts => changeWindow(index, { ends: parts.join(':') })} />}
-            <label className="portal-checkbox"><input type="checkbox" checked={row.ends === '24:00'}
-              onChange={event => changeWindow(index, { ends: event.target.checked ? '24:00' : '' })} />Đến hết ngày</label>
-            <label className="field-label">Sức chứa<input type="number" min={1} step={1} value={row.capacity || ''}
-              onChange={event => changeWindow(index, { capacity: Number(event.target.value) })} /></label>
-            <button type="button" className="button-secondary" onClick={() => {
-              setScheduleChanged(true); setServiceSchedule(rows => rows.filter((_, i) => i !== index));
-            }}>Xóa khung</button>
-          </div>)}
-          <button name="serviceSchedule" type="button" className="button-secondary" onClick={() => {
-            setScheduleChanged(true); setServiceSchedule(rows => [...rows, { weekday: 1, starts: '', ends: '', capacity: 1 }]);
-          }}>Thêm khung giờ</button>
-          {issue('serviceSchedule')}
-        </fieldset>
+          original={facility?.[key] ?? ''} error={scheduleErrors[key]} limits={key === 'accessHours' ? work : undefined}
+          onValueChange={(value, incomplete) => setHours(previous => ({ ...previous, [key]: { value, incomplete } }))} /></div>)}
+        <FacilityServiceSchedule groups={serviceSchedule} access={customer} errors={rowErrors} onChange={changeSchedule} />
+        {scheduleErrors.serviceSchedule && !rowErrors.some(Boolean) && <small className="bom-facility-span bom-facility-field-error" role="alert">{scheduleErrors.serviceSchedule}</small>}
       </div>}
       {creating && <BookingSwitch enabled={false} disabled description="Có thể bật nhận đặt kho sau khi cơ sở đủ điều kiện vận hành." />}
       {planning && <>

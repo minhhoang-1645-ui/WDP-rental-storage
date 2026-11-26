@@ -334,7 +334,7 @@ export class AdditionalServicesService {
         if (review && current) {
           await tx.auditEvent.create({ data: {
             category: 'ACTIVITY', outcome: 'SUCCESS', action: 'CONFIRM_OFFERING_CONFIGURATION',
-            actorId: actor.id, actorRole: actor.role, actorName: actor.fullName,
+            actorId: actor.id, actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email,
             resource: 'facility-service-offering', resourceId: offer.id,
             route: '/manager/additional-services/:id', method: 'PATCH', httpStatus: 200,
             metadata: { facilityId, revision: review.revision, quantityField: field,
@@ -463,7 +463,7 @@ export class AdditionalServicesService {
         }) : [];
         await tx.auditEvent.create({ data: {
           category: 'ACTIVITY', outcome: 'SUCCESS', action: 'UPDATE_SHARED_SERVICE_CATALOG',
-          actorId: actor.id, actorName: actor.fullName, actorRole: actor.role,
+          actorId: actor.id, actorName: actor.fullName, actorRole: actor.role, actorEmail: actor.email,
           resource: 'shared-service-catalog', resourceId: item.id,
           method: 'PATCH', route: '/operations/additional-services/:id', httpStatus: 200,
           metadata: {

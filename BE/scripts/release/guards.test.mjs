@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
+  assertRecoveredHistory,
   historyState,
+  verifyFailedMigration,
   requireCutoverApproval,
   sameDatabase,
 } from './guards.mjs';
 const contract = JSON.parse(
   fs.readFileSync(new URL('./contract.json', import.meta.url)),
 );
+const facilityMigration = '20261126000100_single_facility_and_relocation_decision';
 const rows = contract.migrations.map((m) => ({
   migration_name: m.name,
   checksum: m.checksums[0],
@@ -72,6 +75,28 @@ test('production cutover requires all three explicit approvals and matching rece
     requireCutoverApproval(args, { ...state, receiptSchemaMatches: false }),
   );
 });
+test('P3009 recovery requires explicit approval, exact history and untouched schema', async () => {
+  const sample = structuredClone(rows);
+  const failed = sample.find(row => row.migration_name === facilityMigration);
+  Object.assign(failed, { id: 'failed-attempt', finished_at: null, applied_steps_count: 0 });
+  const state = { ...historyState(sample, contract), receiptSchemaMatches: true };
+  const approvals = ['--approve-production-cutover', '--all-writers-stopped', '--accept-documented-checksum-divergence'];
+  assert.throws(() => requireCutoverApproval(approvals, state), /migration history/);
+  const args = [...approvals, '--recover-single-facility-migration'];
+  assert.doesNotThrow(() => requireCutoverApproval(args, state));
+  assert.throws(() => requireCutoverApproval(args, { ...state, failed: [...state.failed, 'another'] }));
+  const client = (row = failed, schema = { partial: false, invalidAccess: false }) => ({
+    query: async (_sql, params) => ({ rows: params ? [row] : [schema] }),
+  });
+  assert.equal(await verifyFailedMigration(client(), state, contract, args), failed.id);
+  await assert.rejects(verifyFailedMigration(client({ ...failed, checksum: 'different' }), state, contract, args), /checksum/);
+  for (const schema of [{ partial: true, invalidAccess: false }, { partial: false, invalidAccess: true }])
+    await assert.rejects(verifyFailedMigration(client(failed, schema), state, contract, args), /Recovery blocked/);
+  const resolved = { ...failed, rolled_back_at: 'now' };
+  assert.doesNotThrow(() => assertRecoveredHistory([failed], [resolved], failed.id));
+  assert.throws(() => assertRecoveredHistory([failed], [{ ...resolved, checksum: 'changed' }], failed.id));
+});
+
 test('pooled/direct URLs must identify the same database without revealing credentials', () => {
   assert.equal(
     sameDatabase(

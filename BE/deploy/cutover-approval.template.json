@@ -9,5 +9,6 @@
   },
   "serviceFullyStopped": false,
   "historicalChecksumExceptionAccepted": false,
+  "recoverFailedMigration": null,
   "backupManifest": null
 }

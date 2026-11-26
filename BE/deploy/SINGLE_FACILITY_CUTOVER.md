@@ -6,6 +6,16 @@ Admin điều chuyển sau khi Manager cơ sở cũ bàn giao việc thực tế
 
 Di dời do cơ sở đóng cửa đi qua Manager nguồn, Staff nguồn, Manager đích, khách, và hai đầu bàn giao. Manager đích chấp nhận phương án trước khi khách đồng ý và trước khi giữ ô. Kho đích bị chặn sau bàn giao nguồn thì dừng đầu nhận, giữ các allocation và dấu vết, ghi vướng mắc. Manager phối hợp xác minh và chỉ tiếp tục khi kho đủ an toàn. Nếu không thể dùng kho đích sau khi đã bàn giao nguồn, cần chốt phương án tài sản và quyền truy cập trước khi viết xử lý thay ô, hủy, hoặc hoàn tiền. Chuyển kho thường vẫn cùng cơ sở.
 
+## Phục hồi khi Prisma báo P3009
+
+Giữ nguyên file migration. Khi cấp quyền đã được xử lý và PostgreSQL xác nhận chưa có index mới hay cột mới, thêm cờ `--recover-single-facility-migration` vào lệnh rehearsal:
+
+```sh
+node scripts/foundation-db/backup-rehearse.mjs --recover-single-facility-migration
+```
+
+Có thể truyền thêm đường dẫn manifest riêng để dùng lại đúng bản backup. Khi được duyệt, ghi tên `20261126000100_single_facility_and_relocation_decision` vào trường `recoverFailedMigration` của approval và thêm cùng cờ vào lệnh `release:migrate` trong CUTOVER.md. Công cụ kiểm tra snapshot khớp database khi writer đã dừng, rồi dùng Prisma đánh dấu đúng lần thất bại là rolled back và áp dụng migration. Lần thất bại vẫn được lưu.
+
 ## Cutover sau khi được duyệt
 
 1. Đối chiếu đúng Neon production, xác nhận lại toàn bộ grant hiệu lực, tài khoản hoạt động, và trách nhiệm mở theo cơ sở. Bản audit ghi Manager hiện tại có NESTBOX-DEMO và NB-THUDUC. Phương án dự kiến giữ Manager hiện tại ở NESTBOX-DEMO. Chuẩn bị Manager riêng cho NB-THUDUC và Staff trước khi bắt đầu việc tại chỗ.

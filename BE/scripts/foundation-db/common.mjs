@@ -5,8 +5,9 @@ import pg from 'pg';
 export const root = path.resolve(import.meta.dirname, '../..');
 export const pgBin = 'C:/Program Files/PostgreSQL/18/bin';
 export function target() {
-  const values = dotenv.parse(fs.readFileSync(path.join(root, '.env'), 'utf8'));
-  const raw = values.DIRECT_URL || values.DATABASE_URL;
+  const envFile = path.join(root, '.env');
+  const values = fs.existsSync(envFile) ? dotenv.parse(fs.readFileSync(envFile, 'utf8')) : {};
+  const raw = process.env.DIRECT_URL || values.DIRECT_URL || values.DATABASE_URL;
   let url;
   try {
     url = new URL(raw || 'https://invalid.test');

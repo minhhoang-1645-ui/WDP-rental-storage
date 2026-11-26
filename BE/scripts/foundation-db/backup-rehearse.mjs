@@ -5,6 +5,12 @@ import net from 'node:net';
 import { spawnSync } from 'node:child_process';
 import pg from 'pg';
 import { root, pgBin, readClient, quote, fail } from './common.mjs';
+import { assertRecoveredHistory, verifyFailedMigration } from '../release/guards.mjs';
+import { recoverableMigration } from '../migration-command-safety.mjs';
+const args = process.argv.slice(2);
+const manifests = args.filter(arg => arg !== '--recover-single-facility-migration');
+if (manifests.length > 1 || manifests.some(arg => arg.startsWith('--')))
+  throw Error('Pass an optional private manifest path and --recover-single-facility-migration.');
 const directory = path.join(
   root,
   'artifacts',
@@ -67,17 +73,13 @@ await new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen(localPort, '127.0.0.1', () => server.close(resolve));
 });
-const previousPath = process.argv[2]
-  ? path.resolve(process.argv[2])
-  : undefined;
-const previous = previousPath
-  ? JSON.parse(fs.readFileSync(previousPath, 'utf8'))
-  : undefined;
+const previousPath = manifests[0] ? path.resolve(manifests[0]) : undefined;
 if (
   previousPath &&
   !previousPath.startsWith(path.join(root, 'artifacts') + path.sep)
 )
   throw Error('Only a private workspace backup manifest is allowed.');
+const previous = previousPath ? JSON.parse(fs.readFileSync(previousPath, 'utf8')) : undefined;
 const archive = previous?.archive ?? path.join(directory, 'neon-full.dump'),
   cluster = path.join(directory, 'restore-pgdata'),
   passwordFile = path.join(directory, 'local-test-password.tmp');
@@ -354,6 +356,17 @@ try {
     DATABASE_URL: localUrl,
     DIRECT_URL: localUrl,
   };
+  const { inspectFoundationDatabase, releaseContract } = await import('../../dist/foundation-schema.js');
+  const state = await inspectFoundationDatabase(localUrl);
+  let recoveredId, historyBefore;
+  if (state.failed.length) {
+    recoveredId = await verifyFailedMigration(local, state, releaseContract, args);
+    historyBefore = (await local.query('SELECT * FROM "_prisma_migrations" ORDER BY id')).rows;
+    command(process.execPath, [
+      'node_modules/prisma/build/index.js', 'migrate', 'resolve', '--rolled-back', recoverableMigration,
+      '--config', 'prisma.recovery.config.ts',
+    ], env);
+  }
   command(
     process.execPath,
     ['scripts/release/check-recovery-guard.mjs', 'before'],
@@ -392,8 +405,16 @@ try {
     throw Object.assign(Error('Historical migration checksum changed'), {
       safeMessage: 'Applied migration history must remain unchanged.',
     });
+  if (recoveredId) {
+    const actual = (await local.query(
+      'SELECT * FROM "_prisma_migrations" WHERE id=ANY($1::text[]) ORDER BY id',
+      [manifest.originalMigrationIds],
+    )).rows;
+    assertRecoveredHistory(historyBefore, actual, recoveredId);
+  }
   const altered = [];
   for (const table of manifest.tables) {
+    if (recoveredId && table.name === '_prisma_migrations') continue;
     const result = await fingerprint(
       local,
       table,
@@ -415,20 +436,31 @@ try {
         altered.join(', '),
     });
 
+  if (recoveredId) {
+    const index = (await local.query(`
+      SELECT indisunique AND indisvalid AS valid, pg_get_indexdef(indexrelid) AS definition
+      FROM pg_index WHERE indexrelid=to_regclass('public."FacilityAccess_one_active_per_user"')
+    `)).rows[0];
+    if (!index?.valid || !index.definition.endsWith('("userId") WHERE ("revokedAt" IS NULL)'))
+      throw Error('Single-facility unique index is missing or invalid.');
+  }
+
+  // The TAPE-only baseline belongs to the original shared-catalog migration.
+  // For later releases, compare the restored service tables to the production snapshot above.
   const offeringRows = (
     await local.query(
       'SELECT o."additionalServiceId",o."facilityId",o."unitPrice"::text,o."stockOnHand",o."rentalCapacity",s.code FROM "FacilityServiceOffering" o JOIN "AdditionalService" s ON s.id=o."additionalServiceId" ORDER BY s.code',
     )
   ).rows;
-  if (offeringRows.length !== 1 || offeringRows[0].code !== 'TAPE')
+  if (!recoveredId && (offeringRows.length !== 1 || offeringRows[0].code !== 'TAPE'))
     throw Error('Unverified legacy offering created');
   const unchanged = (
     await local.query(
       'SELECT o.id FROM "FacilityServiceOffering" o JOIN "AdditionalService" s ON s.id=o."additionalServiceId" LEFT JOIN "AdditionalServiceInventory" i ON i."additionalServiceId"=s.id WHERE o."unitPrice" IS DISTINCT FROM s."unitPrice" OR o."stockOnHand" IS DISTINCT FROM i."stockOnHand" OR o."rentalCapacity" IS DISTINCT FROM i."rentalCapacity"',
     )
   ).rows;
-  if (unchanged.length) throw Error('Legacy price/stock was changed');
-  command(
+  if (!recoveredId && unchanged.length) throw Error('Legacy price/stock was changed');
+  if (!recoveredId) command(
     process.execPath,
     [
       'node_modules/vitest/vitest.mjs',
@@ -452,10 +484,10 @@ try {
     )
   ).rows;
   if (
-    serviceOwners.some(
+    !recoveredId && (serviceOwners.some(
       (s) => s.code === 'TAPE' && s.facility_code !== 'NESTBOX-DEMO',
     ) ||
-    serviceOwners.some((s) => s.code !== 'TAPE' && s.facility_id !== null)
+    serviceOwners.some((s) => s.code !== 'TAPE' && s.facility_id !== null))
   )
     throw Error('Unexpected legacy service mapping');
   const links = (
@@ -495,7 +527,8 @@ try {
   manifest.rehearsal = {
     passed: true,
     verifiedOfferings: offeringRows,
-    focusedOfferingTestsPassed: true,
+    focusedOfferingTestsPassed: recoveredId ? null : true,
+    recoveredFailedMigration: recoveredId ? recoverableMigration : null,
     startupSchemaGuardBeforeAndAfterPassed: true,
     historyChecksumsPreserved: true,
     serviceOwners,
@@ -509,6 +542,9 @@ try {
   delete manifest.localRehearsalPending;
   console.log(JSON.stringify({ rehearsal: manifest.rehearsal }));
 } catch (error) {
+  const message = error instanceof Error ? error.message : '';
+  if (message && !/password|postgres(?:ql)?:\/\//i.test(message) && !error.safeMessage)
+    error.safeMessage = message;
   manifest.error = {
     code: error.code || 'REHEARSAL_FAILED',
     message: error.safeMessage || 'See private command log.',

@@ -5,7 +5,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import pg from 'pg';
-import { requireCutoverApproval, sameDatabase } from './guards.mjs';
+import { assertRecoveredHistory, requireCutoverApproval, sameDatabase, verifyFailedMigration } from './guards.mjs';
+import { recoverableMigration } from '../migration-command-safety.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 dotenv.config({ path: path.join(root, '.env'), quiet: true, override: false });
 const args = process.argv.slice(2),
@@ -140,7 +141,13 @@ try {
       reject(
         'A full backup with verified recovery and migration rehearsal for this target is required.',
       );
+    const recovering = state.failed.length > 0;
+    if (recovering && (approval.recoverFailedMigration !== recoverableMigration ||
+        manifest.rehearsal.recoveredFailedMigration !== recoverableMigration))
+      reject('Recovery requires explicit approval and rehearsal of the same failed migration.');
+    let recoveredId;
     const originalHistory = await readonly(async (client) => {
+      if (recovering) recoveredId = await verifyFailedMigration(client, state, releaseContract, args);
       const live = (
         await client.query(
           "SELECT n.nspname AS schema,c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname !~ '^pg_' AND n.nspname<>'information_schema' ORDER BY 1,2",
@@ -234,6 +241,17 @@ try {
       ...process.env,
       PGOPTIONS: '-c lock_timeout=10000 -c statement_timeout=120000',
     };
+    if (recoveredId) {
+      const resolution = spawnSync(process.execPath,
+        ['node_modules/prisma/build/index.js', 'migrate', 'resolve', '--rolled-back', recoverableMigration],
+        { cwd: root, env: { ...env, NESTBOX_RELEASE_RESOLVE_FAILED: recoverableMigration },
+          windowsHide: true, encoding: 'utf8', timeout: 120000 },
+      );
+      fs.writeFileSync(path.join(directory, 'prisma-resolve.log'),
+        (resolution.stdout ?? '') + (resolution.stderr ?? ''), { mode: 0o600 });
+      if (resolution.error || resolution.status !== 0)
+        reject('Prisma could not mark the failed attempt rolled back. Keep writers stopped.');
+    }
     const result = spawnSync(
       process.execPath,
       ['node_modules/prisma/build/index.js', 'migrate', 'deploy'],
@@ -265,8 +283,7 @@ try {
           [originalHistory.map((r) => r.id)],
         )
       ).rows;
-      if (JSON.stringify(history) !== JSON.stringify(originalHistory))
-        reject('Historical migration records changed; keep writers stopped.');
+      assertRecoveredHistory(originalHistory, history, recoveredId);
       const tables = manifest.tables.filter(
         (t) => t.name !== '_prisma_migrations',
       );
@@ -289,6 +306,7 @@ try {
           ...final,
           originalBusinessRecordsPreserved: true,
           originalMigrationRowsPreserved: true,
+          recoveredFailedAttemptId: recoveredId ?? null,
         },
         null,
         2,

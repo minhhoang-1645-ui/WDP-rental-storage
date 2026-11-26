@@ -36,6 +36,7 @@ const groups: { title: string; items: Service[] }[] = [
     { title: 'Tiền cọc', icon: Wallet, path: 'deposit-settlements', hint: 'Quyết toán và hoàn cọc' },
   ] },
   { title: 'Hỗ trợ', items: [
+    { title: 'Chính sách thuê kho', icon: FileText, path: 'policies', hint: 'Xem quy định hiện hành' },
     { title: 'Trung tâm hỗ trợ', icon: Headphones, path: 'support-requests', hint: 'Gửi yêu cầu và theo dõi phản hồi' },
   ] },
 ];

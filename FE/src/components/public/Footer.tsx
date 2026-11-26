@@ -1,4 +1,5 @@
-import { Mail, Phone, Warehouse } from 'lucide-react'
+import { PublicBrandMark } from './PublicBrandMark'
+import { Mail, Phone } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/auth-context'
 import { portalDestination } from '../../auth/portal-routing'
@@ -17,8 +18,7 @@ export function Footer() {
       <div className="public-footer-grid">
         <div>
           <Link to="/" className="public-brand public-footer-brand" aria-label="NestBox Storage - Trang chủ">
-            <span><Warehouse size={18} aria-hidden="true" /></span>
-            <strong>NestBox <span>Storage</span></strong>
+            <PublicBrandMark />
           </Link>
           <p className="footer-brand-copy">Kho tự quản cho đồ cá nhân và hàng kinh doanh. Chọn không gian phù hợp và quản lý kỳ thuê trực tuyến.</p>
         </div>

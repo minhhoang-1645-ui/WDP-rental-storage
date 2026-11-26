@@ -455,6 +455,8 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
         <h2>{staffBooking ? 'Kho và thời gian thuê' : 'Thông tin chính'}</h2>
         <Facts
           items={[
+            ...(!staff && resource === 'reservations' && first(row, 'expiresAt')
+              ? [['Hạn giữ đơn', date(first(row, 'expiresAt'), true)]] as [string, React.ReactNode][] : []),
             ...(reference
               ? [
                   [
@@ -551,6 +553,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
                   ["Phương thức", label(row.paymentPlan)],
                 ] as Array<[string, React.ReactNode]>)
               : []),
+            ...(first(row, 'earliestPickupDate') ? [['Ngày nhận chìa khóa sớm nhất', date(first(row, 'earliestPickupDate'))]] as [string, React.ReactNode][] : []),
             ...(row.scheduledAt
               ? ([["Lịch hẹn", date(row.scheduledAt, true)]] as Array<
                   [string, React.ReactNode]
@@ -778,6 +781,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Hạn thanh toán", first(row, "type") === "INITIAL" && first(row, "reservation.expiresAt") ? date(first(row, "reservation.expiresAt"), true) : date(row.dueAt)],
               ...(Number(first(row, 'overduePayment.days')) > 0 ? [
                 ['Quá hạn', `${first(row, 'overduePayment.days')} ngày`],
+                ...(first(row, 'overduePayment.graceDays') ? [['Ân hạn', `${first(row, 'overduePayment.graceDays')} ngày`]] : []),
                 ['Mốc quản lý xử lý', date(first(row, 'overduePayment.managerReviewOn'))],
                 ...(object(row.overduePayment).rentDebtRequiresReconciliation === true ? [['Phân bổ tiền thuê', 'Cần đối soát khoản đã thu']] : []),
               ] as [string, string][] : []),

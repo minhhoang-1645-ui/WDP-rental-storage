@@ -72,7 +72,7 @@ export function readPricingPolicy(key: Config['key'], form: FormData): Config {
   return { key, value: { 3: rule(3), 6: rule(6), 12: rule(12) } };
 }
 
-export function pricingPolicySummary(key: Config['key'], value: Config['value']) {
+export function pricingPolicySummary(key: Config['key'], value: Config['value'], showManagerThreshold = true) {
   if (key === 'cancellation') {
     const v = value as Cancellation;
     return [`Trước ngày thuê từ ${v.farDays} ngày · ${v.farPercent}%`, `Trước từ ${v.nearDays} đến dưới ${v.farDays} ngày · ${v.middlePercent}%`,
@@ -80,12 +80,12 @@ export function pricingPolicySummary(key: Config['key'], value: Config['value'])
   }
   if (key === 'returnOverdue') {
     const v = value as ReturnOverdue;
-    return `Ân hạn ${v.graceDays} ngày\nChuyển quản lý sau ${v.managerDays} ngày\nHệ số phí ${v.multiplier}%`;
+    return `Ân hạn ${v.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + v.managerDays + " ngày" : ""}\nHệ số phí ${v.multiplier}%`;
   }
   if (key === 'paymentOverdue') {
     const terms = value as PaymentOverdue;
     const fee = terms.feeMethod === 'NONE' ? 'Miễn phí' : terms.feeMethod === 'FIXED_AMOUNT' ? `${numberFormat.format(terms.feeAmount)} VNĐ` : `${terms.feeAmount}% tiền thuê còn nợ`;
-    return `Ân hạn ${terms.graceDays} ngày\nChuyển quản lý sau ${terms.managerDays} ngày\n${fee}`;
+    return `Ân hạn ${terms.graceDays} ngày${showManagerThreshold ? "\nChuyển quản lý sau " + terms.managerDays + " ngày" : ""}\n${fee}`;
   }
   if (key === 'earlyReturn') {
     const terms = value as EarlyReturn;

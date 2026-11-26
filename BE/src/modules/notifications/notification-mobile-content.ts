@@ -37,6 +37,12 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
     let { title, summary, actionLabel } = notice;
     let target = detail(notice.kind === 'transfers' && source === 'support-requests' ? 'transfers' : notice.kind, id);
     switch (source) {
+      case 'policy-effective':
+        target = notice.target;
+        break;
+      case 'rental-overdue':
+        target = '/customer/rentals?' + new URLSearchParams({ rentalContractId: id });
+        break;
       case 'contract-expiry':
         target = detail('contracts', id);
         break;
@@ -50,6 +56,7 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
         target = '/customer/rentals';
         break;
       case 'invoices': {
+        if (obj(row.historicalPricing).adjustment === 'PAYMENT_OVERDUE' && notice.actionLabel === 'Xem hóa đơn') { target = detail('invoices', id); break; }
         const renewal = row.type === 'RENEWAL';
         const subject = renewal ? 'Hóa đơn gia hạn' : 'Hóa đơn';
         const outstanding = payableStates.includes(str(row.status)) && Number(row.balanceDue) > 0;

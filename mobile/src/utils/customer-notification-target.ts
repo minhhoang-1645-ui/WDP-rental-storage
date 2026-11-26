@@ -16,6 +16,7 @@ function recordId(value: string | null) {
 }
 
 export function customerNotificationTarget(target: string, kind: string) {
+  if (kind === 'policy-effective' && target === '/customer/policies') return target;
   if (kind === 'stock-movements' || /^\/customer\/(?:stock-movements|stored-items)(?:[/?#]|$)/.test(target)) return '/customer/rentals';
   const direct = recordRoute.exec(target);
   const supportResource = kind === 'early-returns' ? 'early-returns' : kind === 'transfers' ? 'transfers' : 'support-requests';

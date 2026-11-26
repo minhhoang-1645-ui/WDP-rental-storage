@@ -1,16 +1,13 @@
-import { useEffect, useState } from 'react';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { Box, Grid2X2, Headphones, Layers, Map, MapPin, Rows3, Warehouse } from 'lucide-react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Building2, ChevronLeft, Grid2X2, Headphones, Layers, Map, Navigation, Rows3, Warehouse } from 'lucide-react-native';
 import { useResource } from '@/operations/use-resource';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
-import { customerStyles } from '@/components/customer-premium';
-import { BookingUnitSelector } from '@/components/booking-unit-selector';
+import { StorageFloorPlan } from '@/components/storage-floor-plan';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
-import { CustomerTheme as C } from '@/constants/wdp-theme';
-import type { FloorPlanUnit } from '@/components/floor-plan-viewer';
-import { apiRequest } from '@/services/api';
-import { vietnamCalendarDate } from '@/utils/calendar-date';
+import { rentalFloorPlan } from '@/utils/rental-floor-plan';
+
+const blue = '#175CD3';
 
 function formatFloor(value: string) {
   if (/^ground(?: floor)?$/i.test(value)) return 'Tầng trệt';
@@ -20,112 +17,74 @@ function formatFloor(value: string) {
 }
 
 function LocationDetails({ rental, contract }: { rental: Row; contract: Row }) {
-  const { width, fontScale } = useWindowDimensions();
-  const compact = width >= 350 && fontScale <= 1.2;
   const unit = object(contract.unit);
+  const storageType = object(unit.storageType);
+  const facility = Object.keys(object(storageType.facility)).length ? object(storageType.facility) : object(rental.facility);
+  const facilityName = text(facility, 'name').trim();
+  const address = text(facility, 'address').trim();
+  const hasDirections = !!address && !/mô phỏng|lưu trữ demo|^demo$/i.test(address);
   const code = text(unit, 'unitCode').trim();
-  const floor = formatFloor(text(unit, 'floor').trim());
+  const unitId = idOf(unit);
+  const plan = rentalFloorPlan(rental, unitId);
   const zone = text(unit, 'zone').trim();
   const row = text(unit, 'row').trim();
-  const position = text(unit, 'position').trim();
-  const facility = object(object(unit.storageType).facility ?? rental.facility);
-  const location = [
-    { label: 'Cơ sở', value: text(facility, 'name'), icon: Warehouse },
-    { label: 'Địa chỉ', value: text(facility, 'address'), icon: MapPin },
-    { label: 'Tầng', value: floor, icon: Layers },
-    { label: 'Khu', value: zone && (/^khu\b/i.test(zone) ? zone : `Khu ${zone}`), icon: Grid2X2 },
-    { label: 'Hàng', value: row && `Hàng ${row}`, icon: Rows3 },
-    { label: 'Vị trí', value: position && `Ô số ${position}`, icon: Box },
+  const information = [
+    { icon: Layers, value: formatFloor(text(unit, 'floor').trim()) },
+    { icon: Grid2X2, value: zone && (/^khu\s/i.test(zone) ? zone : 'Khu ' + zone) },
+    { icon: Rows3, value: row && 'Hàng ' + row },
   ];
-  const locationSummary = location.map(field => field.value).filter(Boolean).join(' · ');
   const reservationId = text(rental, 'reservationId');
-  const unitId = idOf(unit);
-  const layout = rows(rental.unitLayouts).find(item => text(item, 'unitId') === unitId);
-  const layoutUnits = rows(layout?.units).map(item => ({
-    id: idOf(item),
-    code: text(item, 'code'),
-    row: typeof item.row === 'number' ? item.row : null,
-    position: typeof item.position === 'number' ? item.position : null,
-  })).filter(item => item.id && item.code);
-  const hasLayout = layoutUnits.some(item => item.id === unitId);
-  const productId = text(rental, 'storageType.id');
-  const [bookingLayout, setBookingLayout] = useState<{ unitId: string; units: FloorPlanUnit[] }>();
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    if (hasLayout || !productId || !unitId) return;
-    const controller = new AbortController();
-    const startDate = vietnamCalendarDate();
-    apiRequest<{ units: FloorPlanUnit[] }>('/booking/unit-map', {
-      method: 'POST',
-      authenticated: false,
-      signal: controller.signal,
-      body: JSON.stringify({
-        productId, startDate, periodMode: 'dates',
-        endDate: vietnamCalendarDate(Date.now() + 86400000),
-        quantity: 1, paymentPlan: 'PREPAID', paymentChoice: 'pay-later',
-      }),
-    }).then(result => {
-      if (controller.signal.aborted) return;
-      const units = Array.isArray(result.units) ? result.units : [];
-      const assigned = units.find(item => item.id === unitId);
-      setBookingLayout({ unitId, units: assigned?.floor && assigned.zone
-        ? units.filter(item => item.floor === assigned.floor && item.zone === assigned.zone) : [] });
-    }).catch(() => {
-      if (!controller.signal.aborted) setBookingLayout({ unitId, units: [] });
-    });
-    return () => controller.abort();
-  }, [hasLayout, productId, unitId, retry]);
-  const backup = bookingLayout?.unitId === unitId ? bookingLayout.units : undefined;
-  const mapUnits = hasLayout ? layoutUnits : backup ?? [];
-  const loadingMap = !hasLayout && Boolean(productId && unitId) && !backup;
+  async function directions() {
+    const query = encodeURIComponent(address);
+    const url = Platform.OS === 'ios' ? 'https://maps.apple.com/?daddr=' + query
+      : 'https://www.google.com/maps/dir/?api=1&destination=' + query;
+    try { await Linking.openURL(url); }
+    catch { Alert.alert('Không mở được bản đồ', 'Địa chỉ cơ sở: ' + address); }
+  }
 
   return <>
+    <View style={[styles.card, styles.facility]}>
+      <View style={styles.identity}>
+        <View style={styles.icon}><Building2 size={25} color={blue} /></View>
+        <View style={styles.heading}>
+          <Text accessibilityRole="header" style={styles.title}>{facilityName || 'Chưa có thông tin cơ sở'}</Text>
+          {!!address && <Text selectable style={styles.secondary}>{address}</Text>}
+        </View>
+        {hasDirections && <Pressable accessibilityRole="button" onPress={() => void directions()} style={styles.directions}>
+          <Navigation size={16} color={blue} /><Text style={styles.actionText}>Chỉ đường</Text>
+        </Pressable>}
+      </View>
+    </View>
+
     <View style={styles.card}>
       <View style={styles.identity}>
-        <View style={styles.warehouseIcon}><Warehouse size={28} color={C.navy} /></View>
+        <View style={styles.icon}><Warehouse size={27} color={blue} /></View>
         <View style={styles.heading}>
-          <Text accessibilityRole="header" style={styles.warehouseName}>{text(rental, 'storageType.name') || 'Kho của bạn'}</Text>
-          <Text selectable style={customerStyles.secondary}>{code ? `Ô kho ${code}` : 'Chưa có mã ô kho'}</Text>
+          <Text selectable accessibilityRole="header" style={styles.code}>{code || 'Chưa có mã ô kho'}</Text>
+          <Text style={styles.secondary}>{text(storageType, 'name') || text(rental, 'storageType.name') || 'Kho của bạn'}</Text>
         </View>
       </View>
-      <View style={styles.locationGrid}>
-        {location.map(({ label, value, icon: Icon }, index) => <View key={label}
-          style={[styles.locationField, compact ? styles.quarter : styles.half, index % (compact ? 4 : 2) !== 0 && styles.fieldDivider]}>
-          <Icon size={19} color={C.muted} strokeWidth={1.7} />
-          <Text style={[styles.fieldValue, !value && styles.missingField]}>{value || `${label}: chưa ghi nhận`}</Text>
-        </View>)}
-      </View>
+      {information.some(item => item.value) && <View style={styles.chips}>{information.filter(item => item.value).map(({ icon: Icon, value }) =>
+        <View key={value} style={styles.chip}><Icon size={15} color="#475467" /><Text style={styles.chipText}>{value}</Text></View>
+      )}</View>}
     </View>
 
     <View style={styles.card}>
       <View style={styles.sectionTitle}>
-        <Map size={22} color={C.navy} />
-        <Text accessibilityRole="header" style={[customerStyles.section, styles.heading]}>Sơ đồ ô kho</Text>
+        <Map size={23} color={blue} />
+        <Text accessibilityRole="header" style={[styles.title, styles.heading]}>Sơ đồ kho</Text>
+        {plan && <Text style={[styles.secondary, styles.tag]}>Sơ đồ minh họa</Text>}
       </View>
-      {mapUnits.length ? <BookingUnitSelector units={mapUnits} selected={[unitId]} /> : <View style={styles.mapEmpty}>
-        <View style={styles.smallIcon}><MapPin size={22} color={C.navy} /></View>
-        <Text style={styles.emptyText}>{loadingMap ? 'Đang tải sơ đồ…' : 'Chưa tải được sơ đồ các ô cùng khu.'}</Text>
-        {!loadingMap && productId && unitId ? <Pressable accessibilityRole="button" style={styles.contact}
-          onPress={() => { setBookingLayout(undefined); setRetry(value => value + 1); }}>
-          <Text style={styles.contactText}>Thử lại</Text>
-        </Pressable> : null}
-      </View>}
+      {plan && code
+        ? <StorageFloorPlan key={unitId} plan={plan} unitId={unitId} unitCode={code} />
+        : <View style={styles.mapEmpty}><Map size={25} color={blue} /><Text style={styles.secondary}>Chưa có sơ đồ cơ sở</Text></View>}
     </View>
 
-    <View style={styles.identity}>
-      <View style={styles.smallIcon}><MapPin size={22} color={C.navy} /></View>
-      <View style={styles.heading}>
-        <Text accessibilityRole="header" style={customerStyles.section}>Vị trí của bạn</Text>
-        <Text style={customerStyles.secondary}>{locationSummary || 'Vị trí ô kho chưa được cập nhật.'}</Text>
-      </View>
-    </View>
-
-    {reservationId ? <>
-      <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/customer/[resource]/[id]", params: { resource: "support-requests", id: "new", reservationId, rentalContractId: idOf(contract) } })} style={({ pressed }) => [styles.contact, pressed && styles.pressed]}>
-        <Headphones size={21} color={C.navy} />
-        <Text style={styles.contactText}>Liên hệ nhân viên</Text>
-      </Pressable>
-    </> : null}
+    <Pressable accessibilityRole="button" style={styles.contact} onPress={() => reservationId
+      ? router.push({ pathname: '/customer/[resource]/[id]', params: { resource: 'support-requests', id: 'new', reservationId, rentalContractId: idOf(contract) } })
+      : router.push({ pathname: '/customer/[resource]', params: { resource: 'support-requests' } })}>
+      <Headphones size={22} color={blue} /><Text style={styles.contactText}>Liên hệ nhân viên</Text>
+    </Pressable>
   </>;
 }
 
@@ -137,7 +96,7 @@ export default function Screen() {
   const contract = rentalContractId ? contracts.find(item => idOf(item) === rentalContractId) : contracts[0];
 
   return <>
-    <Stack.Screen options={{ title: 'Vị trí kho', headerTitleAlign: 'center', headerTitleStyle: { color: C.navy, fontSize: 20, fontWeight: '700' } }} />
+    <Stack.Screen options={{ title: 'Vị trí kho', headerTitleAlign: 'center', headerBackVisible: false, headerLeft: () => <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.back} onPress={() => router.canGoBack() ? router.back() : router.replace('/customer/rentals')}><ChevronLeft size={24} color="#101828" /></Pressable>, headerTitleStyle: { color: blue, fontSize: 20, fontWeight: '700' } }} />
     <ScrollView style={styles.screen} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.page}>
       {source.loading ? <LoadingState layout="detail" label="Đang tải vị trí kho…" />
         : source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
@@ -152,7 +111,7 @@ export default function Screen() {
               </Pressable>;
             })}
           </ScrollView> : null}
-          {rental && contract ? <LocationDetails key={idOf(contract)} rental={rental} contract={contract} />
+          {rental && contract ? <LocationDetails key={idOf(contract) + ":" + text(contract, "unit.id")} rental={rental} contract={contract} />
             : <>
               <EmptyState title="Chưa có thông tin vị trí" message="Chọn một ô kho đang thuê để xem vị trí." />
               <Pressable accessibilityRole="button" style={styles.contact} onPress={() => router.navigate('/customer/rentals')}>
@@ -165,30 +124,30 @@ export default function Screen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.surface },
-  page: { padding: 16, paddingBottom: 24, gap: 14, width: '100%', maxWidth: 600, alignSelf: 'center' },
-  card: { borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 12, gap: 12, backgroundColor: C.surface },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  heading: { flex: 1 },
-  warehouseName: { fontSize: 19, fontWeight: '700', color: C.text },
-  warehouseIcon: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: C.tealSubtle },
-  locationGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.divider },
-  locationField: { alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 4 },
-  quarter: { width: '25%' },
-  half: { width: '50%' },
-  fieldDivider: { borderLeftColor: C.divider, borderLeftWidth: 1 },
-  fieldValue: { fontSize: 13, fontWeight: '700', color: C.text, textAlign: 'center' },
-  missingField: { color: C.muted, fontWeight: '500' },
-  sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  mapEmpty: { alignItems: 'center', justifyContent: 'center', padding: 18, minHeight: 132, gap: 9, backgroundColor: C.soft, borderRadius: 11 },
-  smallIcon: { width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: C.tealSubtle },
-  emptyText: { color: C.muted, fontSize: 14, lineHeight: 20, maxWidth: 240, textAlign: 'center' },
-  contact: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: C.navy },
-  contactText: { color: C.navy, fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  pressed: { backgroundColor: C.tealSubtle },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: '#E4E7EC' },
+  screen: { flex: 1, backgroundColor: '#F7F8FA' },
+  page: { padding: 16, paddingBottom: 20, gap: 13, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  card: { borderWidth: 1, borderColor: '#E4E7EC', borderRadius: 16, padding: 12, gap: 9, backgroundColor: 'white' },
+  facility: { paddingVertical: 10 },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  heading: { flex: 1, minWidth: 105 },
+  title: { color: '#101828', fontSize: 18, fontWeight: '700' },
+  code: { color: '#101828', fontSize: 24, fontWeight: '800' },
+  secondary: { color: '#475467', fontSize: 14, lineHeight: 19 },
+  icon: { width: 45, height: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EAF2FF' },
+  directions: { flexDirection: 'row', minHeight: 44, alignItems: 'center', gap: 5, paddingHorizontal: 8, borderWidth: 1, borderColor: blue, borderRadius: 10 },
+  actionText: { color: blue, fontSize: 13, fontWeight: '600' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#EFF5FF', borderRadius: 16, paddingVertical: 5, paddingHorizontal: 8, maxWidth: '100%' },
+  chipText: { color: '#101828', fontSize: 13, flexShrink: 1 },
+  sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  tag: { backgroundColor: '#F2F4F7', borderRadius: 13, paddingHorizontal: 8, paddingVertical: 3, fontSize: 12 },
+  mapEmpty: { alignItems: 'center', justifyContent: 'center', padding: 18, minHeight: 118, gap: 9, backgroundColor: '#F7F8FA', borderRadius: 12 },
+  contact: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: blue, backgroundColor: 'white' },
+  contactText: { color: blue, fontSize: 15, fontWeight: '700', flexShrink: 1 },
   unitChoices: { gap: 8 },
-  unitChoice: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: C.border, borderRadius: 10 },
-  selectedChoice: { borderColor: C.navy, backgroundColor: C.tealSubtle },
-  choiceText: { color: C.text, fontSize: 13, fontWeight: '600' },
-  selectedChoiceText: { color: C.navy },
+  unitChoice: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#E4E7EC', borderRadius: 10 },
+  selectedChoice: { borderColor: blue, backgroundColor: '#EFF5FF' },
+  choiceText: { color: '#101828', fontSize: 13, fontWeight: '600' },
+  selectedChoiceText: { color: blue },
 });

@@ -204,11 +204,11 @@ export class OperationsService {
       if (!old && await tx.facility.findUnique({where:{code:data.code}})) throw new ConflictException('Mã cơ sở đã tồn tại.');
       const impact = old && windows && editsHours
         && (officeHours !== old.officeHours || accessHours !== old.accessHours || editsSchedule)
-        ? await facilityScheduleImpact(tx, old.id, { officeHours, accessHours, schedule: windows, officeChanged: officeHours !== old.officeHours })
+        ? await facilityScheduleImpact(tx, old.id, { officeHours, accessHours, schedule: windows })
         : null;
       if (impact && body.scheduleImpactToken !== impact.token) {
         throw new ConflictException({ code: 'FACILITY_SCHEDULE_IMPACT', ...impact,
-          message: `Thay đổi ảnh hưởng ${impact.appointments} lịch hẹn và ${impact.shifts} ca Staff. Các lịch hiện tại sẽ được giữ để Manager xử lý.` });
+          message: `Thay đổi ảnh hưởng ${impact.appointments} lịch hẹn. Các lịch hiện tại sẽ được giữ để Manager xử lý.` });
       }
       const facility = id
         ? tx.facility.update({ where: { id }, data })
@@ -218,7 +218,7 @@ export class OperationsService {
         category: 'ACTIVITY', action: 'FACILITY_SCHEDULE_IMPACT', outcome: 'SUCCESS',
         actorId: actor.id, actorRole: actor.role, actorName: actor.fullName, actorEmail: actor.email,
         resource: 'facility', resourceId: saved.id, method: 'PATCH', route: '/operations/facilities/' + saved.id, httpStatus: 200,
-        metadata: { facilityName: saved.name, facilityCode: saved.code, facilityId: saved.id, appointments: impact.appointments, shifts: impact.shifts },
+        metadata: { facilityName: saved.name, facilityCode: saved.code, facilityId: saved.id, appointments: impact.appointments },
       } });
       if (reopening && old?.closurePlanId) {
         await tx.supportRequest.updateMany({ where: { closurePlanId: old.closurePlanId, status: { not: 'RESOLVED' },

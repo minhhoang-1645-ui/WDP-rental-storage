@@ -12,7 +12,7 @@ const adminRoles = {
     scope: 'Quản trị toàn hệ thống',
     access: [
       'Quản lý tài khoản và trạng thái truy cập, cấp vai trò khi tạo tài khoản nội bộ và đổi vai trò theo quy định.',
-      'Cấp hoặc thu hồi quyền truy cập cơ sở và quản lý phiên đăng nhập.',
+      'Cấp, thu hồi và điều chuyển quyền truy cập cơ sở. Quản lý phiên đăng nhập.',
       'Tra cứu lịch sử đăng nhập, nhật ký hoạt động và lịch sử thay đổi quyền.',
     ],
     limits: 'Không trực tiếp xử lý nghiệp vụ thuê kho hoặc điều phối nhân viên cơ sở.',
@@ -26,14 +26,14 @@ const adminRoles = {
       'Quản lý danh mục bổ trợ chung và theo dõi doanh thu, hiệu quả cơ sở.',
       'Quyết định phương án ngừng kinh doanh cơ sở.',
     ],
-    limits: 'Không trực tiếp xếp ca, phân công nhân viên hoặc quản trị tài khoản.',
+    limits: 'Không trực tiếp phân công nhân viên hoặc quản trị tài khoản.',
   },
   FACILITY_MANAGER: {
     label: 'Quản lý cơ sở', english: 'Facility Manager', icon: Building2,
-    scope: 'Các cơ sở được cấp quyền',
+    scope: 'Một cơ sở được cấp quyền hiện hành',
     access: [
       'Quản lý loại kho, đơn giá, danh sách kho và dịch vụ bổ trợ tại cơ sở.',
-      'Xếp ca, điều phối nhân viên, quản lý lịch hẹn và hồ sơ thuê kho.',
+      'Giám sát hàng chờ Staff. Phân công việc đặc biệt, điều phối và chuyển giao nhiệm vụ. Quản lý lịch hẹn và hồ sơ thuê kho.',
       'Tra cứu thông tin khách hàng tại cơ sở.',
       'Xử lý ngoại lệ bàn giao, gia hạn, chuyển kho và trả kho.',
       'Xử lý hỗ trợ, khiếu nại và nghiệm thu bảo trì.',
@@ -43,10 +43,10 @@ const adminRoles = {
   },
   FACILITY_STAFF: {
     label: 'Nhân viên cơ sở', english: 'Facility Staff', icon: ClipboardCheck,
-    scope: 'Nhiệm vụ tại cơ sở được cấp quyền',
+    scope: 'Một cơ sở được cấp quyền hiện hành',
     access: [
-      'Xem ca làm, xác nhận vào ca và kết thúc ca.',
-      'Tiếp nhận và thực hiện nhiệm vụ bàn giao, chuyển kho, kiểm tra trả kho, bảo trì và hỗ trợ khách hàng.',
+      'Tra cứu lịch phục vụ, kiểm tra thông tin đặt thuê và chủ động nhận việc vận hành đủ điều kiện.',
+      'Bàn giao kho và phương tiện truy cập, kiểm tra khi trả kho, hỗ trợ và thực hiện chuyển kho đã duyệt. Thực hiện nhiệm vụ đặc biệt khi được giao.',
       'Báo cáo sự cố, ghi nhận kết quả và chuyển quản lý xử lý khi vượt thẩm quyền.',
     ],
     limits: 'Không quản lý giá thuê, chính sách, tài khoản hoặc quyết toán tài chính. Không kiểm kê tài sản cá nhân của khách.',
@@ -57,7 +57,7 @@ const adminRoles = {
     access: [
       'Tìm và đặt thuê kho, ký hợp đồng, thanh toán hóa đơn và đặt lịch nhận kho.',
       'Mua hoặc thuê dịch vụ bổ trợ. Gửi yêu cầu gia hạn, chuyển kho, trả kho và hỗ trợ.',
-      'Theo dõi hồ sơ thuê, lịch sử thanh toán, thông báo và tiến độ yêu cầu trên ứng dụng NestBox.',
+      'Tự quản lý tài sản cá nhân trong kho. Theo dõi hồ sơ thuê, hóa đơn, lịch sử thanh toán, thông báo và tiến độ trên Customer Mobile.',
     ],
     limits: 'Chỉ truy cập hồ sơ và giao dịch của chính mình.',
   },
@@ -82,12 +82,12 @@ export function AccountRoleAccess({ value }: { value: unknown }) {
   if (!role) return <p>Chưa xác định vai trò của tài khoản.</p>;
   const icons = [Layers, ClipboardCheck, Database, ChartNoAxesColumn];
   const cards = value === 'FACILITY_MANAGER' ? [
-    { title: 'Điều phối vận hành', copy: 'Điều phối nhân viên, theo dõi kho, khách hàng và hồ sơ thuê tại cơ sở.' },
+    { title: 'Điều phối vận hành', copy: 'Giám sát hàng chờ, phân công và chuyển giao nhiệm vụ. Theo dõi kho, khách hàng và hồ sơ thuê tại cơ sở.' },
     { title: 'Phê duyệt nghiệp vụ', copy: 'Xử lý yêu cầu ngoại lệ, hỗ trợ khách hàng và nghiệm thu bảo trì theo thẩm quyền.' },
     { title: 'Thu và đặt cọc', copy: 'Kiểm tra hóa đơn, khoản thu, khấu trừ và hoàn tiền đặt cọc theo hồ sơ.' },
     { title: 'Tài chính và báo cáo', copy: 'Theo dõi đơn giá, danh mục kho, dịch vụ bổ trợ và báo cáo hoạt động cơ sở.' },
   ] : role.access.map((copy, index) => ({
-    title: (value === 'FACILITY_STAFF' ? ['Lịch làm việc', 'Nhiệm vụ vận hành', 'Báo cáo và chuyển xử lý']
+    title: (value === 'FACILITY_STAFF' ? ['Lịch phục vụ và nhận việc', 'Nhiệm vụ vận hành', 'Báo cáo và chuyển xử lý']
       : value === 'SYSTEM_ADMINISTRATOR' ? ['Quản lý tài khoản', 'Quyền cơ sở và phiên', 'Nhật ký và lịch sử']
       : value === 'BUSINESS_OPERATIONS_MANAGER' ? ['Quản lý cơ sở', 'Chính sách và khung giá', 'Dịch vụ và hiệu quả', 'Ngừng kinh doanh']
       : ['Đặt và thuê kho', 'Dịch vụ và yêu cầu', 'Theo dõi hồ sơ'])[index],

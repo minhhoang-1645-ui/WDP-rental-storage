@@ -11,20 +11,31 @@ const text = (value: unknown) => typeof value === 'string' && value.trim() ? val
 const record = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 export function activityFacility(event: AuditEvent) {
-  return text(event.metadata?.facilityName) ?? event.facilityName;
+  return text(event.metadata?.facilityName) ?? text(event.facilityName);
 }
 
-function changes(event: AuditEvent) {
-  const meta = event.metadata;
-  if (!meta) return [];
-  const pairs: [string, string, string][] = [];
+export function auditChanges(event: AuditEvent) {
+  const meta = event.metadata ?? {};
+  const pairs: [string, string | undefined, string | undefined][] = [];
   function add(name: string, before: unknown, after: unknown, format: (value: string) => string = value => value) {
     if (typeof before === 'string' && before && typeof after === 'string' && after && before !== after) {
       pairs.push([name, format(before), format(after)]);
     }
   }
   if (event.action === 'CHANGE_ROLE' || (event.action === 'ROLE' && event.resource === 'facility-access')) {
-    add('Vai trò', meta.previousRole, meta.nextRole, loginRole);
+    const before = text(meta.previousRole), after = text(meta.nextRole);
+    if (before || after) pairs.push(['Vai trò', before && loginRole(before), after && loginRole(after)]);
+  }
+  const relocated = event.action === 'RELOCATE_FACILITY_ACCESS' || event.action === 'RELOCATE' && event.resource === 'facility-access';
+  const source = event.previousFacilityName ?? text(meta.previousFacilityName);
+  const destination = activityFacility(event);
+  if (relocated && (source || destination)) pairs.push(['Cơ sở', source, destination]);
+  if (event.action === 'TASK_ASSIGNMENT') {
+    const assignee = (id: unknown, name?: string | null) => id === null ? 'Chưa có người phụ trách'
+      : typeof id === 'string' && id.trim() ? name || id : undefined;
+    const before = assignee(meta.previousStaffUserId, event.previousAssigneeName);
+    const after = assignee(meta.assignedStaffUserId, event.nextAssigneeName);
+    if (before || after) pairs.push(['Người phụ trách', before, after]);
   }
   if (event.action === 'FACILITY_LIFECYCLE') {
     add('Trạng thái cơ sở', meta.previousStatus, meta.status, value => Object.hasOwn(facilityStates, value) ? facilityStates[value] : value);
@@ -55,16 +66,18 @@ function changes(event: AuditEvent) {
   return pairs;
 }
 
-export function ActivityEventDetail({ event, loaded, loading, error, retry, close }: {
-  event?: AuditEvent; loaded: boolean; loading: boolean; error: string; retry: () => void; close: () => void;
+export function ActivityEventDetail({ event, loaded, loading, error, retry, close, permissions = false }: {
+  event?: AuditEvent; permissions?: boolean; loaded: boolean; loading: boolean; error: string; retry: () => void; close: () => void;
 }) {
   const targetId = event?.targetUserId || (event?.resource === 'users' ? event.resourceId : null);
   const targetLink = event?.targetAccount && targetId ? '/admin/users/' + encodeURIComponent(targetId) : null;
-  const differences = event ? changes(event) : [];
+  const differences = event ? auditChanges(event) : [];
   const reason = event?.action === 'FACILITY_LIFECYCLE' ? text(event.metadata?.closureReason)
     : event?.action === 'RETURN_INSPECTION_SCHEDULE' && event.resource === 'returns' ? text(event.metadata?.note)
-    : event?.resource === 'staff-shifts' ? text(record(event.metadata?.after).reason) : undefined;
-  return <Modal title="Chi tiết hoạt động" subtitle={event && <span className="admin-login-event">
+    : event?.resource === 'staff-shifts' ? text(record(event.metadata?.after).reason)
+    : ['TASK_ASSIGNMENT', 'TASK_ESCALATED', 'TASK_RESUMED', 'RELOCATE_FACILITY_ACCESS', 'CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS'].includes(event?.action ?? '')
+      ? text(event?.metadata?.reason) ?? text(event?.metadata?.handoverNote) ?? text(event?.metadata?.note) : undefined;
+  return <Modal title={permissions ? 'Chi tiết thay đổi quyền' : 'Chi tiết hoạt động'} subtitle={event && <span className="admin-login-event">
     <Activity size={16} aria-hidden="true" /><span>{auditTitle(event)}</span>
   </span>} className="admin-login-event-dialog admin-activity-event-dialog" focusTitle onClose={close} footer={<>
     <button type="button" className="button-secondary" onClick={close}>Đóng</button>
@@ -82,10 +95,13 @@ export function ActivityEventDetail({ event, loaded, loading, error, retry, clos
       ]} /></section>
       <section className="admin-activity-detail-section"><h3>Thông tin hoạt động</h3><Facts items={[
         ['Thời gian (UTC+7)', <time dateTime={event.createdAt}>{date(event.createdAt, true)}</time>],
-        ['Đối tượng', event.targetAccount?.fullName ?? auditResource(auditEntity(event))],
+        [permissions ? 'Tài khoản bị tác động' : 'Đối tượng', event.targetAccount?.fullName
+          ?? (permissions ? 'Không ghi nhận' : auditResource(auditEntity(event)))],
+        ...(permissions && event.targetAccount?.email ? [['Email tài khoản bị tác động', event.targetAccount.email] as [string, string]] : []),
+        ...(!permissions && event.action.startsWith('TASK_') && event.resourceId ? [['Mã hồ sơ', event.resourceId] as [string, string]] : []),
         ...(event.action === 'PUBLISH_GROUP_PRICE_RANGE' && text(event.metadata?.groupName)
           ? [['Nhóm kho', text(event.metadata?.groupName)!] as [string, string]] : []),
-        ...(activityFacility(event) ? [['Cơ sở', activityFacility(event)] as [string, string]] : []),
+        ...(activityFacility(event) && !differences.some(([field]) => field === 'Cơ sở') ? [['Cơ sở', activityFacility(event)] as [string, string]] : []),
         ...(reason ? [['Lý do', reason] as [string, string]] : []),
         ...(['REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(event.action) && typeof event.metadata?.count === 'number'
           ? [['Phiên đã thu hồi', String(event.metadata.count)] as [string, string]] : []),
@@ -95,9 +111,9 @@ export function ActivityEventDetail({ event, loaded, loading, error, retry, clos
         <table className="manager-table admin-activity-changes"><thead><tr>
           <th scope="col">Thuộc tính</th><th scope="col">Trước thay đổi</th><th scope="col">Sau thay đổi</th>
         </tr></thead><tbody>{differences.map(([name, before, after]) =>
-          <tr key={name}><th scope="row">{name}</th><td>{before}</td><td>{after}</td></tr>)}</tbody></table>
+          <tr key={name}><th scope="row">{name}</th><td>{before ?? '—'}</td><td>{after ?? '—'}</td></tr>)}</tbody></table>
       </section>}
-      {auditTitle(event) === unclassifiedActivity && /^[A-Z][A-Z0-9_]{0,79}$/.test(event.action) &&
+      {!permissions && auditTitle(event) === unclassifiedActivity && /^[A-Z][A-Z0-9_]{0,79}$/.test(event.action) &&
         <DetailDisclosure title="Thông tin kỹ thuật"><Facts items={[[ 'Mã hoạt động', event.action ]]} /></DetailDisclosure>}
     </> : loaded && <Empty title="Không tìm thấy hoạt động" description="Mở danh sách để xem các hoạt động hiện có." />}
   </Modal>;

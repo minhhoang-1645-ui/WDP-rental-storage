@@ -81,5 +81,5 @@ export async function assertTaskFacility(db: Prisma.TransactionClient, actor: Pu
 }
 export async function assertTaskExecution(db: Prisma.TransactionClient, actor: PublicUser, assignee: string | null | undefined, ref: AssignmentReference) {
   if (actor.role !== 'FACILITY_STAFF' || assignee !== actor.id) throw new ForbiddenException('Chỉ nhân viên được giao mới được thực hiện nhiệm vụ.');
-  await assertTaskFacility(db, actor, ref);
+  return assertTaskFacility(db, actor, ref);
 }

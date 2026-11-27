@@ -55,3 +55,24 @@
 :root[data-workspace-theme="dark"] .applied-policy-milestone strong { color: #82d8c5; }
 
 .applied-policy-effective { padding: 6px 8px; border: 1px solid var(--policy-border); border-radius: 8px; background: var(--workspace-table, #f1f5f9); font-weight: 650; }
+
+.internal-applied-policy .policy-table { table-layout: fixed; min-width: 520px; }
+.internal-applied-policy .policy-table th:first-child { width: 34%; }
+.internal-applied-policy .policy-table thead th:last-child { width: 24%; }
+.internal-applied-policy .policy-table tbody th { font-weight: 680; }
+.internal-applied-policy .policy-active-value { color: var(--workspace-text); }
+.policy-default-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 6px;
+  background: var(--workspace-table);
+  color: var(--workspace-secondary);
+}
+@media (max-width: 600px) {
+  .internal-applied-policy .policy-table { min-width: 0; font-size: .8125rem; }
+  .internal-applied-policy .policy-table :is(th, td) { padding: 8px 7px; }
+  .internal-applied-policy .policy-table thead th:last-child { width: 26%; }
+  .internal-applied-policy .policy-table small { font-size: .75rem; }
+  .internal-applied-policy .policy-default-badge { padding-inline: 5px; }
+}

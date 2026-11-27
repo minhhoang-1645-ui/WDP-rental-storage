@@ -5,6 +5,7 @@ export const depositGroups = ['locker', 'smallDaily', 'other'] as const;
 export const prepaidTerms = [3, 6, 12] as const;
 export const depositMethods = ['NONE', 'FIXED_AMOUNT', 'RENT_PERCENTAGE', 'MONTHLY_RENT_MULTIPLIER'] as const;
 export const returnNoticeRange = { defaultValue: 7, min: 0, max: 30 } as const;
+export const DEPOSIT_REFUND_DAYS = 7;
 
 type DepositMethod = (typeof depositMethods)[number];
 type DepositRule = { method: DepositMethod; amount: number };

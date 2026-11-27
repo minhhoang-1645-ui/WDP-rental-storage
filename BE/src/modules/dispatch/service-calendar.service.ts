@@ -23,21 +23,17 @@ export class ServiceCalendarService {
     if (range.gte >= range.lt) throw new BadRequestException('Khoảng ngày không hợp lệ.');
     const ids = await facilityIds(this.prisma, actor);
     const reservation = { facilityId: { in: ids } };
-    const [appointments, transfers, returns, facilities, shifts] = await Promise.all([
+    const [appointments, transfers, returns, facilities] = await Promise.all([
       this.prisma.handoverAppointment.findMany({ where: { reservation, scheduledAt: range },
-        select: { id: true, appointmentCode: true, status: true, scheduledAt: true, assignedStaffUserId: true,
+        select: { id: true, appointmentCode: true, status: true, scheduledAt: true,
           reservation: { select: { facilityId: true } }, assignedStaff: { select: { fullName: true } } } }),
       this.prisma.transferRequest.findMany({ where: { ...transferTaskScope(actor), supportRequest: { transferRequestedStartAt: range } },
         select: { id: true, transferCode: true, status: true, assignedStaff: { select: { fullName: true } }, supportRequest: { select: { transferRequestedStartAt: true } } } }),
       this.prisma.returnRequest.findMany({ where: { ...returnTaskScope(actor), inspectionScheduledAt: range },
-        select: { id: true, returnCode: true, status: true, inspectionScheduledAt: true, assignedStaffUserId: true,
+        select: { id: true, returnCode: true, status: true, inspectionScheduledAt: true,
           reservation: { select: { facilityId: true } }, assignedStaff: { select: { fullName: true } },
           inspections: { take: 1, select: { storageUnit: { select: { storageType: { select: { facilityId: true } } } } } } } }),
       this.prisma.facility.findMany({ where: { id: { in: ids } }, select: { id: true, serviceSchedule: true, accessHours: true } }),
-      this.prisma.staffShift.findMany({ where: { facilityId: { in: ids }, status: 'SCHEDULED', startsAt: { lt: range.lt }, endsAt: { gt: range.gte },
-        staff: { role: 'FACILITY_STAFF', accountStatus: 'ACTIVE' } },
-        select: { facilityId: true, staffUserId: true, startsAt: true, endsAt: true, checkedOutAt: true,
-          staff: { select: { facilityAccess: { where: { revokedAt: null, facilityId: { in: ids } }, select: { facilityId: true } } } } } }),
     ]);
     const schedules = new Map(facilities.map(row => [row.id, {
       windows: readServiceSchedule(row.serviceSchedule), access: hourSpans(row.accessHours),
@@ -66,11 +62,6 @@ export class ServiceCalendarService {
       else if (schedule && !schedule.windows.length && !allowsCustomerAccess(schedule.access, row.scheduledAt))
         warnings.set(row.id, 'Kiểm tra lại giờ khách truy cập kho');
       else if (row.window && (totals.get(key(row.facilityId, row.window.start)) ?? 0) > row.window.capacity) warnings.set(row.id, 'Khung giờ vượt sức chứa hiện tại');
-      else if (!shifts.some(shift => shift.facilityId === row.facilityId && (!row.assignedStaffUserId || row.assignedStaffUserId === shift.staffUserId)
-        && shift.staff.facilityAccess.some(access => access.facilityId === row.facilityId)
-        && shift.startsAt <= row.scheduledAt && row.scheduledAt < shift.endsAt && (!shift.checkedOutAt || row.scheduledAt < shift.checkedOutAt))) {
-        warnings.set(row.id, row.assignedStaffUserId ? 'Staff được giao không còn ca phù hợp' : 'Chưa có ca phù hợp');
-      }
     }
     return { items: [
       ...appointments.map(row => ({ id: row.id, status: row.status, scheduledAt: row.scheduledAt, assignedStaff: row.assignedStaff,
@@ -103,7 +94,7 @@ export class ServiceCalendarService {
       if (time) {
         const decision = await assessHandoverWindow(tx, facilityId, time, { returnId: id });
         if (decision !== 'CONFIRMED' && decision !== 'MANAGER_CONFIRMATION_REQUIRED') {
-          throw new ConflictException('Chọn giờ phục vụ còn chỗ và có ca làm phù hợp.');
+          throw new ConflictException('Chọn giờ phục vụ còn chỗ.');
         }
       }
       const updated = await tx.returnRequest.update({ where: { id }, data: { inspectionScheduledAt: time }, select: { inspectionScheduledAt: true } });

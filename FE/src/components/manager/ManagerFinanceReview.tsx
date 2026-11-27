@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { mutate } from '../../services/portal';
@@ -21,7 +21,7 @@ const invoiceId = (row: Row) => first(row, 'invoice.id', 'transaction.invoice.id
 const customerName = (row: Row) => first(row, 'customer.fullName', 'transaction.invoice.reservation.customer.fullName');
 const reference = (row: Row) => first(row, 'transferReference', 'providerTransactionId');
 
-export function ManagerFinanceReview({ invoice, onSaved }: { invoice?: Row; onSaved: () => void }) {
+export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { invoice?: Row; onSaved: () => void; refreshVersion?: number }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const kind = params.get('review') === 'reconciliation' ? 'reconciliation' : 'submissions';
@@ -46,6 +46,15 @@ export function ManagerFinanceReview({ invoice, onSaved }: { invoice?: Row; onSa
   const [limit, setLimit] = useState(10);
   const visiblePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / limit)));
   const refresh = () => { submissions.refresh(); reconciliation.refresh(); };
+  const appliedRefresh = useRef(refreshVersion);
+  const { refresh: refreshSubmissions } = submissions;
+  const { refresh: refreshReconciliation } = reconciliation;
+  useEffect(() => {
+    if (appliedRefresh.current === refreshVersion) return;
+    appliedRefresh.current = refreshVersion;
+    refreshSubmissions();
+    refreshReconciliation();
+  }, [refreshVersion, refreshSubmissions, refreshReconciliation]);
 
   function open(group: FinanceReviewType, id = '') {
     if (group !== kind) { setFilter('pending'); setSearch(''); setPage(1); }
@@ -70,7 +79,7 @@ export function ManagerFinanceReview({ invoice, onSaved }: { invoice?: Row; onSa
           {reviewLabels[group]}{count !== null ? ` (${count})` : ''}
         </button>;
       })}
-      <button type="button" className="button-secondary" disabled={submissions.refreshing || reconciliation.refreshing} onClick={refresh}>Làm mới giao dịch</button>
+      {refreshVersion === undefined && <button type="button" className="button-secondary" disabled={submissions.refreshing || reconciliation.refreshing} onClick={refresh}>Làm mới giao dịch</button>}
     </div>
     {notice && <div className="portal-success" role="status">
       {notice.text}{notice.followup && <button className="button-secondary" type="button" onClick={() => open('reconciliation', notice.followup)}>Xem hồ sơ đối soát</button>}

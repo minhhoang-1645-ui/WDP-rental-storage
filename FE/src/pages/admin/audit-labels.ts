@@ -9,12 +9,14 @@ const businessActions: Record<string, string> = {
   CHANGE_ROLE: 'Thay đổi vai trò',
   GRANT_FACILITY_ACCESS: 'Cấp quyền truy cập cơ sở',
   REVOKE_FACILITY_ACCESS: 'Thu hồi quyền truy cập cơ sở',
+  RELOCATE_FACILITY_ACCESS: 'Điều chuyển cơ sở',
   REVOKE_SESSION: 'Thu hồi phiên đăng nhập',
   REVOKE_SESSIONS: 'Thu hồi toàn bộ phiên đăng nhập',
   CREATE_SHIFT: 'Xếp ca nhân viên', CHANGE_SHIFT: 'Điều chỉnh ca làm',
   CHANGE_SHIFT_STATUS: 'Thay đổi trạng thái ca làm', CHECK_IN: 'Xác nhận vào ca',
   CHECK_OUT: 'Kết thúc ca', START_BREAK: 'Bắt đầu nghỉ giữa ca', END_BREAK: 'Kết thúc nghỉ giữa ca',
-  TASK_ASSIGNMENT: 'Phân công nhiệm vụ', RETURN_INSPECTION_SCHEDULE: 'Cập nhật lịch kiểm tra trả kho',
+  TASK_ESCALATED: 'Chuyển yêu cầu lên quản lý', TASK_RESUMED: 'Cho tiếp tục xử lý nhiệm vụ',
+  TASK_STAFF_COMPLETED: 'Hoàn thành nhiệm vụ', TASK_ASSIGNMENT: 'Phân công nhiệm vụ', RETURN_INSPECTION_SCHEDULE: 'Cập nhật lịch kiểm tra trả kho',
   ONLINE_PAYMENT: 'Mở phiên thanh toán trực tuyến',
   CONFIRM_OFFERING_CONFIGURATION: 'Xác nhận cấu hình dịch vụ bổ trợ',
   UPDATE_OFFERING_QUANTITY: 'Cập nhật số lượng dịch vụ tại cơ sở',
@@ -54,6 +56,8 @@ auditResources['business-policies'] = 'Chính sách hệ thống';
 auditResources['transfer-orders'] = 'Phụ lục chuyển kho';
 auditResources['booking-requests'] = 'Đơn đặt kho';
 auditResources['damage-claims'] = 'Sự cố hàng hóa';
+auditResources['reservation-recovery'] = 'Thu hồi quyền vào kho';
+auditResources.support = 'Hỗ trợ';
 Object.assign(auditResources, {
   users: 'Tài khoản', facility: 'Cơ sở', facilities: 'Cơ sở', 'staff-shifts': 'Ca làm',
   'business-rules': 'Quy tắc kinh doanh', 'business-policies': 'Chính sách thuê kho', 'pricing-rules': 'Khung giá thuê',
@@ -68,7 +72,7 @@ const resourceActions: Record<string, Record<string, string>> = {
     REVOKE: businessActions.REVOKE_SESSIONS,
     ACCOUNT_STATUS_UNCHANGED: 'Giữ nguyên trạng thái tài khoản',
   },
-  'facility-access': { CREATE: businessActions.GRANT_FACILITY_ACCESS, ROLE: businessActions.CHANGE_ROLE, REVOKE: businessActions.REVOKE_FACILITY_ACCESS },
+  'facility-access': { CREATE: businessActions.GRANT_FACILITY_ACCESS, ROLE: businessActions.CHANGE_ROLE, REVOKE: businessActions.REVOKE_FACILITY_ACCESS, RELOCATE: businessActions.RELOCATE_FACILITY_ACCESS },
   facilities: { CREATE: 'Tạo cơ sở mới', UPDATE: 'Cập nhật thông tin cơ sở' },
   'business-policies': { UPDATE: 'Cập nhật chính sách thuê kho' },
   'pricing-rules': { CREATE: businessActions.PUBLISH_GROUP_PRICE_RANGE },
@@ -103,7 +107,10 @@ export type AuditEvent = {
   resource: string;
   resourceId?: string | null;
   targetUserId?: string | null;
-  targetAccount?: { fullName: string; role: string } | null;
+  targetAccount?: { fullName: string; role?: string; email?: string } | null;
+  previousFacilityName?: string | null;
+  previousAssigneeName?: string | null;
+  nextAssigneeName?: string | null;
   facilityName?: string | null;
   route?: string;
   metadata?: { facilityId?: string; previousRole?: string; nextRole?: string; sessionId?: string; count?: number; [key: string]: unknown } | null;
@@ -137,6 +144,20 @@ export function auditEntity(event: Pick<AuditEvent, 'resource' | 'entityType'>) 
   return modelResources.get(entity) ?? entity;
 }
 
+const assignmentTitles = {
+  CLAIM: 'Tự nhận nhiệm vụ',
+  ASSIGN: businessActions.TASK_ASSIGNMENT,
+  REASSIGN: 'Thay đổi người phụ trách',
+  RELEASE: 'Đưa nhiệm vụ về hàng chờ',
+};
+
+export const permissionActionOptions: [string, string][] = [
+  ['CHANGE_ROLE', businessActions.CHANGE_ROLE], ['GRANT_FACILITY_ACCESS', businessActions.GRANT_FACILITY_ACCESS],
+  ['REVOKE_FACILITY_ACCESS', businessActions.REVOKE_FACILITY_ACCESS], ['RELOCATE_FACILITY_ACCESS', businessActions.RELOCATE_FACILITY_ACCESS],
+  ['REVOKE_SESSION', businessActions.REVOKE_SESSION], ['REVOKE_SESSIONS', businessActions.REVOKE_SESSIONS],
+  ['DISABLE_ACCOUNT', resourceActions.users.DISABLE_ACCOUNT], ['REACTIVATE_ACCOUNT', resourceActions.users.REACTIVATE_ACCOUNT],
+];
+
 export function activityActionOptions() {
   const descriptions = new Map<string, Set<string>>();
   const collect = (labels: Record<string, string>) => {
@@ -149,11 +170,13 @@ export function activityActionOptions() {
     }
   };
   collect(businessActions);
+  for (const [kind, title] of Object.entries(assignmentTitles)) collect({ ['TASK_ASSIGNMENT:' + kind]: title });
   for (const labels of Object.values(resourceActions)) collect(labels);
   for (const [action, title] of Object.entries(actions)) {
     if (!descriptions.has(action)) collect({ [action]: title });
   }
   return [...descriptions].map(([action, names]): [string, string] => {
+    if (action === 'TASK_ASSIGNMENT') return [action, 'Mọi thay đổi phân công'];
     if (Object.hasOwn(genericVerbs, action)) return [action, genericVerbs[action] + ' hồ sơ (mọi đối tượng)'];
     return [action, names.size === 1 ? [...names][0] : (actions[action] ?? [...names][0] + ' và hoạt động cùng loại')];
   }).sort((a, b) => a[1].localeCompare(b[1], 'vi'));
@@ -164,6 +187,13 @@ export function auditTitle(event: AuditEvent) {
     if (event.action === 'AUTH_LOGIN_ACCOUNT_DISABLED') return 'Đăng nhập thất bại do tài khoản đã khóa';
     if (event.action === 'AUTH_LOGIN') return 'Đăng nhập thất bại';
     if (event.action === 'AUTH_LOGOUT') return 'Đăng xuất thất bại';
+  }
+  if (event.action === 'TASK_ASSIGNMENT') {
+    const meta = event.metadata;
+    if (meta?.source === 'SELF_CLAIM') return assignmentTitles.CLAIM;
+    if (meta?.source === 'MANAGER_QUEUE') return assignmentTitles.RELEASE;
+    if (auditRole(event.actorRole ?? '') === 'FACILITY_MANAGER' && typeof meta?.previousStaffUserId === 'string'
+      && typeof meta?.assignedStaffUserId === 'string') return assignmentTitles.REASSIGN;
   }
   if (event.action === 'FACILITY_LIFECYCLE' && event.metadata?.previousStatus === event.metadata?.status) {
     if (event.metadata?.statusChanged === true) return 'Điều chỉnh kế hoạch ngừng kinh doanh';

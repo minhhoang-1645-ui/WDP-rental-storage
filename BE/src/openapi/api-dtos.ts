@@ -401,6 +401,7 @@ export class UpdateSupportPriorityDto { @ApiProperty({ enum: ['LOW', 'MEDIUM', '
 export class ResolveSupportRequestDto {
   @ApiProperty({ enum: ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], example: 'ACCESS_RESTORED' }) resolutionType!: string;
   @ApiProperty({ example: 'Access credential was revalidated and tested successfully.', minLength: 3, maxLength: 4000 }) resolutionNote!: string;
+  @ApiPropertyOptional({ example: true, description: 'Staff xác nhận đã đối chiếu danh tính và quyền vào kho trước khi khôi phục truy cập.' }) identityVerified?: boolean;
 }
 export class EscalateSupportRequestDto { @ApiProperty({ example: 'Unit door cannot be secured safely. Manager review required.', minLength: 3, maxLength: 4000 }) reason!: string }
 

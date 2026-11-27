@@ -28,7 +28,6 @@ describe('BOM facility schedule HTTP', () => {
     facility: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     handoverAppointment: { findMany: vi.fn() },
     returnRequest: { findMany: vi.fn() },
-    staffShift: { findMany: vi.fn() },
     storageType: { count: vi.fn() }, facilityAccess: { findMany: vi.fn() }, auditEvent: { create: vi.fn() },
   };
   const input = { ...identity, ...hours, serviceSchedule, operationalStatus: 'OPEN', bookingEnabled: false };
@@ -61,7 +60,6 @@ describe('BOM facility schedule HTTP', () => {
     tx.facility.update.mockImplementation(async ({ data }) => ({ ...facility, ...data }));
     tx.handoverAppointment.findMany.mockResolvedValue([]);
     tx.returnRequest.findMany.mockResolvedValue([]);
-    tx.staffShift.findMany.mockResolvedValue([]);
     tx.storageType.count.mockResolvedValue(1);
     tx.facilityAccess.findMany.mockResolvedValue(['FACILITY_MANAGER', 'FACILITY_STAFF'].map(role => ({ user: { role } })));
   });
@@ -131,18 +129,17 @@ describe('BOM facility schedule HTTP', () => {
     expect(response.body).toMatchObject({ serviceSchedule: [], bookingEnabled: true });
     expect(tx.auditEvent.create).not.toHaveBeenCalled();
     await patch({ accessHours: '11:00–16:00, Thứ Hai', serviceSchedule: [] }).expect(409)
-      .expect(({ body }) => expect(body).toMatchObject({ code: 'FACILITY_SCHEDULE_IMPACT', appointments: 1, shifts: 0 }));
+      .expect(({ body }) => expect(body).toMatchObject({ code: 'FACILITY_SCHEDULE_IMPACT', appointments: 1 }));
   });
 
   it('requires acknowledgement for affected records and creates a scoped Manager notice without changing schedules', async () => {
     const monday = (time: string) => new Date('2099-01-05T' + time + ':00+07:00');
     tx.handoverAppointment.findMany.mockResolvedValue([{ id: 'h', scheduledAt: monday('10:00'), status: 'CONFIRMED' }]);
     tx.returnRequest.findMany.mockResolvedValue([{ id: 'r', inspectionScheduledAt: monday('12:00'), status: 'REQUESTED' }]);
-    tx.staffShift.findMany.mockResolvedValue([{ id: 's', startsAt: monday('08:00'), endsAt: monday('16:00') }]);
     const change = { officeHours: '11:00–17:30, Thứ Hai', accessHours: '11:00–16:00, Thứ Hai',
       serviceSchedule: [{ weekday: 1, starts: '11:00', ends: '16:00', capacity: 1 }] };
     const preview = await patch(change).expect(409);
-    expect(preview.body).toMatchObject({ code: 'FACILITY_SCHEDULE_IMPACT', appointments: 1, shifts: 1 });
+    expect(preview.body).toMatchObject({ code: 'FACILITY_SCHEDULE_IMPACT', appointments: 1 });
     expect(tx.facility.update).not.toHaveBeenCalled();
     await patch({ ...change, scheduleImpactToken: 'stale' }).expect(409);
     await patch({ ...change, scheduleImpactToken: preview.body.token }).expect(200);
@@ -150,7 +147,7 @@ describe('BOM facility schedule HTTP', () => {
     const event = tx.auditEvent.create.mock.calls[0][0].data;
     const notices = { 'facility-lifecycle': [{ ...event, id: 'notice', createdAt: facility.updatedAt }] };
     expect(buildNotices({ ...bom, role: 'FACILITY_MANAGER' }, notices)[0]).toMatchObject({
-      important: true, summary: expect.stringContaining('1 lịch hẹn và 1 ca Staff'),
+      important: true, summary: expect.stringContaining('1 lịch hẹn'),
     });
     expect(buildNotices({ ...bom, role: 'STORAGE_CUSTOMER' }, notices)).toEqual([]);
   });

@@ -177,10 +177,15 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
       } else action = staffNeedsAction(kind, row, userId);
       title = `${source.title} · ${action ? 'Cần xử lý' : 'Theo dõi tiến độ'}`;
       message = workflowGuide(kind, status, role === 'FACILITY_STAFF' ? 'staff' : 'internal') || (action ? 'Mở hồ sơ, đối chiếu thông tin và thực hiện thao tác trong phạm vi của bạn.' : 'Mở hồ sơ để xem kết quả và người phụ trách hiện tại.');
-      if (role === 'FACILITY_MANAGER' && awaitingAssignment(kind, row)) message = 'Chưa có nhân viên phụ trách. Mở Phân công nhân viên để chọn người xử lý và theo dõi tiến độ.';
+      if (role === 'FACILITY_MANAGER' && awaitingAssignment(kind, row)) message = 'Chưa có nhân viên phụ trách. Mở Điều phối công việc để xem hàng chờ hoặc phân công khi cần.';
       if (role === 'FACILITY_MANAGER' && assignmentNeedsAttention(kind, row) && !awaitingAssignment(kind, row)) message = 'Tài khoản nhân viên phụ trách đã bị vô hiệu hóa. Chọn người thay thế để hồ sơ tiếp tục được xử lý.';
       if (role === 'FACILITY_MANAGER' && kind === 'maintenance' && status === 'AWAITING_VERIFICATION') { title = 'Bảo trì · Chờ quản lý nghiệm thu'; message = 'Kiểm tra hiện trạng và kết quả nhân viên đã gửi, rồi nghiệm thu hoặc yêu cầu làm tiếp.'; }
       if (role === 'FACILITY_MANAGER' && kind === 'support-requests' && status === 'ESCALATED') { title = 'Hỗ trợ · Cần quản lý quyết định'; message = 'Nhân viên đã chuyển hồ sơ lên. Đọc nội dung, lý do chuyển và ghi kết quả xử lý cho khách.'; }
+      if (role === 'FACILITY_MANAGER' && ['appointments', 'returns'].includes(kind) && row.waitingForManager === true) {
+        title = source.title + ' · Chờ xử lý vướng mắc';
+        message = 'Nhân viên đã báo vướng mắc. Mở Điều phối công việc để xem lý do và quyết định bước tiếp theo.';
+        web = `/manager/assignments?kind=${kind}&record=${encodeURIComponent(id)}`;
+      }
       if (role === 'FACILITY_MANAGER' && kind === 'invoices') { title = action ? 'Hóa đơn · Quá hạn thanh toán' : 'Hóa đơn · Đang chờ thanh toán'; message = action ? 'Kiểm tra số dư, hạn thanh toán và lịch sử thu tiền trước khi liên hệ khách hàng.' : 'Theo dõi hóa đơn khách chưa thanh toán. Nếu thu tại cơ sở, chỉ ghi nhận sau khi thực tế đã nhận tiền.'; }
     }
     if (role === 'STORAGE_CUSTOMER' && kind === 'contracts' && status === 'PENDING_PAYMENT' && !activityText(row, 'terms.acceptedAt') && !paymentWindowClosed({ type: 'INITIAL', reservation: { status: get('reservation.status'), expiresAt: get('reservation.expiresAt') } })) {

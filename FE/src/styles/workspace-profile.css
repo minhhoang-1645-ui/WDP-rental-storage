@@ -53,7 +53,7 @@
   border-radius: 12px;
   background: var(--workspace-popover);
   color: var(--workspace-text);
-  box-shadow: 0 8px 22px #10151d24;
+  box-shadow: 0 8px 22px var(--workspace-shadow, #10151d24);
   font-size: 14px;
 }
 

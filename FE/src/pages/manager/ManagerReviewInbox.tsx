@@ -178,7 +178,10 @@ export function ManagerReviewInbox() {
     { key: 'status', label: 'Trạng thái', cell: task => <Status value={task.status} text={task.statusText} /> },
   ];
   return <section>
-    <PageHeader title={managerSections.reviews.title} description={decisionOnly ? 'Chỉ hiện hồ sơ đang chờ quản lý quyết định.' : 'Hồ sơ cần quản lý quyết định hoặc ghi nhận kết quả.'}><button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button></PageHeader>
+    <PageHeader title={managerSections.reviews.title} description={decisionOnly ? 'Chỉ hiện hồ sơ đang chờ quản lý quyết định.' : 'Hồ sơ cần quản lý quyết định hoặc ghi nhận kết quả.'}>
+      <Link className="button-secondary" to="/manager/assignments?queue=manager">Xem việc cần điều phối</Link>
+      <button className="button-secondary" type="button" onClick={refresh} disabled={loading || refreshing}><RefreshCw size={16} /> Làm mới</button>
+    </PageHeader>
     {errors.length > 0 && <div className="booking-alert is-error" role="alert">Chưa tải được {errors.join(', ')}. <button className="button-secondary" type="button" onClick={refresh}>Thử lại</button></div>}
     <ManagerTaskTable title={managerSections.reviews.title} rowDetail={task => ({ to: task.to, label: `Xem chi tiết hồ sơ ${task.reference}` })} loading={loading} refreshing={refreshing} retry={refresh} items={matching.slice((visiblePage - 1) * limit, visiblePage * limit)}
       columns={columns} rowKey={task => task.queue + ':' + first(task.row, 'id')} total={matching.length} page={visiblePage} limit={limit} update={update}

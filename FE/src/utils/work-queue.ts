@@ -118,6 +118,7 @@ export function hasLinkedTransfer(row: WorkRow) {
 }
 
 export function managerNeedsAction(resource: string, row: WorkRow) {
+  if ((resource === 'appointments' || resource === 'returns') && row.waitingForManager === true) return true;
   if (resource === 'support-requests' && isCustomerTransferSubject(row.subject)) {
     return row.status !== 'RESOLVED' && (!Array.isArray(row.transfers) || row.transfers.length === 0);
   }

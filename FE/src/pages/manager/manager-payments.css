@@ -1,0 +1,23 @@
+.manager-payment-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.manager-payment-totals > div {
+  padding: 12px 16px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-surface);
+}
+
+.manager-payment-totals dt, .manager-payment-caption { color: var(--workspace-secondary); }
+.manager-payment-totals dd { margin: 4px 0 0; font-size: 1.25rem; font-weight: 700; }
+.manager-payment-caption { margin: 8px 0 16px; font-size: .875rem; }
+.manager-payment-empty { margin: 0; padding: 12px 0; color: var(--workspace-secondary); }
+.manager-payment-table { overflow-x: auto; }
+.manager-payment-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.manager-payment-table :is(th, td) { padding: 9px 10px; border-bottom: 1px solid var(--workspace-border); }
+.manager-payment-table :is(th, td):nth-child(n+4) { white-space: nowrap; }
+.manager-payment-table :is(th, td):nth-child(5) { text-align: right; font-variant-numeric: tabular-nums; }

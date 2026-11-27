@@ -30,6 +30,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
     onClose();
   };
   const [facilityId, setFacilityId] = useState(first(record ?? {}, 'facilityId') || scopeFacility || '');
+  const [typeCode, setTypeCode] = useState(first(record ?? {}, 'code'));
   const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
   const [sizeId, setSizeId] = useState(first(record ?? {}, 'sizeId') || 'small');
   const [price, setPrice] = useState(first(record ?? {}, 'monthlyRate'));
@@ -42,6 +43,10 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const validating = changedPrice || bookingEnabled && record?.bookingEnabled === false;
   const outside = Boolean(validating && priceRange && price && (Number(price) < priceRange.min || Number(price) > priceRange.max));
   const priceError = outside || Boolean(validating && bookingEnabled && !priceRange);
+  const unitCode = useApiResource<{ unitNumber: string }>(
+    !type && !record && storageTypeId ? `/manager/storage-types/${encodeURIComponent(storageTypeId)}/next-unit-code` : null,
+    user?.id ?? '',
+  );
   const locations = useApiResource<{ floors: string[]; zones: string[] }>(!type && !locked ? '/manager/unit-locations' : null, user?.id ?? '');
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -59,7 +64,10 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
     try {
       const saved = await mutate<Row>(`/manager/${type ? 'storage-types' : 'units'}${record ? `/${encodeURIComponent(first(record, 'id'))}` : ''}`, record ? 'PATCH' : 'POST', input);
       onSaved(saved);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể lưu.'); }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể lưu.');
+      if (!type && !record) unitCode.refresh();
+    }
     finally { lock.current = false; setBusy(false); }
   };
   const field = (name: string, title: string, numeric = false, required = true, maximum = 100000) => <label className="field-label" key={name}>{title}<input name={name} type={numeric ? 'number' : 'text'} defaultValue={first(record ?? {}, name)} required={required} min={numeric ? 1 : undefined} max={numeric ? maximum : undefined} step={numeric ? 1 : undefined} maxLength={numeric ? undefined : 100} /></label>;
@@ -78,7 +86,13 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
       <fieldset disabled={busy || locked || !options.data}>
         {type ? <>
           {record || scopeFacility ? <label className="field-label">Cơ sở<input readOnly value={first(rows(options.data?.facilities).find(row => row.id === facilityId) ?? {}, 'name') || facilityId} /><input type="hidden" name="facilityId" value={facilityId} /></label> : <label className="field-label">Cơ sở<EntitySelect aria-label="Cơ sở" name="facilityId" value={facilityId} onValueChange={setFacilityId} required><option value="">Chọn cơ sở</option>{rows(options.data?.facilities).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>{first(row, 'name')}</option>)}</EntitySelect></label>}
-          <label className="field-label">Mã loại kho<input name="code" defaultValue={first(record ?? {}, 'code')} required readOnly={Boolean(record)} maxLength={50} pattern={/^[A-Za-z0-9][A-Za-z0-9_-]*$/.source} /></label>
+          <label className="field-label">Mã loại kho
+            <input name="code" value={typeCode} required readOnly={Boolean(record)} maxLength={50}
+              pattern={/^[A-Z0-9][A-Z0-9_\-]*$/.source} placeholder="Ví dụ LG-F02"
+              aria-describedby={formId + '-type-code'}
+              onChange={event => setTypeCode(event.target.value.trim().toUpperCase())} />
+            <small id={formId + '-type-code'}>Mã này dùng làm tiền tố của mã kho vật lý. Chỉ dùng chữ, số, gạch ngang hoặc gạch dưới.</small>
+          </label>
           {field('name', 'Tên loại kho')}
           <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" value={sizeId} onChange={event => setSizeId(event.target.value)}>{Object.entries(object(options.data?.groups)).map(([value, title]) => <option key={value} value={value}>{String(title)}</option>)}</select></label>
           <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
@@ -109,7 +123,15 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
               </option>)}
             </EntitySelect>
           </div>
-          <p>{record ? 'Mã kho ' + first(record, 'unitCode', 'unitNumber') : 'Mã kho được hệ thống tự tạo.'}</p>
+          {record ? <p>Mã kho {first(record, 'unitCode', 'unitNumber')}</p> : <>
+            <label className="field-label">Mã kho tự động
+              <input readOnly value={unitCode.data?.unitNumber ?? ''}
+                placeholder={unitCode.loading ? 'Đang tải mã dự kiến…' : storageTypeId ? 'Chưa có mã dự kiến' : 'Chọn loại kho để xem mã'}
+                aria-describedby={formId + '-unit-code'} />
+              <small id={formId + '-unit-code'} className="inventory-type-preview">Mã dự kiến. Hệ thống cấp mã chính thức khi lưu thành công.</small>
+            </label>
+            {unitCode.error && <LoadState loading={false} error={unitCode.error} retry={unitCode.refresh} />}
+          </>}
           {selectedType && <p className="inventory-type-preview">{[
             selectedType.condition ? label(selectedType.condition) : '',
             selectedType.widthCm && selectedType.lengthCm && selectedType.heightCm ? `${selectedType.widthCm} × ${selectedType.lengthCm} × ${selectedType.heightCm} cm` : '',

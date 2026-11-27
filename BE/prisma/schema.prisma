@@ -535,6 +535,13 @@ model StorageType {
   @@index([facilityId, sizeId, condition])
 }
 
+// StorageType codes are globally unique and immutable in the Manager API.
+// Keep issued numbers even if all units for a prefix are removed.
+model StorageUnitCodeCounter {
+  prefix     String  @id
+  lastIssued Decimal @db.Decimal(50, 0)
+}
+
 model StorageUnit {
   bookingSafetyVersion Int @default(0)
   incidentBlocks IncidentUnitBlock[]

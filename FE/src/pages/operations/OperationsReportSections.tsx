@@ -24,7 +24,7 @@ export function ReportMetrics({ items, loading }: { items: Performance[]; loadin
 }
 
 const invoiceParts = [
-  ['rent', 'Tiền thuê', 'var(--bom-report-teal)'],
+  ['rent', 'Tiền thuê', 'var(--bom-report-brand)'],
   ['services', 'Dịch vụ bổ trợ', 'var(--bom-report-blue)'],
   ['fees', 'Phí khác', 'var(--bom-report-amber)'],
   ['deposit', 'Tiền cọc trên hóa đơn', 'var(--bom-report-violet)'],

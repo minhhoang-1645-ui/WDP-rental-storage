@@ -607,3 +607,32 @@ button.workspace-nav-heading:hover { color: var(--color-navy); }
 .transfer-destination-card:focus-within{outline:3px solid var(--workspace-primary,#9eacb9);outline-offset:2px}
 .transfer-destination-card.is-unavailable{background:var(--workspace-table,#f6f7f8);cursor:default}
 .transfer-destination-notice{padding:14px;border-radius:10px;background:var(--workspace-info-bg,#eef5f5);line-height:1.7}
+
+/* Featured controls used by the public site and internal workspaces. */
+:root[data-web-brand] .workspace-themed .activity-tabs button[aria-selected="true"] {
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+:root[data-web-brand] .workspace-themed .entity-select-options > button[aria-selected="true"] {
+  background: var(--workspace-selected);
+  border-color: var(--workspace-primary);
+}
+:root[data-web-brand] .workspace-themed .entity-select-options > button:is(:focus-visible, .is-keyboard-active) {
+  outline-color: var(--workspace-focus);
+}
+:root[data-web-brand] .workspace-themed .rental-progress {
+  background: linear-gradient(125deg, var(--workspace-selected), var(--workspace-surface) 70%);
+  border-color: var(--workspace-border);
+}
+:root[data-web-brand] .workspace-themed .rental-progress li { color: var(--workspace-muted); border-color: var(--workspace-border); }
+:root[data-web-brand] .workspace-themed .rental-progress li > span { border-color: var(--workspace-border); }
+:root[data-web-brand] .workspace-themed .rental-progress li:is(.is-current, .is-done) {
+  color: var(--workspace-primary);
+  border-color: var(--workspace-primary);
+}
+:root[data-web-brand] .workspace-themed .rental-progress li.is-done > span {
+  background: var(--workspace-success-bg);
+  color: var(--workspace-success);
+  border-color: var(--workspace-success);
+}
+:root[data-web-brand] .workspace-themed .rental-choice-card.is-selected { background: var(--workspace-selected); }

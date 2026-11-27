@@ -212,8 +212,8 @@ function makeNotice(actor: PublicUser, source: string, row: NotificationRow, dat
     const customer = actor.role === 'STORAGE_CUSTOMER';
     if (actor.role === 'FACILITY_MANAGER' && get('action') === 'FACILITY_SCHEDULE_IMPACT') {
       return { key, token: hash([key]), kind: source, at: get('createdAt'), code: get('metadata.facilityCode'),
-        title: 'Cần rà soát lịch hẹn và ca làm tại cơ sở', important: true,
-        summary: [get('metadata.facilityName'), `${read(row, 'metadata.appointments')} lịch hẹn và ${read(row, 'metadata.shifts')} ca Staff được giữ nguyên sau khi đổi giờ hoạt động.`].join(' · '),
+        title: 'Cần rà soát lịch hẹn tại cơ sở', important: true,
+        summary: [get('metadata.facilityName'), `${read(row, 'metadata.appointments')} lịch hẹn được giữ nguyên sau khi đổi giờ hoạt động.`].join(' · '),
         target: '/manager/service-calendar', actionLabel: 'Xem lịch phục vụ' };
     }
     if ((!customer && actor.role !== 'FACILITY_MANAGER') || !['OPEN', 'CLOSING', 'CLOSED'].includes(status)) return;

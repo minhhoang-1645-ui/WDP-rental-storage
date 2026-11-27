@@ -1,6 +1,5 @@
 import { assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
 import { assertPriceWithin, groupPriceKeys, lockPriceRange, maxMonthlyPrice, missingPriceRange, priceBounds, priceVersionStatus, resolveMonthlyRange, sizeGroups as groups } from '../pricing/monthly-price-range.js';
-import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -11,7 +10,11 @@ import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-l
 
 const groupLabels: Record<string, string> = groups;
 const typeFields = ['facilityId', 'code', 'name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'allowDailyRental', 'minRentalDays', 'image', 'imageAlt', 'bookingEnabled', 'expectedUpdatedAt'];
-const unitFields = ['unitNumber', 'storageTypeId', 'floor', 'zone', 'row', 'position', 'expectedUpdatedAt'];
+const unitFields = ['storageTypeId', 'floor', 'zone', 'row', 'position', 'expectedUpdatedAt'];
+
+function physicalUnitCode(prefix: string, sequence: bigint) {
+  return `${prefix}-${sequence.toString().padStart(2, '0')}`;
+}
 
 @Injectable()
 export class InventoryManagementService {
@@ -110,6 +113,15 @@ export class InventoryManagementService {
     };
   }
 
+  async previewUnitCode(storageTypeId: string, actor: PublicUser) {
+    this.manager(actor);
+    return this.prisma.$transaction(async tx => {
+      const type = await this.unitType(tx, storageTypeId, actor);
+      const counter = await tx.storageUnitCodeCounter.findUnique({ where: { prefix: type.code } });
+      return { unitNumber: physicalUnitCode(type.code, BigInt(counter?.lastIssued.toFixed(0) ?? '0') + 1n) };
+    });
+  }
+
   async saveUnit(id: string | undefined, input: Record<string, unknown>, actor: PublicUser) {
     this.manager(actor); this.body(input, unitFields);
     return this.write(async tx => {
@@ -121,18 +133,12 @@ export class InventoryManagementService {
       if (current) { await assertFacility(tx, actor, current.storageType.facilityId); this.version(current.updatedAt, input.expectedUpdatedAt); }
       const value = { ...current, ...input };
       const storageTypeId = this.text(value.storageTypeId, 'Loại kho', 100);
-      const storageType = await tx.storageType.findUnique({ where: { id: storageTypeId }, select: { code: true, facilityId: true } });
-      if (!storageType) throw new BadRequestException('Loại kho không tồn tại.');
-      await assertFacility(tx, actor, storageType.facilityId);
-      const autoCode = !current && (value.unitNumber === undefined || value.unitNumber === '' || value.unitNumber === null);
+      const storageType = await this.unitType(tx, storageTypeId, actor, !current);
       const floor = canonicalUnitFloor(this.optionalText(value.floor, 'Tầng', 100));
       const zone = canonicalUnitZone(this.optionalText(value.zone, 'Khu', 100));
       const sameFloor = Boolean(current && floor?.toLocaleLowerCase('vi') === canonicalUnitFloor(current.floor)?.toLocaleLowerCase('vi'));
       const sameZone = Boolean(current && zone === canonicalUnitZone(current.zone));
       const data = {
-        unitNumber: autoCode
-          ? `${storageType.code.slice(0, 33)}-${randomBytes(8).toString('hex').toUpperCase()}`
-          : current && value.unitNumber === current.unitNumber ? current.unitNumber : this.code(value.unitNumber, 'Mã kho'),
         storageTypeId,
         floor: current && sameFloor ? current.floor : floor,
         zone: current && sameZone ? current.zone : zone,
@@ -155,8 +161,30 @@ export class InventoryManagementService {
         }, select: { unitNumber: true } });
         if (occupied) throw new ConflictException(`Vị trí này đã có kho ${occupied.unitNumber}.`);
       }
-      return current ? tx.storageUnit.update({ where: { id: current.id }, data }) : tx.storageUnit.create({ data });
+      if (current) return tx.storageUnit.update({ where: { id: current.id }, data });
+      // The atomic increment and unit insert commit together. Serializable
+      // retries also recheck the physical location before issuing a code.
+      const counter = await tx.storageUnitCodeCounter.upsert({
+        where: { prefix: storageType.code },
+        create: { prefix: storageType.code, lastIssued: 1 },
+        update: { lastIssued: { increment: 1 } },
+      });
+      const unitNumber = physicalUnitCode(storageType.code, BigInt(counter.lastIssued.toFixed(0)));
+      return tx.storageUnit.create({ data: { ...data, unitNumber } });
+    }, 'Serializable', id ? 1 : 5);
+  }
+
+  private async unitType(tx: Prisma.TransactionClient, id: string, actor: PublicUser, requireOpen = true) {
+    const type = await tx.storageType.findUnique({
+      where: { id },
+      select: { code: true, facilityId: true, facility: { select: { operationalStatus: true } } },
     });
+    if (!type) throw new BadRequestException('Loại kho không tồn tại.');
+    await assertFacility(tx, actor, type.facilityId);
+    if (requireOpen && type.facility.operationalStatus !== 'OPEN') {
+      throw new ConflictException('Chỉ có thể thêm kho tại cơ sở đang hoạt động.');
+    }
+    return type;
   }
 
   private async lockType(tx: Prisma.TransactionClient, id: string) {
@@ -191,13 +219,15 @@ export class InventoryManagementService {
     if (!/^https:\/\/[^\s]+$/i.test(result) && !/^\/(?!\/)[^\s]*$/.test(result)) throw new BadRequestException('Ảnh phải là URL HTTPS hoặc đường dẫn ảnh nội bộ.');
     return result;
   }
-  private async write<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, isolationLevel: 'ReadCommitted' | 'Serializable' = 'Serializable') {
-    try { return await this.prisma.$transaction(operation, { isolationLevel, maxWait: 10000, timeout: 20000 }); }
-    catch (error) {
-      const code = typeof error === 'object' && error ? (error as { code?: string }).code : undefined;
-      if (code === 'P2002') throw new ConflictException('Mã kho hoặc mã loại kho đã tồn tại.');
-      if (code === 'P2034') throw new ConflictException('Dữ liệu đang được sử dụng. Tải lại và thử lại.');
-      throw error;
+  private async write<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>, isolationLevel: 'ReadCommitted' | 'Serializable', attempts = 1) {
+    for (let attempt = 1; ; attempt++) {
+      try { return await this.prisma.$transaction(operation, { isolationLevel, maxWait: 10000, timeout: 20000 }); }
+      catch (error) {
+        const code = typeof error === 'object' && error ? (error as { code?: string }).code : undefined;
+        if (code === 'P2002') throw new ConflictException('Mã kho hoặc mã loại kho đã tồn tại.');
+        if (code !== 'P2034') throw error;
+        if (attempt === attempts) throw new ConflictException('Dữ liệu đang được sử dụng. Tải lại và thử lại.');
+      }
     }
   }
 }

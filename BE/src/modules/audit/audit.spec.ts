@@ -36,10 +36,27 @@ describe('audit persistence and filters (mock DB)', () => {
     expect(db.auditEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where, select: { id: true, action: true, outcome: true, resource: true, resourceId: true, createdAt: true, route: true, metadata: true },
     }));
-    expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['target'] } }, select: { id: true, fullName: true, role: true } });
+    expect(findMany).toHaveBeenCalledWith({ where: { id: { in: ['target'] } }, select: { id: true, fullName: true, role: true, email: true } });
     expect(page.items).toEqual([{ ...item, targetUserId: 'target', targetAccount: { fullName: 'Fixture Staff', role: 'FACILITY_STAFF' } }]);
     await service.list({ category: 'ACTIVITY', event: 'notice' }, admin);
     expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where: expect.objectContaining({ id: 'notice' }) });
+  });
+  it('includes relocation in the permission scope, enriches its two sites, and keeps a separate target identity', async () => {
+    const db = database();
+    const item = { id: 'move', resource: 'users', resourceId: 'staff', action: 'RELOCATE_FACILITY_ACCESS',
+      actorId: admin.id, route: '/admin/facility-access/users/:id/relocate',
+      metadata: { previousFacilityId: 'old', facilityId: 'new', targetUserName: 'Nhân viên vào lúc chuyển' } };
+    db.auditEvent.findMany.mockResolvedValue([item]);
+    const service = new AuditService({ ...db, facility: { findMany: vi.fn().mockResolvedValue([
+      { id: 'old', name: 'Cơ sở cũ' }, { id: 'new', name: 'Cơ sở mới' },
+    ]) } } as never);
+    const result = await service.list({ category: 'ACTIVITY', action: item.action, scope: 'permissions', page: '2', limit: '1' }, admin);
+    expect(result.items[0]).toMatchObject({ actorId: admin.id, targetUserId: 'staff',
+      targetAccount: { fullName: 'Nhân viên vào lúc chuyển' }, previousFacilityName: 'Cơ sở cũ', facilityName: 'Cơ sở mới' });
+    expect(db.auditEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 1, take: 1 }));
+    const where = db.auditEvent.count.mock.calls[0][0].where;
+    expect(where.AND[1].OR[0].action.in).toContain('RELOCATE_FACILITY_ACCESS');
+    expect(where.AND[2].OR[0]).toEqual({ action: 'RELOCATE_FACILITY_ACCESS' });
   });
   it('looks up the account name for old failed login rows without changing their unauthenticated attribution', async () => {
     const db = database();

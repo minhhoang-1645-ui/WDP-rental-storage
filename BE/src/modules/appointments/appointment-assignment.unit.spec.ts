@@ -47,7 +47,7 @@ function setup() {
       findMany: vi.fn(async () => [{ facilityId: 'facility-a' }]),
       findFirst: vi.fn(async () => ({ id: 'grant' })),
     },
-    auditEvent: { create: vi.fn() },
+    auditEvent: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
   };
   const db = { ...tx, $transaction: vi.fn(operation => operation(tx)) };
   return { service: new AppointmentsService(db as never, {} as never, {} as never), records, model, tx };

@@ -41,7 +41,7 @@ export function AdminDashboardPage() {
   const sources = [total, active, disabled, grants, login, activity, permissions];
   const refreshing = sources.some(source => source.refreshing);
   const metrics = [
-    { title: 'Tổng tài khoản', value: total.data?.total, source: total, to: '/admin/users', icon: Users, tone: 'teal' },
+    { title: 'Tổng tài khoản', value: total.data?.total, source: total, to: '/admin/users', icon: Users, tone: 'brand' },
     { title: 'Đang hoạt động', value: active.data?.total, source: active, to: '/admin/users?status=ACTIVE', icon: CheckCircle2, tone: 'green' },
     { title: 'Đã khóa', value: disabled.data?.total, source: disabled, to: '/admin/users?status=DISABLED', icon: Lock, tone: 'red' },
     { title: 'Quyền truy cập cơ sở', value: grants.data?.items?.length, source: grants, to: '/admin/facility-access', icon: Layers3, tone: 'blue' },
@@ -49,7 +49,7 @@ export function AdminDashboardPage() {
 
   return <section className="admin-dashboard admin-overview">
     <header className="admin-overview-welcome">
-      <span className="admin-overview-icon" data-tone="teal"><Hand size={27} aria-hidden="true" /></span>
+      <span className="admin-overview-icon" data-tone="brand"><Hand size={27} aria-hidden="true" /></span>
       <div><h1>{user?.fullName ? 'Xin chào, ' + user.fullName : 'Tổng quan quản trị'}</h1>
         <p>Theo dõi và quản trị tài khoản, vai trò, quyền truy cập cũng như hoạt động bảo mật của hệ thống NestBox Storage.</p>
       </div>
@@ -133,7 +133,9 @@ function EventPanel({ title, to, icon, data, timeline = false }: {
         const { icon: Icon, tone } = eventIcon(event);
         const transition = event.metadata?.previousRole && event.metadata.nextRole
           ? roleName(event.metadata.previousRole) + ' → ' + roleName(event.metadata.nextRole) : '';
-        const titleDetail = transition || event.facilityName;
+        const sites = event.previousFacilityName && event.facilityName
+          ? event.previousFacilityName + ' → ' + event.facilityName : event.facilityName;
+        const titleDetail = transition || sites;
         const summary = [auditActor(event), event.targetAccount?.fullName ? 'Tài khoản: ' + event.targetAccount.fullName : ''].filter(Boolean);
         return <li key={event.id}>
           <Link to={to + '?event=' + encodeURIComponent(event.id)}>

@@ -1,14 +1,12 @@
 .bom-report {
-  --bom-report-teal: #137f76;
-  --bom-report-blue: #416fbd;
+  --bom-report-brand: var(--workspace-primary);
+  --bom-report-blue: var(--workspace-info);
   --bom-report-amber: #b36d25;
   --bom-report-violet: #8153aa;
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0;
   container-type: inline-size;
 }
 [data-workspace-theme="dark"] .bom-report {
-  --bom-report-teal: #73dacc;
-  --bom-report-blue: #85aeeb;
   --bom-report-amber: #edb268;
   --bom-report-violet: #bd9ae3;
 }
@@ -77,7 +75,7 @@
 .bom-report-trend { margin: 0; min-width: 0; }
 .bom-report-trend figcaption { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .84rem; }
 .bom-report-trend figcaption > span { display: inline-flex; align-items: center; gap: 6px; }
-.bom-report-trend .is-rent { background: var(--bom-report-teal); }
+.bom-report-trend .is-rent { background: var(--bom-report-brand); }
 .bom-report-trend .is-received { background: var(--bom-report-blue); }
 .bom-report-axis-unit { display: block; min-height: 1lh; color: var(--workspace-muted); font-size: .75rem; margin: 9px 0 6px; }
 .bom-report-chart { --bom-plot-height: 176px; display: flex; min-width: 0; }
@@ -124,8 +122,8 @@
 .bom-report-stock dd { margin: 0; font-weight: 600; }
 .bom-report-table progress { display: block; appearance: none; height: 6px; width: 100%; min-width: 72px; max-width: 118px; border: 0; border-radius: 4px; background: var(--workspace-table); margin-block: 6px; overflow: hidden; }
 .bom-report-table progress::-webkit-progress-bar { background: var(--workspace-table); }
-.bom-report-table progress::-webkit-progress-value { background: var(--bom-report-teal); }
-.bom-report-table progress::-moz-progress-bar { background: var(--bom-report-teal); }
+.bom-report-table progress::-webkit-progress-value { background: var(--bom-report-brand); }
+.bom-report-table progress::-moz-progress-bar { background: var(--bom-report-brand); }
 .manager-shell.internal-web #portal-main:has(.bom-report):focus-visible { outline: none; }
 .manager-shell.internal-web .bom-report :is(a, button, select, summary, [tabindex="0"]):focus-visible {
   outline: 2px solid var(--workspace-primary); outline-offset: 2px;

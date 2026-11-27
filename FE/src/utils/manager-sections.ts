@@ -42,7 +42,7 @@ export const managerSections = {
 export type ManagerSection = keyof typeof managerSections;
 export const managerPrimaryMenu = [
   { title: 'Tổng quan', key: '' }, { title: managerSections.reviews.title, key: 'reviews' },
-  { title: 'Phân công nhân viên', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
+  { title: 'Điều phối công việc', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
   { title: 'Kho và dịch vụ bổ trợ', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
   { title: 'Dịch vụ & bảng giá', key: 'catalog' }, { title: 'Báo cáo', key: 'reports' },
 ] as const;

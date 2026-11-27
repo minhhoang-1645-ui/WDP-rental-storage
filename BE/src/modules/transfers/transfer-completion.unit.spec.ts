@@ -17,6 +17,7 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
   const maintenance: Record<string, unknown>[] = [];
   const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, assignedStaffUserId: support.assignedStaffUserId, resolutionType: support.resolutionType } });
   const tx = {
+    auditEvent: { create: vi.fn() },
     $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },

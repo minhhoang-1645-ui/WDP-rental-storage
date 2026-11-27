@@ -111,7 +111,7 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
 
   return <section className={activity ? 'admin-audit admin-activity-audit' : 'admin-audit'} data-category={category}>
     <PageHeader title={title} description={permissions
-      ? 'Đổi vai trò, quyền cơ sở, trạng thái tài khoản và thu hồi phiên. Thời gian Việt Nam (UTC+7).'
+      ? 'Thay đổi vai trò, cấp và thu hồi quyền truy cập cơ sở. Thời gian Việt Nam (UTC+7).'
       : 'Thời gian Việt Nam (UTC+7).'}>
       <button className="button-secondary" disabled={invalidRange || data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
       <RefreshStatus active={data.refreshing} />
@@ -126,8 +126,7 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
         <option value="">Tất cả</option>
         {(login ? [['AUTH_LOGIN', 'Đăng nhập'], ['AUTH_LOGOUT', 'Đăng xuất'], ['AUTH_LOGIN_ACCOUNT_DISABLED', 'Đăng nhập tài khoản đã khóa']]
           : activity ? activityFilters
-          : [['CHANGE_ROLE', 'Đổi vai trò'], ['GRANT_FACILITY_ACCESS', 'Cấp quyền cơ sở'], ['REVOKE_FACILITY_ACCESS', 'Thu hồi quyền cơ sở'],
-            ['REVOKE_SESSION', 'Thu hồi một phiên'], ['REVOKE_SESSIONS', 'Thu hồi toàn bộ phiên'], ['DISABLE_ACCOUNT', 'Khóa tài khoản'], ['REACTIVATE_ACCOUNT', 'Mở khóa tài khoản']]
+          : [['CHANGE_ROLE', 'Thay đổi vai trò'], ['GRANT_FACILITY_ACCESS', 'Thêm quyền truy cập cơ sở'], ['REVOKE_FACILITY_ACCESS', 'Thu hồi quyền truy cập cơ sở']]
         ).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
       </select></label>
       <label className="field-label">Kết quả<select aria-label={activity ? 'Kết quả' : undefined} value={params.get('outcome') ?? ''} onChange={event => changeFilter('outcome', event.target.value)}>

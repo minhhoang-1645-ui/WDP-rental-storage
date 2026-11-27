@@ -11,11 +11,10 @@ export type AuditInput = {
   method: string; route: string; httpStatus: number; actor?: Pick<PublicUser, 'id' | 'fullName' | 'email' | 'role'>; attemptedEmail?: unknown; ipAddress?: string; metadata?: Prisma.InputJsonObject;
 };
 export const disabledLoginAction = 'AUTH_LOGIN_ACCOUNT_DISABLED';
-const permissionActions = ['CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSION', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
+const permissionActions = ['CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS'];
 const roleChangeRoute = '/admin/facility-access/users/:id/role';
 const grantRoutes = ['/admin/facility-access', '/admin/facility-access/:id/revoke'];
-const legacyPermissionRoutes = [...grantRoutes, roleChangeRoute, '/admin/users/:id/status'];
-const accountNoticeActions = ['CREATE', 'UPDATE', ...permissionActions];
+const accountNoticeActions = ['CREATE', 'UPDATE', ...permissionActions, 'REVOKE_SESSION', 'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
 const legacyAccountNotices = [
   { route: roleChangeRoute, action: 'ROLE', titleAction: 'CHANGE_ROLE' },
   { route: grantRoutes[0], action: 'CREATE', titleAction: 'GRANT_FACILITY_ACCESS' },
@@ -174,13 +173,10 @@ export class AuditService {
     const action = scalar('action', 80), accountId = scalar('accountId', 120), scope = scalar('scope');
     if (scope && (scope !== 'permissions' || category !== 'ACTIVITY')) throw new BadRequestException('Phạm vi nhật ký không hợp lệ.');
     const extraFilters: Prisma.AuditEventWhereInput[] = [];
-    if (scope === 'permissions') extraFilters.push({ OR: [{ action: { in: permissionActions } }, { route: { in: legacyPermissionRoutes } }] });
+    if (scope === 'permissions') extraFilters.push({ OR: [{ action: { in: permissionActions } }, ...legacyAccountNotices.map(({ action: legacyAction, route }) => ({ action: legacyAction, route }))] });
     if (action) {
-      const legacy = action === 'CHANGE_ROLE' ? { action: 'ROLE', route: roleChangeRoute }
-        : action === 'GRANT_FACILITY_ACCESS' ? { action: 'CREATE', route: '/admin/facility-access' }
-        : action === 'REVOKE_FACILITY_ACCESS' ? { action: 'REVOKE', route: '/admin/facility-access/:id/revoke' }
-        : undefined;
-      extraFilters.push(legacy ? { OR: [{ action }, legacy] } : { action });
+      const legacy = legacyAccountNotices.find(event => event.titleAction === action);
+      extraFilters.push(legacy ? { OR: [{ action }, { action: legacy.action, route: legacy.route }] } : { action });
     }
     const accountGrants = accountId && category === 'ACTIVITY'
       ? await this.prisma.facilityAccess.findMany({ where: { userId: accountId }, select: { id: true } })

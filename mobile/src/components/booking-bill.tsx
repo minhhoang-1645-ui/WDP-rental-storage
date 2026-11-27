@@ -10,10 +10,9 @@ const blue = '#0758DC';
 const money = (value: number | null) => value === null ? 'Chưa có báo giá' : formatMoney(value);
 const amount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-function Line({ title, value, note }: { title: string; value: unknown; note?: string }) {
+function Line({ title, value }: { title: string; value: unknown }) {
   if (value === null || value === undefined || value === '') return null;
-  return <View style={s.line}><View style={s.lineCopy}><Text style={s.label}>{title}</Text>
-    {note ? <Text style={s.note}>{note}</Text> : null}</View>
+  return <View style={s.line}><Text style={[s.label, s.lineCopy]}>{title}</Text>
     <Text style={[s.strong, typeof value === 'number' && value < 0 && s.saving]}>{typeof value === 'number' ? formatMoney(value) : String(value)}</Text></View>;
 }
 
@@ -24,46 +23,25 @@ export function BookingBill({ quote }: { quote: Row }) {
   const discount = amount(quote.discountAmount) ?? 0;
   const duration = typeof quote.termMonths === 'number' && quote.termMonths > 0 ? quote.termMonths + ' tháng'
     : typeof quote.billableDays === 'number' ? quote.billableDays + ' ngày' : '';
-  const unitPrice = amount(quote.billingMode === 'DAILY' ? Number(quote.dailyUnitPrice) : quote.monthlyUnitPrice);
-  const unitRate = unitPrice !== null && unitPrice > 0 && typeof quote.quantity === 'number'
-    ? formatMoney(unitPrice) + ' / ô / ' + (quote.billingMode === 'DAILY' ? 'ngày' : 'tháng') + ' · ' + quote.quantity + ' ô'
-    : undefined;
   const deposit = initial.depositAmount ?? quote.depositAmount;
-  const depositNote = 'Được đối chiếu khi trả kho theo điều khoản hợp đồng.';
   const early = object(object(object(quote.pricingPolicy).earlyReturn).value);
   const earlyFee = early.feeMethod === 'FIXED_AMOUNT' ? formatMoney(Number(early.feeAmount))
     : early.feeMethod === 'UNUSED_RENT_PERCENTAGE' ? `${early.feeAmount}% tiền thuê chưa sử dụng` : 'Miễn phí';
   const earlyRefund = early.refundMode === 'NONE' ? 'Không hoàn tiền thuê trả trước'
     : early.refundMode === 'ORIGINAL_DISCOUNT' ? 'Hoàn theo giá đã giảm' : 'Tính lại theo bảng ưu đãi đã cam kết';
   return <View style={s.group}>
-    <View style={s.breakdown}>
-    <Text style={s.title}>Chi tiết chi phí</Text>
-    {sum.monthly ? <>
-      <Text style={s.strong}>Lần đầu sau khi ký hợp đồng</Text>
-      <Line title="Tiền thuê kỳ đầu" value={initial.rentalAmount} note={unitRate} />
-      {Number(deposit) > 0 && <Line title="Tiền cọc" value={deposit} note={depositNote} />}
-      {Number(initial.purchaseAddOnAmount) > 0 ? <Line title="Vật tư mua một lần" value={initial.purchaseAddOnAmount} /> : null}
-      {Number(initial.rentalAddOnAmount) > 0 ? <Line title="Thiết bị kỳ đầu" value={initial.rentalAddOnAmount} /> : null}
-      <Line title="Số tiền trả lần đầu" value={sum.first} />
-      {sum.remaining !== null && sum.remaining > 0 ? <Line title="Tổng còn lại ở các kỳ sau" value={sum.remaining}
-        note="Thanh toán theo từng hóa đơn đến hạn." /> : null}
-    </> : <>
-      <Line title={duration ? 'Tiền thuê kho · ' + duration : 'Tiền thuê kho'}
-        value={discount > 0 ? quote.baseRentalAmount : quote.rentalAmount} note={unitRate} />
-      {discount > 0 && <Line title="Giảm giá trả thẳng" value={-discount} />}
-      {Number(quote.depositAmount) > 0 && <Line title="Tiền cọc" value={quote.depositAmount} note={depositNote} />}
-      {rows(quote.services).map((item, index) => <Line key={index} title={text(item, 'name') + (item.quantity ? ' × ' + item.quantity : '')} value={item.amount} />)}
-      {!rows(quote.services).length && Number(quote.addOnTotalAmount) > 0 && <Line title="Thiết bị và vật tư" value={quote.addOnTotalAmount} />}
-    </>}
-      <View style={[s.panel, s.line]}>
-        <Text style={[s.strong, s.lineCopy]}>Tổng cả kỳ{Number(deposit) > 0 ? ' (gồm cọc)' : ''}</Text>
-        <Text style={s.amount}>{money(sum.total)}</Text>
-      </View>
+    <View style={[s.panel, s.firstPayment]}>
+      <Text style={s.strong}>Số tiền trả lần đầu</Text>
+      <Text style={s.firstAmount}>{money(sum.first)}</Text>
+      <Text style={s.label}>Bạn gửi yêu cầu ở bước này và thanh toán hóa đơn đầu tiên sau khi ký hợp đồng.</Text>
     </View>
-    <View style={[s.panel, s.notice]}><Info size={18} color={blue} />
-      <View style={s.noticeText}><Text style={s.strong}>Bước này gửi yêu cầu đặt kho</Text>
-        <Text style={s.label}>Bạn thanh toán theo hóa đơn sau khi ký hợp đồng.</Text></View>
-    </View>
+    {sum.monthly && sum.remaining !== null && sum.remaining > 0 && <View style={s.breakdown}>
+      <Text style={s.strong}>Các kỳ thanh toán sau</Text>
+      {sum.laterEach !== null && sum.laterCount !== null
+        ? <Text style={s.label}>{formatMoney(sum.laterEach)} mỗi tháng trong {sum.laterCount} kỳ tiếp theo.</Text>
+        : <Text style={s.label}>Thanh toán hằng tháng theo số tiền ghi trên từng hóa đơn. Số tiền mỗi kỳ có thể khác nhau nếu có dịch vụ bổ sung.</Text>}
+      <Line title="Tổng còn lại" value={sum.remaining} />
+    </View>}
     <Pressable accessibilityRole="button" style={s.link} onPress={() => setDetails(true)}>
       <Text style={s.linkText}>Xem chi tiết chi phí</Text><ChevronRight color={blue} size={17} />
     </Pressable>
@@ -72,6 +50,16 @@ export function BookingBill({ quote }: { quote: Row }) {
         <View style={s.handle} /><View style={s.line}><Text style={s.title}>Chi tiết chi phí</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Đóng" onPress={() => setDetails(false)} style={s.close}><X size={20} color="#18263B" /></Pressable></View>
         <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={[s.group, { paddingBottom: 12 }]}>
+          {sum.monthly && <View style={s.breakdown}>
+            <Text style={s.strong}>Hóa đơn đầu tiên</Text>
+            <Line title="Tiền thuê kỳ đầu" value={initial.rentalAmount} />
+            {Number(deposit) > 0 && <Line title="Tiền cọc" value={deposit} />}
+            {Number(initial.purchaseAddOnAmount) > 0 && <Line title="Vật tư mua một lần" value={initial.purchaseAddOnAmount} />}
+            {Number(initial.rentalAddOnAmount) > 0 && <Line title="Thiết bị kỳ đầu" value={initial.rentalAddOnAmount} />}
+            <Line title="Số tiền trả lần đầu" value={sum.first} />
+            {sum.remaining !== null && sum.remaining > 0 && <Line title="Tổng còn lại" value={sum.remaining} />}
+          </View>}
+          <Text style={s.strong}>Chi phí toàn kỳ</Text>
           <Line title={quote.billingMode === 'DAILY' ? 'Đơn giá một kho / ngày' : 'Đơn giá một kho / tháng'}
             value={quote.billingMode === 'DAILY' && typeof quote.dailyUnitPrice === 'string' && /^\d+(?:\.\d+)?$/.test(quote.dailyUnitPrice)
               ? formatMoney(Number(quote.dailyUnitPrice)) : quote.billingMode === 'DAILY' ? quote.dailyUnitPrice : quote.monthlyUnitPrice} />
@@ -86,7 +74,7 @@ export function BookingBill({ quote }: { quote: Row }) {
             <Line title="Phí chủ động trả kho trước hạn" value={earlyFee} />
             <Line title="Hoàn tiền thuê trả trước" value={earlyRefund} />
           </>}
-          <View style={s.panel}><Text style={s.strong}>Tổng dự kiến thanh toán (gồm cọc)</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
+          <View style={s.panel}><Text style={s.strong}>Tổng cả kỳ{Number(deposit) > 0 ? ' (gồm cọc)' : ''}</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
           {Number(quote.depositAmount) > 0 ? <View style={[s.panel, s.notice]}><Info size={18} color={blue} />
             <View style={s.noticeText}><Text style={s.strong}>Tiền cọc được đối chiếu khi trả kho</Text><Text style={s.label}>Hoàn cọc theo điều khoản trong hợp đồng.</Text></View></View> : null}
         </ScrollView>
@@ -96,12 +84,13 @@ export function BookingBill({ quote }: { quote: Row }) {
 }
 
 const s = StyleSheet.create({
-  lineCopy: { flex: 1, gap: 2 },
-  note: { fontSize: 12, color: '#64748B' },
+  lineCopy: { flex: 1 },
   breakdown: { borderWidth: 1, borderColor: '#DCE3EC', borderRadius: 12, padding: 10, gap: 3 },
+  firstPayment: { padding: 16, gap: 6 },
+  firstAmount: { color: blue, fontSize: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
   group: { gap: 8 }, panel: { backgroundColor: '#EDF3FD', borderRadius: 12, padding: 12, gap: 4 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, noticeText: { flex: 1, gap: 4 },
-  green: { backgroundColor: '#E7F6E9' }, saving: { fontSize: 15, fontWeight: '700', color: '#09672A' },
+  saving: { fontSize: 15, fontWeight: '700', color: '#09672A' },
   amount: { color: blue, fontSize: 19, fontWeight: '800' }, title: { fontSize: 18, fontWeight: '800', color: '#18263B' },
   line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 5 },
   label: { fontSize: 13, color: '#40516A', flexShrink: 1 }, strong: { fontSize: 14, color: '#18263B', fontWeight: '700' },

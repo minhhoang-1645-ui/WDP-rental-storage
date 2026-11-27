@@ -48,6 +48,9 @@ export function BookingBill({ quote }: { quote: Row }) {
       <Text style={s.label}>Bạn gửi yêu cầu ở bước này và thanh toán hóa đơn đầu tiên sau khi ký hợp đồng.</Text>
     </View>
     {laterPayments}
+    {sum.total !== null && <View style={s.breakdown}>
+      <Line title={Number(deposit) > 0 ? 'Tổng cả kỳ (gồm cọc)' : 'Tổng cả kỳ'} value={sum.total} />
+    </View>}
     <Pressable accessibilityRole="button" style={s.link} onPress={() => setDetails(true)}>
       <Text style={s.linkText}>Xem chi tiết chi phí</Text><ChevronRight color={blue} size={17} />
     </Pressable>

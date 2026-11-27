@@ -230,7 +230,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
               {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' &&
-                <MaintenanceRepairPlan key={first(row, 'updatedAt')} row={row} refresh={data.refresh} onSuccess={setNotice} />}
+                <MaintenanceRepairPlan key={`repair-plan:${first(row, 'updatedAt')}`} row={row} refresh={data.refresh} onSuccess={setNotice} />}
               {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
               {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && <section className="manager-section">
                 <h2>Phân công nhân viên</h2>
@@ -254,7 +254,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
               {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.costs &&
-                <MaintenanceCosts key={first(row, 'updatedAt')} row={row} refresh={data.refresh} onSuccess={setNotice} />}
+                <MaintenanceCosts key={`maintenance-costs:${first(row, 'updatedAt')}`} row={row} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
                   ...(row.commercial ? [['Phụ lục đổi loại', first(row, 'commercial.acceptedAt') ? 'Đã ký' : 'Chờ khách ký']] as [string, string][] : [])]} />

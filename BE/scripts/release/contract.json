@@ -514,6 +514,13 @@
         "6fa3bfbf436ae4102b5bc00860394fc91be954b587eb6cd2ab3d290e4a7a140e",
         "c3e7ddd34389674bf03c2c1b932c9db16628fdd8c4c94eb36eb652981a3397ad"
       ]
+    },
+    {
+      "name": "20261127000200_support_resolution_photos",
+      "checksums": [
+        "8d01e9ec21226426b57b613c103b16f16855060d70fcd7193667ffb4ae124d5a",
+        "81c5144c1ecce7c8f7c09d0769f698cb38093fb0a915a10f49b2e14ff7f65c04"
+      ]
     }
   ],
   "historicalException": {

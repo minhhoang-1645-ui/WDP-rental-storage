@@ -19,6 +19,17 @@ import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointme
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { ApiError } from '../../services/api';
 
+const photoTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+function readHandoverPhoto(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được ảnh bàn giao.'));
+    reader.onerror = () => reject(new Error('Không đọc được ảnh bàn giao.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function StaffActions({
   resource,
   row,
@@ -36,7 +47,8 @@ export function StaffActions({
   const confirm = useConfirmation();
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
-  const busy = pendingAction !== undefined;
+  const [readingPhotos, setReadingPhotos] = useState(false);
+  const busy = pendingAction !== undefined || readingPhotos;
   const lock = useRef(false);
   const returnRequirementsId = useId();
   const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
@@ -127,13 +139,14 @@ export function StaffActions({
       setPendingAction(undefined);
     }
   };
-  const submit = (
+  const submit = async (
     event: FormEvent<HTMLFormElement>,
     suffix: string,
     field: string,
     idempotent = false,
   ) => {
     event.preventDefault();
+    if (busy || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
@@ -146,6 +159,24 @@ export function StaffActions({
         condition: String(data.get(`condition-${unit.id}`) ?? '').trim(),
         inspected: data.get(`checked-${unit.id}`) === 'on',
       })) : undefined;
+      const files = data.getAll('handoverPhotos').filter((entry): entry is File => entry instanceof File && Boolean(entry.name));
+      const photoLinks = String(data.get('handoverPhotoLinks') ?? '').split(/\r?\n/).map(link => link.trim()).filter(Boolean);
+      if (files.length > 3 || files.some(file => !photoTypes.includes(file.type) || file.size === 0 || file.size > 400 * 1024)) {
+        setError('Chọn tối đa 3 ảnh JPG, PNG hoặc WebP, tối đa 400 KB mỗi ảnh.');
+        return;
+      }
+      if (photoLinks.length > 3 || photoLinks.some(link => !/^https:\/\/[^\s]+$/i.test(link) || link.length > 2000)) {
+        setError('Nhập tối đa 3 link HTTPS, mỗi link trên một dòng.');
+        return;
+      }
+      let photos: string[] = [];
+      if (files.length) {
+        setError('');
+        setReadingPhotos(true);
+        try { photos = await Promise.all(files.map(readHandoverPhoto)); }
+        catch (caught) { setError(caught instanceof Error ? caught.message : 'Không đọc được ảnh bàn giao.'); return; }
+        finally { setReadingPhotos(false); }
+      }
       input.handoverReport = {
         recipientType,
         recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
@@ -157,6 +188,8 @@ export function StaffActions({
         accessDelivered: data.get('accessDelivered') === 'on',
         documentsDelivered: data.get('documentsDelivered') === 'on',
         ...(unitChecks ? { unitChecks } : {}),
+        ...(photos.length ? { photos } : {}),
+        ...(photoLinks.length ? { photoLinks } : {}),
       };
     }
     void run(suffix, 'POST', input, idempotent);
@@ -220,12 +253,20 @@ export function StaffActions({
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
               <PurchasedProducts row={row} confirm />
+              <label className="field-label">Ảnh bàn giao từ máy (tùy chọn)
+                <input name="handoverPhotos" type="file" accept={photoTypes.join(',')} multiple disabled={busy} />
+                <small>Tối đa 3 ảnh JPG, PNG hoặc WebP, mỗi ảnh tối đa 400 KB.</small>
+              </label>
+              <label className="field-label">Link ảnh bàn giao (tùy chọn)
+                <textarea name="handoverPhotoLinks" rows={2} maxLength={6002} placeholder="https://..." disabled={busy} />
+                <small>Tối đa 3 link HTTPS, mỗi link một dòng.</small>
+              </label>
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
               {tracksUnits && !allUnitsRecorded && <p role="status">Đã ghi nhận {physicalUnits.filter(unit => progress.has(unit.id)).length}/{physicalUnits.length} kho.</p>}
-              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded} aria-busy={pendingAction === '/complete-handover'}>
+              <button type="submit" className="button-primary" disabled={busy || tracksUnits && !allUnitsRecorded} aria-busy={busy || pendingAction === '/complete-handover'}>
                 {pendingAction === '/complete-handover' ? 'Đang ghi nhận bàn giao…' : 'Xác nhận đã bàn giao giấy tờ và chìa khóa'}
               </button>
             </form>

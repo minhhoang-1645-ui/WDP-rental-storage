@@ -33,6 +33,7 @@ function setup(status = 'CONFIRMED') {
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([]),
     $queryRawUnsafe: vi.fn(),
+    auditEvent: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
     reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
     user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
@@ -72,7 +73,13 @@ describe('RV3 handover completion service', () => {
   });
   it('records the contract customer, Staff identity and actual completion time', async () => {
     const { service, update } = setup();
-    const result = await service.completeHandover('appointment', { handoverReport: report }, staff);
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/0sAAAAASUVORK5CYII='];
+    const photoLinks = ['https://example.test/handover.png'];
+    const result = await service.completeHandover('appointment', { handoverReport: { ...report, photos, photoLinks } }, staff);
+    expect(result.handoverReport).toMatchObject({ photos, photoLinks });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      handoverReport: expect.objectContaining({ photos, photoLinks }),
+    }) }));
     expect(result.handoverNote).toContain('Người nhận: Khách thuê');
     expect(result.handoverReport).toMatchObject({ recipientName: 'Khách thuê', accessItemCount: 1, identityVerified: true, documentsDelivered: true });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completedByUserId: staff.id, completedAt: expect.any(Date) }) }));

@@ -237,6 +237,10 @@ export class HandoverReportRequestDto {
   documentsDelivered?: boolean;
   @ApiPropertyOptional({ type: [HandoverUnitCheckRequestDto], description: 'Khi gửi, phải có đúng một kết quả cho mỗi kho vật lý trong lịch.' })
   unitChecks?: HandoverUnitCheckRequestDto[];
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Ảnh JPG, PNG hoặc WebP dạng data URL, tối đa 400 KB mỗi ảnh.' })
+  photos?: string[];
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Liên kết ảnh HTTPS.' })
+  photoLinks?: string[];
 }
 
 export class CompleteHandoverRequestDto {

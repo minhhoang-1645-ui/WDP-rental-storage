@@ -10,6 +10,7 @@ import type { StaffOperation } from './staff-resources';
 import { transferProblem } from '../../utils/transfer-problem';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
+import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 type Fact = [string, ReactNode];
 
 function DateFact({ value, withTime = false }: { value: string; withTime?: boolean }) {
@@ -154,6 +155,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
               ['Hiện trạng', condition],
               ['Ghi chú vấn đề', issue !== condition ? issue : ''],
             ])} />
+            <ReturnInspectionPhotos inspection={item} />
           </div>;
         })}
       </section>}

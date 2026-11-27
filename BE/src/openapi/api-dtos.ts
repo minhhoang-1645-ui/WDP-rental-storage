@@ -294,6 +294,9 @@ export class UpdateReturnInspectionRequestDto {
 
   @ApiPropertyOptional({ example: 'Phát hiện hư hỏng cần Manager xử lý riêng.', maxLength: 2000, description: 'Bắt buộc khi result là ISSUE_FOUND.' })
   issueNote?: string;
+
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Ảnh JPG, PNG hoặc WebP dạng data URL, tối đa 400 KB mỗi ảnh. Bỏ qua trường để giữ ảnh cũ.' })
+  inspectionPhotos?: string[];
 }
 
 export class DepositSettlementIssueReviewDto {

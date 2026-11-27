@@ -1011,6 +1011,7 @@ model ReturnInspection {
   issueType          InspectionIssueType?
   conditionNote      String?
   issueNote          String?
+  inspectionPhotos   Json?
   inspectedByUserId  String?
   inspectedBy        User?                   @relation("ReturnInspector", fields: [inspectedByUserId], references: [id], onDelete: Restrict)
   inspectedAt        DateTime?

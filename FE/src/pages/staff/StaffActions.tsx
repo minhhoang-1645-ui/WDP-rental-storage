@@ -20,6 +20,7 @@ import { useConfirmation } from '../../components/workspace/ConfirmationProvider
 import { ApiError } from '../../services/api';
 
 import { useEvidencePhotoPicker } from '../../components/workspace/useEvidencePhotoPicker';
+import { inspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 
 export function StaffActions({
   resource,
@@ -273,6 +274,7 @@ export function StaffActions({
                   <InspectionEditor
                     key={`${first(item, "id")}:${item.result}:${item.inspectedAt}`}
                     inspection={item}
+                    disabled={busy}
                     save={(input) =>
                       run(
                         `/inspections/${encodeURIComponent(first(item, "id"))}`,
@@ -456,16 +458,25 @@ export function StaffActions({
 
 function InspectionEditor({
   inspection,
+  disabled,
   save,
 }: {
   inspection: Row;
+  disabled: boolean;
   save: (input: Row) => Promise<void>;
 }) {
   const [result, setResult] = useState(
     inspection.result === "ISSUE_FOUND" ? "ISSUE_FOUND" : "PASS",
   );
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    'Ảnh kiểm tra từ máy (tùy chọn)', disabled, inspectionPhotos(inspection),
+  );
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || photoReadLock.current) {
+      event.currentTarget.removeAttribute('data-wdp-submitting');
+      return;
+    }
     const data = new FormData(event.currentTarget);
     void save({
       result,
@@ -478,6 +489,7 @@ function InspectionEditor({
       conditionNote:
         String(data.get("conditionNote") ?? "").trim() || undefined,
       evidenceLink: String(data.get('evidenceLink') ?? '').trim() || undefined,
+      inspectionPhotos: handoverPhotos.map(photo => photo.src),
     });
   };
   return (
@@ -509,6 +521,7 @@ function InspectionEditor({
       <label className="field-label">Liên kết ảnh kiểm tra (tùy chọn)
         <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
       </label>
+      {photoPicker}
       {result === "ISSUE_FOUND" && (
         <>
           <label className="field-label">
@@ -545,7 +558,7 @@ function InspectionEditor({
           </label>
         </>
       )}
-      <button className="button-secondary">
+      <button className="button-secondary" disabled={disabled || readingPhotos}>
         Lưu kết quả kho {first(inspection, "unit.unitCode")}
       </button>
     </form>

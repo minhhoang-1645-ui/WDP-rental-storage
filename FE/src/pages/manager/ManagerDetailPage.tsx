@@ -62,6 +62,7 @@ import { staffRecordIdentity } from '../staff/staff-work';
 import { PolicySettlementActions } from '../../components/manager/PolicySettlementActions';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
+import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
@@ -1020,6 +1021,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
             {item.inspectedAt ? (
               <small>{date(item.inspectedAt, true)}</small>
             ) : null}
+            {returning && <ReturnInspectionPhotos inspection={item} />}
           </>,
         ]}
       />

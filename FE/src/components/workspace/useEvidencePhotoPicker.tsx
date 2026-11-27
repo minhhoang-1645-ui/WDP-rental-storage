@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { markFormDirty } from '../../services/live-events';
 
 const photoTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -11,11 +12,13 @@ function readHandoverPhoto(file: File) {
   });
 }
 
-export function useEvidencePhotoPicker(label: string, disabled: boolean) {
+export function useEvidencePhotoPicker(label: string, disabled: boolean, initialPhotos: string[] = []) {
   const [readingPhotos, setReadingPhotos] = useState(false);
-  const [handoverPhotos, setHandoverPhotos] = useState<{ id: number; name: string; src: string }[]>([]);
+  const [handoverPhotos, setHandoverPhotos] = useState(() => initialPhotos.map((src, index) => ({
+    id: index, name: `Ảnh đã lưu ${index + 1}`, src,
+  })));
   const [photoError, setPhotoError] = useState('');
-  const nextPhotoId = useRef(0);
+  const nextPhotoId = useRef(initialPhotos.length);
   const photoReadLock = useRef(false);
 
   async function addHandoverPhotos(files: File[]) {
@@ -60,7 +63,9 @@ export function useEvidencePhotoPicker(label: string, disabled: boolean) {
                   {handoverPhotos.map(photo => <li key={photo.id}>
                     <img src={photo.src} alt={photo.name} />
                     <span>{photo.name}</span>
-                    <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={() => {
+                    <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={event => {
+                      const form = event.currentTarget.form;
+                      if (form) markFormDirty(form);
                       setHandoverPhotos(previous => previous.filter(item => item.id !== photo.id));
                       setPhotoError('');
                     }}>Bỏ ảnh</button>

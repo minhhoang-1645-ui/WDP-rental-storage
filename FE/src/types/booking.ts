@@ -115,6 +115,7 @@ export interface PricingQuote extends PricingEstimate {
 }
 
 export interface AvailabilityResult {
+  serviceQuoteVersion?: string
   available: boolean
   availableQuantity?: number
   startDate: string

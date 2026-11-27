@@ -105,14 +105,21 @@
 .bom-report-tooltip span { display: flex; justify-content: space-between; gap: 4px; }
 .bom-report-table { max-width: 100%; overflow: auto; }
 .bom-report-table .manager-table :is(th, td) { padding: 9px 10px; font-variant-numeric: tabular-nums; vertical-align: top; }
-.bom-report-table .manager-table th { white-space: normal; }
+.manager-shell.internal-web .bom-report-table .manager-table th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
 .bom-report-table .manager-table th small { display: block; margin-top: 3px; font-size: .73rem; color: var(--workspace-muted); font-weight: 400; }
 .bom-report-table .manager-table .bom-report-money { text-align: end; }
 .bom-report-table td.bom-report-money { white-space: nowrap; }
-.bom-report-comparison .manager-table { min-width: 1040px; table-layout: fixed; }
-.bom-report-comparison th:first-child { width: 14%; }
-.bom-report-comparison th:nth-child(5) { width: 8%; }
-.bom-report-comparison th:nth-child(7) { width: 14%; }
+.bom-report-comparison .manager-table { min-width: 1120px; table-layout: fixed; }
+.bom-report-comparison td:first-child { overflow-wrap: anywhere; }
+.bom-report-comparison td.bom-report-money { white-space: normal; overflow-wrap: anywhere; }
+.bom-report-date-context, .bom-report-chart-note { color: var(--workspace-secondary); font-size: .875rem; }
+.bom-report-date-context { margin-block: 8px 12px; }
+.bom-report-date-context p, .bom-report-date-context ul { margin: 4px 0; }
+.bom-report-date-context ul { padding-inline-start: 20px; }
 .bom-report-trend-details .manager-table { min-width: 430px; }
 .bom-report-trend-details summary { cursor: pointer; font-weight: 650; }
 .bom-report-trend-details .bom-report-table { margin-top: 12px; }

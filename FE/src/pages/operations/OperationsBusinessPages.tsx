@@ -8,7 +8,7 @@ import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import { vietnamCalendarDate } from '../../utils/business-date';
 import { isReportDay } from '../../utils/reporting';
-import { ReportComparison, ReportFinances, ReportMetrics, ReportTrend, ReportTrendTable } from './OperationsReportSections';
+import { ReportComparison, ReportDateContext, ReportFinances, ReportMetrics, ReportTrend, ReportTrendTable } from './OperationsReportSections';
 import { displayDate, periods, reportPreset, reportTrendGroup, type Facility, type Period, type PerformanceReport, type Trend } from './operations-report-data';
 import './operations-report.css';
 
@@ -83,6 +83,10 @@ export function OperationsBusinessReport() {
   const facilityKnown = facilities.data?.some(item => item.id === facilityId);
   const rangeLabel = from && to ? (from === to ? displayDate(from) : displayDate(from) + ' – ' + displayDate(to))
     : from ? 'Từ ' + displayDate(from) : to ? 'Đến ' + displayDate(to) : 'Tất cả thời gian';
+  const scopeLabel = facilityId
+    ? facilities.data?.find(item => item.id === facilityId)?.name ?? items[0]?.name ?? 'Cơ sở đã chọn'
+    : 'Tất cả cơ sở';
+  const dateContext = <ReportDateContext trend={trend.data} facility={scopeLabel} range={rangeLabel} openRange={!from || !to} group={group} />;
 
   return <section className="bom-report">
     <PageHeader title="Doanh thu và hiệu quả cơ sở">
@@ -125,11 +129,12 @@ export function OperationsBusinessReport() {
       <ReportFinances items={items} invoiceCount={trend.data?.invoiceCount} loading={report.loading} />
       <section className="bom-report-panel">
         <h2>Xu hướng tài chính theo {group === 'day' ? 'ngày' : 'tháng'}</h2>
+        {dateContext}
         <LoadState loading={false} error={trend.error} retry={trend.refresh} />
         <ReportTrend trend={trend.data} group={group} loading={trend.loading} />
       </section>
       <ReportComparison items={items} />
-      <ReportTrendTable trend={trend.data} group={group} loading={trend.loading} />
+      <ReportTrendTable trend={trend.data} group={group} loading={trend.loading} context={dateContext} />
     </>}
     {report.data && !items.length && <Empty title="Không có cơ sở phù hợp" description="Chọn lại phạm vi cơ sở để xem báo cáo." />}
   </section>;

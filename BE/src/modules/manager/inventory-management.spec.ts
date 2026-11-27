@@ -1,5 +1,7 @@
 import 'reflect-metadata';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
+import { prepareCatalogPhoto, catalogPhotoLimits } from './catalog-photo.js';
 import { BadRequestException, ConflictException, ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -19,7 +21,7 @@ function fixture() {
     user: { findFirst: vi.fn().mockResolvedValue({ id: 'manager' }) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
     businessRule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue({ value: { min: 1000000, max: 2000000 } }) },
-    storageType: { findUnique: vi.fn().mockResolvedValue({ ...type, facility: { operationalStatus: 'OPEN' } }), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
+    storageType: { findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue({ ...type, facility: { operationalStatus: 'OPEN' } }), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
     storageUnitCodeCounter: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({ lastIssued: new Prisma.Decimal(1) }) },
     facility: { findUnique: vi.fn().mockResolvedValue({ id: 'facility' }), findMany: vi.fn().mockResolvedValue([{ id: 'facility', name: 'Cơ sở' }]) },
     storageUnit: { groupBy: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...unit, ...data })) },
@@ -28,6 +30,66 @@ function fixture() {
   const prisma = { ...tx, $transaction: vi.fn().mockImplementation(async operation => operation(tx)) };
   return { tx, prisma, service: new InventoryManagementService(prisma as never) };
 }
+
+describe('catalog image save', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+  const png = () => sharp({
+    create: { width: 4, height: 3, channels: 3, background: '#ffffff' },
+  }).png().toBuffer();
+  function storage() {
+    vi.stubEnv('CATALOG_STORAGE_URL', 'https://storage.example.test');
+    vi.stubEnv('CATALOG_STORAGE_BUCKET', 'catalog-images');
+    vi.stubEnv('CATALOG_STORAGE_SERVICE_KEY', 'test-only');
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+  it('rejects oversized and invalid image contents', async () => {
+    await expect(prepareCatalogPhoto(Buffer.alloc(catalogPhotoLimits.fileSize + 1))).rejects.toThrow('5 MB');
+    await expect(prepareCatalogPhoto(Buffer.from('not an image'))).rejects.toThrow('ảnh JPG');
+  });
+  it('creates a type with an uploaded image using the public object URL', async () => {
+    const fetchMock = storage();
+    const { service, tx } = fixture();
+    const { id: _id, updatedAt: _updatedAt, image: _image, ...input } = type;
+    const result = await service.saveType(undefined, { ...input, code: 'NEW', monthlyRate: 1500000 }, actor, await png());
+    expect(tx.storageType.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ image: result.image }),
+    }));
+    expect(result.image).toEqual(expect.stringContaining('/object/public/catalog-images/'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('preserves a legacy image, uploads normalized bytes on replacement and supports removal', async () => {
+    const fetchMock = storage();
+    const { service, tx } = fixture();
+    const old = '/legacy.png';
+    tx.storageType.findUnique.mockResolvedValue({ ...type, image: old });
+    const input = { expectedUpdatedAt: version };
+    expect(await service.saveType(type.id, input, actor)).toMatchObject({ image: old });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const replaced = await service.saveType(type.id, input, actor, await png());
+    expect(replaced.image).toMatch(/^https:\/\/storage\.example\.test\/storage\/v1\/object\/public\/catalog-images\/catalog\/.*\.webp$/);
+    const [, upload] = fetchMock.mock.calls[0]!;
+    expect((await sharp(Buffer.from(upload?.body as Uint8Array)).metadata()).format).toBe('webp');
+    expect(await service.saveType(type.id, { ...input, image: '' }, actor)).toMatchObject({ image: '' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('checks facility access before uploading and cleans up when save fails', async () => {
+    const fetchMock = storage();
+    const { service, tx } = fixture();
+    const image = await png();
+    const input = { expectedUpdatedAt: version };
+    tx.facilityAccess.findMany.mockResolvedValueOnce([]);
+    await expect(service.saveType(type.id, input, actor, image)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await expect(service.saveType(type.id, input, actor, image)).rejects.toThrow('Không thể tải ảnh');
+    expect(tx.storageType.update).not.toHaveBeenCalled();
+    tx.storageType.update.mockRejectedValueOnce(new Error('save failed'));
+    await expect(service.saveType(type.id, input, actor, image)).rejects.toThrow('save failed');
+    expect(fetchMock.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'DELETE', 'POST', 'DELETE']);
+  });
+});
 describe('Manager inventory configuration safety (mock DB only)', () => {
   it('merges equivalent ground labels and lists locations independently of pagination', async () => {
     const { service, tx } = fixture();

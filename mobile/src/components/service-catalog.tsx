@@ -29,9 +29,10 @@ function durationLabel(service:AdditionalService,choice:ServiceSelection) {
 function formula(service:AdditionalService,choice:ServiceSelection) {
   if(service.unitPrice==null)return 'Chưa có giá';
   const price=formatMoney(service.unitPrice);
-  if(service.billingUnit==='ONE_TIME')return price+'/cái × '+choice.quantity;
+  const unit=service.physicalUnit?.trim()||(service.kind==='PURCHASE'?'sản phẩm':'thiết bị');
+  if(service.billingUnit==='ONE_TIME')return price+'/'+unit+' × '+choice.quantity;
   const units=service.billingUnit==='MONTH'?serviceCalendarMonths(choice.serviceStartDate??'',choice.serviceEndDate??''):(Date.parse(choice.serviceEndDate??'')-Date.parse(choice.serviceStartDate??''))/86400000;
-  return price+'/'+(service.billingUnit==='MONTH'?'tháng':'ngày')+' × '+(Number.isFinite(units)?units:'—')+' '+(service.billingUnit==='MONTH'?'tháng':'ngày')+' × '+choice.quantity;
+  return price+'/'+unit+'/'+(service.billingUnit==='MONTH'?'tháng':'ngày')+' × '+(Number.isFinite(units)?units:'—')+' '+(service.billingUnit==='MONTH'?'tháng':'ngày')+' × '+choice.quantity;
 }
 function ServiceImage({service}:{service:AdditionalService}) {
   const [failed,setFailed]=useState('');

@@ -14,7 +14,8 @@ export interface PublicFacility {
 export interface Catalog {
   products: StorageListing[]
   sizes: StorageSize[]
-  approvedDurations: number[]
+  suggestedRentalMonths?: number[]
+  approvedDurations?: number[]
   addons: AdditionalService[]
   facilities?: PublicFacility[]
 }

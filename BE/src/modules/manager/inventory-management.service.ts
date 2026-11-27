@@ -1,12 +1,13 @@
 import { assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
 import { assertPriceWithin, groupPriceKeys, lockPriceRange, maxMonthlyPrice, missingPriceRange, priceBounds, priceVersionStatus, resolveMonthlyRange, sizeGroups as groups } from '../pricing/monthly-price-range.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { unitHistoryCounts, unitMetadataLocked } from './unit-edit-policy.js';
 import { canonicalUnitFloor, canonicalUnitZone, unitFloorValues } from './unit-location.js';
+import { prepareCatalogPhoto } from './catalog-photo.js';
 
 const groupLabels: Record<string, string> = groups;
 const typeFields = ['facilityId', 'code', 'name', 'sizeId', 'condition', 'widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'allowDailyRental', 'minRentalDays', 'image', 'imageAlt', 'bookingEnabled', 'expectedUpdatedAt'];
@@ -18,6 +19,7 @@ function physicalUnitCode(prefix: string, sequence: bigint) {
 
 @Injectable()
 export class InventoryManagementService {
+  private readonly logger = new Logger(InventoryManagementService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async listTypes(actor: PublicUser) {
@@ -35,9 +37,11 @@ export class InventoryManagementService {
     return { items: items.map(item => this.typeView(item)), facilities, pricingRanges, groups, total: items.length, page: 1, limit: Math.max(1, items.length) };
   }
 
-  async saveType(id: string | undefined, input: Record<string, unknown>, actor: PublicUser) {
+  async saveType(id: string | undefined, input: Record<string, unknown>, actor: PublicUser, photoBytes?: Buffer) {
     this.manager(actor); this.body(input, typeFields);
-    return this.write(async tx => {
+    if (photoBytes && Object.hasOwn(input, 'image')) throw new BadRequestException('Chỉ chọn một thao tác với ảnh.');
+    let photo: Awaited<ReturnType<typeof prepareCatalogPhoto>> | undefined;
+    const save = this.write(async tx => {
       const scope = id ? await tx.storageType.findUnique({ where: { id }, select: { facilityId: true } }) : null;
       if (id && !scope) throw new NotFoundException('Không tìm thấy loại kho.');
       const scopedFacility = scope?.facilityId ?? this.text(input.facilityId, 'Cơ sở', 100);
@@ -59,7 +63,8 @@ export class InventoryManagementService {
           : this.integer(value.monthlyRate, 'Giá tháng (VND)', 1, maxMonthlyPrice),
         allowDailyRental: value.allowDailyRental,
         minRentalDays: value.allowDailyRental === true ? this.integer(value.minRentalDays, 'Số ngày thuê tối thiểu', 1, 30) : current?.minRentalDays ?? null,
-        image: this.image(value.image), imageAlt: this.optionalText(value.imageAlt, 'Mô tả ảnh', 300) ?? '',
+        image: Object.hasOwn(input, 'image') ? this.image(input.image) : current?.image ?? '',
+        imageAlt: this.optionalText(value.imageAlt, 'Mô tả ảnh', 300) ?? '',
       };
       if (!Object.hasOwn(groups, data.sizeId)) throw new BadRequestException('Nhóm kho không hợp lệ.');
       if (input.bookingEnabled !== undefined && typeof input.bookingEnabled !== 'boolean') throw new BadRequestException('Trạng thái kinh doanh không hợp lệ.');
@@ -90,14 +95,30 @@ export class InventoryManagementService {
           ];
           if (history.some(count => count > 0)) throw new ConflictException('Loại kho đã có hồ sơ. Chỉ cập nhật giá hoặc ảnh; hãy tạo loại mới nếu đổi kích thước/điều kiện thuê.');
         }
-        // Only the catalog row changes. Never update historical quotes, contracts or invoices.
-        return this.typeView(await tx.storageType.update({ where: { id: current.id }, data: { ...data, bookingEnabled, sizeName: groupLabels[data.sizeId] } }));
       }
+      if (photoBytes) {
+        photo = await prepareCatalogPhoto(photoBytes);
+        await photo.upload();
+        data.image = photo.url;
+      }
+      // Only the catalog row changes. Never update historical quotes, contracts or invoices.
+      if (current) return this.typeView(await tx.storageType.update({ where: { id: current.id }, data: { ...data, bookingEnabled, sizeName: groupLabels[data.sizeId] } }));
       return this.typeView(await tx.storageType.create({ data: {
         ...data, bookingEnabled, id: `type-${randomUUID()}`, sizeName: groupLabels[data.sizeId],
         kicker: '', roomEquivalent: '', capacity: '', boxCount: '', suitableItems: [], features: [], floor: '', access: '',
       } }));
     }, 'ReadCommitted');
+    return save.catch(async error => {
+      if (photo) {
+        try {
+          const saved = await this.prisma.storageType.findFirst({ where: { image: photo.url }, select: { id: true } });
+          if (!saved) await photo.discard();
+        } catch {
+          this.logger.warn('Could not verify or clean up uncommitted catalog photo ' + photo.url);
+        }
+      }
+      throw error;
+    });
   }
 
   async listUnitLocations(actor: PublicUser) {

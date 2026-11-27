@@ -13,7 +13,7 @@ import type {
   PricingQuote,
 } from './pricing.types.js';
 import { localizeService } from '../additional-services/additional-service-labels.js';
-import { businessDate } from '../../business-date.js';
+import { businessDate, rentalMonthEnd } from '../../business-date.js';
 import { assertListedPrice } from './monthly-price-range.js';
 import { baselinePricingPolicy, loadPricingPolicy, prepaidTerms, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 
@@ -59,7 +59,10 @@ export class PricingService {
       parsed.serviceSelections ?? [],
       storageType.facilityId,
     );
-    return this.calculate(storageType, parsed, services, await loadPricingPolicy(this.prisma));
+    const quote = this.calculate(storageType, parsed, services, await loadPricingPolicy(this.prisma));
+    if (quote.billingMode === 'DAILY' && quote.paymentPlan !== 'PREPAID')
+      throw new BadRequestException('Thuê theo ngày cần thanh toán toàn bộ kỳ thuê.');
+    return quote;
   }
 
   calculate(
@@ -120,6 +123,12 @@ export class PricingService {
       });
     }
 
+    if (input.expectedBillingMode && input.expectedBillingMode !== billingMode) {
+      throw new BadRequestException('Thuê theo ngày phải ngắn hơn một tháng theo lịch. Thuê theo tháng phải đúng số tháng theo lịch.');
+    }
+    if (input.expectedBillingMode === 'DAILY' && input.paymentPlan !== 'PREPAID') {
+      throw new BadRequestException('Thuê theo ngày cần thanh toán toàn bộ kỳ thuê.');
+    }
     const prepaidTerm = prepaidTerms.find(term => term === termMonths);
     const prepaid = prepaidTerm === undefined ? undefined : policy.prepaid.value[prepaidTerm];
     const prepaidDiscountPercent = prepaid?.enabled ? prepaid.percent : 0;
@@ -341,11 +350,14 @@ export class PricingService {
         code: 'INVALID_PAYMENT_PLAN',
         message: 'paymentPlan phải là PAY_MONTHLY hoặc PREPAID.',
       });
+    if (input.expectedBillingMode !== undefined && input.expectedBillingMode !== 'DAILY' && input.expectedBillingMode !== 'MONTHLY')
+      throw new BadRequestException('Hình thức thuê không hợp lệ.');
     return {
       storageTypeId,
       quantity,
       startDate,
       endDate,
+      expectedBillingMode: input.expectedBillingMode,
       paymentPlan: paymentPlan as PaymentPlan,
       serviceSelections: this.parseServiceSelections(input),
     };
@@ -627,16 +639,7 @@ export class PricingService {
   }
 
   private addMonths(startDate: string, months: number) {
-    const start = this.date(startDate);
-    const day = start.getUTCDate();
-    const result = new Date(start);
-    result.setUTCDate(1);
-    result.setUTCMonth(result.getUTCMonth() + months);
-    const daysInMonth = new Date(
-      Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
-    ).getUTCDate();
-    result.setUTCDate(Math.min(day, daysInMonth));
-    return result.toISOString().slice(0, 10);
+    return rentalMonthEnd(startDate, months);
   }
 
   private dailyRateDisplay(monthlyPrice: bigint) {

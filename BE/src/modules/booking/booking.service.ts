@@ -9,7 +9,7 @@ import { BusinessPolicyService } from '../policies/business-policy.service.js';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { businessDate, isIsoCalendarDate } from '../../business-date.js';
+import { businessDate, isIsoCalendarDate, rentalMonthEnd } from '../../business-date.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from '../billing/billing.service.js';
@@ -20,7 +20,7 @@ import type { PaymentPlan } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 import { reservationDetailInclude, reservationWorkflow } from './reservation-detail.js';
 import { paidCancellation } from './paid-cancellation.js';
-import { approvedDurations, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
+import { suggestedRentalMonths, type AvailabilityResult, type GuestContact, type GuestInquiry, type PendingReservation, type QuoteSnapshot, type ReservationDraft } from './booking.types.js';
 import { loadPricingPolicy } from '../policies/pricing-policy.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
@@ -108,15 +108,17 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       facilities,
       products,
       sizes,
-      approvedDurations,
+      // Keep the legacy response field for deployed clients.
+      approvedDurations: suggestedRentalMonths,
+      suggestedRentalMonths,
       addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, physicalUnit: addon.physicalUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
       pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
   }
 
-  async checkAvailability(input: Record<string, unknown>): Promise<AvailabilityResult> {
-    const { draft } = await this.validateDraft(input);
+  async checkAvailability(input: Record<string, unknown>, legacyGuestDates = false): Promise<AvailabilityResult> {
+    const { draft } = await this.validateDraft(input, legacyGuestDates);
     return this.prisma.$transaction(async (tx) => {
       await this.expireUnpaidAutomaticReservations(tx, draft.productId);
       const result = await this.checkAvailabilityForDraft(tx, draft);
@@ -167,10 +169,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     if (user.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ khách hàng được tạo đơn đặt kho cho tài khoản của mình.');
     const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
-    const expectedServiceQuoteVersion = input.expectedServiceQuoteVersion;
-    if (expectedServiceQuoteVersion !== undefined &&
-      (typeof expectedServiceQuoteVersion !== 'string' || !/^[a-f0-9]{64}$/.test(expectedServiceQuoteVersion)))
-      throw new BadRequestException('Phiên bản báo giá dịch vụ không hợp lệ.');
+    const expectedServiceQuoteVersion = this.expectedQuoteVersion(input.expectedServiceQuoteVersion);
     const idempotencyKey = this.fingerprint('reservation', user.id, draft);
     const existing = await this.prisma.reservation.findUnique({
       where: { idempotencyKey },
@@ -232,6 +231,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   async createInquiry(input: Record<string, unknown>): Promise<GuestInquiry> {
     const { draft } = await this.validateDraft(input);
     this.assertPayLater(draft);
+    const expectedServiceQuoteVersion = this.expectedQuoteVersion(input.expectedServiceQuoteVersion);
     const customer = this.validateGuestContact(input);
     const idempotencyKey = this.fingerprint('inquiry', customer.email, draft, customer.phone);
     const accessToken = this.inquiryAccessToken(idempotencyKey);
@@ -248,6 +248,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
           if (!product) throw new BadRequestException('Mã sản phẩm không hợp lệ.');
           const availability = await this.checkAvailabilityForDraft(tx, draft);
           if (!availability.available) throw new ConflictException({ message: availability.message, availability });
+          if (expectedServiceQuoteVersion && expectedServiceQuoteVersion !== this.serviceQuoteVersion(availability.quote))
+            throw new ConflictException({ code: 'SERVICE_QUOTE_CHANGED', message: 'Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.' });
           await this.inventory.assertQuoteAvailable(tx, Array.isArray(availability.quote.services) ? availability.quote.services : [],draft.productId);
           return tx.contactInquiry.create({
             data: {
@@ -307,7 +309,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     };
     let currentQuote;
     try {
-      currentQuote = await this.calculateCurrentQuote(tx, draft, this.isoDate(guest.endDate));
+      currentQuote = await this.calculateCurrentQuote(tx, draft, this.isoDate(guest.endDate), storedQuote);
     } catch (error) {
       if (error instanceof BadRequestException) throw new ConflictException({ code: 'ADDITIONAL_SERVICE_NO_LONGER_AVAILABLE', message: 'Một dịch vụ bổ sung đã bị tắt hoặc không còn hợp lệ. Vui lòng sửa booking.' });
       throw error;
@@ -319,7 +321,8 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     if (!availability.available) {
       throw new ConflictException({ code: 'REQUESTED_STORAGE_NO_LONGER_AVAILABLE', message: availability.message, availability });
     }
-    await this.inventory.assertQuoteAvailable(tx, storedQuote.services ?? [], draft.productId);
+    await this.inventory.assertQuoteAvailable(tx, storedQuote.services ?? [], draft.productId, false,
+      (storedQuote.services ?? []).filter(service => service.billingUnit === 'DAY').map(service => service.serviceId));
     const reservation = await tx.reservation.create({
       data: {
         reservationCode: this.createReference('WDP'),
@@ -871,10 +874,11 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return storageType;
   }
 
-  private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string) {
+  private async calculateCurrentQuote(db: DbClient, draft: ReservationDraft, endDateExclusive: string, committedQuote?: QuoteSnapshot) {
     const storageType = await this.bookableType(db, draft.productId);
     const selections = draft.serviceSelections ?? [];
-    const services = await pricedServices(db,selections.map(item=>item.serviceId),storageType.facilityId);
+    const committedDailyIds = (committedQuote?.services ?? []).filter(service => service.billingUnit === 'DAY').map(service => service.serviceId);
+    const services = await pricedServices(db,selections.map(item=>item.serviceId),storageType.facilityId, committedDailyIds);
     return this.pricing.calculate(storageType, {
       storageTypeId: draft.productId,
       quantity: draft.quantity,
@@ -885,7 +889,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     }, services.map((service) => ({ ...service, unitPrice: service.unitPrice })) as any, await loadPricingPolicy(db));
   }
 
-  private async validateDraft(input: Record<string, unknown>) {
+  private async validateDraft(input: Record<string, unknown>, legacyGuestDates = false) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('Dữ liệu đặt kho không hợp lệ.');
     const productId = typeof input.productId === 'string' ? input.productId : '';
     const product = await this.prisma.storageType.findUnique({ where: { id: productId } });
@@ -896,9 +900,11 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const startDate = typeof input.startDate === 'string' ? input.startDate : '';
     if (!isIsoCalendarDate(startDate) || startDate < businessDate()) throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     const periodMode = input.periodMode === 'dates' ? 'dates' as const : 'duration' as const;
-    const durationMonths = Number(input.durationMonths);
+    if (input.periodMode !== undefined && input.periodMode !== 'duration' && input.periodMode !== 'dates')
+      throw new BadRequestException('Hình thức thuê không hợp lệ.');
+    const durationMonths = typeof input.durationMonths === 'number' ? input.durationMonths : NaN;
     const endDate = typeof input.endDate === 'string' ? input.endDate : undefined;
-    if (periodMode === 'duration' && !approvedDurations.includes(durationMonths as (typeof approvedDurations)[number])) throw new BadRequestException('Thời hạn thuê không nằm trong danh sách được duyệt.');
+    if (periodMode === 'duration' && !rentalMonthEnd(startDate, durationMonths)) throw new BadRequestException('Số tháng thuê phải là số nguyên dương và ngày kết thúc phải hợp lệ.');
     if (periodMode === 'dates' && (!endDate || !isIsoCalendarDate(endDate) || endDate <= startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu.');
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 3) throw new BadRequestException('Số lượng phải từ 1 đến 3.');
@@ -910,6 +916,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     const paymentPlanInput = input.paymentPlan;
     if (!['PAY_MONTHLY', 'PREPAID'].includes(paymentPlanInput as string)) throw new BadRequestException('paymentPlan phải là PAY_MONTHLY hoặc PREPAID.');
     const paymentPlan = paymentPlanInput as PaymentPlan;
+    if (periodMode === 'dates' && !legacyGuestDates) {
+      if (!product.allowDailyRental || endDate! >= rentalMonthEnd(startDate, 1))
+        throw new BadRequestException('Thuê theo ngày chỉ áp dụng cho loại kho hỗ trợ và kỳ thuê ngắn hơn một tháng theo lịch.');
+      if (!product.minRentalDays || (Date.parse(endDate!) - Date.parse(startDate)) / 86400000 < product.minRentalDays)
+        throw new BadRequestException(`Thời hạn thuê tối thiểu là ${product.minRentalDays ?? 1} ngày.`);
+      if (paymentPlan !== 'PREPAID') throw new BadRequestException('Thuê theo ngày cần thanh toán toàn bộ kỳ thuê.');
+    }
     const selectedUnitIds = input.selectedUnitIds === undefined ? undefined : this.selectedUnitIds(input.selectedUnitIds, quantity);
     const draft: ReservationDraft = { productId, startDate, ...(endDate ? { endDate } : {}), periodMode, ...(periodMode === 'duration' ? { durationMonths } : {}), quantity, adjacencyPreference, ...(selectedUnitIds?.length ? { selectedUnitIds } : {}), addonIds, serviceSelections, ...(note ? { note } : {}), paymentChoice, paymentPlan };
     return { draft, product };
@@ -935,7 +948,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getEndDateExclusive(draft: ReservationDraft) {
-    return draft.periodMode === 'dates' ? draft.endDate! : this.addMonths(draft.startDate, draft.durationMonths!);
+    return draft.periodMode === 'dates' ? draft.endDate! : rentalMonthEnd(draft.startDate, draft.durationMonths!);
   }
 
   private toProduct(record: any): BookingProduct & Record<string, unknown> {
@@ -1150,6 +1163,13 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       includePolicy ? [quote.pricingPolicy?.deposit.version, quote.pricingPolicy?.prepaid.version, quote.pricingPolicy?.renewal?.version, quote.pricingPolicy?.returnNotice?.version] : null);
   }
 
+  private expectedQuoteVersion(value: unknown) {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))
+      throw new BadRequestException('Phiên bản báo giá dịch vụ không hợp lệ.');
+    return value;
+  }
+
   private fingerprint(...parts: unknown[]) { return createHash('sha256').update(JSON.stringify(parts)).digest('hex'); }
   private tokenHash(value: string) { return createHash('sha256').update(value).digest('hex'); }
   private inquiryAccessToken(idempotencyKey: string) {
@@ -1164,16 +1184,6 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
   }
   private isUniqueError(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'; }
   private isPrismaCode(error: unknown, code: string) { return typeof error === 'object' && error !== null && 'code' in error && error.code === code; }
-  private addMonths(startDate: string, months: number) {
-    const start = this.date(startDate);
-    const day = start.getUTCDate();
-    const result = new Date(start);
-    result.setUTCDate(1);
-    result.setUTCMonth(result.getUTCMonth() + months);
-    const daysInMonth = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
-    result.setUTCDate(Math.min(day, daysInMonth));
-    return this.isoDate(result);
-  }
   private requiredText(value: unknown, label: string, minimumLength: number) {
     if (typeof value !== 'string' || value.trim().length < minimumLength) throw new BadRequestException(label + ' phải có ít nhất ' + minimumLength + ' ký tự.');
     return value.trim();

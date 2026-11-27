@@ -9,7 +9,7 @@ import {
   assertActiveRole,
   managerReservationScope,
 } from '../facility-access/record-access.js';
-import { serviceUnits } from './service-units.js';
+import { physicalServiceUnit } from './service-units.js';
 import { localizeService } from './additional-service-labels.js';
 import {
   BadRequestException,
@@ -25,6 +25,7 @@ import {
   committedOfferingQuantities,
   eligibleServiceFacility,
   MAX_OFFERING_QUANTITY,
+  newServiceTerms,
   offeringKey,
   offeringQuantity,
   offeringView,
@@ -76,7 +77,7 @@ export class AdditionalServicesService {
     managerReservationScope(actor);
     await facilityIds(this.prisma, actor);
     const rows = await this.prisma.additionalService.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...newServiceTerms },
       orderBy: { code: 'asc' },
     });
     return rows.map((o) =>
@@ -289,6 +290,8 @@ export class AdditionalServicesService {
           : await tx.facilityServiceOffering.findUnique({ where });
         if (!creating && !current)
           throw new NotFoundException('Dịch vụ chưa được cấu hình tại cơ sở.');
+        if (item.kind === 'RENTAL' && item.billingUnit === 'DAY' && (creating || (isActive && !current?.isActive)))
+          throw new BadRequestException('Thiết bị thuê ngày cũ đã ngừng nhận giao dịch mới.');
         const review = current?.configurationReview as ConfigurationReview | null | undefined;
         if ((review?.revision ?? undefined) !== input.reviewRevision)
           throw new ConflictException('Cấu hình cần rà soát đã thay đổi. Vui lòng tải lại và xác nhận phiên bản hiện tại.');
@@ -492,10 +495,7 @@ export class AdditionalServicesService {
   ) {
     const data: Record<string, unknown> = {};
     if (input.physicalUnit !== undefined) {
-      if (input.physicalUnit !== null &&
-        (typeof input.physicalUnit !== 'string' || !serviceUnits.some(unit => unit === input.physicalUnit)))
-        throw new BadRequestException('Chọn đơn vị vật lý trong danh mục chuẩn.');
-      data.physicalUnit = input.physicalUnit;
+      data.physicalUnit = input.physicalUnit === current?.physicalUnit ? input.physicalUnit : physicalServiceUnit(input.physicalUnit);
     }
     const required = (key: string) => !partial || input[key] !== undefined;
     if (!partial) {
@@ -547,12 +547,13 @@ export class AdditionalServicesService {
         : (current?.billingUnit ?? '');
     if (
       (kind === 'PURCHASE' && billingUnit !== 'ONE_TIME') ||
-      (kind === 'RENTAL' && !['DAY', 'MONTH'].includes(billingUnit))
+      (kind === 'RENTAL' && billingUnit !== 'MONTH' &&
+        !(billingUnit === 'DAY' && current?.kind === 'RENTAL' && current.billingUnit === 'DAY'))
     )
       throw new BadRequestException({
         code: 'INVALID_ADDITIONAL_SERVICE_BILLING_UNIT',
         message:
-          'Sản phẩm tiêu hao tính phí một lần. Thiết bị cho thuê tính phí theo ngày hoặc theo tháng.',
+          'Sản phẩm tiêu hao tính phí một lần. Thiết bị cho thuê mới chỉ tính phí theo tháng.',
       });
     if (input.imageUrl !== undefined) {
       if (

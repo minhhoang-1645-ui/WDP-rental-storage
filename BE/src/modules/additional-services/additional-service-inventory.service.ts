@@ -2,6 +2,7 @@ import {
   eligibleServiceFacility,
   offeringView,
   publicOfferingScope,
+  newServiceTerms,
   serviceFacilityScope,
   type OfferingRecord,
   MAX_OFFERING_QUANTITY,
@@ -20,7 +21,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { businessToday } from '../../business-date.js';
+import { businessToday, rentalMonthEnd } from '../../business-date.js';
 
 export function purchasedPhysicalUnit(quote: unknown, serviceId: string): string | null {
   if (!quote || typeof quote !== 'object' || !('services' in quote) || !Array.isArray(quote.services)) return null;
@@ -44,6 +45,7 @@ export class AdditionalServiceInventoryService {
           : {}),
         additionalService: {
           isActive: true,
+          ...newServiceTerms,
           OR: [{ id: serviceId }, { code: serviceId }],
         },
       },
@@ -63,6 +65,10 @@ export class AdditionalServiceInventoryService {
     if (service.kind === 'PURCHASE')
       return this.purchaseAvailability(this.prisma, service, quantity);
     const { startDate, endDate } = this.interval(input);
+    const months = (Number(endDate.slice(0, 4)) - Number(startDate.slice(0, 4))) * 12 +
+      Number(endDate.slice(5, 7)) - Number(startDate.slice(5, 7));
+    if (rentalMonthEnd(startDate, months) !== endDate)
+      throw new BadRequestException('Thiết bị thuê tháng cần thời gian sử dụng đủ số tháng theo lịch.');
     return this.rentalAvailability(
       this.prisma,
       service,
@@ -224,6 +230,7 @@ export class AdditionalServiceInventoryService {
     services: any[],
     storageTypeId: string,
     existingReservation = false,
+    committedDailyIds: string[] = [],
   ) {
     const ids = services.map((service) => service.serviceId);
     if (!ids.length) return;
@@ -258,6 +265,9 @@ export class AdditionalServiceInventoryService {
         throw new ConflictException(
           'Thiết bị chưa thuộc cơ sở của kho đã chọn.',
         );
+      if (!existingReservation && service.kind === 'RENTAL' && service.billingUnit === 'DAY' &&
+        !committedDailyIds.includes(selection.serviceId))
+        throw new ConflictException('Thiết bị thuê ngày cũ đã ngừng nhận giao dịch mới.');
       if (
         (!existingReservation && (!offer?.facility.bookingEnabled || offer.facility.operationalStatus !== eligibleServiceFacility.operationalStatus ||
           !service.isActive || (service.unitPrice ?? 0n) <= 0n)) ||

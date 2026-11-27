@@ -10,6 +10,6 @@ export function ReservationPage() {
   const date = params.get('date')
   const duration = params.get('duration')
   if (date) bookingParams.set('date', date)
-  if (duration && ['1', '3', '6', '12'].includes(duration)) bookingParams.set('duration', duration)
+  if (duration && /^[1-9]\d*$/.test(duration) && Number.isSafeInteger(Number(duration))) bookingParams.set('duration', duration)
   return <Navigate to={`/booking?${bookingParams}`} replace />
 }

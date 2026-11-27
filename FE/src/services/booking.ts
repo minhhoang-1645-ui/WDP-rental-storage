@@ -15,7 +15,7 @@ export const authApi = {
 }
 
 export const bookingApi = {
-  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; paymentPlan: BookingDraft['paymentPlan']; services?: BookingDraft['services'] }, signal?: AbortSignal) =>
+  quote: (input: { storageTypeId: string; quantity: number; startDate: string; endDate: string; expectedBillingMode?: 'DAILY' | 'MONTHLY'; paymentPlan: BookingDraft['paymentPlan']; services?: BookingDraft['services'] }, signal?: AbortSignal) =>
     apiRequest<PricingQuote>('/pricing/quote', { method: 'POST', body: JSON.stringify(input), signal }),
   availability: (draft: BookingDraft, signal?: AbortSignal) =>
     apiRequest<AvailabilityResult>('/booking/availability', { method: 'POST', body: JSON.stringify(draft), signal }),

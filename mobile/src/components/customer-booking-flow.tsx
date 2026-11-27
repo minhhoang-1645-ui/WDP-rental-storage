@@ -1,6 +1,6 @@
 import { BookingHeader, BookingTabs } from './booking-header';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, Calculator, CalendarDays, Check, CircleCheck, CreditCard, FileText, Info, Map as MapIcon, Minus, Plus, Warehouse, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,18 +29,19 @@ import { matchingStorage, storageArea, StorageComparison } from './storage-compa
 import { CustomerReveal } from './customer-flow';
 import { ErrorState, LoadingState } from './screen-state';
 import { RentalCalendar } from './rental-calendar';
+import { rentalEndDate as monthEnd } from '@/utils/rental-period';
 import { acceptsBookings, BookingFacilityPicker, isBookingFacility, type BookingFacility } from './booking-facility-picker';
 import { useBookingFacility } from './booking-facility-context';
 
 
 type UnitMap = {productId: string; startDate: string; endDateExclusive: string; units: FloorPlanUnit[]};
-const monthEnd = (start: string, months: number) => {if(!isCalendarDate(start) || !Number.isInteger(months) || months<1)return '';const date=new Date(start+'T00:00:00Z');const result=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+months,1));result.setUTCDate(Math.min(date.getUTCDate(),new Date(Date.UTC(result.getUTCFullYear(),result.getUTCMonth()+1,0)).getUTCDate()));return result.toISOString().slice(0,10);};
 
 
 export function CustomerBookingFlow() {
   const catalog = usePublicCatalog(undefined, true, true);
   const { facilityId, selectFacility } = useBookingFacility();
   const [choosing, setChoosing] = useState(true);
+  const [selections,setSelections] = useState<ServiceSelection[]>([]);
   const insets = useSafeAreaInsets();
   const entries = catalog.data?.facilities;
   const productFacilityIds = [...new Set(rows(catalog.data?.products).map(item => text(item, 'facilityId')).filter(Boolean))];
@@ -66,7 +67,7 @@ export function CustomerBookingFlow() {
 
   return <View style={{ flex: 1 }}>
     {facility && <View style={showPicker ? { display: 'none' } : { flex: 1 }}>
-      <BookingWizard key={facility.id} facility={facility} hidden={showPicker}
+      <BookingWizard key={facility.id} facility={facility} hidden={showPicker} selections={selections} setSelections={setSelections}
         onChangeFacility={() => setChoosing(true)} refreshFacilities={catalog.refresh} />
     </View>}
     {showPicker && <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: 'white' }}>
@@ -78,11 +79,13 @@ export function CustomerBookingFlow() {
   </View>;
 }
 
-function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFacilities }: {
+function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFacilities, selections, setSelections }: {
   facility: BookingFacility;
   hidden?: boolean;
   onChangeFacility?: () => void;
   refreshFacilities: () => void;
+  selections: ServiceSelection[];
+  setSelections: (value: ServiceSelection[]) => void;
 }) {
 
   const params = useLocalSearchParams<{product?: string; size?: string; minimumArea?: string; startDate?: string; endDate?: string; durationMonths?: string; periodMode?: string; unit?: string}>();
@@ -104,20 +107,16 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
     ? '/additional-services?facilityId=' + encodeURIComponent(productFacilityId) : null);
   const serviceScopeMismatch = addons.data !== undefined && (!Array.isArray(addons.data)
     || addons.data.some(service => !service || service.facilityId !== productFacilityId));
-  const services = serviceScopeMismatch ? [] : addons.data ?? [];
-  const durations = Array.isArray(catalog.data?.approvedDurations)
-    ? [...new Set(catalog.data.approvedDurations.filter((value): value is number =>
-      typeof value === 'number' && Number.isSafeInteger(value) && value > 0))].sort((a, b) => a - b)
-    : [];
+  const services = serviceScopeMismatch ? [] : (addons.data ?? []).filter(item => !(item.kind === 'RENTAL' && item.billingUnit === 'DAY'));
   const [mode,setMode] = useState<'duration'|'dates'>(params.periodMode === 'dates' ? 'dates' : 'duration');
   const allowsDaily = product?.allowDailyRental === true;
   const effectiveMode = allowsDaily ? mode : 'duration';
   const [start,setStart] = useState(isCalendarDate(params.startDate ?? '') ? params.startDate! : '');
   const [dailyEnd,setEnd] = useState(isCalendarDate(params.endDate ?? '') ? params.endDate! : '');
-  const [chosenMonths,setMonths] = useState(Number(params.durationMonths) || 3), [quantity,setQuantity] = useState('1');
-  const months = durations.includes(chosenMonths) ? chosenMonths : durations[0] ?? 0;
-  const [plan,setPlan] = useState<'PAY_MONTHLY'|'PREPAID'>('PAY_MONTHLY');
-  const [selections,setSelections] = useState<ServiceSelection[]>([]);
+  const [chosenMonths,setMonths] = useState(params.durationMonths ?? '3'), [quantity,setQuantity] = useState('1');
+  const months = /^[1-9]\d*$/.test(chosenMonths) ? Number(chosenMonths) : NaN;
+  const [monthlyPlan,setPlan] = useState<'PAY_MONTHLY'|'PREPAID'>('PAY_MONTHLY');
+  const plan = effectiveMode === 'dates' ? 'PREPAID' : monthlyPlan;
   const [units,setUnits] = useState<FloorPlanUnit[]>([]), [selected,setSelected] = useState<string[]>([]);
   const [quote,setQuote] = useState<Row>(), [busy,setBusy] = useState(false), [error,setError] = useState(''), [soldOut,setSoldOut] = useState(false);
   const [createdBooking,setCreatedBooking] = useState<Row>();
@@ -143,10 +142,12 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
   const chooseProduct = (choice: Row) => {
     invalidate();
     setStep(1);
-    setSelections([]);
     if (choice.facilityId === productFacilityId) addons.refresh();
     setProduct(text(choice, 'id'));
-    if (choice.allowDailyRental !== true) setMode('duration');
+    if (choice.allowDailyRental !== true) {
+      if (mode === 'dates') setMonths('');
+      setMode('duration');
+    }
   };
   const payload = (ids = selected) => ({productId, ...(facility ? { facilityId: facility.id } : {}), startDate:start, quantity:Number(quantity), ...(effectiveMode === 'duration' ? { periodMode: 'duration', durationMonths: months } : { periodMode: 'dates', endDate: end }), paymentPlan:plan, paymentChoice:'pay-later', adjacencyPreference:false, ...(ids.length ? {selectedUnitIds:ids} : {}), addonIds:[], services:selections});
   const serviceScopeIssue = selections.length > 0 && selections.some(selection => !services.some(service => service.id === selection.serviceId));
@@ -154,10 +155,11 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
     if (catalog.error || wrongScope || (facility && productFacilityId !== facility.id)) return 'Chưa xác minh được loại kho tại cơ sở đã chọn.';
     if (!product) return 'Chọn loại kho.';
     if (!isCalendarDate(start) || start < vietnamCalendarDate()) return 'Chọn ngày bắt đầu từ hôm nay.';
-    if (effectiveMode === 'duration' && !durations.includes(months)) return 'Chưa tải được thời hạn thuê được hỗ trợ.';
+    if (effectiveMode === 'duration' && !end) return 'Nhập số tháng thuê là số nguyên dương với ngày kết thúc hợp lệ.';
     if (!isCalendarDate(end) || end <= start) return 'Chọn ngày kết thúc sau ngày bắt đầu.';
     if (!Number.isInteger(Number(quantity)) || Number(quantity) < 1 || Number(quantity) > 3) return 'Bạn có thể đặt từ 1 đến 3 kho.';
     if (effectiveMode === 'dates' && end >= monthEnd(start, 1)) return 'Chọn kỳ thuê theo tháng nếu thuê từ một tháng trở lên.';
+    if (effectiveMode === 'dates' && !Number(product.minRentalDays)) return 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.';
     if (effectiveMode === 'dates' && rentalDays < Number(product.minRentalDays)) return 'Thời gian thuê tối thiểu là ' + product.minRentalDays + ' ngày.';
     if (!includeServices) return '';
     if (serviceScopeIssue) return 'Dịch vụ không còn khả dụng tại cơ sở này. Vui lòng chọn lại.';
@@ -351,15 +353,22 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
       </>}
       {step===2 && <>
         <View style={booking.summary}><Warehouse size={18} color={blue}/><View style={{flex:1}}><Text style={booking.label}>{previewSize.name}</Text><Text style={booking.muted}>{[previewSize.dimensions, areaLabel].filter(Boolean).join(' · ')}</Text></View></View>
-        <BookingTabs value={effectiveMode} options={[{value:'duration',label:'Theo tháng'},...(product.allowDailyRental===true?[{value:'dates',label:'Theo ngày'}]:[])]}
+        {allowsDaily ? <BookingTabs value={effectiveMode} options={[{value:'duration',label:'Thuê theo tháng'},{value:'dates',label:'Thuê theo ngày'}]}
           onChange={value=>{if(value===effectiveMode)return;invalidate();setMode(value as typeof mode);setEnd('');}}/>
+          : <Text style={booking.label}>Thuê theo tháng</Text>}
         <RentalCalendar compact start={start} end={end} daily={effectiveMode==='dates'}
           earliestEnd={start && Number(product.minRentalDays)>0 ? new Date(Date.parse(start)+Number(product.minRentalDays)*86400000).toISOString().slice(0,10) : undefined}
           endLimit={start ? monthEnd(start,1) : undefined} onChange={(from,to)=>{invalidate();setStart(from);setEnd(to);}}/>
-        {effectiveMode==='duration' && durations.length > 0 && <BookingStepper label="Thời hạn thuê" display={months+' tháng'} index={durations.indexOf(months)} count={durations.length}
-          onChange={index=>{invalidate();setMonths(durations[index]);}}/>}
+        {effectiveMode==='duration' ? <View style={booking.summary}>
+          <Text style={booking.label}>Số tháng thuê</Text>
+          <TextInput accessibilityLabel="Số tháng thuê" keyboardType="number-pad" value={chosenMonths}
+            onChangeText={value=>{invalidate();setMonths(value);}}
+            style={{ flex:1, minHeight:44, color:C.text, textAlign:'right' }} />
+        </View> : <Text style={booking.muted}>{Number(product.minRentalDays) > 0
+          ? `Thuê ít nhất ${product.minRentalDays} ngày và dưới một tháng theo lịch. Thanh toán toàn bộ kỳ thuê.`
+          : 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.'}</Text>}
         <View style={booking.summary}><CalendarDays size={18} color={blue}/><Text style={[booking.meta,{flex:1}]}>
-          {start ? formatDate(start) : 'Chọn ngày bắt đầu'} → {end ? formatDate(end) : 'Chọn ngày kết thúc'}
+          {start ? formatDate(start) : 'Chọn ngày bắt đầu'} → {end ? formatDate(end) : effectiveMode === 'dates' ? 'Chọn ngày kết thúc' : 'Ngày kết thúc được tính theo số tháng'}
           {effectiveMode==='dates' && rentalDays>0 ? ' · '+rentalDays+' ngày' : ''}
         </Text></View>
         <BookingStepper label="Số kho" display={quantity} index={Number(quantity)-1} count={3} onChange={index=>{invalidate();setQuantity(String(index+1));}}/>
@@ -421,7 +430,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         <View style={{ gap: 8 }}>
         <Text style={styles.title}>Cách thanh toán</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {(['PAY_MONTHLY', 'PREPAID'] as const).map(value => <Pressable key={value} accessibilityRole="radio"
+          {(['PAY_MONTHLY', 'PREPAID'] as const).filter(value => effectiveMode === 'duration' || value === 'PREPAID').map(value => <Pressable key={value} accessibilityRole="radio"
             accessibilityState={{ checked: value === plan, disabled: busy }} disabled={busy}
             onPress={() => {
               if (request.current || locked.current || value === plan) return;

@@ -2,7 +2,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import type { PaymentPlan, PricingQuote } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 
-export const approvedDurations = [1, 3, 6, 12] as const;
+export const suggestedRentalMonths = [1, 3, 6, 12] as const;
 export type PeriodMode = 'duration' | 'dates';
 export type PaymentChoice = 'pay-later' | 'pay-now';
 

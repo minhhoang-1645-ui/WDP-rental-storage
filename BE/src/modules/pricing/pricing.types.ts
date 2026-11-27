@@ -9,6 +9,7 @@ export interface PricingInput {
   startDate: string;
   endDate: string;
   paymentPlan: PaymentPlan;
+  expectedBillingMode?: BillingMode;
   serviceSelections?: Array<{ serviceId: string; quantity: number; serviceStartDate?: string; serviceEndDate?: string }>;
 }
 

@@ -1,4 +1,5 @@
-import { Ellipsis, Eye, EyeOff, Plus, RefreshCw, Search } from 'lucide-react';
+import { Ellipsis, Plus, RefreshCw, Search } from 'lucide-react';
+import { PasswordInput } from '../../components/ui/PasswordInput';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { AdminAvatar } from './AdminAvatar';
@@ -121,7 +122,6 @@ function CreateUser({ onClose, onSuccess }: { onClose: () => void; onSuccess: (r
   const [values, setValues] = useState({ fullName: '', email: '', phone: '', password: '', confirmPassword: '', role: 'FACILITY_STAFF' });
   const [touched, setTouched] = useState<Partial<Record<keyof typeof values, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -139,7 +139,7 @@ function CreateUser({ onClose, onSuccess }: { onClose: () => void; onSuccess: (r
   const message = (field: Field) => issue(field) && <small id={formId + '-' + field} className="admin-field-error" role="alert">{errors[field]}</small>;
   const input = (field: Field) => ({
     name: field, value: values[field], required: true, 'aria-invalid': Boolean(issue(field)),
-    'aria-describedby': [field === 'password' ? formId + '-password-hint' : '', issue(field) ? formId + '-' + field : ''].filter(Boolean).join(' ') || undefined,
+    'aria-describedby': [field === 'password' || field === 'confirmPassword' ? formId + '-password-hint' : '', issue(field) ? formId + '-' + field : ''].filter(Boolean).join(' ') || undefined,
     onBlur: () => setTouched(current => ({ ...current, [field]: true })),
     onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
       setValues(current => ({ ...current, [field]: event.target.value }));
@@ -171,36 +171,32 @@ function CreateUser({ onClose, onSuccess }: { onClose: () => void; onSuccess: (r
     }
   }
 
-  return <Modal title="Tạo tài khoản" className="admin-create-dialog admin-account-modal" onClose={onClose} busy={busy} footer={<>
+  const required = <span aria-hidden="true"> *</span>;
+  return <Modal title="Tạo tài khoản" className="admin-create-dialog admin-account-modal" focusTitle onClose={onClose} busy={busy} footer={<>
     <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
     <button type="submit" form={formId} className="button-primary" disabled={busy}>{busy ? 'Đang tạo…' : 'Tạo tài khoản'}</button>
   </>}>
     <form id={formId} className="portal-form" noValidate onSubmit={submit}>
       <fieldset className="admin-account-fields" disabled={busy}>
         <legend>Thông tin cá nhân</legend>
-        <label className="field-label">Họ và tên<input {...input('fullName')} maxLength={120} autoComplete="name" />{message('fullName')}</label>
-        <label className="field-label">Email<input {...input('email')} type="email" maxLength={254} autoComplete="off" />{message('email')}</label>
-        <label className="field-label">Số điện thoại<input {...input('phone')} type="tel" maxLength={25} autoComplete="tel" />{message('phone')}</label>
+        <label className="field-label admin-account-span"><span>Họ và tên{required}</span><input {...input('fullName')} maxLength={120} autoComplete="name" />{message('fullName')}</label>
+        <label className="field-label"><span>Email{required}</span><input {...input('email')} type="email" maxLength={254} autoComplete="off" />{message('email')}</label>
+        <label className="field-label"><span>Số điện thoại{required}</span><input {...input('phone')} type="tel" maxLength={25} autoComplete="tel" />{message('phone')}</label>
       </fieldset>
       <fieldset className="admin-account-fields" disabled={busy}>
         <legend>Thông tin truy cập</legend>
-        <label className="field-label">Vai trò<select aria-label="Vai trò" value={values.role} onChange={event => setValues({ ...values, role: event.target.value })}>
+        <label className="field-label admin-account-span"><span>Vai trò{required}</span><select required value={values.role} onChange={event => setValues({ ...values, role: event.target.value })}>
           <option value="FACILITY_STAFF">Nhân viên cơ sở</option><option value="FACILITY_MANAGER">Quản lý cơ sở</option>
           <option value="BUSINESS_OPERATIONS_MANAGER">Điều hành kinh doanh</option>
         </select></label>
-        <label className="field-label">Mật khẩu ban đầu
-          <div className="portal-password">
-            <input {...input('password')} type={showPassword ? 'text' : 'password'} maxLength={128} autoComplete="new-password" />
-            <button type="button" className="icon-button" aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-              onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+        {([['password', 'Mật khẩu ban đầu'], ['confirmPassword', 'Xác nhận mật khẩu']] as const).map(([field, title]) => (
+          <div className="field-label" key={field}>
+            <label htmlFor={formId + '-input-' + field}>{title}{required}</label>
+            <PasswordInput {...input(field)} id={formId + '-input-' + field} maxLength={128} autoComplete="new-password" />
+            {message(field)}
           </div>
-          <small id={formId + '-password-hint'}>8–128 ký tự, có ít nhất một ký tự khác khoảng trắng.</small>
-          {message('password')}
-        </label>
-        <label className="field-label">Xác nhận mật khẩu
-          <input {...input('confirmPassword')} type={showPassword ? 'text' : 'password'} maxLength={128} autoComplete="new-password" />
-          {message('confirmPassword')}
-        </label>
+        ))}
+        <small className="admin-account-span admin-password-hint" id={formId + '-password-hint'}>8–128 ký tự, có ít nhất một ký tự khác khoảng trắng.</small>
       </fieldset>
       {error && <p className="booking-alert is-error" role="alert">{error}</p>}
     </form>

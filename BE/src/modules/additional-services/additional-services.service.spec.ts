@@ -172,7 +172,7 @@ describe('Additional Products & Rental Services V1', () => {
     await prisma.$disconnect();
   });
 
-  it('public catalog exposes billing unit for active and hides inactive add-ons', async () => {
+  it('public catalog exposes active purchases and monthly equipment while hiding legacy daily ones', async () => {
     const items = await catalog.publicCatalog();
     expect(items.find((item) => item.id === purchaseId)).toMatchObject({
       billingUnit: 'ONE_TIME',
@@ -180,9 +180,7 @@ describe('Additional Products & Rental Services V1', () => {
     expect(items.find((item) => item.id === rentalId)).toMatchObject({
       billingUnit: 'MONTH',
     });
-    expect(items.find((item) => item.id === dailyRentalId)).toMatchObject({
-      billingUnit: 'DAY',
-    });
+    expect(items.some((item) => item.id === dailyRentalId)).toBe(false);
     expect(items.some((item) => item.id === inactiveId)).toBe(false);
   });
   it('manager creates catalog records with compatible billing units', async () => {
@@ -271,8 +269,8 @@ describe('Additional Products & Rental Services V1', () => {
     });
     expect(quote.discountAmount).toBe(225000);
   });
-  it('prices DAY rental by exact days and quantity', async () => {
-    const quote = await pricing.quote({
+  it('blocks new public quotes for legacy DAY equipment', async () => {
+    await expect(pricing.quote({
       storageTypeId: 'sm-b12',
       quantity: 1,
       startDate,
@@ -286,12 +284,7 @@ describe('Additional Products & Rental Services V1', () => {
           serviceEndDate: '2032-11-04',
         },
       ],
-    });
-    expect(quote.services[0]).toMatchObject({
-      billingUnit: 'DAY',
-      amount: 360000,
-    });
-    expect(quote.rentalAddOnAmount).toBe(360000);
+    })).rejects.toBeInstanceOf(BadRequestException);
   });
   it('rejects incompatible PURCHASE and RENTAL billing units', async () => {
     await expect(

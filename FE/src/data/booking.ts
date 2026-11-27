@@ -40,12 +40,11 @@ export function bookingDate(value: unknown): string {
 
 export function readBookingDraft(catalog: Catalog): BookingDraft {
   const storageListings = catalog.products
-  const approvedDurations = catalog.approvedDurations
-  const fallback = { ...initialBookingDraft, productId: storageListings.find(item => item.id === initialBookingDraft.productId)?.id ?? storageListings[0].id, durationMonths: approvedDurations.includes(3) ? 3 : approvedDurations[0] }
+  const fallback = { ...initialBookingDraft, productId: storageListings.find(item => item.id === initialBookingDraft.productId)?.id ?? storageListings[0].id }
   try {
     const saved = JSON.parse(safeLocalStorage.getItem(DRAFT_STORAGE_KEY) ?? '') as Partial<BookingDraft>
     const productId = storageListings.some((item) => item.id === saved.productId) ? saved.productId! : fallback.productId
-    const durationMonths = approvedDurations.includes(saved.durationMonths as 1 | 3 | 6 | 12) ? saved.durationMonths as 1 | 3 | 6 | 12 : null
+    const durationMonths = typeof saved.durationMonths === 'number' && Number.isSafeInteger(saved.durationMonths) && saved.durationMonths > 0 ? saved.durationMonths : null
     const quantity = Number.isInteger(saved.quantity) && Number(saved.quantity) >= 1 && Number(saved.quantity) <= 3 ? Number(saved.quantity) : 1
     const customer = saved.customer && typeof saved.customer === 'object' ? saved.customer : initialBookingDraft.customer
     return {
@@ -60,7 +59,7 @@ export function readBookingDraft(catalog: Catalog): BookingDraft {
       adjacencyPreference: saved.adjacencyPreference === true && quantity > 1,
       addonIds: [],
       services: Array.isArray(saved.services) ? saved.services.filter(selection =>
-        selection && catalog.addons.some(service => service.id === selection.serviceId) &&
+        selection && typeof selection.serviceId === 'string' && selection.serviceId &&
         Number.isSafeInteger(selection.quantity) && selection.quantity >= 1 && selection.quantity <= 100
       ).slice(0, 20).map(selection => ({
         serviceId: selection.serviceId,

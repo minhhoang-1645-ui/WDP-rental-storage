@@ -308,12 +308,24 @@
 .admin-session-time small { color: var(--workspace-secondary); }
 [data-workspace-role="admin"] .admin-account-modal { width: min(645px, calc(100vw - 24px)); }
 .admin-account-fields {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
-  min-width: 0; padding: 12px; border: 1px solid var(--workspace-border); border-radius: var(--control-radius);
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px 12px;
+  min-width: 0; padding: 16px 12px 12px; border: 1px solid var(--workspace-border); border-radius: var(--control-radius);
 }
 .admin-account-fields legend { padding-inline: 5px; color: var(--workspace-secondary); font-weight: 600; }
-.admin-account-fields .field-label:first-of-type { grid-column: 1 / -1; }
-.admin-account-fields .field-label > small:not(.admin-field-error) { color: var(--workspace-secondary); }
+.admin-account-span { grid-column: 1 / -1; }
+.admin-password-hint { color: var(--workspace-secondary); }
+.workspace-themed[data-workspace-role="admin"] .admin-account-modal :is(input, select) {
+  box-sizing: border-box; min-width: 0; height: 44px; min-height: 44px;
+}
+.workspace-themed[data-workspace-role="admin"] .admin-create-dialog .password-field > button {
+  min-height: 0; padding: 0; color: var(--workspace-secondary);
+}
+.workspace-themed[data-workspace-role="admin"] .admin-create-dialog .password-field > button:hover { background: var(--workspace-hover); }
+.workspace-themed[data-workspace-role="admin"] .admin-account-modal :is(header > .icon-button, .password-field > button):focus-visible {
+  outline: 2px solid var(--admin-focus); outline-offset: -2px; box-shadow: none;
+}
+.workspace-themed[data-workspace-role="admin"] .admin-create-dialog { max-height: calc(100dvh - 24px); }
+.admin-create-dialog > header { flex: none; }
 .admin-field-error { color: var(--workspace-error); }
 .admin-account-modal [aria-invalid="true"] { border-color: var(--workspace-error); }
 .workspace-themed[data-workspace-role="admin"] :is(.admin-accounts, .admin-account-detail, .admin-account-modal) :is(a, button, input, select):focus:not(:focus-visible) {

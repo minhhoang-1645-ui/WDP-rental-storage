@@ -41,7 +41,11 @@ export type Performance = Facility & {
 type MoneyKey = 'rent' | 'services' | 'fees' | 'deposit' | 'billed' | 'debt' | 'received'
   | 'depositRefunded' | 'rentRefunded' | 'bookingRefunded' | 'transferRefunded';
 export type PerformanceReport = { asOf: string; period: { from: string | null; to: string | null }; items: Performance[] };
-export type Trend = { invoiceCount?: number; times: Array<{ date: string; rent: number | null; received: number | null; bookings: number | null }> };
+export type Trend = {
+  invoiceCount?: number;
+  dateSemantics?: { bookings: string; rent: string; received: string };
+  times: Array<{ date: string; rent: number | null; received: number | null; bookings: number | null }>;
+};
 
 const number = new Intl.NumberFormat('vi-VN');
 const percent = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });

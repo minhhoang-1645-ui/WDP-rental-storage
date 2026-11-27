@@ -12,8 +12,9 @@ export function serviceDisplayName(code: string, name: string) {
   return known && name.trim().toLowerCase() === known[0].toLowerCase() ? known[1] : name;
 }
 /** Rate is per purchased item/device AND per billing period, never transport labour. */
-export function serviceRateUnit(service: { kind: string; billingUnit: string }) {
-  return service.kind === 'PURCHASE' ? 'sản phẩm · mua một lần' : service.billingUnit === 'DAY' ? 'thiết bị / ngày' : service.billingUnit === 'MONTH' ? 'thiết bị / tháng lịch' : 'Chưa xác định đơn vị';
+export function serviceRateUnit(service: { kind: string; billingUnit: string; physicalUnit?: string | null }) {
+  const unit = service.physicalUnit?.trim() || (service.kind === 'PURCHASE' ? 'sản phẩm' : 'thiết bị');
+  return service.kind === 'PURCHASE' ? unit + ' · mua một lần' : service.billingUnit === 'DAY' ? unit + ' / ngày' : service.billingUnit === 'MONTH' ? unit + ' / tháng lịch' : 'Chưa xác định đơn vị';
 }
 export function localizeService<T extends { code: string; name: string; description?: string | null }>(item: T): T {
   return { ...item, name: serviceDisplayName(item.code, item.name), ...(item.description ? { description: item.description.replace(/\bunit\b/gi, 'kho').replace(/\badd-on\b/gi, 'dịch vụ bổ sung') } : {}) };

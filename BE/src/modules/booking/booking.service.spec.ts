@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BookingService } from './booking.service.js';
+import { PricingService } from '../pricing/pricing.service.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `test-facility-${runId}`;
@@ -73,6 +74,12 @@ describe('BookingService with PostgreSQL persistence', () => {
     });
     await prisma.storageUnit.createMany({ data: unitNumbers.map((unitNumber, index) => ({ storageTypeId: productId, unitNumber, row: 1, position: index + 1 })) });
     const stored = await prisma.user.create({ data: { id: userId, fullName: 'Test Customer', email: `${runId}@example.test`, phone: '0900000000', role: 'STORAGE_CUSTOMER', passwordHash: 'test-only' } });
+    await prisma.user.create({ data: { ...manager, passwordHash: 'test-only' } });
+    await prisma.facilityAccess.create({ data: { facilityId, userId: manager.id, grantedById: manager.id, activeKey: JSON.stringify([manager.id, facilityId]) } });
+    await prisma.businessRule.create({ data: {
+      facilityId, key: 'monthlyPriceRange:small', value: { min: 1_000_000, max: 2_000_000 },
+      version: 1, effectiveFrom: new Date('2000-01-01'), createdById: manager.id,
+    } });
     user = { id: stored.id, fullName: stored.fullName, email: stored.email, phone: stored.phone ?? '', role: stored.role };
     service = new BookingService(prisma);
   });
@@ -104,6 +111,9 @@ describe('BookingService with PostgreSQL persistence', () => {
     await prisma.contactInquiry.deleteMany({ where: { storageTypeId: productId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId: productId } });
     await prisma.storageType.delete({ where: { id: productId } });
+    await prisma.facilityAccess.deleteMany({ where: { facilityId } });
+    await prisma.businessRule.deleteMany({ where: { facilityId } });
+    await prisma.user.delete({ where: { id: manager.id } });
     await prisma.user.delete({ where: { id: userId } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
@@ -137,11 +147,37 @@ describe('BookingService with PostgreSQL persistence', () => {
   });
 
   it('prices an approved seven-day custom period through Pricing V1', async () => {
-    const result = await service.checkAvailability({ ...baseDraft(), periodMode: 'dates', durationMonths: undefined, endDate: futureDate(67) });
+    const result = await service.checkAvailability({ ...baseDraft(), periodMode: 'dates', durationMonths: undefined, endDate: futureDate(67), paymentPlan: 'PREPAID' });
     expect(result.available).toBe(true);
     expect(result.quote.periodStatus).toBe('SHORT_DURATION_APPROVED');
     expect(result.quote.billingMode).toBe('DAILY');
     expect(result.quote.rentalAmount).toBe(350000);
+  });
+
+  it.each([2, 5, 8, 15])('checks availability for a %i-month rental', async durationMonths => {
+    const result = await service.checkAvailability({ ...baseDraft(), durationMonths });
+    expect(result).toMatchObject({ available: true, quote: { billingMode: 'MONTHLY', termMonths: durationMonths, discountAmount: 0 } });
+    await expect(new PricingService(prisma).quote({
+      storageTypeId: productId, startDate: result.startDate, endDate: result.endDateExclusive,
+      quantity: 1, paymentPlan: 'PAY_MONTHLY', expectedBillingMode: 'MONTHLY',
+    })).resolves.toEqual(result.quote);
+  });
+
+  it.each([0, -2, 1.5])('rejects invalid month count %s in availability', async durationMonths => {
+    await expect(service.checkAvailability({ ...baseDraft(), durationMonths })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('validates daily booking rules with the persisted storage type', async () => {
+    const draft = { ...baseDraft(), periodMode: 'dates', endDate: futureDate(61), paymentPlan: 'PREPAID' };
+    await expect(service.checkAvailability(draft)).rejects.toThrow('tối thiểu');
+    try {
+      await prisma.storageType.update({ where: { id: productId }, data: { minRentalDays: 1 } });
+      await expect(service.checkAvailability(draft)).resolves.toMatchObject({ available: true, quote: { billableDays: 1, billingMode: 'DAILY' } });
+      await prisma.storageType.update({ where: { id: productId }, data: { allowDailyRental: false } });
+      await expect(service.checkAvailability(draft)).rejects.toThrow('loại kho hỗ trợ');
+    } finally {
+      await prisma.storageType.update({ where: { id: productId }, data: { allowDailyRental: true, minRentalDays: 7 } });
+    }
   });
 
   it('requires paymentPlan on new booking requests instead of using the legacy fallback', async () => {
@@ -211,7 +247,7 @@ describe('BookingService with PostgreSQL persistence', () => {
     const confirmed = await service.updateManagerReservationStatus(created.id, { status: 'CONFIRMED' }, manager);
     expect(confirmed.status).toBe('CONFIRMED');
     expect(confirmed.allocatedUnits).toHaveLength(2);
-    expect(confirmed.allocatedUnits.map((unit: any) => unit.position)).toEqual([1, 2]);
+    expect(confirmed.allocatedUnits.map((unit: any) => unit.position).sort((a: number, b: number) => a - b)).toEqual([1, 2]);
     expect(await prisma.reservationUnit.count({ where: { reservation: { reservationCode: created.id } } })).toBe(2);
     const contracts = await prisma.rentalContract.findMany({ where: { reservation: { reservationCode: created.id } }, orderBy: { contractCode: 'asc' } });
     expect(contracts).toHaveLength(2);

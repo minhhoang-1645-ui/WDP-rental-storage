@@ -1,6 +1,6 @@
 import { lastCreatedKey } from '../../utils/record-identity';
 import { safeSessionStorage } from '../../services/browser-storage'
-import { vietnamCalendarDate } from '../../utils/business-date'
+import { rentalMonthEnd, vietnamCalendarDate, wholeRentalMonths } from '../../utils/business-date'
 import { AvailabilityNotice, BookingSummary, type AvailabilityState, type QuoteState } from '../../components/booking/BookingSummary'
 import { quotePaymentSummary } from '../../utils/quote-payment-summary'
 import { serviceDisplayName } from '../../utils/service-labels'
@@ -12,6 +12,7 @@ import { useAuth } from '../../auth/auth-context'
 import { StorageImage } from '../../components/public/StorageImage'
 import { storageMonthlyPrice, storageSpecifications, storageGroupSummary } from '../../utils/storage-selection'
 import { AdditionalServicePicker } from '../../components/booking/AdditionalServicePicker'
+import { DatePicker } from '../../components/workspace/DateTimeFields'
 import { Container } from '../../components/ui/Container'
 import { bookingDate, bookingAvailabilityFingerprint, clearBookingAvailability, clearBookingDraft, readBookingAvailability, readBookingDraft, readBookingStep, saveBookingAvailability, saveBookingDraft, saveBookingStep } from '../../data/booking'
 import { useCatalog } from '../../catalog/catalog-context'
@@ -29,18 +30,15 @@ function quoteText(amount: number) {
 
 function endDateExclusive(draft: BookingDraft) {
   if (draft.periodMode === 'dates') return bookingDate(draft.endDate)
-  if (!bookingDate(draft.startDate) || typeof draft.durationMonths !== 'number' || !Number.isInteger(draft.durationMonths) || draft.durationMonths <= 0) return ''
-  const [year, month, day] = draft.startDate.split('-').map(Number)
-  const target = new Date(Date.UTC(year, month - 1 + draft.durationMonths, 1))
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
-  target.setUTCDate(Math.min(day, lastDay))
-  return bookingDate(target.toISOString().slice(0, 10))
+  return rentalMonthEnd(draft.startDate, draft.durationMonths ?? 0)
 }
 
-function hasValidAvailabilityInput(draft: BookingDraft, approvedDurations: number[]) {
+function hasValidAvailabilityInput(draft: BookingDraft, allowsDaily: boolean, minimumDays: number | null) {
   if (!bookingDate(draft.startDate) || draft.startDate < vietnamCalendarDate() || !endDateExclusive(draft)) return false
-  if (draft.periodMode === 'duration') return approvedDurations.includes(draft.durationMonths as 1 | 3 | 6 | 12)
-  return Boolean(bookingDate(draft.endDate) && draft.endDate > draft.startDate)
+  if (draft.periodMode === 'duration') return true
+  const monthEnd = endDateExclusive({ ...draft, periodMode: 'duration', durationMonths: 1 })
+  const days = (Date.parse(draft.endDate) - Date.parse(draft.startDate)) / 86400000
+  return allowsDaily && minimumDays != null && days >= minimumDays && draft.endDate < monthEnd
 }
 
 interface CheckoutStepProps {
@@ -106,7 +104,7 @@ function CheckoutStep({ draft, summary, user, onUpdate, onBack, profileReturnPat
 
 export function BookingWizardPage() {
   const catalog = useCatalog()
-  const { getStorageListing, getStorageSize, bookingSizes, approvedDurations } = catalog
+  const { getStorageListing, getStorageSize, bookingSizes } = catalog
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -117,11 +115,17 @@ export function BookingWizardPage() {
     const product = params.get('product')
     const date = bookingDate(params.get('date'))
     const duration = Number(params.get('duration'))
+    const chosen = getStorageListing(product ?? '') ?? getStorageListing(saved.productId)
+    const hasDuration = Number.isSafeInteger(duration) && duration > 0
+    const legacyMonths = saved.periodMode === 'dates' ? wholeRentalMonths(saved.startDate, saved.endDate) : null
+    const daily = !hasDuration && !legacyMonths && saved.periodMode === 'dates' && chosen?.allowDailyRental === true
     return {
       ...saved,
       ...(product && getStorageListing(product) ? { productId: product } : {}),
       ...(date ? { startDate: date } : {}),
-      ...(approvedDurations.includes(duration as 1 | 3 | 6 | 12) ? { durationMonths: duration as 1 | 3 | 6 | 12, periodMode: 'duration' } : {}),
+      durationMonths: hasDuration ? duration : legacyMonths ?? (saved.periodMode === 'dates' && !daily ? null : saved.durationMonths),
+      periodMode: daily ? 'dates' : 'duration',
+      paymentPlan: daily ? 'PREPAID' : saved.paymentPlan,
     }
   })
   const [step, setStep] = useState<1 | 2 | 3>(() => {
@@ -153,10 +157,11 @@ export function BookingWizardPage() {
   useEffect(() => saveBookingStep(step), [step])
 
   const product = getStorageListing(draft.productId) ?? catalog.products[0]
-  const approvedAddons=catalog.approvedAddons.filter(item=>item.facilityId===product.facilityId)
+  const approvedAddons=catalog.approvedAddons.filter(item=>item.facilityId===product.facilityId && !(item.kind === 'RENTAL' && item.billingUnit === 'DAY'))
   const size = storageSpecifications(product, getStorageSize(product.sizeId)!)
   const selectedCategory = bookingSizes.find((item) => item.id === product.sizeId)!
-  const canCheckAvailability = product.id === draft.productId && hasValidAvailabilityInput(draft, approvedDurations) && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
+  const periodValid = product.id === draft.productId && hasValidAvailabilityInput(draft, product.allowDailyRental, product.minRentalDays ?? null)
+  const canCheckAvailability = periodValid && !(draft.services ?? []).some(selection => serviceSelectionIssue(approvedAddons.find(service => service.id === selection.serviceId), selection, draft.startDate, endDateExclusive(draft)))
   const pricingEndDate = endDateExclusive(draft)
 
   const invalidateAvailability = () => {
@@ -176,6 +181,12 @@ export function BookingWizardPage() {
 
   const updateDraft = (patch: Partial<BookingDraft>) => {
     const next = { ...draft, ...patch }
+    if (next.periodMode === 'dates' && getStorageListing(next.productId)?.allowDailyRental !== true) {
+      next.periodMode = 'duration'
+      next.endDate = ''
+      next.durationMonths = null
+    }
+    if (next.periodMode === 'dates') next.paymentPlan = 'PREPAID'
     if (bookingAvailabilityFingerprint(next) !== bookingAvailabilityFingerprint(draft)) invalidateAvailability()
     setDraft(next)
     setError('')
@@ -253,6 +264,7 @@ export function BookingWizardPage() {
           quantity: draft.quantity,
           startDate: draft.startDate,
           endDate,
+          expectedBillingMode: draft.periodMode === 'dates' ? 'DAILY' : 'MONTHLY',
           paymentPlan: draft.paymentPlan,
           services: draft.services,
         }, controller.signal)
@@ -270,7 +282,7 @@ export function BookingWizardPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [showQuote, product.id, draft.startDate, pricingEndDate, draft.quantity, draft.paymentPlan, draft.services, availabilityRetry])
+  }, [showQuote, product.id, draft.startDate, pricingEndDate, draft.periodMode, draft.quantity, draft.paymentPlan, draft.services, availabilityRetry])
 
   const selectSize = (sizeId: typeof product.sizeId) => {
     const category = bookingSizes.find((item) => item.id === sizeId)!
@@ -302,9 +314,18 @@ export function BookingWizardPage() {
     setSubmitting(true)
     setError('')
     try {
-      const payload = { ...checkoutDraft, ...checkoutDraft.customer, note: checkoutDraft.note }
+      const check = await bookingApi.availability(checkoutDraft)
+      if (!check.available) throw new ApiError(409, check.message, { availability: check })
+      const amounts = ['billingMode', 'paymentPlan', 'quotedTotalAmount', 'estimatedInitialAmountDue', 'rentalAmount', 'depositAmount', 'discountAmount', 'addOnTotalAmount', 'services'] as const
+      if (amounts.some(key => JSON.stringify(check.quote[key]) !== JSON.stringify(readyQuote[key]))) {
+        retryAvailability()
+        setError('Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.')
+        return
+      }
+      const expectedServiceQuoteVersion = check.serviceQuoteVersion
+      const payload = { ...checkoutDraft, ...checkoutDraft.customer, note: checkoutDraft.note, expectedServiceQuoteVersion }
       if (!user && emailBooking) {
-        const input = { ...checkoutDraft.customer, storageTypeId: checkoutDraft.productId, quantity: checkoutDraft.quantity, startDate: checkoutDraft.startDate, endDate: endDateExclusive(checkoutDraft), paymentPlan: checkoutDraft.paymentPlan, services: checkoutDraft.services ?? [] }
+        const input = { ...checkoutDraft.customer, storageTypeId: checkoutDraft.productId, quantity: checkoutDraft.quantity, startDate: checkoutDraft.startDate, endDate: endDateExclusive(checkoutDraft), periodMode: checkoutDraft.periodMode, durationMonths: checkoutDraft.durationMonths, paymentPlan: checkoutDraft.paymentPlan, services: checkoutDraft.services ?? [], expectedServiceQuoteVersion }
         const fingerprint = JSON.stringify(input)
         const saved = safeSessionStorage.getItem('wdp-guest-request-retry')
         let retry: { fingerprint: string; key: string } | null = null
@@ -340,6 +361,7 @@ export function BookingWizardPage() {
         clearBookingAvailability()
         window.requestAnimationFrame(() => document.getElementById('booking-order-summary')?.scrollIntoView({ block: 'nearest' }))
       } else {
+        if (caught instanceof ApiError && (caught.payload as { code?: string } | null)?.code === 'SERVICE_QUOTE_CHANGED') retryAvailability()
         setError(caught instanceof Error ? caught.message : 'Không thể gửi yêu cầu.')
       }
     } finally {
@@ -362,7 +384,7 @@ export function BookingWizardPage() {
     onRetry={retryAvailability} onStorage={() => goToStep(1)}
     onDates={() => {
       if (step !== 2) goToStep(2)
-      window.requestAnimationFrame(() => document.getElementById('booking-start-date')?.focus())
+      window.requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.booking-form-panel button[aria-label="Ngày bắt đầu"]')?.focus())
     }}
     onQuantity={quantity => {
       updateDraft({ quantity, adjacencyPreference: quantity > 1 && draft.adjacencyPreference })
@@ -438,24 +460,29 @@ export function BookingWizardPage() {
           <button type="button" className="booking-back" onClick={() => goToStep(1)}><ArrowLeft size={16} /> Sửa lựa chọn kho</button>
           <h2 id="booking-step-title" tabIndex={-1} className="booking-title">Thời gian & dịch vụ</h2>
           <div className="booking-form-panel">
-            <label className="field-label">Ngày bắt đầu<input type="date" min={vietnamCalendarDate()} id="booking-start-date" name="startDate" value={draft.startDate} onChange={(event) => updateDraft({ startDate: event.target.value })} /></label>
-            <div className="period-mode-tabs" role="group" aria-label="Cách chọn thời gian">
-              <button type="button" aria-pressed={draft.periodMode === 'duration'} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Theo số tháng</button>
-              <button type="button" aria-pressed={draft.periodMode === 'dates'} onClick={() => updateDraft({ periodMode: 'dates', durationMonths: null })}>Theo ngày kết thúc</button>
-            </div>
-            {draft.periodMode === 'duration' ? <fieldset>
-              <legend>Số tháng thuê</legend>
-              <div className="duration-grid">{approvedDurations.map((months) => <button type="button" key={months} aria-pressed={draft.durationMonths === months} onClick={() => updateDraft({ durationMonths: months })}>{months}<small>tháng</small></button>)}</div>
-            </fieldset> : <label className="field-label">
-              Ngày kết thúc
-              <input type="date" min={draft.startDate || vietnamCalendarDate()} name="endDate" value={draft.endDate} onChange={(event) => updateDraft({ endDate: event.target.value })} />
-              <small className="field-help">Thuê ít nhất {product.allowDailyRental ? `${product.minRentalDays ?? 1} ngày` : '1 tháng'}. Ngày kết thúc nằm ngoài kỳ thuê.</small>
-            </label>}
+            {product.allowDailyRental ? <div className="period-mode-tabs" role="group" aria-label="Hình thức thuê">
+              <button type="button" aria-pressed={draft.periodMode === 'duration'} onClick={() => updateDraft({ periodMode: 'duration', endDate: '' })}>Thuê theo tháng</button>
+              <button type="button" aria-pressed={draft.periodMode === 'dates'} onClick={() => updateDraft({ periodMode: 'dates' })}>Thuê theo ngày</button>
+            </div> : <strong>Thuê theo tháng</strong>}
+            <DatePicker label="Ngày bắt đầu" name="startDate" min={vietnamCalendarDate()} value={draft.startDate} onChange={startDate => updateDraft({ startDate })} />
+            {draft.periodMode === 'duration' ? <label className="field-label">Số tháng thuê
+              <input type="number" min={1} step={1} value={draft.durationMonths ?? ''} onChange={event => updateDraft({ durationMonths: event.target.value === '' ? null : Number(event.target.value) })} />
+            </label> : <div>
+              <DatePicker label="Ngày kết thúc" name="endDate" min={draft.startDate || vietnamCalendarDate()} value={draft.endDate} onChange={endDate => updateDraft({ endDate })} />
+              <small className="field-help">{product.minRentalDays != null
+                ? `Tối thiểu ${product.minRentalDays} ngày và dưới một tháng theo lịch. Ngày kết thúc nằm ngoài kỳ thuê.`
+                : 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.'}</small>
+              {readyQuote?.dailyUnitPrice && <p>Đơn giá ngày {Number(readyQuote.dailyUnitPrice).toLocaleString('vi-VN')} đ / kho</p>}
+            </div>}
+            {periodValid && <p>Ngày kết thúc dự kiến <strong>{pricingEndDate.split('-').reverse().join('/')}</strong>
+              {draft.periodMode === 'dates' && ` · ${(Date.parse(pricingEndDate) - Date.parse(draft.startDate)) / 86400000} ngày`}</p>}
             <fieldset className="payment-plan-fieldset"><legend>Cách thanh toán</legend><div className="payment-options">
-              <button type="button" className="payment-option" onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Trả hàng tháng</strong><small>Thanh toán theo từng kỳ</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>
+              {draft.periodMode === 'duration' && <button type="button" className="payment-option" onClick={() => updateDraft({ paymentPlan: 'PAY_MONTHLY' })} aria-pressed={draft.paymentPlan === 'PAY_MONTHLY'}><span className="payment-option-copy"><strong>Trả hàng tháng</strong><small>Thanh toán theo từng kỳ</small></span>{draft.paymentPlan === 'PAY_MONTHLY' && <Check size={18} />}</button>}
               <button type="button" className="payment-option" onClick={() => updateDraft({ paymentPlan: 'PREPAID' })} aria-pressed={draft.paymentPlan === 'PREPAID'}><span className="payment-option-copy"><strong>Trả trước cả kỳ</strong>{Boolean(readyQuote?.discountPercent) && <small>Giảm {readyQuote?.discountPercent}% tiền thuê</small>}</span>{draft.paymentPlan === 'PREPAID' && <Check size={18} />}</button>
             </div></fieldset>
-            <section className="addon-section"><div className="addon-heading"><h3>Dịch vụ bổ sung</h3></div><AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={endDateExclusive(draft)} onChange={services => updateDraft({ services })} /></section>
+            <section className="addon-section"><div className="addon-heading"><h3>Dịch vụ bổ sung</h3></div>{periodValid
+              ? <AdditionalServicePicker services={approvedAddons} selections={draft.services ?? []} startDate={draft.startDate} endDate={pricingEndDate} onChange={services => updateDraft({ services })} />
+              : <p>Vui lòng chọn thời gian thuê kho trước khi chọn dịch vụ bổ sung.</p>}</section>
             <details className="booking-disclosure" open={draft.note ? true : undefined}>
               <summary>Thêm ghi chú <ChevronDown size={16} aria-hidden="true" /></summary>
               <textarea aria-label="Ghi chú (không bắt buộc)" rows={3} maxLength={500} value={draft.note} onChange={(event) => updateDraft({ note: event.target.value })} />

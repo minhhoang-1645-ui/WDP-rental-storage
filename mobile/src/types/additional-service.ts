@@ -6,6 +6,7 @@ export interface AdditionalService {
   description: string | null;
   kind: 'PURCHASE' | 'RENTAL';
   billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH';
+  physicalUnit?: string | null;
   unitPrice: number | null;
   isActive?: boolean;
   imageUrl?: string | null;

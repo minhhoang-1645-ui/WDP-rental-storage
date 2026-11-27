@@ -13,6 +13,31 @@ export function reportFilters(query: Record<string, unknown>) {
   return { from, to, group, typeId };
 }
 type Row = Record<string, any>;
+type ReportBucket = { date: string; rent: number; received: number; bookings: number };
+export function fillReportBuckets(series: Map<string, ReportBucket>, { from, to, group }: ReturnType<typeof reportFilters>) {
+  const labels = [...series.keys()].sort();
+  const fromLabel = labels[0], toLabel = labels.at(-1);
+  const dateFor = (label: string) => new Date(label + (group === 'year' && label.length === 4 ? '-01-01' : group === 'month' && label.length === 7 ? '-01' : '') + 'T00:00:00Z');
+  function startOfBucket(date: Date) {
+    if (group === 'year') date.setUTCMonth(0, 1);
+    if (group === 'month') date.setUTCDate(1);
+    if (group === 'week') date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    return date;
+  }
+  if ((!from && !fromLabel) || (!to && !toLabel)) return [];
+  const cursor = startOfBucket(dateFor(from || fromLabel));
+  const end = startOfBucket(dateFor(to || toLabel!));
+  const result: ReportBucket[] = [];
+  while (cursor <= end) {
+    if (result.length >= 600) throw new BadRequestException('Khoảng báo cáo quá dài cho cách nhóm đã chọn. Hãy chọn kỳ ngắn hơn hoặc nhóm theo tháng/năm.');
+    const date = cursor.toISOString().slice(0, group === 'year' ? 4 : group === 'month' ? 7 : 10);
+    result.push(series.get(date) ?? { date, rent: 0, received: 0, bookings: 0 });
+    if (group === 'year') cursor.setUTCFullYear(cursor.getUTCFullYear() + 1);
+    else if (group === 'month') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    else cursor.setUTCDate(cursor.getUTCDate() + (group === 'week' ? 7 : 1));
+  }
+  return result;
+}
 function number(value: unknown) { const n = Number(value ?? 0); if (!Number.isSafeInteger(n) || n < 0) throw new BadRequestException('Số liệu vượt giới hạn hiển thị an toàn. Thu hẹp thời gian báo cáo.'); return n; }
 @Injectable()
 export class ReportingService {
@@ -88,7 +113,7 @@ export class ReportingService {
       this.prisma.$queryRaw<Row[]>(Prisma.sql`SELECT COUNT(DISTINCT a."storageUnitId") AS allocated FROM "ReservationUnit" a JOIN "StorageUnit" u ON u.id=a."storageUnitId" JOIN "StorageType" t ON t.id=u."storageTypeId" JOIN "Reservation" r ON r.id=a."reservationId" WHERE r.status = 'CONFIRMED' AND a."releasedAt" IS NULL AND ${this.scope(filters,Prisma.sql`r."createdAt"`,Prisma.sql`t.id`,Prisma.sql`t."facilityId"`)}`),
       this.prisma.$queryRaw<Row[]>(Prisma.sql`SELECT COUNT(*) AS count FROM "Invoice" i JOIN "Reservation" r ON r.id=i."reservationId" WHERE i.status = 'VOID' AND ${invoiceScope}`),
     ]);
-    const categories = new Map<string, Row>(), times = new Map<string, Row>();
+    const categories = new Map<string, Row>(), times = new Map<string, ReportBucket>();
     const category = (row: Row) => { if (!categories.has(row.id)) categories.set(row.id, { id: row.id, name: row.name, requests: 0, confirmed: 0, units: 0, rent: 0, physicalUnits: 0, occupied: 0 }); return categories.get(row.id)!; };
     const time = (date: string) => { if (!times.has(date)) times.set(date, { date, rent: 0, received: 0, bookings: 0 }); return times.get(date)!; };
     const sums = { rent: 0, deposit: 0, total: 0, paid: 0, debt: 0, received: 0, overdue: 0, invoiceCount: 0, paymentCount: 0, bookingCount: 0, confirmedCount: 0, allocatedUnits: number(totals[0]?.allocated) };
@@ -97,7 +122,8 @@ export class ReportingService {
     for (const row of paymentGroups) { sums.received += number(row.received); sums.paymentCount += number(row.count); time(row.date).received += number(row.received); }
     for (const row of units) { const c = categories.get(row.storageTypeId); if (c) { c.physicalUnits += row._count; if (row.status === 'OCCUPIED') c.occupied += row._count; } }
     for (const value of Object.values(sums)) number(value);
-    return { asOf: new Date().toISOString(), filters, ...sums, missingAmounts: 0, missingPayments: 0, voidCount: number(voids[0]?.count), categories: [...categories.values()].sort((a, b) => b.requests - a.requests || a.name.localeCompare(b.name, 'vi')), times: [...times.values()].sort((a, b) => a.date.localeCompare(b.date)), unitSummary: units.map(row => ({ typeId: row.storageTypeId, status: row.status, count: row._count })), dateSemantics: { bookings: 'Ngày tạo đơn', rent: 'Ngày phát hành hóa đơn; không gồm cọc/dịch vụ', received: 'Ngày nhận tiền; có thể gồm cọc/dịch vụ', occupancy: 'Hiện tại, không phải lịch sử' } };
+    const buckets = fillReportBuckets(times, filters);
+    return { asOf: new Date().toISOString(), filters, ...sums, missingAmounts: 0, missingPayments: 0, voidCount: number(voids[0]?.count), categories: [...categories.values()].sort((a, b) => b.requests - a.requests || a.name.localeCompare(b.name, 'vi')), times: buckets, unitSummary: units.map(row => ({ typeId: row.storageTypeId, status: row.status, count: row._count })), dateSemantics: { bookings: 'Ngày tạo đơn đặt kho, không phải ngày bắt đầu thuê', rent: 'Ngày phát hành hóa đơn, không gồm cọc và dịch vụ', received: 'Ngày thực tế nhận tiền, có thể gồm cọc và dịch vụ', occupancy: 'Hiện tại, không phải lịch sử' } };
   }
   async csv(input: Record<string, unknown>, actor:PublicUser) {
     await assertActiveRole(this.prisma,actor,actor.role==='BUSINESS_OPERATIONS_MANAGER'?'BUSINESS_OPERATIONS_MANAGER':'FACILITY_MANAGER');

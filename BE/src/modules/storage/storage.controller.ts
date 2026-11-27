@@ -1,8 +1,7 @@
 import { BadRequestException, Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BookingService } from '../booking/booking.service.js';
-import { approvedDurations } from '../booking/booking.types.js';
-import { businessDate, isIsoCalendarDate } from '../../business-date.js';
+import { businessDate, isIsoCalendarDate, rentalMonthEnd } from '../../business-date.js';
 
 @Controller('storage')
 @ApiTags('Storage')
@@ -29,7 +28,7 @@ export class StorageController {
     if (size !== 'all' && !catalog.sizes.some((item) => item.id === size)) throw new BadRequestException('Kích thước kho không hợp lệ.');
     if (!['all', 'standard', 'climate'].includes(condition as string)) throw new BadRequestException('Loại kho không hợp lệ.');
     const duration = query.duration ?? '3';
-    if (typeof duration !== 'string' || (duration !== 'flexible' && !approvedDurations.some((value) => String(value) === duration))) {
+    if (typeof duration !== 'string' || (duration !== 'flexible' && (!/^[1-9]\d*$/.test(duration) || !Number.isSafeInteger(Number(duration))))) {
       throw new BadRequestException('Thời hạn thuê không hợp lệ.');
     }
     const startDate = query.date;
@@ -37,6 +36,8 @@ export class StorageController {
       throw new BadRequestException('Ngày bắt đầu không hợp lệ.');
     }
     const checkedPeriod = Boolean(startDate && duration !== 'flexible');
+    if (typeof startDate === 'string' && checkedPeriod && !rentalMonthEnd(startDate, Number(duration)))
+      throw new BadRequestException('Ngày kết thúc kỳ thuê không hợp lệ.');
     let items = catalog.products.filter((item) => (!facilityId || item.facilityId === facilityId)
       && (size === 'all' || item.sizeId === size) && (condition === 'all' || item.condition === condition));
     if (checkedPeriod) {

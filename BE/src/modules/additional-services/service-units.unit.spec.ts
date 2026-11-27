@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AdditionalServicesService } from './additional-services.service.js';
 import { PricingService } from '../pricing/pricing.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
+import { availablePublicOfferings, newServiceTerms, pricedServices } from './service-offerings.js';
+import { AdditionalServiceInventoryService } from './additional-service-inventory.service.js';
 
 const stamp = new Date();
 const catalogItem = {
@@ -18,6 +20,52 @@ const catalogItem = {
   offerings: [],
 };
 describe('physical unit independent of billing and historical prices', () => {
+  it('excludes daily rentals from the customer catalog and new quotes, with a scoped exception for committed lines', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { facilityServiceOffering: { findMany } } as never;
+    await availablePublicOfferings(db, 'facility');
+    expect(findMany.mock.calls.at(-1)?.[0].where.additionalService).toMatchObject(newServiceTerms);
+    await pricedServices(db, ['day-item', 'month-item'], 'facility');
+    expect(findMany.mock.calls.at(-1)?.[0].where.additionalService.OR)
+      .toEqual([newServiceTerms, { id: { in: [] } }]);
+    await pricedServices(db, ['day-item'], 'facility', ['day-item']);
+    expect(findMany.mock.calls.at(-1)?.[0].where).toMatchObject({
+      facilityId: 'facility', additionalServiceId: { in: ['day-item'] },
+      additionalService: { OR: [newServiceTerms, { id: { in: ['day-item'] } }] },
+    });
+  });
+  it('rejects public equipment availability requests for partial rental months', async () => {
+    const inventory = new AdditionalServiceInventoryService({
+      facilityServiceOffering: { findMany: vi.fn().mockResolvedValue([{
+        facilityId: 'facility', rentalCapacity: 5, isActive: true, unitPrice: 10000n,
+        additionalService: { ...catalogItem, kind: 'RENTAL', billingUnit: 'MONTH' },
+      }]) },
+    } as never);
+    await expect(inventory.publicAvailability('addon', {
+      startDate: '2027-01-01', endDate: '2027-01-02', quantity: '1',
+    })).rejects.toThrow('đủ số tháng theo lịch');
+  });
+  it('creates consumables and monthly equipment with valid units, but rejects new daily equipment', async () => {
+    const actor = { id: 'bom', role: 'BUSINESS_OPERATIONS_MANAGER' as const, fullName: 'Test', email: 'bom@example.test', phone: '' };
+    const create = vi.fn(async ({ data }) => ({ ...catalogItem, ...data }));
+    const db = {
+      user: { findFirst: vi.fn().mockResolvedValue(actor) },
+      additionalService: { findUnique: vi.fn().mockResolvedValue(null), create },
+      $queryRawUnsafe: vi.fn(),
+      $transaction: (callback: (tx: unknown) => unknown) => callback(db),
+    };
+    const catalog = new AdditionalServicesService(db as never);
+    const item = { code: 'BOX', name: 'Thùng carton', kind: 'PURCHASE', billingUnit: 'ONE_TIME', physicalUnit: 'thùng' };
+    await expect(catalog.saveCatalog(undefined, item, actor)).resolves.toMatchObject({ physicalUnit: 'thùng', billingUnit: 'ONE_TIME' });
+    await expect(catalog.saveCatalog(undefined, { ...item, physicalUnit: '  chai  nhỏ ' }, actor)).resolves.toMatchObject({ physicalUnit: 'chai nhỏ' });
+    const rental = { ...item, kind: 'RENTAL', physicalUnit: 'bộ' };
+    await expect(catalog.saveCatalog(undefined, { ...rental, billingUnit: 'MONTH' }, actor)).resolves.toMatchObject({ physicalUnit: 'bộ', billingUnit: 'MONTH' });
+    await expect(catalog.saveCatalog(undefined, { ...rental, billingUnit: 'DAY' }, actor)).rejects.toThrow('chỉ tính phí theo tháng');
+    for (const physicalUnit of ['', 'tháng', 'chu kỳ', '<chai>', 'chai\nnhỏ', 'a'.repeat(41)]) {
+      await expect(catalog.saveCatalog(undefined, { ...item, physicalUnit }, actor)).rejects.toThrow('đơn vị');
+    }
+    expect(create).toHaveBeenCalledTimes(3);
+  });
   it('adds a nullable catalog field without guessing legacy units; reviews configured offerings and only blocks outstanding obligations', async () => {
     const actor = {
       id: 'bom',
@@ -53,7 +101,13 @@ describe('physical unit independent of billing and historical prices', () => {
         { kind: 'RENTAL', billingUnit: 'DAY', expectedUpdatedAt:stamp.toISOString() },
         actor,
       ),
-    ).resolves.toMatchObject({ kind: 'RENTAL', billingUnit: 'DAY' });
+    ).rejects.toThrow('chỉ tính phí theo tháng');
+    additionalService.findUnique.mockResolvedValue({ ...catalogItem, kind: 'RENTAL', billingUnit: 'DAY' });
+    additionalService.update.mockImplementationOnce(async ({ data }) => ({ ...catalogItem, kind: 'RENTAL', billingUnit: 'DAY', ...data }));
+    await expect(service.saveCatalog('addon', { name: 'Xe cũ', isActive: false, expectedUpdatedAt: stamp.toISOString() }, actor))
+      .resolves.toMatchObject({ billingUnit: 'DAY', isActive: false });
+    await expect(service.saveCatalog('addon', { billingUnit: 'MONTH', physicalUnit: '  bộ  thiết bị  ', expectedUpdatedAt: stamp.toISOString() }, actor))
+      .resolves.toMatchObject({ billingUnit: 'MONTH', physicalUnit: 'bộ thiết bị' });
     additionalService.findUnique.mockResolvedValue({ ...catalogItem, physicalUnit: 'cái' });
     const expectedUpdatedAt = stamp.toISOString();
     await expect(service.saveCatalog('addon', { physicalUnit: 'thùng', expectedUpdatedAt }, actor))

@@ -3,7 +3,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { apiRequest } from "../../services/api";
 import { date, first, type Row } from "../../components/manager/portal-data";
 import { Facts } from "../../components/manager/PortalUi";
-import { vietnamCalendarDate } from "../../utils/business-date";
+import { vietnamCalendarDate, wholeRentalMonths } from "../../utils/business-date";
 
 export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
   const [result, setResult] = useState<Row>();
@@ -25,6 +25,7 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
       setError("Ngày kết thúc phải sau ngày bắt đầu.");
       return;
     }
+    const durationMonths = wholeRentalMonths(startDate, endDate);
     lock.current = true;
     setBusy(true);
     try {
@@ -35,12 +36,13 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
             productId: form.get("productId"),
             startDate,
             endDate,
-            periodMode: "dates",
+            periodMode: durationMonths ? "duration" : "dates",
+            ...(durationMonths ? { durationMonths } : {}),
             quantity: Number(form.get("quantity")),
             adjacencyPreference: false,
             addonIds: [],
             paymentChoice: "pay-later",
-            paymentPlan: "PAY_MONTHLY",
+            paymentPlan: durationMonths ? "PAY_MONTHLY" : "PREPAID",
           }),
         }),
       );

@@ -208,6 +208,8 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
   const [kind, setKind] = useState<AdditionalService['kind']>(item?.kind ?? 'PURCHASE');
   const [billingUnit, setBillingUnit] = useState(item?.billingUnit ?? 'ONE_TIME');
   const [physicalUnit, setPhysicalUnit] = useState(item?.physicalUnit ?? '');
+  const [custom, setCustom] = useState(Boolean(item?.physicalUnit && !serviceUnits(item.kind).includes(item.physicalUnit)));
+  const unitOptions = serviceUnits(kind);
   const affectsFacilities = !!item?.configuredFacilityCount && canEditStructure &&
     (kind !== item.kind || billingUnit !== item.billingUnit || physicalUnit !== (item.physicalUnit ?? ''));
   const [busy, setBusy] = useState(false);
@@ -229,7 +231,11 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
       setError('Nhập tên sản phẩm hoặc dịch vụ có ít nhất 2 ký tự.');
       return;
     }
-    const physicalUnit = form.get('physicalUnit') || null;
+    if (custom && !physicalUnit.trim()) {
+      setError('Nhập tên đơn vị tính khi chọn Khác.');
+      return;
+    }
+    const unit = physicalUnit.trim().replace(/\s+/g, ' ') || null;
     lock.current = true;
     setBusy(true);
     try {
@@ -242,8 +248,8 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
           ...(item ? { expectedUpdatedAt: item.updatedAt } : { code }),
           ...(canEditStructure ? {
             kind,
-            billingUnit: kind === 'PURCHASE' ? 'ONE_TIME' : form.get('billingUnit'),
-            ...(physicalUnit !== (item?.physicalUnit ?? null) ? { physicalUnit } : {}),
+            billingUnit,
+            ...(unit !== (item?.physicalUnit ?? null) ? { physicalUnit: unit } : {}),
           } : {}),
         }),
       });
@@ -265,22 +271,29 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
         <label>Phân loại<select disabled={!canEditStructure} aria-describedby={!canEditStructure ? structureHelpId : undefined} value={kind} onChange={event => {
           const next = event.target.value as typeof kind;
           setKind(next);
-          setBillingUnit(next === 'PURCHASE' ? 'ONE_TIME' : item?.billingUnit === 'MONTH' ? 'MONTH' : 'DAY');
+          setBillingUnit(next === 'PURCHASE' ? 'ONE_TIME' : 'MONTH');
+          setCustom(Boolean(physicalUnit && !serviceUnits(next).includes(physicalUnit)));
         }}>
           {Object.entries(categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>
         <label>Hình thức tính phí
-          <select key={kind} name="billingUnit" disabled={!canEditStructure} aria-describedby={!canEditStructure ? structureHelpId : undefined}
-            value={billingUnit} onChange={event => setBillingUnit(event.target.value as typeof billingUnit)}>
-            {kind === 'PURCHASE' ? <option value="ONE_TIME">{billingLabels.ONE_TIME}</option> :
-              <><option value="DAY">{billingLabels.DAY}</option><option value="MONTH">{billingLabels.MONTH}</option></>}
-          </select></label>
-        <label>Đơn vị tính
+          <input readOnly value={billingLabels[billingUnit] + (billingUnit === 'DAY' ? ' (dữ liệu cũ)' : '')} />
+        </label>
+        <label>Đơn vị vật lý
           <select name="physicalUnit" disabled={!canEditStructure} aria-describedby={!canEditStructure ? structureHelpId : undefined}
-            value={physicalUnit} onChange={event => setPhysicalUnit(event.target.value)}><option value="">Chưa thiết lập</option>
-            {item?.physicalUnit && !serviceUnits.some(unit => unit === item.physicalUnit) && <option value={item.physicalUnit}>{item.physicalUnit}</option>}
-            {serviceUnits.map(unit => <option key={unit}>{unit}</option>)}
+            value={custom ? '__custom__' : physicalUnit} onChange={event => {
+              setCustom(event.target.value === '__custom__');
+              setPhysicalUnit(event.target.value === '__custom__' ? '' : event.target.value);
+            }}><option value="">Chưa thiết lập</option>
+            {unitOptions.map(unit => <option key={unit}>{unit}</option>)}
+            <option value="__custom__">Khác</option>
           </select></label>
+        {custom && <label>Tên đơn vị tính<input maxLength={40} placeholder="Ví dụ: chai, lọ, mét" disabled={!canEditStructure}
+          value={physicalUnit} onChange={event => setPhysicalUnit(event.target.value)} required /></label>}
+        {billingUnit === 'DAY' && <div className="operations-catalog-description">
+          <small>Thiết bị thuê ngày cũ đã ngừng nhận giao dịch mới.</small>
+          {canEditStructure && <button className="button-secondary" type="button" onClick={() => setBillingUnit('MONTH')}>Chuyển sang thuê tháng</button>}
+        </div>}
         {!canEditStructure && <small className="operations-catalog-description" id={structureHelpId}>
           {item?.structureBlockReason ?? 'Chưa xác định được các giao dịch đang xử lý. Vui lòng tải lại.'}
         </small>}

@@ -8,8 +8,7 @@ export function CatalogProvider({ children, allowEmpty = false }: PropsWithChild
   const { data: rawCatalog, loading, refreshing, error, refresh } = useApiResource<Catalog>('/booking/catalog')
   const catalog = rawCatalog && Array.isArray(rawCatalog.products) && Array.isArray(rawCatalog.sizes) ? publicCatalog(rawCatalog) : rawCatalog
   const valid = Boolean(Array.isArray(catalog?.products) && Array.isArray(catalog.sizes)
-    && (allowEmpty || (catalog.products.length && catalog.sizes.length))
-    && Array.isArray(catalog.approvedDurations) && catalog.approvedDurations.length)
+    && (allowEmpty || (catalog.products.length && catalog.sizes.length)))
   if (loading || (refreshing && !valid)) return <section className="mx-auto max-w-[1560px] px-5 sm:px-8"><LoadingSkeleton layout="catalog" label="Đang tải danh mục kho…" /></section>
   if (error || !catalog || !valid) return <section className="section-space text-center" aria-live="polite">
     <h1 className="text-2xl font-bold">Chưa tải được danh mục kho</h1>

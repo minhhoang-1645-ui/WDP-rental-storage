@@ -94,6 +94,10 @@
 .public-themed .booking-size-card[aria-pressed="true"] .booking-radio { border: 5px solid var(--workspace-primary); }
 .public-themed .booking-page :is(.period-mode-tabs > button, .duration-grid > button) { min-height: 46px; }
 .public-themed .booking-page .period-mode-tabs > button { align-items: center; font-size: 15px; }
+.public-themed .booking-page .booking-form-panel :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 2px;
+}
 .public-themed .booking-page :is(.booking-option-block h3, .addon-heading h3, .booking-pricing h3, .booking-form-panel legend) {
   color: var(--workspace-text);
   font-size: 17px;

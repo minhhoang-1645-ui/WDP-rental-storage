@@ -1,4 +1,5 @@
 import { FileText, Wallet, CircleDollarSign, Boxes } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { isReportDay, reportBucketLabel } from '../../utils/reporting';
 import { displayCount, displayMoney, displayPercent, fraction, money, occupancy, sumMoney, type Performance, type Trend, type TrendGroup } from './operations-report-data';
@@ -95,6 +96,22 @@ function trendValues(trend: Trend | null, group: TrendGroup) {
   return trend.times.map(row => ({ ...row, rent: money(row.rent), received: money(row.received) }));
 }
 
+export function ReportDateContext({ trend, facility, range, openRange, group }: {
+  trend: Trend | null; facility: string; range: string; openRange: boolean; group: TrendGroup;
+}) {
+  const semantics = trend?.dateSemantics;
+  const first = trend?.times[0], last = trend?.times.at(-1);
+  return <div className="bom-report-date-context">
+    <p><strong>{facility}</strong> · {range} · UTC+7</p>
+    {openRange && first && last && <p>Mốc mở lấy từ dữ liệu thực tế. Chuỗi hiển thị từ {reportBucketLabel(first.date, group)} đến {reportBucketLabel(last.date, group)}.</p>}
+    {semantics && <ul>
+      <li><strong>Tiền thuê đã lập hóa đơn</strong> · {semantics.rent}</li>
+      <li><strong>Tiền đã thu</strong> · {semantics.received}</li>
+      <li><strong>Đơn mới</strong> · {semantics.bookings}</li>
+    </ul>}
+  </div>;
+}
+
 export function ReportTrend({ trend, group, loading }: { trend: Trend | null; group: TrendGroup; loading: boolean }) {
   const values = trendValues(trend, group);
   const rows = values ?? [];
@@ -103,16 +120,17 @@ export function ReportTrend({ trend, group, loading }: { trend: Trend | null; gr
   const invalid = !values || rows.some(row => row.rent === null || row.rent < 0n || row.received === null || row.received < 0n);
   const emptyMessage = loading ? 'Đang tải xu hướng tài chính…'
     : invalid ? 'Chưa đủ số liệu hợp lệ để vẽ biểu đồ.'
-    : !max ? 'Không phát sinh tiền thuê lập hóa đơn hoặc tiền đã thu trong kỳ.' : '';
+    : !rows.length ? 'Không phát sinh tiền thuê lập hóa đơn hoặc tiền đã thu trong kỳ.' : '';
   const step = max > 0n ? chartStep(max) : 0n, limit = step * 4n;
   const [unit, divisor] = limit >= 1_000_000_000n ? ['tỷ đồng', 1_000_000_000n] : limit >= 1_000_000n ? ['triệu đồng', 1_000_000n]
     : limit >= 1_000n ? ['nghìn đồng', 1_000n] : ['đồng', 1n];
   return <figure className="bom-report-trend" aria-label={'Xu hướng tài chính theo ' + (group === 'day' ? 'ngày' : 'tháng')}>
-    <figcaption><span><i className="is-rent" />Tiền thuê đã lập hóa đơn</span><span><i className="is-received" />Tiền đã thu (gồm cọc)</span></figcaption>
+    <figcaption><span><i className="is-rent" />Tiền thuê đã lập hóa đơn</span><span><i className="is-received" />Tiền đã thu</span></figcaption>
+    {!emptyMessage && max === 0n && <p className="bom-report-chart-note">Không phát sinh tiền thuê lập hóa đơn hoặc tiền đã thu trong kỳ.</p>}
     <span className="bom-report-axis-unit">{!emptyMessage && unit}</span>
     <div className="bom-report-chart">
-      <div className="bom-report-axis" aria-hidden="true">{!emptyMessage && [4n, 3n, 2n, 1n, 0n].map((point, index) =>
-        <span key={String(point)} style={{ top: index * 25 + '%' }}>{axisValue(point * step, divisor)}</span>)}</div>
+      <div className="bom-report-axis" aria-hidden="true">{!emptyMessage && (max === 0n ? [0n] : [4n, 3n, 2n, 1n, 0n]).map(point =>
+        <span key={String(point)} style={{ top: Number(4n - point) * 25 + '%' }}>{axisValue(point * step, divisor)}</span>)}</div>
       <div className="bom-report-chart-scroll">
         <div className="bom-report-plot" style={emptyMessage ? undefined : { gridTemplateColumns: `repeat(${rows.length}, minmax(92px, 1fr))` }}>
           <div className="bom-report-gridlines" aria-hidden="true"><i /><i /><i /><i /><i /></div>
@@ -137,28 +155,42 @@ export function ReportTrend({ trend, group, loading }: { trend: Trend | null; gr
 }
 
 const comparisons = [
-  ['Cơ sở', ''], ['Tỷ lệ sử dụng kho', 'Hiện tại'], ['Tình trạng kho', 'Hiện tại'], ['Hợp đồng hoạt động', 'Hiện tại'],
-  ['Đơn mới', 'Trong kỳ'], ['Bàn giao / trả kho', 'Trong kỳ'], ['Tiền thuê đã lập hóa đơn', 'Trong kỳ'],
-  ['Tiền đã thu', 'Trong kỳ · Gồm cọc'], ['Công nợ', 'Hiện tại'],
+  ['Cơ sở', '', '15%'], ['Tỷ lệ sử dụng', 'Hiện tại', '10%'], ['Tình trạng kho', 'Hiện tại', '12%'], ['HĐ hoạt động', 'Hiện tại', '10%'],
+  ['Đơn mới', 'Trong kỳ', '7%'], ['Bàn giao / trả kho', 'Trong kỳ', '10%'], ['Tiền thuê lập hóa đơn', 'Trong kỳ', '12%'],
+  ['Tiền đã thu', 'Trong kỳ', '12%'], ['Công nợ', 'Hiện tại', '12%'],
 ] as const;
 
+function facilityStatus(item: Performance) {
+  if (item.operationalStatus === 'CLOSED') return 'Đã ngừng hoạt động';
+  if (item.operationalStatus === 'CLOSING') return 'Đang ngừng hoạt động';
+  return item.bookingEnabled ? 'Đang nhận đặt kho' : 'Tạm dừng nhận đặt kho';
+}
+
 export function ReportComparison({ items }: { items: Performance[] }) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const status = facilityStatus(item);
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
   return <section className="bom-report-panel">
     <header className="bom-report-section-header">
-      <h2>So sánh hiệu quả cơ sở</h2><small>{displayCount(items.filter(item => item.operationalStatus === 'OPEN').length)}/{displayCount(items.length)} cơ sở đang hoạt động</small>
+      <h2>So sánh hiệu quả cơ sở</h2>
     </header>
+    {!!items.length && <p className="bom-report-chart-note"><strong>{displayCount(items.length)} cơ sở</strong>
+      {['Đang nhận đặt kho', 'Tạm dừng nhận đặt kho', 'Đang ngừng hoạt động', 'Đã ngừng hoạt động'].map(status =>
+        <span key={status}> · {status} {displayCount(counts.get(status) ?? 0)}</span>)}</p>}
     <div className="manager-table-wrap bom-report-table bom-report-comparison" tabIndex={0} role="region" aria-label="Bảng so sánh hiệu quả cơ sở">
       <table className="manager-table">
+        <colgroup>{comparisons.map(([label, , width]) => <col key={label} style={{ width }} />)}</colgroup>
         <thead><tr>{comparisons.map(([label, scope], index) => <th scope="col" key={label} className={index >= 6 ? 'bom-report-money' : undefined}>
           {label}{scope && <small>{scope}</small>}
         </th>)}</tr></thead>
         <tbody>{items.length === 0 && <tr><td colSpan={comparisons.length}>Đang tải số liệu cơ sở…</td></tr>}{items.map(item => {
           const rate = occupancy(item.units?.occupied, item.units?.total);
-          const status = item.operationalStatus === 'CLOSED' ? 'Đã ngừng hoạt động' : item.operationalStatus === 'CLOSING'
-            ? 'Đang ngừng hoạt động' : item.bookingEnabled ? 'Đang nhận đặt kho' : 'Tạm dừng nhận đặt kho';
+          const status = facilityStatus(item);
           return <tr key={item.id}>
             <td><Link to={'/operations/facilities/' + encodeURIComponent(item.id)}>{item.name}</Link><small>{status}</small></td>
-            <td><strong>{rate === null ? '—' : displayPercent(rate)}</strong><small>{displayCount(item.units?.occupied)}/{displayCount(item.units?.total)} kho</small>
+            <td><strong>{item.units?.total === 0 ? 'Chưa có kho' : rate === null ? '—' : displayPercent(rate)}</strong>{item.units?.total !== 0 && <small>{displayCount(item.units?.occupied)}/{displayCount(item.units?.total)} kho</small>}
               {rate !== null && <progress aria-label={'Tỷ lệ sử dụng ' + item.name} value={rate} max={100} />}
             </td>
             <td><dl className="bom-report-stock">
@@ -176,11 +208,12 @@ export function ReportComparison({ items }: { items: Performance[] }) {
   </section>;
 }
 
-export function ReportTrendTable({ trend, group, loading }: { trend: Trend | null; group: TrendGroup; loading: boolean }) {
+export function ReportTrendTable({ trend, group, loading, context }: { trend: Trend | null; group: TrendGroup; loading: boolean; context: ReactNode }) {
   const rows = trendValues(trend, group);
   const label = group === 'day' ? 'ngày' : 'tháng';
   return <details className="bom-report-panel bom-report-trend-details">
     <summary>Xem số liệu chi tiết theo {label}</summary>
+    {context}
     <div className="manager-table-wrap bom-report-table">
       <table className="manager-table">
         <thead><tr><th scope="col">{group === 'day' ? 'Ngày' : 'Tháng'}</th><th scope="col" className="bom-report-money">Tiền thuê đã lập hóa đơn</th>

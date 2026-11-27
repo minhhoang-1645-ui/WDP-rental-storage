@@ -7,6 +7,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { BookingService } from '../booking/booking.service.js';
 import { EmailService } from './email.service.js';
 import { AccountOnboardingService } from './account-onboarding.service.js';
+import { rentalMonthEnd } from '../../business-date.js';
 
 @Injectable()
 export class GuestBookingService {
@@ -20,8 +21,16 @@ export class GuestBookingService {
     let record = await this.prisma.guestBookingRequest.findUnique({ where: { idempotencyKey: key }, include: { storageType: true, services: true } });
     if (record && !this.sameRequest(record, parsed)) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', message: 'Idempotency-Key đã dùng cho yêu cầu khác.' });
     if (record && record.status !== 'PENDING_VERIFICATION') return this.view(record);
-    const availability = await this.booking.checkAvailability({ productId: parsed.storageTypeId, startDate: parsed.startDate, endDate: parsed.endDate, periodMode: 'dates', quantity: parsed.quantity, adjacencyPreference: false, services: parsed.services, addonIds: [], paymentChoice: 'pay-later', paymentPlan: parsed.paymentPlan });
+    const availability = await this.booking.checkAvailability({
+      productId: parsed.storageTypeId, startDate: parsed.startDate, endDate: parsed.endDate,
+      periodMode: parsed.periodMode ?? 'dates', durationMonths: parsed.durationMonths, quantity: parsed.quantity,
+      adjacencyPreference: false, services: parsed.services, addonIds: [], paymentChoice: 'pay-later', paymentPlan: parsed.paymentPlan,
+    }, parsed.periodMode === undefined);
+    if (!record && availability.quote.billingMode === 'DAILY' && parsed.paymentPlan !== 'PREPAID')
+      throw new BadRequestException('Thuê theo ngày cần thanh toán toàn bộ kỳ thuê.');
     if (!availability.available) throw new ConflictException({ code: 'REQUESTED_STORAGE_NOT_AVAILABLE', message: availability.message, availability });
+    if (input.expectedServiceQuoteVersion !== undefined && input.expectedServiceQuoteVersion !== availability.serviceQuoteVersion)
+      throw new ConflictException({ code: 'SERVICE_QUOTE_CHANGED', message: 'Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.' });
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + this.tokenTtlMinutes() * 60_000);
     if (record) {
@@ -84,6 +93,11 @@ export class GuestBookingService {
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 3) throw new BadRequestException('quantity phải từ 1 đến 3.');
     const startDate = text(input.startDate, 'startDate', 10, 10), endDate = text(input.endDate, 'endDate', 10, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate <= startDate) throw new BadRequestException('Khoảng ngày không hợp lệ.');
+    const periodMode = input.periodMode;
+    if (periodMode !== undefined && periodMode !== 'duration' && periodMode !== 'dates') throw new BadRequestException('Hình thức thuê không hợp lệ.');
+    const durationMonths = typeof input.durationMonths === 'number' ? input.durationMonths : undefined;
+    if (periodMode === 'duration' && rentalMonthEnd(startDate, durationMonths ?? 0) !== endDate)
+      throw new BadRequestException('Ngày kết thúc không khớp số tháng thuê.');
     const paymentPlan = input.paymentPlan;
     if (!['PAY_MONTHLY', 'PREPAID'].includes(String(paymentPlan))) throw new BadRequestException('paymentPlan không hợp lệ.');
     const rawServices = Array.isArray(input.services) ? input.services : [];
@@ -97,7 +111,7 @@ export class GuestBookingService {
       return { serviceId, quantity: serviceQuantity, ...(serviceStartDate ? { serviceStartDate } : {}), ...(serviceEndDate ? { serviceEndDate } : {}) };
     });
     if (new Set(services.map((service) => service.serviceId)).size !== services.length) throw new BadRequestException('Dịch vụ bổ sung bị trùng.');
-    return { fullName, email, phone, storageTypeId, quantity, startDate, endDate, paymentPlan: paymentPlan as 'PAY_MONTHLY' | 'PREPAID', services };
+    return { fullName, email, phone, storageTypeId, quantity, startDate, endDate, periodMode, durationMonths, paymentPlan: paymentPlan as 'PAY_MONTHLY' | 'PREPAID', services };
   }
 
   private sameRequest(record: any, parsed: any) { const stored = record.services.map((service: any) => ({ serviceId: service.additionalServiceId, quantity: service.quantity, ...(service.serviceStartDate ? { serviceStartDate: this.iso(service.serviceStartDate) } : {}), ...(service.serviceEndDate ? { serviceEndDate: this.iso(service.serviceEndDate) } : {}) })); return record.fullName === parsed.fullName && record.email === parsed.email && record.phone === parsed.phone && record.storageTypeId === parsed.storageTypeId && record.quantity === parsed.quantity && this.iso(record.startDate) === parsed.startDate && this.iso(record.endDate) === parsed.endDate && record.paymentPlan === parsed.paymentPlan && JSON.stringify(stored) === JSON.stringify(parsed.services); }

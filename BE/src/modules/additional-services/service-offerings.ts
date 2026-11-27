@@ -23,6 +23,7 @@ export async function pricedServices(
   db: Prisma.TransactionClient,
   ids: string[],
   facilityId: string,
+  committedDailyIds: string[] = [],
 ) {
   if (!ids.length) return [];
   const offers = await db.facilityServiceOffering.findMany({
@@ -30,6 +31,10 @@ export async function pricedServices(
       facilityId,
       additionalServiceId: { in: ids },
       ...publicOfferingScope,
+      additionalService: {
+        ...publicOfferingScope.additionalService,
+        OR: [newServiceTerms, { id: { in: committedDailyIds } }],
+      },
     },
     include: { additionalService: true },
   });
@@ -39,6 +44,8 @@ export const eligibleServiceFacility = {
   bookingEnabled: true,
   operationalStatus: 'OPEN',
 } as const;
+
+export const newServiceTerms = { NOT: { kind: 'RENTAL', billingUnit: 'DAY' } } satisfies Prisma.AdditionalServiceWhereInput;
 
 export const publicOfferingScope = {
   isActive: true,
@@ -112,7 +119,11 @@ export async function availablePublicOfferings(
   facilityId?: string,
 ) {
   const offers = await db.facilityServiceOffering.findMany({
-    where: { ...publicOfferingScope, ...(facilityId ? { facilityId } : {}) },
+    where: {
+      ...publicOfferingScope,
+      additionalService: { ...publicOfferingScope.additionalService, ...newServiceTerms },
+      ...(facilityId ? { facilityId } : {}),
+    },
     include: { additionalService: true },
     orderBy: [{ additionalService: { name: 'asc' } }, { facilityId: 'asc' }],
   });

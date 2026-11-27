@@ -59,7 +59,7 @@ export class BookingAvailabilityRequestDto {
   @ApiProperty({ enum: ['duration', 'dates'], example: 'duration' })
   periodMode!: 'duration' | 'dates';
 
-  @ApiPropertyOptional({ enum: [1, 3, 6, 12], example: 3, description: 'Bắt buộc khi periodMode là duration.' })
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 5, description: 'Số nguyên dương. Bắt buộc khi thuê theo tháng.' })
   durationMonths?: number;
 
   @ApiPropertyOptional({ example: '2026-12-15', format: 'date', description: 'Bắt buộc khi periodMode là dates và phải sau startDate.' })
@@ -91,6 +91,8 @@ export class BookingAvailabilityRequestDto {
 }
 
 export class PricingQuoteRequestDto {
+  @ApiPropertyOptional({ enum: ['DAILY', 'MONTHLY'], description: 'Hình thức khách chọn để đối chiếu với cách tính giá của Backend.' })
+  expectedBillingMode?: 'DAILY' | 'MONTHLY';
   @ApiProperty({ example: 'sm-b12' })
   storageTypeId!: string;
 
@@ -122,6 +124,8 @@ export class GuestInquiryRequestDto extends BookingAvailabilityRequestDto {
 }
 
 export class CreateGuestBookingRequestDto {
+  @ApiPropertyOptional({ enum: ['duration', 'dates'], description: 'duration là thuê tháng, dates là thuê ngày.' }) periodMode?: 'duration' | 'dates';
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 5 }) durationMonths?: number;
   @ApiProperty({ example: 'Nguyen Van A', minLength: 2, maxLength: 120 }) fullName!: string;
   @ApiProperty({ example: 'customer@example.test', format: 'email' }) email!: string;
   @ApiProperty({ example: '0900000000', minLength: 8, maxLength: 25 }) phone!: string;

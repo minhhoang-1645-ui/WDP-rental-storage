@@ -54,7 +54,7 @@ describe('Shared storage catalog and database inventory', () => {
   });
 
   it('filters by product type and full-period availability', async () => {
-    const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '1' });
+    const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '5' });
     expect(result.checkedPeriod).toBe(true);
     expect(result.items.map((item) => item.id)).toContain('sm-b12');
   });
@@ -76,7 +76,7 @@ describe('Shared storage catalog and database inventory', () => {
   });
 
   it('rejects invalid filters, impossible dates and missing products', async () => {
-    for (const query of [{ size: 'unknown' }, { type: 'unknown' }, { duration: '2' }, { date: ['2030-01-01'] }, { date: '2099-02-30', size: 'locker', type: 'climate' }]) {
+    for (const query of [{ size: 'unknown' }, { type: 'unknown' }, { duration: '0' }, { duration: '1.5' }, { duration: '-2' }, { date: ['2030-01-01'] }, { date: '2099-02-30', size: 'locker', type: 'climate' }]) {
       await expect(storage.list(query)).rejects.toBeInstanceOf(BadRequestException);
     }
     await expect(storage.get('missing')).rejects.toBeInstanceOf(NotFoundException);

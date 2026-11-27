@@ -4,6 +4,7 @@ import { PricingService } from './pricing.service.js';
 import { BookingService } from '../booking/booking.service.js';
 import type { PricingInput } from './pricing.types.js';
 import { baselinePricingPolicy, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
+import { rentalMonthEnd } from '../../business-date.js';
 
 const service = new PricingService({} as never);
 const storage = { id: 'type', name: 'Kho', sizeId: 'small', monthlyRate: new Prisma.Decimal(3000000), allowDailyRental: true, minRentalDays: 1 };
@@ -16,7 +17,7 @@ it('gates direct quotes on the group range and keeps internal bounds out of cust
     facility: { findUnique: vi.fn().mockResolvedValue({ bookingEnabled: true, operationalStatus: 'OPEN' }) },
     businessRule: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) } };
   const pricing = new PricingService(db as never);
-  const request = { ...input, startDate: start, endDate: end };
+  const request = { ...input, startDate: start, endDate: end, paymentPlan: 'PREPAID' as const };
   await expect(pricing.quote(request)).rejects.toThrow('chưa nhận giao dịch');
   db.businessRule.findFirst.mockResolvedValue({ value: { min: 1_000_000, max: 2_800_000 } });
   await expect(pricing.quote(request)).rejects.toThrow('chưa nhận giao dịch');
@@ -46,6 +47,24 @@ it('lists multiple eligible types in one group and filters another site independ
   expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ bookingEnabled: true }) }));
 });
 describe('existing pricing policy boundaries, no live database', () => {
+  it.each([2, 5, 8, 15])('quotes %i whole months using the calendar and existing discount schedule', months => {
+    const startDate = '2028-01-31';
+    const endDate = rentalMonthEnd(startDate, months);
+    expect(service.calculate(storage, { ...input, startDate, endDate, expectedBillingMode: 'MONTHLY', paymentPlan: 'PREPAID' }))
+      .toMatchObject({ termMonths: months, rentalAmount: months * 3_000_000, discountAmount: 0, depositAmount: 3_000_000 });
+  });
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER])('rejects an invalid or unrepresentable month count of %s', months => {
+    expect(rentalMonthEnd('2028-01-31', months)).toBe('');
+  });
+  it('validates a one-day prepaid quote against the actual storage type and billing mode', () => {
+    const daily = { ...input, endDate: '2026-01-02', expectedBillingMode: 'DAILY', paymentPlan: 'PREPAID' } as const;
+    expect(service.calculate(storage, daily)).toMatchObject({ billingMode: 'DAILY', billableDays: 1, rentalAmount: 100000, discountAmount: 0 });
+    expect(() => service.calculate({ ...storage, minRentalDays: 2 }, daily)).toThrow();
+    expect(() => service.calculate({ ...storage, allowDailyRental: false }, daily)).toThrow();
+    expect(() => service.calculate(storage, { ...daily, endDate: '2026-02-01' })).toThrow();
+    expect(() => service.calculate(storage, { ...daily, paymentPlan: 'PAY_MONTHLY' })).toThrow();
+    expect(rentalMonthEnd('2028-01-31', 1)).toBe('2028-02-29');
+  });
   it.each([
     ['NONE', 0, 0],
     ['FIXED_AMOUNT', 700_000, 1_400_000],

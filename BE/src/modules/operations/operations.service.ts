@@ -10,6 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { businessDate, isIsoCalendarDate } from '../../business-date.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { randomUUID } from 'node:crypto';
@@ -100,17 +101,22 @@ export class OperationsService {
       if (closing && mode !== 'CONTRACT_EXPIRY' && mode !== 'REQUIRED_RELOCATION')
         throw new BadRequestException('Chọn phương án ngừng kinh doanh hợp lệ.');
       const modeChanged = closing && body.closureMode !== undefined && mode !== old?.closureMode;
+      const expected = body.closureExpectedAt;
+      const previousExpected = old?.closureExpectedAt?.toISOString().slice(0, 10);
+      const expectedChanged = expected !== undefined && (expected ?? '') !== (previousExpected ?? '');
       const planChanged = closing && (changed || modeChanged || (body.closureReason !== undefined && body.closureReason !== old?.closureReason)
-        || (body.closureExpectedAt !== undefined && body.closureExpectedAt !== (old?.closureExpectedAt?.toISOString().slice(0,10) ?? '')));
+        || expectedChanged);
       if (modeChanged && old?.closureMode === 'REQUIRED_RELOCATION' && !changed)
         throw new ConflictException('Cần xác minh an toàn và mở lại trước khi hủy phương án di dời bắt buộc.');
       const reopening = changed && value.operationalStatus === 'OPEN';
       const reopeningSafetyEvidence = reopening && old?.closureMode === 'REQUIRED_RELOCATION'
         ? text('reopeningSafetyEvidence', 500) : null;
-      const expected = body.closureExpectedAt;
-      if (expected != null && expected !== '' && (typeof expected !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expected)
-        || !Number.isFinite(Date.parse(expected)) || new Date(expected).toISOString().slice(0,10) !== expected))
-        throw new BadRequestException('Ngày dự kiến ngừng phục vụ không hợp lệ.');
+      if (expected != null && expected !== '') {
+        if (typeof expected !== 'string' || !isIsoCalendarDate(expected))
+          throw new BadRequestException('Ngày dự kiến ngừng phục vụ không hợp lệ.');
+        if (closing && (changed || expectedChanged) && expected < businessDate())
+          throw new BadRequestException('Ngày dự kiến ngừng phục vụ không được trước ngày hiện tại.');
+      }
       const closureReason = planChanged
         ? text('closureReason', 500)
         : null;

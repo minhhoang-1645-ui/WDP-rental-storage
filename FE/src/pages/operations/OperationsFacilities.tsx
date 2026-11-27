@@ -12,6 +12,7 @@ import { TablePopover } from '../../components/workspace/StaffTaskTable';
 import { useListPagination } from '../../components/workspace/useListPagination';
 import { ApiError, apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
+import { vietnamCalendarDate } from '../../utils/business-date';
 import './operations-facilities.css';
 
 const base = '/operations/facilities';
@@ -35,6 +36,9 @@ const booking = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 
 const bookingDescription = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 'Cơ sở hiện không tiếp nhận khách thuê mới.'
   : facility.bookingEnabled ? 'Đang tiếp nhận khách thuê mới.' : 'Đang tạm dừng nhận khách thuê mới.';
 const textOrFallback = (text?: string | null) => text?.trim() || 'Chưa thiết lập';
+const closureDateError = 'Ngày dự kiến ngừng phục vụ không được trước ngày hiện tại.';
+const overdueClosure = (facility?: Facility) => facility?.operationalStatus === 'CLOSING'
+  && Boolean(facility.closureExpectedAt && facility.closureExpectedAt.slice(0, 10) < vietnamCalendarDate());
 const formatDate = (value?: string | null, includeTime = false) => value
   ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', ...(includeTime ? { timeStyle: 'short' } : {}), timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value))
   : 'Chưa thiết lập';
@@ -168,6 +172,7 @@ export function OperationsFacilities() {
         </div>
         {(facility.operationalStatus === 'CLOSING' || facility.closureMode) && <section className="manager-section">
           <h2>Kế hoạch ngừng kinh doanh</h2>
+          {overdueClosure(facility) && <Status value="pending" text="Quá ngày dự kiến" />}
           <Facts items={[
             ['Phương án', facility.closureMode ? modes[facility.closureMode] ?? 'Chưa xác định' : 'Chưa thiết lập'],
             ['Lý do', textOrFallback(facility.closureReason)], ['Bắt đầu', formatDate(facility.closureStartedAt, true)], ['Ngày dự kiến', formatDate(facility.closureExpectedAt)],
@@ -254,6 +259,7 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   const editing = dialog.kind === 'edit';
   const planning = dialog.kind === 'plan';
   const starting = planning && facility?.operationalStatus === 'OPEN';
+  const previousClosureDate = starting ? '' : facility?.closureExpectedAt?.slice(0, 10) ?? '';
   const cancelling = dialog.kind === 'reopen' && facility?.operationalStatus === 'CLOSING';
   const [issues, setIssues] = useState<Record<string, string>>({});
   const [serviceSchedule, setServiceSchedule] = useState(() => groupWindows(facility?.serviceSchedule ?? []));
@@ -303,9 +309,17 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
       body = { ...values, ...(creating ? { operationalStatus: 'OPEN', bookingEnabled: false } : {}),
         ...(scheduleChanged ? { serviceSchedule: windows } : {}) };
     } else if (planning) {
+      const expected = read('closureExpectedAt');
+      if (expected && (starting || expected !== previousClosureDate)) {
+        const parsed = new Date(expected + 'T00:00:00Z');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(expected) || !Number.isFinite(+parsed) || parsed.toISOString().slice(0, 10) !== expected)
+          next.closureExpectedAt = 'Ngày dự kiến ngừng phục vụ không hợp lệ.';
+        else if (expected < vietnamCalendarDate()) next.closureExpectedAt = closureDateError;
+      }
       body = {
         operationalStatus: 'CLOSING', bookingEnabled: false, closureMode: read('closureMode'),
-        closureReason: required('closureReason', 'Lý do ngừng kinh doanh', 500), closureExpectedAt: read('closureExpectedAt'),
+        closureReason: required('closureReason', 'Lý do ngừng kinh doanh', 500),
+        ...(starting || expected !== previousClosureDate ? { closureExpectedAt: expected } : {}),
       };
     } else {
       body = { operationalStatus: 'OPEN', bookingEnabled: false, reopeningSafetyEvidence: required('reopeningSafetyEvidence', 'Căn cứ xác nhận an toàn', 500) };
@@ -313,7 +327,8 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
     setIssues(next);
     const first = Object.keys(next)[0];
     if (first) {
-      const field = form.querySelector<HTMLElement>('[data-hours-field="' + first + '"] button') ??
+      const field = (first === 'closureExpectedAt' ? form.querySelector<HTMLElement>('.workspace-date-trigger') : null) ??
+        form.querySelector<HTMLElement>('[data-hours-field="' + first + '"] button') ??
         form.elements.namedItem(first) as HTMLElement | null;
       field?.focus();
       return;
@@ -355,8 +370,14 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
           </label>)}
         </fieldset>
         <label className="field-label"><span>Lý do ngừng kinh doanh <span aria-hidden="true">*</span></span><textarea name="closureReason" required maxLength={500} rows={2} defaultValue={facility?.closureReason ?? ''} {...validation('closureReason')} />{issue('closureReason')}</label>
-        <DatePicker label="Ngày dự kiến ngừng phục vụ" name="closureExpectedAt" defaultValue={facility?.closureExpectedAt?.slice(0, 10) ?? ''} />
-        <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />Dừng nhận đặt kho, gia hạn và dịch vụ mới. Các nghĩa vụ đã cam kết được giữ nguyên.</p>
+        <div>
+          <DatePicker label="Ngày dự kiến ngừng phục vụ" name="closureExpectedAt" defaultValue={previousClosureDate}
+            min={vietnamCalendarDate()} existingDateBeforeMin={previousClosureDate} error={issues.closureExpectedAt}
+            onChange={() => setIssues(previous => ({ ...previous, closureExpectedAt: '' }))} />
+          <small>Có thể để trống nếu chưa xác định được ngày ngừng phục vụ.</small>
+          {overdueClosure(facility) && <p><Status value="pending" text="Quá ngày dự kiến" /></p>}
+        </div>
+        <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />Cơ sở dừng nhận đặt kho, gia hạn và dịch vụ mới ngay khi xác nhận kế hoạch. Ngày dự kiến ngừng phục vụ là mốc dự kiến hoàn tất các nghĩa vụ còn lại.</p>
       </>}
       {dialog.kind === 'reopen' && <>
         <p>Nhận đặt kho mới vẫn tạm dừng sau khi mở lại.</p>

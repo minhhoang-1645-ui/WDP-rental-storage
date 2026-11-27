@@ -2,9 +2,15 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { assertFacility, facilityIds } from '../facility-access/facility-access.service.js';
-import { returnTaskScope, taskFacilityId, transferTaskScope } from '../facility-access/task-access.js';
+import { reservationScope, returnTaskScope, taskFacilityId, transferTaskScope } from '../facility-access/task-access.js';
 import { assessHandoverWindow, readServiceSchedule, serviceWindow } from './service-schedule.js';
 import { allowsCustomerAccess, hourSpans } from '../operations/facility-hours.js';
+import { readUnitHandoverDraft } from '../appointments/handover-report.js';
+import { transferWork } from './work-phase.js';
+
+const calendarAssignee = { select: { id: true, fullName: true } } as const;
+const calendarReservation = { reservationCode: true, customer: { select: { fullName: true } } } as const;
+const calendarUnit = { select: { unitNumber: true, storageType: { select: { name: true } } } } as const;
 
 function instant(value: unknown) {
   if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) throw new BadRequestException('Thời gian cần có ngày, giờ và múi giờ.');
@@ -16,6 +22,71 @@ function instant(value: unknown) {
 @Injectable()
 export class ServiceCalendarService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async staffAgenda(actor: PublicUser, from: unknown, to: unknown) {
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException();
+    const range = { gte: instant(from), lt: instant(to) };
+    if (+range.lt <= +range.gte || +range.lt - +range.gte > 7 * 86_400_000) {
+      throw new BadRequestException('Chọn khoảng lịch tối đa 7 ngày.');
+    }
+    const [facilityId] = await facilityIds(this.prisma, actor);
+    if (!facilityId) throw new ForbiddenException('Cần được cấp quyền tại một cơ sở.');
+    const localUnit = { storageUnit: { storageType: { facilityId } } };
+    const [appointments, returns, transfers] = await Promise.all([
+      this.prisma.handoverAppointment.findMany({
+        where: { reservation: { facilityId, ...reservationScope(actor) }, scheduledAt: range },
+        select: { id: true, appointmentCode: true, scheduledAt: true, completedAt: true, cancelledAt: true,
+          status: true, handoverReport: true, assignedStaff: calendarAssignee,
+          reservation: { select: { ...calendarReservation, units: { where: localUnit,
+            select: { storageUnit: calendarUnit, createdAt: true, releasedAt: true } } } } },
+      }),
+      this.prisma.returnRequest.findMany({
+        where: { ...returnTaskScope(actor), inspectionScheduledAt: range, AND: [{ OR: [
+          { inspections: { some: localUnit } },
+          { inspections: { none: {} }, reservation: { facilityId } },
+        ] }] },
+        select: { id: true, returnCode: true, status: true, inspectionScheduledAt: true,
+          assignedStaff: calendarAssignee, reservation: { select: calendarReservation },
+          inspections: { where: localUnit, select: { storageUnit: calendarUnit } } },
+      }),
+      this.prisma.transferRequest.findMany({
+        where: { ...transferTaskScope(actor), AND: [{ fromStorageUnit: { storageType: { facilityId } } }],
+          supportRequest: { transferRequestedStartAt: range } },
+        select: { id: true, transferCode: true, status: true, assignedStaff: calendarAssignee,
+          sourceHandover: true, handoverReport: true, commercialSnapshot: true, customerAcceptedAt: true,
+          reservation: { select: calendarReservation }, supportRequest: { select: { transferRequestedStartAt: true } },
+          fromStorageUnit: calendarUnit, toStorageUnit: calendarUnit },
+      }),
+    ]);
+    function identity(row: { assignedStaff: { id: string; fullName: string } | null;
+      reservation: { reservationCode: string; customer: { fullName: string } } }) {
+      const mine = row.assignedStaff?.id === actor.id;
+      const name = row.reservation.customer.fullName;
+      return { reference: row.reservation.reservationCode,
+        customer: mine ? name : name.trim().split(/\s+/).map(part => Array.from(part)[0]).join('.'),
+        assignee: row.assignedStaff?.fullName ?? null,
+        ownership: mine ? 'mine' : row.assignedStaff ? 'other' : 'unassigned' };
+    }
+    return { facilityId, items: [
+      ...appointments.map(row => {
+        const closedAt = row.status === 'COMPLETED' ? row.completedAt ?? row.scheduledAt
+          : row.status === 'CANCELLED' ? row.cancelledAt ?? row.scheduledAt : null;
+        return { ...identity(row), kind: 'appointments', id: row.id, code: row.appointmentCode,
+          status: row.status, scheduledAt: row.scheduledAt,
+          inProgress: row.status === 'CONFIRMED' && readUnitHandoverDraft(row.handoverReport).unitProgress.length > 0,
+          units: row.reservation.units.filter(unit => closedAt
+            ? unit.createdAt <= closedAt && (!unit.releasedAt || unit.releasedAt >= closedAt)
+            : !unit.releasedAt).map(unit => unit.storageUnit) };
+      }),
+      ...returns.map(row => ({ ...identity(row), kind: 'returns', id: row.id, code: row.returnCode,
+        status: row.status, scheduledAt: row.inspectionScheduledAt!, inProgress: row.status === 'INSPECTION_IN_PROGRESS',
+        units: row.inspections.map(inspection => inspection.storageUnit) })),
+      ...transfers.map(row => ({ ...identity(row), kind: 'transfers', id: row.id, code: row.transferCode,
+        status: row.status, scheduledAt: row.supportRequest!.transferRequestedStartAt!,
+        inProgress: row.status === 'APPROVED' && (Boolean(row.sourceHandover) || transferWork(row).handoverStarted),
+        units: row.toStorageUnit ? [row.fromStorageUnit, row.toStorageUnit] : [row.fromStorageUnit] })),
+    ].sort((a, b) => +a.scheduledAt - +b.scheduledAt || a.code.localeCompare(b.code)) };
+  }
 
   async agenda(actor: PublicUser, from: unknown, to: unknown) {
     if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();

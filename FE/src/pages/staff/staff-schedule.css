@@ -1,0 +1,60 @@
+.staff-schedule-page { display: grid; gap: 14px; min-width: 0; }
+.staff-schedule-week {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: var(--workspace-surface);
+}
+.staff-schedule-navigation, .staff-schedule-navigation > [role="group"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.staff-schedule-navigation > [role="group"] { margin-inline: auto; }
+.staff-schedule-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.staff-schedule-days button {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 3px;
+  padding: 8px 2px;
+  min-height: 4.5rem;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+  cursor: pointer;
+}
+.staff-schedule-days button:hover,
+.staff-schedule-days button[aria-pressed="true"] { background: var(--workspace-selected); }
+.staff-schedule-days button[aria-pressed="true"] { border-color: var(--workspace-primary); }
+.staff-schedule-days button[aria-current="date"] small:first-of-type { color: var(--workspace-primary); font-weight: 700; }
+.staff-schedule-days button:focus-visible { outline: 2px solid var(--workspace-primary); outline-offset: 2px; }
+.staff-schedule-days small, .staff-schedule-empty p { color: var(--workspace-secondary); }
+.staff-schedule-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+.staff-schedule-empty {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  text-align: center;
+  padding: 20px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+}
+.staff-schedule-empty svg { color: var(--workspace-primary); }
+.staff-schedule-empty h2 { font-size: 1rem; }
+.staff-schedule-empty h2, .staff-schedule-empty p { margin: 0; }
+.staff-schedule-page .staff-table-options:empty { display: none; }
+@media (max-width: 620px) {
+  .staff-schedule-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-schedule-filters > :first-child { grid-column: 1 / -1; }
+  .staff-schedule-days button { font-size: .75rem; }
+}

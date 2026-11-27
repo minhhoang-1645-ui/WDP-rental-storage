@@ -47,6 +47,7 @@ import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetai
 import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffSchedulePage } from "../pages/staff/StaffSchedulePage";
 import { StaffIssueReportPage } from "../pages/staff/StaffIssueReportPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerPaymentsPage } from "../pages/manager/ManagerPaymentsPage";
@@ -213,7 +214,7 @@ export function AppRouter() {
           <Route index element={<StaffOperationsPage />} />
           <Route path="tasks" element={<StaffTasksPage />} />
           <Route path="policies" element={<StaffAppliedPoliciesPage />} />
-          <Route path="schedule" element={<StaffTasksPage view="schedule" />} />
+          <Route path="schedule" element={<StaffSchedulePage />} />
           <Route path="history" element={<StaffTasksPage view="history" />} />
           <Route path="report-issue" element={<StaffIssueReportPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />

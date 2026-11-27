@@ -22,6 +22,7 @@ import { ReturnsService } from './returns.service.js';
 import { StaffReturnsController } from './staff-returns.controller.js';
 import { monthlyBoundary } from './return-period-closeout.js';
 import { pricingPolicyDefaults } from '../policies/pricing-policy.js';
+import { depositRefundDebtClause } from '../documents/document-policy.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `return-facility-${runId}`;
@@ -309,6 +310,66 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     });
   });
 
+  it.each(['new-with-deposit', 'old-with-deposit', 'new-without-deposit'] as const)(
+    'applies the signed deposit refund condition only where agreed (%s)', async scenario => {
+      const { reservation, contracts: [contract], initial, quote } = await activeRental({ end: day(0) });
+      const signedClause = scenario !== 'old-with-deposit';
+      const hasDeposit = scenario !== 'new-without-deposit';
+      await prisma.rentalContract.update({ where: { id: contract.id }, data: {
+        termsAcceptedAt: day(-30),
+        signedSnapshot: { envelopeVersion: 1, document: { clauses: signedClause ? [depositRefundDebtClause] : [{ title: '6. Trả kho', text: 'Quyết toán cọc sau khi nhận kho.' }] } },
+      } });
+      if (!hasDeposit) {
+        await prisma.reservation.update({ where: { id: reservation.id }, data: { quoteSnapshot: { ...quote, depositAmount: 0 } } });
+        await prisma.invoice.update({ where: { id: initial.id }, data: { pricingSnapshot: Prisma.DbNull,
+          depositAmount: 0n, totalAmount: initial.rentalAmount, amountPaid: initial.rentalAmount } });
+      }
+      const invoice = await prisma.invoice.create({ data: {
+        invoiceCode: reservation.reservationCode + '-DUE', reservationId: reservation.id, type: 'RECURRING', billingCycle: 2,
+        status: 'OPEN', rentalAmount: 300000n, depositAmount: 0n, balanceDue: 300000n, totalAmount: 300000n,
+      } });
+      const request = await requestContract(reservation.id, contract.id);
+      await passAll(request.id);
+      await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
+      await expect(prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } }))
+        .resolves.toMatchObject({ status: 'AVAILABLE' });
+      const settlement = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: request.id } });
+      const deposits = new DepositSettlementsService(prisma);
+      const refund = { method: 'BANK_TRANSFER', reference: 'DEPOSIT-REFUND-' + settlement.id, refundConfirmed: true };
+      const key = 'refund-' + settlement.id;
+      const details = await deposits.getManager(settlement.id, manager);
+      expect(details).toMatchObject({ contractOutstandingBalance: 300000, refundRequiresDebtClearance: signedClause });
+      if (!hasDeposit) {
+        expect(details).toMatchObject({ status: 'SETTLED', refundAmount: 0, refundDueOn: null, refundBlockReason: null });
+        expect((await returns.getCustomerReturn(customerId, request.id)).status).toBe('COMPLETED');
+        return;
+      }
+      if (signedClause) {
+        expect(details).toMatchObject({ refundDueOn: null, refundBlockReason: expect.stringContaining('công nợ') });
+        await expect(deposits.refund(settlement.id, refund, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 300000 },
+        });
+        await expect(prisma.depositSettlement.findUnique({ where: { id: settlement.id } })).resolves.toMatchObject({ refundedAt: null });
+        // Model a customer clearing the remaining debt a day after the physical return.
+        await prisma.returnRequest.update({ where: { id: request.id }, data: { physicallyReturnedAt: day(-1) } });
+        const billing = new BillingService(prisma);
+        await billing.recordPayment(invoice.id, { amount: 100000, method: 'CASH' }, 'partial-' + invoice.id, manager);
+        await expect(deposits.refund(settlement.id, refund, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 200000 },
+        });
+        await billing.recordPayment(invoice.id, { amount: 200000, method: 'CASH' }, 'clear-' + invoice.id, manager);
+        await expect(deposits.getManager(settlement.id, manager)).resolves.toMatchObject({
+          contractOutstandingBalance: 0, refundBlockReason: null, refundDueOn: dateText(day(7)),
+        });
+      } else {
+        expect(details).toMatchObject({ refundBlockReason: null, refundDueOn: dateText(day(7)) });
+      }
+      await expect(deposits.refund(settlement.id, refund, key, manager)).resolves.toMatchObject({ status: 'SETTLED', deductionAmount: 0 });
+      await expect(prisma.invoice.findUnique({ where: { id: invoice.id } })).resolves.toMatchObject({
+        balanceDue: signedClause ? 0n : 300000n,
+      });
+    });
+
   it.each(['earlyReturn', 'returnOverdue', 'paymentOverdue', 'cancellation'] as const)(
     'rejects a stale booking quote after publishing a %s version', async policy => {
       const draft = { productId: storageTypeId, startDate: dateText(day(2)), periodMode: 'duration', durationMonths: 1, quantity: 1,
@@ -559,11 +620,11 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(prisma.invoice.findUnique({ where: { id: initial.id } })).resolves.toEqual(initial);
   });
 
-  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async (scenario: any) => {
+  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'prepaid-combined-with-debt', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async (scenario: any) => {
     const start = day(-40);
     const end = monthlyBoundary(start, 6);
     const { reservation, contracts: [contract], initial, quote } = await activeRental({ end });
-    const isPrepaid = scenario === 'prepaid' || scenario === 'prepaid-combined';
+    const isPrepaid = scenario.startsWith('prepaid');
     const billing = new BillingService(prisma);
     const service = new ReturnsService(prisma, undefined, billing);
     const terms = { ...quote, termMonths: 6, paymentPlan: isPrepaid ? 'PREPAID' : 'PAY_MONTHLY' };
@@ -625,13 +686,27 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
       returnId: requested.id, closeout: { appliedAt: expect.any(String), refundAmount }, rentRefund: { approvedAt: null, refundedAt: null },
     } });
     expect(await settlements.getCustomer(customerId, deposit.id)).not.toHaveProperty('earlyReturnSettlement');
-    if (scenario === 'prepaid-combined') {
+    if (scenario === 'prepaid-combined' || scenario === 'prepaid-combined-with-debt') {
       const key = 'combined-' + initial.id;
       const body = { depositAmount: 1500000, rentAmount: refundAmount, refundConfirmed: true };
       await expect(settlements.confirmReturnRefund(deposit.id, { ...body, refundConfirmed: false }, key, manager)).rejects.toThrow('xác nhận');
       const reference = 'combined-transfer-' + initial.id;
       await expect(settlements.confirmReturnRefund(deposit.id, { ...body, rentAmount: 1, reference }, key, manager)).rejects.toThrow('Số tiền cần hoàn vừa thay đổi');
       await expect(settlements.confirmReturnRefund(deposit.id, body, key, manager)).rejects.toThrow('mã giao dịch');
+      if (scenario === 'prepaid-combined-with-debt') {
+        await prisma.rentalContract.update({ where: { id: contract.id }, data: {
+          termsAcceptedAt: start, signedSnapshot: { clauses: [depositRefundDebtClause] },
+        } });
+        const late = await prisma.invoice.create({ data: {
+          invoiceCode: initial.invoiceCode + '-LATE', reservationId: reservation.id, type: 'SETTLEMENT', status: 'OPEN',
+          billingCycle: null, rentalAmount: 0n, serviceAmount: 0n, depositAmount: 0n, chargeAmount: 50000n, totalAmount: 50000n, balanceDue: 50000n,
+          pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE', sourceInvoiceId: initial.id },
+        } });
+        await expect(settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 50000 },
+        });
+        await billing.recordPayment(late.id, { amount: 50000, method: 'CASH' }, 'late-' + late.id, manager);
+      }
       const confirmed = await settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager);
       expect(confirmed).toMatchObject({ status: 'SETTLED', refundReference: reference, refundedAt: expect.any(String),
         earlyReturnSettlement: { rentRefund: { approvedAt: confirmed.refundedAt, refundedAt: confirmed.refundedAt, reference } } });

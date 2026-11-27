@@ -81,7 +81,8 @@ export function CombinedReturnRefund({ row, busy, onConfirm }: { row: Row; busy:
       [rentRefund.refundedAt ? 'Tiền thuê và dịch vụ đã hoàn' : 'Tiền thuê và dịch vụ cần hoàn', money(rentAmount)],
     ]} />
     <InvoiceAdjustments invoices={rows(closeout.adjustedInvoices)} official />
-    {complete ? <p role="status">{depositAmount + rentAmount > 0 ? <>Đã ghi nhận hoàn <strong>{money(depositAmount + rentAmount)}</strong>.</> : 'Đã xử lý phần hoàn tiền. Không có khoản cần hoàn.'}</p> :
+    {first(row, 'refundBlockReason') ? null :
+      complete ? <p role="status">{depositAmount + rentAmount > 0 ? <>Đã ghi nhận hoàn <strong>{money(depositAmount + rentAmount)}</strong>.</> : 'Đã xử lý phần hoàn tiền. Không có khoản cần hoàn.'}</p> :
       !ready ? <p>{row.status === 'PENDING_REVIEW' ? 'Duyệt tiền cọc để chốt tổng tiền hoàn.' : 'Xử lý khoản phải thu thêm để hoàn tất quyết toán.'}</p> :
         <form className="portal-form" onSubmit={event => {
           event.preventDefault();

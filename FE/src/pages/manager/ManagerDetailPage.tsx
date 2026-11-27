@@ -944,6 +944,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
         <section className="manager-section">
           <h2>Hoàn tiền cọc</h2>
           {row.refundOverdue === true && <p role="alert">Hồ sơ hoàn cọc đã quá hạn xử lý.</p>}
+          {first(row, 'refundBlockReason') && <p className="booking-alert is-warning" role="status">{first(row, 'refundBlockReason')}</p>}
           <Facts
             items={[
               ["Tiền cọc", money(row.depositAmount)],
@@ -951,11 +952,13 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Khấu trừ cọc", money(row.deductionAmount)],
               ["Tiền cọc hoàn lại", money(row.refundAmount)],
               ...(first(row, "refundDueOn") ? [["Hạn xử lý hoàn cọc (UTC+7)", first(row, "refundDueOn")] as [string, string]] : []),
-              ["Thu thêm", money(row.outstandingAmount)],
+              ["Công nợ hợp đồng còn lại", typeof row.contractOutstandingBalance === 'number' ? money(row.contractOutstandingBalance) : "Cần đối soát"],
+              ["Thu thêm từ quyết toán cọc", money(row.outstandingAmount)],
               ["Phương thức hoàn", label(row.refundMethod)],
               ...(first(row, "refundReference") ? [["Tham chiếu hoàn", first(row, "refundReference")] as [string, string]] : []),
             ]}
           />
+          {row.refundRequiresDebtClearance === false && Number(row.refundAmount) > 0 && <p>Điều khoản hoàn cọc áp dụng theo hợp đồng đã ký.</p>}
           {Boolean(row.outstandingInvoice) && (
             <Link
               className="button-secondary"

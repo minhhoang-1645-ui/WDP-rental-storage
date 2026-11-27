@@ -570,7 +570,7 @@ export function ManagerActions({
                 Duyệt quyết toán
               </button>
             </form>
-          ) : row.earlyReturnSettlement ? null : row.status === "APPROVED" &&
+          ) : row.earlyReturnSettlement || first(row, 'refundBlockReason') ? null : row.status === "APPROVED" &&
             Number(row.refundAmount) > 0 &&
             Number(row.outstandingAmount) === 0 ? (
             <form

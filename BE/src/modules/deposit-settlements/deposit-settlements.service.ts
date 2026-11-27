@@ -5,7 +5,11 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { earlyReturnSettlementPending, rentRefundView } from '../returns/return-period-closeout.js';
-import { businessDate } from '../../business-date.js';
+import { businessDate, businessToday, isIsoCalendarDate } from '../../business-date.js';
+import { depositRefundDebtClause } from '../documents/document-policy.js';
+import { DEPOSIT_REFUND_DAYS } from '../policies/pricing-policy.js';
+import { depositRefundLedger, returnInvoiceFields } from '../returns/contract-return-finance.js';
+import { signedDocument } from '../signing/signing-otp.service.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type SettlementStatus = 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED';
@@ -165,8 +169,10 @@ export class DepositSettlementsService {
       if (current.status !== 'APPROVED' || current.refundAmount <= 0n || current.outstandingAmount !== 0n || current.refundedAt !== null) {
         throw new ConflictException('Settlement chưa đủ điều kiện ghi nhận refund.');
       }
+      const refundState = this.refundDebtState(current);
+      this.assertRefundDebtCleared(refundState);
       const now = new Date();
-      await this.recordDepositRefund(tx, current.id, parsed, actor.id, now);
+      await this.recordDepositRefund(tx, current.id, parsed, actor.id, now, refundState);
       await this.completeReturn(tx, current.returnRequestId, actor.id, now);
       return this.toSettlement(await this.find(current.id, tx), true);
     }, 'Refund vừa được ghi nhận bởi thao tác khác. Vui lòng tải lại.');
@@ -211,7 +217,9 @@ export class DepositSettlementsService {
 
       const now = new Date();
       if (pendingDeposit > 0) {
-        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference, note: null, idempotencyKey }, actor.id, now);
+        const refundState = this.refundDebtState(current);
+        this.assertRefundDebtCleared(refundState);
+        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference, note: null, idempotencyKey }, actor.id, now, refundState);
       }
       await tx.returnRequest.update({ where: { id: returned.id }, data: {
         ...(!returned.rentRefundApprovedAt ? { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id } : {}),
@@ -222,10 +230,53 @@ export class DepositSettlementsService {
     }, 'Khoản hoàn vừa được cập nhật. Vui lòng tải lại hồ sơ.');
   }
 
-  private recordDepositRefund(tx: Prisma.TransactionClient, id: string, refund: ReturnType<DepositSettlementsService['refundInput']>, actorId: string, now: Date) {
+  private refundDebtState(record: Awaited<ReturnType<DepositSettlementsService['find']>>) {
+    const { returnRequest } = record;
+    const contracts = returnRequest.inspections.map(inspection => inspection.rentalContract);
+    const applies = contracts.length > 0 && contracts.every(contract => {
+      const document = signedDocument(contract.signedSnapshot);
+      return Boolean(contract.termsAcceptedAt && Array.isArray(document?.clauses) && document.clauses.some(
+        (clause: { title?: string; text?: string } | null) =>
+          clause?.title === depositRefundDebtClause.title && clause.text === depositRefundDebtClause.text,
+      ));
+    });
+    const ledger = depositRefundLedger(returnRequest.reservation.invoices, contracts.map(contract => contract.id),
+      returnRequest.reservation.contracts.map(contract => contract.id));
+    const blockReason = applies && record.refundAmount > 0n && !record.refundedAt && ledger.outstandingBalance !== 0
+      ? ledger.outstandingBalance === null
+        ? 'Cần đối soát công nợ của hợp đồng trước khi hoàn cọc.'
+        : 'Khách cần thanh toán hết công nợ của hợp đồng trước khi hoàn cọc.'
+      : null;
+    let dueOn = record.refundDueOn;
+    if (applies && !record.refundedAt && returnRequest.physicallyReturnedAt && record.depositAmount > 0n) {
+      if (ledger.outstandingBalance !== 0) dueOn = null;
+      else {
+        const recorded = (returnRequest.overdueSettlement as { physicalReturnDate?: unknown } | null)?.physicalReturnDate;
+        const returned = typeof recorded === 'string' && isIsoCalendarDate(recorded)
+          ? new Date(recorded + 'T00:00:00.000Z')
+          : returnRequest.physicallyReturnedAt;
+        const clearance = ledger.latestClearance;
+        dueOn = businessToday(clearance && clearance > returned ? clearance : returned);
+        dueOn.setUTCDate(dueOn.getUTCDate() + DEPOSIT_REFUND_DAYS);
+      }
+    }
+    return { applies, outstandingBalance: ledger.outstandingBalance, blockReason, dueOn };
+  }
+
+  private assertRefundDebtCleared(state: ReturnType<DepositSettlementsService['refundDebtState']>) {
+    if (state.blockReason) throw new ConflictException({
+      code: 'DEPOSIT_REFUND_CONTRACT_DEBT',
+      message: state.blockReason,
+      outstandingBalance: state.outstandingBalance,
+    });
+  }
+
+  private recordDepositRefund(tx: Prisma.TransactionClient, id: string, refund: ReturnType<DepositSettlementsService['refundInput']>,
+    actorId: string, now: Date, state: ReturnType<DepositSettlementsService['refundDebtState']>) {
     return tx.depositSettlement.update({ where: { id }, data: {
       status: 'SETTLED', refundMethod: refund.method, refundReference: refund.reference, refundNote: refund.note,
       refundIdempotencyKey: refund.idempotencyKey, refundedAt: now, settledByUserId: actorId, settledAt: now,
+      ...(state.applies && state.dueOn ? { refundDueOn: state.dueOn, refundPolicyVersion: 1 } : {}),
     } });
   }
 
@@ -253,11 +304,16 @@ export class DepositSettlementsService {
       outstandingInvoice: { include: { payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } } },
       returnRequest: { omit: { assignedStaffUserId: true }, include: {
         requestedBy: { select: { id: true, fullName: true } },
-        reservation: { include: {
+        reservation: { select: {
+          id: true, reservationCode: true,
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, condition: true } },
+          contracts: { select: { id: true } },
+          invoices: { select: { ...returnInvoiceFields, paidAt: true, voidedAt: true } },
         } },
-        inspections: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } }, rentalContract: { select: { id: true, contractCode: true, status: true } } }, orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }] },
+        inspections: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } },
+          rentalContract: { select: { id: true, contractCode: true, status: true, signedSnapshot: true, termsAcceptedAt: true } } },
+          orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }] },
       } },
     };
   }
@@ -270,7 +326,9 @@ export class DepositSettlementsService {
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toSettlement(record, manager)) };
   }
 
-  private toSettlement(record: any, manager: boolean) {
+  private toSettlement(record: Awaited<ReturnType<DepositSettlementsService['find']>>, manager: boolean) {
+    const refundState = this.refundDebtState(record);
+    const refundDueOn = refundState.dueOn?.toISOString().slice(0, 10) ?? null;
     const issues = record.issues.map((issue: any) => ({
       inspectionId: issue.returnInspectionId,
       unit: { id: issue.returnInspection.storageUnit.id, unitCode: issue.returnInspection.storageUnit.unitNumber, status: issue.returnInspection.storageUnit.status },
@@ -302,11 +360,11 @@ export class DepositSettlementsService {
         unitCode: inspection.storageUnit.unitNumber, contractCode: inspection.rentalContract.contractCode,
       })),
       refundedAt: record.refundedAt?.toISOString() ?? null,
-      refundDueOn: record.refundDueOn?.toISOString().slice(0, 10) ?? null,
-      refundPolicyVersion: record.refundPolicyVersion ?? null,
-      refundOverdue: Boolean(record.refundDueOn && !record.refundedAt &&
+      refundDueOn,
+      refundPolicyVersion: refundDueOn ? refundState.applies ? 1 : record.refundPolicyVersion : null,
+      refundOverdue: Boolean(refundDueOn && !record.refundedAt &&
         (record.status === 'PENDING_REVIEW' || record.status === 'APPROVED' && record.refundAmount > 0n) &&
-        businessDate() > record.refundDueOn.toISOString().slice(0, 10)),
+        businessDate() > refundDueOn),
       settledAt: record.settledAt?.toISOString() ?? null,
       outstandingInvoice: record.outstandingInvoice ? {
         id: record.outstandingInvoice.id,
@@ -341,6 +399,9 @@ export class DepositSettlementsService {
     }
     return {
       ...base,
+      contractOutstandingBalance: refundState.outstandingBalance,
+      refundRequiresDebtClearance: refundState.applies,
+      refundBlockReason: refundState.blockReason,
       reviewNote: record.reviewNote,
       reviewedBy: record.reviewedBy,
       reviewedAt: record.reviewedAt?.toISOString() ?? null,

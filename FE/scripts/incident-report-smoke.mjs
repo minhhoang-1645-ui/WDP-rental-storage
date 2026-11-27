@@ -60,10 +60,10 @@ try {
       await page.getByLabel('Loại sự cố', { exact: true }).selectOption('UTILITIES');
       await page.getByLabel('Mức ưu tiên đề xuất', { exact: true }).selectOption('URGENT');
       await page.getByLabel('Mô tả sự cố', { exact: true }).fill(report.description);
-      const photo = page.locator('input[type=file]');
+      const photo = page.locator('input[type=file][multiple]');
       await photo.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('invalid') });
       await page.getByText('Chỉ nhận ảnh JPG', { exact: false }).waitFor();
-      await photo.setInputFiles({ name: 'incident.png', mimeType: 'image/png', buffer: png });
+      await page.locator('input[type=file][capture=environment]').setInputFiles({ name: 'incident.png', mimeType: 'image/png', buffer: png });
       await page.getByAltText('Ảnh sự cố 1').waitFor();
       await page.getByRole('button', { name: 'Gửi báo cáo sự cố' }).click();
       await page.getByText('Chưa tải được ảnh kiểm thử.').waitFor();

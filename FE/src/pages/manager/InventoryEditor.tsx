@@ -10,9 +10,12 @@ import { apiRequest } from '../../services/api';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { useOutletContext } from 'react-router-dom';
 import { priceRangeFor, priceRangeLabel, priceRangeNotice, type PriceRange } from './inventory-pricing';
+import { centimetersFromMeters, metersFromCm } from './inventory-dimensions';
+import { rentalTerms, useRentalPolicy } from './inventory-rental-terms';
+import { unitMeasurements } from './unit-display';
 import './inventory-editor.css';
 
-const dimensions = [['widthCm', 'Rộng (cm)'], ['lengthCm', 'Dài (cm)'], ['heightCm', 'Cao (cm)']] as const;
+const dimensions = [['widthCm', 'Rộng (m)'], ['lengthCm', 'Dài (m)'], ['heightCm', 'Cao (m)']] as const;
 const measurement = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 6 });
 
 export function NewInventoryUnit({ onClose, onSaved }: { onClose: () => void; onSaved: (saved: Row) => void }) {
@@ -40,6 +43,7 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
   const formId = useId();
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const type = kind === 'type';
+  const rentalPolicy = useRentalPolicy(type ? user?.id : undefined);
   const locationError = !type && error.startsWith('Vị trí này đã có kho') ? error : '';
   const locked = !type && Boolean(record && (record.editLocked === true || record.status !== 'AVAILABLE' || rows(record.allocations).length > 0 || record.activeMaintenance));
   const close = async () => {
@@ -57,7 +61,8 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
   const [price, setPrice] = useState(first(record ?? {}, 'monthlyRate'));
   const [enabled, setEnabled] = useState<boolean | undefined>(record ? record.bookingEnabled !== false : undefined);
   const [daily, setDaily] = useState(record?.allowDailyRental === true);
-  const [size, setSize] = useState(() => Object.fromEntries(dimensions.map(([key]) => [key, first(record ?? {}, key)])));
+  const [size, setSize] = useState(() => Object.fromEntries(dimensions.map(([key]) => [key, metersFromCm(record?.[key])])));
+  const [dimensionError, setDimensionError] = useState<string>();
   const [picked, setPicked] = useState<{ file: File; preview: string } | null>(null);
   const photo = picked?.file;
   const [removePhoto, setRemovePhoto] = useState(false);
@@ -67,9 +72,9 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
   }, [picked]);
   const facilities = rows(options.data?.facilities);
   const facilityId = first(record ?? {}, 'facilityId') || scopeFacility || (facilities.length === 1 ? first(facilities[0], 'id') : '');
-  const width = Number(size.widthCm), length = Number(size.lengthCm), height = Number(size.heightCm);
-  const area = width > 0 && length > 0 ? width * length / 10_000 : 0;
-  const volume = height > 0 ? area * height / 100 : 0;
+  const width = centimetersFromMeters(size.widthCm), length = centimetersFromMeters(size.lengthCm), height = centimetersFromMeters(size.heightCm);
+  const area = width && length ? width * length / 10_000 : 0;
+  const volume = width && length && height ? width * length * height / 1_000_000 : 0;
   const displayedPhoto = picked?.preview ?? (removePhoto ? '' : first(record ?? {}, 'image'));
   function selectPhoto(file?: File) {
     if (!file) return;
@@ -99,8 +104,15 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
     if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || (type ? priceError || !facilityId : !selectedType)) return;
     const fields = new FormData(event.currentTarget);
     const input: Row = Object.fromEntries(fields.entries());
-    for (const key of type ? ['widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;
+    for (const key of type ? ['monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;
     if (type) {
+      const invalidDimension = dimensions.find(([key]) => centimetersFromMeters(String(fields.get(key) ?? '')) === null);
+      if (invalidDimension) {
+        setDimensionError(invalidDimension[0]);
+        event.currentTarget.querySelector<HTMLInputElement>(`[name="${invalidDimension[0]}"]`)?.focus();
+        return;
+      }
+      for (const [key] of dimensions) input[key] = centimetersFromMeters(String(fields.get(key)));
       input.facilityId = facilityId;
       if (removePhoto && !photo) input.image = '';
       input.allowDailyRental = fields.get('allowDailyRental') === 'on';
@@ -158,13 +170,18 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
           </label>
           {field('name', 'Tên loại kho')}
           <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" value={sizeId} onChange={event => setSizeId(event.target.value)}>{Object.entries(object(options.data?.groups)).map(([value, title]) => <option key={value} value={value}>{String(title)}</option>)}</select></label>
-          <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
+          <label className="field-label">Điều kiện bảo quản<select name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
           </div></fieldset>
           <fieldset className="inventory-type-section"><legend>Kích thước kho</legend>
           <div className="inventory-type-grid inventory-dimensions">
             {dimensions.map(([key, title]) => <label className="field-label" key={key}>{title}
-              <input name={key} type="number" min={1} max={100000} step={1} required value={size[key]}
-                onChange={event => setSize(current => ({ ...current, [key]: event.target.value }))} />
+              <input name={key} type="text" inputMode="decimal" required value={size[key]} placeholder="Ví dụ 1,5"
+                aria-invalid={dimensionError === key} aria-describedby={dimensionError === key ? formId + '-dimension-error' : undefined}
+                onChange={event => {
+                  setSize(current => ({ ...current, [key]: event.target.value }));
+                  if (dimensionError === key) setDimensionError(undefined);
+                }} />
+              {dimensionError === key && <small id={formId + '-dimension-error'} role="alert">Nhập từ 0,01 đến 1.000 m, tối đa hai chữ số thập phân.</small>}
             </label>)}
           </div>
           <p>Diện tích <strong>{area > 0 ? measurement.format(area) + ' m²' : '—'}</strong> · Thể tích <strong>{volume > 0 ? measurement.format(volume) + ' m³' : '—'}</strong></p>
@@ -181,8 +198,12 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
           </div>
           <label className="inventory-type-check"><input type="checkbox" checked={bookingEnabled} disabled={!priceRange && !bookingEnabled}
             onChange={event => setEnabled(event.target.checked)} /> Bật kinh doanh loại kho</label>
+          </fieldset>
+          <fieldset className="inventory-type-section"><legend>Điều kiện thuê</legend>
           <label className="inventory-type-check"><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
           {daily && field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, true, 30)}
+          {rentalTerms({ sizeId, allowDailyRental: daily }, rentalPolicy).filter(([title]) => title === 'Thuê tháng tối thiểu' || title.startsWith('Tiền cọc')).map(([title, value]) =>
+            <p key={title}>{title} <strong>{value}</strong></p>)}
           </fieldset>
           <fieldset className="inventory-type-section"><legend>Hình ảnh loại kho</legend>
           {displayedPhoto && <img className="inventory-photo-preview" src={displayedPhoto} alt="Ảnh xem trước loại kho" />}
@@ -223,8 +244,7 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
               </strong></dd></div>
               {selectedType && <>
                 <div><dt>Điều kiện bảo quản</dt><dd>{selectedType.condition ? label(selectedType.condition) : '—'}</dd></div>
-                <div><dt>Kích thước</dt><dd>{selectedType.widthCm && selectedType.lengthCm && selectedType.heightCm
-                  ? `${selectedType.widthCm} × ${selectedType.lengthCm} × ${selectedType.heightCm} cm` : '—'}</dd></div>
+                <div><dt>Kích thước</dt><dd>{unitMeasurements({ dimensions: selectedType }).dimensions}</dd></div>
                 <div><dt>Giá thuê tháng</dt><dd>{money(selectedType.monthlyRate)}</dd></div>
               </>}
             </dl>

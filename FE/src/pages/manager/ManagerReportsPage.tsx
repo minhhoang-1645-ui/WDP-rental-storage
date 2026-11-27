@@ -1,5 +1,5 @@
 import { DateRangePicker } from '../../components/workspace/DateTimeFields';
-import { useId, useState } from 'react';
+import { useContext, useId, useState } from 'react';
 import { CalendarDays, ChevronDown, CircleHelp, ClipboardList, Coins, Download, Receipt, RefreshCw, Wallet, Warehouse, type LucideIcon } from 'lucide-react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -7,11 +7,13 @@ import { DashboardSkeleton, SkeletonBone } from '../../components/LoadingSkeleto
 import { ReceivedMoneyChart, StorageStatusChart } from '../../components/manager/ManagerReportSummaryCharts';
 import { FinancialReportDetails, OperationalReportDetails, ReportTypeTable } from '../../components/manager/ManagerReportDetails';
 import { LoadState, RefreshStatus } from '../../components/manager/PortalUi';
+import { ManagerFacility } from '../../components/manager/operations-workspace';
 import { apiRequest } from '../../services/api';
 import { useLiveRefresh } from '../../services/live-events';
 import { useApiResource } from '../../services/useApiResource';
 import type { ManagerPeriodReport, ManagerReport } from '../../types/manager-report';
 import { isReportCount, isReportDay, reportBucketLabel, reportDay, reportMoney, type ReportGroup } from '../../utils/reporting';
+import { downloadReportWorkbook, excelMoney, reportInvoiceSheet, type ReportSheet } from '../../utils/report-workbook';
 import '../../styles/manager-reports.css';
 import { MaintenanceCostTable, type MaintenanceCostReport } from '../../components/workspace/MaintenanceCostTable';
 
@@ -68,19 +70,6 @@ function Metric({ name, value, scope, description, icon: Icon, loading }: {
   </article>;
 }
 
-async function exportFinance(dates: Dates) {
-  const { finance } = await apiRequest<ManagerReport>(snapshotPath + '?' + new URLSearchParams(dates));
-  const rows = [
-    ['Chỉ số', 'Giá trị', 'Định nghĩa'],
-    ['Tiền đã thu trong kỳ', reportMoney(finance.collectedAmount), `${finance.paymentCount} khoản thu đã ghi nhận; gồm cọc và dịch vụ.`],
-    ['Cọc trên hóa đơn trả đủ trong kỳ', reportMoney(finance.depositOnFullyPaidInvoices), 'Theo ngày trả đủ; chưa gồm cọc của hóa đơn trả một phần. Không phải doanh thu thuê.'],
-    ['Công nợ hiện tại', reportMoney(finance.outstandingAmount), `${finance.unpaidInvoices} hóa đơn chưa trả đủ còn dư; không gồm hóa đơn đã hủy.`],
-    ['Hoàn cọc đã duyệt, chưa kết thúc', reportMoney(finance.approvedRefundOutstanding), 'Theo quyết toán đã duyệt; chưa gồm cọc đang chờ xét duyệt hoặc chưa quyết toán.'],
-  ];
-  const csv = rows.map(row => row.map(value => '"' + value.replaceAll('"', '""') + '"').join(',')).join('\r\n');
-  return new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-}
-
 export function ManagerReportsRedirect() {
   const { search, hash } = useLocation();
   const params = new URLSearchParams(search);
@@ -91,6 +80,7 @@ export function ManagerReportsRedirect() {
 
 export function ManagerReportsPage() {
   const { user } = useAuth();
+  const facility = useContext(ManagerFacility);
   const [params, setParams] = useSearchParams();
   const tabsId = useId();
   const tab: Tab = params.get('tab') === 'operations' ? 'operations' : 'finance';
@@ -122,7 +112,7 @@ export function ManagerReportsPage() {
   );
   const snapshot = useApiResource<ManagerReport>(snapshotPath, user?.id, true);
   const typeReport = useApiResource<ManagerPeriodReport>(tab === 'operations' && expanded.operations && typeId ? '/manager/reports?' + typeQuery : null, user?.id);
-  const catalog = useApiResource<{ items: { id: string; name: string; code: string }[] }>(expanded[tab] ? '/manager/storage-types' : null, user?.id);
+  const catalog = useApiResource<{ items: { id: string; name: string; code: string }[] }>(expanded[tab] || typeId ? '/manager/storage-types' : null, user?.id);
   function refresh() { range.refresh(); snapshot.refresh(); typeReport.refresh(); catalog.refresh(); maintenance.refresh(); }
   useLiveRefresh('/manager/*', refresh);
   const invalidDraft = !isReportDay(draft.from) || !isReportDay(draft.to) || draft.from > draft.to;
@@ -157,17 +147,38 @@ export function ManagerReportsPage() {
   }
 
   async function download(kind: Export) {
+    if (!facility || !report || (kind === 'kpi' && !finance) || exporting) return;
     setExporting(kind);
     setExportError('');
     try {
-      const file = kind === 'kpi' ? await exportFinance(dates)
-        : await apiRequest<Blob>(`/manager/reports/invoices.csv?${typeQuery}`, { responseType: 'blob' });
-      const url = URL.createObjectURL(file);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `nestbox-${kind === 'kpi' ? 'bao-cao' : 'hoa-don'}-${dates.from}-${dates.to}.csv`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const invoiceRequest = reportInvoiceSheet(`/manager/reports/invoices.csv?${typeQuery}`);
+      const sheets: ReportSheet[] = [];
+      if (kind === 'kpi' && finance) {
+        // This period-specific KPI is absent from the period chart and current balance snapshots.
+        const [invoices, { finance: periodFinance }] = await Promise.all([
+          invoiceRequest, apiRequest<ManagerReport>(snapshotPath + '?' + new URLSearchParams(dates)),
+        ]);
+        sheets.push(
+          { name: 'Tổng quan tài chính', headers: ['Chỉ số', 'Giá trị', 'Phạm vi', 'Định nghĩa'], moneyColumns: [2], rows: [
+            ['Tiền đã nhận', excelMoney(report.received), 'Trong kỳ', 'Theo ngày nhận tiền, có thể gồm tiền thuê, cọc và dịch vụ.'],
+            ['Tiền thuê trên hóa đơn', excelMoney(report.rent), 'Trong kỳ', 'Tiền thuê trên hóa đơn còn hiệu lực, theo ngày phát hành, đã trừ ưu đãi.'],
+            ['Cọc trên hóa đơn trả đủ', excelMoney(periodFinance.depositOnFullyPaidInvoices), 'Trong kỳ', 'Theo ngày trả đủ, chưa gồm cọc của hóa đơn trả một phần.'],
+            ['Công nợ hiện tại', excelMoney(finance.outstandingAmount), 'Hiện tại', 'Số dư hóa đơn còn hiệu lực và chưa trả đủ tại thời điểm tải.'],
+            ['Hoàn cọc đã duyệt, chưa kết thúc', excelMoney(finance.approvedRefundOutstanding), 'Hiện tại', 'Theo quyết toán đã duyệt, chưa gồm cọc đang chờ xét duyệt hoặc chưa quyết toán.'],
+          ] },
+          { name: 'Tiền thuê theo loại kho', headers: ['Loại kho', 'Tiền thuê trên hóa đơn'], moneyColumns: [2],
+            rows: report.categories.map(item => [item.name, excelMoney(item.rent)]) },
+          invoices,
+          { name: 'Tiền nhận theo thời gian', headers: ['Mốc thời gian', 'Tiền đã nhận'], moneyColumns: [2],
+            rows: report.times.map(item => [reportBucketLabel(item.date, group), excelMoney(item.received)]) },
+        );
+      } else sheets.push(await invoiceRequest);
+      const typeName = catalog.data?.items.find(item => item.id === typeId)?.name ?? report.categories.find(item => item.id === typeId)?.name ?? typeId;
+      await downloadReportWorkbook(`nestbox-${kind === 'kpi' ? 'bao-cao' : 'hoa-don'}-${dates.from}-${dates.to}`, {
+        title: kind === 'kpi' ? 'Báo cáo tài chính cơ sở' : 'Danh sách hóa đơn',
+        scope: facility.name, period: rangeLabel,
+        invoiceScope: typeId ? `${facility.name} · ${typeName}` : undefined,
+      }, sheets);
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Không xuất được báo cáo.');
     } finally {
@@ -205,6 +216,14 @@ export function ManagerReportsPage() {
       <button className="button-secondary" type="submit" disabled={invalidDraft}>Áp dụng</button>
       {draft.from && draft.to && draft.from > draft.to && <p role="alert">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}
     </form>}
+    <div className="manager-report-actions">
+      <button type="button" className="button-secondary" disabled={!report || !finance || !facility || refreshing || Boolean(exporting)}
+        onClick={() => void download('kpi')}><Download size={16} aria-hidden="true" />{exporting === 'kpi' ? 'Đang xuất…' : 'Xuất báo cáo tài chính'}</button>
+      <button type="button" className="button-secondary" disabled={!report || !facility || refreshing || Boolean(exporting)}
+        onClick={() => void download('invoices')}><Download size={16} aria-hidden="true" />{exporting === 'invoices' ? 'Đang xuất…' : 'Xuất danh sách hóa đơn'}</button>
+    </div>
+    {typeId && <p className="manager-report-note">Danh sách hóa đơn áp dụng bộ lọc loại kho trong Chi tiết vận hành.</p>}
+    {exportError && <p role="alert" className="booking-alert is-error">{exportError}</p>}
     <RefreshStatus active={refreshing} />
     <div className="manager-report-tabs" role="tablist" aria-label="Nhóm báo cáo">
       {tabs.map(([key, name]) => <button key={key} id={`${tabsId}-${key}`} type="button" role="tab"
@@ -231,11 +250,17 @@ export function ManagerReportsPage() {
         </div>
         <LoadState loading={false} error={snapshot.error} retry={snapshot.refresh} />
         <section className="manager-report-chart" aria-labelledby="report-money-title">
-          <h2 id="report-money-title">Tiền đã nhận theo thời gian</h2>
+          <div className="manager-report-header">
+            <h2 id="report-money-title">Tiền đã nhận theo thời gian</h2>
+            <label className="manager-report-period">Hiển thị theo<select value={linkedGroup} onChange={event => changeParams({ group: event.target.value })}>
+              <option value="">Tự động</option><option value="day">Ngày</option><option value="week">Tuần</option>
+              <option value="month">Tháng</option><option value="year">Năm</option>
+            </select></label>
+          </div>
           <LoadState loading={range.loading} error={range.error} retry={range.refresh} placeholder={<DashboardSkeleton variant="bars" />} />
           {report && <ReceivedMoneyChart key={query.toString()} buckets={report.times} received={report.received} group={group} {...dates} />}
         </section>
-        <MaintenanceCostTable className="manager-report-chart" data={maintenance.data}
+        <MaintenanceCostTable className="manager-report-chart" data={maintenance.data} managerFacilityId={facility?.id ?? ''}
           loading={maintenance.loading} error={maintenance.error} refresh={maintenance.refresh} />
         <details className="manager-report-details manager-report-finance-accordion" open={expanded.finance} onToggle={event => {
           const open = event.currentTarget.open;
@@ -246,18 +271,6 @@ export function ManagerReportsPage() {
             <FinancialReportDetails report={report} finance={finance} rangeLoading={range.loading} snapshotLoading={snapshot.loading}
               rangeFailed={Boolean(range.error)} snapshotFailed={Boolean(snapshot.error)} />
             {Array.isArray(report?.categories) && <ReportTypeTable key={rangeKey} kind="rent" categories={report.categories} catalog={catalog.data?.items} />}
-            <div className="manager-report-actions">
-              <label className="field-label">Gom biểu đồ theo<select value={linkedGroup} onChange={event => changeParams({ group: event.target.value })}>
-                <option value="">Tự động</option><option value="day">Ngày</option><option value="week">Tuần</option>
-                <option value="month">Tháng</option><option value="year">Năm</option>
-              </select></label>
-              <button type="button" className="button-secondary" disabled={!report || !finance || refreshing || Boolean(exporting)}
-                onClick={() => void download('kpi')}><Download size={16} aria-hidden="true" />{exporting === 'kpi' ? 'Đang xuất…' : 'Xuất KPI tài chính CSV'}</button>
-              <button type="button" className="button-secondary" disabled={!report || refreshing || Boolean(exporting)}
-                onClick={() => void download('invoices')}><Download size={16} aria-hidden="true" />{exporting === 'invoices' ? 'Đang xuất…' : 'Xuất hóa đơn CSV'}</button>
-            </div>
-            {typeId && <p className="manager-report-note">CSV hóa đơn áp dụng bộ lọc loại kho trong Chi tiết vận hành.</p>}
-            {exportError && <p role="alert" className="booking-alert is-error">{exportError}</p>}
           </div>
         </details>
       </>}

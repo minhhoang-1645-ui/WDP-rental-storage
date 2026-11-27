@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { ManagerFinanceReview } from '../../components/manager/ManagerFinanceReview';
@@ -37,6 +37,8 @@ export function ManagerPaymentsPage() {
   const refund = useApiResource<{ total: number }>(financeReviewTypes.reconciliation.api + '?status=REFUND_REQUIRED&limit=1', identity);
   const count = submissions.data && pending.data && refund.data ? submissions.data.total + pending.data.total + refund.data.total : undefined;
   const summary = payments.data?.summary;
+  const onlineTotal = summary && BigInt(summary.online) + BigInt(summary.transfer);
+  const reviewHistory = params.get('reviewView') === 'history';
   const refreshPayments = () => { payments.refresh(); submissions.refresh(); pending.refresh(); refund.refresh(); };
 
   function update(key: string, value: string) {
@@ -48,13 +50,12 @@ export function ManagerPaymentsPage() {
       return next;
     }, { replace: true, preventScrollReset: true });
   }
-  function selectTab(showExceptions: boolean) {
-    setParams(previous => {
-      const next = new URLSearchParams(previous);
-      if (showExceptions) next.set('tab', 'exceptions');
-      else for (const key of ['tab', 'review', 'record']) next.delete(key);
-      return next;
-    }, { replace: true, preventScrollReset: true });
+  function reviewSearch(kind?: keyof typeof financeReviewTypes, history = false) {
+    const next = new URLSearchParams(params);
+    for (const key of ['tab', 'review', 'record', 'reviewView']) next.delete(key);
+    if (kind) next.set('review', kind);
+    if (history) next.set('reviewView', 'history');
+    return next.toString();
   }
 
   return <section className="manager-payments">
@@ -63,20 +64,23 @@ export function ManagerPaymentsPage() {
         disabled={payments.refreshing || submissions.refreshing || pending.refreshing || refund.refreshing}><RefreshCw size={16} aria-hidden="true" /> Làm mới</button>
     </PageHeader>
     <dl className="manager-payment-totals">
-      {([['total', 'Tổng khoản thu'], ['online', 'Thanh toán trực tuyến'], ['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản lịch sử']] as const).map(([key, title]) =>
-        <div key={key}><dt>{title}</dt><dd>{summary?.[key] !== undefined ? currency.format(BigInt(summary[key])) : '—'}</dd></div>)}
+      <div><dt>Tổng khoản thu</dt><dd>{summary ? currency.format(BigInt(summary.total)) : '—'}</dd></div>
+      <div><dt>Thanh toán trực tuyến</dt><dd>{onlineTotal !== undefined ? currency.format(onlineTotal) : '—'}</dd></div>
+      <div><dt>Tiền mặt</dt><dd>{summary ? currency.format(BigInt(summary.cash)) : '—'}</dd></div>
     </dl>
-    <p className="manager-payment-caption">Thanh toán trực tuyến gồm payOS và VNPay lịch sử. Các số liệu chưa trừ khoản hoàn.</p>
-    <div className="portal-toolbar" role="group" aria-label="Nội dung khoản thu">
-      <button type="button" className={exceptions ? 'button-secondary' : 'button-primary'} aria-pressed={!exceptions} onClick={() => selectTab(false)}>Lịch sử khoản thu</button>
-      <button type="button" className={exceptions ? 'button-primary' : 'button-secondary'} aria-pressed={exceptions} onClick={() => selectTab(true)}>
-        Giao dịch cần xử lý{count === undefined ? '' : ` (${count})`}
-      </button>
+    <div className="manager-payment-meta">
+      <p className="manager-payment-caption">Số liệu chưa trừ các khoản hoàn tiền</p>
+      <Link className="portal-text-button" to={{ search: reviewSearch(exceptions ? undefined : 'reconciliation', !exceptions) }}>
+        {exceptions ? 'Về lịch sử khoản thu' : 'Tra cứu đối soát'}
+      </Link>
     </div>
-    {exceptions ? count === 0 && !params.has('review')
-      ? <p className="manager-payment-empty" role="status">Hiện không có giao dịch cần xử lý. <Link to={{ search: '?' + new URLSearchParams({ ...Object.fromEntries(params), review: 'submissions' }) }}>Tra cứu hồ sơ giao dịch</Link></p>
-      : <ManagerFinanceReview onSaved={refreshPayments} refreshVersion={refreshVersion} />
+    {exceptions ? <ManagerFinanceReview key={reviewHistory ? 'history' : 'pending'} showAllInitially={reviewHistory}
+      onSaved={refreshPayments} refreshVersion={refreshVersion} />
       : <div className="manager-section">
+        {count !== undefined && count > 0 && <div className="manager-payment-review-alert">
+          <span role="status"><AlertCircle size={16} aria-hidden="true" />Có {count} giao dịch cần đối soát</span>
+          <Link className="button-secondary" to={{ search: reviewSearch(pending.data?.total || refund.data?.total ? 'reconciliation' : 'submissions') }}>Xem và xử lý</Link>
+        </div>}
         <div className="portal-toolbar">
           <ManagerTableSearch value={search} onChange={value => update('search', value)} placeholder="Khách hàng, mã kho, hóa đơn, mã giao dịch" />
           <ManagerTableFilter label="Phương thức thanh toán" value={method} onChange={value => update('method', value)} options={methods} />

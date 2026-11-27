@@ -2,6 +2,8 @@ import { useListPagination } from '../../components/workspace/useListPagination'
 import { RefreshCw } from "lucide-react";
 import { useState } from 'react';
 import { InventoryEditor } from './InventoryEditor';
+import { rentalTerms, useRentalPolicy } from './inventory-rental-terms';
+import { unitMeasurements } from './unit-display';
 import { priceRangeFor, priceRangeLabel, priceRangeNotice, priceState, type PriceRange, type Bounds } from './inventory-pricing';
 import { useAuth } from "../../auth/auth-context";
 import { useApiResource } from "../../services/useApiResource";
@@ -32,8 +34,9 @@ export function ManagerCatalogPage() {
   const managed = useApiResource<Row>(user?.role === 'FACILITY_MANAGER' ? '/manager/storage-types' : null, user?.id ?? '');
   const [editor, setEditor] = useState<{ record?: Row }>();
   const [selected, setSelected] = useState<CatalogRow>();
-  const refresh = () => { resource.refresh(); managed.refresh(); };
   const isManager = user?.role === 'FACILITY_MANAGER';
+  const rentalPolicy = useRentalPolicy(isManager ? user?.id : undefined);
+  const refresh = () => { resource.refresh(); managed.refresh(); rentalPolicy.refresh(); };
   const ranges = rows(managed.data?.pricingRanges) as PriceRange[];
   const publicProducts = rows(resource.data?.products);
   const products: CatalogRow[] = isManager ? rows(managed.data?.items).map(row => {
@@ -43,7 +46,9 @@ export function ManagerCatalogPage() {
     const facility = object(row.facility);
     const facilityOpen = facility.operationalStatus ? facility.operationalStatus === 'OPEN' && facility.bookingEnabled === true : Boolean(product);
     const bookable = facilityOpen && row.bookingEnabled !== false && compliance === 'Hợp lệ';
-    return { ...row, ...product, monthlyPrice: row.monthlyRate, dimensions: product?.dimensions ?? [row.widthCm, row.lengthCm, row.heightCm].join(' × ') + ' cm',
+    const { dimensions, area, volume } = unitMeasurements({ dimensions: row });
+    return { ...row, ...product, monthlyPrice: row.monthlyRate, dimensions, floorArea: area, volume,
+      sizeId: row.sizeId, allowDailyRental: row.allowDailyRental, minRentalDays: row.minRentalDays,
       status: bookable ? product?.status ?? 'available' : 'UNAVAILABLE', compliance, currentRange: current, scheduledRange: scheduled,
       saleState: row.bookingEnabled === false ? 'Đã tắt kinh doanh' : compliance !== 'Hợp lệ' ? 'Tạm chặn theo khung giá'
         : facilityOpen ? 'Đang kinh doanh' : 'Cơ sở đang tạm dừng' };
@@ -97,7 +102,7 @@ export function ManagerCatalogPage() {
                   <small>{row.currentRange ? priceRangeLabel(row.currentRange) : 'Chưa có khung giá'}</small>
                   <small><strong>{row.compliance}</strong></small>
                 </>}</td>
-                <td><span>Cọc: {row.depositMonths == null ? 'Chưa thiết lập' : `${first(row, 'depositMonths')} tháng`}</span><small>Thuê tối thiểu: {row.minRentalDays == null ? 'Chưa thiết lập' : `${first(row, 'minRentalDays')} ngày`}</small><small>Theo ngày: {row.allowDailyRental == null ? 'Chưa thiết lập' : row.allowDailyRental ? 'Có' : 'Không'}</small></td>
+                <td>{rentalTerms(row, rentalPolicy).map(([title, value]) => <small key={title}>{title}: {value}</small>)}</td>
                 <td>{isManager ? row.saleState : <Status value={first(row, 'status').toUpperCase()} />}</td>
                 {user?.role === 'FACILITY_MANAGER' && <td><div className="manager-inline-actions"><button className="button-secondary" disabled={!rows(managed.data?.items).some(item => item.id === row.id)} onClick={() => setEditor({ record: rows(managed.data?.items).find(item => item.id === row.id) })}>Chỉnh sửa</button></div></td>}
               </DetailRow>)}</tbody>
@@ -121,9 +126,7 @@ export function ManagerCatalogPage() {
           ['Tuân thủ khung giá', selected.compliance === 'Cần điều chỉnh' ? 'Cần điều chỉnh · dùng Chỉnh sửa ở danh sách loại kho.' : selected.compliance],
           ...(selected.scheduledRange ? [['Phiên bản tiếp theo', priceRangeNotice(selected.scheduledRange)]] : []),
         ] as [string, string][] : []),
-        ['Tiền cọc', selected.depositMonths == null ? 'Chưa thiết lập' : `${first(selected, 'depositMonths')} tháng`],
-        ['Thuê tối thiểu', selected.minRentalDays == null ? 'Chưa thiết lập' : `${first(selected, 'minRentalDays')} ngày`],
-        ['Cho thuê theo ngày', selected.allowDailyRental == null ? 'Chưa thiết lập' : selected.allowDailyRental ? 'Có' : 'Không'],
+        ...rentalTerms(selected, rentalPolicy),
         ['Trạng thái', isManager ? selected.saleState : label(selected.status)],
       ]} />}
     </section>

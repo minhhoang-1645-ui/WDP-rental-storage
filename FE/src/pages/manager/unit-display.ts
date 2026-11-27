@@ -1,5 +1,6 @@
 import { date, first, label, object, rows, type Row } from '../../components/manager/portal-data';
 import { staffDay } from '../staff/staff-resources';
+import { metersFromCm } from './inventory-dimensions';
 
 export function unitLocation(unit: Row) {
   return [first(unit, 'floor'), unit.zone && `Khu ${unit.zone}`, unit.row && `Hàng ${unit.row}`, unit.position && `Ô ${unit.position}`].filter(Boolean).join(' · ');
@@ -22,7 +23,6 @@ export function unitStatusDescription(unit: Row) {
   return unitStatusDescriptions[first(unit, 'status')] ?? '';
 }
 
-const dimensionFormat = new Intl.NumberFormat('vi-VN');
 const areaFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 });
 const volumeFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 6 });
 
@@ -33,7 +33,7 @@ export function unitMeasurements(unit: Row) {
   const hasFloor = validCm(widthCm) && validCm(lengthCm);
   const hasVolume = hasFloor && validCm(heightCm);
   return {
-    dimensions: hasVolume ? `${dimensionFormat.format(widthCm)} × ${dimensionFormat.format(lengthCm)} × ${dimensionFormat.format(heightCm)} cm` : '—',
+    dimensions: hasVolume ? `${metersFromCm(widthCm)} × ${metersFromCm(lengthCm)} × ${metersFromCm(heightCm)} m` : '—',
     area: hasFloor ? `${areaFormat.format(widthCm * lengthCm / 10_000)} m²` : '—',
     volume: hasVolume ? `${volumeFormat.format(widthCm * lengthCm * heightCm / 1_000_000)} m³` : '—',
   };

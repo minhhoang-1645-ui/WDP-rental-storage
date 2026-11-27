@@ -14,7 +14,23 @@
 
 .manager-payment-totals dt, .manager-payment-caption { color: var(--workspace-secondary); }
 .manager-payment-totals dd { margin: 4px 0 0; font-size: 1.25rem; font-weight: 700; }
-.manager-payment-caption { margin: 8px 0 16px; font-size: .875rem; }
+.manager-payment-meta, .manager-payment-review-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.manager-payment-meta { margin: 8px 0 16px; font-size: .875rem; }
+.manager-payment-caption { margin: 0; }
+.manager-payment-review-alert {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-surface);
+}
+.manager-payment-review-alert > span { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .manager-payment-empty { margin: 0; padding: 12px 0; color: var(--workspace-secondary); }
 .manager-payment-table { overflow-x: auto; }
 .manager-payment-table table { width: 100%; border-collapse: collapse; text-align: left; }

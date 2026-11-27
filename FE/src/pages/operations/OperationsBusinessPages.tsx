@@ -4,12 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { Empty, LoadState, PageHeader, RefreshStatus } from '../../components/manager/PortalUi';
 import { DateRangePicker } from '../../components/workspace/DateTimeFields';
-import { apiRequest } from '../../services/api';
 import { useApiResource } from '../../services/useApiResource';
 import { vietnamCalendarDate } from '../../utils/business-date';
-import { isReportDay } from '../../utils/reporting';
+import { isReportDay, reportBucketLabel } from '../../utils/reporting';
+import { downloadReportWorkbook, excelMoney, reportInvoiceSheet, type ReportSheet } from '../../utils/report-workbook';
 import { ReportComparison, ReportDateContext, ReportFinances, ReportMetrics, ReportTrend, ReportTrendTable } from './OperationsReportSections';
-import { displayDate, periods, reportPreset, reportTrendGroup, type Facility, type Period, type PerformanceReport, type Trend } from './operations-report-data';
+import { displayDate, occupancy, periods, reportPreset, reportTrendGroup, sumMoney, type Facility, type Period, type PerformanceReport, type Trend } from './operations-report-data';
 import './operations-report.css';
 import { MaintenanceCostTable, type MaintenanceCostReport } from '../../components/workspace/MaintenanceCostTable';
 
@@ -37,7 +37,7 @@ export function OperationsBusinessReport() {
   const maintenance = useApiResource<MaintenanceCostReport>(valid ? '/operations/reports/maintenance-costs?' + query : null, user?.id);
   const facilities = useApiResource<Facility[]>('/operations/facilities', user?.id);
   const [exportError, setExportError] = useState('');
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'finance' | 'invoices' | null>(null);
   const exportLock = useRef(false);
   const updating = report.refreshing || trend.refreshing || maintenance.refreshing;
   const timestamp = Date.parse(report.data?.asOf ?? '');
@@ -62,24 +62,53 @@ export function OperationsBusinessReport() {
     if (facilities.error) facilities.refresh();
   }
 
-  async function download() {
-    if (!valid || exportLock.current) return;
+  async function download(kind: 'finance' | 'invoices') {
+    if (!valid || exportLock.current || (kind === 'finance' && (!report.data || !trend.data))) return;
     exportLock.current = true;
-    setExporting(true);
+    setExporting(kind);
     setExportError('');
     try {
-      const blob = await apiRequest<Blob>('/operations/reports/invoices.csv?' + query, { responseType: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'nestbox-hoa-don.csv';
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const invoices = await reportInvoiceSheet('/operations/reports/invoices.csv?' + query);
+      const sheets: ReportSheet[] = [invoices];
+      if (kind === 'finance' && trend.data) {
+        const rate = occupancy(items.reduce((sum, item) => sum + item.units.occupied, 0),
+          items.reduce((sum, item) => sum + item.units.total, 0));
+        const rentByName = new Map<string, bigint>();
+        const typeIndex = invoices.headers.indexOf('Loại kho');
+        const rentIndex = invoices.headers.indexOf('Tiền thuê VND');
+        for (const row of invoices.rows) {
+          const type = row[typeIndex], rent = row[rentIndex];
+          if (typeof type === 'string' && typeof rent === 'number') rentByName.set(type, (rentByName.get(type) ?? 0n) + BigInt(rent));
+        }
+        sheets.unshift(
+          { name: 'Tổng quan tài chính', headers: ['Chỉ số', 'Giá trị', 'Phạm vi', 'Định nghĩa'], moneyColumns: [2], rows: [
+            ['Tiền thuê đã lập hóa đơn', excelMoney(sumMoney(items, 'rent')), 'Trong kỳ', 'Phần tiền thuê trên hóa đơn phát hành trong kỳ.'],
+            ['Tiền đã thu', excelMoney(sumMoney(items, 'received')), 'Trong kỳ', 'Khoản thu đã ghi nhận, bao gồm tiền cọc.'],
+            ['Công nợ hiện tại', excelMoney(sumMoney(items, 'debt')), 'Hiện tại', 'Số dư còn phải thu tại thời điểm báo cáo.'],
+          ] },
+          { name: 'Tiền thuê theo loại kho', headers: ['Tên loại kho trên danh sách hóa đơn', 'Tiền thuê trên hóa đơn'],
+            moneyColumns: [2], rows: Array.from(rentByName, ([name, rent]) => [name, excelMoney(rent)]) },
+        );
+        sheets.push(
+          { name: 'Xu hướng tài chính', headers: ['Mốc thời gian', 'Tiền thuê đã lập hóa đơn', 'Tiền đã thu', 'Đơn đặt'], moneyColumns: [2, 3],
+            rows: trend.data.times.map(row => [reportBucketLabel(row.date, group), excelMoney(row.rent), excelMoney(row.received), row.bookings]) },
+          { name: 'So sánh hiệu quả cơ sở', headers: ['Cơ sở', 'Tiền thuê trong kỳ', 'Tiền thu trong kỳ', 'Công nợ hiện tại', 'Tỷ lệ sử dụng kho'],
+            moneyColumns: [2, 3, 4], rows: items.map(item => {
+              const usage = occupancy(item.units.occupied, item.units.total);
+              return [item.name, excelMoney(item.rent), excelMoney(item.received), excelMoney(item.debt), usage === null ? null : usage / 100];
+            }).concat([['Toàn phạm vi', excelMoney(sumMoney(items, 'rent')), excelMoney(sumMoney(items, 'received')),
+              excelMoney(sumMoney(items, 'debt')), rate === null ? null : rate / 100]]) },
+        );
+      }
+      await downloadReportWorkbook(kind === 'finance' ? 'nestbox-bao-cao-tai-chinh-bom' : 'nestbox-hoa-don-bom', {
+        title: kind === 'finance' ? 'Báo cáo tài chính BOM' : 'Danh sách hóa đơn',
+        scope: scopeLabel, period: rangeLabel,
+      }, sheets);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'Không thể xuất hóa đơn CSV.');
+      setExportError(error instanceof Error ? error.message : 'Không thể xuất báo cáo Excel.');
     } finally {
       exportLock.current = false;
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -95,9 +124,6 @@ export function OperationsBusinessReport() {
     <PageHeader title="Doanh thu và hiệu quả cơ sở">
       <button type="button" className="button-secondary" disabled={!valid || updating || report.loading || trend.loading} onClick={refresh}>
         <RefreshCw size={16} aria-hidden="true" />Làm mới
-      </button>
-      <button type="button" className="button-primary" disabled={!valid || exporting} onClick={() => void download()}>
-        <Download size={16} aria-hidden="true" />{exporting ? 'Đang xuất CSV…' : 'Xuất hóa đơn CSV'}
       </button>
     </PageHeader>
 
@@ -117,6 +143,12 @@ export function OperationsBusinessReport() {
       <DateRangePicker
         from={{ label: 'Từ ngày', value: from, onChange: value => change({ period: 'custom', from: value, to }) }}
         to={{ label: 'Đến ngày', value: to, onChange: value => change({ period: 'custom', from, to: value }) }} />
+      <button type="button" className="button-primary" disabled={!valid || !report.data || !trend.data || updating || Boolean(exporting)} onClick={() => void download('finance')}>
+        <Download size={16} aria-hidden="true" />{exporting === 'finance' ? 'Đang xuất…' : 'Xuất báo cáo tài chính'}
+      </button>
+      <button type="button" className="button-secondary" disabled={!valid || Boolean(exporting)} onClick={() => void download('invoices')}>
+        <Download size={16} aria-hidden="true" />{exporting === 'invoices' ? 'Đang xuất…' : 'Xuất danh sách hóa đơn'}
+      </button>
     </div>
 
     <div className="bom-report-period">

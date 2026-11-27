@@ -22,7 +22,7 @@ const invoiceId = (row: Row) => first(row, 'invoice.id', 'transaction.invoice.id
 const customerName = (row: Row) => first(row, 'customer.fullName', 'transaction.invoice.reservation.customer.fullName');
 const reference = (row: Row) => first(row, 'transferReference', 'providerTransactionId');
 
-export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { invoice?: Row; onSaved: () => void; refreshVersion?: number }) {
+export function ManagerFinanceReview({ invoice, onSaved, refreshVersion, showAllInitially = false }: { invoice?: Row; onSaved: () => void; refreshVersion?: number; showAllInitially?: boolean }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const kind = params.get('review') === 'reconciliation' ? 'reconciliation' : 'submissions';
@@ -32,7 +32,7 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
   const submissions = usePaginatedResource<Row>(financeReviewTypes.submissions.api + (invoiceQuery ? '?' + invoiceQuery : ''), user?.id);
   // The reconciliation API is facility-scoped and does not accept an invoice filter.
   const reconciliation = usePaginatedResource<Row>(financeReviewTypes.reconciliation.api, user?.id);
-  const [filter, setFilter] = useState('pending');
+  const [filter, setFilter] = useState(showAllInitially ? 'all' : 'pending');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [notice, setNotice] = useState<{ text: string; followup?: string }>();
@@ -58,7 +58,7 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
   }, [refreshVersion, refreshSubmissions, refreshReconciliation]);
 
   function open(group: FinanceReviewType, id = '') {
-    if (group !== kind) { setFilter('pending'); setSearch(''); setPage(1); }
+    if (group !== kind) { setFilter(showAllInitially ? 'all' : 'pending'); setSearch(''); setPage(1); }
     setParams(previous => {
       const next = new URLSearchParams(previous);
       next.set('review', group);

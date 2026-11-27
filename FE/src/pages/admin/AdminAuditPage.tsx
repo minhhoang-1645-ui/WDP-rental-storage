@@ -6,17 +6,29 @@ import { useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { useInternalListResource } from '../../components/workspace/useInternalListResource';
-import { date, label } from '../../components/manager/portal-data';
-import { Empty, Facts, LoadState, Modal, PageHeader, Pagination, RefreshStatus, Status } from '../../components/manager/PortalUi';
-import { activityActionOptions, auditActor, auditResource, auditRole, auditTitle, type AuditEvent } from './audit-labels';
+import { date } from '../../components/manager/portal-data';
+import { Empty, LoadState, PageHeader, Pagination, RefreshStatus, Status } from '../../components/manager/PortalUi';
+import { activityActionOptions, auditActor, auditTitle, permissionActionOptions, type AuditEvent } from './audit-labels';
 
-import { ActivityEventDetail, activityFacility } from './ActivityEventDetail';
+import { ActivityEventDetail, activityFacility, auditChanges } from './ActivityEventDetail';
 import { accountRoleLabel } from './AccountRole';
 import { AuditAccountScope, LoginEventDetail, LoginEventLabel, LoginEventTime, loginRole } from './LoginEventDetail';
 
 const auditFilterKeys = ['search', 'role', 'from', 'to', 'action', 'accountId', 'outcome'] as const;
 const activityFilters = activityActionOptions();
 const outcomeText = (outcome: unknown) => outcome === 'SUCCESS' ? 'Thành công' : outcome === 'FAILURE' ? 'Thất bại' : '';
+
+function permissionSummary(event: AuditEvent) {
+  const change = auditChanges(event)[0];
+  if (change) {
+    const [field, before, after] = change;
+    return before && after ? <>{before} → {after}</>
+      : <>{before ? field + ' trước' : field + ' sau'} · {before ?? after}</>;
+  }
+  const count = event.metadata?.count;
+  if (['REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(event.action) && typeof count === 'number') return count + ' phiên';
+  return activityFacility(event) ?? '—';
+}
 
 export function AdminAuditPage({ category, permissions = false }: { category: 'LOGIN' | 'ACTIVITY'; permissions?: boolean }) {
   const { user } = useAuth();
@@ -52,18 +64,11 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
   const activity = !login && !permissions;
   const accountId = params.get('accountId')?.trim();
   const title = permissions ? 'Lịch sử thay đổi quyền' : login ? 'Lịch sử đăng nhập' : 'Nhật ký hoạt động';
-  const listPath = permissions ? '/admin/permission-history' : login ? '/admin/login-history' : '/admin/activity';
   const listParams = new URLSearchParams(params);
   listParams.delete('event');
-  const eventPath = (id: string) => {
-    const next = new URLSearchParams(listParams);
-    next.set('event', id);
-    return `${listPath}?${next}`;
-  };
-
   function changeFilter(key: typeof auditFilterKeys[number], value: string) {
     setParams(previous => {
-      const next = new URLSearchParams(!permissions ? window.location.search : previous);
+      const next = new URLSearchParams(window.location.search || previous);
       if (value) next.set(key, value);
       else next.delete(key);
       next.delete('page');
@@ -84,48 +89,28 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
 
   const event = detail.data?.items.find(item => item.id === eventId);
   const closeEvent = () => setParams(listParams, { replace: true, preventScrollReset: true });
-  const drawer = eventId && permissions ? (
-    <Modal title={event ? auditTitle(event) : 'Chi tiết hoạt động'}
-      className="admin-audit-drawer" onClose={() => setParams(listParams, { replace: true, preventScrollReset: true })}
-      titleBadge={event && <Status value={event.outcome === 'FAILURE' ? 'REJECTED' : 'ACTIVE'} text={outcomeText(event.outcome)} />}
-      footer={<button type="button" className="button-secondary" onClick={detail.refresh} disabled={detail.loading || detail.refreshing}><RefreshCw size={16} />Làm mới</button>}>
-      <LoadState loading={detail.loading} error={detail.error} retry={detail.refresh} layout="detail" />
-      {event ? <section className="manager-section record-focused-layout">
-        <h2>Thông tin hoạt động</h2>
-        <Facts items={[
-          ['Thời gian (UTC+7)', <time key="time" dateTime={event.createdAt}>{date(event.createdAt, true)}</time>],
-          ['Người thực hiện', auditActor(event)],
-          ['Vai trò', event.actorRole ? label(auditRole(event.actorRole)) : 'Không ghi nhận'],
-          ...(outcomeText(event.outcome) ? [['Kết quả', outcomeText(event.outcome)] as [string, string]] : []),
-          ...(!event.targetAccount ? [['Đối tượng', auditResource(event.resource)] as [string, string]] : []),
-          ...(event.metadata?.previousRole ? [['Vai trò trước', label(event.metadata.previousRole)]] as [string, string][] : []),
-          ...(event.metadata?.nextRole ? [['Vai trò sau', label(event.metadata.nextRole)]] as [string, string][] : []),
-          ...(event.facilityName || event.metadata?.facilityId ? [['Cơ sở', event.facilityName || event.metadata?.facilityId]] as [string, React.ReactNode][] : []),
-          ...(event.metadata?.sessionId ? [['Mã phiên', event.metadata.sessionId]] as [string, string][] : []),
-          ...(['REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(event.action) && typeof event.metadata?.count === 'number' ? [['Phiên đã thu hồi', String(event.metadata.count)]] as [string, string][] : []),
-          ...(event.targetAccount && event.resourceId ? [['Tài khoản liên quan', <Link key="account" to={`/admin/users/${encodeURIComponent(event.targetUserId ?? event.resourceId)}`}>{event.targetAccount.fullName}</Link>]] as [string, React.ReactNode][] : []),
-        ]} />
-      </section> : detail.data && <Empty title="Không tìm thấy hoạt động" description="Mở nhật ký để xem các sự kiện hiện có." />}
-    </Modal>
-  ) : null;
+  function openEvent(id: string) {
+    eventScroll.current = { left: window.scrollX, top: window.scrollY };
+    const next = new URLSearchParams(window.location.search);
+    next.set('event', id);
+    setParams(next, { preventScrollReset: true });
+  }
 
-  return <section className={activity ? 'admin-audit admin-activity-audit' : 'admin-audit'} data-category={category}>
+  return <section className={permissions ? 'admin-audit admin-activity-audit admin-permission-audit' : activity ? 'admin-audit admin-activity-audit' : 'admin-audit'} data-category={category}>
     <PageHeader title={title} description={permissions
-      ? 'Thay đổi vai trò, cấp và thu hồi quyền truy cập cơ sở. Thời gian Việt Nam (UTC+7).'
+      ? 'Đổi vai trò, quyền cơ sở, trạng thái tài khoản và thu hồi phiên. Thời gian Việt Nam (UTC+7).'
       : 'Thời gian Việt Nam (UTC+7).'}>
       <button className="button-secondary" disabled={invalidRange || data.loading || data.refreshing} onClick={data.refresh}><RefreshCw size={16} />Làm mới</button>
       <RefreshStatus active={data.refreshing} />
     </PageHeader>
     <div className="portal-toolbar admin-toolbar" role="search" aria-label="Bộ lọc nhật ký">
-      <label className="field-label portal-search">{login ? 'Tìm tài khoản' : 'Tìm nhật ký'}<input name="search" type="search" maxLength={100} value={params.get('search') ?? ''} onChange={event => changeFilter('search', event.target.value)} placeholder={login ? 'Tên hoặc email' : 'Tên, email hoặc mã hồ sơ'} /></label>
-      <label className="field-label">{permissions ? 'Vai trò người thực hiện' : 'Vai trò'}<select aria-label={permissions ? 'Vai trò người thực hiện' : 'Vai trò'} name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].map(role => <option key={role} value={role}>{permissions ? label(role) : accountRoleLabel(role)}</option>)}</select></label>
-      {permissions && <label className="field-label">Mã tài khoản<input name="accountId" maxLength={120} value={params.get('accountId') ?? ''}
-        onChange={event => changeFilter('accountId', event.target.value)} placeholder="ID tài khoản" /></label>}
-      <label className="field-label">{login ? 'Sự kiện' : activity ? 'Hoạt động' : 'Hành động'}<select aria-label={activity ? 'Hoạt động' : undefined} value={params.get('action') ?? ''} onChange={event => changeFilter('action', event.target.value)}>
+      <label className="field-label portal-search">{login || permissions ? 'Tìm tài khoản' : 'Tìm nhật ký'}<input name="search" type="search" maxLength={100} value={params.get('search') ?? ''} onChange={event => changeFilter('search', event.target.value)} placeholder={login || permissions ? 'Tên hoặc email' : 'Tên, email hoặc mã hồ sơ'} /></label>
+      <label className="field-label">{permissions ? 'Vai trò người thực hiện' : 'Vai trò'}<select aria-label={permissions ? 'Vai trò người thực hiện' : 'Vai trò'} name="role" value={params.get('role') ?? ''} onChange={event => changeFilter('role', event.target.value)}><option value="">Tất cả</option>{['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].map(role => <option key={role} value={role}>{accountRoleLabel(role)}</option>)}</select></label>
+      <label className="field-label">{login ? 'Sự kiện' : activity ? 'Hoạt động' : 'Loại thay đổi quyền'}<select aria-label={activity ? 'Hoạt động' : undefined} value={params.get('action') ?? ''} onChange={event => changeFilter('action', event.target.value)}>
         <option value="">Tất cả</option>
         {(login ? [['AUTH_LOGIN', 'Đăng nhập'], ['AUTH_LOGOUT', 'Đăng xuất'], ['AUTH_LOGIN_ACCOUNT_DISABLED', 'Đăng nhập tài khoản đã khóa']]
           : activity ? activityFilters
-          : [['CHANGE_ROLE', 'Thay đổi vai trò'], ['GRANT_FACILITY_ACCESS', 'Thêm quyền truy cập cơ sở'], ['REVOKE_FACILITY_ACCESS', 'Thu hồi quyền truy cập cơ sở']]
+          : permissionActionOptions
         ).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
       </select></label>
       <label className="field-label">Kết quả<select aria-label={activity ? 'Kết quả' : undefined} value={params.get('outcome') ?? ''} onChange={event => changeFilter('outcome', event.target.value)}>
@@ -134,7 +119,7 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
       <DateRangePicker from={{ label: 'Từ ngày', value: from, onChange: value => changeFilter('from', value) }}
         to={{ label: 'Đến ngày', value: to, onChange: value => changeFilter('to', value) }} />
       <button type="button" className="button-secondary" onClick={clearFilters}>Xóa bộ lọc</button>
-      {!permissions && accountId && <div className="admin-login-account-scope">
+      {accountId && <div className="admin-login-account-scope">
         <AuditAccountScope id={accountId} adminId={user?.id} />
         <button type="button" className="portal-text-button" onClick={() => changeFilter('accountId', '')}>
           <X size={15} aria-hidden="true" /> Bỏ lọc theo tài khoản
@@ -146,22 +131,19 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
     {data.data && <>
       {data.data.items.length ? <div className="manager-table-wrap" tabIndex={0} role="region" aria-label={title}><table className="manager-table admin-audit-table"><thead><tr><th scope="col">Thời gian</th><th scope="col">{login ? 'Tài khoản' : 'Người thực hiện'}</th>
         {!activity && <th scope="col">{permissions ? 'Tài khoản bị tác động' : 'Vai trò'}</th>}
-        <th scope="col">{permissions ? 'Thay đổi quyền' : login ? 'Sự kiện' : 'Hoạt động'}</th><th scope="col">Kết quả</th></tr></thead><tbody>
+        <th scope="col">{permissions ? 'Thay đổi quyền' : login ? 'Sự kiện' : 'Hoạt động'}</th>{permissions && <th scope="col">Nội dung thay đổi</th>}<th scope="col">Kết quả</th>{permissions && <th scope="col">Thao tác</th>}</tr></thead><tbody>
         {data.data.items.map(event => (
-          <DetailRow key={event.id} detail={{ ...(!permissions ? { open: () => {
-            eventScroll.current = { left: window.scrollX, top: window.scrollY };
-            const next = new URLSearchParams(window.location.search);
-            next.set('event', event.id);
-            setParams(next, { preventScrollReset: true });
-          } } : { to: eventPath(event.id) }), label: `Xem sự kiện ${auditTitle(event)} · ${auditActor(event)} · ${date(event.createdAt, true)}` }}>
-            <td>{!permissions ? <LoginEventTime value={event.createdAt} /> : <time dateTime={event.createdAt}>{date(event.createdAt, true)}</time>}</td>
+          <DetailRow key={event.id} detail={{ open: () => openEvent(event.id),
+            label: `Xem sự kiện ${auditTitle(event)} · ${auditActor(event)} · ${date(event.createdAt, true)}` }}>
+            <td><LoginEventTime value={event.createdAt} /></td>
             <td><strong>{auditActor(event)}</strong>
               {event.actorEmail && (event.actorName || event.attemptAccountName) && <small>{event.actorEmail}</small>}
-              {activity && event.actorRole && <small>{loginRole(event.actorRole)}</small>}
+              {(activity || permissions) && event.actorRole && <small>{loginRole(event.actorRole)}</small>}
             </td>
             {!activity && <td>{permissions
-              ? event.targetAccount && event.resourceId
-                ? <Link className="audit-target-link" to={'/admin/users/' + encodeURIComponent(event.targetUserId ?? event.resourceId)}>{event.targetAccount.fullName}</Link>
+              ? event.targetAccount && event.targetUserId
+                ? <><Link className="audit-target-link" to={'/admin/users/' + encodeURIComponent(event.targetUserId)}>{event.targetAccount.fullName}</Link>
+                  {event.targetAccount.email && <small>{event.targetAccount.email}</small>}</>
                 : 'Không ghi nhận'
               : loginRole(event.actorRole)}</td>}
             <td>
@@ -169,19 +151,16 @@ export function AdminAuditPage({ category, permissions = false }: { category: 'L
               {activity && (event.targetAccount || activityFacility(event)) && <small>
                 {[event.targetAccount?.fullName, activityFacility(event)].filter(Boolean).join(' · ')}
               </small>}
-              {permissions && event.metadata?.previousRole && event.metadata.nextRole && <small>
-                {label(event.metadata.previousRole)} → {label(event.metadata.nextRole)}
-              </small>}
-              {permissions && event.facilityName && <small>{event.facilityName}</small>}
             </td>
+            {permissions && <td>{permissionSummary(event)}</td>}
             <td><Status value={event.outcome === 'FAILURE' ? 'REJECTED' : 'ACTIVE'} text={outcomeText(event.outcome)} /></td>
+            {permissions && <td><button type="button" className="portal-text-button" onClick={() => openEvent(event.id)}>Xem chi tiết</button></td>}
           </DetailRow>
         ))}
       </tbody></table></div> : <Empty title="Chưa có nhật ký phù hợp" description="Thử đổi bộ lọc. Lịch sử trước khi bật tính năng không được tạo lại." />}
       <Pagination page={page} limit={limit} onLimitChange={limit => setParams(previous => { const next = new URLSearchParams(previous); next.set('limit', String(limit)); next.delete('page'); return next; }, { replace: true })} total={data.data.total} disabled={data.loading} onChange={next => setParams(previous => { const value = new URLSearchParams(previous); value.set('page', String(next)); return value; })} />
     </>}
-    {drawer}
-    {activity && eventId && <ActivityEventDetail event={event} loaded={Boolean(detail.data)}
+    {(activity || permissions) && eventId && <ActivityEventDetail event={event} permissions={permissions} loaded={Boolean(detail.data)}
       loading={detail.loading} error={detail.error} retry={detail.refresh} close={closeEvent} />}
     {login && eventId && <LoginEventDetail event={event} adminId={user?.id} loaded={Boolean(detail.data)}
       loading={detail.loading} error={detail.error} retry={detail.refresh} close={closeEvent} />}

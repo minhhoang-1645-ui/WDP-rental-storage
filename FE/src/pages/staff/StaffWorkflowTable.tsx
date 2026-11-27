@@ -3,6 +3,7 @@ import { Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { staffRecordIdentity } from './staff-work';
+import { physicalUnitLabel } from '../../utils/physical-units';
 import type { StaffTableWorkflow } from './staff-resources';
 import { handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
 
@@ -33,9 +34,7 @@ export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
     } },
   ];
   if (resource === 'transfers') columns.push({ key: 'units', label: 'Kho nguồn → Kho đích', cell: row => {
-    const from = first(row, 'fromUnit.unitCode', 'fromUnit.unitNumber');
-    const to = first(row, 'toUnit.unitCode', 'toUnit.unitNumber');
-    return [from, to].filter(Boolean).join(' → ') || '—';
+    return <strong>{physicalUnitLabel(row, 'transfers') || '—'}</strong>;
   } });
   if (maintenance || resource === 'support-requests') columns.push(
     { key: 'summary', label: maintenance ? 'Nội dung bảo trì' : 'Nội dung hỗ trợ', cell: row => {

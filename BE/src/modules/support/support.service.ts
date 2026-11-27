@@ -1,8 +1,9 @@
+import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertAssignmentVersion } from '../facility-access/operational-assignment.js';
-import { assertTaskFacility, supportTaskScope, supportTaskReference } from '../facility-access/task-access.js';
+import { taskFacilityId, assertTaskFacility, supportTaskScope, supportTaskReference } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 
 import { EARLY_RETURN_SUBJECT, earlyReturnApprovalNote } from '../returns/early-return-classification.js';
@@ -148,12 +149,12 @@ export class SupportService {
         return current;
       }
       await recordAssignment(tx,actor,"support-requests",current.id,current.assignedStaffUserId,staff.id,
-        current.status === 'ESCALATED' ? {
+        { facilityId: staff.facilityId, ...(current.status === 'ESCALATED' ? {
           previousStatus: 'ESCALATED', nextStatus: 'ASSIGNED',
           escalatedAt: current.escalatedAt?.toISOString() ?? null,
           escalatedByUserId: current.escalatedByUserId ?? null,
           escalationReason: current.escalationReason ?? null,
-        } : undefined);
+        } : {}) });
       return tx.supportRequest.update({ where: { id: current.id }, data: {
         assignedStaffUserId: staff.id, status: ['OPEN', 'ESCALATED'].includes(current.status) ? 'ASSIGNED' : current.status,
         ...(current.status === 'ESCALATED' ? { startedAt: null } : {}),
@@ -206,6 +207,19 @@ export class SupportService {
     return this.transition(id, key, 'STAFF_RESOLVE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS' || current.customerWaitReason) throw new ConflictException('Tiếp tục xử lý trước khi ghi kết quả hỗ trợ.');
       if (current.category === 'PAYMENT_SUPPORT') throw new ConflictException('Chuyển yêu cầu thanh toán cho quản lý xem xét.');
+      const accessIssue = ['LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE'].includes(current.category);
+      const facilityId = await taskFacilityId(tx, supportTaskReference(current));
+      if (parsed.resolutionType === 'ACCESS_RESTORED' || accessIssue && parsed.resolutionType === 'ON_SITE_RESOLVED') {
+        if (input.identityVerified !== true) throw new BadRequestException('Cần xác nhận đã đối chiếu danh tính khách và quyền truy cập kho.');
+        const entitled = await tx.rentalContract.findFirst({ where: { status: 'ACTIVE', reservationId: current.reservationId,
+          ...(current.rentalContractId ? { id: current.rentalContractId } : {}),
+          reservation: { customerId: current.customerUserId },
+          reservationUnit: { releasedAt: null, ...(current.storageUnitId ? { storageUnitId: current.storageUnitId } : {}),
+            storageUnit: { storageType: { facilityId } } },
+        }, select: { id: true } });
+        if (!entitled) throw new ConflictException('Khách không có quyền truy cập kho đang hiệu lực tại cơ sở.');
+      }
+      await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'support-requests', current.id, { facilityId, identityVerified: input.identityVerified === true });
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
@@ -214,6 +228,8 @@ export class SupportService {
     const reason = this.text(input.reason, 4000, 'reason');
     return this.transition(id, key, 'ESCALATE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException('Chỉ Support Request IN_PROGRESS mới được escalate.');
+      await recordTaskEvent(tx, actor, 'TASK_ESCALATED', 'support-requests', current.id,
+        { reason, facilityId: await taskFacilityId(tx, supportTaskReference(current)) });
       return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'ESCALATED', customerWaitReason: null, escalatedAt: new Date(), escalatedByUserId: actor.id, escalationReason: reason, lastAction: 'ESCALATE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }

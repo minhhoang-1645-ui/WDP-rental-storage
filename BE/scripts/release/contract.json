@@ -507,6 +507,13 @@
         "cb8f50a52e90c69d8be700d1d6263bd0324b6cf5090d611559ee96f71a2629d1",
         "ef83f439022b70efa365ca2a7e5a17235bfd3fef0ed2eb5e92dea2a9db0467d1"
       ]
+    },
+    {
+      "name": "20261127000100_physical_unit_code_sequence",
+      "checksums": [
+        "6fa3bfbf436ae4102b5bc00860394fc91be954b587eb6cd2ab3d290e4a7a140e",
+        "c3e7ddd34389674bf03c2c1b932c9db16628fdd8c4c94eb36eb652981a3397ad"
+      ]
     }
   ],
   "historicalException": {

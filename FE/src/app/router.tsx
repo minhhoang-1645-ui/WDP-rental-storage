@@ -1,3 +1,4 @@
+import { ManagerAppliedPoliciesPage } from '../components/workspace/ManagerAppliedPoliciesPage';
 import { StaffAppliedPoliciesPage } from '../components/workspace/StaffAppliedPoliciesPage';
 import { AppliedPoliciesPage } from "../components/workspace/AppliedPoliciesPage";
 import { ServiceCalendarPage } from '../pages/operations/ServiceCalendarPage';
@@ -47,6 +48,7 @@ import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
 import { StaffIssueReportPage } from "../pages/staff/StaffIssueReportPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
+import { ManagerPaymentsPage } from "../pages/manager/ManagerPaymentsPage";
 import { ManagerDetailPage } from "../pages/manager/ManagerDetailPage";
 import { staffWorkflows } from "../utils/operation-access";
 import { WorkspaceNotFound } from "../components/layout/WorkspaceNotFound";
@@ -234,7 +236,7 @@ export function AppRouter() {
       </Route>
       <Route element={<RoleGuard allowedRoles={["FACILITY_MANAGER"]} />}>
         <Route path="manager" element={<ManagerLayout />}>
-          <Route path="policies" element={<AppliedPoliciesPage />} />
+          <Route path="policies" element={<ManagerAppliedPoliciesPage />} />
           <Route path="settings/:section?" element={<AccountSettingsPage />} />
           <Route path="damage-claims" element={<DamageClaimsPage />} />
           <Route path="assignments" element={<ManagerAssignmentsPage />} />
@@ -247,6 +249,7 @@ export function AppRouter() {
           <Route path="reservations" element={<ManagerListPage resource="reservations" />} />
           <Route path="operations/reservations" element={<Navigate to="/manager/reservations" replace />} />
           <Route path="reservations/:id" element={<ManagerReservationDetailPage />} />
+          <Route path="operations/payments" element={<ManagerPaymentsPage />} />
           {operationalRoutes("/manager")}
         </Route>
       </Route>

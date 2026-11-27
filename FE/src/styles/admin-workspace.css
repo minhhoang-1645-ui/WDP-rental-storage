@@ -116,6 +116,10 @@
 .admin-activity-audit .admin-audit-table th:nth-child(3) { width: auto; }
 .workspace-themed[data-workspace-role="admin"] .admin-audit.admin-activity-audit .admin-audit-table { min-width: 0; }
 .admin-activity-audit .admin-audit-table td { overflow-wrap: anywhere; }
+.workspace-themed[data-workspace-role="admin"] .admin-permission-audit .admin-audit-table { min-width: 760px; }
+.admin-permission-audit .admin-audit-table th:first-child { width: 88px; }
+.admin-permission-audit .admin-audit-table th:nth-child(2), .admin-permission-audit .admin-audit-table th:nth-child(3) { width: 19%; }
+.admin-permission-audit .admin-audit-table :is(th, td):last-child { width: 105px; white-space: nowrap; }
 @container (max-width: 500px) {
   .admin-activity-audit .admin-audit-table th:first-child { width: 74px; }
   .admin-activity-audit .admin-audit-table th:last-child { width: 82px; }
@@ -342,21 +346,12 @@
 /* Admin workspace presentation. Shared portal controls retain their behavior. */
 .manager-shell.internal-web[data-workspace-role="admin"] {
   --admin-space: clamp(16px, 2.2vw, 32px);
-  --admin-kpi: #19515a;
-  --admin-kpi-hover: #20626c;
-  --admin-kpi-text: #fff;
-  --admin-focus: var(--workspace-primary);
+  --admin-kpi: var(--workspace-primary);
+  --admin-kpi-hover: var(--workspace-primary-hover);
+  --admin-kpi-text: var(--workspace-on-primary);
+  --admin-focus: var(--workspace-focus);
 }
 .manager-shell.internal-web[data-workspace-role="admin"] > .portal-workspace { font-size: .875rem; }
-.manager-shell.internal-web[data-workspace-role="admin"][data-workspace-theme="dark"] > .portal-workspace {
-  --workspace-background: #0b1220;
-  --workspace-surface: #111c2e;
-  --workspace-table: #172338;
-  --workspace-border: #29384d;
-  --workspace-text: #e2e8f0;
-  --workspace-secondary: #a5b4c8;
-  --admin-kpi: #16444d;
-}
 .manager-shell.internal-web[data-workspace-role="admin"] .manager-main {
   padding: var(--admin-space);
   max-width: 1720px;
@@ -534,12 +529,6 @@
 .admin-facility-options label { display: flex; align-items: center; gap: 10px; padding: 9px 3px; }
 .admin-facility-options label > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .admin-facility-options input { width: 17px; height: 17px; flex: none; accent-color: var(--workspace-primary); }
-.manager-shell.internal-web[data-workspace-role="admin"] .admin-audit-drawer {
-  position: fixed; inset: 0 0 0 auto; margin: 0;
-  width: min(480px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh;
-  border-radius: 12px 0 0 12px; box-shadow: -18px 0 44px #0b122030;
-}
-[data-workspace-role="admin"] .admin-audit-drawer .manager-section { border: 0; padding: 0; }
 [data-workspace-role="admin"] :is(.workspace-notification-surface, .account-settings-form) { border-radius: 12px; }
 @container (max-width: 690px) {
   .admin-facility-grid { grid-template-columns: minmax(0, 1fr); }
@@ -572,13 +561,7 @@
 [data-workspace-role="admin"] .account-settings-nav { border: 1px solid var(--workspace-border); border-radius: 12px; padding: 8px; }
 [data-workspace-role="admin"] .account-settings-content { background: var(--workspace-surface); border: 1px solid var(--workspace-border); border-radius: 12px; }
 
-[data-workspace-role="admin"] .admin-audit-drawer .portal-dialog-body { flex: 1; min-height: 0; }
 
-/* The overview uses quiet surfaces and reserves the stronger teal for navigation and emphasis. */
-.manager-shell.internal-web[data-workspace-role="admin"]:not([data-workspace-theme="dark"]) > .portal-workspace {
-  --workspace-background: #f6f8fa;
-  --workspace-border: #e5eaf0;
-}
 .admin-overview .admin-boundaries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
 .admin-boundaries article {
   display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px;
@@ -618,11 +601,6 @@
 @media (max-width: 560px) { .admin-overview .admin-boundaries { grid-template-columns: 1fr; } }
 
 /* Administrator dashboard and shell, sized to the desktop reference. */
-.manager-shell.internal-web[data-workspace-role="admin"]:not([data-workspace-theme="dark"]) > .portal-workspace {
-  --workspace-text: #172b3a;
-  --workspace-secondary: #526177;
-  --workspace-primary: #176c73;
-}
 .manager-shell.internal-web[data-workspace-role="admin"] {
   --admin-space: clamp(16px, 1.55vw, 26px);
 }
@@ -671,12 +649,13 @@
   padding: 0 15px;
   border: 1px solid transparent;
   border-radius: 11px;
-  background: linear-gradient(145deg, #19565e, #103e46);
-  color: #fff;
+  background: var(--workspace-primary);
+  color: var(--workspace-on-primary);
   font-weight: 700;
   white-space: nowrap;
 }
-.admin-overview-refresh:hover { background: #176c73; }
+.admin-overview-refresh:hover:not(:disabled) { background: var(--workspace-primary-hover); }
+.admin-overview-refresh:active:not(:disabled) { background: var(--workspace-primary-active); }
 .admin-overview-refresh:disabled { opacity: .72; }
 .admin-overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .admin-overview-card {
@@ -700,8 +679,8 @@
 .admin-overview-kpi > span + span > span { font-weight: 600; font-size: 14px; }
 .admin-overview-kpi strong { font-size: 31px; line-height: 1.1; font-weight: 750; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 .admin-overview-icon {
-  --icon-ink: #22636d;
-  --icon-background: #edf2f5;
+  --icon-ink: var(--workspace-secondary);
+  --icon-background: var(--workspace-table);
   display: inline-grid;
   place-items: center;
   flex: none;
@@ -711,10 +690,10 @@
   color: var(--icon-ink);
   background: var(--icon-background);
 }
-.admin-overview-icon[data-tone="teal"] { --icon-ink: #067d80; --icon-background: #dff4f3; }
-.admin-overview-icon[data-tone="green"] { --icon-ink: #087e47; --icon-background: #daf5e6; }
-.admin-overview-icon[data-tone="red"] { --icon-ink: #d8273c; --icon-background: #fce9ed; }
-.admin-overview-icon[data-tone="blue"] { --icon-ink: #1379dc; --icon-background: #e1f2ff; }
+.admin-overview-icon[data-tone="brand"] { --icon-ink: var(--workspace-primary); --icon-background: var(--workspace-selected); }
+.admin-overview-icon[data-tone="green"] { --icon-ink: var(--workspace-success); --icon-background: var(--workspace-success-bg); }
+.admin-overview-icon[data-tone="red"] { --icon-ink: var(--workspace-error); --icon-background: var(--workspace-error-bg); }
+.admin-overview-icon[data-tone="blue"] { --icon-ink: var(--workspace-info); --icon-background: var(--workspace-info-bg); }
 .admin-overview-welcome > .admin-overview-icon { width: 54px; height: 54px; }
 .admin-overview .admin-overview-grid { grid-template-columns: minmax(0, .985fr) minmax(0, 1.015fr); gap: 19px 16px; align-items: stretch; }
 .admin-overview-panel { min-height: 259px; padding: 14px 18px 12px; }
@@ -728,13 +707,13 @@
 .admin-overview-roles a { display: grid; grid-template-columns: minmax(66px, 100px) minmax(0, 1fr) 48px 64px; gap: 18px; align-items: center; min-height: 32px; color: inherit; text-decoration: none; font-size: 14px; font-weight: 650; }
 .admin-overview-roles a:hover { color: var(--workspace-primary); }
 .admin-overview-roles strong { text-align: right; font-variant-numeric: tabular-nums; }
-.admin-overview-role-bar { height: 14px; border-radius: 99px; background: #8997b42a; overflow: hidden; }
-.admin-overview-role-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--role-fill, #08717d); }
-.admin-overview-roles [data-role-index="1"] { --role-fill: #1b838d; }
-.admin-overview-roles [data-role-index="2"] { --role-fill: #3c9ca3; }
-.admin-overview-roles [data-role-index="3"] { --role-fill: #63b4bb; }
-.admin-overview-roles [data-role-index="4"] { --role-fill: #9acdd2; }
-.admin-overview-role-share { display: inline-block; border-radius: 20px; padding: 2px 9px; text-align: center; background: #8b9eb62a; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.admin-overview-role-bar { height: 14px; border-radius: 99px; background: var(--workspace-table); overflow: hidden; }
+.admin-overview-role-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--role-fill, var(--workspace-primary)); }
+.admin-overview-roles [data-role-index="1"] { --role-fill: var(--workspace-primary-hover); }
+.admin-overview-roles [data-role-index="2"] { --role-fill: color-mix(in srgb, var(--workspace-primary) 75%, var(--nestbox-brand-accent)); }
+.admin-overview-roles [data-role-index="3"] { --role-fill: color-mix(in srgb, var(--workspace-primary) 57%, var(--nestbox-brand-accent)); }
+.admin-overview-roles [data-role-index="4"] { --role-fill: color-mix(in srgb, var(--workspace-primary) 40%, var(--nestbox-brand-accent)); }
+.admin-overview-role-share { display: inline-block; border-radius: 20px; padding: 2px 9px; text-align: center; background: var(--workspace-table); font-size: 12px; font-weight: 650; white-space: nowrap; }
 .admin-overview-roles .admin-overview-role-share { font-size: 13px; }
 .admin-overview .admin-overview-events li > a { display: grid; width: 100%; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 51px; color: inherit; text-decoration: none; }
 .admin-overview-events .admin-overview-icon { width: 36px; height: 36px; border-radius: 10px; }
@@ -747,9 +726,9 @@
 .admin-overview-events li + li { border-top: 1px solid var(--workspace-border); }
 .admin-overview-events a:hover, .admin-overview-login-account:hover { color: var(--workspace-primary); }
 .admin-overview .admin-overview-events.is-timeline { position: relative; padding-inline-start: 47px; }
-.admin-overview-events.is-timeline::before { content: ""; position: absolute; inset: 22px auto 24px 18px; border-left: 1px solid #7b9da780; }
+.admin-overview-events.is-timeline::before { content: ""; position: absolute; inset: 22px auto 24px 18px; border-left: 1px solid color-mix(in srgb, var(--workspace-primary) 45%, var(--workspace-border)); }
 .admin-overview-events.is-timeline > li { position: relative; }
-.admin-overview-events.is-timeline > li::before { content: ""; position: absolute; inset: 22px auto auto -32px; width: 7px; height: 7px; background: #3a8991; border-radius: 50%; box-shadow: 0 0 0 2px #3a899126; }
+.admin-overview-events.is-timeline > li::before { content: ""; position: absolute; inset: 22px auto auto -32px; width: 7px; height: 7px; background: var(--workspace-primary); border-radius: 50%; box-shadow: 0 0 0 2px var(--workspace-selected); }
 .admin-overview .admin-overview-events.is-timeline li > a { min-height: 47px; gap: 14px; }
 .admin-overview-logins { overflow-x: auto; }
 .admin-overview-logins table { width: 100%; min-width: 525px; border-collapse: collapse; text-align: left; }
@@ -760,15 +739,14 @@
 .admin-overview-logins th:last-child, .admin-overview-logins td:last-child { text-align: right; }
 .admin-overview-login-account { display: flex; gap: 11px; align-items: center; color: inherit; text-decoration: none; }
 .admin-overview-login-account > span + span { display: grid; gap: 2px; overflow-wrap: anywhere; }
-.admin-overview-login-account .admin-avatar { border-radius: 50%; color: #166b68; background: #e1f3f0; }
+.admin-overview-login-account .admin-avatar { border-radius: 50%; color: var(--workspace-primary); background: var(--workspace-selected); }
 .admin-overview-login-account[data-role="FACILITY_STAFF"] .admin-avatar { color: #5145b6; background: #ece9ff; }
 .admin-overview-login-account[data-role="STORAGE_CUSTOMER"] .admin-avatar { color: #962942; background: #f8eaf1; }
 .admin-overview-login-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
 .admin-overview-login-status > svg { flex: none; }
-.admin-overview-login-status[data-tone="green"] { color: #087744; }
+.admin-overview-login-status[data-tone="green"] { color: var(--workspace-success); }
 .admin-overview-login-status[data-tone="red"], .admin-overview-failed { color: var(--workspace-error); }
 .admin-overview-empty { padding: 14px 0; color: var(--workspace-secondary); }
-[data-workspace-theme="dark"] .admin-overview-login-status[data-tone="green"] { color: #7cdcad; }
 @media (max-width: 1220px) {
   .admin-overview-kpi { gap: 10px; padding: 13px; }
   .admin-overview-kpi .admin-overview-icon { width: 40px; height: 40px; }

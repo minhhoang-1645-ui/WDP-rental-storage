@@ -69,10 +69,25 @@ const options = new Map(activityActionOptions());
 assert(!options.has('AUTH_LOGIN'));
 assert.equal(options.get('CREATE'), 'Tạo hồ sơ (mọi đối tượng)');
 assert.equal(options.get('UPDATE'), 'Cập nhật hồ sơ (mọi đối tượng)');
-for (const [resource, action, title] of cases.filter(([, action]) => ['CREATE_SHIFT', 'PUBLISH_GROUP_PRICE_RANGE', 'REVOKE_SESSION', 'TASK_ASSIGNMENT'].includes(action))) {
+for (const [resource, action, title] of cases.filter(([, action]) => ['CREATE_SHIFT', 'PUBLISH_GROUP_PRICE_RANGE', 'REVOKE_SESSION'].includes(action))) {
   assert.equal(options.get(action), auditTitle(event(resource, action)));
   assert.equal(options.get(action), title);
 }
+assert.equal(options.get('RELOCATE_FACILITY_ACCESS'), 'Điều chuyển cơ sở');
+assert.equal(auditTitle(event('users', 'RELOCATE_FACILITY_ACCESS')), 'Điều chuyển cơ sở');
+assert.equal(auditTitle(event('facility-access', 'RELOCATE')), 'Điều chuyển cơ sở');
+const coordination = [
+  ['CLAIM', 'FACILITY_STAFF', { source: 'SELF_CLAIM', previousStaffUserId: null, assignedStaffUserId: 'staff' }, 'Tự nhận nhiệm vụ'],
+  ['ASSIGN', 'FACILITY_MANAGER', { previousStaffUserId: null, assignedStaffUserId: 'staff' }, 'Phân công nhiệm vụ'],
+  ['REASSIGN', 'FACILITY_MANAGER', { previousStaffUserId: 'old', assignedStaffUserId: 'other' }, 'Thay đổi người phụ trách'],
+  ['RELEASE', 'FACILITY_MANAGER', { source: 'MANAGER_QUEUE', previousStaffUserId: 'staff', assignedStaffUserId: null }, 'Đưa nhiệm vụ về hàng chờ'],
+];
+for (const [variant, actorRole, metadata, title] of coordination) {
+  assert.equal(auditTitle(event('appointments', 'TASK_ASSIGNMENT', { actorRole, metadata })), title);
+  assert.equal(options.get('TASK_ASSIGNMENT:' + variant), title);
+}
+assert.equal(auditTitle(event('returns', 'TASK_STAFF_COMPLETED')), 'Hoàn thành nhiệm vụ');
+assert.equal(auditTitle(event('support-requests', 'TASK_ESCALATED')), 'Chuyển yêu cầu lên quản lý');
 assert.equal(auditActor(event('units', 'CREATE', { actorId: 'id-only', targetAccount: { fullName: 'Đối tượng' } })), 'Không ghi nhận người thực hiện');
 assert.equal(auditActor(event('units', 'CREATE', { actorName: '  ', actorEmail: 'actor@example.test' })), 'actor@example.test');
 assert.equal(auditActor(event('appointments', 'TASK_ASSIGNMENT', { route: '/system/dispatch', metadata: { source: 'AUTO' } })), 'Hệ thống');

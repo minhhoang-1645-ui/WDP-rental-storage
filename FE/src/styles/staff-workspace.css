@@ -206,6 +206,61 @@ a.staff-metric:hover {
   font-size: 13px;
 }
 .staff-panel-empty { padding-top: 16px; }
+.work-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  gap: var(--space-12);
+  margin: 0 0 var(--space-16);
+}
+.work-summary > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  background: var(--workspace-surface);
+}
+.work-summary dt { color: var(--workspace-secondary); font-size: var(--type-control); }
+.work-summary dd { margin: 0; color: var(--workspace-text); font-weight: 730; font-size: 1.35rem; }
+.work-view-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 0 var(--space-12); }
+.work-view-switch button {
+  min-height: 40px;
+  padding: 7px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-surface);
+  color: var(--workspace-secondary);
+  font-size: var(--type-control);
+  font-weight: 650;
+}
+.work-view-switch button:hover:not([aria-pressed="true"]) { background: var(--workspace-hover); color: var(--workspace-text); }
+.work-view-switch button[aria-pressed="true"] {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+.workspace-themed .staff-work-page .manager-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  text-align: center;
+}
+.staff-work-page .manager-empty :is(h2, p) { margin: 0; }
+.staff-work-page .staff-queue .staff-table-options { display: block; padding: 0; }
+.staff-work-page .staff-queue .staff-table-options .staff-table-toolbar { margin: 0; }
+@media (max-width: 650px) {
+  .staff-work-page .work-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .staff-work-page .work-summary > div { padding: 8px; }
+  .staff-work-page .staff-queue .manager-table :is(th, td):last-child {
+    position: sticky;
+    right: 0;
+    border-inline-start: 1px solid var(--workspace-border);
+    background: var(--workspace-surface);
+  }
+}
 .internal-web.workspace-themed .manager-table .button-secondary { min-height: 36px; padding: 7px 12px; }
 
 .workspace-themed[data-workspace-role="staff"] .staff-table-toolbar {

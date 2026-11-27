@@ -29,6 +29,11 @@ class AppliedBusinessPolicyController {
     const actor = request.user!;
     return actor.role === 'FACILITY_STAFF' ? this.policies.staffApplied(actor) : this.policies.applied(actor);
   }
+  @Get('customer')
+  @Roles('STORAGE_CUSTOMER')
+  customer(@Req() request: AuthenticatedRequest) {
+    return this.policies.customerApplied(request.user!);
+  }
 }
 
 @Global()

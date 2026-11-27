@@ -24,6 +24,7 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   }
   const adminAccessAction = request.method === 'POST' && route === '/admin/facility-access' ? 'GRANT_FACILITY_ACCESS'
     : request.method === 'PATCH' && route === '/admin/facility-access/:id/revoke' ? 'REVOKE_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/relocate' ? 'RELOCATE_FACILITY_ACCESS'
     : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/role' ? 'CHANGE_ROLE'
     : request.method === 'PATCH' && route === '/admin/users/:id/sessions/:sessionId/revoke' ? 'REVOKE_SESSION'
     : request.method === 'PATCH' && route === '/admin/users/:id/sessions/revoke' ? 'REVOKE_SESSIONS' : undefined;
@@ -39,6 +40,9 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   return { category: 'ACTIVITY', action, resource, route };
 }
 
+const taskAssignmentRoutes = /^\/manager\/(?:appointments|returns|transfers|support-requests|maintenance|damage-claims)\/:id\/assign$/;
+const taskResultRoutes = /^\/staff\/(?:appointments\/:id\/complete-handover|returns\/:id\/finalize|transfers\/:id\/(?:complete|problem)|support-requests\/:id\/(?:escalate|resolve)|maintenance\/:id\/complete-work)$/;
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(@Inject(AuditService) private readonly audit: AuditService) {}
@@ -48,7 +52,9 @@ export class AuditInterceptor implements NestInterceptor {
     if (!target) return next.handle();
     const record = async (status: number, result?: unknown, error?: unknown) => {
       // Successful IAM writes record their audit event inside the mutation transaction.
-      if (status < 400 && ['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(target.action)) return;
+      if (status < 400 && (['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'RELOCATE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(target.action)
+        || taskAssignmentRoutes.test(target.route) || taskResultRoutes.test(target.route)
+        || target.route === '/staff/management/damage-claims/:id' && request.user?.role === 'FACILITY_STAFF')) return;
       const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown; statusChanged?: unknown } : undefined;
       const auth = target.resource === 'auth';
       const disabledLogin = target.action === 'AUTH_LOGIN' && error instanceof AccountDisabledException ? error : undefined;

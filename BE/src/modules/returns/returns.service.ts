@@ -1,3 +1,4 @@
+import { assertTaskNotEscalated, pendingTaskException, pendingTaskIds, recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
@@ -17,12 +18,11 @@ import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo }
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { BillingService } from '../billing/billing.service.js';
 import { applyEarlyReturn, hasStartedUnissuedRenewal, PERIOD_CLOSEOUT, planEarlyReturn, protectedFacilityReturn, rentRefundView, summarizeEarlyReturn } from './return-period-closeout.js';
-import type { PricingPolicySnapshot } from '../policies/pricing-policy.js';
+import { DEPOSIT_REFUND_DAYS, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 import { applyOccupiedOverdue, calculateOccupiedOverdue } from './overdue-return.js';
 import { transferredDepositDelta } from '../transfers/transfer-finance.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
-const DEPOSIT_REFUND_DAYS = 7;
 type ViewMode = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER' | 'FACILITY_STAFF';
 type ReturnStatus = 'REQUESTED' | 'INSPECTION_IN_PROGRESS' | 'ISSUE_FOUND' | 'PENDING_SETTLEMENT' | 'COMPLETED';
 type IssueType = 'NORMAL_WEAR' | 'FACILITY_FAULT' | 'CUSTOMER_DAMAGE' | 'CLEANING_REQUIRED' | 'LOST_KEY_OR_ACCESS_ITEM' | 'OTHER';
@@ -142,7 +142,9 @@ export class ReturnsService {
   async getStaffReturn(id: string, actor: PublicUser) {
     const record = await this.prisma.returnRequest.findFirst({ where: { AND: [returnTaskScope(actor), { OR: [{ id }, { returnCode: id }] }], assignedStaffUserId: actor.id }, include: this.include(true, actor.id) });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-    return this.toReturn(record, 'FACILITY_STAFF');
+    const view = this.toReturn(record, 'FACILITY_STAFF');
+    if (record.physicallyReturnedAt || !['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(record.status)) return view;
+    return { ...view, waitingForManager: Boolean(await pendingTaskException(this.prisma, 'returns', record.id)) };
   }
 
   async assign(id: string, input: Record<string, unknown>, actor: PublicUser) {
@@ -152,11 +154,11 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.returnRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (!['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Phiếu trả kho đã được tiếp nhận.');
-      await assertActiveAssignee(tx, staffId, actor, {returnRequestId:current.id});
+      const { facilityId } = await assertActiveAssignee(tx, staffId, actor, {returnRequestId:current.id});
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staffId) return this.toReturn(current, 'FACILITY_MANAGER');
       await recordAssignment(tx,actor,"returns",current.id,current.assignedStaffUserId,staffId,
-        physicalHandoff(input, Boolean(current.assignedStaffUserId && current.inspectionStartedAt && !current.physicallyReturnedAt)));
+        { ...physicalHandoff(input, Boolean(current.assignedStaffUserId && current.inspectionStartedAt && !current.physicallyReturnedAt)), facilityId });
       return this.toReturn(await tx.returnRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }), 'FACILITY_MANAGER');
     }, 'Phân công vừa thay đổi. Vui lòng tải lại.');
   }
@@ -188,6 +190,16 @@ export class ReturnsService {
     await assertRoutineAccess(tx, row.inspections.map(item => item.storageUnitId), this.authorizedClosurePlan(row));
   }
 
+  async assertClaimReady(tx: Prisma.TransactionClient, id: string, now: Date) {
+    const row = await tx.returnRequest.findUniqueOrThrow({ where: { id }, include: this.include() });
+    if (row.status !== 'REQUESTED' || row.inspectionStartedAt || !row.inspections.length
+      || row.inspectionScheduledAt && row.inspectionScheduledAt > now) {
+      throw new ConflictException('Phiếu trả kho chưa sẵn sàng kiểm tra.');
+    }
+    this.requestContracts(row);
+    await assertRoutineAccess(tx, row.inspections.map(item => item.storageUnitId));
+  }
+
   async startInspection(id: string, actor: PublicUser) {
     this.assertOperational(actor);
     const identity = await this.identity(id);
@@ -196,6 +208,7 @@ export class ReturnsService {
       const current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
       await assertTaskExecution(tx,actor,current.assignedStaffUserId,{returnRequestId:current.id});
+      await assertTaskNotEscalated(tx, 'returns', current.id);
       if (current.status === 'INSPECTION_IN_PROGRESS') return this.toReturn(current, 'FACILITY_STAFF');
       if (current.status !== 'REQUESTED') throw new ConflictException(`Không thể bắt đầu kiểm tra ở trạng thái ${current.status}.`);
       await assertCanStartDirectWork(tx, actor.id, 'returns', current.id);
@@ -218,6 +231,7 @@ export class ReturnsService {
       const current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
       await assertTaskExecution(tx,actor,current.assignedStaffUserId,{returnRequestId:current.id});
+      await assertTaskNotEscalated(tx, 'returns', current.id);
       if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Chỉ yêu cầu đang kiểm tra mới được ghi kết quả.');
       const inspection = current.inspections.find((item) => item.id === inspectionId);
       if (!inspection) throw new NotFoundException('Inspection không thuộc yêu cầu trả kho này.');
@@ -254,7 +268,8 @@ export class ReturnsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "ReturnRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       let current = await tx.returnRequest.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
-      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{returnRequestId:current.id});
+      const facilityId = await assertTaskExecution(tx,actor,current.assignedStaffUserId,{returnRequestId:current.id});
+      await assertTaskNotEscalated(tx, 'returns', current.id);
       if (['PENDING_SETTLEMENT', 'COMPLETED'].includes(current.status)) return this.toReturn(current, 'FACILITY_STAFF');
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "Reservation" WHERE id = ${current.reservationId} FOR UPDATE`);
       if (!['INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(current.status)) throw new ConflictException('Yêu cầu phải đang kiểm tra trước khi hoàn tất trả kho vật lý.');
@@ -432,6 +447,7 @@ export class ReturnsService {
         },
         include: this.include(),
       });
+      await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'returns', current.id, { nextStatus: updated.status, facilityId });
       return this.toReturn(updated, 'FACILITY_STAFF');
     }, 'Yêu cầu trả kho vừa được hoàn tất hoặc thay đổi bởi thao tác khác. Vui lòng tải lại.');
   }
@@ -774,7 +790,11 @@ export class ReturnsService {
       this.prisma.returnRequest.count({ where }),
       this.prisma.returnRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], omit: { assignedStaffUserId: mode === 'STORAGE_CUSTOMER' }, include: this.include(mode !== 'STORAGE_CUSTOMER') }),
     ]);
-    return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toReturn(record, mode)) };
+    const waiting = mode === 'FACILITY_STAFF' ? await pendingTaskIds(this.prisma, 'returns', records.filter(record =>
+      !record.physicallyReturnedAt && ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(record.status)).map(record => record.id)) : new Set<string>();
+    return { page: query.page, limit: query.limit, total, items: records.map(record => ({
+      ...this.toReturn(record, mode), ...(waiting.has(record.id) && { waitingForManager: true, coordination: { phase: 'WAITING', waitReason: 'MANAGER' } }),
+    })) };
   }
 
   private operationalWhere(query: ReturnListQuery): Prisma.ReturnRequestWhereInput {

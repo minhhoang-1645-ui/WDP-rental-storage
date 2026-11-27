@@ -15,6 +15,8 @@ export class InventoryManagementController {
   constructor(private readonly inventory: InventoryManagementService) {}
   @Get('storage-types') @ApiOperation({ summary: 'Loại kho và cơ sở để quản lý bảng giá' })
   list(@Req() req: AuthenticatedRequest) { return this.inventory.listTypes(req.user!); }
+  @Get('storage-types/:id/next-unit-code') @ApiOperation({ summary: 'Xem mã dự kiến, không giữ chỗ số thứ tự' })
+  nextUnitCode(@Param('id') id: string, @Req() req: AuthenticatedRequest) { return this.inventory.previewUnitCode(id, req.user!); }
   @Get('unit-locations') @ApiOperation({ summary: 'Danh sách tầng và khu từ toàn bộ kho vật lý' })
   unitLocations(@Req() req: AuthenticatedRequest) { return this.inventory.listUnitLocations(req.user!); }
   @Post('storage-types') @ApiOperation({ summary: 'Tạo loại kho, kích thước và giá tháng' })

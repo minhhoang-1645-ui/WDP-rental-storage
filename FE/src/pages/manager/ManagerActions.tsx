@@ -754,7 +754,7 @@ export function ManagerActions({
                 className="portal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!target || !transferDestinationReady || transferReviewHash && !transferStaff) return;
+                  if (!target || !transferDestinationReady) return;
                   void run(`${root}/approve`, "POST", {
                     toStorageUnitId: target,
                     staffUserId: transferStaff,
@@ -773,7 +773,7 @@ export function ManagerActions({
                 />
                 <StaffPicker task={{kind:"transfers",id}} list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
                 <p>Có thể duyệt chuyển kho nội bộ rồi đưa vào hàng chờ. Hồ sơ có phụ lục cần chọn người phụ trách.</p>
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || Boolean(transferReviewHash && !transferStaff)}>
+                <button className="button-primary" disabled={busy || !target || !transferDestinationReady}>
                   {busy ? 'Đang lưu…' : transferStaff ? 'Duyệt và phân công' : 'Duyệt vào hàng chờ'}
                 </button>
               </form>

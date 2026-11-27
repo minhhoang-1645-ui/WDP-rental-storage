@@ -1,3 +1,4 @@
+import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { workPhase } from '../dispatch/work-phase.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
 import { assertTaskFacility, currentContractScope } from '../facility-access/task-access.js';
@@ -134,12 +135,12 @@ export class DamageClaimsService {
     const staffId = managerAssignmentInput(actor, input);
     return this.prisma.$transaction(async tx => {
       const row = await this.lockClaim(tx, id);
-      await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
+      const facilityId = await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
       if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ConflictException('Hồ sơ sự cố đã có quyết định.');
       await assertActiveAssignee(tx, staffId, actor, {rentalContractId:row.rentalContractId});
       assertAssignmentVersion(input, row.assignedStaffId);
       if (row.assignedStaffId === staffId) return this.view(row, 'FACILITY_MANAGER');
-      await recordAssignment(tx,actor,"damage-claims",row.id,row.assignedStaffId,staffId);
+      await recordAssignment(tx,actor,"damage-claims",row.id,row.assignedStaffId,staffId,{ facilityId });
       const updated = await tx.damageClaim.update({ where: { id }, data: {
         assignedStaffId: staffId, history: this.history(row, actor, 'ASSIGNED', new Date(), row.status),
       } });
@@ -151,7 +152,7 @@ export class DamageClaimsService {
     if (actor.role !== 'FACILITY_STAFF' && actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException();
     return this.prisma.$transaction(async tx => {
       const row = await this.lockClaim(tx, id);
-      await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
+      const facilityId = await assertTaskFacility(tx,actor,{rentalContractId:row.rentalContractId});
       if (actor.role === 'FACILITY_STAFF') assertTaskAssignee(actor, row.assignedStaffId);
       this.assertVersion(row, input.expectedUpdatedAt);
 
@@ -160,6 +161,7 @@ export class DamageClaimsService {
         if (!['REPORTED', 'INVESTIGATING'].includes(row.status)) throw new ForbiddenException('Hồ sơ đã được quản lý quyết định.');
         const staffFacts = this.text(input.staffFacts, 'Ghi nhận thực tế', 10);
         const staffEvidenceLinks = input.staffEvidenceLinks === undefined ? this.staffEvidence(row.history) : claimEvidence(input.staffEvidenceLinks);
+        await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'damage-claims', row.id, { facilityId, nextStatus: 'INVESTIGATING' });
         return this.view(await tx.damageClaim.update({ where: { id }, data: {
           status: 'INVESTIGATING', staffFacts, factsRecordedAt: now,
           history: this.history(row, actor, 'INSPECTED', now, 'INVESTIGATING', { staffEvidenceLinks }),

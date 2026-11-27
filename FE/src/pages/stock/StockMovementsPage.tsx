@@ -69,7 +69,7 @@ function StockList({ role }: { role: StockRole }) {
       {role === 'STORAGE_CUSTOMER' && !creating && <button className="button-primary" onClick={() => setCreating(true)}>Tạo phiếu nhập / xuất</button>}
     </PageHeader>
     {role !== 'STORAGE_CUSTOMER' && <Link className="button-secondary" to={`/${roleNamespace(role)}/stored-items`}>Hàng đang lưu theo kho</Link>}
-    {role === 'FACILITY_MANAGER' && <Link className="button-secondary" to="/manager/assignments">Phân công nhân viên</Link>}
+    {role === 'FACILITY_MANAGER' && <Link className="button-secondary" to="/manager/assignments">Điều phối công việc</Link>}
     {notice && <p className="booking-alert" role="status">{notice}</p>}
     {role === 'STORAGE_CUSTOMER' && <><Link className="button-secondary" to={params.get('rentalContractId') ? `/customer/stored-items?rentalContractId=${encodeURIComponent(params.get('rentalContractId')!)}` : '/customer/stored-items'}>Hàng đang lưu</Link>{creating && <StockCreate onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setNotice('Yêu cầu của bạn đã được gửi. Số lượng hàng sẽ được cập nhật sau khi giao nhận thực tế.'); data.refresh(); }} />}</>}
     <div className={`portal-toolbar${role === 'FACILITY_STAFF' ? ' staff-table-toolbar' : ''}`}>

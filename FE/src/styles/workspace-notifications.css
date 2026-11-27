@@ -43,7 +43,7 @@
   border-radius: 12px;
   background: var(--workspace-popover);
   color: var(--workspace-text);
-  box-shadow: 0 12px 28px #10151d30;
+  box-shadow: 0 12px 28px var(--workspace-shadow, #10151d30);
   font-size: 14px;
 }
 .workspace-notification-panel:popover-open { display: flex; flex-direction: column; }

@@ -33,18 +33,17 @@ it('uses Vietnam access hours for manual confirmation without querying shifts or
   await expect(assess('2026-11-23T05:00:00+07:00')).rejects.toThrow('cần thiết lập giờ khách truy cập');
 });
 
-it('keeps configured windows subject to both planned staff and shared capacity', async () => {
+it('enforces capacity for configured windows without a StaffShift model', async () => {
   const tx = {
     $queryRawUnsafe: vi.fn(),
     facility: { findUniqueOrThrow: vi.fn().mockResolvedValue({
       accessHours: '24/7', serviceSchedule: [{ weekday: 1, starts: '22:00', ends: '24:00', capacity: 2 }],
     }) },
-    staffShift: { count: vi.fn().mockResolvedValueOnce(0).mockResolvedValue(1) },
     handoverAppointment: { count: vi.fn().mockResolvedValue(1) },
     returnRequest: { count: vi.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(1).mockResolvedValue(0) },
   };
   const assess = (time: string) => assessHandoverWindow(tx as never, 'facility', new Date(time));
-  await expect(assess('2026-11-23T23:59:00+07:00')).resolves.toBe('NO_PLANNED_STAFF');
+  await expect(assess('2026-11-23T23:59:00+07:00')).resolves.toBe('CONFIRMED');
   await expect(assess('2026-11-23T23:59:00+07:00')).resolves.toBe('CAPACITY_REACHED');
   await expect(assess('2026-11-23T23:59:00+07:00')).resolves.toBe('CONFIRMED');
   await expect(assess('2026-11-24T00:00:00+07:00')).resolves.toBe('NO_SERVICE_WINDOW');

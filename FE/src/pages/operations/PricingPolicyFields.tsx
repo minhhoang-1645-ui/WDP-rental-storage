@@ -37,7 +37,7 @@ type Version = {
   createdAt: string; status: string; author: string | null;
 };
 export type PricingPolicy = Config & {
-  title: string; description: string; updatedAt: string | null; effectiveVersion: number;
+  title: string; description: string; updatedAt: string | null; effectiveVersion: number; isDefault?: boolean; effectiveFrom?: string | null;
   history: (Version & { value: Config['value'] })[];
 };
 

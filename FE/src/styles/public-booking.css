@@ -127,7 +127,7 @@
   background: var(--workspace-surface);
   border-color: var(--workspace-border);
 }
-.public-themed :is(.catalog-size-filters > button, .booking-size-card, .booking-product-options > button, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab):not(:disabled):hover {
+.public-themed :is(.catalog-size-filters > button, .booking-size-card, .booking-product-options > button, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab):not(:disabled, [aria-pressed="true"], .is-selected):hover {
   background: var(--workspace-hover);
 }
 .public-themed :is(.catalog-size-filters > button, .booking-size-card, .booking-product-options > button, .period-mode-tabs > button, .duration-grid > button, .payment-option, .addon-service-tab):is([aria-pressed="true"], .is-selected) {

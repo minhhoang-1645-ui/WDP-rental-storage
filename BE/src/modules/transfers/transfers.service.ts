@@ -1,3 +1,4 @@
+import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertListedPrice, resolveMonthlyRange, priceInRange, lockPriceRange } from '../pricing/monthly-price-range.js';
 import { assertCanStartDirectWork, transferWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
@@ -242,14 +243,14 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
-      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
+      const facilityId = await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (current.status !== 'APPROVED') throw new ConflictException('Chỉ phân công lệnh chuyển kho đã duyệt.');
       await assertActiveAssignee(tx, staffId, actor, {storageUnitId:current.fromStorageUnitId});
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staffId) return this.toTransfer(current);
       const progress = this.handoverData(current.handoverReport);
       await recordAssignment(tx,actor,"transfers",current.id,current.assignedStaffUserId,staffId,
-        physicalHandoff(input, Boolean(current.assignedStaffUserId && progress.destinationAccessDeliveredAt)));
+        { ...physicalHandoff(input, Boolean(current.assignedStaffUserId && progress.destinationAccessDeliveredAt)), facilityId });
       return this.toTransfer(await tx.transferRequest.update({ where: { id: current.id }, data: { assignedStaffUserId: staffId }, include: this.include() }));
     }, 'Phân công vừa thay đổi. Vui lòng tải lại.');
   }
@@ -265,7 +266,7 @@ export class TransfersService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "TransferRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
-      await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
+      const facilityId = await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
       if (['APPROVED', 'COMPLETED'].includes(current.status) && current.approvedByUserId === actor.id
         && current.toStorageUnitId === toStorageUnitId && (!requestedStaffId || current.assignedStaffUserId === requestedStaffId)) return this.toTransfer(current);
       if (current.status !== 'REQUESTED') throw new ConflictException('Chỉ Transfer REQUESTED mới được duyệt.');
@@ -290,7 +291,6 @@ export class TransfersService {
       if (destination.storageTypeId !== current.fromStorageUnit.storageTypeId) throw new ConflictException('Chỉ chuyển sang kho cùng loại tại cùng cơ sở.');
       if (current.reason === 'OTHER') await assertListedPrice(tx, destination.storageType, true);
       const commercial = commercialPolicyApplies(current as never) ? await this.commercial?.prepare(tx, current, destination) : undefined;
-      if (commercial && !staffId) throw new BadRequestException('Chọn nhân viên phụ trách hồ sơ có phụ lục trước khi duyệt.');
       if (commercialPolicyApplies(current as never) && (!commercial || !commercial.adjustmentTerms || input.commercialReviewHash !== this.commercialReviewHash(commercial))) {
         throw new ConflictException('Xem và xác nhận lại phương án tài chính mới nhất trước khi duyệt.');
       }
@@ -303,7 +303,7 @@ export class TransfersService {
       const targetAllocation = await tx.reservationUnit.create({ data: { reservationId: current.reservationId, storageUnitId: destination.id, plannedStartDate: start, plannedEndDate: end } });
       const reserved = await tx.storageUnit.updateMany({ where: { id: destination.id, status: 'AVAILABLE' }, data: { status: 'RESERVED' } });
       if (reserved.count !== 1) throw new ConflictException('Unit đích vừa được sử dụng bởi thao tác khác.');
-      await recordAssignment(tx,actor,'transfers',current.id,current.assignedStaffUserId,staffId);
+      await recordAssignment(tx,actor,'transfers',current.id,current.assignedStaffUserId,staffId, { facilityId });
       const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'APPROVED', toStorageUnitId: destination.id, toReservationUnitId: targetAllocation.id, approvedByUserId: actor.id, assignedStaffUserId: staffId, approvedAt: new Date(), ...(commercial ? { commercialSnapshot: commercial } : { handoverReport: { stagedHandover: true } }) }, include: this.include() });
       return this.toTransfer(updated);
     }, 'Không thể duyệt Transfer do xung đột đồng thời.');
@@ -335,7 +335,7 @@ export class TransfersService {
       const current = await tx.transferRequest.findFirst({ where: { OR: [{ id }, { transferCode: id }] }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy lệnh chuyển kho.');
       if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
-      await assertTaskExecution(tx, actor, current.assignedStaffUserId, { storageUnitId: current.fromStorageUnitId });
+      const facilityId = await assertTaskExecution(tx, actor, current.assignedStaffUserId, { storageUnitId: current.fromStorageUnitId });
       if (current.status !== 'APPROVED' || !current.toStorageUnitId || current.commercialSnapshot && !current.customerAcceptedAt) throw new ConflictException('Lệnh chuyển kho hiện không thể ghi nhận vướng mắc.');
       await assertTaskFacility(tx, actor, { storageUnitId: current.toStorageUnitId });
       const report = this.handoverData(current.handoverReport);
@@ -348,6 +348,7 @@ export class TransfersService {
       const updated = await tx.transferRequest.update({ where: { id: current.id }, data: { handoverReport: {
         ...report, problems: [...problems, { note, staffId: actor.id, staffName: actor.fullName, reportedAt: new Date().toISOString() }],
       } as Prisma.InputJsonObject }, include: this.include() });
+      await recordTaskEvent(tx, actor, 'TASK_ESCALATED', 'transfers', current.id, { reason: note, facilityId });
       return this.toTransfer(updated, { staffId: actor.id });
     }, 'Không thể lưu vướng mắc do hồ sơ vừa thay đổi.');
   }
@@ -475,7 +476,7 @@ export class TransfersService {
       const current = await tx.transferRequest.findUniqueOrThrow({ where: { id: identity.id }, include: this.include() });
       if (current.closurePlanId) throw new ConflictException('Sử dụng hồ sơ hỗ trợ di dời liên cơ sở.');
       await assertTaskFacility(tx,actor,{storageUnitId:current.fromStorageUnitId});
-      await assertTaskExecution(tx,actor,current.assignedStaffUserId,{storageUnitId:current.fromStorageUnitId});
+      const facilityId = await assertTaskExecution(tx,actor,current.assignedStaffUserId,{storageUnitId:current.fromStorageUnitId});
       if(current.toStorageUnitId) await assertTaskFacility(tx,actor,{storageUnitId:current.toStorageUnitId});
       if (current.status === 'COMPLETED') {
         await this.resolveLinkedTransferSupport(tx, current, actor);
@@ -516,6 +517,7 @@ export class TransfersService {
       await tx.storageUnit.update({ where: { id: current.fromStorageUnitId }, data: { status: 'MAINTENANCE' } });
       await tx.storageUnit.update({ where: { id: current.toStorageUnitId }, data: { status: 'OCCUPIED' } });
       const completed = await tx.transferRequest.update({ where: { id: current.id }, data: { status: 'COMPLETED', completedByUserId: actor.id, completedAt: now, ...(commercialSettlement ? { commercialSettlement } : {}), handoverReport: { ...this.handoverData(current.handoverReport), ...handover, recordedByUserId: actor.id, recordedByName: actor.fullName, recordedAt: now.toISOString() } as Prisma.InputJsonObject }, include: this.include() });
+      await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'transfers', current.id, { facilityId });
       await this.resolveLinkedTransferSupport(tx, completed, actor);
       await this.ensureSourceMaintenance(tx, completed, actor);
       return this.toTransfer(await tx.transferRequest.findUniqueOrThrow({ where: { id: current.id }, include: this.include() }), { staffId: actor.id });
@@ -583,8 +585,8 @@ export class TransfersService {
       renewals: { where: renewalAwaitingCurrentInvoice(), select: { id: true }, take: 1 } } },
     rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, reservationUnitId: true } },
     fromReservationUnit: { select: { releasedAt: true } },
-    fromStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } }, maintenanceRequests: { where: { activeKey: { not: null } }, select: { id: true, maintenanceCode: true, status: true, assignedStaffUserId: true }, take: 1 } } },
-    toStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true } } } },
+    fromStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true, facility: { select: { id: true, name: true } } } }, maintenanceRequests: { where: { activeKey: { not: null } }, select: { id: true, maintenanceCode: true, status: true, assignedStaffUserId: true }, take: 1 } } },
+    toStorageUnit: { include: { storageType: { select: { id: true, code: true, name: true, facility: { select: { id: true, name: true } } } } } },
     ...(includeAssignee ? { assignedStaff: { select: operationalAssignee } } : {}),
     requestedBy: { select: { id: true, fullName: true, role: true } }, approvedBy: { select: { id: true, fullName: true, role: true } }, completedBy: { select: { id: true, fullName: true, role: true } },
     supportRequest: { select: { id: true, supportCode: true, status: true, resolutionType: true, assignedStaffUserId: true, subject: true, description: true, transferRequestedStartAt: true, transferRequestedEndAt: true } },
@@ -598,8 +600,13 @@ export class TransfersService {
     } : null;
     const { problems: _problems, problemReview: _review, problemReviewHistory: _history, ...customerReport } = this.handoverData(record.handoverReport);
     const handoverReport = customer ? Object.keys(customerReport).length ? customerReport : null : record.handoverReport ?? null;
-    return { ...(staffId && record.reservation.facility ? { facility: record.reservation.facility } : {}), id: record.id, transferCode: record.transferCode, status: record.status, commercialSettlement: staffId ? null : this.settlementView(record.commercialSettlement, customer), commercialPayment: staffId ? null : commercialPayment, transferRequestedSchedule: transferProposalView(support), rejectionReason: record.rejectionReason ?? null, handoverReport, ...(customer ? {} : { assignedStaff: record.assignedStaff, coordination: workPhase('transfers', { ...record, ...transferWork(record) }) }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId)), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId)) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
-  private unit(unit: any, includeLocation = false) { return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType, ...(includeLocation ? { floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position } : {}) }; }
+    return { ...(staffId && record.reservation.facility ? { facility: record.reservation.facility } : {}), id: record.id, transferCode: record.transferCode, status: record.status, commercialSettlement: staffId ? null : this.settlementView(record.commercialSettlement, customer), commercialPayment: staffId ? null : commercialPayment, transferRequestedSchedule: transferProposalView(support), rejectionReason: record.rejectionReason ?? null, handoverReport, ...(customer ? {} : { assignedStaff: record.assignedStaff, coordination: workPhase('transfers', { ...record, ...transferWork(record) }) }), reason: record.reason, requestDescription: support?.description ?? null, ...(!customer && record.reservation.customer ? { customer: record.reservation.customer } : {}), commercial: record.commercialSnapshot ? staffId ? { acceptedAt: record.customerAcceptedAt?.toISOString() ?? null } : { snapshot: record.commercialSnapshot, snapshotHash: snapshotHash(record.commercialSnapshot), acceptedAt: record.customerAcceptedAt?.toISOString() ?? null, acceptanceName: record.customerAcceptanceName, signatureImage: record.customerSignatureImage, verification: signatureVerification(record.commercialSignedSnapshot), otp: this.signing?.availability() ?? { emailConfigured: false } } : null, reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, startDate: this.iso(record.reservation.startDate), endDate: this.iso(record.reservation.endDate) }, contract: { id: record.rentalContract.id, contractCode: record.rentalContract.contractCode, status: record.rentalContract.status, startDate: this.iso(record.rentalContract.startDate), endDate: this.iso(record.rentalContract.endDate) }, fromUnit: this.unit(record.fromStorageUnit, Boolean(staffId), !customer), toUnit: record.toStorageUnit ? this.unit(record.toStorageUnit, Boolean(staffId), !customer) : null, supportRequest: !customer && support && (!staffId || support.assignedStaffUserId === staffId && !isTransferSubject(support.subject ?? '')) ? { id: support.id, supportCode: support.supportCode, status: support.status, resolutionType: support.resolutionType } : null, sourceMaintenance: !customer && maintenance && (!staffId || maintenance.assignedStaffUserId === staffId) ? { id: maintenance.id, maintenanceCode: maintenance.maintenanceCode, status: maintenance.status } : null, sourceMaintenanceMissing: !customer && record.fromStorageUnit.status === 'MAINTENANCE' && !record.fromStorageUnit.maintenanceRequests?.length, requestedBy: record.requestedBy, approvedBy: record.approvedBy, completedBy: record.completedBy, approvedAt: record.approvedAt?.toISOString() ?? null, completedAt: record.completedAt?.toISOString() ?? null, createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
+  private unit(unit: any, includeLocation = false, includeFacility = false) {
+    const { facility, ...storageType } = unit.storageType ?? {};
+    return { id: unit.id, unitCode: unit.unitNumber, status: unit.status, storageType: unit.storageType ? storageType : unit.storageType,
+      ...(includeFacility && facility ? { facility } : {}),
+      ...(includeLocation ? { floor: unit.floor, zone: unit.zone, row: unit.row, position: unit.position } : {}) };
+  }
   private text(value: unknown, label: string) { if (typeof value !== 'string' || !value.trim()) throw new BadRequestException(`${label} là bắt buộc.`); return value.trim(); }
   private integer(value: unknown, fallback: number, max: number, label: string) { if (value === undefined) return fallback; const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) throw new BadRequestException(`${label} không hợp lệ.`); return parsed; }
   private today() { return businessToday(); }

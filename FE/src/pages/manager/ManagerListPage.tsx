@@ -1,12 +1,14 @@
-import { ManagerFinanceReview } from '../../components/manager/ManagerFinanceReview';
 import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { useApiResource } from '../../services/useApiResource';
+import { usePaginatedResource } from '../../services/usePaginatedResource';
+import { useInternalListScroll } from '../../components/workspace/internal-list-memory';
 import { DetailRow } from '../../components/workspace/DetailRow';
 import { ManagerTaskTable } from '../../components/manager/ManagerTaskTable';
 import { TableSkeleton } from '../../components/LoadingSkeleton';
-import { isManagerTaskResource, managerResourceColumns } from './manager-task-columns';
+import { isManagerRecordResource, isManagerTaskResource, managerRecordAction, managerResourceColumns } from './manager-task-columns';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { recordIdentity } from '../../utils/record-identity';
+import { physicalUnitLabel } from '../../utils/physical-units';
 import { internalPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -71,6 +73,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const [today, setToday] = useState(() => staffDay(Date.now()));
   const filterDate = staffAppointments && appointmentView === 'today' ? today : params.get('date') ?? '';
   const managerTable = user?.role === 'FACILITY_MANAGER' && isManagerTaskResource(resource) ? resource : null;
+  const managerRecords = managerTable && isManagerRecordResource(managerTable) ? managerTable : null;
   const limit = internalPageSize(params);
   const search = params.get("search") ?? "";
   const reviewOnly = user?.role === 'FACILITY_MANAGER' && isManagerReviewWorkflow(resource) && params.get('view') === 'decision';
@@ -87,6 +90,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   const [creatingUnit, setCreatingUnit] = useState(false);
   const [unitCreated, setUnitCreated] = useState('');
   const unitTypes = useApiResource<{ items: Row[] }>(managerTable === 'units' ? '/manager/storage-types' : null, user?.id);
+  const activeContracts = usePaginatedResource<Row>(managerRecords === 'customers' ? '/manager/contracts?status=ACTIVE' : null, user?.id, true);
   const [createdMaintenance, setCreatedMaintenance] = useState<{ owner: string; row: Row }>();
   const [state, setState] = useState<{
     key: string;
@@ -94,12 +98,13 @@ export function ManagerListPage({ resource }: { resource: string }) {
     data?: Page;
     error?: string;
   }>();
+  const searchSnapshotUnits = Boolean(search.trim() && (managerRecords === 'appointments' || managerRecords === 'renewals'));
   const local = Boolean(
     (config?.local && !staffTransferList) ||
     (resource === "returns" && !staffTable && status === "PENDING_SETTLEMENT"),
   );
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
-  if (search.trim()) query.set("search", search.trim());
+  if (search.trim() && !searchSnapshotUnits) query.set("search", search.trim());
   if (status) query.set(config?.filterKey ?? "status", status);
   const from = staffAppointments && !filterDate ? params.get('from') : null;
   const through = staffAppointments && !filterDate ? params.get('through') : null;
@@ -117,12 +122,12 @@ export function ManagerListPage({ resource }: { resource: string }) {
     if (params.get(field)) query.set(field, params.get(field)!);
   const oldest = managerTable === 'deposit-settlements' && params.get('sort') === 'oldest';
   const path = `/manager/${resource}${local ? "" : `?${query}`}`;
-  const key = `${user?.id}:${path}:${oldest}`;
+  const key = `${user?.id}:${path}:${oldest}:${searchSnapshotUnits}`;
   useEffect(() => {
     if (!config) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      const request = local
+      const request = local || searchSnapshotUnits
         ? allPages(path, controller.signal)
         : oldest ? oldestSettlementPage(path, page, limit, controller.signal) : apiRequest<Page>(path, { signal: controller.signal });
       request
@@ -145,7 +150,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [key, path, local, config, oldest, page, limit, revision]);
+  }, [key, path, local, searchSnapshotUnits, config, oldest, page, limit, revision]);
   useEffect(() => {
     const refresh = () => {
       if (hasDraft()) return;
@@ -156,6 +161,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
     return () => window.removeEventListener("focus", refresh);
   }, [staffAppointments]);
   const current = state?.key === key ? state : undefined;
+  useInternalListScroll(Boolean(managerRecords), Boolean(current?.data));
   const refreshing = Boolean(current && current.revision !== revision);
   let items = current?.data?.items ?? [];
   if (reviewOnly) items = items.filter(row => row.status === status);
@@ -166,15 +172,22 @@ export function ManagerListPage({ resource }: { resource: string }) {
       (row) =>
         (!status || row.status === status) &&
         (!search ||
-          normalizeSearch(JSON.stringify(row)).includes(normalizeSearch(search))) &&
+          normalizeSearch(physicalUnitLabel(row, resource) + ' ' + JSON.stringify(row)).includes(normalizeSearch(search))) &&
         (!params.get("date") ||
-          date(row.createdAt) === date(params.get("date"))),
+          date((resource === 'returns' ? row.requestedAt : undefined) ?? row.createdAt) === date(params.get("date"))),
     );
-  const total = local ? items.length : (current?.data?.total ?? 0);
-  const visiblePage = local ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : page;
-  const visible = local ? items.slice((visiblePage - 1) * limit, visiblePage * limit) : items;
+  if (searchSnapshotUnits) items = items.filter(row => normalizeSearch([
+    physicalUnitLabel(row, resource), code(row), first(row, 'reservation.reference'),
+    first(customer(row), 'fullName'), first(customer(row), 'email'),
+    ...rows(row.contracts).map(contract => first(contract, 'contractCode')),
+  ].join(' ')).includes(normalizeSearch(search.trim())));
+  const paginateLocally = local || searchSnapshotUnits;
+  const total = paginateLocally ? items.length : (current?.data?.total ?? 0);
+  const visiblePage = paginateLocally ? Math.min(page, Math.max(1, Math.ceil(total / limit))) : page;
+  const visible = paginateLocally ? items.slice((visiblePage - 1) * limit, visiblePage * limit) : items;
   const refresh = () => {
     if (staffAppointments) setToday(staffDay(Date.now()));
+    if (managerRecords === 'customers') activeContracts.refresh();
     setRevision((v) => v + 1);
   };
   useLiveRefresh(path, refresh);
@@ -213,7 +226,20 @@ export function ManagerListPage({ resource }: { resource: string }) {
     setParams(next, { replace: true });
   }
   if (!config) return <Empty title="Không tìm thấy trang" />;
-  const listTitle = staffTable === 'returns' ? 'Trả kho' : config.title;
+  const listTitle = staffTable === 'returns' || managerRecords === 'returns' ? 'Trả kho' :
+    managerRecords === 'appointments' ? 'Bàn giao kho' : config.title;
+  const contractUnits = activeContracts.data?.items;
+  const unitsByCustomer = new Map<string, Set<string>>();
+  const contractsComplete = contractUnits?.length === activeContracts.data?.total && contractUnits?.every(row => {
+    const owner = first(customer(row), 'id');
+    const unit = first(row, 'storageUnit.id');
+    if (row.status !== 'ACTIVE' || !owner || !unit) return false;
+    const units = unitsByCustomer.get(owner) ?? new Set<string>();
+    units.add(unit);
+    unitsByCustomer.set(owner, units);
+    return true;
+  });
+  const activeUnitCounts = contractsComplete ? new Map([...unitsByCustomer].map(([owner, units]) => [owner, units.size])) : undefined;
   let description = !managerTable && user?.role !== 'FACILITY_STAFF' ? config.description : undefined;
   if (reviewOnly) description = 'Chỉ hiển thị hồ sơ cần quản lý quyết định. Các bước tiếp nhận và thực hiện thuộc nhân viên.';
   if (managerTable === 'units') description = managerStorageLabels.units.description;
@@ -225,7 +251,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
             type="search"
             value={search}
             maxLength={100}
-            placeholder={staffTable === 'appointments' ? 'Mã lịch, mã đặt kho, khách hàng…' : staffTable === 'maintenance' ? 'Mã phiếu, kho, nội dung…' : managerTable === 'units' ? 'Mã kho…' : 'Mã hồ sơ, tên khách, kho…'}
+            placeholder={managerRecords === 'customers' ? 'Tên, email hoặc điện thoại…' : staffTable === 'appointments' ? 'Mã lịch, mã đặt kho, khách hàng…' : staffTable === 'maintenance' ? 'Mã phiếu, kho, nội dung…' : managerTable === 'units' ? 'Mã kho…' : 'Mã hồ sơ, tên khách, kho…'}
             onChange={(event) => change("search", event.target.value)}
           />
         </label>
@@ -288,7 +314,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
           </label>
         )}
         {["appointments", "returns"].includes(resource) && (
-          <DatePicker label={staffTable === 'returns' ? 'Ngày gửi yêu cầu' : 'Ngày'} value={filterDate}
+          <DatePicker label={resource === 'returns' && (staffTable || managerRecords) ? 'Ngày gửi yêu cầu' : managerRecords === 'appointments' ? 'Ngày hẹn' : 'Ngày'} value={filterDate}
             onChange={value => change('date', value)} />
         )}
         {resource === "units" && (
@@ -322,7 +348,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
         )}
   </>;
   return (
-    <section className={managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
+    <section className={managerRecords ? `manager-record-list manager-record-list-${managerRecords}` : managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
       {creatingUnit && <NewInventoryUnit onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
         {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
@@ -340,8 +366,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
           Làm mới
         </button>
       </PageHeader>
-      {resource === 'payments' && user?.role === 'FACILITY_MANAGER' && <ManagerFinanceReview onSaved={refresh} />}
-      {resource === 'transfers' && !reviewOnly && <ClosureRelocations revision={revision} />}
+      {resource === 'transfers' && !reviewOnly && <ClosureRelocations revision={revision} search={managerRecords ? search : undefined} />}
       {managerTable === 'units' && unitCreated && <p className="portal-success" role="status">Đã thêm kho {unitCreated}.</p>}
       {staffAppointments && <div className="staff-appointment-views" role="group" aria-label="Xem lịch bàn giao">
         {appointmentViews.map(([value, title]) => {
@@ -356,10 +381,19 @@ export function ManagerListPage({ resource }: { resource: string }) {
           : first(createdMaintenance.row, 'assignedStaff.id') ? 'Đã có người phụ trách.' : 'Chờ phân công.'}
       </div>}
       {staffTable === 'maintenance' && <details className="manager-section staff-table-guidance"><summary>Hướng dẫn xử lý bảo trì</summary><p>Báo sự cố tại cơ sở được cấp quyền. Chờ quản lý phân công trước khi sửa và gửi kết quả để nghiệm thu.</p></details>}
-      {managerTable ? <ManagerTaskTable title={config.title} columns={managerResourceColumns(managerTable, {
+      {managerRecords === 'customers' && !activeContracts.loading && !activeUnitCounts && <p className="manager-record-note" role="status">Chưa đủ dữ liệu hợp đồng để xác định số kho đang thuê.</p>}
+      {managerTable ? <ManagerTaskTable title={listTitle} columns={managerResourceColumns(managerTable, {
         direction: oldest ? 'ascending' : 'descending', toggle: toggleSettlementSort,
-      })} items={visible}
+      }, activeUnitCounts)} items={visible}
         rowDetail={row => ({ to: detailPath(managerTable, row), label: `Xem chi tiết hồ sơ ${code(row)}` })}
+        rowAction={managerRecords ? row => {
+          const action = managerRecordAction(managerRecords, row);
+          return {
+            to: action === 'Xem vướng mắc' ? '/manager/assignments?kind=appointments&record=' + encodeURIComponent(recordId(row))
+              : detailPath(managerRecords, row),
+            label: action,
+          };
+        } : undefined}
         rowKey={row => first(row, 'id')} loading={!current} refreshing={refreshing} error={current?.error} retry={refresh}
         page={visiblePage} limit={limit} total={total} update={(key, value) => change(key, value)} toolbar={toolbar} /> : <>
       <div className={`portal-toolbar${staffTable ? ' staff-table-toolbar' : ''}`}>{toolbar}</div>

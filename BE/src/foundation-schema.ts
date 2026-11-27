@@ -113,6 +113,8 @@ export async function inspectFoundationDatabase(
       'Reservation.paidCancellation',
       'TransferRequest.commercialSettlement',
       'StorageType.bookingEnabled',
+      'StorageUnitCodeCounter.prefix',
+      'StorageUnitCodeCounter.lastIssued',
       'ReturnRequest.overdueSettlement',
       'OnlinePaymentReconciliation.externalReferenceKey',
       'OnlinePaymentReconciliation.onlinePaymentTransactionId',

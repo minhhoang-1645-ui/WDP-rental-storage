@@ -10,6 +10,7 @@ import { AdminAvatar } from './AdminAvatar';
 import { AccountRole } from './AccountRole';
 
 const path = '/admin/facility-access';
+const handoffNotice = 'Các công việc đang phụ trách cần được hoàn thành hoặc bàn giao theo quy trình hiện hành trước khi thu hồi hoặc điều chuyển quyền truy cập.';
 type Facility = { id: string; name: string; code: string };
 type Account = { id: string; fullName: string; email?: string; role: string; accountStatus?: string };
 type Grant = { id: string; facilityId: string; facility: { name: string }; grantedAt: string; revokedAt: string | null; grantedById: string; revokedById: string | null; grantedByName?: string | null; revokedByName?: string | null };
@@ -238,7 +239,7 @@ function FacilityAccessDetail({ account, directory, directoryRefreshing, onChang
         <div><dt>Tài khoản</dt><dd>{account.fullName}</dd></div>
         <div><dt>Cơ sở</dt><dd>{revoke.facility.name}{codes.get(revoke.facilityId) && ' · ' + codes.get(revoke.facilityId)}</dd></div>
       </dl>
-      <p>Tài khoản mất quyền tại cơ sở này và phải đăng nhập lại. Công việc và ca làm đã xếp cần được xử lý theo quy trình hiện hành.</p>
+      <p>Tài khoản mất quyền tại cơ sở này và phải đăng nhập lại. {handoffNotice}</p>
       {data.data?.openAssignments ? <p>Công việc đang mở: {data.data.openAssignments}. Quản lý cơ sở xử lý các công việc cần bàn giao.</p> : null}
       {error && <p role="alert" className="booking-alert is-error">{error}</p>}
     </Modal>}
@@ -289,7 +290,7 @@ function GrantFacilityAccess({ account, facilities, active, current, disabled, o
     <div className="admin-facility-modal-account"><AdminAvatar name={account.fullName} />
       <div><strong>{account.fullName}</strong><small>{account.email}</small></div>
     </div>
-    {current && <p>Tài khoản sẽ mất quyền tại <strong>{current.facility.name}</strong> và phải đăng nhập lại sau khi điều chuyển.</p>}
+    {current && <p>Tài khoản sẽ mất quyền tại <strong>{current.facility.name}</strong> và phải đăng nhập lại sau khi điều chuyển. {handoffNotice}</p>}
     <label className="field-label">Tìm cơ sở
       <span className="admin-facility-search"><Search size={16} aria-hidden="true" />
         <input type="search" value={search} placeholder="Tên hoặc mã cơ sở" onChange={event => setSearch(event.target.value)} />

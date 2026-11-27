@@ -69,9 +69,10 @@ function ClaimList({ role, identity, web, onCreated }: { role: ClaimRole; identi
     { key: 'date', label: 'Ngày báo', cell: claim => claimDate(claim.createdAt, true) },
     { key: 'status', label: 'Trạng thái', cell: claim => <ClaimBadge claim={claim} role={role} /> },
   ] : [
-    { key: 'title', label: 'Sự cố', cell: claim => <Link className="claims-title-link" to={to(claim)}>{claimTitle(claim.description)}</Link> },
+    { key: 'title', label: 'Sự cố', cell: claim => <><Link className="claims-title-link" to={to(claim)}>{claimTitle(claim.description)}</Link>
+      {role === 'FACILITY_MANAGER' && <CopyRecordCode value={claim.claimCode} showLabel={false} />}</> },
     ...(role !== 'STORAGE_CUSTOMER' ? [{ key: 'customer', label: 'Khách hàng', cell: (claim: Claim) => claim.customer?.fullName ?? '—' }] : []),
-    { key: 'unit', label: 'Kho', cell: claim => claim.unitCodeSnapshot },
+    { key: 'unit', label: 'Kho', cell: claim => role === 'FACILITY_MANAGER' ? <strong>{claim.unitCodeSnapshot || '—'}</strong> : claim.unitCodeSnapshot },
     ...(role === 'FACILITY_MANAGER' ? [{ key: 'staff', label: 'Nhân viên phụ trách', cell: (claim: Claim) => claim.assignedStaff?.fullName ?? 'Chưa phân công' }] : []),
     { key: 'date', label: 'Ngày báo', cell: claim => claimDate(claim.createdAt) },
     { key: 'status', label: 'Trạng thái', cell: claim => <ClaimBadge claim={claim} role={role} /> },

@@ -29,6 +29,8 @@ export interface PaymentListQuery {
   limit: number;
   search?: string;
   method?: 'BANK_TRANSFER' | 'CASH' | 'VNPAY';
+  from?: string;
+  to?: string;
 }
 
 type HistoricalQuote = {
@@ -246,23 +248,39 @@ export class BillingService {
   }
 
   async listManagerPayments(query: PaymentListQuery, actor: PublicUser) {
+    const localStart = (day: string) => new Date(day + 'T00:00:00+07:00');
+    const term = { contains: query.search, mode: 'insensitive' } as const;
     const where: Prisma.PaymentWhereInput = {
       AND:[{invoice:invoiceFacilityScope(actor)}],
       ...(query.method ? { method: query.method } : {}),
+      ...(query.from || query.to ? { receivedAt: {
+        gte: query.from ? localStart(query.from) : undefined,
+        lt: query.to ? new Date(+localStart(query.to) + 86400000) : undefined,
+      } } : {}),
       ...(query.search ? { OR: [
         { paymentCode: { contains: query.search, mode: 'insensitive' } },
         { reference: { contains: query.search, mode: 'insensitive' } },
+        { onlinePaymentTransaction: { OR: [{ providerTransactionId: term }, { merchantOrderRef: term }] } },
+        { invoice: { renewalRequest: { rentalContract: { reservationUnit: { storageUnit: { unitNumber: term } } } } } },
         { invoice: { invoiceCode: { contains: query.search, mode: 'insensitive' } } },
         { invoice: { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } } },
         { invoice: { reservation: { customer: { fullName: { contains: query.search, mode: 'insensitive' } } } } },
         { invoice: { reservation: { customer: { email: { contains: query.search, mode: 'insensitive' } } } } },
       ] } : {}),
     };
-    return this.paymentPage(where, query.page, query.limit, true);
+    const [result, amounts] = await Promise.all([
+      this.paymentPage(where, query.page, query.limit, true),
+      this.prisma.payment.groupBy({ by: ['method'], where, _sum: { amount: true } }),
+    ]);
+    const methodAmount = (method: PaymentListQuery['method']) => amounts.find(item => item.method === method)?._sum.amount ?? 0n;
+    return { ...result, summary: {
+      total: amounts.reduce((sum, item) => sum + (item._sum.amount ?? 0n), 0n).toString(),
+      online: methodAmount('VNPAY').toString(), cash: methodAmount('CASH').toString(),
+    } };
   }
 
   async getManagerPayment(id: string, actor: PublicUser) {
-    const record = await this.prisma.payment.findFirst({ where: { invoice:invoiceFacilityScope(actor), OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude() });
+    const record = await this.prisma.payment.findFirst({ where: { invoice:invoiceFacilityScope(actor), OR: [{ id }, { paymentCode: id }] }, include: this.paymentInclude(true) });
     if (!record) throw new NotFoundException('Không tìm thấy thanh toán.');
     return this.toPayment(record, true);
   }
@@ -789,7 +807,7 @@ export class BillingService {
   private async paymentPage(where: Prisma.PaymentWhereInput, page: number, limit: number, includeCustomer: boolean) {
     const [total, items] = await Promise.all([
       this.prisma.payment.count({ where }),
-      this.prisma.payment.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ receivedAt: 'desc' }, { id: 'asc' }], include: this.paymentInclude() }),
+      this.prisma.payment.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ receivedAt: 'desc' }, { id: 'asc' }], include: this.paymentInclude(includeCustomer) }),
     ]);
     return { page, limit, total, items: items.map((item) => this.toPayment(item, includeCustomer)) };
   }
@@ -812,10 +830,21 @@ export class BillingService {
     };
   }
 
-  private paymentInclude() {
+  private paymentInclude(managerView = false) {
     return {
       recordedBy: { select: { id: true, fullName: true, role: true } },
-      invoice: { include: { reservation: { include: {
+      ...(managerView ? { onlinePaymentTransaction: { select: { providerTransactionId: true, merchantOrderRef: true } } } : {}),
+      invoice: { include: {
+        ...(managerView ? {
+          renewalRequest: {
+            select: {
+              rentalContract: {
+                select: { reservationUnit: { select: { storageUnit: { select: { unitNumber: true } } } } },
+              },
+            },
+          },
+        } : {}),
+        reservation: { include: {
         customer: { select: { id: true, fullName: true, email: true, phone: true } },
         contracts: { select: { id: true, contractCode: true, status: true }, orderBy: { contractCode: 'asc' as const } },
       } } } },
@@ -899,6 +928,10 @@ export class BillingService {
       reference: record.reference,
       note: record.note,
       receivedAt: record.receivedAt.toISOString(),
+      ...(includeCustomer && Object.hasOwn(record.invoice, 'renewalRequest') ? {
+        unitCode: record.invoice.renewalRequest?.rentalContract?.reservationUnit.storageUnit.unitNumber ?? null,
+        gatewayReference: record.onlinePaymentTransaction?.providerTransactionId ?? record.onlinePaymentTransaction?.merchantOrderRef ?? null,
+      } : {}),
       invoice: {
         id: record.invoice.id,
         invoiceCode: record.invoice.invoiceCode,

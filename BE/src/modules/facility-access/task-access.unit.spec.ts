@@ -37,7 +37,7 @@ describe('Facility task authorization (offline, no database connection)',()=>{
   });
   it('allows an assigned task only while the Staff account and facility grant remain active',async()=>{
     const {db,grants,users}=repository();
-    await expect(assertTaskExecution(db as never,staff,staff.id,{reservationId:'reservation-a'})).resolves.toBeUndefined();
+    await expect(assertTaskExecution(db as never,staff,staff.id,{reservationId:'reservation-a'})).resolves.toBe('A');
     grants.splice(1,1);
     await expect(assertTaskExecution(db as never,staff,staff.id,{reservationId:'reservation-a'})).rejects.toBeInstanceOf(ForbiddenException);
     users[1].accountStatus='DISABLED';

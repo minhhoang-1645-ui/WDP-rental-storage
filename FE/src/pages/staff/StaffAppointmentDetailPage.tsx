@@ -1,3 +1,4 @@
+import { StaffTaskException } from './StaffTaskException';
 import { ArrowLeft, Check, Printer, RefreshCw } from 'lucide-react';
 import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -77,6 +78,8 @@ export function StaffAppointmentDetailPage() {
             ? 'Đơn đặt kho chưa đủ điều kiện bàn giao.' : 'Làm mới hồ sơ để kiểm tra điều kiện bàn giao.')}</p>
       </section>}
       </Fragment>
+      {assigned && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && <StaffTaskException
+        kind="appointments" id={first(row, 'id')} waiting={row.waitingForManager === true} refresh={data.refresh} />}
       <HandoverNotes row={row} />
       <AppointmentHistory row={row} />
     </>}

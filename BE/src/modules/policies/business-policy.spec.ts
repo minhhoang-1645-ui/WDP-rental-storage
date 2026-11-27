@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BusinessPolicyService, validatePolicy } from './business-policy.service.js';
-import { loadPricingPolicy, pricingPolicyDefaults, pricingPolicyValidators } from './pricing-policy.js';
+import { DEPOSIT_REFUND_DAYS, loadPricingPolicy, pricingPolicyDefaults, pricingPolicyValidators } from './pricing-policy.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -29,6 +29,17 @@ it('serves the applied catalog under the production API prefix with role guards'
     const http = request(app.getHttpServer());
     const path = '/api/business-policies/applied';
     await http.get(path).expect(401);
+    await http.get(path + '/customer').expect(401);
+    const customer = await http.get(path + '/customer').set('Authorization', 'Bearer STORAGE_CUSTOMER').expect(200);
+    expect(customer.body.depositRefundDays).toBe(DEPOSIT_REFUND_DAYS);
+    expect(customer.body.items).toHaveLength(5);
+    expect(customer.body.pricing).toHaveLength(7);
+    expect(customer.body.pricing.find((row: { key: string }) => row.key === 'paymentOverdue'))
+      .toMatchObject({ isDefault: true, effectiveFrom: null, value: { graceDays: expect.any(Number), feeMethod: expect.any(String) } });
+    expect(JSON.stringify(customer.body)).not.toMatch(/managerDays|effectiveVersion|createdBy|history|description/);
+    for (const role of ['FACILITY_MANAGER', 'FACILITY_STAFF', 'SYSTEM_ADMINISTRATOR', 'BUSINESS_OPERATIONS_MANAGER']) {
+      await http.get(path + '/customer').set('Authorization', 'Bearer ' + role).expect(403);
+    }
     for (const role of ['STORAGE_CUSTOMER', 'FACILITY_MANAGER']) {
       const response = await http.get(path).set('Authorization', 'Bearer ' + role).expect(200);
       expect(response.body.items).toHaveLength(5);
@@ -47,6 +58,8 @@ it('serves the applied catalog under the production API prefix with role guards'
     const staffView = await http.get(path).set('Authorization', staff).expect(200);
     expect(staffView.body.entries.map((entry: { key: string }) => entry.key)).toEqual(expect.arrayContaining(['handoverLeadDays', 'renewal', 'paymentOverdue', 'returnOverdue']));
     expect(staffView.body.entries).toHaveLength(7);
+    expect(staffView.body.entries.find((entry: { key: string }) => entry.key === 'renewal').value)
+      .toEqual({ opensDaysBefore: expect.any(Number), closesDaysBefore: expect.any(Number) });
     expect(staffView.body.entries.find((entry: { key: string }) => entry.key === 'paymentOverdue').value).toEqual(expect.objectContaining({ graceDays: expect.any(Number), managerDays: expect.any(Number) }));
     expect(JSON.stringify(staffView.body)).not.toMatch(/feeAmount|feeMethod|multiplier|createdBy|deposit|cancellation/);
     activeGrants.mockResolvedValue([{ facility: { name: 'NestBox A' } }, { facility: { name: 'NestBox B' } }]);
@@ -76,6 +89,39 @@ it('serves the applied catalog under the production API prefix with role guards'
     }
   } finally {
     await app.close();
+  }
+});
+
+it('distinguishes defaults, legacy settings and version one as the effective window changes for each role', async () => {
+  const legacyFrom = new Date('2025-12-01T08:30:00+07:00');
+  const scheduledFrom = new Date('2026-02-01T09:30:00+07:00');
+  const legacy = { key: 'handoverLeadDays', updatedAt: legacyFrom, value: 2 };
+  const scheduled = { key: 'handoverLeadDays', version: 1, value: 6, effectiveFrom: scheduledFrom, effectiveTo: null, createdAt: legacyFrom };
+  const service = new BusinessPolicyService({
+    user: { findFirst: vi.fn().mockResolvedValue({ id: 'active' }) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([]) },
+    businessPolicy: { findMany: vi.fn().mockResolvedValue([legacy]), findUnique: vi.fn().mockResolvedValue(legacy) },
+    businessRule: { findMany: vi.fn().mockResolvedValue([scheduled]) },
+  } as never);
+  const current = async () => {
+    const manager = await service.applied({ id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser);
+    const staff = await service.staffApplied({ id: 'staff', role: 'FACILITY_STAFF' } as PublicUser);
+    const customer = await service.customerApplied({ id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser);
+    return [manager.items, staff.entries, customer.items].map(rows => rows.find(row => row.key === 'handoverLeadDays'));
+  };
+  try {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-11-01T00:00:00Z'));
+    for (const policy of await current()) expect(policy).toMatchObject({ isDefault: true, effectiveFrom: null });
+    vi.setSystemTime(new Date(+scheduledFrom - 1));
+    for (const policy of await current()) expect(policy).toMatchObject({ value: 2, isDefault: false, effectiveFrom: legacyFrom });
+    vi.setSystemTime(scheduledFrom);
+    const [manager, staff, customer] = await current();
+    for (const policy of [manager, staff, customer]) expect(policy).toMatchObject({ value: 6, isDefault: false, effectiveFrom: scheduledFrom });
+    expect(manager).toMatchObject({ effectiveVersion: 1 });
+    expect(customer).not.toHaveProperty('effectiveVersion');
+  } finally {
+    vi.useRealTimers();
   }
 });
 

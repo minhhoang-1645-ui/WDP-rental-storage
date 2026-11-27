@@ -4,7 +4,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable 
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
-import { pricingPolicyDefaults, pricingPolicyValidators, returnNoticeRange, type PricingPolicyKey } from './pricing-policy.js';
+import { DEPOSIT_REFUND_DAYS, pricingPolicyDefaults, pricingPolicyValidators, returnNoticeRange, type PricingPolicyKey } from './pricing-policy.js';
 export const policyDefinitions = {
  reservationHoldMinutes: { title:'Thời hạn giữ đơn chưa thanh toán',unit:'phút',defaultValue:1440,min:15,max:10080,description:'Áp dụng cho đơn xác nhận mới; giữ nguyên hạn của đơn đã tạo.' },
  handoverLeadDays: { title:'Nhận chìa khóa trước ngày thuê',unit:'ngày',defaultValue:3,min:0,max:7,description:'Không thay đổi lịch đã đặt; chỉ kích hoạt hợp đồng từ ngày bắt đầu thuê.' },
@@ -50,17 +50,31 @@ export class BusinessPolicyService {
   const catalog = await this.catalog(false);
   const manager = actor.role === 'FACILITY_MANAGER';
   return {
-   items: catalog.items.map(({key,title,description,value,unit,effectiveVersion,history}) => ({
+   items: catalog.items.map(({key,title,description,value,unit,effectiveVersion,effectiveFrom,isDefault}) => ({
     key,title,description,value,unit,effectiveVersion,
-    effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,
+    effectiveFrom: manager || effectiveVersion > 0 ? effectiveFrom : null,
+    isDefault,
    })),
-   pricing: catalog.pricing.map(({key,title,description,value,effectiveVersion,history}) => ({
+   pricing: catalog.pricing.map(({key,title,description,value,effectiveVersion,effectiveFrom,isDefault}) => ({
     key,title,description: !manager && key === 'paymentOverdue' ? 'Thời gian cho phép quá hạn và phí một lần theo điều khoản đã cam kết.' : description,
     value: manager || !('managerDays' in value) ? value : Object.fromEntries(Object.entries(value).filter(([name]) => name !== 'managerDays')),
-    effectiveVersion,
-    effectiveFrom: history.find(row => row.status === 'EFFECTIVE' && row.version === effectiveVersion)?.effectiveFrom ?? null,
+    effectiveVersion,effectiveFrom,isDefault,
    })),
+   ...(manager ? { depositRefundDays: DEPOSIT_REFUND_DAYS } : {}),
   };
+ }
+ async customerApplied(actor: PublicUser) {
+  await assertActiveRole(this.prisma, actor, 'STORAGE_CUSTOMER');
+  const catalog = await this.catalog(false);
+  const items = catalog.items.map(({ key, value, unit, effectiveFrom, isDefault }) => ({ key, value, unit, effectiveFrom, isDefault }));
+  const pricing = catalog.pricing.map(({ key, value, effectiveFrom, isDefault }) => {
+   if ('managerDays' in value) {
+    const { managerDays: _, ...customerValue } = value;
+    return { key, value: customerValue, effectiveFrom, isDefault };
+   }
+   return { key, value, effectiveFrom, isDefault };
+  });
+  return { items, pricing, depositRefundDays: DEPOSIT_REFUND_DAYS };
  }
  async staffApplied(actor: PublicUser) {
   await assertActiveRole(this.prisma, actor, 'FACILITY_STAFF');
@@ -81,8 +95,8 @@ export class BusinessPolicyService {
   function operationalValue(key: string, value: unknown) {
    if (key in policyDefinitions) return validatePolicy(key, value);
    if (key === 'renewal') {
-    const { opensDaysBefore, closesDaysBefore, priceMode } = pricingPolicyValidators.renewal(value);
-    return { opensDaysBefore, closesDaysBefore, priceMode };
+    const { opensDaysBefore, closesDaysBefore } = pricingPolicyValidators.renewal(value);
+    return { opensDaysBefore, closesDaysBefore };
    }
    const { graceDays, managerDays } = key === 'paymentOverdue'
     ? pricingPolicyValidators.paymentOverdue(value) : pricingPolicyValidators.returnOverdue(value);
@@ -93,10 +107,11 @@ export class BusinessPolicyService {
    const title = numeric?.title ?? pricingDefinitions[key as PricingPolicyKey].title;
    const versions = rules.filter(rule => rule.key === key);
    const current = versions.filter(rule => rule.effectiveFrom <= now && (!rule.effectiveTo || rule.effectiveTo > now)).at(-1);
-   const baseline = key === 'handoverLeadDays' && legacyHandover && legacyHandover.updatedAt <= now
-    ? legacyHandover.value : numeric?.defaultValue ?? pricingPolicyDefaults[key as PricingPolicyKey];
+   const legacy = key === 'handoverLeadDays' && legacyHandover && legacyHandover.updatedAt <= now ? legacyHandover : null;
+   const baseline = legacy?.value ?? numeric?.defaultValue ?? pricingPolicyDefaults[key as PricingPolicyKey];
    return { key, title, value: operationalValue(key, current?.value ?? baseline),
-    effectiveVersion: current?.version ?? 0, effectiveFrom: current?.effectiveFrom ?? null };
+    effectiveVersion: current?.version ?? 0, effectiveFrom: current?.effectiveFrom ?? legacy?.updatedAt ?? null,
+    isDefault: !current && !legacy };
   });
   const updates = entries.flatMap(entry => {
    const versions = rules.filter(rule => rule.key === entry.key);
@@ -119,12 +134,16 @@ export class BusinessPolicyService {
   const history=await this.prisma.businessRule.findMany({where:{key:{in:[...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)]},facilityId:null,storageTypeId:null,
    ...(includeHistory ? {} : {effectiveFrom:{lte:now},OR:[{effectiveTo:null},{effectiveTo:{gt:now}}]})},orderBy:{version:'desc'}});
   const authors=includeHistory ? await this.prisma.user.findMany({where:{id:{in:[...new Set(history.map(row=>row.createdById))]}},select:{id:true,fullName:true}}) : [];
-  const items=await Promise.all(Object.entries(policyDefinitions).map(async([key,d])=>{
+  const items=Object.entries(policyDefinitions).map(([key,d])=>{
    const versions=history.filter(r=>r.key===key);
    const row=legacy.find(r=>r.key===key);
    const effective=versions.find(v=>v.effectiveFrom<=now&&(!v.effectiveTo||v.effectiveTo>now));
-   return {key,...d,value:await this.value(key as keyof typeof policyDefinitions,this.prisma,now),updatedAt:versions[0]?.createdAt.toISOString()??row?.updatedAt.toISOString()??null,version:versions[0]?.version??0,effectiveVersion:effective?.version??0,history:versions.map(describeVersion)};
-  }));
+   const legacyEffective = row && (key === 'reservationHoldMinutes' || key === 'handoverLeadDays') && row.updatedAt <= now ? row : null;
+   return {key,...d,value:effective ? validatePolicy(key,effective.value) : legacyEffective ? validatePolicy(key,legacyEffective.value) : d.defaultValue,
+    updatedAt:versions[0]?.createdAt.toISOString()??row?.updatedAt.toISOString()??null,version:versions[0]?.version??0,
+    effectiveVersion:effective?.version??0,effectiveFrom:effective?.effectiveFrom??legacyEffective?.updatedAt??null,
+    isDefault:!effective&&!legacyEffective,history:versions.map(describeVersion)};
+  });
   function describeVersion(v: (typeof history)[number]) {
    return { ...v, author: authors.find(a=>a.id===v.createdById)?.fullName??null,
     status: v.effectiveFrom>now?'SCHEDULED':v.effectiveTo&&v.effectiveTo<=now?'HISTORICAL':'EFFECTIVE' };
@@ -135,7 +154,7 @@ export class BusinessPolicyService {
    return { key, ...pricingDefinitions[key], defaultValue: pricingPolicyDefaults[key],
     value: effective ? pricingPolicyValidators[key](effective.value) : pricingPolicyDefaults[key],
     updatedAt: versions[0]?.createdAt.toISOString() ?? null, version: versions[0]?.version ?? 0,
-    effectiveVersion: effective?.version ?? 0, history: versions.map(describeVersion) };
+    effectiveVersion: effective?.version ?? 0, effectiveFrom: effective?.effectiveFrom ?? null, isDefault: !effective, history: versions.map(describeVersion) };
   });
   return {items, pricing};
  }

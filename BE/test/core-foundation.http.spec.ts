@@ -430,6 +430,8 @@ it('applies incident rental holds immediately and releases only the assessed inc
   expect(history.map(event => event.action)).toEqual(expect.arrayContaining([
     'INCIDENT_BOOKING_SCOPE', 'TASK_ASSIGNMENT', 'INCIDENT_VERIFICATION_REJECTED', 'INCIDENT_VERIFIED',
   ]));
+  expect(history.filter(event => event.action === 'TASK_STAFF_COMPLETED')).toHaveLength(2);
+  expect(history.filter(event => event.action === 'COMPLETE_WORK')).toHaveLength(0);
 
   const existing = await reserve('A');
   const allocationBefore = await db.reservationUnit.findFirstOrThrow({ where: { reservationId: existing.id } });

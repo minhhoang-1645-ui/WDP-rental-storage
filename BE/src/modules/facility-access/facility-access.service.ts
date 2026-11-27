@@ -281,7 +281,9 @@ export class FacilityAccessService {
       const current = active[0];
       if (active.length !== 1 || current.id !== expectedAccessId) throw new ConflictException('Quyền cơ sở đã thay đổi. Hãy tải lại tài khoản.');
       if (current.facilityId === facilityId) return current;
-      if (!await tx.facility.findUnique({ where: { id: facilityId }, select: { id: true } })) throw new BadRequestException('Cơ sở chuyển đến không tồn tại.');
+      const destination = await tx.facility.findUnique({ where: { id: facilityId }, select: { name: true } });
+      if (!destination) throw new BadRequestException('Cơ sở chuyển đến không tồn tại.');
+      const origin = await tx.facility.findUniqueOrThrow({ where: { id: current.facilityId }, select: { name: true } });
       if (user.role === 'FACILITY_MANAGER') await assertManagerCoverage(tx, userId, current.facilityId);
       if (user.role === 'FACILITY_STAFF') await assertNoOpenAssignments(tx, userId);
       await tx.facilityAccess.update({ where: { id: current.id }, data: { revokedAt: new Date(), revokedById: actor.id, activeKey: null } });
@@ -289,7 +291,8 @@ export class FacilityAccessService {
       await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
       await revokeActiveSessions(tx, { userId }, 'FACILITY_ACCESS_REVOKED', actor.id);
       await this.audit(tx, actor, 'RELOCATE_FACILITY_ACCESS', userId, '/admin/facility-access/users/:id/relocate',
-        { previousFacilityId: current.facilityId, facilityId, previousAccessId: current.id, accessId: grant.id });
+        { previousFacilityId: current.facilityId, previousFacilityName: origin.name, facilityId, facilityName: destination.name,
+          targetUserName: user.fullName, targetUserEmail: user.email, previousAccessId: current.id, accessId: grant.id });
       return grant;
     });
   }
@@ -342,5 +345,5 @@ export async function assertAssignmentAccess(tx:Db,actor:PublicUser,staffId:stri
  const id=await taskFacilityId(tx,reference);
  await assertFacility(tx,actor,id);
  if(!await tx.facilityAccess.findFirst({where:{userId:staffId,facilityId:id,revokedAt:null},select:{id:true}}))throw new ForbiddenException('Nhân viên chưa được cấp quyền tại cơ sở của công việc.');
- return staff;
+ return { ...staff, facilityId: id };
 }

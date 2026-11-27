@@ -3,6 +3,8 @@ import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { recordIdentity } from '../../utils/record-identity';
+import { physicalUnitLabel } from '../../utils/physical-units';
+import { normalizeSearch } from '../../utils/notification-tools';
 import { managerReviewReturn } from '../../components/manager/manager-table-params';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { ManagerPricingExplanation } from '../../components/manager/ManagerPricingExplanation';
@@ -82,7 +84,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
     true,
   );
   const isStaff = user?.role === 'FACILITY_STAFF';
-  const listPath = isStaff ? `/staff/${resource}` : resource === 'reservations' ? '/manager' : ["units", "customers", "inquiries"].includes(
+  const listPath = isStaff ? `/staff/${resource}` : ["units", "customers", "inquiries", "reservations"].includes(
     resource,
   )
     ? `/manager/${resource}`
@@ -97,20 +99,24 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
   const row = isStaff && data.status !== null && [401, 403, 404].includes(data.status) ? null : data.data;
   const staffOperation = isStaff && isStaffOperationDetail(resource) ? resource : null;
   const identity = row && (staffOperation ? staffRecordIdentity(row, resource) : recordIdentity(row, resource));
+  const physical = row ? physicalUnitLabel(row, resource) : '';
   const reference = row ? code(row) : '';
   const service = resource === 'support-requests' || resource === 'maintenance';
   const rentalTitle = resource === 'rentals' && identity && [identity.typeName || identity.location || 'Kho đang thuê', identity.person && `Khách ${identity.person}`].filter(Boolean).join(' · ');
   const serviceTitle = service && row && (resource === 'maintenance'
     ? ['Sự cố và bảo trì', incidentArea(row.commonArea) || identity?.location].filter(Boolean).join(' · ')
-    : identity?.person ? `Hỗ trợ khách ${identity.person}` : first(row, 'subject') || 'Hỗ trợ khách hàng');
+    : physical ? `Hỗ trợ · ${physical}` : identity?.person ? `Hỗ trợ khách ${identity.person}` : first(row, 'subject') || 'Hỗ trợ khách hàng');
   const staffTitle = isStaff && identity?.person && !identity.title.includes(identity.person) ? `${identity.title === reference ? config.title : identity.title} · ${identity.person}` : '';
   const operationTitle = staffOperation && [
     resource === 'returns' ? 'Trả kho' : config.title,
     resource === 'transfers' && row
-      ? [first(row, 'fromUnit.unitCode', 'fromUnit.unitNumber'), first(row, 'toUnit.unitCode', 'toUnit.unitNumber')].filter(Boolean).join(' → ')
+      ? physical
       : resource === 'support-requests' ? identity?.person : identity?.location,
   ].filter(Boolean).join(' · ');
-  const title = operationTitle || serviceTitle || rentalTitle || staffTitle || (row && (resource === 'customers' ? first(row, 'fullName', 'name') : identity?.title !== reference ? identity?.title : '')) || config.title;
+  const operationalRecord = !isStaff && ['reservations', 'contracts', 'appointments', 'renewals', 'returns', 'transfers'].includes(resource);
+  const title = operationTitle || serviceTitle || rentalTitle || staffTitle ||
+    (row && operationalRecord ? [config.title, physical].filter(Boolean).join(' · ') : undefined) ||
+    (row && (resource === 'customers' ? first(row, 'fullName', 'name') : identity?.title !== reference ? identity?.title : '')) || config.title;
   const status = row?.status ?? row?.rentalState ?? row?.accountStatus;
   const timeline = row ? Object.entries(timelineLabels).flatMap(([key, label]) => {
     if (isStaff && (key === 'updatedAt' || key === 'createdAt' && row.requestedAt)) return [];
@@ -363,6 +369,12 @@ function ServiceReferences({ row, staff }: { row: Row; staff: boolean }) {
 }
 
 function DetailContent({ row, resource, staff }: { row: Row; resource: string; staff: boolean }) {
+  const [reservationSearch, setReservationSearch] = useState('');
+  const reservations = rows(row.reservations);
+  const matchingReservations = reservations.filter(item => normalizeSearch([
+    first(item, 'reference'), first(row, 'fullName', 'email'), first(item, 'storageType.name'),
+    ...rows(item.allocatedUnits).map(unit => first(unit, 'unitCode', 'unitNumber')),
+  ].join(' ')).includes(normalizeSearch(reservationSearch.trim())));
   const staffBooking = staff && resource === 'reservations';
   const rental = resource === 'rentals';
   const managerContract = !staff && resource === 'contracts';
@@ -705,6 +717,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
                   to={`/manager/units/${encodeURIComponent(first(row, "fromUnit.id"))}`}
                 >
                   {first(row, "fromUnit.unitCode")}
+                  {first(row, "fromUnit.facility.name") && <small>{first(row, "fromUnit.facility.name")}</small>}
                 </Link>,
               ],
               [
@@ -714,6 +727,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
                     to={`/manager/units/${encodeURIComponent(first(row, "toUnit.id"))}`}
                   >
                     {first(row, "toUnit.unitCode")}
+                    {first(row, "toUnit.facility.name") && <small>{first(row, "toUnit.facility.name")}</small>}
                   </Link>
                 ) : (
                   "Chưa chọn"
@@ -809,9 +823,13 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
             items={[
               ["Số tiền", money(row.amount)],
               ["Phương thức", label(row.method)],
-              ["Mã tham chiếu", first(row, "reference") || "—"],
-              ["Người ghi nhận", first(row, "recordedBy.fullName")],
-              ["Ngày nhận", date(row.receivedAt, true)],
+              ["Khách hàng", first(row, "invoice.reservation.customer.fullName") || "—"],
+              ["Mã kho", first(row, "unitCode") || "—"],
+              ["Mã giao dịch", first(row, "paymentCode") || "—"],
+              ...(row.method === 'VNPAY' ? [['Tham chiếu VNPay', first(row, 'gatewayReference', 'reference') || '—'] as [string, string]] : []),
+              ...(row.method === 'BANK_TRANSFER' ? [['Tham chiếu chuyển khoản', first(row, 'reference') || '—'] as [string, string]] : []),
+              ...(row.method === 'CASH' ? [['Người ghi nhận', first(row, 'recordedBy.fullName') || '—'] as [string, string]] : []),
+              ["Thời gian ghi nhận", date(row.receivedAt, true)],
               [
                 "Hóa đơn",
                 <Link
@@ -857,7 +875,8 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
       </DetailDisclosure>}
       <RelatedTable
         title="Kho được phân bổ"
-        items={rows(row.allocatedUnits)}
+        items={resource === 'appointments' && ['COMPLETED', 'CANCELLED'].includes(String(row.status))
+          ? rows(row.historicalUnits) : rows(row.allocatedUnits)}
         headers={["Kho", "Vị trí / Kỳ phân bổ", "Trạng thái"]}
         render={(item) => [
           <Link
@@ -982,18 +1001,29 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
           </>,
         ]}
       />
+      {resource === 'customers' && reservations.length > 0 && <div className="portal-toolbar">
+        <label className="field-label portal-search">Tìm trong lịch sử đặt kho
+          <input type="search" value={reservationSearch} maxLength={100} placeholder="Mã kho, mã đơn hoặc tên khách…"
+            onChange={event => setReservationSearch(event.target.value)} />
+        </label>
+      </div>}
+      {resource === 'customers' && reservations.length > 0 && !matchingReservations.length &&
+        <p role="status">Không tìm thấy đơn đặt kho phù hợp.</p>}
       <RelatedTable
         title="Lịch sử đặt kho"
-        items={rows(row.reservations)}
-        headers={["Đặt kho", "Kỳ thuê", "Trạng thái"]}
+        items={matchingReservations}
+        headers={["Mã kho / Đặt kho", "Kỳ thuê", "Trạng thái"]}
         render={(item) => [
           <Link
             to={`/manager/reservations/${encodeURIComponent(first(item, "id"))}`}
           >
-            {first(item, "reference")}
+            <strong>{physicalUnitLabel(item, 'reservations') || 'Chưa phân bổ'}</strong>
+            <small>{first(item, "reference")}</small>
             <small>
               {first(item, "storageType.name")} · {first(item, "quantity")} kho
             </small>
+            {rows(item.allocatedUnits).some(unit => !unit.releasedAt) && rows(item.allocatedUnits).some(unit => unit.releasedAt) &&
+              <small>Kho đã trả: {rows(item.allocatedUnits).filter(unit => unit.releasedAt).map(unit => first(unit, 'unitCode', 'unitNumber')).filter(Boolean).join(', ')}</small>}
           </Link>,
           `${date(item.startDate)} → ${date(item.endDate)}`,
           <Status value={item.status} />,

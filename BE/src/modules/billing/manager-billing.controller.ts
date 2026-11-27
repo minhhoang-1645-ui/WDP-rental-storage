@@ -6,6 +6,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { RecordPaymentRequestDto } from '../../openapi/api-dtos.js';
 import { BillingService, type InvoiceListQuery, type PaymentListQuery } from './billing.service.js';
 import { OnlinePaymentService } from './online-payment.service.js';
+import { isIsoCalendarDate } from '../../business-date.js';
 
 const invoiceStatuses = ['OPEN', 'PARTIALLY_PAID', 'PAID', 'VOID'] as const;
 const paymentMethods = ['BANK_TRANSFER', 'CASH'] as const;
@@ -92,7 +93,9 @@ export class ManagerBillingController {
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'BANK-REF-123' })
-  @ApiQuery({ name: 'method', required: false, enum: paymentMethods })
+  @ApiQuery({ name: 'method', required: false, enum: [...paymentMethods, 'VNPAY'] })
+  @ApiQuery({ name: 'from', required: false, example: '2026-11-01' })
+  @ApiQuery({ name: 'to', required: false, example: '2026-11-30' })
   @ApiOkResponse({ description: 'Danh sách Payment.' })
   @ApiBadRequestResponse({ description: 'Pagination hoặc filter không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
@@ -171,8 +174,12 @@ export class ManagerBillingController {
   private paymentQuery(query: Record<string, unknown>): PaymentListQuery {
     const common = this.commonQuery(query);
     const method = this.optional(query.method, 'method');
-    if (method && !paymentMethods.includes(method as (typeof paymentMethods)[number])) throw new BadRequestException('Payment method không hợp lệ.');
-    return { ...common, ...(method ? { method: method as PaymentListQuery['method'] } : {}) };
+    if (method && method !== 'VNPAY' && !paymentMethods.includes(method as (typeof paymentMethods)[number])) throw new BadRequestException('Phương thức thanh toán không hợp lệ.');
+    const from = this.optional(query.from, 'Từ ngày');
+    const to = this.optional(query.to, 'Đến ngày');
+    if ((from && !isIsoCalendarDate(from)) || (to && !isIsoCalendarDate(to)) || (from && to && from > to))
+      throw new BadRequestException('Khoảng ngày ghi nhận không hợp lệ.');
+    return { ...common, from, to, method: method as PaymentListQuery['method'] };
   }
 
   private commonQuery(query: Record<string, unknown>) {

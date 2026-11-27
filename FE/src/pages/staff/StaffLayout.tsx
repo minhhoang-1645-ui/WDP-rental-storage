@@ -18,8 +18,8 @@ export const staffSections: WorkspaceSection[] = groups.map(group => ({
 }));
 const menu: InternalNavItem[] = [
   ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Tổng quan', group: 'Không gian làm việc', match: ['/staff/operations'] })),
-  { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Không gian làm việc' },
-  { to: '/staff/schedule', label: 'Lịch của tôi', icon: CalendarClock, group: 'Không gian làm việc' },
+  { to: '/staff/tasks', label: 'Công việc', icon: ClipboardList, group: 'Không gian làm việc' },
+  { to: '/staff/schedule', label: 'Lịch phục vụ', icon: CalendarClock, group: 'Không gian làm việc' },
   { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Không gian làm việc' },
   { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Không gian làm việc' },
   { to: '/staff/policies', label: 'Chính sách áp dụng', icon: FileText, group: 'Tra cứu' },

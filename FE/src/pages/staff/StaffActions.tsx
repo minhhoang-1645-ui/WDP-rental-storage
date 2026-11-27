@@ -1,3 +1,4 @@
+import { StaffTaskException } from './StaffTaskException';
 import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { vietnamCalendarDate } from '../../utils/business-date';
 import { useId, useRef, useState, type FormEvent } from "react";
@@ -176,6 +177,11 @@ export function StaffActions({
         (item.result !== "ISSUE_FOUND" || first(item, "issueType")),
     );
   const canFinalize = returnPaid && allInspected;
+  const returnCanEscalate = resource === 'returns' && assigned && !row.physicallyReturnedAt &&
+    ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(String(row.status));
+  if (returnCanEscalate && row.waitingForManager === true) {
+    return <StaffTaskException kind="returns" id={first(row, 'id')} waiting refresh={refresh} />;
+  }
   return (
     <section className="manager-section record-action-panel" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
       <h2>{resource === 'support-requests' ? 'Kết quả hỗ trợ' : resource === 'maintenance' ? 'Kết quả sửa chữa' : resource === 'returns' ? 'Kiểm tra kho trả' : resource === 'appointments' ? 'Bàn giao kho' : 'Xử lý hồ sơ'}</h2>
@@ -184,6 +190,7 @@ export function StaffActions({
           {error}
         </div>
       )}
+      {returnCanEscalate && <StaffTaskException kind="returns" id={first(row, 'id')} waiting={false} refresh={refresh} />}
       <fieldset className="portal-action-fieldset" disabled={busy}>
         {resource === "appointments" && row.status === "CONFIRMED" && assigned && (
           missingUnits ? <p role="status">Chưa đủ thông tin các kho đã phân bổ. Hãy làm mới hồ sơ.</p> : (
@@ -377,7 +384,7 @@ export function StaffActions({
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
                 if (supportOption === 'wait-customer') void run('/wait-customer', 'POST', { reason: note }, true);
                 else if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
-                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, identityVerified: data.get('identityVerified') === 'on' }, true);
               }}>
                 <label className="field-label">Hướng xử lý
                   <select value={supportOption} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
@@ -394,6 +401,8 @@ export function StaffActions({
                     value={supportOption === 'escalate' ? escalationDraft : resolutionDraft}
                     onChange={event => (supportOption === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
                 </label>
+                {(supportOption === 'ACCESS_RESTORED' || supportOption === 'ON_SITE_RESOLVED' && ['LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE'].includes(String(row.category))) &&
+                  <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu danh tính khách và quyền truy cập kho</label>}
                 <button className="button-primary" disabled={busy || !supportOption}>
                   {busy ? 'Đang lưu…' : supportOption === 'wait-customer' ? 'Ghi nhận chờ khách' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>

@@ -66,7 +66,7 @@ it('keeps created and changed customer times pending until the Manager confirms'
   await expect(confirm('09:00')).resolves.toMatchObject({ status: 'CONFIRMED' });
   const calendar = await agenda.agenda(manager, when('00:00'), when('23:59'));
   expect(calendar.items).toEqual([expect.objectContaining({
-    id: requested.id, status: 'CONFIRMED', warning: 'Chưa có ca phù hợp',
+    id: requested.id, status: 'CONFIRMED', warning: undefined,
   })]);
   const change = (time: string) => appointments.rescheduleCustomerAppointment(requested.id,
     { expectedScheduledAt: when('09:00'), scheduledAt: when(time) }, customer);

@@ -1,7 +1,8 @@
 import type { ActivityState } from '../../activity/context';
-import { first, object, rows, type Row } from '../../components/manager/portal-data';
+import { first, object, type Row } from '../../components/manager/portal-data';
 import { activitySources } from '../../utils/activity';
 import { recordIdentity } from '../../utils/record-identity';
+import { physicalUnitLabel } from '../../utils/physical-units';
 import { transferProblem } from '../../utils/transfer-problem';
 import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
 
@@ -18,9 +19,7 @@ export function staffActivityReady(activity: ActivityState, kind: string) {
 
 export function staffRecordIdentity(row: Row, resource: string) {
   const identity = recordIdentity(row, resource);
-  if (resource !== 'returns') return identity;
-  const inspected = [...new Set(rows(row.inspections).map(item => first(item, 'unit.unitCode')).filter(Boolean))];
-  return { ...identity, location: inspected.join(', ') || identity.location };
+  return { ...identity, location: physicalUnitLabel(row, resource) || (resource === 'maintenance' ? identity.location : '') };
 }
 
 export function staffWorkItems(activity: ActivityState, userId?: string, includeHistory = false) {
@@ -43,7 +42,8 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const identity = staffRecordIdentity(row, entry.kind);
     const status = first(row, 'status');
     const recovery = entry.kind === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId;
-    const phase = recovery ? 'ASSIGNED' : first(row, 'coordination.phase');
+    const phase = recovery ? 'ASSIGNED' : row.waitingForManager === true ? 'WAITING' : first(row, 'coordination.phase');
+    const waitReason = row.waitingForManager === true ? 'MANAGER' : first(row, 'coordination.waitReason');
     const scheduledAt = recovery ? '' : first(row, 'scheduledAt', 'inspectionScheduledAt', 'transferRequestedSchedule.startAt');
     const dueAt = first(row, 'dueAt') || scheduledAt;
     const blocked = !recovery && entry.kind === 'appointments' && ['REQUESTED', 'CONFIRMED'].includes(status)
@@ -55,11 +55,11 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
     const processed = !recovery && (phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
-      || entry.kind === 'support-requests' && status === 'ESCALATED'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
       || entry.kind === 'damage-claims' && Boolean(row.staffFacts)
       || entry.kind === 'transfers' && transferProblem(row).review.decision === 'CANCEL'
       || entry.kind === 'appointments' && first(row, 'scheduleAdjustment.action') === 'NO_SHOW'));
+    const actualCompletionAt = first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'completedAt');
     const titles: Record<string, string> = {
       appointments: status === 'REQUESTED' ? 'Xác nhận lịch bàn giao' : 'Bàn giao kho',
       returns: status === 'REQUESTED' ? 'Tiếp nhận trả kho' : 'Kiểm tra kho trả',
@@ -69,10 +69,12 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       'damage-claims': 'Kiểm tra sự cố hàng hóa',
     };
     return {
-      entry, status, phase, scheduledAt, processed, blocked, waiting, actionable, blockingReason: first(row, 'bookingBlockReason'),
+      entry, status, phase, waitReason, scheduledAt, processed, blocked, waiting, actionable, actualCompletionAt, blockingReason: first(row, 'bookingBlockReason'),
       title: recovery ? 'Thu hồi quyền truy cập kho' : titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
-      unit: identity.location || first(row, 'unitCodeSnapshot'),
+      unit: physicalUnitLabel(row, entry.kind),
+      reference: first(row, 'reservation.reference'),
+      contractCode: first(row, 'rentalContract.contractCode', 'contract.contractCode'),
       priority: first(row, 'priority'),
       facilityId: first(row, 'facility.id'),
       facilityName: first(row, 'facility.name'),
@@ -81,7 +83,8 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       timestamp: dueAt || scheduledAt || entry.at,
       overdue: actionable && !processed && Date.parse(scheduledAt) < now,
     };
-  }).filter(task => includeHistory ? task.processed : task.actionable || task.blocked || task.waiting);
+  }).filter(task => includeHistory ? task.processed : task.actionable || task.blocked || task.waiting ||
+    !task.processed && ['ASSIGNED', 'IN_PROGRESS'].includes(task.phase));
 }
 
 export function staffWorkPhase(task: ReturnType<typeof staffWorkItems>[number]) {

@@ -13,10 +13,16 @@ export function ManagerLayout() {
   const { user } = useAuth();
   const access = useApiResource<{ id: string; name: string }[]>(user ? '/manager/staff/facilities' : null, user?.id, true);
   const facility = !access.error && access.data?.length === 1 ? access.data[0] : undefined;
+  const facilityId = facility?.id;
   useEffect(() => {
-    safeSessionStorage.removeItem('nestbox-manager-facility');
+    if (facilityId) safeSessionStorage.setItem('nestbox-manager-facility', facilityId);
+    else safeSessionStorage.removeItem('nestbox-manager-facility');
     window.dispatchEvent(new Event('nestbox-manager-facility-change'));
-  }, [user?.id, facility?.id]);
+    return () => {
+      safeSessionStorage.removeItem('nestbox-manager-facility');
+      window.dispatchEvent(new Event('nestbox-manager-facility-change'));
+    };
+  }, [user?.id, facilityId]);
 
   const notice = access.loading ? 'Đang tải cơ sở…'
     : access.error || (access.data && access.data.length > 1

@@ -653,6 +653,11 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
 
   private toRenewal(record: any, manager: boolean) {
     const scope = this.snapshot(record).scope;
+    const appendix = signedDocument(record.appendixSnapshot);
+    const historical = manager && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(record.status);
+    const appendixContracts: { contractCode?: string; unitCode?: string }[] = Array.isArray(appendix?.contracts) ? appendix.contracts : [];
+    const historicalUnit = (contract: RenewalContract) =>
+      appendixContracts.find(item => item?.contractCode === contract.contractCode)?.unitCode ?? null;
     const contracts = (record.reservation.contracts as RenewalContract[]).filter(contract => !record.rentalContractId || contract.id === record.rentalContractId);
     const invoices = record.invoices.filter((invoice: any) => invoice.amountPaid > 0n || !isScheduledRenewalInvoice(invoice)
       || closeoutPaymentAllowed(record.reservation, record.rentalContractId)).map((invoice: any) => ({
@@ -666,7 +671,8 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       id: record.id, renewalCode: record.renewalCode, status: record.status,
       rentalContractId: record.rentalContractId ?? null,
       contracts: contracts.map(contract => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status,
-        endDate: this.isoDate(contract.endDate), unitCode: scope?.unitCode ?? contract.reservationUnit.storageUnit.unitNumber })),
+        endDate: this.isoDate(contract.endDate), unitCode: scope?.unitCode ??
+          (historical ? historicalUnit(contract) : contract.reservationUnit.storageUnit.unitNumber) })),
       reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, quantity: record.rentalContractId ? 1 : record.reservation.quantity,
         currentEndDate: this.isoDate(record.rentalContractId ? contracts[0]?.endDate ?? record.previousEndDate : record.reservation.endDate),
         storageType: { id: scope ? this.snapshot(record).storageTypeId : record.reservation.storageType.id, code: contracts[0]?.reservationUnit.storageUnit.storageType?.code ?? record.reservation.storageType.code,

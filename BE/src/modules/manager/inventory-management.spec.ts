@@ -19,9 +19,10 @@ function fixture() {
     user: { findFirst: vi.fn().mockResolvedValue({ id: 'manager' }) },
     facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
     businessRule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue({ value: { min: 1000000, max: 2000000 } }) },
-    storageType: { findUnique: vi.fn().mockResolvedValue(type), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
+    storageType: { findUnique: vi.fn().mockResolvedValue({ ...type, facility: { operationalStatus: 'OPEN' } }), findMany: vi.fn().mockResolvedValue([type, { ...type, id: 'no-price', monthlyRate: null }]), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...type, ...data })) },
+    storageUnitCodeCounter: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({ lastIssued: new Prisma.Decimal(1) }) },
     facility: { findUnique: vi.fn().mockResolvedValue({ id: 'facility' }), findMany: vi.fn().mockResolvedValue([{ id: 'facility', name: 'Cơ sở' }]) },
-    storageUnit: { groupBy: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => data) },
+    storageUnit: { groupBy: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), findUnique: vi.fn().mockResolvedValue(unit), count: vi.fn().mockResolvedValue(0), create: vi.fn().mockImplementation(async ({ data }) => data), update: vi.fn().mockImplementation(async ({ data }) => ({ ...unit, ...data })) },
     reservation: { count: vi.fn().mockResolvedValue(0) }, guestBookingRequest: { count: vi.fn().mockResolvedValue(0) }, contactInquiry: { count: vi.fn().mockResolvedValue(0) },
   };
   const prisma = { ...tx, $transaction: vi.fn().mockImplementation(async operation => operation(tx)) };
@@ -122,23 +123,28 @@ describe('Manager inventory configuration safety (mock DB only)', () => {
   it('allows moving an unused unit, but never manually setting status', async () => {
     const { service, tx } = fixture();
     await expect(service.saveUnit('unit', { zone: 'B', expectedUpdatedAt: version }, actor)).resolves.toMatchObject({ zone: 'B' });
-    await expect(service.saveUnit(undefined, { unitNumber: 'NEW', storageTypeId: 'type' }, actor)).resolves.toMatchObject({ unitNumber: 'NEW' });
+    await expect(service.saveUnit(undefined, { storageTypeId: 'type' }, actor)).resolves.toMatchObject({ unitNumber: 'SM-A-01' });
     expect(tx.storageUnit.create.mock.calls[0][0].data).not.toHaveProperty('status');
+    await expect(service.saveUnit(undefined, { unitNumber: 'NEW', storageTypeId: 'type' }, actor)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.saveUnit('unit', { unitNumber: 'NEW', expectedUpdatedAt: version }, actor)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.saveUnit('unit', { status: 'AVAILABLE', expectedUpdatedAt: version }, actor)).rejects.toBeInstanceOf(BadRequestException);
   });
   it.each(['P2002', 'P2034'])('converts %s races to actionable conflicts', async code => {
     const { service, tx } = fixture(); tx.storageUnit.create.mockRejectedValue({ code });
-    await expect(service.saveUnit(undefined, { unitNumber: 'NEW', storageTypeId: 'type' }, actor)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.saveUnit(undefined, { storageTypeId: 'type' }, actor)).rejects.toBeInstanceOf(ConflictException);
   });
-  it('generates a type-prefixed physical unit code on the server when omitted', async () => {
-    const { service } = fixture();
-    await expect(service.saveUnit(undefined, { unitNumber: '', storageTypeId: 'type' }, actor)).resolves.toMatchObject({ unitNumber: expect.stringMatching(/^SM-A-[A-F0-9]{16}$/) });
+  it('previews a server-generated physical unit code without advancing the counter', async () => {
+    const { service, tx } = fixture();
+    await expect(service.previewUnitCode('type', actor)).resolves.toEqual({ unitNumber: 'SM-A-01' });
+    expect(tx.storageUnitCodeCounter.upsert).not.toHaveBeenCalled();
+    tx.storageUnitCodeCounter.findUnique.mockResolvedValue({ lastIssued: new Prisma.Decimal(99) });
+    await expect(service.previewUnitCode('type', actor)).resolves.toEqual({ unitNumber: 'SM-A-100' });
   });
   it('route guard grants configuration only to Manager, including GET list', () => {
     const guard = new RolesGuard(new Reflector());
-    for (const name of ['list', 'unitLocations', 'createType', 'updateType', 'createUnit', 'updateUnit'] as const) {
+    for (const name of ['list', 'unitLocations', 'nextUnitCode', 'createType', 'updateType', 'createUnit', 'updateUnit'] as const) {
       for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR']) {
-        const context = { getClass: () => InventoryManagementController, getHandler: () => InventoryManagementController.prototype[name], switchToHttp: () => ({ getRequest: () => ({ method: ['list', 'unitLocations'].includes(name) ? 'GET' : 'POST', originalUrl: '/api/manager/storage-types', user: { role } }) }) } as unknown as ExecutionContext;
+        const context = { getClass: () => InventoryManagementController, getHandler: () => InventoryManagementController.prototype[name], switchToHttp: () => ({ getRequest: () => ({ method: ['list', 'unitLocations', 'nextUnitCode'].includes(name) ? 'GET' : 'POST', originalUrl: '/api/manager/storage-types', user: { role } }) }) } as unknown as ExecutionContext;
         if (role === 'FACILITY_MANAGER') expect(guard.canActivate(context)).toBe(true);
         else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
       }

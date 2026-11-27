@@ -62,7 +62,7 @@
 
 .workspace-skeleton { min-width: 0; }
 .workspace-skeleton .loading-skeleton__bone {
-  background: color-mix(in srgb, var(--workspace-muted) 18%, var(--workspace-surface));
+  background: var(--workspace-skeleton, color-mix(in srgb, var(--workspace-muted) 18%, var(--workspace-surface)));
   animation-duration: 2.2s;
   animation-name: workspace-skeleton-pulse;
 }

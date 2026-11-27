@@ -21,7 +21,7 @@
 body { min-width:280px; font-size:16px; line-height:1.55; background:var(--color-canvas); color:var(--color-ink); }
 :is(button,input,select,textarea) { accent-color:var(--color-primary); }
 :is(input,textarea)::placeholder { color:var(--text-placeholder); opacity:1; }
-:focus-visible { outline:3px solid var(--color-primary); outline-offset:3px; }
+:focus-visible { outline:3px solid var(--workspace-focus, var(--color-primary)); outline-offset:3px; }
 :is(.button-primary,.button-secondary,.button-light) { border-radius:10px; min-height:44px; padding:10px 18px; font-size:15px; line-height:1.4; box-shadow:none; }
 .button-primary { background:var(--workspace-primary); color:var(--workspace-on-primary); }
 .button-primary:hover:not(:disabled) { background:var(--color-primary-hover); }

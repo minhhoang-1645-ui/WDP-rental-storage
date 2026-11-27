@@ -1,3 +1,4 @@
+import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
@@ -195,7 +196,7 @@ export class MaintenanceService {
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staff.id) return current;
       await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id,
-        physicalHandoff(input, Boolean(current.assignedStaffUserId && current.status === 'IN_PROGRESS')));
+        { ...physicalHandoff(input, Boolean(current.assignedStaffUserId && current.status === 'IN_PROGRESS')), facilityId: staff.facilityId });
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { assignedStaffUserId: staff.id, lastAction: 'ASSIGN', lastActionIdempotencyKey: safeKey },
@@ -305,6 +306,9 @@ export class MaintenanceService {
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể hoàn tất công việc này.');
       this.assertUnitMaintenance(current);
+      const facilityId = current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id;
+      await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'maintenance', current.id,
+        { ...(facilityId && { facilityId }), nextStatus: 'AWAITING_VERIFICATION' });
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { status: 'AWAITING_VERIFICATION', workCompletedAt: new Date(), workNote, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey },
@@ -440,6 +444,10 @@ export class MaintenanceService {
         { maintenanceCode: { contains: query.search, mode: 'insensitive' } },
         { description: { contains: query.search, mode: 'insensitive' } },
         { locationNote: { contains: query.search, mode: 'insensitive' } },
+        { incidentBlocks: { some: { releasedAt: null, storageUnit: {
+          storageType: { facility: facilityScope(actor) },
+          unitNumber: { contains: query.search, mode: 'insensitive' },
+        } } } },
         { storageUnit: { is: { OR: [
           { unitNumber: { contains: query.search, mode: 'insensitive' } },
           { floor: { contains: query.search, mode: 'insensitive' } },

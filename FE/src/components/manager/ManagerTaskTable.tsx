@@ -1,6 +1,6 @@
 import type { RowDetail } from '../workspace/DetailRow';
 import { useInternalListReturn } from '../workspace/internal-list-memory';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { StaffTaskTable, type StaffColumn } from '../workspace/StaffTaskTable';
@@ -18,16 +18,24 @@ export function ManagerTableBack({ fallback }: { fallback: string }) {
 }
 
 export function ManagerTaskTable<T>({ title, columns, items, rowKey, rowDetail, emphasized, loading = false, refreshing = false, error = '', retry,
-  page, limit, total, update, toolbar, emptyTitle, emptyDescription, workspace = 'manager' }: {
+  page, limit, total, update, toolbar, emptyTitle, emptyDescription, workspace = 'manager', rowAction }: {
   title: string; columns: StaffColumn<T>[]; items: T[]; rowKey: (item: T) => string; rowDetail?: (item: T) => RowDetail | undefined;
   emphasized?: (item: T) => boolean; loading?: boolean; refreshing?: boolean; error?: string; retry: () => void;
   page: number; limit: number; total: number; update: (key: string, value: string) => void;
   toolbar?: ReactNode; emptyTitle?: string; emptyDescription?: string;
   workspace?: 'manager' | 'staff';
+  rowAction?: (item: T) => { to: string; label: string };
 }) {
+  const { pathname, search, hash } = useLocation();
+  const visibleColumns: StaffColumn<T>[] = rowAction ? [...columns, {
+    key: 'action', label: 'Thao tác', cell: item => {
+      const { to, label } = rowAction(item);
+      return <Link className="button-secondary manager-record-action" to={to} state={{ returnTo: pathname + search + hash }}>{label}</Link>;
+    },
+  }] : columns;
   return <div className="manager-task-list">
     {workspace === 'staff' && <><div className="portal-toolbar staff-table-toolbar">{toolbar}</div><RefreshStatus active={refreshing} /></>}
-    <StaffTaskTable key={title} title={title} columns={columns} items={items} rowKey={rowKey} rowDetail={rowDetail}
+    <StaffTaskTable key={title} title={title} columns={visibleColumns} items={items} rowKey={rowKey} rowDetail={rowDetail}
       emphasized={emphasized} toolbar={workspace === 'manager' ? <>{toolbar}<RefreshStatus active={refreshing} /></> : undefined} hideTable={!!error || !items.length}
       loadingRows={loading ? Math.min(limit, 6) : undefined} preferenceScope={workspace} />
     <LoadState loading={false} error={error} retry={retry} />

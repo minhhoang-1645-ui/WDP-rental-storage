@@ -3,6 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom';
 import { apiRequest } from '../../services/api';
 import { StaffPicker } from './StaffPicker';
 import { useAuth } from '../../auth/auth-context';
+import { normalizeSearch } from '../../utils/notification-tools';
 
 type Unit = { id: string; code: string; facility: { id: string; name: string; closureMode?: string }; type: string; location: string };
 type Contract = { id: string; code: string; customer: string; endDate: string; unit: Unit };
@@ -11,11 +12,11 @@ type PendingBooking = { id: string; reservationCode: string; customer: string; f
 type Task = { id: string; status: string; contract: Contract; transfer: { id: string; status: string } | null };
 type RecordView = { id: string; code: string; status: string; contract: Omit<Contract, 'unit'>; source: Unit; destination: Unit; destinationAccepted: boolean; consent: boolean; assignedStaffId: string; receivingStaffId: string | null; safetyConfirmed: boolean; servicesApproved: boolean; sourceHandover: boolean; destinationHandover: boolean; exception: string | null };
 
-function unitLabel(unit: Unit) { return unit.facility.name + ' · ' + unit.code; }
+function unitLabel(unit: Unit) { return unit.code + ' · ' + unit.facility.name; }
 const pending = (status: string) => ['REQUESTED', 'APPROVED'].includes(status);
 const statusName = (status: string) => ({ REQUESTED: 'Chờ khách xác nhận', APPROVED: 'Đã giữ kho', COMPLETED: 'Đã chuyển kho', REJECTED: 'Đã hủy hoặc từ chối', ASSIGNED: 'Đã phân công', ESCALATED: 'Chờ quản lý xử lý', IN_PROGRESS: 'Đang hỗ trợ', RESOLVED: 'Đã xử lý' }[status] ?? status);
 
-export function ClosureRelocations({ revision }: { revision: number }) {
+export function ClosureRelocations({ revision, search = '' }: { revision: number; search?: string }) {
   const { user } = useAuth();
   const manager = user?.role === 'FACILITY_MANAGER';
   const activeFacility = useOutletContext<string | null>();
@@ -70,7 +71,10 @@ export function ClosureRelocations({ revision }: { revision: number }) {
     finally { setBusy(false); }
   }
   const noteField = (label: string) => <label className="field-label">{label}<textarea value={note} maxLength={2000} onChange={event => setNote(event.target.value)} /></label>;
-  return <details className="manager-section" open={!!notice || affected.length + pendingBookings.length + tasks.length + records.filter(row => pending(row.status)).length > 0}>
+  const keyword = normalizeSearch(search.trim());
+  const matches = (...values: string[]) => !keyword || normalizeSearch(values.join(' ')).includes(keyword);
+  const displayedRecords = records.filter(row => matches(row.code, row.contract.code, row.contract.customer, unitLabel(row.source), unitLabel(row.destination)));
+  return <details className="manager-section" open={!!notice || affected.length + pendingBookings.length + tasks.length + records.filter(row => pending(row.status)).length > 0 || Boolean(keyword && displayedRecords.length)}>
     <summary><strong>Hỗ trợ di dời liên cơ sở</strong></summary>
     {error && <p role="alert" className="portal-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -116,9 +120,9 @@ export function ClosureRelocations({ revision }: { revision: number }) {
         {noteField('Vướng mắc hoặc nhu cầu xử lý khác')}<button className="button-secondary" disabled={note.trim().length < 3 || busy} onClick={() => void action('/tasks/' + task.id + '/exception', { note })}>Báo quản lý</button>
       </div>}
     </div>)}
-    {records.map(row => <div key={row.id} className="manager-section">
+    {displayedRecords.map(row => <div key={row.id} className="manager-section">
       <h3>{row.contract.customer} · {row.code}</h3>
-      <p>{unitLabel(row.source)} → {unitLabel(row.destination)} · {row.status === 'REQUESTED' && !row.destinationAccepted ? 'Chờ cơ sở đích xác nhận' : statusName(row.status)}</p>
+      <p><strong>{unitLabel(row.source)} → {unitLabel(row.destination)}</strong> · {row.status === 'REQUESTED' && !row.destinationAccepted ? 'Chờ cơ sở đích xác nhận' : statusName(row.status)}</p>
       <p>Khách {row.consent ? 'đã đồng ý' : 'chưa đồng ý'} · Kho cũ {row.sourceHandover ? 'đã giao' : 'chờ giao'} · Kho mới {row.destinationHandover ? 'đã nhận' : 'chờ nhận'}</p>
       {row.exception && <p role="alert">{row.exception}</p>}
       {pending(row.status) && <button className="button-secondary" onClick={() => choose(row.id)}>Xử lý hồ sơ</button>}

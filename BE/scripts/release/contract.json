@@ -36,7 +36,8 @@
     "20261125000500_return_inspection_schedule",
     "20261125000600_work_dispatch_fields",
     "20261125000700_staff_shift_break",
-    "20261126000100_single_facility_and_relocation_decision"
+    "20261126000100_single_facility_and_relocation_decision",
+    "20261127000600_payos_payin"
   ],
   "migrations": [
     {

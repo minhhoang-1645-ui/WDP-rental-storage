@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import pg from 'pg';
 import { assertRecoveredHistory, requireCutoverApproval, sameDatabase, verifyFailedMigration } from './guards.mjs';
 import { recoverableMigration } from '../migration-command-safety.mjs';
+import { releaseManifestVerified } from '../foundation-db/rehearsal-checks.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 dotenv.config({ path: path.join(root, '.env'), quiet: true, override: false });
 const args = process.argv.slice(2),
@@ -125,6 +126,7 @@ try {
     );
     const dump = fs.readFileSync(manifest.archive);
     if (
+      !releaseManifestVerified(manifest, currentCommit) ||
       crypto.createHash('sha256').update(dump).digest('hex') !==
         manifest.sha256 ||
       manifest.target?.host !== state.target.host ||

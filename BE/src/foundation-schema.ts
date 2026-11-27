@@ -92,6 +92,7 @@ export async function inspectFoundationDatabase(
       'IncidentUnitBlock.id',
       'Facility.serviceSchedule',
       'Facility.photo',
+      'AdditionalService.minimumRentalMonths',
       'ReturnRequest.inspectionScheduledAt',
       'SupportRequest.customerWaitReason',
       'Facility.closurePlanId',

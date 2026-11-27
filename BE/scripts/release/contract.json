@@ -37,12 +37,13 @@
     "20261125000600_work_dispatch_fields",
     "20261125000700_staff_shift_break",
     "20261126000100_single_facility_and_relocation_decision",
-    "20261127000600_payos_payin",
     "20261127000600_maintenance_costs",
+    "20261127000600_payos_payin",
     "20261127000700_maintenance_work_history",
     "20261127000800_maintenance_actual_cost_only",
     "20261127000900_facility_photo",
-    "20261128000100_maintenance_repair_attachments"
+    "20261128000100_maintenance_repair_attachments",
+    "20261128000100_service_minimum_months"
   ],
   "migrations": [
     {
@@ -590,6 +591,13 @@
       "checksums": [
         "7e5c7f91c066d4f631681ce154cb7c3120ccf09faa2807ee203bbdaf0df1ed3b",
         "f0515e954ebc62010587a6f03a2167fbb1535d1ed32ec64fb24c7984c76e2520"
+      ]
+    },
+    {
+      "name": "20261128000100_service_minimum_months",
+      "checksums": [
+        "df38d18c0d12d47849ad838a07888e541600523d8e707ccc006aeec506683576",
+        "5ab73846277fff0b9c3c58f44dee03c997de0dd0a42a69bdff683bf8ec36f950"
       ]
     }
   ],

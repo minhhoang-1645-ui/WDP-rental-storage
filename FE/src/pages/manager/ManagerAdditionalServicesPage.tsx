@@ -163,6 +163,7 @@ function Facts({ values }: { values: [string, string | undefined | null][] }) {
 function SharedFacts({ item }: { item: AdditionalService }) {
   return <Facts values={[
     ['Phân loại', categories[item.kind]], ['Hình thức tính phí', billing[item.billingUnit]], ['Đơn vị tính', item.physicalUnit],
+    ['Thuê tối thiểu', item.billingUnit === 'MONTH' ? `${item.minimumRentalMonths ?? 1} tháng` : null],
   ]} />;
 }
 

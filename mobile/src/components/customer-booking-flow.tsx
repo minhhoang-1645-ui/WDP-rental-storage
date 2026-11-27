@@ -33,6 +33,7 @@ import { rentalEndDate as monthEnd } from '@/utils/rental-period';
 import { acceptsBookings, BookingFacilityPicker, isBookingFacility, type BookingFacility } from './booking-facility-picker';
 import { useBookingFacility } from './booking-facility-context';
 
+const minimumMonthlyRental = 'Thuê theo tháng tối thiểu là 1 tháng.';
 
 type UnitMap = {productId: string; startDate: string; endDateExclusive: string; units: FloorPlanUnit[]};
 
@@ -155,7 +156,8 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
     if (catalog.error || wrongScope || (facility && productFacilityId !== facility.id)) return 'Chưa xác minh được loại kho tại cơ sở đã chọn.';
     if (!product) return 'Chọn loại kho.';
     if (!isCalendarDate(start) || start < vietnamCalendarDate()) return 'Chọn ngày bắt đầu từ hôm nay.';
-    if (effectiveMode === 'duration' && !end) return 'Nhập số tháng thuê là số nguyên dương với ngày kết thúc hợp lệ.';
+    if (effectiveMode === 'duration' && (!Number.isSafeInteger(months) || months < 1)) return minimumMonthlyRental;
+    if (effectiveMode === 'duration' && !end) return 'Ngày kết thúc không hợp lệ. Kiểm tra lại ngày bắt đầu và số tháng thuê.';
     if (!isCalendarDate(end) || end <= start) return 'Chọn ngày kết thúc sau ngày bắt đầu.';
     if (!Number.isInteger(Number(quantity)) || Number(quantity) < 1 || Number(quantity) > 3) return 'Bạn có thể đặt từ 1 đến 3 kho.';
     if (effectiveMode === 'dates' && end >= monthEnd(start, 1)) return 'Chọn kỳ thuê theo tháng nếu thuê từ một tháng trở lên.';
@@ -359,12 +361,16 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         <RentalCalendar compact start={start} end={end} daily={effectiveMode==='dates'}
           earliestEnd={start && Number(product.minRentalDays)>0 ? new Date(Date.parse(start)+Number(product.minRentalDays)*86400000).toISOString().slice(0,10) : undefined}
           endLimit={start ? monthEnd(start,1) : undefined} onChange={(from,to)=>{invalidate();setStart(from);setEnd(to);}}/>
-        {effectiveMode==='duration' ? <View style={booking.summary}>
+        {effectiveMode==='duration' ? <>
+          <View style={booking.summary}>
           <Text style={booking.label}>Số tháng thuê</Text>
           <TextInput accessibilityLabel="Số tháng thuê" keyboardType="number-pad" value={chosenMonths}
             onChangeText={value=>{invalidate();setMonths(value);}}
             style={{ flex:1, minHeight:44, color:C.text, textAlign:'right' }} />
-        </View> : <Text style={booking.muted}>{Number(product.minRentalDays) > 0
+          </View>
+          <Text accessibilityRole={error === minimumMonthlyRental ? 'alert' : undefined}
+            style={error === minimumMonthlyRental ? styles.error : booking.muted}>{minimumMonthlyRental}</Text>
+        </> : <Text style={booking.muted}>{Number(product.minRentalDays) > 0
           ? `Thuê ít nhất ${product.minRentalDays} ngày và dưới một tháng theo lịch. Thanh toán toàn bộ kỳ thuê.`
           : 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.'}</Text>}
         <View style={booking.summary}><CalendarDays size={18} color={blue}/><Text style={[booking.meta,{flex:1}]}>
@@ -445,7 +451,7 @@ function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFaci
         </View>
       </View>{busy?<LoadingState layout="compact" label="Đang cập nhật chi phí…"/>:quote && quoteReady?<BookingBill quote={quote}/>:<Button title="Cập nhật chi phí" variant="secondary" onPress={()=>void availability(5,true)}/>}{profileContactIssue(user?.fullName??'',user?.phone??'')&&<Navigation title="Bổ sung thông tin liên hệ" path="/customer/account?returnTo=booking"/>}</>}
 
-      </CustomerReveal>}{error?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{step===2&&<Button title="Thử lại" variant="secondary" disabled={busy} onPress={()=>void availability(3)}/>}</View>:null}
+      </CustomerReveal>}{error && !(step === 2 && effectiveMode === 'duration' && error === minimumMonthlyRental) ?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{step===2&&<Button title="Thử lại" variant="secondary" disabled={busy} onPress={()=>void availability(3)}/>}</View>:null}
     </ScrollView>}
     {!createdBooking && step!==4 && <View style={{paddingHorizontal:16,paddingTop:12,paddingBottom:Math.max(insets.bottom,12),borderTopWidth:1,borderColor:'#E4E7EC',backgroundColor:'white',gap:8}}>
 

@@ -390,6 +390,10 @@ const defaultMonth = defaultServiceSelection(shelfService,'2027-01-31','2027-03-
 assert.equal(defaultMonth.serviceEndDate,'2027-02-28');
 assert.equal(serviceEstimatedTotal(shelfService,defaultMonth,'2027-01-31','2027-03-15'),120000);
 assert.equal(serviceEstimatedTotal(shelfService,{...defaultMonth,serviceEndDate:'2027-03-15'},'2027-01-31','2027-03-15'),null);
+const threeMonthSelection = defaultServiceSelection(shelfService, '2027-01-31', '2027-04-30');
+assert.equal(threeMonthSelection.serviceEndDate, '2027-04-30');
+assert.equal(serviceEstimatedTotal(shelfService, threeMonthSelection, '2027-01-31', '2027-04-30'), 360000);
+assert.match(serviceSelectionIssue({ ...shelfService, minimumRentalMonths: 2 }, defaultMonth, '2027-01-31', '2027-04-30'), /tối thiểu 2 tháng/);
 const dayService={...shelfService,id:'cart',billingUnit:'DAY',unitPrice:60000};
 assert.equal(serviceEstimatedTotal(dayService,{serviceId:'cart',quantity:2,serviceStartDate:'2027-01-05',serviceEndDate:'2027-01-10'},'2027-01-01','2027-04-01'),600000);
 assert(serviceSelectionIssue(dayService,{serviceId:'cart',quantity:0},'2027-01-01','2027-04-01'));

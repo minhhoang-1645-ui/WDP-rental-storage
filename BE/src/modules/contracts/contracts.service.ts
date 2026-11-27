@@ -208,6 +208,7 @@ export class ContractsService {
         include: {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
+          facility: { select: { code: true, name: true, address: true, officeHours: true, accessHours: true } },
           services: true,
           renewals: { orderBy: [{ requestedAt: 'asc' as const }, { id: 'asc' as const }], select: {
             id: true, renewalCode: true, rentalContractId: true, status: true, previousEndDate: true, requestedEndDate: true, termMonths: true, paymentPlan: true, quoteSnapshot: true,
@@ -241,6 +242,7 @@ export class ContractsService {
       reservation: {
         id: reservation.id,
         reference: reservation.reservationCode,
+        facility: reservation.facility ?? null,
         status: reservation.status,
         quantity: reservation.quantity,
         ...(includeCustomer ? { customer: { id: reservation.customer.id, fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? '' } } : {}),
@@ -302,11 +304,14 @@ export class ContractsService {
 
   private documentSnapshot(contract: any) {
     const reservation = contract.reservation;
+    const unit = contract.reservationUnit.storageUnit;
     return {
       documentType: 'RENTAL_CONTRACT', version: contract.termsAcceptedAt ? contract.termsVersion : this.policy.issuer().termsVersion, contractCode: contract.contractCode,
       ...(contract.termsAcceptedAt ? { issuer: { brand: 'NestBox Storage', draft: true }, legacySnapshotUnavailable: true } : { issuer: this.policy.issuer(), clauses: this.policy.terms() }),
       reservationReference: reservation.reservationCode, customer: { fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? null },
-      storage: { name: reservation.storageType.name, unitCode: contract.reservationUnit.storageUnit.unitNumber },
+      ...(reservation.facility ? { facility: reservation.facility } : {}),
+      storage: { name: reservation.storageType.name, unitCode: unit.unitNumber,
+        floor: unit.floor ?? null, zone: unit.zone ?? null, row: unit.row ?? null, position: unit.position ?? null },
       startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate),
       quantity: reservation.quantity, pricing: reservation.quoteSnapshot,
       services: reservation.services.map((service: any) => ({ name: service.serviceNameSnapshot, billingUnit: service.billingUnitSnapshot, quantity: service.quantity, amount: Number(service.amountSnapshot) })),

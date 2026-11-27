@@ -33,8 +33,17 @@ export class PdfDocumentService {
     return this.render('HỢP ĐỒNG THUÊ KHO', contract.contractCode, issuer, pdf => {
       if (document.legacySnapshotUnavailable) this.paragraph(pdf, 'BẢN ĐỐI CHIẾU HỒ SƠ CŨ: phiên bản trước chưa lưu bản nội dung gốc được ký. File này tổng hợp dữ liệu hiện có, không xác nhận lại điều khoản hoặc tính toàn vẹn của nội dung ký trước đây.');
       this.party(pdf, issuer, document.customer ?? contract.reservation.customer);
+      if (document.facility?.name) {
+        this.section(pdf, 'Cơ sở thuê kho');
+        this.rows(pdf, [['Cơ sở', [document.facility.name, document.facility.code].filter(Boolean).join(' · ')],
+          ['Địa chỉ kho', document.facility.address], ['Giờ làm việc', document.facility.officeHours], ['Giờ khách truy cập kho', document.facility.accessHours]]
+          .filter(([, value]) => value));
+      }
       this.section(pdf, 'Thông tin kho và thời hạn');
-      this.rows(pdf, [['Mã đặt kho', document.reservationReference], ['Kho thuê', `${document.storage?.name ?? contract.storageType.name} - ${document.storage?.unitCode ?? contract.storageUnit.unitCode}`], ['Bắt đầu thuê', date(document.startDate)], ['Kết thúc kỳ thuê', `${date(document.endDate)} (không bao gồm ngày này)`], ['Phiên bản nội dung', document.version]]);
+      const storage = document.storage;
+      const location = [storage?.floor, storage?.zone, storage?.row != null ? 'Hàng ' + storage.row : '',
+        storage?.position != null ? 'Vị trí ' + storage.position : ''].filter(Boolean).join(' · ');
+      this.rows(pdf, [['Mã đặt kho', document.reservationReference], ['Kho thuê', `${document.storage?.name ?? contract.storageType.name} - ${document.storage?.unitCode ?? contract.storageUnit.unitCode}`], ...(location ? [['Vị trí trong cơ sở', location]] : []), ['Bắt đầu thuê', date(document.startDate)], ['Kết thúc kỳ thuê', `${date(document.endDate)} (không bao gồm ngày này)`], ['Phiên bản nội dung', document.version]]);
       this.quote(pdf, document.pricing, document.quantity);
       if (Array.isArray(document.clauses)) for (const clause of document.clauses) { pdf.font('Regular').fontSize(10); this.ensure(pdf, pdf.heightOfString(text(clause.text), { width: 499, lineGap: 4 }) + 45); this.section(pdf, text(clause.title)); this.paragraph(pdf, text(clause.text)); }
       else this.paragraph(pdf, 'Hồ sơ phiên bản trước: tài liệu này thể hiện đúng các thông tin đã lưu. Không bổ sung điều khoản hoặc xác thực OTP hồi tố vào nội dung khách đã xác nhận.');

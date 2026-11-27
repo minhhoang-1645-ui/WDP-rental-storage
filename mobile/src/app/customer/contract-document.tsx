@@ -35,6 +35,12 @@ function RentalContractDocument({ id }: { id: string }) {
       title: 'Tiếp tục ký', path: '/customer/contract-sign?id=' + encodeURIComponent(id) + '&reviewedHash=' + encodeURIComponent(hash),
     } : undefined;
   const lines = rows(quote.lineItems);
+  const facility = object(document.facility);
+  const bookingFacility = object(object(row?.reservation).facility);
+  const initial = object(quote.initialPaymentBreakdown);
+  const location = [text(document, 'storage.floor'), text(document, 'storage.zone'),
+    text(document, 'storage.row') && 'Hàng ' + text(document, 'storage.row'),
+    text(document, 'storage.position') && 'Vị trí ' + text(document, 'storage.position')].filter(Boolean).join(' · ');
 
   return <JourneyScreen title="Xem hợp đồng" action={action}>
     {!source.error && !source.loading && <CustomerRenewalDocuments contract={row} />}
@@ -43,30 +49,41 @@ function RentalContractDocument({ id }: { id: string }) {
       : !available ? <ErrorState message="Chưa có nội dung hợp đồng để hiển thị." onRetry={source.refresh} />
       : <DocumentPaper title="Hợp đồng thuê kho tự quản" meta={[text(document, 'contractCode'), text(document, 'version')].filter(Boolean).join(' · ')}>
         {document.legacySnapshotUnavailable ? <JourneyNotice title="Bản đối chiếu hồ sơ cũ" message="Hồ sơ này thiếu bản nội dung gốc đã ký." />
-          : issuer.draft !== false ? <JourneyNotice title="Bản dự thảo" message="Thông tin pháp nhân hoặc điều khoản phát hành chưa được phê duyệt đầy đủ." /> : null}
+          : issuer.draft !== false ? <JourneyNotice title="Bản dự thảo" message="Bên cho thuê chưa hoàn tất thông tin pháp nhân hoặc phê duyệt phát hành." /> : null}
         <Section title="Bên cho thuê" values={[
-          ['Tên pháp nhân', text(issuer, 'legalName') || 'Chưa cấu hình'],
-          ['Mã số thuế', text(issuer, 'taxCode')], ['Địa chỉ', text(issuer, 'address')], ['Người đại diện', text(issuer, 'representative')],
+          ['Tên pháp nhân', text(issuer, 'legalName') || 'Chưa có thông tin phát hành'],
+          ['Mã số thuế', text(issuer, 'taxCode')], ['Địa chỉ pháp nhân', text(issuer, 'address')], ['Người đại diện', text(issuer, 'representative')],
         ]} />
         <Section title="Khách thuê" values={[
           ['Họ và tên', text(document, 'customer.fullName')], ['Email', text(document, 'customer.email')], ['Điện thoại', text(document, 'customer.phone')],
         ]} />
+        <Section title="Cơ sở thuê kho" values={[
+          ['Tên cơ sở', text(facility, 'name')], ['Mã cơ sở', text(facility, 'code')],
+          ['Địa chỉ kho', text(facility, 'address')], ['Giờ làm việc', text(facility, 'officeHours')],
+          ['Giờ khách truy cập kho', text(facility, 'accessHours')],
+        ]} />
+        {!text(facility, 'name') && <Section title="Tham chiếu cơ sở trên đơn đặt kho" values={[
+          ['Cơ sở', text(bookingFacility, 'name')], ['Địa chỉ hiện tại', text(bookingFacility, 'address')],
+        ]} />}
         <Section title="Thông tin kho và thời hạn" values={[
           ['Đơn đặt kho', text(document, 'reservationReference')], ['Loại kho', text(document, 'storage.name')],
-          ['Mã ô kho', text(document, 'storage.unitCode')], ['Bắt đầu thuê', formatDate(text(document, 'startDate'))],
+          ['Mã ô kho', text(document, 'storage.unitCode')], ['Vị trí trong cơ sở', location], ['Bắt đầu thuê', formatDate(text(document, 'startDate'))],
           ['Kết thúc kỳ thuê', text(document, 'endDate') ? formatDate(text(document, 'endDate')) + ' (không bao gồm ngày này)' : ''],
+        ]} />
+        <Section title="Tóm tắt thanh toán" values={[
+          ['Cách thanh toán', statusLabel(text(quote, 'paymentPlan'))],
+          ['Dự kiến trả lần đầu', contractAmount(initial.totalAmount ?? quote.estimatedInitialAmountDue ??
+            object(quote.initialInvoiceEstimate).totalAmount ?? object(quote.initialInvoiceEstimate).amountDue)],
+          ['Dự kiến còn lại', Number(initial.remainingAmount) > 0 ? contractAmount(initial.remainingAmount) : ''],
+          ['Tổng dự kiến cả kỳ', contractAmount(quote.quotedTotalAmount ?? quote.totalAmount ?? quote.grandTotal)],
         ]} />
         {Object.keys(quote).length > 0 ? <Section title="Báo giá đính kèm" values={[
           ['Phạm vi', text(document, 'quantity') ? text(document, 'quantity') + ' kho trong cùng đơn đặt' : 'Đơn đặt kho'],
-          ['Cách thanh toán', statusLabel(text(quote, 'paymentPlan'))],
-          ['Đơn giá mỗi kho/tháng', contractAmount(quote.monthlyUnitPrice)],
+          [quote.billingMode === 'DAILY' ? 'Đơn giá mỗi kho/ngày' : 'Đơn giá mỗi kho/tháng', contractAmount(quote.billingMode === 'DAILY' ? quote.dailyUnitPrice : quote.monthlyUnitPrice)],
           ...(lines.length ? lines.map(line => [text(line, 'label', 'name') || 'Khoản phí', [contractAmount(line.amount ?? line.totalAmount), text(line, 'basis')].filter(Boolean).join(' · ')] as [string, string]) : [
             ['Tiền thuê trước giảm giá', contractAmount(quote.baseRentalAmount)], ['Giảm giá', contractAmount(quote.discountAmount)],
             ['Tiền thuê sau giảm giá', contractAmount(quote.rentalAmount)], ['Tiền cọc', contractAmount(quote.depositAmount)],
           ] as [string, string][]),
-          ['Tổng dự kiến cả kỳ', contractAmount(quote.quotedTotalAmount ?? quote.totalAmount ?? quote.grandTotal)],
-          ['Dự kiến thanh toán lần đầu', contractAmount(object(quote.initialPaymentBreakdown).totalAmount ?? quote.estimatedInitialAmountDue ??
-            object(quote.initialInvoiceEstimate).totalAmount ?? object(quote.initialInvoiceEstimate).amountDue)],
         ]} /> : null}
         {rows(document.services).map((service, index) => <View key={index} style={s.line}>
           <Text style={s.body}>{[text(service, 'name'), text(service, 'quantity')].filter(Boolean).join(' × ')}</Text>

@@ -190,7 +190,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               <ul>{rows(object(row.handoverReport).problems).map((problem, index) =>
                 <li key={index}><strong>{first(problem, 'staffName')} · {date(problem.reportedAt, true)}</strong><p>{first(problem, 'note')}</p></li>)}</ul>
             </DetailDisclosure>}
-          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
+          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : resource === 'invoices' ? ' invoice-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
             {!staffOperation && !service && workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {staffOperation ? <StaffOperationDetails resource={staffOperation} row={row} actions={
@@ -237,7 +237,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               </DetailDisclosure>}
             </div>
             {showProcessing && <aside className="manager-processing" id={isStaff ? 'staff-processing' : undefined} tabIndex={isStaff ? -1 : undefined}>
-              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : 'Xử lý hồ sơ'}</h2>
+              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : resource === 'invoices' ? 'Ghi nhận thanh toán' : 'Xử lý hồ sơ'}</h2>
               <ManagerActions
                 key={`${resource}:${id}:${row.updatedAt ?? row.status}`}
                 resource={resource}

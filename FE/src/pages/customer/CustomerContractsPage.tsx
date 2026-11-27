@@ -139,6 +139,7 @@ export function CustomerContractsPage() {
           <div className="record-page-title"><h3>Kho {selected.storageUnit.unitCode}</h3><CustomerStatus status={selected.status} /></div>
           <CopyRecordCode value={selected.contractCode} label="Mã hợp đồng" />
           <p>{formatPortalDate(selected.startDate)} – {formatPortalDate(selected.endDate)}</p>
+          {selected.reservation.facility && <p>Cơ sở trên đơn đặt kho · {selected.reservation.facility.name} · {selected.reservation.facility.address}</p>}
           <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />
           {selected.terms.acceptedAt ? <DetailDisclosure title="Thông tin ký hợp đồng">
             <p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>

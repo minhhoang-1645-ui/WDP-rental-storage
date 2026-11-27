@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { ArrowRight, ImagePlus, MapPin, Warehouse } from 'lucide-react';
+import { ArrowRight, MapPin, Warehouse } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { SESSION_ENDED_EVENT } from '../../auth/session-end';
@@ -10,6 +10,7 @@ import { allPages } from '../../services/portal';
 import { useApiResource } from '../../services/useApiResource';
 import { incidentArea, incidentAreas, incidentCategories, rentalImpacts } from '../../utils/maintenance-incident';
 import { staffFacilityMessage, useStaffFacility } from './staff-facility';
+import { EvidencePhotoField } from '../../components/workspace/EvidencePhotoField';
 
 type Unit = { id: string; unitCode: string; status: string };
 type Preview = { file: File; url: string };
@@ -40,8 +41,6 @@ function IssueReport({ userId }: { userId: string }) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [reportQuery, setReportQuery] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
-  const cameraInput = useRef<HTMLInputElement>(null);
   const reportParams = new URLSearchParams({ page: String(page), limit: '10', facilityId: selected, search: reportQuery });
   const reports = useApiResource<Page<Row>>(selected ? '/staff/maintenance/reported-by-me?' + reportParams : null, userId, true);
   const [units, setUnits] = useState<{ facility: string; items: Unit[]; error: string }>();
@@ -238,20 +237,16 @@ function IssueReport({ userId }: { userId: string }) {
           {priority === 'URGENT' && <p className="booking-alert" role="alert">Giữ khoảng cách an toàn, báo ngay cho quản lý tại cơ sở và gọi lực lượng khẩn cấp khi cần. Gửi phiếu sau khi đã xử lý nguy cơ tức thời.</p>}
           <label className="field-label">Mô tả sự cố<textarea name="description" minLength={3} maxLength={4000} rows={4} required defaultValue={draft?.description ?? ''}
             placeholder="Mô tả hiện trạng và thời điểm phát hiện" /></label>
-          <div className="incident-upload">
-            <strong>Ảnh sự cố <small>(tùy chọn)</small></strong>
-            <input ref={fileInput} hidden type="file" accept={fileTypes.join(',')} multiple onChange={addPhotos} />
-            <input ref={cameraInput} hidden type="file" accept={fileTypes.join(',')} capture="environment" onChange={addPhotos} />
-            <button type="button" className="button-secondary" disabled={photos.length >= 5} onClick={() => cameraInput.current?.click()}>Chụp ảnh</button>
-            <div><button type="button" className="button-secondary" disabled={photos.length >= 5} onClick={() => fileInput.current?.click()}>
-              <ImagePlus size={17} aria-hidden="true" /> Thêm ảnh
-            </button> <small>{photos.length}/5 ảnh · JPG, PNG hoặc WebP · Tối đa 5 MB/ảnh</small></div>
-          </div>
-          {photoError && <p className="booking-alert is-error" role="alert">{photoError}</p>}
-          {photos.length > 0 && <ul className="incident-photos">{photos.map(({ file, url }, index) => <li key={url}>
-            <img src={url} alt={'Ảnh sự cố ' + (index + 1)} />
-            <button type="button" className="button-secondary" aria-label={'Xóa ảnh ' + file.name} onClick={() => removePhoto(url)}>Xóa ảnh</button>
-          </li>)}</ul>}
+          <EvidencePhotoField label="Ảnh sự cố (tùy chọn)" accept={fileTypes.join(',')} count={photos.length} limit={5}
+            help="JPG, PNG hoặc WebP · Tối đa 5 MB mỗi ảnh" disabled={busy} error={photoError} onSelect={addPhotos}>
+            {photos.length > 0 && <ul className="evidence-photo-previews" aria-label="Ảnh đã chọn">
+              {photos.map(({ file, url }, index) => <li key={url}>
+                <img src={url} alt={'Ảnh sự cố ' + (index + 1)} />
+                <span title={file.name}>{file.name}</span>
+                <button type="button" className="button-secondary" aria-label={'Xóa ảnh ' + file.name} onClick={() => removePhoto(url)}>Xóa ảnh</button>
+              </li>)}
+            </ul>}
+          </EvidencePhotoField>
           <button type="submit" className="button-primary" disabled={!selected || facilities.loading || facilities.refreshing || Boolean(facilities.error) || !areaMode && !currentUnits?.items.length}>
             {busy ? 'Đang gửi…' : 'Gửi báo cáo'}
           </button>

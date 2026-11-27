@@ -7,6 +7,14 @@ export const depositMethods = ['NONE', 'FIXED_AMOUNT', 'RENT_PERCENTAGE', 'MONTH
 export const returnNoticeRange = { defaultValue: 7, min: 0, max: 30 } as const;
 export const DEPOSIT_REFUND_DAYS = 7;
 
+export function contractReturnNoticeDays(snapshot: unknown, startDate: Date, endDate: Date) {
+  const value = (snapshot as { pricingPolicy?: PricingPolicySnapshot } | null)?.pricingPolicy?.returnNotice?.value;
+  const bookedDays = (+endDate - +startDate) / 86_400_000;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < returnNoticeRange.min ||
+    value > returnNoticeRange.max || !Number.isSafeInteger(bookedDays) || bookedDays < 0) return null;
+  return Math.min(value, bookedDays);
+}
+
 type DepositMethod = (typeof depositMethods)[number];
 type DepositRule = { method: DepositMethod; amount: number };
 type DepositRules = Record<(typeof depositGroups)[number], DepositRule>;

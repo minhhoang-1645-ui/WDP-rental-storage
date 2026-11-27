@@ -54,7 +54,7 @@ export class ManagerService {
     const [pendingReservations, activeRentalRows, overdueRows, upcomingAppointments, pendingRenewals, openSupportRequests, maintenanceUnits, pendingDepositSettlements, availableUnits, occupiedUnits] = await Promise.all([
       this.prisma.reservation.count({ where: { AND:[scope], status: 'PENDING' } }),
       this.prisma.rentalContract.findMany({ where: { ...currentContractScope(actor), status: 'ACTIVE' }, distinct: ['reservationId'], select: { reservationId: true } }),
-      this.prisma.rentalContract.findMany({ where: { ...currentContractScope(actor), status: 'ACTIVE', endDate: { lte: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
+      this.prisma.rentalContract.findMany({ where: { ...currentContractScope(actor), status: 'ACTIVE', endDate: { lt: today } }, distinct: ['reservationId'], select: { reservationId: true } }),
       this.prisma.handoverAppointment.count({ where: { reservation:scope, status: { in: ['REQUESTED', 'CONFIRMED'] }, scheduledAt: { gte: now } } }),
       this.prisma.renewalRequest.count({ where: { ...renewalTaskScope(actor), status: { in: ['PENDING', 'APPROVED_PENDING_PAYMENT'] } } }),
       this.prisma.supportRequest.count({ where: { ...supportTaskScope(actor), status: { not: 'RESOLVED' } } }),

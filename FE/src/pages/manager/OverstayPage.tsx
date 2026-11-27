@@ -14,7 +14,7 @@ export function OverstayPage() {
   const setPage = (nextPage: number) => setParams({ page: String(nextPage) }, { replace: true });
   const result = useApiResource<Page<Overstay>>(`${staff ? '/staff/management/overstays' : '/manager/overstays'}?page=${page}`, user?.id, true);
   return <section>
-    <PageHeader title="Đến hạn nhưng chưa trả kho" description="Kho vẫn được giữ cho đến khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng. Hệ thống không tự tính phí trễ hạn." />
+    <PageHeader title="Đến hạn nhưng chưa trả kho" description="Kho vẫn được giữ cho đến khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng. Nếu hợp đồng có điều khoản quá hạn, phí được tính khi xác nhận ngày nhận kho thực tế." />
     <LoadState loading={result.loading} error={result.error} retry={result.refresh} />
     {result.data?.items.map(row => {
       const id = encodeURIComponent(row.reservationId);
@@ -23,7 +23,7 @@ export function OverstayPage() {
       return <DetailCard className="manager-section" key={row.id} detail={{ to, label: `Xem hồ sơ kho quá hạn ${row.storageUnit.unitNumber}` }}>
         <h2>{row.storageUnit.unitNumber} · {row.customer.fullName}</h2>
         <p>{row.storageUnit.floor} · {row.storageUnit.zone} · {row.customer.phone}</p>
-        <p>Hết kỳ ngày {row.endDate} · {row.overdueDays} ngày chưa hoàn tất trả · {row.contractCode}</p>
+        <p>Hết kỳ ngày {row.endDate} · {row.overdueDays === 0 ? 'Đến hạn hôm nay' : 'Quá hạn ' + row.overdueDays + ' ngày'} · {row.contractCode}</p>
         <Link className="button-primary" to={to}>{staff ? row.returnRequest ? 'Xử lý trả kho' : 'Xem kho và liên hệ khách' : 'Xem hồ sơ thuê'}</Link>
       </DetailCard>;
     })}

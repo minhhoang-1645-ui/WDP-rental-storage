@@ -43,7 +43,8 @@
     "20261127000800_maintenance_actual_cost_only",
     "20261127000900_facility_photo",
     "20261128000100_maintenance_repair_attachments",
-    "20261128000100_service_minimum_months"
+    "20261128000100_service_minimum_months",
+    "20261128000200_return_expected_date"
   ],
   "migrations": [
     {
@@ -598,6 +599,13 @@
       "checksums": [
         "df38d18c0d12d47849ad838a07888e541600523d8e707ccc006aeec506683576",
         "5ab73846277fff0b9c3c58f44dee03c997de0dd0a42a69bdff683bf8ec36f950"
+      ]
+    },
+    {
+      "name": "20261128000200_return_expected_date",
+      "checksums": [
+        "9f880a8f5dc178c2334481d9fa35ba6d61e7b7eccd23f03efd9bc7e305a9c5b8",
+        "7f6b767bb0f6872c6904fbf89ac91f58077ac512146c31098dfb933403939eb5"
       ]
     }
   ],

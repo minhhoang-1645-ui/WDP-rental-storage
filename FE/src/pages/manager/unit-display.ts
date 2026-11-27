@@ -47,8 +47,8 @@ export function allocationDisplay(allocation: Row, occupied = false, today = sta
   if (reservationStatus && reservationStatus !== 'CONFIRMED') return { status: reservationStatus, text: label(reservationStatus) };
   const start = first(allocation, 'startDate').slice(0, 10);
   const end = first(allocation, 'endDate').slice(0, 10);
-  if (contractStatus === 'ACTIVE' || occupied) return end && end <= today
-    ? { status: 'OVERDUE', text: 'Quá hạn · chưa trả' } : { status: 'ACTIVE', text: 'Đang hiệu lực' };
+  if (contractStatus === 'ACTIVE' || occupied) return end && end < today
+    ? { status: 'OVERDUE', text: 'Quá hạn · chưa trả' } : { status: 'ACTIVE', text: end === today ? 'Đến hạn hôm nay' : 'Đang hiệu lực' };
   if (start > today) return { status: 'RESERVED', text: 'Sắp bắt đầu' };
   if (end && end <= today) return { status: 'COMPLETED', text: 'Đã kết thúc' };
   return { status: 'RESERVED', text: 'Đang giữ' };

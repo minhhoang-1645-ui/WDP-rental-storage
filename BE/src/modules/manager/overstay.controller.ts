@@ -5,7 +5,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { businessToday } from '../../business-date.js';
+import { businessToday, daysAfterRentalEnd } from '../../business-date.js';
 
 @Controller(['manager/overstays', 'staff/management/overstays'])
 @UseGuards(AuthGuard, RolesGuard)
@@ -33,6 +33,6 @@ export class OverstayController {
         reservationUnit: { include: { storageUnit: { select: { unitNumber: true, floor: true, zone: true } } } },
       } }),
     ]);
-    return { page, limit, total, items: rows.map(row => ({ id: row.id, contractCode: row.contractCode, reservationId: row.reservationId, reference: row.reservation.reservationCode, customer: row.reservation.customer, storageUnit: row.reservationUnit.storageUnit, endDate: row.endDate.toISOString().slice(0, 10), overdueDays: Math.floor((today.getTime() - row.endDate.getTime()) / 86400000) + 1, returnRequest: row.returnInspections[0]?.returnRequest ?? null, message: 'Đã hết kỳ thuê, chưa hoàn tất trả kho. Kho vẫn bị chặn cho tới khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng.' })) };
+    return { page, limit, total, items: rows.map(row => ({ id: row.id, contractCode: row.contractCode, reservationId: row.reservationId, reference: row.reservation.reservationCode, customer: row.reservation.customer, storageUnit: row.reservationUnit.storageUnit, endDate: row.endDate.toISOString().slice(0, 10), overdueDays: daysAfterRentalEnd(row.endDate, today), returnRequest: row.returnInspections[0]?.returnRequest ?? null, message: 'Đã hết kỳ thuê, chưa hoàn tất trả kho. Kho vẫn bị chặn cho tới khi xác nhận đã dọn trống và hoàn tất kiểm tra hiện trạng.' })) };
   }
 }

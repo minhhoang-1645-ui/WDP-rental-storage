@@ -21,6 +21,7 @@ import { ManagerReturnsController } from './manager-returns.controller.js';
 import { ReturnsService } from './returns.service.js';
 import { StaffReturnsController } from './staff-returns.controller.js';
 import { monthlyBoundary } from './return-period-closeout.js';
+import { pricingPolicyDefaults } from '../policies/pricing-policy.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `return-facility-${runId}`;
@@ -70,6 +71,8 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
       { id: adminId, email: `${adminId}@example.test`, fullName: 'Return Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
     ] });
   await prisma.facilityAccess.createMany({data:[managerId,staffId].map(userId=>({userId,facilityId,grantedById:adminId}))});
+  await prisma.businessRule.create({ data: { id: randomUUID(), key: 'monthlyPriceRange:small', facilityId,
+    version: 1, value: { min: 1000000, max: 2000000 }, effectiveFrom: day(-1), createdById: adminId } });
 });
 
   afterEach(async () => {
@@ -103,6 +106,7 @@ afterAll(async () => {
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
+await prisma.businessRule.deleteMany({where:{createdById:adminId}});
 await prisma.facilityAccess.deleteMany({where:{facilityId}});
 await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
@@ -150,7 +154,8 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
 };
   const requestContract = async (reservationId: string, rentalContractId: string, key = `return-key-${randomUUID()}`) => {
  const row=await returns.createCustomerReturn(customer,{reservationId,rentalContractId},key);
- return returns.assign(row.id,{staffUserId:staff.id},manager);
+ const existing = await returns.getManagerReturn(row.id, manager);
+ return returns.assign(row.id,{staffUserId:staff.id,expectedAssignedStaffUserId:existing.assignedStaff?.id ?? null},manager);
 };
 
   async function historicalReturn(rental: Awaited<ReturnType<typeof activeRental>>) {
@@ -232,6 +237,94 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     } });
     await expect(requestReturn(renewal.reservation.id)).rejects.toMatchObject({ response: { code: 'UNRESOLVED_RENEWAL_EXISTS' } });
   });
+
+  it('accepts advance notice for the contract end, independently of the inspection appointment', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(7) });
+    const input = { reservationId: reservation.id, rentalContractId: contract.id, expectedReturnDate: dateText(contract.endDate) };
+    const key = 'planned-return-' + reservation.id;
+    const request = await returns.createCustomerReturn(customer, input, key);
+    expect(request).toMatchObject({ expectedReturnDate: input.expectedReturnDate, timing: 'ON_OR_AFTER_END', inspectionScheduledAt: null,
+      actualReturnDate: null, overdueDays: 0 });
+    await expect(returns.createCustomerReturn(customer, input, key)).resolves.toMatchObject({ id: request.id });
+    await expect(returns.createCustomerReturn(customer, { ...input, expectedReturnDate: dateText(day(8)) }, key)).rejects.toMatchObject({ status: 409 });
+    await expect(returns.createCustomerReturn(customer, { ...input, expectedReturnDate: dateText(day(6)) }, key + '-early'))
+      .rejects.toMatchObject({ response: { code: 'EARLY_RETURN_APPROVAL_REQUIRED' } });
+    await returns.assign(request.id, { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager);
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({
+      inspectionStartBlock: expect.stringContaining('Chưa đến hạn thuê'),
+    });
+    await expect(returns.startInspection(request.id, staff)).rejects.toMatchObject({
+      response: { code: 'RETURN_INSPECTION_WINDOW_NOT_OPEN' },
+    });
+    await expect(prisma.returnRequest.findUnique({ where: { id: request.id } })).resolves.toMatchObject({
+      status: 'REQUESTED', inspectionStartedAt: null, physicallyReturnedAt: null,
+    });
+  });
+
+  it('waits for the planned return day and the inspection appointment before starting', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const request = await returns.createCustomerReturn(customer, {
+      reservationId: reservation.id, rentalContractId: contract.id, expectedReturnDate: dateText(day(1)),
+    }, 'return-window-' + reservation.id);
+    await returns.assign(request.id, { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager);
+    await expect(returns.startInspection(request.id, staff)).rejects.toThrow('Chưa đến ngày dự kiến trả kho');
+    await prisma.returnRequest.update({ where: { id: request.id }, data: {
+      expectedReturnDate: day(0), inspectionScheduledAt: new Date(Date.now() + 15 * 60_000),
+    } });
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({
+      inspectionStartBlock: 'Chưa đến giờ hẹn kiểm tra trả kho.',
+    });
+    await expect(returns.startInspection(request.id, staff)).rejects.toThrow('Chưa đến giờ hẹn');
+    await prisma.returnRequest.update({ where: { id: request.id }, data: {
+      inspectionScheduledAt: new Date(Date.now() - 60_000),
+    } });
+    await expect(returns.startInspection(request.id, staff)).resolves.toMatchObject({
+      status: 'INSPECTION_IN_PROGRESS', inspectionStartBlock: null,
+    });
+  });
+
+  it('counts the end date as zero overdue days for Manager and Staff', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const request = await requestContract(reservation.id, contract.id);
+    const managerRows = await new OverstayController(prisma).list({ headers: {}, user: manager });
+    expect(managerRows.items.find(row => row.id === contract.id)?.overdueDays).toBe(0);
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({ overdueDays: 0 });
+    await expect(returns.getCustomerReturn(customerId, request.id)).resolves.toMatchObject({ overdueDays: 0 });
+  });
+
+  it('releases the physically returned unit while a separate open invoice remains payable', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const invoice = await prisma.invoice.create({ data: {
+      invoiceCode: reservation.reservationCode + '-DUE', reservationId: reservation.id, type: 'RECURRING',
+      status: 'OPEN', billingCycle: 2, rentalAmount: 300000n, depositAmount: 0n, balanceDue: 300000n, totalAmount: 300000n,
+    } });
+    const request = await requestContract(reservation.id, contract.id);
+    await passAll(request.id);
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
+    await expect(prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } }))
+      .resolves.toMatchObject({ status: 'AVAILABLE' });
+    await expect(prisma.invoice.findUnique({ where: { id: invoice.id } })).resolves.toMatchObject({ status: 'OPEN', balanceDue: 300000n });
+    await expect(returns.getManagerReturn(request.id, manager)).resolves.toMatchObject({
+      physicallyReturnedAt: expect.any(String), settlementStatus: 'APPROVED', debtStatus: 'OUTSTANDING', outstandingBalance: 300000,
+    });
+  });
+
+  it.each(['earlyReturn', 'returnOverdue', 'paymentOverdue', 'cancellation'] as const)(
+    'rejects a stale booking quote after publishing a %s version', async policy => {
+      const draft = { productId: storageTypeId, startDate: dateText(day(2)), periodMode: 'duration', durationMonths: 1, quantity: 1,
+        adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' };
+      const shown = await booking.checkAvailability(draft);
+      expect(shown.available).toBe(true);
+      const id = randomUUID();
+      await prisma.businessRule.create({ data: { id, key: policy, version: 1, value: pricingPolicyDefaults[policy],
+        effectiveFrom: new Date(), createdById: adminId } });
+      try {
+        await expect(booking.createReservation(customer, { ...draft, expectedServiceQuoteVersion: shown.serviceQuoteVersion }))
+          .rejects.toMatchObject({ response: { code: 'SERVICE_QUOTE_CHANGED' } });
+      } finally {
+        await prisma.businessRule.delete({ where: { id } });
+      }
+    });
 
   it('creates exactly one maintenance case per ISSUE_FOUND unit in a quantity-three return', async () => {
     const rental = await activeRental({ quantity: 3 });
@@ -383,7 +476,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     for (const user of [manager, staff]) {
       const list = await overdue.list({ headers: {}, user });
       expect(list.items.find(item => item.id === a.id)?.returnRequest?.id).toBe(first.id);
-      expect(list.items.find(item => item.id === b.id)?.returnRequest).toBeNull();
+      expect(list.items.find(item => item.id === b.id)?.returnRequest).toBe(user === manager ? null : undefined);
     }
     await passAll(first.id);
     await expect(returns.finalize(first.id, staff, { unitsEmpty: true, accessRevoked: true })).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
@@ -392,6 +485,8 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(returns.getManagerReturn(first.id,manager)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
     const firstDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: first.id } });
     await expect(deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, staff)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(deposits.refund(firstDeposit.id, { method: 'CASH', refundConfirmed: true }, 'refund-a-' + runId, manager)).rejects.toThrow('mã chứng từ');
+    await expect(deposits.refund(firstDeposit.id, { method: 'BANK_TRANSFER', refundConfirmed: true }, 'refund-a-' + runId, manager)).rejects.toThrow('mã giao dịch');
     await deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, manager);
     await expect(returns.getCustomerReturn(customerId, first.id)).resolves.toMatchObject({ status: 'COMPLETED' });
 
@@ -435,7 +530,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
         })));
       },
     });
-    await expect(new ReturnsService(failingClient).finalize(request.id, staff)).rejects.toThrow('Forced storage update failure');
+    await expect(new ReturnsService(failingClient).finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toThrow('Forced storage update failure');
     await expect(prisma.rentalContract.findUnique({ where: { id: a.id } })).resolves.toMatchObject({ status: 'ACTIVE', completedAt: null });
     await expect(prisma.reservationUnit.findUnique({ where: { id: a.reservationUnit.id } })).resolves.toMatchObject({ releasedAt: null });
     await expect(prisma.storageUnit.findUnique({ where: { id: a.reservationUnit.storageUnit.id } })).resolves.toMatchObject({ status: 'OCCUPIED' });
@@ -534,11 +629,15 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
       const key = 'combined-' + initial.id;
       const body = { depositAmount: 1500000, rentAmount: refundAmount, refundConfirmed: true };
       await expect(settlements.confirmReturnRefund(deposit.id, { ...body, refundConfirmed: false }, key, manager)).rejects.toThrow('xác nhận');
-      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, rentAmount: 1 }, key, manager)).rejects.toThrow('Số tiền cần hoàn vừa thay đổi');
-      const confirmed = await settlements.confirmReturnRefund(deposit.id, body, key, manager);
-      expect(confirmed).toMatchObject({ status: 'SETTLED', refundReference: null, refundedAt: expect.any(String),
-        earlyReturnSettlement: { rentRefund: { approvedAt: confirmed.refundedAt, refundedAt: confirmed.refundedAt, reference: null } } });
-      expect(await settlements.confirmReturnRefund(deposit.id, body, key, manager)).toEqual(confirmed);
+      const reference = 'combined-transfer-' + initial.id;
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, rentAmount: 1, reference }, key, manager)).rejects.toThrow('Số tiền cần hoàn vừa thay đổi');
+      await expect(settlements.confirmReturnRefund(deposit.id, body, key, manager)).rejects.toThrow('mã giao dịch');
+      const confirmed = await settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager);
+      expect(confirmed).toMatchObject({ status: 'SETTLED', refundReference: reference, refundedAt: expect.any(String),
+        earlyReturnSettlement: { rentRefund: { approvedAt: confirmed.refundedAt, refundedAt: confirmed.refundedAt, reference } } });
+      expect(await settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager)).toEqual(confirmed);
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, reference: 'different-reference' }, key, manager))
+        .rejects.toMatchObject({ status: 409 });
       expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED', rentRefundedById: manager.id });
       return;
     }
@@ -555,6 +654,11 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
       await expect(service.settleEarlyReturn(requested.id, { ...transfer, reference: 'another' }, manager, true)).rejects.toThrow('đã được ghi nhận');
     }
     expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED' });
+    if (scenario === 'used-debt') {
+      await expect(service.getCustomerReturn(customerId, requested.id)).resolves.toMatchObject({
+        physicallyReturnedAt: expect.any(String), settlementStatus: 'SETTLED', debtStatus: 'OUTSTANDING', outstandingBalance: 1500000,
+      });
+    }
   });
 
   it('allows an early return approval for a previously signed contract using the standard decision', async () => {

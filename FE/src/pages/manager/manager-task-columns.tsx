@@ -95,9 +95,12 @@ function managerRecordColumns(resource: RecordResource, status: StaffColumn<Row>
       recordCode, customerName,
       physical,
       { key: 'date', label: 'Thời gian trả kho', cell: row => {
-        const corrected = first(row, 'overdueSettlement.physicalReturnDate');
-        const timestamp = corrected || first(row, 'physicallyReturnedAt', 'inspectionScheduledAt');
-        return <>{timestamp ? date(timestamp, !corrected) : 'Chưa có lịch'}{returnedTiming(row) && <small>{returnedTiming(row)}</small>}</>;
+        const actual = first(row, 'actualReturnDate');
+        const scheduled = first(row, 'inspectionScheduledAt');
+        const expected = first(row, 'expectedReturnDate');
+        return <>{actual ? date(actual) : scheduled ? date(scheduled, true) : 'Chưa có lịch'}
+          {expected && !actual && <small>Dự kiến trả {date(expected)}</small>}
+          {returnedTiming(row) && <small>{returnedTiming(row)}</small>}</>;
       } },
       { key: 'inspection', label: 'Kết quả kiểm tra', cell: row => {
         const total = first(row, 'inspectionSummary.total');
@@ -111,14 +114,16 @@ function managerRecordColumns(resource: RecordResource, status: StaffColumn<Row>
           {Number(first(row, 'inspectionSummary.issues')) > 0 && <small>{first(row, 'inspectionSummary.issues')} kho có vấn đề</small>}
           {staff && !row.physicallyReturnedAt && <small>Phụ trách {staff}</small>}</>;
       } },
-      { key: 'settlement', label: 'Trạng thái quyết toán', cell: row => {
+      { key: 'settlement', label: 'Quyết toán và công nợ', cell: row => {
         const settlement = first(row, 'settlementStatus');
         const pendingRentRefund = Boolean(first(row, 'earlyReturnCloseout.appliedAt')) && (!first(row, 'rentRefund.approvedAt')
           || Number(first(row, 'earlyReturnCloseout.refundAmount')) > 0 && !first(row, 'rentRefund.refundedAt'));
         return <>{pendingRentRefund ? <Status value="PENDING_SETTLEMENT" /> : settlement ? <Status value={settlement} text={settlement === 'PENDING_REVIEW' ? 'Chờ quyết toán'
-          : settlement === 'APPROVED' ? 'Đã duyệt quyết toán' : undefined} />
+          : settlement === 'APPROVED' ? 'Đã duyệt quyết toán cọc' : settlement === 'SETTLED' ? 'Đã quyết toán cọc' : undefined} />
           : row.status === 'PENDING_SETTLEMENT' ? <Status value={row.status} /> : '—'}
-          {row.status === 'COMPLETED' && <small>Hồ sơ hoàn tất</small>}</>;
+          {row.physicallyReturnedAt && <small>Đã nhận kho</small>}
+          {row.debtStatus === 'OUTSTANDING' && <small>Còn công nợ</small>}
+          {row.debtStatus === 'NEEDS_RECONCILIATION' && <small>Cần đối soát công nợ</small>}</>;
       } },
     ];
     case 'customers': return [

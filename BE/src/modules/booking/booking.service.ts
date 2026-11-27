@@ -1165,7 +1165,9 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
     return this.fingerprint(terms, quote.currency, quote.billingMode, quote.paymentPlan,
       quote.quantity, quote.monthlyUnitPrice, quote.baseRentalAmount, quote.discountPercent,
       quote.discountAmount, quote.rentalAmount, quote.depositAmount, quote.quotedTotalAmount,
-      includePolicy ? [quote.pricingPolicy?.deposit.version, quote.pricingPolicy?.prepaid.version, quote.pricingPolicy?.renewal?.version, quote.pricingPolicy?.returnNotice?.version] : null);
+      includePolicy ? [quote.pricingPolicy?.deposit.version, quote.pricingPolicy?.prepaid.version,
+        quote.pricingPolicy?.renewal?.version, quote.pricingPolicy?.returnNotice?.version, quote.pricingPolicy?.earlyReturn?.version,
+        quote.pricingPolicy?.returnOverdue?.version, quote.pricingPolicy?.paymentOverdue?.version, quote.pricingPolicy?.cancellation?.version] : null);
   }
 
   private expectedQuoteVersion(value: unknown) {

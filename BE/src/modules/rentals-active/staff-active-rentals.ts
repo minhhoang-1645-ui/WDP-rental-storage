@@ -25,7 +25,7 @@ export function staffRentalWhere(scope: Prisma.RentalContractWhereInput, query: 
   ] });
   if (query.customer) filters.push({ OR: customerMatch(query.customer) });
   if (query.overdue !== undefined) {
-    const inTerm = { AND: [scope, { endDate: { gt: businessToday(now) } }] };
+    const inTerm = { AND: [scope, { endDate: { gte: businessToday(now) } }] };
     filters.push({ contracts: query.overdue ? { none: inTerm } : { some: inTerm } });
   }
   return { AND: filters };

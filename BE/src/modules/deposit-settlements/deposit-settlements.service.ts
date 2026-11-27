@@ -183,6 +183,10 @@ export class DepositSettlementsService {
     if ((depositAmount > 0 || rentAmount > 0) && input.refundConfirmed !== true) {
       throw new BadRequestException('Cần xác nhận đã chuyển tiền hoàn cho khách.');
     }
+    const reference = this.optionalText(input.reference, 160, 'reference');
+    if ((depositAmount > 0 || rentAmount > 0) && (!reference || reference.length < 2)) {
+      throw new BadRequestException('Cần mã giao dịch chuyển khoản hoàn tiền.');
+    }
     const identity = await this.identity(id);
     return this.serializable(async tx => {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
@@ -195,8 +199,8 @@ export class DepositSettlementsService {
       const pendingDeposit = !current.refundedAt && current.status !== 'SETTLED' ? depositRefund : 0;
       const pendingRent = returned.rentRefundedAt ? 0 : closeout.refundAmount;
       if (current.status === 'SETTLED' && !earlyReturnSettlementPending(returned) &&
-          (depositAmount === 0 || current.refundedAt && depositAmount === depositRefund) &&
-          (rentAmount === 0 || returned.rentRefundedAt && rentAmount === closeout.refundAmount)) return this.managerView(current);
+          (depositAmount === 0 || current.refundedAt && depositAmount === depositRefund && current.refundReference === reference) &&
+          (rentAmount === 0 || returned.rentRefundedAt && rentAmount === closeout.refundAmount && returned.rentRefundReference === reference)) return this.managerView(current);
       if (returned.status !== 'PENDING_SETTLEMENT' || current.outstandingAmount !== 0n ||
           !(current.status === 'SETTLED' || current.status === 'APPROVED' && pendingDeposit > 0)) {
         throw new ConflictException('Cần xử lý xong quyết toán cọc và khoản phải thu thêm trước khi xác nhận hoàn tiền.');
@@ -207,11 +211,11 @@ export class DepositSettlementsService {
 
       const now = new Date();
       if (pendingDeposit > 0) {
-        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference: null, note: null, idempotencyKey }, actor.id, now);
+        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference, note: null, idempotencyKey }, actor.id, now);
       }
       await tx.returnRequest.update({ where: { id: returned.id }, data: {
         ...(!returned.rentRefundApprovedAt ? { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id } : {}),
-        ...(pendingRent > 0 ? { rentRefundedAt: now, rentRefundedById: actor.id } : {}),
+        ...(pendingRent > 0 ? { rentRefundedAt: now, rentRefundedById: actor.id, rentRefundReference: reference } : {}),
       } });
       await this.completeReturn(tx, returned.id, actor.id, now);
       return this.managerView(await this.find(current.id, tx));
@@ -383,7 +387,8 @@ export class DepositSettlementsService {
     const method = input.method;
     if (method !== 'BANK_TRANSFER' && method !== 'CASH') throw new BadRequestException('method phải là BANK_TRANSFER hoặc CASH.');
     const reference = this.optionalText(input.reference, 200, 'reference');
-    if (reference && reference.length < 2) throw new BadRequestException('Mã giao dịch hoàn tiền phải có ít nhất 2 ký tự.');
+    if (!reference || reference.length < 2) throw new BadRequestException(method === 'BANK_TRANSFER'
+      ? 'Cần mã giao dịch chuyển khoản hoàn cọc.' : 'Cần số phiếu chi hoặc mã chứng từ hoàn cọc tiền mặt.');
     // Clients predating explicit confirmation sent a transaction reference after refunding.
     if (input.refundConfirmed !== true && (input.refundConfirmed !== undefined || !reference)) {
       throw new BadRequestException('Cần xác nhận đã hoàn tiền thực tế cho khách.');

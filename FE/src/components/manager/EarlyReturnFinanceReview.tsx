@@ -63,6 +63,7 @@ export function EarlyReturnFinanceFields({ item }: { item: Row }) {
 
 export function CombinedReturnRefund({ row, busy, onConfirm }: { row: Row; busy: boolean; onConfirm: (body: Row) => void }) {
   const [confirmed, setConfirmed] = useState(false);
+  const [reference, setReference] = useState('');
   const settlement = object(row.earlyReturnSettlement);
   const closeout = object(settlement.closeout);
   const rentRefund = object(settlement.rentRefund);
@@ -80,20 +81,23 @@ export function CombinedReturnRefund({ row, busy, onConfirm }: { row: Row; busy:
       [rentRefund.refundedAt ? 'Tiền thuê và dịch vụ đã hoàn' : 'Tiền thuê và dịch vụ cần hoàn', money(rentAmount)],
     ]} />
     <InvoiceAdjustments invoices={rows(closeout.adjustedInvoices)} official />
-    {complete ? <p role="status">{depositAmount + rentAmount > 0 ? <>Đã ghi nhận hoàn <strong>{money(depositAmount + rentAmount)}</strong>.</> : 'Đã hoàn tất quyết toán. Không phát sinh tiền hoàn.'}</p> :
+    {complete ? <p role="status">{depositAmount + rentAmount > 0 ? <>Đã ghi nhận hoàn <strong>{money(depositAmount + rentAmount)}</strong>.</> : 'Đã xử lý phần hoàn tiền. Không có khoản cần hoàn.'}</p> :
       !ready ? <p>{row.status === 'PENDING_REVIEW' ? 'Duyệt tiền cọc để chốt tổng tiền hoàn.' : 'Xử lý khoản phải thu thêm để hoàn tất quyết toán.'}</p> :
         <form className="portal-form" onSubmit={event => {
           event.preventDefault();
-          if (busy || total > 0 && !confirmed) return;
-          onConfirm({ depositAmount: depositPending, rentAmount: rentPending, refundConfirmed: total > 0 });
+          if (busy || total > 0 && (!confirmed || reference.trim().length < 2)) return;
+          onConfirm({ depositAmount: depositPending, rentAmount: rentPending, refundConfirmed: total > 0, reference: total > 0 ? reference.trim() : undefined });
         }}>
           {total > 0 && <>
             <p>Tổng cần chuyển <strong>{money(total)}</strong></p>
+            <label className="field-label">Mã giao dịch chuyển khoản
+              <input value={reference} onChange={event => setReference(event.target.value)} required minLength={2} maxLength={160} />
+            </label>
             <label className="portal-checkbox"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
               Tôi đã chuyển số tiền trên cho khách.
             </label>
           </>}
-          <button className="button-primary" disabled={busy || total > 0 && !confirmed}>
+          <button className="button-primary" disabled={busy || total > 0 && (!confirmed || reference.trim().length < 2)}>
             {total > 0 ? 'Xác nhận đã chuyển tiền' : 'Hoàn tất quyết toán'}
           </button>
         </form>}

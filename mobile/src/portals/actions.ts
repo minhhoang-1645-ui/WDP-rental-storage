@@ -138,10 +138,12 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     const early = endDate > vietnamCalendarDate(now);
     const legacyApproval = early && approved && text(contract, 'returnReadiness.policy') !== 'PERIOD_CLOSEOUT_V1'
       && !text(contract, 'returnReadiness.earlyReturnBlockReason');
-    if (endDate && (!early || approved) && (legacyApproval || returnSettlementReady(contract))) {
+    if (endDate && (legacyApproval || returnSettlementReady(contract))) {
       actions.push({ title: `Trả kho ${unit}`, path: '/customer/returns', method: 'POST', idempotent: true,
-        fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)], transform: input => ({ ...input, reservationId, rentalContractId }),
-        description: scope + (early ? ' Quản lý đã chấp thuận trả trước hạn.' : '') + returnNotice });
+        fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)],
+        transform: input => ({ ...input, reservationId, rentalContractId,
+          expectedReturnDate: endDate > vietnamCalendarDate(now) ? endDate : vietnamCalendarDate(now) }),
+        description: scope + returnNotice });
     }
     if (early && !approved && !pendingOrApproved.some(item => item.status !== 'RESOLVED')) {
       actions.push({ title: `Đề nghị trả trước hạn kho ${unit}`, path: '/customer/support-requests', method: 'POST', idempotent: true,

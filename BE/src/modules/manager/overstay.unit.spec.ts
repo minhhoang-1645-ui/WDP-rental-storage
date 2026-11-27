@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRequest, PublicUser } from '../auth/auth.types.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import { OverstayController } from './overstay.controller.js';
+import { staffContractScope } from '../facility-access/task-access.js';
 
 function setup(role: PublicUser['role'], _unusedLegacyFlag: boolean) {
   const count = vi.fn().mockResolvedValue(0);
@@ -21,7 +22,7 @@ describe('overdue physical storage scope', () => {
     };
     const where = {
       status: 'ACTIVE', endDate: { lte: expect.any(Date) },
-      reservationUnit: { releasedAt: null }, AND: [expect.objectContaining({reservation:expect.objectContaining({facility:expect.any(Object)})})],
+      reservationUnit: { releasedAt: null }, AND: [staffContractScope(request.user!)],
     };
     expect(count).toHaveBeenCalledWith({ where });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, skip: 25, take: 25 }));

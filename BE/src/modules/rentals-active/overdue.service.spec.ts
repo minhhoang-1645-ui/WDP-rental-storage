@@ -8,6 +8,7 @@ import { deriveOverdueState } from './overdue-state.js';
 import { ContractsService } from '../contracts/contracts.service.js';
 import { ManagerService } from '../manager/manager.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { businessToday } from '../../business-date.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `overdue-facility-${runId}`;
@@ -24,8 +25,7 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
   let rentals: ActiveRentalsService;
   let booking: BookingService;
   const dateAt = (days: number) => {
-    const value = new Date();
-    value.setUTCHours(0, 0, 0, 0);
+    const value = businessToday();
     value.setUTCDate(value.getUTCDate() + days);
     return value;
   };
@@ -56,6 +56,8 @@ describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:
       ...[staffA, staffB].map(staff => ({ id: staff.id, email: `${staff.id}@example.test`, fullName: staff.id, role: staff.role, passwordHash: 'secret-hash' })),
     ] });
   await prisma.facilityAccess.createMany({data:[managerId,staffA.id,staffB.id].map(userId=>({userId,facilityId,grantedById:managerId}))});
+  await prisma.businessRule.create({ data: { id: randomUUID(), key: 'monthlyPriceRange:small', facilityId,
+    version: 1, value: { min: 1000000, max: 2000000 }, effectiveFrom: dateAt(-1), createdById: managerId } });
 });
 
   afterEach(async () => {
@@ -79,6 +81,7 @@ afterAll(async () => {
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
 await prisma.facilityAccess.deleteMany({where:{facilityId}});
+await prisma.businessRule.deleteMany({where:{facilityId}});
 await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffA.id, staffB.id] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
@@ -102,7 +105,7 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
         contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: reservation.id, reservationUnitId: allocation.id,
         status, startDate: reservation.startDate, endDate, activatedAt: status === 'ACTIVE' ? dateAt(-180) : null,
       } });
-      await prisma.storageUnit.update({ where: { id: unit.id }, data: { status: status === 'ACTIVE' ? 'OCCUPIED' : 'AVAILABLE' } });
+      await prisma.storageUnit.update({ where: { id: unit.id }, data: { status: status === 'ACTIVE' ? 'OCCUPIED' : 'RESERVED' } });
     }
     return { reservation, units };
   }
@@ -117,10 +120,15 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     return { future, allocation };
   }
 
-  it('derives ACTIVE before end and OVERDUE exactly at the exclusive end boundary deterministically', () => {
+  it('counts the exclusive end date as zero days overdue in the local timezone', () => {
     const end = new Date('2027-05-10T00:00:00.000Z');
     expect(deriveOverdueState(end, new Date('2027-05-09T23:59:59.999+07:00'))).toMatchObject({ isOverdue: false, overdueSince: null, rentalState: 'ACTIVE' });
-    expect(deriveOverdueState(end, new Date('2027-05-10T00:00:00.000+07:00'))).toMatchObject({ effectiveEndDate: '2027-05-10', isOverdue: true, overdueSince: '2027-05-10', rentalState: 'OVERDUE' });
+    expect(deriveOverdueState(end, new Date('2027-05-10T00:00:00.000+07:00'))).toMatchObject({
+      effectiveEndDate: '2027-05-10', isOverdue: false, overdueDays: 0, overdueSince: null, rentalState: 'ACTIVE',
+    });
+    expect(deriveOverdueState(end, new Date('2027-05-11T00:00:00.000+07:00'))).toMatchObject({
+      isOverdue: true, overdueDays: 1, overdueSince: '2027-05-11', rentalState: 'OVERDUE',
+    });
   });
 
   it('exposes overdue without mutating ACTIVE contracts, OCCUPIED units, invoices or recurring cycles', async () => {
@@ -148,9 +156,9 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     } });
     expect((await rentals.getCustomerRental(customerId, completed.reservation.id)).isOverdue).toBe(false);
 
-    const waiting = await rental({ endDate: dateAt(0) });
+    const waiting = await rental({ endDate: dateAt(-1) });
     const renewal = await prisma.renewalRequest.create({ data: {
-      renewalCode: `WDPR-WAIT-${runId}`, reservationId: waiting.reservation.id, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: dateAt(0), requestedEndDate: dateAt(90), termMonths: 3,
+      renewalCode: `WDPR-WAIT-${runId}`, reservationId: waiting.reservation.id, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: dateAt(-1), requestedEndDate: dateAt(90), termMonths: 3,
       paymentPlan: 'PAY_MONTHLY', quoteSnapshot: {} as Prisma.InputJsonValue, requestedByUserId: customerId, activeKey: waiting.reservation.id, idempotencyKey: `wait-${randomUUID()}`,
     } });
     const view = await rentals.getCustomerRental(customerId, waiting.reservation.id);

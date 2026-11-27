@@ -123,22 +123,30 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
     const received = Boolean(row.physicallyReturnedAt);
     const hasResults = inspections.some(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)));
     const settlementStatus = first(row, 'settlementStatus');
+    const phone = first(person, 'phone');
     return <>
       <Section title="Thông tin trả kho" items={[
         ['Khách hàng', name],
+        ['Số điện thoại', phone ? <a className="portal-text-button" href={`tel:${phone}`}>{phone}</a> : 'Chưa có số điện thoại'],
         ['Cơ sở', first(row, 'facility.name')],
-        ['Kho trả', inspections.map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ')],
+        ['Vị trí kho', inspections.length > 0 && <span className="record-links">{inspections.map(item => {
+          const aisle = first(item, 'unit.row');
+          const position = first(item, 'unit.position');
+          const location = [first(item, 'unit.unitCode'), first(item, 'unit.floor'), first(item, 'unit.zone'),
+            aisle && `Dãy ${aisle}`, position && `Vị trí ${position}`].filter(Boolean);
+          return <span key={first(item, 'id')}>{location.join(' · ') || 'Chưa cập nhật vị trí'}</span>;
+        })}</span>],
         ['Hợp đồng', inspections.map(item => first(item, 'contract.contractCode')).filter(Boolean).join(', ')],
-        ...(inspections.length === 1 ? [['Hạn thuê thực tế', dateField('reservation.effectiveEndDate') ||
-          <DateFact value={first(inspections[0], 'contract.endDate')} />] as Fact] : []),
-        ['Loại yêu cầu', row.timing === 'EARLY' ? 'Trả trước hạn' : row.timing === 'ON_OR_AFTER_END' ? 'Trả từ ngày hết hạn' : ''],
         ['Ngày gửi yêu cầu', dateField('requestedAt', true)],
+        ['Lịch kiểm tra trả kho', dateField('inspectionScheduledAt', true) || 'Chưa đặt lịch'],
+        ['Số ngày quá hạn', typeof row.overdueDays === 'number' ? `${row.overdueDays} ngày` : '—'],
         ['Người phụ trách', assigned],
       ]} note={first(row, 'note')} />
       <section className="manager-section">
-        <h2>Hướng dẫn tiếp nhận trả kho</h2>
-        <p>Đối chiếu ngày khách gửi yêu cầu và hạn thuê trong hồ sơ trước khi bố trí lịch. Chuyển Quản lý cơ sở xử lý quyết toán, phí hoặc hoàn tiền.</p>
-        <Link to="/staff/policies#returnNoticeDays">Tra cứu thời hạn báo trước hiện hành</Link>
+        <h2>Đánh giá thời hạn báo trước</h2>
+        {inspections.map(item => <ReturnNotice key={first(item, 'id')} inspection={item} showUnit={inspections.length > 1} />)}
+        {!inspections.length && <p>Chưa có thông tin đánh giá cho hồ sơ này.</p>}
+        <p className="record-text">Staff tiếp nhận kho theo quy trình kiểm tra. Manager xử lý phí, khấu trừ và hoàn cọc khi quyết toán.</p>
       </section>
       {actions}
       {hasResults && <section className="manager-section">
@@ -165,7 +173,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       {received && <section className="manager-section">
         <h2>Kết quả tiếp nhận kho</h2>
         <Facts items={facts([
-          ['Đã nhận kho thực tế', dateField('physicallyReturnedAt', true)],
+          ['Thời điểm ghi nhận tiếp nhận', dateField('physicallyReturnedAt', true)],
           ['Người tiếp nhận', first(row, 'physicallyReturnedBy.fullName')],
           ['Quyết toán cọc', settlementStatus && <Status value={settlementStatus} text={settlementStatus === 'SETTLED' ? 'Đã quyết toán'
             : row.status === 'PENDING_SETTLEMENT' && settlementStatus === 'PENDING_REVIEW' ? 'Chờ quản lý quyết toán' : undefined} />],
@@ -262,6 +270,33 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       )}</span>],
     ]} />
   </>;
+}
+
+function ReturnNotice({ inspection, showUnit }: { inspection: Row; showUnit: boolean }) {
+  const notice = object(inspection.returnNotice);
+  const expectedDate = first(notice, 'expectedDate');
+  const physicalDate = first(notice, 'physicalDate');
+  const endDate = first(inspection, 'contract.endDate');
+  const referenceDate = first(notice, 'referenceDate');
+  const timing = first(notice, 'timing');
+  const result = first(notice, 'result');
+  const timingLabel = timing === 'EARLY' ? 'Trước hạn' : timing === 'ON_TIME' ? 'Đúng ngày hết hạn'
+    : timing === 'LATE' ? 'Sau hạn thuê' : 'Chưa xác định';
+
+  return <div className="staff-operation-unit">
+    {showUnit && <h3>{first(inspection, 'unit.unitCode')}</h3>}
+    <Facts items={facts([
+      ['Hạn thuê', endDate && <DateFact value={endDate} />],
+      ['Ngày dự kiến trả kho', expectedDate ? <><DateFact value={expectedDate} />{notice.expectedDateSource === 'CONTRACT_END' && ' (theo hạn thuê)'}</> : 'Chưa xác định'],
+      ['Ngày trả thực tế', physicalDate && <DateFact value={physicalDate} />],
+      [physicalDate ? 'Thời điểm trả so với hạn thuê' : 'Dự kiến so với hạn thuê', timingLabel],
+      ['Yêu cầu báo trước', typeof notice.requiredDays === 'number' ? `${notice.requiredDays} ngày` : 'Chưa có chính sách lưu trong hồ sơ'],
+      ['Báo trước thực tế', typeof notice.actualDays === 'number' ? `${notice.actualDays} ngày` : 'Chưa xác định'],
+      ['Mốc tính báo trước', referenceDate && <DateFact value={referenceDate} />],
+    ])} />
+    {result === 'MET' ? <Status value="PASS" text="Đủ thời hạn báo trước" /> : result === 'SHORT' ?
+      <Status value="ISSUE_FOUND" text="Không đủ thời hạn báo trước" /> : <Status value="PENDING" text="Chưa đủ dữ liệu đánh giá báo trước" />}
+  </div>;
 }
 
 function TransferUnit({ title, unit }: { title: string; unit: Row }) {

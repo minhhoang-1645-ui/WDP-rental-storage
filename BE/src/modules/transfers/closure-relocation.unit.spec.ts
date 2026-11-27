@@ -27,6 +27,7 @@ function setup() {
     storageUnit: { findUnique: vi.fn(async ({ where }) => where.id === source.id ? source : destination), update: vi.fn() },
     rentalContract: { update: vi.fn() }, reservationUnit: { update: vi.fn() }, invoice: { create: vi.fn() },
     maintenanceRequest: { count: vi.fn().mockResolvedValue(0) }, reservationService: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
+    incidentUnitBlock: { count: vi.fn().mockResolvedValue(0) },
     supportRequest: { update: vi.fn() }, auditEvent: { create: vi.fn() },
   };
   const db = { $transaction: vi.fn(async fn => fn(tx)) };

@@ -253,15 +253,22 @@ export function StaffActions({
           ))}
         {resource === "returns" && (
           <>
+            {first(row, 'inspectionStartBlock') && (row.status === 'REQUESTED' || inspecting) && (
+              <div className="booking-alert is-warning return-requirements" role="status">
+                <strong>Chưa thể bắt đầu kiểm tra</strong>
+                <p>{first(row, 'inspectionStartBlock')}</p>
+              </div>
+            )}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
+                disabled={busy || Boolean(first(row, 'inspectionStartBlock'))}
                 onClick={() => void run("/start-inspection")}
               >
                 Bắt đầu kiểm tra
               </button>
             )}
-            {inspecting && (
+            {inspecting && !first(row, 'inspectionStartBlock') && (
               <>
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi

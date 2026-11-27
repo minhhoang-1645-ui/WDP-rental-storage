@@ -282,6 +282,9 @@ export class CreateReturnRequestDto {
   @ApiPropertyOptional({ example: 'WDP-2026-AB12CD34-C01', description: 'ID hoặc mã hợp đồng. Bắt buộc với đơn có nhiều hợp đồng.' })
   rentalContractId?: string;
 
+  @ApiPropertyOptional({ example: '2026-12-15', description: 'Ngày dự kiến trả kho theo lịch Việt Nam (YYYY-MM-DD).' })
+  expectedReturnDate?: string;
+
   @ApiPropertyOptional({ example: 'Khách đã dọn hết đồ và sẵn sàng kiểm tra kho.', maxLength: 2000 })
   note?: string;
 }
@@ -329,11 +332,11 @@ export class RefundDepositRequestDto {
   @ApiProperty({ enum: ['BANK_TRANSFER', 'CASH'], example: 'BANK_TRANSFER' })
   method!: 'BANK_TRANSFER' | 'CASH';
 
-  @ApiPropertyOptional({ example: true, description: 'Xác nhận tiền đã được hoàn thực tế. Bắt buộc khi không gửi mã giao dịch.' })
+  @ApiPropertyOptional({ example: true, description: 'Xác nhận tiền đã được hoàn thực tế.' })
   refundConfirmed?: boolean;
 
-  @ApiPropertyOptional({ example: 'REFUND-20261009-001', maxLength: 200, description: 'Mã giao dịch cũ nếu có.' })
-  reference?: string;
+  @ApiProperty({ example: 'REFUND-20261009-001', minLength: 2, maxLength: 200, description: 'Mã giao dịch ngân hàng hoặc mã chứng từ hoàn tiền mặt.' })
+  reference!: string;
 
   @ApiPropertyOptional({ example: 'Deposit refund completed.', maxLength: 2000 })
   note?: string;

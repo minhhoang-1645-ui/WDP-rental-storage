@@ -138,7 +138,9 @@ function SettlementDetails({ row }: { row: Row }) {
     <View style={s.statuses}>
       <View style={[s.statusPanel, approved ? s.green : s.yellow]}>
         <CircleCheck size={20} color={approved ? green : '#8A5500'} />
-        <View style={s.grow}><Text style={[s.bold, approved && s.greenText]}>{approved ? 'Đã quyết toán' : 'Đang quyết toán'}</Text>
+        <View style={s.grow}><Text style={[s.bold, approved && s.greenText]}>{row.status === 'SETTLED' ? 'Đã quyết toán cọc'
+          : row.status === 'AWAITING_OUTSTANDING_PAYMENT' ? 'Chờ thanh toán khoản thu thêm'
+          : row.status === 'APPROVED' ? 'Đã duyệt khoản hoàn cọc' : 'Đang quyết toán cọc'}</Text>
           {settledAt ? <Text style={s.small}>{formatDate(settledAt)}</Text> : null}</View>
       </View>
       <View style={[s.statusPanel, s.blueSurface]}><Building2 size={21} color={blue} />

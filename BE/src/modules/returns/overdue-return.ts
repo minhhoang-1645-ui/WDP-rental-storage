@@ -1,10 +1,9 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { businessToday } from '../../business-date.js';
+import { businessToday, daysAfterRentalEnd } from '../../business-date.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { invoiceMoney } from '../billing/invoice-breakdown.js';
 import { pricingPolicyValidators, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 
-const day = 86_400_000;
 type Quote = { monthlyUnitPrice?: number; pricingPolicy?: PricingPolicySnapshot };
 type Contract = { id: string; activatedAt: Date | null; endDate: Date; currentMonthlyRate: bigint | null; rateEffectiveFrom: Date | null };
 type Renewal = { rentalContractId: string | null; status: string; requestedEndDate: Date; quoteSnapshot: unknown; appendixAcceptedAt: Date | null };
@@ -16,7 +15,7 @@ export function calculateOccupiedOverdue(contract: Contract, bookingQuote: unkno
   const signed = quote?.pricingPolicy?.returnOverdue;
   if (!signed || vacatedOn <= contract.endDate) return null;
   const terms = pricingPolicyValidators.returnOverdue(signed.value);
-  const overdueDays = Math.round((+vacatedOn - +contract.endDate) / day);
+  const overdueDays = daysAfterRentalEnd(contract.endDate, vacatedOn);
   const billableDays = Math.max(0, overdueDays - terms.graceDays);
   const rate = !renewal && contract.rateEffectiveFrom && contract.rateEffectiveFrom <= contract.endDate ? contract.currentMonthlyRate : quote?.monthlyUnitPrice;
   if (!rate || typeof rate === 'number' && !Number.isSafeInteger(rate) || BigInt(rate) <= 0n) throw new ConflictException('Thiếu đơn giá cam kết để tính phí quá hạn trả kho.');

@@ -203,6 +203,12 @@ export interface CustomerSupportRequest {
 }
 
 export interface CustomerReturnRequest {
+  expectedReturnDate?: string | null
+  actualReturnDate?: string | null
+  inspectionScheduledAt?: string | null
+  overdueDays?: number
+  debtStatus?: 'OUTSTANDING' | 'NEEDS_RECONCILIATION' | 'CLEAR'
+  outstandingBalance?: number | null
   returnReadiness?: ReturnReadiness
   earlyReturnCloseout?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
   rentRefund?: { approvedAt: string | null; refundedAt: string | null; reference: string | null } | null

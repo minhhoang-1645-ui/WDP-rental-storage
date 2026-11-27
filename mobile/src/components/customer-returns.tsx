@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { Box, CheckCircle2, ChevronRight, Circle } from 'lucide-react-native';
 import { JourneyNotice, JourneyScreen } from '@/components/customer-journey-ui';
+import { DateField } from './date-field';
 import { StatusBadge } from '@/components/customer-ui';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-state';
 import { OperationForm } from '@/operations/form';
@@ -11,7 +12,7 @@ import { useResource } from '@/operations/use-resource';
 import { Button, Navigation } from '@/operations/ui';
 import { notifyDataChanged } from '@/services/live-events';
 import { formatDate, formatMoney } from '@/utils/format';
-import { currentTimeMs } from '@/utils/calendar-date';
+import { currentTimeMs, vietnamCalendarDate } from '@/utils/calendar-date';
 import { customerRentalActions, returnSettlementAmount } from '@/portals/actions';
 import { isCurrentEarlyReturnApproval } from '@/utils/early-return';
 
@@ -86,6 +87,7 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
   const [selected, setSelected] = useState('');
   const [mode, setMode] = useState<'normal' | 'early'>('normal');
   const [editing, setEditing] = useState(false);
+  const [returnDateDraft, setReturnDateDraft] = useState('');
   const targetId = reservationId || selected;
   const item = active.find(row => text(row, 'reservationId') === targetId);
   const [selectedContract, setSelectedContract] = useState(rentalContractId ?? '');
@@ -97,14 +99,22 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
   const actions = item && contractId ? customerRentalActions(item, sent, currentTimeMs(), proposals, contractId) : [];
   const normal = actions.find(action => action.path === '/customer/returns');
   const early = actions.find(action => action.title.startsWith('Đề nghị trả trước hạn kho '));
-  const action = mode === 'normal' ? normal : early;
   const newPolicy = contract && text(contract, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1';
   const estimate = object(contract?.earlyReturnEstimate);
   const overdue = object(contract?.overdueOccupancy);
   const approved = contract && (newPolicy || proposals.some(row => text(row, 'reservation.id') === targetId &&
     (!text(row, 'contract.id') || text(row, 'contract.id') === contractId) &&
     isCurrentEarlyReturnApproval(row, text(contract, 'endDate'))));
-  const earlyJourney = Boolean(fromApproval || approved);
+  const today = vietnamCalendarDate(currentTimeMs());
+  const endDate = text(contract ?? {}, 'endDate');
+  const earliest = fromApproval && approved || today >= endDate ? today : endDate;
+  const expectedReturnDate = returnDateDraft || earliest;
+  const earlyJourney = Boolean(approved && expectedReturnDate < endDate);
+  const normalAction = normal && {
+    ...normal,
+    transform: (input: Row) => ({ ...normal.transform?.(input), expectedReturnDate }),
+  };
+  const action = mode === 'normal' ? normalAction : early;
   const debt = earlyJourney ? estimate.outstandingAmount : contract ? returnSettlementAmount(contract) : NaN;
   const blockReason = contract ? text(contract, 'returnReadiness.earlyReturnBlockReason') : '';
   const blockedMessage = blockReason === 'RENEWAL_IN_PROGRESS' ? 'Kho đang xử lý yêu cầu gia hạn.'
@@ -118,7 +128,7 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
     {!active.length && <EmptyState title="Bạn chưa có kho đang thuê" message="" />}</>;
   return <>
     {contracts.length > 1 && contracts.map(row => <Choice key={idOf(row)} title={text(row, 'unit.unitCode', 'contractCode')}
-      selected={idOf(row) === contractId} onPress={() => { setSelectedContract(idOf(row)); setEditing(false); }} />)}
+      selected={idOf(row) === contractId} onPress={() => { setSelectedContract(idOf(row)); setEditing(false); setReturnDateDraft(''); }} />)}
     {contract && <View style={[s.card, s.selected]}><Box size={22} color={blue} /><View style={s.grow}><Text style={s.title}>{text(contract, 'unit.unitCode') || title(item)}</Text>
       <Text style={s.muted}>Hết hạn thuê: {formatDate(text(contract, 'endDate'))}</Text></View></View>}
     {typeof contract?.returnNoticeDays === 'number' && <JourneyNotice title="Báo trước khi trả kho"
@@ -133,6 +143,8 @@ function ReturnFormContent({ reservationId, rentalContractId, fromApproval, acti
       <Choice title="Đúng hạn" selected={mode === 'normal'} onPress={() => { setMode('normal'); setEditing(false); }} />
       <Choice title="Trước hạn" selected={mode === 'early'} onPress={() => { setMode('early'); setEditing(false); }} />
     </View>}
+    {mode === 'normal' && normal && <DateField title="Ngày dự kiến trả kho" value={expectedReturnDate}
+      min={earliest} disabled={editing} onChange={setReturnDateDraft} />}
     <JourneyNotice title="Trước khi bàn giao" message={earlyJourney ? 'Lấy hết hàng và chuẩn bị chìa khóa hoặc thẻ. Các kỳ chưa bắt đầu được miễn sau khi bàn giao kho.' : 'Kiểm tra công nợ, lấy hết hàng và chuẩn bị chìa khóa hoặc thẻ để bàn giao cho nhân viên.'} />
     {mode === 'normal' && typeof debt === 'number' && Number.isFinite(debt) && debt > 0 ? <Text style={s.muted}>{earlyJourney ? 'Nếu trả hôm nay, còn phải thanh toán ' : 'Còn phải thanh toán '}{formatMoney(debt)}.</Text> : null}
     {(mode === 'early' || earlyJourney) && Number(estimate.penaltyAmount) > 0 && <Text style={s.muted}>Phí trả kho trước hạn dự kiến · {formatMoney(Number(estimate.penaltyAmount))}</Text>}
@@ -171,6 +183,15 @@ function ReturnDetail({ row }: { row: Row }) {
       <Text style={s.muted}>{rows(row.inspections).map(item => text(item, 'unit.unitCode')).filter(Boolean).join(' · ')}</Text>
       <StatusBadge status={returnStatus(row)} tone={complete ? 'success' : 'warning'} /></View></View>
     {steps.map(([label, date]) => <View key={label} style={s.card}><CheckCircle2 size={18} color={blue} /><View style={s.grow}><Text style={s.title}>{label}</Text><Text style={s.muted}>{formatDate(date, true)}</Text></View></View>)}
+    <View style={s.card}><View style={s.grow}>
+      <Text style={s.title}>Ngày dự kiến trả · {text(row, 'expectedReturnDate') ? formatDate(text(row, 'expectedReturnDate')) : 'Chưa ghi nhận'}</Text>
+      <Text style={s.muted}>Lịch kiểm tra · {text(row, 'inspectionScheduledAt') ? formatDate(text(row, 'inspectionScheduledAt'), true) : 'Chưa đặt lịch'}</Text>
+      {text(row, 'actualReturnDate') && <Text style={s.muted}>Ngày trả thực tế · {formatDate(text(row, 'actualReturnDate'))}</Text>}
+      <Text style={s.muted}>Quyết toán cọc · {text(row, 'settlementStatus') === 'SETTLED' ? 'Đã quyết toán cọc' : text(row, 'settlementStatus') ? 'Đang xử lý' : 'Chưa tạo'}</Text>
+      {row.debtStatus === 'CLEAR' && <Text style={s.muted}>Công nợ · Đã thanh toán đủ</Text>}
+      {row.debtStatus === 'OUTSTANDING' && <Text style={s.muted}>Công nợ · Còn phải trả {formatMoney(Number(row.outstandingBalance))}</Text>}
+      {row.debtStatus === 'NEEDS_RECONCILIATION' && <Text style={s.muted}>Công nợ · Cần đối soát</Text>}
+    </View></View>
     {Boolean(closeout.appliedAt) && <View style={s.card}><View style={s.grow}>
       <Text style={s.title}>Quyết toán tiền thuê</Text>
       <Text style={s.muted}>Ngày chấm dứt · {formatDate(text(closeout, 'effectiveDate'))}</Text>

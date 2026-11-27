@@ -977,6 +977,7 @@ model ReturnRequest {
   requestedByUserId      String
   requestedBy            User               @relation("ReturnRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   requestedAt            DateTime           @default(now())
+  expectedReturnDate     DateTime?          @db.Date
   inspectionStartedAt    DateTime?
   inspectionStartedById  String?
   inspectionStartedBy    User?              @relation("ReturnInspectionStarter", fields: [inspectionStartedById], references: [id], onDelete: Restrict)

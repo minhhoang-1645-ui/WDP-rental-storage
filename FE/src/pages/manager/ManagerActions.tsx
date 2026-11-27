@@ -155,8 +155,8 @@ export function ManagerActions({
           <option value="CASH">Tiền mặt</option>
         </select>
       </label>
-      {resource !== "deposit-settlements" && method === "BANK_TRANSFER" && <label className="field-label">
-        Mã giao dịch ngân hàng đã kiểm tra
+      {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
+        {method === "CASH" ? "Số phiếu chi hoặc mã chứng từ" : "Mã giao dịch ngân hàng đã kiểm tra"}
         <input
           value={reference}
           placeholder={resource === 'invoices' ? 'Nhập mã giao dịch' : undefined}
@@ -584,6 +584,7 @@ export function ManagerActions({
                     {
                       method,
                       refundConfirmed: true,
+                      reference: reference.trim(),
                       note: note.trim() || undefined,
                     },
                     true,

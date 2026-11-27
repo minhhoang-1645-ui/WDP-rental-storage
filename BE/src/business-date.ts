@@ -2,6 +2,9 @@
 export const businessDate = (now = new Date()) => new Date(now.getTime() + 7 * 3600000).toISOString().slice(0, 10);
 export const businessToday = (now = new Date()) => new Date(businessDate(now) + 'T00:00:00.000Z');
 
+export const daysAfterRentalEnd = (endDate: Date, asOfDate: Date) =>
+  Math.max(0, Math.round((+asOfDate - +endDate) / 86_400_000));
+
 export function isIsoCalendarDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(value + 'T00:00:00.000Z');

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { businessDate } from '../../business-date.js';
 import { SupportService } from '../support/support.service.js';
 import { EARLY_RETURN_SUBJECT } from './early-return-classification.js';
-import { ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -265,6 +265,36 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     await expect(returns.finalize(requested.id, manager)).rejects.toBeInstanceOf(ForbiddenException);
     expect(await prisma.maintenanceRequest.count({ where: { returnInspection: { returnRequestId: requested.id } } })).toBe(2);
   }, 60000);
+
+  it('stores inspection photos per unit and exposes them only in operational details', async () => {
+    const request = await historicalReturn(await activeRental({ quantity: 2 }));
+    const [first, second] = (await returns.startInspection(request.id, staff)).inspections;
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jLZkAAAAASUVORK5CYII='];
+    const result = { result: 'PASS', conditionNote: 'Kho sạch' };
+    await returns.updateInspection(request.id, first.id, result, staff);
+    await expect(returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: ['data:image/png;base64,AAAA'] }, staff)).rejects.toBeInstanceOf(BadRequestException);
+    const evidenceLink = 'https://example.test/return.jpg';
+    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: photos, evidenceLink }, staff);
+    await returns.updateInspection(request.id, first.id, { ...result, conditionNote: 'Kho sạch, cửa đã đóng' }, staff);
+    const managerDetail = await returns.getManagerReturn(request.id, manager);
+    const recorded = expect.objectContaining({ staffUserId: staff.id, photos, note: expect.stringContaining(evidenceLink) });
+    expect(managerDetail.inspections).toEqual(expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: photos, evidenceSubmissions: [recorded] })]));
+    await expect(returns.getManagerReturn(request.id, actor('no-facility-grant', 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(managerDetail.inspections.find((item: { id: string }) => item.id === second.id)).not.toHaveProperty('inspectionPhotos');
+    const customerDetail = await returns.getCustomerReturn(customerId, request.id);
+    expect(customerDetail.inspections.find((item: { id: string }) => item.id === first.id)).not.toHaveProperty('inspectionPhotos');
+    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: [] }, staff);
+    expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: [], evidenceSubmissions: [recorded] })]),
+    );
+    await prisma.returnRequest.update({ where: { id: request.id }, data: { assignedStaffUserId: null } });
+    expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual([
+      expect.objectContaining({ id: first.id, evidenceSubmissions: [recorded] }),
+    ]);
+    expect((await returns.listStaffReturns({ page: 1, limit: 20 }, staff)).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: request.id })]),
+    );
+  });
 
   it('rejects finalization while any inspection remains PENDING', async () => {
     const requested = await historicalReturn(await activeRental({ quantity: 2 }));

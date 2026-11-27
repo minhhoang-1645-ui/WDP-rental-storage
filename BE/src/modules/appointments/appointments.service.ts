@@ -174,7 +174,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
   async getOperationalAppointment(id: string, actor: PublicUser) {
     const appointment = await this.prisma.handoverAppointment.findFirst({ where: { AND: [{reservation:reservationScope(actor)}, { OR: [{ id }, { appointmentCode: id }] }, actor.role === 'FACILITY_STAFF' ? this.staffScope(actor.id) : {}] }, include: this.appointmentInclude() });
     if (!appointment) throw new NotFoundException('Không tìm thấy lịch bàn giao.');
-    const view = this.toAppointment(appointment, true, actor.role === 'FACILITY_STAFF');
+    const view = this.toAppointment(appointment, true, actor.role === 'FACILITY_STAFF', true);
     const recoveryStaffId = (appointment.reservation.paidCancellation as { recoveryStaffId?: string } | null)?.recoveryStaffId;
     if (actor.role === 'FACILITY_STAFF' && recoveryStaffId === actor.id && view.canRecordCancellationRecovery) return view;
     if (!['REQUESTED', 'CONFIRMED'].includes(appointment.status)) return view;
@@ -490,7 +490,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           include: this.appointmentInclude(),
         });
         await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'appointments', current.id, { facilityId: current.reservation.facilityId });
-        return this.toAppointment(updated, true);
+        return this.toAppointment(updated, true, false, true);
       }, 'Lịch bàn giao vừa được hoàn tất bởi yêu cầu khác. Vui lòng tải lại.');
   }
 
@@ -608,10 +608,10 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
       ? { scheduleHistory: value.scheduleHistory } : {};
   }
 
-  private publicHandoverReport(value: Prisma.JsonValue | null) {
+  private publicHandoverReport(value: Prisma.JsonValue | null, includeEvidence: boolean) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return value ?? null;
-    const { scheduleHistory: _scheduleHistory, ...report } = value;
-    return report;
+    const { scheduleHistory: _scheduleHistory, photos, photoLinks, ...report } = value;
+    return includeEvidence ? { ...report, ...(photos !== undefined ? { photos } : {}), ...(photoLinks !== undefined ? { photoLinks } : {}) } : report;
   }
 
   private async appointmentLeadDays(record:any,db:Prisma.TransactionClient=this.prisma) {
@@ -769,7 +769,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private toAppointment(record: any, includeCustomer: boolean, staff = false) {
+  private toAppointment(record: any, includeCustomer: boolean, staff = false, includeEvidence = false) {
     const cancellation = record.reservation.paidCancellation;
     const draft = record.status === 'CONFIRMED' ? readUnitHandoverDraft(record.handoverReport) : null;
     const historical = staff && ['COMPLETED', 'CANCELLED'].includes(record.status);
@@ -807,7 +807,7 @@ export class AppointmentsService implements OnModuleInit, OnModuleDestroy {
           physicalUnit: purchasedPhysicalUnit(record.reservation.quoteSnapshot, line.additionalServiceId),
         })),
       } : {}),
-      handoverReport: record.status === 'COMPLETED' ? this.publicHandoverReport(record.handoverReport) : null,
+      handoverReport: record.status === 'COMPLETED' ? this.publicHandoverReport(record.handoverReport, includeEvidence) : null,
       ...(includeCustomer && ['REQUESTED', 'CONFIRMED'].includes(record.status)
         ? this.handoverBookingReadiness(record.reservation) : {}),
       ...(includeCustomer && record.handoverReport?.scheduleHistory?.length

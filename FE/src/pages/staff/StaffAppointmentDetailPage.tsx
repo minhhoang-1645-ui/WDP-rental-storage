@@ -234,6 +234,10 @@ function HandoverResult({ row }: { row: Row }) {
   const performer = first(row, 'completedBy.fullName');
   const checks = rows(report?.unitChecks).filter(unit => unit.inspected === true && first(unit, 'unitCode', 'unitId') && first(unit, 'condition'));
   const condition = report ? handoverCondition(first(report, 'condition')) : '';
+  const photos = Array.isArray(report?.photos) ? report.photos.filter((photo): photo is string =>
+    typeof photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(photo)) : [];
+  const links = Array.isArray(report?.photoLinks) ? report.photoLinks.filter((link): link is string =>
+    typeof link === 'string' && /^https:\/\//i.test(link)) : [];
   const confirmed = confirmationSteps.filter(([key]) => report?.[key] === true);
   const facts: Array<[string, string]> = [];
   if (completed) facts.push(['Hoàn tất thực tế', completed]);
@@ -254,6 +258,11 @@ function HandoverResult({ row }: { row: Row }) {
     {confirmed.length > 0 && <ul className="staff-handover-steps" aria-label="Các bước đã xác nhận">
       {confirmed.map(([key, title]) => <li key={key}><Check size={16} aria-hidden="true" />{title}</li>)}
     </ul>}
+    {(photos.length > 0 || links.length > 0) && <section>
+      <h3>Ảnh bàn giao</h3>
+      <div className="staff-handover-photos">{photos.map((photo, i) => <img key={i} src={photo} alt={'Ảnh bàn giao ' + (i + 1)} />)}</div>
+      {links.length > 0 && <ul>{links.map((link, i) => <li key={i}><a href={link} target="_blank" rel="noopener noreferrer">Mở link ảnh {i + 1}</a></li>)}</ul>}
+    </section>}
     {row.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Kho được kích hoạt khi đến ngày bắt đầu thuê và đủ điều kiện.</p>}
   </section>;
 }

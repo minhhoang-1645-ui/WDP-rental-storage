@@ -1,3 +1,4 @@
+import { evidencePhotos } from '../../evidence-photos.js';
 import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
@@ -131,11 +132,14 @@ export class SupportService {
   async getStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.supportRequest.findFirst({ where: { AND: [supportTaskScope(actor), { OR: [{ id }, { supportCode: id }] }], assignedStaffUserId: actor.id, subject: { not: EARLY_RETURN_SUBJECT }, NOT: transferSubjectFilter }, include: this.include('FACILITY_STAFF') });
     if (!record) throw new NotFoundException('Không tìm thấy Support Request.');
-    return this.toView(record, 'FACILITY_STAFF');
+    return { ...this.toView(record, 'FACILITY_STAFF'), resolutionPhotos: record.resolutionPhotos ?? [] };
   }
   async getManager(id: string, actor:PublicUser) {
     managerReservationScope(actor);
- const row=await this.find(id,this.prisma); await assertTaskFacility(this.prisma,actor,supportTaskReference(row)); return this.toView(row,'FACILITY_MANAGER'); }
+    const row = await this.find(id, this.prisma);
+    await assertTaskFacility(this.prisma, actor, supportTaskReference(row));
+    return { ...this.toView(row, 'FACILITY_MANAGER'), resolutionPhotos: row.resolutionPhotos ?? [] };
+  }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.id(input.staffUserId, 'staffUserId');
@@ -204,6 +208,7 @@ export class SupportService {
 
   resolveAssignedRequest(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const parsed = this.resolutionInput(input, staffResolutions);
+    const photos = evidencePhotos(input.resolutionPhotos);
     return this.transition(id, key, 'STAFF_RESOLVE', actor, 'FACILITY_STAFF', async (tx, current, safeKey) => {
       if (current.status !== 'IN_PROGRESS' || current.customerWaitReason) throw new ConflictException('Tiếp tục xử lý trước khi ghi kết quả hỗ trợ.');
       if (current.category === 'PAYMENT_SUPPORT') throw new ConflictException('Chuyển yêu cầu thanh toán cho quản lý xem xét.');
@@ -220,7 +225,7 @@ export class SupportService {
         if (!entitled) throw new ConflictException('Khách không có quyền truy cập kho đang hiệu lực tại cơ sở.');
       }
       await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'support-requests', current.id, { facilityId, identityVerified: input.identityVerified === true });
-      return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
+      return tx.supportRequest.update({ where: { id: current.id }, data: { status: 'RESOLVED', resolutionType: parsed.resolutionType, resolutionNote: parsed.resolutionNote, ...(photos.length ? { resolutionPhotos: photos } : {}), resolvedByUserId: actor.id, resolvedAt: new Date(), lastAction: 'STAFF_RESOLVE', lastActionIdempotencyKey: safeKey }, include: this.include() });
     });
   }
 

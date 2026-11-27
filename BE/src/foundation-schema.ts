@@ -82,6 +82,11 @@ export async function inspectFoundationDatabase(
       'MaintenanceRequest.rentalImpact',
       'MaintenanceRequest.reportedAffectedUnitIds',
       'MaintenancePhoto.id',
+      'SupportRequest.resolutionPhotos',
+      'MaintenanceRequest.workPhotos',
+      'ReturnInspection.inspectionPhotos',
+      ...['id', 'returnInspectionId', 'maintenanceRequestId', 'staffUserId', 'staffName', 'note', 'photos', 'recordedAt']
+        .map(name => 'StaffEvidenceSubmission.' + name),
       'StorageUnit.bookingSafetyVersion',
       'IncidentUnitBlock.id',
       'Facility.serviceSchedule',

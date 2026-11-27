@@ -1,0 +1,111 @@
+.manager-floor-plan .manager-section { margin-top: 1rem; }
+
+.manager-plan-filters { display: flex; flex-wrap: wrap; gap: 1rem; }
+.manager-plan-filters label { flex: 1 1 12rem; max-width: 20rem; }
+
+.manager-plan-caption {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  margin: 1.25rem 0 .75rem;
+  color: var(--workspace-accent, #3155d8);
+  font-weight: 700;
+}
+
+.manager-plan-map {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(.65rem, 2vw, 1.25rem);
+  border: 1px solid var(--workspace-border, #dbe3ef);
+  border-radius: 16px;
+  background-color: var(--workspace-surface-muted, #f1f5f9);
+  background-image: radial-gradient(var(--workspace-border, #dbe3ef) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.manager-plan-area {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--workspace-border, #dbe3ef);
+  border-radius: 12px;
+  background: var(--workspace-surface, #fff);
+}
+
+.manager-plan-area h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin: 0;
+  padding: .8rem 1rem;
+  background: #e9eefc;
+  color: #223574;
+  font-size: 1rem;
+}
+
+.manager-plan-row {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: start;
+  gap: .75rem;
+  padding: .8rem;
+}
+
+.manager-plan-row + .manager-plan-row {
+  border-top: 1px dashed var(--workspace-border, #dbe3ef);
+}
+
+.manager-plan-row h3 {
+  margin: .45rem 0 0;
+  color: var(--workspace-muted, #475569);
+  font-size: .875rem;
+}
+
+.manager-plan-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+  gap: .6rem;
+}
+
+.manager-plan-unit {
+  --plan-unit-color: #64748b;
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: .4rem;
+  min-width: 0;
+  padding: .65rem .7rem;
+  border: 1px solid var(--workspace-border, #dbe3ef);
+  border-inline-start: 4px solid var(--plan-unit-color);
+  border-radius: 8px;
+  background: var(--workspace-surface, #fff);
+  color: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.manager-plan-unit[data-status="AVAILABLE"] { --plan-unit-color: #168454; }
+.manager-plan-unit[data-status="RESERVED"] { --plan-unit-color: #a26413; }
+.manager-plan-unit[data-status="OCCUPIED"] { --plan-unit-color: #3456b3; }
+.manager-plan-unit[data-status="MAINTENANCE"] { --plan-unit-color: #b24444; }
+.manager-plan-unit:hover { background: var(--workspace-surface-muted, #f1f5f9); }
+.manager-plan-unit:focus-visible { outline: 2px solid var(--workspace-accent, #3155d8); outline-offset: 2px; }
+
+.manager-plan-unit-code {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.manager-plan-unit-code svg { flex: 0 0 auto; color: var(--plan-unit-color); }
+.manager-plan-unit small { color: var(--workspace-muted, #475569); }
+.manager-plan-unplaced { border-style: dashed; }
+.manager-plan-unplaced h2 { background: #fbf0d8; color: #754914; }
+.manager-plan-unplaced p { margin: .8rem .8rem 0; }
+.manager-plan-unplaced .manager-plan-slots { padding: .8rem; }
+
+@media (max-width: 600px) {
+  .manager-plan-row { grid-template-columns: minmax(0, 1fr); gap: .55rem; }
+  .manager-plan-row h3 { margin: 0; }
+}

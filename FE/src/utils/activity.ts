@@ -2,7 +2,7 @@ import { managerFinanceReviewPath } from './manager-finance-review';
 import { roleNamespace } from '../role-names';
 import { paymentWindowClosed } from './payment-state';
 import { workflowGuide } from './workflow-guide';
-import { assignmentNeedsAttention, awaitingAssignment, isAssignedStaffWork, managerNeedsAction, needsStaffAssignment, staffNeedsAction } from './work-queue';
+import { assignmentNeedsAttention, awaitingAssignment, isAssignedStaffWork, managerNeedsAction, needsStaffAssignment, staffNeedsAction, staffRecordedAt } from './work-queue';
 import { isTransferRequest } from './transfer-request';
 import { isEarlyReturnRequest } from './early-return';
 
@@ -107,6 +107,7 @@ export function buildActivity(role: ActivityRole, userId: string, data: Activity
     const get = (path: string) => activityText(row, path), kind = source.kind, status = get('status') || get('accountStatus'), id = get('id');
     if (!id) continue;
     if (role === 'FACILITY_STAFF' && needsStaffAssignment(kind) && !isAssignedStaffWork(kind, row, userId)
+      && !staffRecordedAt(kind, row, userId)
       && !(status === 'COMPLETED' && get('completedBy.id') === userId && !get('assignedStaff.id'))) continue;
     if (kind === 'inquiries' && row.requestType !== 'INQUIRY') continue;
     const code = ['claimCode', 'renewalCode', 'invoiceCode', 'submissionCode', 'reconciliationCode', 'appointmentCode', 'movementCode', 'supportCode', 'maintenanceCode', 'returnCode', 'settlementCode', 'transferCode', 'contractCode', 'reference'].map(get).find(Boolean) || id;

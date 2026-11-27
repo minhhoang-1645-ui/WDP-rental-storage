@@ -157,3 +157,36 @@
   .staff-operation-detail .record-disclosure::details-content { content-visibility: visible; }
   .staff-operation-detail :is(.record-action-panel, .record-copy) { display: none !important; }
 }
+
+.invoice-detail-grid .invoice-breakdown {
+  grid-template-columns: minmax(0, 1fr);
+}
+.invoice-detail-grid .invoice-breakdown .customer-table-wrap {
+  max-width: 100%;
+}
+.invoice-detail-grid .invoice-breakdown .customer-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+.invoice-detail-grid .invoice-breakdown .customer-table :is(th, td) {
+  padding-inline: clamp(8px, 1vw, 16px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.invoice-detail-grid .invoice-breakdown thead th:first-child {
+  width: 40%;
+}
+.invoice-detail-grid .manager-processing .portal-form :is(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 1240px) {
+  .workspace-themed .record-detail-page .manager-detail-grid.invoice-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .invoice-detail-grid .manager-processing {
+    position: static;
+    max-height: none;
+  }
+}

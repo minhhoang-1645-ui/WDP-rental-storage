@@ -19,6 +19,9 @@ import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointme
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { ApiError } from '../../services/api';
 
+import { useEvidencePhotoPicker } from '../../components/workspace/useEvidencePhotoPicker';
+import { inspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
+
 export function StaffActions({
   resource,
   row,
@@ -36,7 +39,11 @@ export function StaffActions({
   const confirm = useConfirmation();
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
-  const busy = pendingAction !== undefined;
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : resource === 'maintenance' ? 'Ảnh kết quả sửa chữa (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
+    pendingAction !== undefined,
+  );
+  const busy = pendingAction !== undefined || readingPhotos;
   const lock = useRef(false);
   const returnRequirementsId = useId();
   const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
@@ -134,9 +141,13 @@ export function StaffActions({
     idempotent = false,
   ) => {
     event.preventDefault();
+    if (busy || photoReadLock.current || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
-    if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
+    if (suffix === '/complete-work') {
+      input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
+      input.workPhotos = handoverPhotos.map(photo => photo.src);
+    }
     if (suffix === '/complete-handover') {
       const deliveredPurchaseIds = data.getAll('deliveredPurchaseIds').map(String);
       if (deliveredPurchaseIds.length) input.deliveredPurchaseIds = deliveredPurchaseIds;
@@ -146,6 +157,12 @@ export function StaffActions({
         condition: String(data.get(`condition-${unit.id}`) ?? '').trim(),
         inspected: data.get(`checked-${unit.id}`) === 'on',
       })) : undefined;
+      const photoLinks = String(data.get('handoverPhotoLinks') ?? '').split(/\r?\n/).map(link => link.trim()).filter(Boolean);
+      if (photoLinks.length > 3 || photoLinks.some(link => !/^https:\/\/[^\s]+$/i.test(link) || link.length > 2000)) {
+        setError('Nhập tối đa 3 link HTTPS, mỗi link trên một dòng.');
+        return;
+      }
+      const photos = handoverPhotos.map(photo => photo.src);
       input.handoverReport = {
         recipientType,
         recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
@@ -157,6 +174,8 @@ export function StaffActions({
         accessDelivered: data.get('accessDelivered') === 'on',
         documentsDelivered: data.get('documentsDelivered') === 'on',
         ...(unitChecks ? { unitChecks } : {}),
+        ...(photos.length ? { photos } : {}),
+        ...(photoLinks.length ? { photoLinks } : {}),
       };
     }
     void run(suffix, 'POST', input, idempotent);
@@ -220,12 +239,17 @@ export function StaffActions({
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
               <PurchasedProducts row={row} confirm />
+              {photoPicker}
+              <label className="field-label">Link ảnh bàn giao (tùy chọn)
+                <textarea name="handoverPhotoLinks" rows={2} maxLength={6002} placeholder="https://..." disabled={busy} />
+                <small>Tối đa 3 link HTTPS, mỗi link một dòng.</small>
+              </label>
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
               {tracksUnits && !allUnitsRecorded && <p role="status">Đã ghi nhận {physicalUnits.filter(unit => progress.has(unit.id)).length}/{physicalUnits.length} kho.</p>}
-              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded} aria-busy={pendingAction === '/complete-handover'}>
+              <button type="submit" className="button-primary" disabled={busy || tracksUnits && !allUnitsRecorded} aria-busy={busy || pendingAction === '/complete-handover'}>
                 {pendingAction === '/complete-handover' ? 'Đang ghi nhận bàn giao…' : 'Xác nhận đã bàn giao giấy tờ và chìa khóa'}
               </button>
             </form>
@@ -250,6 +274,7 @@ export function StaffActions({
                   <InspectionEditor
                     key={`${first(item, "id")}:${item.result}:${item.inspectedAt}`}
                     inspection={item}
+                    disabled={busy}
                     save={(input) =>
                       run(
                         `/inspections/${encodeURIComponent(first(item, "id"))}`,
@@ -344,7 +369,10 @@ export function StaffActions({
                 <label className="field-label">Liên kết ảnh kết quả (tùy chọn)
                   <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
                 </label>
-                <button className="button-primary">
+                {Array.isArray(row.workPhotos) ? photoPicker : (
+                  <p role="status">Máy chủ hiện chỉ lưu liên kết ảnh bảo trì. Hãy dán liên kết HTTPS vào ô trên.</p>
+                )}
+                <button className="button-primary" disabled={busy}>
                   Gửi kết quả nghiệm thu
                 </button>
               </form>
@@ -380,11 +408,12 @@ export function StaffActions({
               <form className="portal-form" onSubmit={event => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
+                if (busy || photoReadLock.current) return;
                 const note = String(data.get('supportNote') ?? '').trim();
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
                 if (supportOption === 'wait-customer') void run('/wait-customer', 'POST', { reason: note }, true);
                 else if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
-                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, identityVerified: data.get('identityVerified') === 'on' }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, resolutionPhotos: handoverPhotos.map(photo => photo.src), identityVerified: data.get('identityVerified') === 'on' }, true);
               }}>
                 <label className="field-label">Hướng xử lý
                   <select value={supportOption} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
@@ -403,6 +432,7 @@ export function StaffActions({
                 </label>
                 {(supportOption === 'ACCESS_RESTORED' || supportOption === 'ON_SITE_RESOLVED' && ['LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE'].includes(String(row.category))) &&
                   <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu danh tính khách và quyền truy cập kho</label>}
+                {supportOption && !['wait-customer', 'escalate'].includes(supportOption) && photoPicker}
                 <button className="button-primary" disabled={busy || !supportOption}>
                   {busy ? 'Đang lưu…' : supportOption === 'wait-customer' ? 'Ghi nhận chờ khách' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>
@@ -428,16 +458,25 @@ export function StaffActions({
 
 function InspectionEditor({
   inspection,
+  disabled,
   save,
 }: {
   inspection: Row;
+  disabled: boolean;
   save: (input: Row) => Promise<void>;
 }) {
   const [result, setResult] = useState(
     inspection.result === "ISSUE_FOUND" ? "ISSUE_FOUND" : "PASS",
   );
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    'Ảnh kiểm tra từ máy (tùy chọn)', disabled, inspectionPhotos(inspection),
+  );
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || photoReadLock.current) {
+      event.currentTarget.removeAttribute('data-wdp-submitting');
+      return;
+    }
     const data = new FormData(event.currentTarget);
     void save({
       result,
@@ -450,6 +489,7 @@ function InspectionEditor({
       conditionNote:
         String(data.get("conditionNote") ?? "").trim() || undefined,
       evidenceLink: String(data.get('evidenceLink') ?? '').trim() || undefined,
+      inspectionPhotos: handoverPhotos.map(photo => photo.src),
     });
   };
   return (
@@ -481,6 +521,7 @@ function InspectionEditor({
       <label className="field-label">Liên kết ảnh kiểm tra (tùy chọn)
         <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
       </label>
+      {photoPicker}
       {result === "ISSUE_FOUND" && (
         <>
           <label className="field-label">
@@ -517,7 +558,7 @@ function InspectionEditor({
           </label>
         </>
       )}
-      <button className="button-secondary">
+      <button className="button-secondary" disabled={disabled || readingPhotos}>
         Lưu kết quả kho {first(inspection, "unit.unitCode")}
       </button>
     </form>

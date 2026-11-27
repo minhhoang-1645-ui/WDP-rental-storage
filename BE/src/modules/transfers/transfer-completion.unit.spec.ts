@@ -169,7 +169,10 @@ describe('Transfer keys are required before a new physical completion', () => {
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
   });
   it('stores the key exchange with the completed transfer', async () => {
-    const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
+    const app = setup();
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1sAAAAASUVORK5CYII='];
+    const result = await app.service.complete('transfer', app.actor, { ...handover, photos });
+    expect(result.handoverReport.photos).toEqual(photos);
     expect(result.handoverReport).toMatchObject({ returnedKeyCount: 1, deliveredKeyCount: 2, recipientName: 'Khách kiểm thử', oldKeysReturned: true, newKeysDelivered: true });
     expect(result.handoverReport.recordedByUserId).toBe(app.actor.id);
   });

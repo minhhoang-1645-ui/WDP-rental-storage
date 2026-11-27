@@ -41,6 +41,7 @@ function IssueReport({ userId }: { userId: string }) {
   const [search, setSearch] = useState('');
   const [reportQuery, setReportQuery] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const reportParams = new URLSearchParams({ page: String(page), limit: '10', facilityId: selected, search: reportQuery });
   const reports = useApiResource<Page<Row>>(selected ? '/staff/maintenance/reported-by-me?' + reportParams : null, userId, true);
   const [units, setUnits] = useState<{ facility: string; items: Unit[]; error: string }>();
@@ -240,6 +241,8 @@ function IssueReport({ userId }: { userId: string }) {
           <div className="incident-upload">
             <strong>Ảnh sự cố <small>(tùy chọn)</small></strong>
             <input ref={fileInput} hidden type="file" accept={fileTypes.join(',')} multiple onChange={addPhotos} />
+            <input ref={cameraInput} hidden type="file" accept={fileTypes.join(',')} capture="environment" onChange={addPhotos} />
+            <button type="button" className="button-secondary" disabled={photos.length >= 5} onClick={() => cameraInput.current?.click()}>Chụp ảnh</button>
             <div><button type="button" className="button-secondary" disabled={photos.length >= 5} onClick={() => fileInput.current?.click()}>
               <ImagePlus size={17} aria-hidden="true" /> Thêm ảnh
             </button> <small>{photos.length}/5 ảnh · JPG, PNG hoặc WebP · Tối đa 5 MB/ảnh</small></div>

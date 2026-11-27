@@ -15,7 +15,23 @@ import './inventory-editor.css';
 const dimensions = [['widthCm', 'Rộng (cm)'], ['lengthCm', 'Dài (cm)'], ['heightCm', 'Cao (cm)']] as const;
 const measurement = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 6 });
 
-export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'type' | 'unit'; record?: Row; onClose: () => void; onSaved: (saved: Row) => void }) {
+export function NewInventoryUnit({ onClose, onSaved }: { onClose: () => void; onSaved: (saved: Row) => void }) {
+  const [creatingType, setCreatingType] = useState(false);
+  const [storageTypeId, setStorageTypeId] = useState('');
+
+  return creatingType
+    ? <InventoryEditor key="type" kind="type" onClose={() => setCreatingType(false)} onSaved={saved => {
+      setStorageTypeId(first(saved, 'id'));
+      setCreatingType(false);
+    }} />
+    : <InventoryEditor key="unit" kind="unit" initialStorageTypeId={storageTypeId}
+      onCreateType={() => setCreatingType(true)} onClose={onClose} onSaved={onSaved} />;
+}
+
+export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateType, onClose, onSaved }: {
+  kind: 'type' | 'unit'; record?: Row; initialStorageTypeId?: string; onCreateType?: () => void;
+  onClose: () => void; onSaved: (saved: Row) => void;
+}) {
   const { user } = useAuth();
   const scopeFacility = useOutletContext<string>();
   const requestConfirmation = useConfirmation();
@@ -36,7 +52,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
     onClose();
   };
   const [typeCode, setTypeCode] = useState(first(record ?? {}, 'code'));
-  const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id'));
+  const [storageTypeId, setStorageTypeId] = useState(first(record ?? {}, 'storageTypeId', 'storageType.id') || initialStorageTypeId || '');
   const [sizeId, setSizeId] = useState(first(record ?? {}, 'sizeId') || 'small');
   const [price, setPrice] = useState(first(record ?? {}, 'monthlyRate'));
   const [enabled, setEnabled] = useState<boolean | undefined>(record ? record.bookingEnabled !== false : undefined);
@@ -64,7 +80,9 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
     setPhotoError('');
     setPicked({ file, preview: URL.createObjectURL(file) });
   }
-  const selectedType = rows(options.data?.items).find(row => row.id === storageTypeId);
+  const storageTypes = rows(options.data?.items);
+  const selectedType = storageTypes.find(row => row.id === storageTypeId);
+  const needsType = Boolean(!type && !record && onCreateType && options.data && !options.error && !storageTypes.length);
   const { current: priceRange, scheduled } = priceRangeFor(rows(options.data?.pricingRanges) as PriceRange[], facilityId, sizeId);
   const bookingEnabled = enabled ?? Boolean(priceRange);
   const changedPrice = !record || sizeId !== record.sizeId || Number(price) !== Number(record.monthlyRate);
@@ -78,7 +96,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   const locations = useApiResource<{ floors: string[]; zones: string[] }>(!type && !locked ? '/manager/unit-locations' : null, user?.id ?? '');
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || (type ? priceError || !facilityId : !storageTypeId)) return;
+    if (lock.current || locked || user?.role !== 'FACILITY_MANAGER' || (type ? priceError || !facilityId : !selectedType)) return;
     const fields = new FormData(event.currentTarget);
     const input: Row = Object.fromEntries(fields.entries());
     for (const key of type ? ['widthCm', 'lengthCm', 'heightCm', 'monthlyRate', 'minRentalDays'] : ['row', 'position']) input[key] = fields.get(key) ? Number(fields.get(key)) : null;
@@ -114,12 +132,13 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
   return <Modal title={type ? record ? 'Chỉnh sửa loại kho' : 'Thêm loại kho' : record ? 'Sửa kho vật lý' : 'Thêm kho vật lý'} onClose={close} busy={busy} focusTitle={!type}
     className={type ? 'inventory-type-dialog' : 'inventory-unit-dialog'} footer={<>
       <button type="button" className="button-secondary" disabled={busy} onClick={close}>{locked ? 'Đóng' : 'Hủy'}</button>
-      {!locked && <button type="submit" form={formId} className="button-primary" disabled={busy || !options.data || (type ? priceError || !facilityId : !storageTypeId)}>
+      {needsType ? <button type="button" className="button-primary" onClick={onCreateType}>Thêm loại kho</button> : !locked && <button type="submit" form={formId} className="button-primary" disabled={busy || !options.data || (type ? priceError || !facilityId : !selectedType)}>
         {busy ? photo ? 'Đang tải ảnh và lưu…' : 'Đang lưu…' : record ? 'Lưu thay đổi' : type ? 'Thêm loại kho' : 'Thêm kho'}
       </button>}
     </>}>
     <LoadState loading={options.loading} error={options.error} retry={options.refresh} />
-    {options.data && <form id={formId} className="portal-form" onSubmit={submit} onChange={event => {
+    {needsType && <p role="status">Cơ sở này chưa có loại kho. Hãy tạo loại kho với kích thước và đơn giá trước khi thêm kho vật lý.</p>}
+    {options.data && !needsType && <form id={formId} className="portal-form" onSubmit={submit} onChange={event => {
       if (!type) event.currentTarget.dataset.wdpDirty = 'true';
       if (locationError) setError('');
     }}>
@@ -192,7 +211,7 @@ export function InventoryEditor({ kind, record, onClose, onSaved }: { kind: 'typ
             <EntitySelect aria-label="Loại kho áp dụng" name="storageTypeId" value={storageTypeId}
               onValueChange={setStorageTypeId} disabled={busy || locked} required>
               <option value="">Chọn loại kho</option>
-              {rows(options.data?.items).map(row => <option key={first(row, 'id')} value={first(row, 'id')}>
+              {storageTypes.map(row => <option key={first(row, 'id')} value={first(row, 'id')}>
                 {first(row, 'name')} · {first(row, 'code')}
               </option>)}
             </EntitySelect>

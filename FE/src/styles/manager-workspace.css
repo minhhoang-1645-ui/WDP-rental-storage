@@ -362,3 +362,18 @@
 @media print {
   .manager-unit-detail .record-disclosure::details-content { content-visibility: visible; }
 }
+.workspace-themed .portal-dialog.inventory-type-dialog { width: min(720px, calc(100vw - 24px)); }
+.inventory-type-dialog fieldset, .inventory-type-image { display: grid; gap: 12px; min-width: 0; }
+.inventory-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.inventory-type-dimensions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.inventory-type-dialog .portal-form .inventory-type-grid .field-label { min-width: 0; margin: 0; }
+.inventory-type-dialog .portal-form .inventory-type-toggle { display: flex; align-items: center; gap: 9px; }
+.inventory-type-dialog .portal-form .inventory-type-toggle input { width: 1.125rem; min-height: 0; height: 1.125rem; margin: 0; accent-color: var(--workspace-primary); }
+.inventory-type-image { padding: 12px; border: 1px solid var(--workspace-border); border-radius: 10px; }
+.inventory-type-image h3 { margin: 0; font-size: 1rem; }
+.inventory-type-image input[type="file"] { overflow: hidden; }
+.inventory-type-preview-row { display: flex; align-items: center; gap: 10px; }
+.inventory-type-preview-row img { width: 96px; height: 68px; object-fit: cover; border-radius: 8px; }
+@media (max-width: 560px) {
+  .inventory-type-grid:not(.inventory-type-dimensions) { grid-template-columns: minmax(0, 1fr); }
+}

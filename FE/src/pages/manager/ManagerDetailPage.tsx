@@ -62,6 +62,8 @@ import { staffRecordIdentity } from '../staff/staff-work';
 import { PolicySettlementActions } from '../../components/manager/PolicySettlementActions';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
+import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
+import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
@@ -190,7 +192,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               <ul>{rows(object(row.handoverReport).problems).map((problem, index) =>
                 <li key={index}><strong>{first(problem, 'staffName')} · {date(problem.reportedAt, true)}</strong><p>{first(problem, 'note')}</p></li>)}</ul>
             </DetailDisclosure>}
-          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
+          <div className={`manager-detail-grid${resource === 'transfers' ? ' transfer-detail-grid' : resource === 'invoices' ? ' invoice-detail-grid' : ''}${!showProcessing ? ' record-detail-readonly' : ''}`}>
             {!staffOperation && !service && workflowGuide(resource, row.status) && <div className="workspace-full-row"><WorkflowHint>{workflowGuide(resource, row.status)}</WorkflowHint></div>}
             <div className="manager-detail-content">
               {staffOperation ? <StaffOperationDetails resource={staffOperation} row={row} actions={
@@ -214,6 +216,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               )}
               {user?.role === 'FACILITY_MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
+              {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
                   ...(row.commercial ? [['Phụ lục đổi loại', first(row, 'commercial.acceptedAt') ? 'Đã ký' : 'Chờ khách ký']] as [string, string][] : [])]} />
@@ -237,7 +240,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               </DetailDisclosure>}
             </div>
             {showProcessing && <aside className="manager-processing" id={isStaff ? 'staff-processing' : undefined} tabIndex={isStaff ? -1 : undefined}>
-              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : 'Xử lý hồ sơ'}</h2>
+              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : resource === 'invoices' ? 'Ghi nhận thanh toán' : 'Xử lý hồ sơ'}</h2>
               <ManagerActions
                 key={`${resource}:${id}:${row.updatedAt ?? row.status}`}
                 resource={resource}
@@ -296,6 +299,7 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
     <h2>{maintenance ? 'Nội dung sự cố' : 'Nội dung khách gửi'}</h2>
     <Facts items={[
       ...(maintenance && first(row, 'facility.name') ? [['Cơ sở', first(row, 'facility.name')] as [string, string]] : []),
+      ...(maintenance && first(row, 'reportedBy.fullName') ? [['Người báo cáo', first(row, 'reportedBy.fullName')], ['Thời điểm báo cáo', date(row.createdAt, true)]] as [string, string][] : []),
       ...(maintenance && incidentArea(row.commonArea) ? [['Khu vực chung', [incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(unitCode ? [['Kho', [unitCode, location].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(maintenance ? [['Khóa đặt thuê của phiếu', row.blocksUnit === true
@@ -310,6 +314,7 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
       {Boolean(row.description) && <p>{first(row, 'description')}</p>}
     </div>}
     {maintenance && <MaintenancePhotoGallery record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />}
+    {maintenance && <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />}
   </section>;
 }
 
@@ -328,6 +333,42 @@ function AffectedBookingWarning({ bookings }: { bookings: Row[] }) {
         {' · '}{date(appointment.scheduledAt, true)}{' · '}<Status value={appointment.status} />
       </div>)}
     </li>)}</ul>
+  </section>;
+}
+
+const staffEvidenceTitles: Record<string, string> = {
+  maintenance: 'Ảnh kết quả sửa chữa',
+  appointments: 'Ảnh bàn giao kho',
+  'support-requests': 'Ảnh kết quả hỗ trợ',
+  transfers: 'Ảnh bàn giao chuyển kho',
+};
+
+function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
+  const title = staffEvidenceTitles[resource];
+  if (!title) return null;
+  if (resource === 'maintenance' && rows(row.evidenceSubmissions).length > 0) return <section className="manager-section">
+    <h2>{title}</h2>
+    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} />
+  </section>;
+  const report = object(row.handoverReport);
+  const uploaded = resource === 'maintenance' ? row.workPhotos
+    : resource === 'support-requests' ? row.resolutionPhotos : report.photos;
+  const photos = Array.isArray(uploaded) ? uploaded.filter((value): value is string =>
+    typeof value === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(value)) : [];
+  const linkValues = resource === 'appointments' && Array.isArray(report.photoLinks) ? report.photoLinks
+    : resource === 'maintenance' ? evidenceLinks(first(row, 'workNote')) : [];
+  const links = linkValues.filter((value): value is string => typeof value === 'string' && /^https:\/\//i.test(value));
+  const showMaintenanceResult = resource === 'maintenance' && ['AWAITING_VERIFICATION', 'COMPLETED'].includes(String(row.status));
+  if (!photos.length && !links.length && !showMaintenanceResult) return null;
+  return <section className="manager-section">
+    <h2>{title}</h2>
+    {!photos.length && !links.length && <p>{Array.isArray(row.workPhotos)
+      ? 'Phiếu này chưa có ảnh hoặc liên kết ảnh đã lưu.'
+      : 'Máy chủ hiện chưa hỗ trợ ảnh tải trực tiếp cho kết quả bảo trì.'}</p>}
+    {photos.length > 0 && <div className="staff-handover-photos">
+      {photos.map((photo, index) => <img key={index} src={photo} alt={title + ' ' + (index + 1)} loading="lazy" />)}
+    </div>}
+    <EvidenceLinks links={links} />
   </section>;
 }
 
@@ -985,6 +1026,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
             {item.inspectedAt ? (
               <small>{date(item.inspectedAt, true)}</small>
             ) : null}
+            {returning && <ReturnInspectionPhotos inspection={item} />}
           </>,
         ]}
       />

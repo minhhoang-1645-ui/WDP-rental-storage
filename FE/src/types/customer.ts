@@ -22,7 +22,7 @@ export interface CustomerContract {
   status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   startDate: string
   endDate: string
-  reservation: { id: string; reference: string; status: string; quantity: number }
+  reservation: { id: string; reference: string; status: string; quantity: number; facility?: { name: string; code: string; address: string } | null }
   storageType: CustomerStorageType
   storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string }
   activatedAt: string | null

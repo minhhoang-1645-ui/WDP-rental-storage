@@ -514,6 +514,34 @@
         "6fa3bfbf436ae4102b5bc00860394fc91be954b587eb6cd2ab3d290e4a7a140e",
         "c3e7ddd34389674bf03c2c1b932c9db16628fdd8c4c94eb36eb652981a3397ad"
       ]
+    },
+    {
+      "name": "20261127000200_support_resolution_photos",
+      "checksums": [
+        "8d01e9ec21226426b57b613c103b16f16855060d70fcd7193667ffb4ae124d5a",
+        "81c5144c1ecce7c8f7c09d0769f698cb38093fb0a915a10f49b2e14ff7f65c04"
+      ]
+    },
+    {
+      "name": "20261127000300_maintenance_work_photos",
+      "checksums": [
+        "17bbd6fbbf77a3a9599e9959383e8c3458eaed03152466f14921f2f1e1ba8b63",
+        "e685c594f1676575a6f5d5c9de3555c64781e1ec9de9b7f7d409733641ca4832"
+      ]
+    },
+    {
+      "name": "20261127000400_return_inspection_photos",
+      "checksums": [
+        "da87d755fc88d9c27a291f5640ac057a54c04178655364842cc1bf2c484a4102",
+        "0a017664a9bf9c62bf3e04911354412ad9963115e5a66398d804201ec59d7bdf"
+      ]
+    },
+    {
+      "name": "20261127000500_staff_evidence_submissions",
+      "checksums": [
+        "9e2cf955c1ab59ce3751e5b5a2ecb092cde2f48f2d8563e12a12bb211aad88f8",
+        "3a5967134fb18d688ae9d4e679f3b453416fe72964e7bde855840eb64584f9cf"
+      ]
     }
   ],
   "historicalException": {

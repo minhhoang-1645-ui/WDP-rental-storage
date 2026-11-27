@@ -39,7 +39,7 @@ export function StaffActions({
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
   const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
-    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
+    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : resource === 'maintenance' ? 'Ảnh kết quả sửa chữa (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
     pendingAction !== undefined,
   );
   const busy = pendingAction !== undefined || readingPhotos;
@@ -143,7 +143,10 @@ export function StaffActions({
     if (busy || photoReadLock.current || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
-    if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
+    if (suffix === '/complete-work') {
+      input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
+      input.workPhotos = handoverPhotos.map(photo => photo.src);
+    }
     if (suffix === '/complete-handover') {
       const deliveredPurchaseIds = data.getAll('deliveredPurchaseIds').map(String);
       if (deliveredPurchaseIds.length) input.deliveredPurchaseIds = deliveredPurchaseIds;
@@ -364,7 +367,8 @@ export function StaffActions({
                 <label className="field-label">Liên kết ảnh kết quả (tùy chọn)
                   <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
                 </label>
-                <button className="button-primary">
+                {photoPicker}
+                <button className="button-primary" disabled={busy}>
                   Gửi kết quả nghiệm thu
                 </button>
               </form>

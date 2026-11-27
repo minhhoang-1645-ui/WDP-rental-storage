@@ -1054,6 +1054,7 @@ model MaintenanceRequest {
   startedAt                DateTime?
   workCompletedAt          DateTime?
   workNote                 String?
+  workPhotos               Json?
   verificationNote         String?
   verifiedByUserId         String?
   verifiedBy               User?               @relation("MaintenanceVerifier", fields: [verifiedByUserId], references: [id], onDelete: Restrict)

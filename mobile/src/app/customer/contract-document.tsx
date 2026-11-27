@@ -38,6 +38,11 @@ function RentalContractDocument({ id }: { id: string }) {
   const facility = object(document.facility);
   const bookingFacility = object(object(row?.reservation).facility);
   const initial = object(quote.initialPaymentBreakdown);
+  const transfers = rows(row?.transfers).filter(transfer => transfer.status === 'COMPLETED');
+  const currentUnit = object(row?.storageUnit);
+  const currentLocation = [text(currentUnit, 'floor'), text(currentUnit, 'zone'),
+    text(currentUnit, 'row') && 'Hàng ' + text(currentUnit, 'row'),
+    text(currentUnit, 'position') && 'Vị trí ' + text(currentUnit, 'position')].filter(Boolean).join(' · ');
   const location = [text(document, 'storage.floor'), text(document, 'storage.zone'),
     text(document, 'storage.row') && 'Hàng ' + text(document, 'storage.row'),
     text(document, 'storage.position') && 'Vị trí ' + text(document, 'storage.position')].filter(Boolean).join(' · ');
@@ -65,7 +70,17 @@ function RentalContractDocument({ id }: { id: string }) {
         {!text(facility, 'name') && <Section title="Tham chiếu cơ sở trên đơn đặt kho" values={[
           ['Cơ sở', text(bookingFacility, 'name')], ['Địa chỉ hiện tại', text(bookingFacility, 'address')],
         ]} />}
-        <Section title="Thông tin kho và thời hạn" values={[
+        {transfers.length > 0 && <>
+          <Section title="Kho đang thuê sau chuyển kho" values={[
+            ['Mã ô kho hiện tại', text(currentUnit, 'unitCode')], ['Vị trí hiện tại', currentLocation],
+          ]} />
+          <Section title="Lịch sử chuyển kho" values={transfers.map(transfer => [
+            text(transfer, 'transferCode') || 'Chuyển kho',
+            [(text(transfer, 'fromUnit.unitCode') || '—') + ' → ' + (text(transfer, 'toUnit.unitCode') || '—'),
+              formatDate(text(transfer, 'completedAt'), true)].filter(Boolean).join(' · '),
+          ])} />
+        </>}
+        <Section title={transfers.length ? 'Thông tin kho trong hợp đồng gốc' : 'Thông tin kho và thời hạn'} values={[
           ['Đơn đặt kho', text(document, 'reservationReference')], ['Loại kho', text(document, 'storage.name')],
           ['Mã ô kho', text(document, 'storage.unitCode')], ['Vị trí trong cơ sở', location], ['Bắt đầu thuê', formatDate(text(document, 'startDate'))],
           ['Kết thúc kỳ thuê', text(document, 'endDate') ? formatDate(text(document, 'endDate')) + ' (không bao gồm ngày này)' : ''],

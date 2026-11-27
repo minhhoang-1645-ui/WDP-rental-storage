@@ -521,6 +521,13 @@
         "8d01e9ec21226426b57b613c103b16f16855060d70fcd7193667ffb4ae124d5a",
         "81c5144c1ecce7c8f7c09d0769f698cb38093fb0a915a10f49b2e14ff7f65c04"
       ]
+    },
+    {
+      "name": "20261127000300_maintenance_work_photos",
+      "checksums": [
+        "17bbd6fbbf77a3a9599e9959383e8c3458eaed03152466f14921f2f1e1ba8b63",
+        "e685c594f1676575a6f5d5c9de3555c64781e1ec9de9b7f7d409733641ca4832"
+      ]
     }
   ],
   "historicalException": {

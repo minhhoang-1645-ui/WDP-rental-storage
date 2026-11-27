@@ -341,6 +341,10 @@ function ServiceOutcome({ row, maintenance }: { row: Row; maintenance: boolean }
     <h2>{maintenance ? 'Kết quả đã ghi nhận' : 'Kết quả xử lý'}</h2>
     {Boolean(row.resolutionType) && <strong>{label(row.resolutionType)}</strong>}
     {outcome && <p className="record-text">{outcome}</p>}
+    {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
+      {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
+        <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}
+    </div>}
     {review && <p className="record-text"><strong>Nhận xét nghiệm thu</strong> {review}</p>}
     {(owner || closedAt) && <p className="record-attribution">{[owner, closedAt && date(closedAt, true)].filter(Boolean).join(' · ')}</p>}
   </section>;

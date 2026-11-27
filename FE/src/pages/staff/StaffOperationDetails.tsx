@@ -205,7 +205,12 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           ['Người nghiệm thu', first(row, 'verifiedBy.fullName')], ['Ngày nghiệm thu', dateField('verifiedAt', true)],
           ['Nhận xét nghiệm thu', verification],
           ['Tình trạng kho hiện tại', first(row, 'unit.status') && <Status value={at(row, 'unit.status')} />],
-        ]} />}
+        ]}>
+          {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
+            {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
+              <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}
+          </div>}
+        </Section>}
       <References items={[[ 'Trả kho', returnId && <Link to={`/staff/returns/${encodeURIComponent(returnId)}`}>{first(row, 'returnContext.returnRequest.returnCode')}</Link> ]]} />
     </>;
   }

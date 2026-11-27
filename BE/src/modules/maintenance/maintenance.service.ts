@@ -1,6 +1,7 @@
 import { recordTaskEvent } from '../dispatch/task-exception.js';
 import { assertCanStartDirectWork, workPhase } from '../dispatch/work-phase.js';
 import { managerReservationScope } from '../facility-access/record-access.js';
+import { evidencePhotos } from '../../evidence-photos.js';
 import { appendEvidenceLink } from '../facility-access/operational-evidence.js';
 import { businessToday } from '../../business-date.js';
 import { recordAssignment } from '../facility-access/assignment-audit.js';
@@ -156,7 +157,7 @@ export class MaintenanceService {
   async getStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
+    return { ...this.toMaintenance(record, 'FACILITY_STAFF', actor.id), workPhotos: record.workPhotos ?? [] };
   }
 
   async getManager(id: string, actor:PublicUser) {
@@ -164,7 +165,7 @@ export class MaintenanceService {
 
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include(true) });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return this.toMaintenance(record, 'FACILITY_MANAGER');
+    return { ...this.toMaintenance(record, 'FACILITY_MANAGER'), workPhotos: record.workPhotos ?? [] };
   }
 
   private detailScope(id: string, actor: PublicUser): Prisma.MaintenanceRequestWhereInput {
@@ -301,6 +302,7 @@ export class MaintenanceService {
   completeWork(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     this.requiredText(input.workNote, 4000, 'workNote');
     const workNote = this.requiredText(appendEvidenceLink(input.workNote, input.evidenceLink), 4000, 'workNote');
+    const workPhotos = evidencePhotos(input.workPhotos);
     return this.transition(id, key, 'COMPLETE_WORK', async (tx, current, safeKey) => {
       if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
@@ -311,7 +313,7 @@ export class MaintenanceService {
         { ...(facilityId && { facilityId }), nextStatus: 'AWAITING_VERIFICATION' });
       return tx.maintenanceRequest.update({
         where: { id: current.id },
-        data: { status: 'AWAITING_VERIFICATION', workCompletedAt: new Date(), workNote, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey },
+        data: { status: 'AWAITING_VERIFICATION', workCompletedAt: new Date(), workNote, workPhotos, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey },
         include: this.include(),
       });
     }, actor, 'FACILITY_STAFF');

@@ -35,7 +35,7 @@ const facilityName = (row: Row) => text(row, 'reservation.facility.name', 'facil
 const reservationId = (row: Row) => text(row, 'reservation.id');
 const closedBooking = (row: Row) => ['EXPIRED', 'CANCELLED', 'REJECTED'].includes(text(row, 'reservation.status'));
 
-function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submissions: Row[], vnpay: boolean, now: number) {
+function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submissions: Row[], onlinePaymentAvailable: boolean, now: number) {
   const today = vietnamCalendarDate(now);
   const initialByReservation = new Map(invoices.filter(row => row.type === 'INITIAL' && row.status !== 'VOID').map(row => [reservationId(row), row]));
   const pending = new Set(submissions.filter(row => row.status === 'PENDING_VERIFICATION').map(row => text(row, 'invoice.id')));
@@ -74,7 +74,7 @@ function taskList(contracts: Row[], invoices: Row[], appointments: Row[], submis
     const activatesRenewal = invoice.type === 'RENEWAL' && Number(invoice.renewalCycle) === 1 &&
       text(invoice, 'renewalRequest.status') === 'APPROVED_PENDING_PAYMENT';
     const dueNow = invoice.type === 'INITIAL' || activatesRenewal || Boolean(due && due.slice(0, 10) <= today);
-    if (!vnpay || !dueNow || closedBooking(invoice) || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type)) ||
+    if (!onlinePaymentAvailable || !dueNow || closedBooking(invoice) || !['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type)) ||
       !['OPEN', 'PARTIALLY_PAID'].includes(String(invoice.status)) || !(Number(invoice.balanceDue) > 0) ||
       pending.has(idOf(invoice)) || invoicePaymentBlockedBySchedule(invoice, now) || paymentWindowClosed(invoice, now) ||
       (invoice.type === 'RECURRING' ? object(invoice.signing).complete === false : object(invoice.signing).complete !== true)) continue;
@@ -143,8 +143,10 @@ export default function CustomerHomeScreen() {
   const availableWidth = Math.min(width, 540);
   const cardWidth = count > 1 ? Math.round(availableWidth * 0.82) : availableWidth - 40;
   const stride = cardWidth + 10;
+  const gateway = config.data?.payosConfigured === true ? 'payOS'
+    : config.data?.vnpayConfigured === true ? 'VNPay' : '';
   const tasks = !taskError && !taskLoading ? taskList(unique(rows(contracts.data?.items)), unique(rows(invoices.data?.items)),
-    rows(appointments.data?.items), rows(submissions.data?.items), config.data?.vnpayConfigured === true, now) : [];
+    rows(appointments.data?.items), rows(submissions.data?.items), Boolean(gateway), now) : [];
   const nextVisit = rows(appointments.data?.items)
     .filter(item => idOf(item) && ['REQUESTED', 'CONFIRMED'].includes(String(item.status)) && Date.parse(text(item, 'scheduledAt')) >= now)
     .sort((a, b) => Date.parse(text(a, 'scheduledAt')) - Date.parse(text(b, 'scheduledAt')))[0];
@@ -153,7 +155,7 @@ export default function CustomerHomeScreen() {
   const pendingInvoiceIds = new Set(rows(submissions.data?.items).filter(item => item.status === 'PENDING_VERIFICATION' ||
     Boolean(text(item, 'reconciliation.status') && text(item, 'reconciliation.status') !== 'RECONCILED'))
     .map(item => text(item, 'invoice.id')));
-  const upcoming = !submissions.error && !submissions.loading && config.data?.vnpayConfigured === true
+  const upcoming = !submissions.error && !submissions.loading && gateway
     ? rows(invoices.data?.items).filter(item => idOf(item) && outstanding(item) && !closedBooking(item) &&
       ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(item.type)) && !paymentWindowClosed(item, now) &&
       !invoicePaymentBlockedBySchedule(item, now) && !pendingInvoiceIds.has(idOf(item)) &&
@@ -264,7 +266,7 @@ export default function CustomerHomeScreen() {
 
       {upcoming && <View style={s.recent}>
         <Text accessibilityRole="header" style={s.sectionTitle}>Hóa đơn sắp đến hạn</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={'Thanh toán VNPay · ' + invoiceTitle(upcoming)}
+        <Pressable accessibilityRole="button" accessibilityLabel={'Thanh toán qua ' + gateway + ' · ' + invoiceTitle(upcoming)}
           onPress={() => go('/customer/invoices/' + encodeURIComponent(idOf(upcoming)))} style={s.booking}>
           <SmallIcon icon={CreditCard} />
           <View style={s.grow}>
@@ -273,7 +275,7 @@ export default function CustomerHomeScreen() {
             {[storageName(upcoming), facilityName(upcoming)].filter(Boolean).length > 0 && <Text style={s.secondary}>{[storageName(upcoming), facilityName(upcoming)].filter(Boolean).join(' · ')}</Text>}
             <Text style={s.secondary}>{text(upcoming, 'dueAt') ? 'Đến hạn ' + formatDate(text(upcoming, 'dueAt')) + ' · ' : ''}{invoiceBadge(upcoming).label}</Text>
           </View>
-          <View style={s.pay}><Text style={s.payText}>Thanh toán VNPay</Text></View>
+          <View style={s.pay}><Text style={s.payText}>Thanh toán qua {gateway}</Text></View>
         </Pressable>
       </View>}
       <View style={s.recent}>

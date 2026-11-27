@@ -115,9 +115,12 @@ export function CustomerRenewalDetail({ id }: { id: string }) {
   const isCancelled = row?.status === 'CANCELLED';
   const approved = !isCancelled && row?.status === 'APPROVED_PENDING_PAYMENT';
   const payable = approved && signed && invoice && ['OPEN', 'PARTIALLY_PAID'].includes(String(invoice.status)) && Number(invoice.balanceDue) > 0;
+  const paymentConfig = useResource<Row>(payable ? '/customer/payment-config' : null);
+  const gateway = paymentConfig.data?.payosConfigured === true ? 'payOS'
+    : paymentConfig.data?.vnpayConfigured === true ? 'VNPay' : '';
   const rentalId = text(row ?? {}, 'reservation.id');
   const money = (value: unknown) => typeof value === 'number' ? formatMoney(value) : '—';
-  const action = payable ? { title: 'Thanh toán qua VNPay', path: invoicePath + '?renewalPayment=1' }
+  const action = payable ? { title: gateway ? 'Thanh toán qua ' + gateway : 'Thanh toán gia hạn', path: invoicePath + '?renewalPayment=1' }
     : completed && rentalId ? { title: 'Xem chi tiết kho', path: '/customer/rentals/' + encodeURIComponent(rentalId) } : undefined;
   return <JourneyScreen title={approved ? signed ? 'Thanh toán gia hạn' : 'Phụ lục gia hạn' : 'Gia hạn kho'} action={action}>
     {source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : source.loading ? <LoadingState layout="detail" /> : row ? <>
@@ -133,7 +136,8 @@ export function CustomerRenewalDetail({ id }: { id: string }) {
         <Fact label="Hạn cũ" value={formatDate(text(row, 'previousEndDate'))} />
         <Fact label="Gia hạn thêm" value={text(row, 'termMonths') + ' tháng'} />
         <Fact label={completed ? 'Hạn mới' : 'Hạn mới dự kiến'} value={formatDate(text(row, 'requestedEndDate'))} />
-        {payable ? <><Fact label="Kho áp dụng" value={text(row, 'reservation.storageType.name')} /><Fact label="Phương thức thanh toán" value="VNPay" /></> : null}
+        {payable ? <Fact label="Kho áp dụng" value={text(row, 'reservation.storageType.name')} /> : null}
+        {payable && gateway ? <Fact label="Phương thức thanh toán" value={gateway} /> : null}
         {completed && invoice && typeof invoice.amountPaid === 'number' ? <Fact label="Đã trả hóa đơn kỳ đầu" value={money(invoice.amountPaid)} /> : null}
       </View>
       {text(row, 'rejectionReason') ? <Text style={s.error}>{text(row, 'rejectionReason')}</Text> : null}

@@ -48,6 +48,36 @@ export function StaffActions({
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
   const [readingPhotos, setReadingPhotos] = useState(false);
+  const [handoverPhotos, setHandoverPhotos] = useState<{ id: number; name: string; src: string }[]>([]);
+  const [photoError, setPhotoError] = useState('');
+  const nextPhotoId = useRef(0);
+  const photoReadLock = useRef(false);
+
+  async function addHandoverPhotos(files: File[]) {
+    if (!files.length || photoReadLock.current || pendingAction !== undefined) return;
+    if (handoverPhotos.length + files.length > 3) {
+      setPhotoError('Chỉ được đính kèm tối đa 3 ảnh. Bỏ ảnh đã chọn để thêm ảnh khác.');
+      return;
+    }
+    if (files.some(file => !photoTypes.includes(file.type) || file.size === 0 || file.size > 400 * 1024)) {
+      setPhotoError('Chọn ảnh JPG, PNG hoặc WebP tối đa 400 KB mỗi ảnh.');
+      return;
+    }
+    photoReadLock.current = true;
+    setReadingPhotos(true);
+    setPhotoError('');
+    try {
+      const additions = await Promise.all(files.map(async file => ({
+        id: nextPhotoId.current++, name: file.name, src: await readHandoverPhoto(file),
+      })));
+      setHandoverPhotos(previous => [...previous, ...additions]);
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : 'Không đọc được ảnh bàn giao.');
+    } finally {
+      photoReadLock.current = false;
+      setReadingPhotos(false);
+    }
+  }
   const busy = pendingAction !== undefined || readingPhotos;
   const lock = useRef(false);
   const returnRequirementsId = useId();
@@ -139,14 +169,14 @@ export function StaffActions({
       setPendingAction(undefined);
     }
   };
-  const submit = async (
+  const submit = (
     event: FormEvent<HTMLFormElement>,
     suffix: string,
     field: string,
     idempotent = false,
   ) => {
     event.preventDefault();
-    if (busy || lock.current) return;
+    if (busy || photoReadLock.current || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-work') input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
@@ -159,24 +189,12 @@ export function StaffActions({
         condition: String(data.get(`condition-${unit.id}`) ?? '').trim(),
         inspected: data.get(`checked-${unit.id}`) === 'on',
       })) : undefined;
-      const files = data.getAll('handoverPhotos').filter((entry): entry is File => entry instanceof File && Boolean(entry.name));
       const photoLinks = String(data.get('handoverPhotoLinks') ?? '').split(/\r?\n/).map(link => link.trim()).filter(Boolean);
-      if (files.length > 3 || files.some(file => !photoTypes.includes(file.type) || file.size === 0 || file.size > 400 * 1024)) {
-        setError('Chọn tối đa 3 ảnh JPG, PNG hoặc WebP, tối đa 400 KB mỗi ảnh.');
-        return;
-      }
       if (photoLinks.length > 3 || photoLinks.some(link => !/^https:\/\/[^\s]+$/i.test(link) || link.length > 2000)) {
         setError('Nhập tối đa 3 link HTTPS, mỗi link trên một dòng.');
         return;
       }
-      let photos: string[] = [];
-      if (files.length) {
-        setError('');
-        setReadingPhotos(true);
-        try { photos = await Promise.all(files.map(readHandoverPhoto)); }
-        catch (caught) { setError(caught instanceof Error ? caught.message : 'Không đọc được ảnh bàn giao.'); return; }
-        finally { setReadingPhotos(false); }
-      }
+      const photos = handoverPhotos.map(photo => photo.src);
       input.handoverReport = {
         recipientType,
         recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
@@ -194,6 +212,29 @@ export function StaffActions({
     }
     void run(suffix, 'POST', input, idempotent);
   };
+  const photoPicker = <div className="staff-handover-photo-picker">
+                <label className="field-label">{resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)'}
+                  <input type="file" accept={photoTypes.join(',')} multiple disabled={busy || handoverPhotos.length === 3}
+                    onChange={event => {
+                      const files = Array.from(event.target.files ?? []);
+                      event.target.value = '';
+                      void addHandoverPhotos(files);
+                    }} />
+                  <small>JPG, PNG hoặc WebP, tối đa 400 KB mỗi ảnh. Có thể chọn từng ảnh hoặc chọn nhiều ảnh cùng lúc.</small>
+                </label>
+                <p role="status">{readingPhotos ? 'Đang đọc ảnh…' : `Đã chọn ${handoverPhotos.length}/3 ảnh`}</p>
+                {photoError && <p className="booking-alert is-error" role="alert">{photoError}</p>}
+                {handoverPhotos.length > 0 && <ul className="staff-handover-photos staff-handover-photo-preview" aria-label={resource === 'appointments' ? 'Ảnh bàn giao đã chọn' : 'Ảnh hỗ trợ đã chọn'}>
+                  {handoverPhotos.map(photo => <li key={photo.id}>
+                    <img src={photo.src} alt={photo.name} />
+                    <span>{photo.name}</span>
+                    <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={() => {
+                      setHandoverPhotos(previous => previous.filter(item => item.id !== photo.id));
+                      setPhotoError('');
+                    }}>Bỏ ảnh</button>
+                  </li>)}
+                </ul>}
+              </div>;
   const inspections = rows(row.inspections);
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
     String(row.status),
@@ -253,10 +294,7 @@ export function StaffActions({
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
               <PurchasedProducts row={row} confirm />
-              <label className="field-label">Ảnh bàn giao từ máy (tùy chọn)
-                <input name="handoverPhotos" type="file" accept={photoTypes.join(',')} multiple disabled={busy} />
-                <small>Tối đa 3 ảnh JPG, PNG hoặc WebP, mỗi ảnh tối đa 400 KB.</small>
-              </label>
+              {photoPicker}
               <label className="field-label">Link ảnh bàn giao (tùy chọn)
                 <textarea name="handoverPhotoLinks" rows={2} maxLength={6002} placeholder="https://..." disabled={busy} />
                 <small>Tối đa 3 link HTTPS, mỗi link một dòng.</small>
@@ -421,11 +459,12 @@ export function StaffActions({
               <form className="portal-form" onSubmit={event => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
+                if (busy || photoReadLock.current) return;
                 const note = String(data.get('supportNote') ?? '').trim();
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
                 if (supportOption === 'wait-customer') void run('/wait-customer', 'POST', { reason: note }, true);
                 else if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
-                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, identityVerified: data.get('identityVerified') === 'on' }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, resolutionPhotos: handoverPhotos.map(photo => photo.src), identityVerified: data.get('identityVerified') === 'on' }, true);
               }}>
                 <label className="field-label">Hướng xử lý
                   <select value={supportOption} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
@@ -444,6 +483,7 @@ export function StaffActions({
                 </label>
                 {(supportOption === 'ACCESS_RESTORED' || supportOption === 'ON_SITE_RESOLVED' && ['LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE'].includes(String(row.category))) &&
                   <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu danh tính khách và quyền truy cập kho</label>}
+                {supportOption && !['wait-customer', 'escalate'].includes(supportOption) && photoPicker}
                 <button className="button-primary" disabled={busy || !supportOption}>
                   {busy ? 'Đang lưu…' : supportOption === 'wait-customer' ? 'Ghi nhận chờ khách' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>

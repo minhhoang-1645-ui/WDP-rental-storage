@@ -225,6 +225,12 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       ['Người thực hiện', first(row, resolved ? 'resolvedBy.fullName' : 'escalatedBy.fullName')],
       [resolved ? 'Ngày hoàn tất' : 'Ngày chuyển quản lý', dateField(resolved ? 'resolvedAt' : 'escalatedAt', true)],
     ]} note={first(row, resolved ? 'resolutionNote' : 'escalationReason')} />}
+    {resolved && Array.isArray(row.resolutionPhotos) && row.resolutionPhotos.length > 0 && <section className="manager-section">
+      <h2>Ảnh kết quả hỗ trợ</h2>
+      <div className="staff-handover-photos">{row.resolutionPhotos.map((photo, index) =>
+        typeof photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(photo)
+          ? <img key={index} src={photo} alt={'Ảnh hỗ trợ ' + (index + 1)} /> : null)}</div>
+    </section>}
     <References items={[
       ['Đơn đặt kho', reservation], ['Hợp đồng', contract], ['Hóa đơn', invoice],
       ['Chuyển kho', transfers.length > 0 && <span className="record-links">{transfers.map(transfer =>

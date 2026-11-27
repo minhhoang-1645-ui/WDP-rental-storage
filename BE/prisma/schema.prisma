@@ -1185,6 +1185,7 @@ model SupportRequest {
   escalationReason         String?
   resolutionType           SupportResolutionType?
   resolutionNote           String?
+  resolutionPhotos         Json?
   resolvedByUserId         String?
   resolvedBy               User?                  @relation("SupportResolver", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
   resolvedAt               DateTime?

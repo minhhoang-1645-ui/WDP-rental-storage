@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { rasterImageMime } from '../../raster-image.js';
+import { evidencePhotos } from '../../evidence-photos.js';
 
 type PhysicalUnit = { id: string; unitNumber: string };
 
@@ -35,23 +35,13 @@ function checkedUnits(report: Record<string, unknown>, units: readonly PhysicalU
   });
 }
 
-const maxPhotoBytes = 400 * 1024;
-
 function handoverEvidence(report: Record<string, unknown>) {
   function entries(value: unknown, label: string): unknown[] {
     if (value === undefined) return [];
     if (!Array.isArray(value) || value.length > 3) throw new BadRequestException('Chỉ được gửi tối đa 3 ' + label + '.');
     return value;
   }
-  const photos = entries(report.photos, 'tệp ảnh').map(value => {
-    const match = typeof value === 'string' && value.length <= 4 * Math.ceil(maxPhotoBytes / 3) + 32
-      ? /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value) : null;
-    if (!match) throw new BadRequestException('Chỉ chấp nhận ảnh JPG, PNG hoặc WebP tối đa 400 KB mỗi ảnh.');
-    const bytes = Buffer.from(match[2], 'base64');
-    if (bytes.length > maxPhotoBytes || bytes.toString('base64') !== match[2] || rasterImageMime(bytes) !== match[1])
-      throw new BadRequestException('Tệp ảnh bàn giao không hợp lệ.');
-    return match[0];
-  });
+  const photos = evidencePhotos(report.photos);
   const photoLinks = entries(report.photoLinks, 'link ảnh').map(value => {
     const link = typeof value === 'string' && value.length <= 2000 && !/\s/.test(value) ? URL.parse(value) : null;
     if (link?.protocol !== 'https:' || link.username || link.password) throw new BadRequestException('Link ảnh phải là đường dẫn HTTPS hợp lệ.');

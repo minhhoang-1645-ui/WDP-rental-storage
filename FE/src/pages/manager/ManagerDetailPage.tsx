@@ -1,4 +1,6 @@
-import { ManagerFinanceReview } from '../../components/manager/ManagerFinanceReview';
+import { ManagerInvoiceDetail } from './ManagerInvoiceDetail';
+import { ManagerTransferDetail } from './ManagerTransferDetail';
+import { ManagerContractDetail } from './ManagerContractDetail';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
@@ -98,7 +100,9 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
   const returnPath = reportReturn ? '/staff/report-issue' : savedReturnPath;
   useStaffProcessingTarget(isStaff && Boolean(data.data));
   if (!config) return <Empty title="Không tìm thấy trang" />;
-  const row = isStaff && data.status !== null && [401, 403, 404].includes(data.status) ? null : data.data;
+  const scopedTransfer = resource === 'transfers' && user?.role === 'FACILITY_MANAGER';
+  const scopedContract = resource === 'contracts' && user?.role === 'FACILITY_MANAGER';
+  const row = (isStaff || scopedTransfer || scopedContract) && data.status !== null && [401, 403, 404].includes(data.status) ? null : data.data;
   const staffOperation = isStaff && isStaffOperationDetail(resource) ? resource : null;
   const identity = row && (staffOperation ? staffRecordIdentity(row, resource) : recordIdentity(row, resource));
   const physical = row ? physicalUnitLabel(row, resource) : '';
@@ -141,6 +145,22 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
     && !(service && ['RESOLVED', 'COMPLETED'].includes(String(status)))
     && (!isStaff || resource !== 'transfers' || row?.status === 'APPROVED')
     && (resource !== 'reservations' || row?.status === 'PENDING');
+  if (resource === 'invoices' && user?.role === 'FACILITY_MANAGER' && row) {
+    return <ManagerInvoiceDetail row={row} id={id} returnPath={returnPath} timeline={timeline} canRecord={showProcessing}
+      refresh={data.refresh} refreshing={data.refreshing} notice={notice} onNotice={setNotice} />;
+  }
+  if (scopedTransfer && row) {
+    return <ManagerTransferDetail key={id + ':' + String(row.status)} row={row} id={id} returnPath={returnPath} canProcess={showProcessing}
+      refresh={data.refresh} refreshing={data.refreshing} notice={notice} onNotice={setNotice}>
+      <PolicySettlementActions resource={resource} row={row} id={id} refresh={data.refresh} />
+      <StaffEvidence row={row} resource={resource} />
+    </ManagerTransferDetail>;
+  }
+  if (scopedContract && row) {
+    return <ManagerContractDetail row={row} id={id} returnPath={returnPath} timeline={timeline} refresh={data.refresh} refreshing={data.refreshing} error={data.error}>
+      <ManagerContractTransfers contract={row} identity={user?.id ?? ''} />
+    </ManagerContractDetail>;
+  }
   return (
     <section className={`record-detail-page${staffOperation ? ' staff-operation-detail' : ''}`}>
       {editingUnit && row && <InventoryEditor kind="unit" record={row} onClose={() => setEditingUnit(false)} onSaved={() => { setEditingUnit(false); setNotice('Đã cập nhật kho.'); data.refresh(); }} />}
@@ -204,7 +224,6 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
-              {resource === 'invoices' && user?.role === 'FACILITY_MANAGER' && <ManagerFinanceReview invoice={row} onSaved={data.refresh} />}
               {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
               {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
@@ -409,6 +428,48 @@ function ServiceReferences({ row, staff }: { row: Row; staff: boolean }) {
   </DetailDisclosure>;
 }
 
+function InvoiceOverview({ row }: { row: Row }) {
+  const breakdown = row.breakdown as CustomerInvoice['breakdown'];
+  const reference = first(row, 'reservation.reference');
+  const period = [date(row.billingPeriodStart), date(row.billingPeriodEnd)].filter(value => value !== '—').join(' – ');
+  const bookingDeadline = row.type === 'INITIAL' ? first(row, 'reservation.expiresAt') : '';
+  const overdue = object(row.overduePayment);
+  const charges = ([
+    ['Tiền thuê', row.rentalAmount],
+    ['Tiền cọc', row.depositAmount],
+    ['Dịch vụ bổ sung', row.serviceAmount],
+    ['Phí được duyệt', row.chargeAmount],
+  ] as const).filter(([, amount]) => typeof amount === 'number' && Number.isFinite(amount) && amount !== 0);
+  const showCharges = charges.length > 0 && !(charges.length === 1 && charges[0][0] === 'Tiền thuê' && charges[0][1] === row.totalAmount);
+  return <section className="manager-section invoice-overview">
+    <h2>Chi tiết hóa đơn</h2>
+    <dl className="invoice-overview-totals">
+      <div><dt>Tổng hóa đơn</dt><dd>{money(row.totalAmount)}</dd></div>
+      <div><dt>Đã thu</dt><dd>{money(row.amountPaid)}</dd></div>
+      <div className="invoice-overview-due"><dt>Còn phải thu</dt><dd>{money(row.balanceDue)}</dd></div>
+    </dl>
+    <Facts items={[
+      ['Loại hóa đơn', label(row.type)],
+      ...(period ? [['Kỳ thu', period] as [string, string]] : []),
+      ['Hạn thanh toán', bookingDeadline ? date(bookingDeadline, true) : date(row.dueAt)],
+      ...(reference ? [['Đơn đặt kho', <Link to={`/manager/reservations/${encodeURIComponent(reference)}`}>{reference}</Link>] as [string, React.ReactNode]] : []),
+      ...(Number(overdue.days) > 0 ? [
+        ['Quá hạn', `${first(overdue, 'days')} ngày`],
+        ...(first(overdue, 'graceDays') ? [['Số ngày cho phép quá hạn', `${first(overdue, 'graceDays')} ngày`]] : []),
+        ...(first(overdue, 'managerReviewOn') ? [['Mốc quản lý xử lý', date(first(overdue, 'managerReviewOn'))]] : []),
+        ...(overdue.rentDebtRequiresReconciliation === true ? [['Phân bổ tiền thuê', 'Cần đối soát khoản đã thu']] : []),
+      ] as [string, string][] : []),
+    ]} />
+    {first(row, 'replacesInvoice.id') && <p>Thay hóa đơn <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacesInvoice.id'))}`}>{first(row, 'replacesInvoice.invoiceCode')}</Link></p>}
+    {first(row, 'replacementInvoice.id') && <p>Được thay bằng <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacementInvoice.id'))}`}>{first(row, 'replacementInvoice.invoiceCode')}</Link></p>}
+    {row.isPastDue === true && <div className="booking-alert is-error">Hóa đơn đã quá hạn thanh toán.</div>}
+    {(showCharges || Boolean(breakdown?.units?.length || breakdown?.sharedServices?.length)) && <DetailDisclosure title="Xem các khoản tính theo kho và dịch vụ">
+      {showCharges && <Facts items={charges.map(([name, amount]) => [name, money(amount)])} />}
+      {Boolean(breakdown?.units?.length || breakdown?.sharedServices?.length) && <InvoiceBreakdown details={breakdown} currency={first(row, 'currency') || undefined} compact />}
+    </DetailDisclosure>}
+  </section>;
+}
+
 function DetailContent({ row, resource, staff }: { row: Row; resource: string; staff: boolean }) {
   const [reservationSearch, setReservationSearch] = useState('');
   const reservations = rows(row.reservations);
@@ -437,6 +498,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
   );
   return (
     <>
+      {resource === 'invoices' && <InvoiceOverview row={row} />}
       {returning && <section className="manager-section">
         <h2>Kho trong yêu cầu trả</h2>
         <Facts items={[
@@ -819,44 +881,6 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
             </div>
           </section>
         )}
-      {resource === "invoices" && (
-        <section className="manager-section">
-          <h2>Chi tiết hóa đơn</h2>
-          <p>Đơn {first(row, 'reservation.reference')} · {(row.breakdown as CustomerInvoice['breakdown'])?.units?.length ?? first(row, 'reservation.quantity')} kho</p>
-          <InvoiceBreakdown details={row.breakdown as CustomerInvoice['breakdown']} currency={first(row, 'currency')} />
-          {first(row, 'replacesInvoice.id') && <p>Thay hóa đơn <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacesInvoice.id'))}`}>{first(row, 'replacesInvoice.invoiceCode')}</Link></p>}
-          {first(row, 'replacementInvoice.id') && <p>Được thay bằng <Link to={`/manager/operations/invoices/${encodeURIComponent(first(row, 'replacementInvoice.id'))}`}>{first(row, 'replacementInvoice.invoiceCode')}</Link></p>}
-          <h3>{staff ? 'Tổng thanh toán' : 'Số tiền và kỳ thanh toán'}</h3>
-          <Facts
-            items={[
-              ["Loại hóa đơn", label(row.type)],
-              [
-                "Kỳ thu",
-                `${date(row.billingPeriodStart)} → ${date(row.billingPeriodEnd)}`,
-              ],
-              ["Hạn thanh toán", first(row, "type") === "INITIAL" && first(row, "reservation.expiresAt") ? date(first(row, "reservation.expiresAt"), true) : date(row.dueAt)],
-              ...(Number(first(row, 'overduePayment.days')) > 0 ? [
-                ['Quá hạn', `${first(row, 'overduePayment.days')} ngày`],
-                ...(first(row, 'overduePayment.graceDays') ? [['Số ngày cho phép quá hạn', `${first(row, 'overduePayment.graceDays')} ngày`]] : []),
-                ['Mốc quản lý xử lý', date(first(row, 'overduePayment.managerReviewOn'))],
-                ...(object(row.overduePayment).rentDebtRequiresReconciliation === true ? [['Phân bổ tiền thuê', 'Cần đối soát khoản đã thu']] : []),
-              ] as [string, string][] : []),
-              ["Tiền thuê", money(row.rentalAmount)],
-              ["Tiền cọc", money(row.depositAmount)],
-              ["Dịch vụ bổ sung", money(row.serviceAmount)],
-              ["Phí được duyệt", money(row.chargeAmount)],
-              ["Tổng riêng hóa đơn này", money(row.totalAmount)],
-              ["Đã thu", money(row.amountPaid)],
-              ["Còn phải thanh toán hóa đơn này", money(row.balanceDue)],
-            ]}
-          />
-          {row.isPastDue === true && (
-            <div className="booking-alert is-error">
-              Hóa đơn đã quá hạn thanh toán.
-            </div>
-          )}
-        </section>
-      )}
       {resource === "payments" && (
         <section className="manager-section">
           <h2>Khoản thu đã ghi nhận</h2>
@@ -910,7 +934,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
           )}
         </section>
       )}
-      {Object.keys(quote).length > 0 && resource !== "renewals" && <ManagerPricingExplanation quote={quote} emphasizeInstallments={managerContract} />}
+      {Object.keys(quote).length > 0 && !['renewals', 'invoices'].includes(resource) && <ManagerPricingExplanation quote={quote} emphasizeInstallments={managerContract} />}
       {managerContract && reference && !invoices.length && <DetailDisclosure title="Hóa đơn theo kỳ">
         <Link to={`/manager/operations/invoices?${new URLSearchParams({ search: reference })}`}>Xem hóa đơn của đơn {reference}</Link>
       </DetailDisclosure>}

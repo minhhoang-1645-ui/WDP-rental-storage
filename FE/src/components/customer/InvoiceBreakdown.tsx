@@ -4,19 +4,23 @@ import '../../styles/invoice-breakdown.css';
 
 const serviceBillingLabels = { ONE_TIME: 'Một lần', DAY: 'Theo ngày', MONTH: 'Theo tháng' };
 
-export function InvoiceBreakdown({ details, currency }: { details?: CustomerInvoice['breakdown']; currency?: string }) {
+export function InvoiceBreakdown({ details, currency, compact = false }: {
+  details?: CustomerInvoice['breakdown']; currency?: string; compact?: boolean;
+}) {
   const money = (amount: number) => moneyLabel(amount, currency);
   if (!details) return <p className="invoice-breakdown-note">Chứng từ này lưu số tiền tổng hợp.</p>;
+  const showDeposit = !compact || details.units.some(unit => unit.depositAmount !== 0);
   return <div className="invoice-breakdown">
     {!!details.units.length && <section>
       <h3>Chi tiết từng kho</h3>
       <div className="customer-table-wrap customer-responsive-table"><table className="customer-table">
-        <thead><tr><th scope="col">Kho và hợp đồng</th><th scope="col">Tiền thuê</th><th scope="col">Tiền cọc</th><th scope="col">Tổng</th></tr></thead>
+        <thead><tr><th scope="col">Kho và hợp đồng</th><th scope="col">Tiền thuê</th>{showDeposit && <><th scope="col">Tiền cọc</th><th scope="col">Tổng</th></>}</tr></thead>
         <tbody>{details.units.map(unit => <tr key={unit.contractId}>
           <th scope="row" data-label="Kho và hợp đồng"><strong>{unit.unitCode}</strong><small>{unit.storageTypeName} · {unit.contractCode}</small></th>
-          <td data-label="Tiền thuê"><span>{money(unit.rentalAmount)}<small>Giá tháng {money(unit.monthlyRate)}</small>
-            {!!unit.discountAmount && <small>Đã giảm {money(unit.discountAmount)}</small>}</span></td><td data-label="Tiền cọc">{money(unit.depositAmount)}</td>
-          <td data-label="Tổng"><strong>{money(unit.rentalAmount + unit.depositAmount)}</strong></td>
+          <td data-label="Tiền thuê"><span>{money(unit.rentalAmount)}{(!compact || unit.rentalAmount !== unit.monthlyRate) && <small>Giá tháng {money(unit.monthlyRate)}</small>}
+            {!!unit.discountAmount && <small>Đã giảm {money(unit.discountAmount)}</small>}</span></td>
+          {showDeposit && <><td data-label="Tiền cọc">{money(unit.depositAmount)}</td>
+            <td data-label="Tổng"><strong>{money(unit.rentalAmount + unit.depositAmount)}</strong></td></>}
         </tr>)}</tbody>
       </table></div>
     </section>}

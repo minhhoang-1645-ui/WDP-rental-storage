@@ -16,10 +16,8 @@ import {
   rows,
   type Row,
 } from "../../components/manager/portal-data";
-import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
 import { IncidentBookingImpact } from '../../components/manager/IncidentBookingImpact';
 import { TransferHandoverForm, TransferProblemForm } from '../../components/manager/TransferHandoverForm';
-import { StaffPicker } from '../../components/manager/StaffPicker';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
@@ -50,16 +48,13 @@ export function ManagerActions({
   const [note, setNote] = useState(first(row, "internalNotes"));
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
+  const invalidInvoiceAmount = !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 || Number(amount) > Number(row.balanceDue);
   const [method, setMethod] = useState("BANK_TRANSFER");
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
   const [maintenancePassed, setMaintenancePassed] = useState(true);
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
-  const [target, setTarget] = useState("");
-  const [transferStaff, setTransferStaff] = useState('');
-  const [transferDestinationReady, setTransferDestinationReady] = useState(false);
-  const [transferReviewHash, setTransferReviewHash] = useState('');
   const [problemDecision, setProblemDecision] = useState('CONTINUE');
   const [problemNote, setProblemNote] = useState('');
   const problem = transferProblem(row);
@@ -128,6 +123,11 @@ export function ManagerActions({
           title: 'Ghi nhận khách không đến?', description: 'Lịch này sẽ bị hủy. Đơn đặt kho và hóa đơn giữ nguyên.',
           confirmLabel: 'Xác nhận hủy lịch', destructive: true,
         })) return;
+        if (resource === 'invoices' && path.endsWith('/payments') && !await confirm({
+          title: 'Xác nhận ghi nhận thanh toán',
+          description: `Ghi nhận ${money(body?.amount)} đã nhận cho hóa đơn ${first(row, 'invoiceCode')}.`,
+          confirmLabel: 'Xác nhận ghi nhận',
+        })) return;
         await mutate(path, verb, body, idempotent);
         onSuccess?.("Đã lưu thao tác thành công.");
         refresh();
@@ -157,6 +157,7 @@ export function ManagerActions({
         Mã giao dịch ngân hàng đã kiểm tra
         <input
           value={reference}
+          placeholder={resource === 'invoices' ? 'Nhập mã giao dịch' : undefined}
           maxLength={200}
           required
           onChange={(e) => setReference(e.target.value)}
@@ -167,6 +168,7 @@ export function ManagerActions({
         Ghi chú
         <textarea
           rows={3}
+          placeholder={resource === 'invoices' ? 'Nhập ghi chú (nếu có)' : undefined}
           maxLength={2000}
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -402,11 +404,7 @@ export function ManagerActions({
                 );
               }}
             >
-              <p>
-                Ghi nhận khoản thu đã nhận thực tế. Còn thu:{" "}
-                <strong>{money(row.balanceDue)}</strong>.
-              </p>
-              <label className="field-label">
+              <div className="invoice-payment-amount"><label className="field-label">
                 Số tiền nhận (VND)
                 <input
                   type="number"
@@ -414,6 +412,8 @@ export function ManagerActions({
                   min={1}
                   max={Number(row.balanceDue)}
                   step={1}
+                  placeholder="Nhập số tiền"
+                  aria-invalid={Boolean(amount) && invalidInvoiceAmount}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
@@ -424,11 +424,12 @@ export function ManagerActions({
                 onClick={() => setAmount(String(row.balanceDue))}
               >
                 Điền số còn thu
-              </button>
+              </button></div>
+              {Boolean(amount) && invalidInvoiceAmount && <small role="status">Nhập số tiền nguyên dương, tối đa {money(row.balanceDue)}.</small>}
               {paymentFields}
               <button
                 className="button-primary"
-                disabled={busy || !amount || (method === "BANK_TRANSFER" && !reference.trim())}
+                disabled={busy || invalidInvoiceAmount || (method === "BANK_TRANSFER" && !reference.trim())}
               >
                 Ghi nhận thanh toán
               </button>
@@ -747,47 +748,12 @@ export function ManagerActions({
             </>}
             <button className="button-primary" disabled={busy || problemNote.trim().length < 3}>Lưu quyết định</button>
           </form>}
-        {resource === "transfers" && user?.role === 'FACILITY_MANAGER' &&
-          (row.status === "REQUESTED" ? (
-            <>
-              <form
-                className="portal-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!target || !transferDestinationReady) return;
-                  void run(`${root}/approve`, "POST", {
-                    toStorageUnitId: target,
-                    staffUserId: transferStaff,
-                    ...(transferReviewHash ? { commercialReviewHash: transferReviewHash } : {}),
-                  });
-                }}
-              >
-                <TransferDestinationPicker
-                  transferId={id}
-                  source={object(row.fromUnit)}
-                  value={target}
-                  onChange={setTarget}
-                  onReady={setTransferDestinationReady}
-                  onReviewed={setTransferReviewHash}
-                  disabled={busy}
-                />
-                <StaffPicker task={{kind:"transfers",id}} list value={transferStaff} onChange={setTransferStaff} disabled={busy} />
-                <p>Có thể duyệt chuyển kho nội bộ rồi đưa vào hàng chờ. Hồ sơ có phụ lục cần chọn người phụ trách.</p>
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady}>
-                  {busy ? 'Đang lưu…' : transferStaff ? 'Duyệt và phân công' : 'Duyệt vào hàng chờ'}
-                </button>
-              </form>
-              <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
-                <label className="field-label">Lý do từ chối chuyển kho<textarea required minLength={3} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="Ghi rõ nguyên nhân để khách hàng biết kết quả xem xét." /></label>
-                <button className="button-secondary" disabled={busy || reason.trim().length < 3}>Từ chối chuyển kho</button>
-              </form>
-            </>
-          ) : (
+        {resource === "transfers" && user?.role === "FACILITY_MANAGER" && row.status !== "REQUESTED" &&
             <p>
               {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích.'}
               {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>{first(row, 'assignedStaff.id') ? 'Đổi nhân viên' : 'Phân công hồ sơ cũ'}</Link></>}
             </p>
-          ))}
+          }
         {[
           "contracts",
           "rentals",

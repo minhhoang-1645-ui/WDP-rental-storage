@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, FileSearch, RefreshCw, Search } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { mutate } from '../../services/portal';
@@ -67,10 +68,14 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
     }, { replace: true, preventScrollReset: true });
   }
 
-  return <section className="manager-section" aria-labelledby="finance-review-title">
+  const start = (visiblePage - 1) * limit;
+  const pageCount = Math.ceil(filtered.length / limit);
+  return <section className={invoice ? 'invoice-review invoice-dashboard-card' : 'manager-section'} aria-labelledby="finance-review-title">
+    <header className="invoice-review-header"><div>
     <h2 id="finance-review-title">Giao dịch cần xử lý</h2>
-    <p>Xác minh thông báo chuyển khoản và xử lý giao dịch chưa thể ghi nhận vào hóa đơn.</p>
-    <div className="portal-toolbar" role="group" aria-label="Loại giao dịch">
+    <p>{invoice ? 'Xác minh và đối soát giao dịch của hóa đơn.' : 'Xác minh thông báo chuyển khoản và xử lý giao dịch chưa thể ghi nhận vào hóa đơn.'}</p>
+    </div>{invoice && <button type="button" className="button-secondary" disabled={submissions.refreshing || reconciliation.refreshing} onClick={refresh}><RefreshCw size={16} /> Làm mới</button>}</header>
+    <div className={invoice ? 'invoice-review-nav' : 'portal-toolbar'} role="group" aria-label="Loại giao dịch">
       {(['submissions', 'reconciliation'] as const).map(group => {
         const result = group === 'submissions' ? submissions : reconciliation;
         const count = result.data ? entries(result).filter(row => pending(row, group)).length : null;
@@ -79,7 +84,7 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
           {reviewLabels[group]}{count !== null ? ` (${count})` : ''}
         </button>;
       })}
-      {refreshVersion === undefined && <button type="button" className="button-secondary" disabled={submissions.refreshing || reconciliation.refreshing} onClick={refresh}>Làm mới giao dịch</button>}
+      {!invoice && refreshVersion === undefined && <button type="button" className="button-secondary" disabled={submissions.refreshing || reconciliation.refreshing} onClick={refresh}>Làm mới giao dịch</button>}
     </div>
     {notice && <div className="portal-success" role="status">
       {notice.text}{notice.followup && <button className="button-secondary" type="button" onClick={() => open('reconciliation', notice.followup)}>Xem hồ sơ đối soát</button>}
@@ -88,7 +93,35 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
       Không tìm thấy giao dịch tại cơ sở đang quản lý.{' '}
       <button type="button" className="portal-text-button" onClick={() => open(kind)}>Xem danh sách giao dịch</button>
     </p>}
-    <ManagerTaskTable title={reviewLabels[kind]} items={filtered.slice((visiblePage - 1) * limit, visiblePage * limit)}
+    {invoice ? <>
+      <div className="invoice-review-filters">
+        <label className="invoice-review-search"><Search size={17} aria-hidden="true" /><input aria-label="Tìm kiếm" placeholder="Tìm mã giao dịch, hóa đơn, khách hàng..." value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
+        <ManagerTableFilter label="Trạng thái giao dịch" value={filter} onChange={value => { setFilter(value); setPage(1); }} options={[[ 'pending', 'Cần xử lý' ], ['all', 'Tất cả trạng thái'], ...statuses[kind]]} />
+        {(search || filter !== 'pending') && <button type="button" className="button-secondary" onClick={() => { setSearch(''); setFilter('pending'); setPage(1); }}>Xóa bộ lọc</button>}
+      </div>
+      <div className="invoice-review-table" tabIndex={0} role="region" aria-label={reviewLabels[kind]} aria-busy={resource.loading || resource.refreshing}>
+        <table><thead><tr>{['Mã giao dịch', 'Thời gian', 'Số tiền', 'Trạng thái', 'Thao tác'].map(title => <th key={title} scope="col">{title}</th>)}</tr></thead><tbody>
+          {resource.error || resource.loading || !filtered.length ? <tr><td colSpan={5}>
+            <div className="invoice-review-empty" role={resource.error ? 'alert' : 'status'}>
+              {resource.error ? <>{resource.error} <button type="button" className="button-secondary" onClick={resource.refresh}>Thử lại</button></> : resource.loading ? 'Đang tải giao dịch…' : <>
+                <span><FileSearch size={38} aria-hidden="true" /></span><strong>Không có giao dịch</strong>
+                <p>{term || filter !== 'pending' && filter !== 'all' ? 'Không có giao dịch phù hợp với bộ lọc hiện tại.' : filter === 'pending' ? 'Hiện không có giao dịch cần xử lý.' : 'Hóa đơn này chưa có giao dịch.'}</p>
+              </>}
+            </div>
+          </td></tr> : filtered.slice(start, start + limit).map(row => <tr key={first(row, 'id')}>
+            <td><button type="button" className="portal-text-button" onClick={() => open(kind, first(row, 'id'))}>{recordCode(row)}</button></td>
+            <td>{date(first(row, 'submittedAt', 'createdAt'), true)}</td><td>{money(row.amount)}</td>
+            <td><Status value={row.status} text={statuses[kind].find(([value]) => value === row.status)?.[1]} /></td>
+            <td><button type="button" className="button-secondary" aria-label={'Xem giao dịch ' + recordCode(row)} onClick={() => open(kind, first(row, 'id'))}>{pending(row, kind) ? kind === 'submissions' ? 'Xử lý' : 'Đối soát' : 'Xem'}</button></td>
+          </tr>)}
+        </tbody></table>
+      </div>
+      {!resource.loading && !resource.error && <footer className="invoice-review-footer">
+        <span>{filtered.length ? `${start + 1}–${Math.min(start + limit, filtered.length)} trên ${filtered.length}` : '0'} giao dịch</span>
+        {filtered.length > 0 && <ManagerTableFilter label="Số dòng" value={String(limit)} onChange={value => { setLimit(Number(value)); setPage(1); }} options={['10', '20', '50'].map(value => [value, `${value} / trang`])} />}
+        {pageCount > 1 && <nav aria-label="Phân trang giao dịch"><button type="button" className="button-secondary" aria-label="Trang trước" disabled={visiblePage === 1} onClick={() => setPage(visiblePage - 1)}><ChevronLeft size={16} /></button><span>{visiblePage} / {pageCount}</span><button type="button" className="button-secondary" aria-label="Trang sau" disabled={visiblePage === pageCount} onClick={() => setPage(visiblePage + 1)}><ChevronRight size={16} /></button></nav>}
+      </footer>}
+    </> : <ManagerTaskTable title={reviewLabels[kind]} items={filtered.slice(start, start + limit)}
       total={filtered.length} page={visiblePage} limit={limit} update={(key, value) => {
         if (key === 'page') setPage(Number(value));
         if (key === 'limit') { setLimit(Number(value)); setPage(1); }
@@ -106,7 +139,7 @@ export function ManagerFinanceReview({ invoice, onSaved, refreshVersion }: { inv
         <ManagerTableSearch placeholder="Mã giao dịch, hóa đơn hoặc khách hàng" value={search} onChange={value => { setSearch(value); setPage(1); }} />
         <ManagerTableFilter label="Trạng thái giao dịch" value={filter} onChange={value => { setFilter(value); setPage(1); }}
           options={[[ 'pending', 'Cần xử lý' ], ['all', 'Tất cả trạng thái'], ...statuses[kind]]} />
-      </>} />
+      </>} />}
     {selected && <FinanceReviewDialog key={kind + ':' + first(selected, 'id')} kind={kind} row={selected}
       onClose={() => open(kind)} onReconcile={id => open('reconciliation', id)} onSaved={result => {
         const followup = kind === 'submissions' ? first(result, 'reconciliation.id') : '';

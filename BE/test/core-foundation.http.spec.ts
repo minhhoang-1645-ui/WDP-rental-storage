@@ -68,6 +68,12 @@ async function denied(
     method + ' ' + path + ' as ' + who + ': ' + JSON.stringify(response.body),
   ).toContain(response.status);
 }
+async function planMaintenance(path: string, manager: string, plan = 'Sửa theo hiện trạng đã kiểm tra.') {
+  const current = (await api('get', path, manager)).body;
+  return api('patch', path + '/repair-plan', manager, {
+    surveyResult: 'Đã kiểm tra tình trạng thực tế.', repairMethod: 'INTERNAL', repairPlan: plan, expectedUpdatedAt: current.updatedAt,
+  });
+}
 async function reserve(facility = 'A', quantity = 1, startDate = today(), services: { serviceId: string; quantity: number }[] = []) {
   const response = await api(
     'post',
@@ -347,6 +353,7 @@ it('reports incidents without mutating rentals and secures photo evidence throug
   expect((await api('get', '/manager/staff?taskType=maintenance&taskId=' + id, 'managerA')).body.items)
     .toEqual(expect.arrayContaining([expect.objectContaining({ id: identity('staffA') })]));
   await denied('patch', task + '/assign', 'managerA', { staffUserId: identity('staffB') });
+  await planMaintenance(task, 'managerA');
   await api('patch', task + '/assign', 'managerA', { staffUserId: identity('staffA') });
   await denied('post', staffTask + '/start', 'incidentReporter');
   await api('post', staffTask + '/start', 'staffA', {}, 201);
@@ -361,7 +368,7 @@ it('reports incidents without mutating rentals and secures photo evidence throug
       expect.objectContaining({ staffUserId: identity('staffA'), photos: [], note: 'Đã kiểm tra lại lần hai.' }),
     ]));
   }
-  await api('post', task + '/verify', 'managerA', { note: 'Đã kiểm tra khu vực.' }, 201);
+  await api('post', task + '/verify', 'managerA', { note: 'Đã kiểm tra khu vực.', safetyVerified: true }, 201);
   expect((await api('get', staffTask, 'incidentReporter')).body).toMatchObject({ status: 'COMPLETED', unit: null });
   expect((await api('get', '/staff/maintenance/reported-by-me', 'incidentReporter')).body.items)
     .toEqual(expect.arrayContaining([expect.objectContaining({ id, unitCode: null, commonArea: 'CORRIDOR' })]));
@@ -465,6 +472,7 @@ it('applies incident rental holds immediately and releases only the assessed inc
   await api('patch', secondPath + '/booking-impact', 'managerA', { affectedUnitIds: [unit, second], expectedAffectedUnitIds: [second] });
   await api('patch', firstPath + '/booking-impact', 'managerA', { affectedUnitIds: [], expectedAffectedUnitIds: [unit] });
   expect(await unitMap(unit)).toMatchObject({ available: false, bookingBlocked: true });
+  await planMaintenance(secondPath, 'managerA');
   await api('patch', secondPath + '/assign', 'managerA', { staffUserId: identity('staffA') });
   const staffPath = '/staff/maintenance/' + secondHold.id;
   await api('post', staffPath + '/start', 'staffA', {}, 201);
@@ -472,7 +480,7 @@ it('applies incident rental holds immediately and releases only the assessed inc
   await api('post', secondPath + '/reject-verification', 'managerA', { note: 'Kiểm tra lại khu vực.' }, 201);
   expect(await unitMap(unit)).toMatchObject({ available: false, bookingBlocked: true });
   await api('post', staffPath + '/complete-work', 'staffA', { workNote: 'Đã xử lý lại và kiểm tra.' }, 201);
-  await api('post', secondPath + '/verify', 'managerA', {}, 201);
+  await api('post', secondPath + '/verify', 'managerA', { safetyVerified: true }, 201);
   expect(await unitMap(unit)).toMatchObject({ available: true, bookingBlocked: false, status: originalStatus });
   expect(await unitMap(second)).toMatchObject({ available: true, bookingBlocked: false });
   expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: secondHold.id, releasedAt: { not: null } } })).toBeGreaterThan(1);
@@ -875,6 +883,7 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
       expect(await db.transferRequest.findUniqueOrThrow({ where: { id: transfer.id } })).toMatchObject({ status: 'APPROVED', completedAt: null });
       expect(await db.rentalContract.findUniqueOrThrow({ where: { id: contract.id } })).toMatchObject({ reservationUnitId: contract.reservationUnitId });
       const issuePath = '/staff/maintenance/' + issueId;
+      await planMaintenance('/manager/maintenance/' + issueId, 'managerA');
       await api('patch', '/manager/maintenance/' + issueId + '/assign', 'managerA', {
         staffUserId: identity('staffA'), expectedAssignedStaffUserId: null,
       });
@@ -887,7 +896,7 @@ it('runs booking, OTP signing, bank verification, task reassignment and physical
       const rework = await api('post', '/manager/maintenance/' + issueId + '/reject-verification', 'managerA', { note: 'Kiểm tra thêm khóa dự phòng.' }, 201);
       expect(rework.body.status).toBe('IN_PROGRESS');
       await api('post', issuePath + '/complete-work', 'staffA', result, 201);
-      await api('post', '/manager/maintenance/' + issueId + '/verify', 'managerA', {}, 201);
+      await api('post', '/manager/maintenance/' + issueId + '/verify', 'managerA', { safetyVerified: true }, 201);
       expect((await db.storageUnit.findUniqueOrThrow({ where: { id: unitId } })).status).toBe('RESERVED');
       await api('post', staffPath + '/complete', 'staffA2', {
         recipientName: 'HTTP customer', returnedKeyCount: 1, deliveredKeyCount: 1, note: 'Kho nguồn trống, cửa và khóa nguyên trạng.',
@@ -1014,6 +1023,7 @@ it('allows only authorized Staff to report facility issues and prevents executio
     'managerA',
   );
   const assign = '/manager/maintenance/' + issue.body.id + '/assign';
+  await planMaintenance('/manager/maintenance/' + issue.body.id, 'managerB');
   const release = '/manager/assignments/maintenance/' + issue.body.id + '/release';
   const expected = identity('staffB');
   await api('patch', assign, 'managerB', { staffUserId: expected, expectedAssignedStaffUserId: null });
@@ -1050,6 +1060,7 @@ it('serializes conflicting grants and protects the last Manager', async () => {
     reportedByUserId: identity(manager),
   } });
   const accessPath = '/admin/facility-access/users/' + userId + '/relocate';
+  await planMaintenance('/manager/maintenance/' + issue.id, manager);
   const relocationInput = { expectedAccessId: current.id, facilityId };
   const patch = (path: string, actor: string, body: object) => request(app.getHttpServer()).patch('/api' + path)
     .set('Authorization', 'Bearer ' + tokens[actor]).send(body);
@@ -1291,7 +1302,7 @@ it('tracks maintenance costs separately from verification across two facilities'
   expect(customerView).not.toHaveProperty('costs');
   await denied('get', customerPath, 'other');
   const withoutCost = await create('B', identity('B-1'), 'NO_IMPACT');
-  const zeroCost = await create('B', identity('B-2'), 'NO_IMPACT');
+  const zeroCost = await create('B', identity('B-2'), 'AFFECTED');
   const manager = '/manager/maintenance/' + issue.id;
   const staff = '/staff/maintenance/' + issue.id;
   await db.$executeRaw`UPDATE "MaintenanceRequest" SET "estimatedCostVnd" = 100000 WHERE id = ${issue.id}`;
@@ -1343,7 +1354,8 @@ it('tracks maintenance costs separately from verification across two facilities'
   const newest = proposals.find((item: { maintenanceCostVnd: string }) => item.maintenanceCostVnd === '125000');
   const confirmation = { expectedActualVnd: '145000', submissionIds: [newest.id] };
   await api('post', manager + '/confirm-cost', 'managerA', confirmation, 409);
-  await api('post', manager + '/verify', 'managerA', {}, 201);
+  await api('post', manager + '/verify', 'managerA', {}, 400);
+  await api('post', manager + '/verify', 'managerA', { safetyVerified: true }, 201);
   expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: issue.id, releasedAt: null } })).toBe(0);
   expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: independentlyBlocked.id, releasedAt: null } })).toBe(1);
   expect((await api('get', customerPath, 'customer')).body.storageUnit.maintenanceNotice).toEqual(expect.any(String));
@@ -1368,18 +1380,37 @@ it('tracks maintenance costs separately from verification across two facilities'
 
   const managerB = '/manager/maintenance/' + withoutCost.id;
   const staffB = '/staff/maintenance/' + withoutCost.id;
-  await api('patch', managerB + '/assign', 'managerB', { staffUserId: identity('staffB') });
-  await api('post', staffB + '/start', 'staffB', {}, 201);
+  const unplanned = await api('patch', managerB + '/assign', 'managerB', { staffUserId: identity('staffB') }, 409);
+  expect(unplanned.body.code).toBe('MAINTENANCE_REPAIR_PLAN_REQUIRED');
+  await api('patch', managerB + '/repair-plan', 'managerB', {
+    surveyResult: 'Đã khảo sát', repairMethod: 'INTERNAL', repairPlan: '', expectedUpdatedAt: withoutCost.updatedAt,
+  }, 400);
+  await api('patch', managerB + '/assign', 'managerB', { staffUserId: identity('staffB') }, 409);
+  // Simulate older records that were assigned or started before repair plans became mandatory.
+  await db.maintenanceRequest.update({ where: { id: withoutCost.id }, data: { assignedStaffUserId: identity('staffB') } });
+  await api('post', staffB + '/start', 'staffB', {}, 409);
+  await db.maintenanceRequest.update({ where: { id: withoutCost.id }, data: { status: 'IN_PROGRESS', startedAt: new Date() } });
+  await api('post', staffB + '/complete-work', 'staffB', { workNote: 'Kiểm tra và vệ sinh nội bộ' }, 409);
+  await planMaintenance(managerB, 'managerB');
+  expect((await api('get', staffB, 'staffB')).body.repair.plan).toBe('Sửa theo hiện trạng đã kiểm tra.');
   await api('post', staffB + '/complete-work', 'staffB', { workNote: 'Kiểm tra và vệ sinh nội bộ' }, 201);
-  await api('post', managerB + '/verify', 'managerB', {}, 201);
+  await db.maintenanceRequest.update({ where: { id: withoutCost.id }, data: { repairPlan: null } });
+  await api('post', managerB + '/verify', 'managerB', { safetyVerified: true }, 409);
+  expect((await db.maintenanceRequest.findUniqueOrThrow({ where: { id: withoutCost.id } })).workNote).toBe('Kiểm tra và vệ sinh nội bộ');
+  await planMaintenance(managerB, 'managerB', 'Khôi phục phương án đúng với hiện trạng.');
+  await api('post', managerB + '/verify', 'managerB', { safetyVerified: true }, 201);
   expect((await api('get', managerB, 'managerB')).body).toMatchObject({ status: 'COMPLETED', costs: { actualVnd: null, status: 'UNRECORDED' } });
   const zeroManager = '/manager/maintenance/' + zeroCost.id;
   const zeroStaff = '/staff/maintenance/' + zeroCost.id;
+  await planMaintenance(zeroManager, 'managerB');
   await api('patch', zeroManager + '/assign', 'managerB', { staffUserId: identity('staffB') });
   await api('post', zeroStaff + '/start', 'staffB', {}, 201);
   await api('post', zeroStaff + '/complete-work', 'staffB', { workNote: 'Sửa nội bộ không phát sinh', actualCostVnd: '0' }, 201);
-  await api('post', zeroManager + '/verify', 'managerB', {}, 201);
+  expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: zeroCost.id, releasedAt: null } })).toBe(1);
+  await api('post', zeroManager + '/verify', 'managerB', { safetyVerified: true }, 201);
   const zero = (await api('get', zeroManager, 'managerB')).body;
+  expect(zero).toMatchObject({ status: 'COMPLETED', blocksUnit: false, costs: { actualVnd: '0', status: 'PENDING' } });
+  expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: zeroCost.id, releasedAt: null } })).toBe(0);
   await api('post', zeroManager + '/confirm-cost', 'managerB', {
     expectedActualVnd: '0', submissionIds: [zero.evidenceSubmissions[0].id],
   }, 201);
@@ -1435,7 +1466,8 @@ it('closes a maintenance incident after safe assessment and respects reassigned 
   const incident = (await create()).body;
   const remaining = (await create()).body;
   const root = '/manager/maintenance/' + incident.id;
-  const close = { reason: 'Khảo sát xác nhận ô kho an toàn', safetyVerified: true };
+  const close = { surveyResult: 'Khảo sát xác nhận ô kho an toàn', reason: 'Không phát hiện hư hỏng', safetyVerified: true };
+  await api('post', root + '/close-without-repair', 'managerA', { ...close, surveyResult: '' }, 400);
   await api('post', root + '/close-without-repair', 'managerA', { ...close, safetyVerified: false }, 400);
   await api('post', root + '/close-without-repair', 'managerA', { ...close, reason: '' }, 400);
   await denied('post', root + '/close-without-repair', 'managerB', close);
@@ -1495,6 +1527,7 @@ it('requires assigned Staff work and Manager verification before maintenance rel
   await denied('post', '/manager/maintenance/' + issue.id + '/hold-unsafe-unit', 'managerA');
   const held = await api('post', '/manager/maintenance/' + issue.id + '/hold-unsafe-unit', 'managerB', {}, 201);
   expect(held.body).toMatchObject({ blocksUnit: true, unit: { status: 'AVAILABLE' } });
+  await planMaintenance('/manager/maintenance/' + issue.id, 'managerB');
   await api(
     'patch',
     '/manager/maintenance/' + issue.id + '/assign',
@@ -1533,7 +1566,7 @@ it('requires assigned Staff work and Manager verification before maintenance rel
     'post',
     '/manager/maintenance/' + issue.id + '/verify',
     'managerB',
-    { note: 'Đã nghiệm thu hiện trạng và khóa.' },
+    { note: 'Đã nghiệm thu hiện trạng và khóa.', safetyVerified: true },
     201,
   );
   expect(await db.incidentUnitBlock.count({ where: { maintenanceRequestId: issue.id, releasedAt: null } })).toBe(0);

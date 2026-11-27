@@ -343,7 +343,9 @@ export function StaffActions({
               ) && (
                 <p>Chỉ nhân viên được phân công mới được xử lý hồ sơ này.</p>
               )}
-            {assigned && row.status === "OPEN" && (
+            {assigned && row.repairPlanReady !== true && ["OPEN", "IN_PROGRESS"].includes(String(row.status)) &&
+              <p role="status">Chờ quản lý lưu khảo sát và phương án xử lý.</p>}
+            {assigned && row.repairPlanReady === true && row.status === "OPEN" && (
               <button
                 className="button-primary"
                 onClick={() => void run("/start", "POST", undefined, true)}
@@ -351,7 +353,7 @@ export function StaffActions({
                 Bắt đầu sửa chữa
               </button>
             )}
-            {assigned && row.status === "IN_PROGRESS" && (
+            {assigned && row.repairPlanReady === true && row.status === "IN_PROGRESS" && (
               <form
                 className="portal-form staff-maintenance-result"
                 onSubmit={(event) =>

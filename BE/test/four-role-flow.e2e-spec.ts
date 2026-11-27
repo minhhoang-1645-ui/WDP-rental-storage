@@ -174,11 +174,19 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     expect((await api('GET', `/customer/support-requests/${transferRequest.id}`, 'STORAGE_CUSTOMER')).status).toBe('RESOLVED');
     expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).storageUnit.id).toBe(destination.id);
     const maintenance = (await api('GET', '/manager/maintenance', 'FACILITY_MANAGER')).items.find((m: any) => m.unit.id === contract.storageUnit.id);
-    expect(maintenance.assignedStaff.id).toBe(users.FACILITY_STAFF.id);
+    await api('PATCH', `/manager/maintenance/${maintenance.id}/repair-plan`, 'FACILITY_MANAGER', {
+      surveyResult: 'Đã kiểm tra ô kho sau khi chuyển.',
+      repairMethod: 'INTERNAL',
+      repairPlan: 'Sửa khóa và vệ sinh ô kho.',
+      expectedUpdatedAt: maintenance.updatedAt,
+    });
+    await api('PATCH', `/manager/maintenance/${maintenance.id}/assign`, 'FACILITY_MANAGER', {
+      staffUserId: users.FACILITY_STAFF.id, expectedAssignedStaffUserId: maintenance.assignedStaff?.id ?? null,
+    });
     await api('POST', `/staff/maintenance/${maintenance.id}/start`, 'FACILITY_STAFF', {});
     await api('POST', `/staff/maintenance/${maintenance.id}/complete-work`, 'FACILITY_STAFF', { workNote: 'Đã sửa khóa và vệ sinh trong bài test local' });
     await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'FACILITY_STAFF', {}, 403);
-    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'FACILITY_MANAGER', { note: 'Local verification' });
+    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'FACILITY_MANAGER', { note: 'Local verification', safetyVerified: true });
     expect((await db.storageUnit.findUnique({ where: { id: contract.storageUnit.id } })).status).toBe('AVAILABLE');
     const proposal = await api('POST', '/customer/support-requests', 'STORAGE_CUSTOMER', { reservationId: booking.id, category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Local early return proposal' });
     const review = (await api('GET', '/manager/early-return-requests', 'FACILITY_MANAGER')).items.find((r: any) => r.id === proposal.id);

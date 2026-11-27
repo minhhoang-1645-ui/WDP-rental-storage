@@ -6,6 +6,7 @@ export interface PublicFacility {
   id: string
   name: string
   address: string
+  photo?: string | null
   bookingEnabled: boolean
   officeHours?: string
   accessHours?: string

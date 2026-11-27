@@ -30,7 +30,8 @@ import { useApiResource } from '../../services/useApiResource';
 import { ApiError } from '../../services/api';
 import { StaffPicker } from '../../components/manager/StaffPicker';
 import { staffFromWork } from '../../utils/staff';
-import { assignmentNeedsAttention, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
+import { assignmentNeedsAttention, assignmentRequiresRepairPlan, assignmentWorkRank, canAssignWork } from '../../utils/work-queue';
+import { maintenanceAssignmentHint } from '../../components/manager/MaintenanceRepairPlan';
 import { transferProblem } from '../../utils/transfer-problem';
 import { isTransferRequest } from '../../utils/transfer-request';
 import { isEarlyReturnRequest } from '../../utils/early-return';
@@ -261,6 +262,7 @@ export function ManagerAssignmentsPage() {
         : queued ? ['open', 'Chờ Staff tiếp nhận']
         : assigned ? ['assigned', assignedLabel]
         : linkedTransfer ? ['in_progress', 'Đã lập hồ sơ chuyển kho']
+        : assignmentRequiresRepairPlan(task.kind, task.row) && canAssign(task) ? ['pending', 'Chờ lưu phương án']
         : manager ? ['pending', canAssign(task) ? 'Cần quản lý phân công' : 'Chờ quản lý xử lý']
         : waiting || phase(task) === 'UNASSIGNED' ? ['pending', phaseLabels[phase(task)]] : ['', ''];
       return <>{text ? <Status value={tone} text={text} /> : '—'}
@@ -270,7 +272,10 @@ export function ManagerAssignmentsPage() {
       const { assigned, manager, exception } = factsByTask.get(taskKey(task))!;
       return <div className="work-row-actions">
         {exception && <button type="button" className="button-primary" onClick={() => setSelected({ task, intent: 'exception' })}>Xử lý vướng mắc</button>}
-        {canAssign(task) && <button type="button" className={exception ? 'button-secondary' : 'button-primary'} onClick={() => setSelected({ task, intent: 'assign' })}>{assigned ? 'Đổi người phụ trách' : 'Phân công'}</button>}
+        {canAssign(task) && <button type="button" className={exception ? 'button-secondary' : 'button-primary'}
+          disabled={assignmentRequiresRepairPlan(task.kind, task.row)}
+          title={assignmentRequiresRepairPlan(task.kind, task.row) ? maintenanceAssignmentHint : undefined}
+          onClick={() => setSelected({ task, intent: 'assign' })}>{assigned ? 'Đổi người phụ trách' : 'Phân công'}</button>}
         {!exception && canRelease(task) && <button type="button" className="button-secondary" onClick={() => setSelected({ task, intent: 'release' })}>Đưa về hàng chờ</button>}
         <Link className="button-secondary" to={workDetail(task)}>{manager && !canAssign(task) && !exception ? 'Xem hồ sơ cần xử lý' : 'Xem chi tiết'}</Link>
       </div>;
@@ -372,7 +377,8 @@ function AssignmentDetail({
     || task.kind === 'maintenance' && phase(task) === 'IN_PROGRESS'
     || task.kind === 'transfers' && first(task.row, 'handoverReport.destinationAccessDeliveredAt')));
   const [staffId, setStaffId] = useState('');
-  const assignable = intent === 'assign' && canAssign(task) && !exception;
+  const needsRepairPlan = assignmentRequiresRepairPlan(task.kind, task.row);
+  const assignable = intent === 'assign' && canAssign(task) && !exception && !needsRepairPlan;
   const releasable = intent === 'release' && canRelease(task);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -474,6 +480,7 @@ function AssignmentDetail({
         }}>Xem hồ sơ công việc</Link>
       </div>
       {error && <div className="booking-alert is-error" role="alert">{error}</div>}
+      {intent === 'assign' && needsRepairPlan && <p className="record-text">{maintenanceAssignmentHint}</p>}
       {assignable && <form id={formId} className="portal-form" onSubmit={assign}>
         <StaffPicker task={{kind:task.kind,id}} list value={staffId} onChange={value => { setStaffId(value); if (!stale) setError(''); }} workloads={workloads} disabled={busy || stale} />
         {requiresHandoff && <>

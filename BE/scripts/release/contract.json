@@ -40,7 +40,8 @@
     "20261127000600_payos_payin",
     "20261127000600_maintenance_costs",
     "20261127000700_maintenance_work_history",
-    "20261127000800_maintenance_actual_cost_only"
+    "20261127000800_maintenance_actual_cost_only",
+    "20261127000900_facility_photo"
   ],
   "migrations": [
     {
@@ -574,6 +575,13 @@
       "checksums": [
         "30f95381a50b16d98b44a5e6c27d550e3029c4cb31029232df7f6358d4d8b1e9",
         "37a4062bc35058554f312caa9b08e440f30fea428521d4bf935aaf0680ef858f"
+      ]
+    },
+    {
+      "name": "20261127000900_facility_photo",
+      "checksums": [
+        "21ccd8de2981dedafae348f40b2dfe3a85334a363a45b371468450f69743e86f",
+        "6618cf2cfe73a84bf373b505900b2a4e67b58fb0e2a06b314afa8d638c3574be"
       ]
     }
   ],

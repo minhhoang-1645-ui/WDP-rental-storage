@@ -76,7 +76,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       availablePublicOfferings(this.prisma, facilityId).then(items => items.map(offeringView)),
       facilityId ? Promise.resolve(undefined) : this.prisma.facility.findMany({
         where: { operationalStatus: 'OPEN' },
-        select: { id: true, name: true, address: true, bookingEnabled: true, operationalStatus: true, accessHours: true, officeHours: true },
+        select: { id: true, name: true, address: true, photo: true, bookingEnabled: true, operationalStatus: true, accessHours: true, officeHours: true },
         orderBy: { code: 'asc' },
       }),
     ]);

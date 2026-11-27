@@ -33,24 +33,39 @@ export function BookingBill({ quote }: { quote: Row }) {
     : early.feeMethod === 'UNUSED_RENT_PERCENTAGE' ? `${early.feeAmount}% tiền thuê chưa sử dụng` : 'Miễn phí';
   const earlyRefund = early.refundMode === 'NONE' ? 'Không hoàn tiền thuê trả trước'
     : early.refundMode === 'ORIGINAL_DISCOUNT' ? 'Hoàn theo giá đã giảm' : 'Tính lại theo bảng ưu đãi đã cam kết';
-  const laterPayments = sum.monthly && sum.remaining !== null && sum.remaining > 0 && <View style={s.breakdown}>
-      <Text style={s.strong}>Các kỳ thanh toán sau</Text>
-      <Line title="Tiền thuê kho mỗi tháng" value={monthlyRent === null ? null : formatMoney(monthlyRent) + ' / tháng'} />
-      {sum.laterEach !== null && sum.laterCount !== null
-        ? <Text style={s.label}>Còn {sum.laterCount} kỳ thanh toán theo tháng.</Text>
-        : <Text style={s.label}>Thiết bị thuê và dịch vụ bổ sung được tính theo từng hóa đơn.</Text>}
-      <Line title="Tổng còn lại của các kỳ sau" value={sum.remaining} />
-    </View>;
-  return <View style={s.group}>
-    <View style={[s.panel, s.firstPayment]}>
-      <Text style={s.strong}>Số tiền trả lần đầu</Text>
-      <Text style={s.firstAmount}>{money(sum.first)}</Text>
-      <Text style={s.label}>Bạn gửi yêu cầu ở bước này và thanh toán hóa đơn đầu tiên sau khi ký hợp đồng.</Text>
+  const daily = quote.billingMode === 'DAILY';
+  const unitPrice = daily && typeof quote.dailyUnitPrice === 'string' && /^\d+(?:\.\d+)?$/.test(quote.dailyUnitPrice)
+    ? Number(quote.dailyUnitPrice) : daily ? quote.dailyUnitPrice : monthlyUnitPrice;
+  const totalLabel = Number(quote.depositAmount ?? deposit) > 0 ? 'Tổng cả kỳ (gồm cọc)' : 'Tổng cả kỳ';
+  const remainingMonths = sum.monthly && typeof quote.termMonths === 'number' && Number.isSafeInteger(quote.termMonths)
+    ? quote.termMonths - 1 : 0;
+  const summary = <View style={s.breakdown}>
+    <Text style={s.strong}>Tóm tắt chi phí</Text>
+    <Line title={daily ? 'Giá thuê 1 kho / ngày' : 'Giá thuê 1 kho / tháng'} value={unitPrice} />
+    <Line title="Thời hạn thuê" value={duration} />
+    {quantity !== null && quantity > 1 && <Line title="Số kho" value={quantity + ' kho'} />}
+    <View style={s.panel}>
+      <Text style={s.strong}>Trả lần đầu</Text>
+      <Text style={[s.amount, s.firstAmount]}>{money(sum.first)}</Text>
+      <Line title={sum.monthly ? 'Tiền thuê tháng đầu' : 'Tiền thuê cả kỳ'} value={initial.rentalAmount} />
+      {Number(deposit) > 0 && <Line title="Tiền cọc" value={deposit} />}
+      {Number(initial.purchaseAddOnAmount) > 0 && <Line title="Vật tư mua một lần" value={initial.purchaseAddOnAmount} />}
+      {Number(initial.rentalAddOnAmount) > 0 && <Line title={sum.monthly ? 'Thiết bị tháng đầu' : 'Thiết bị cả kỳ'} value={initial.rentalAddOnAmount} />}
     </View>
-    {laterPayments}
-    {sum.total !== null && <View style={s.breakdown}>
-      <Line title={Number(deposit) > 0 ? 'Tổng cả kỳ (gồm cọc)' : 'Tổng cả kỳ'} value={sum.total} />
+    {sum.monthly && sum.remaining !== null && sum.remaining > 0 && <View style={s.subtotal}>
+        <Line title={remainingMonths > 0 ? `Còn phải trả trong ${remainingMonths} tháng sau` : 'Còn phải trả ở các kỳ sau'} value={sum.remaining} />
+        {sum.laterCount !== null && sum.laterEach !== null
+          ? <Line title="Mỗi tháng sau trả" value={sum.laterEach} />
+          : <>
+            <Line title="Tiền thuê kho mỗi tháng" value={monthlyRent} />
+            <Text style={s.label}>Số tiền mỗi kỳ có thể thay đổi theo thiết bị và dịch vụ trên hóa đơn.</Text>
+          </>}
     </View>}
+    <View style={s.panel}><Text style={s.strong}>{totalLabel}</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
+  </View>;
+  return <View style={s.group}>
+    {summary}
+    <Text style={s.label}>Bạn sẽ thanh toán khoản đầu tiên sau khi ký hợp đồng.</Text>
     <Pressable accessibilityRole="button" style={s.link} onPress={() => setDetails(true)}>
       <Text style={s.linkText}>Xem chi tiết chi phí</Text><ChevronRight color={blue} size={17} />
     </Pressable>
@@ -59,28 +74,14 @@ export function BookingBill({ quote }: { quote: Row }) {
         <View style={s.handle} /><View style={s.line}><Text style={s.title}>Chi tiết chi phí</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Đóng" onPress={() => setDetails(false)} style={s.close}><X size={20} color="#18263B" /></Pressable></View>
         <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={[s.group, { paddingBottom: 12 }]}>
-          {sum.monthly && <View style={s.breakdown}>
-            <Text style={s.strong}>Hóa đơn đầu tiên</Text>
-            <Line title="Tiền thuê kỳ đầu" value={initial.rentalAmount} />
-            {Number(deposit) > 0 && <Line title="Tiền cọc" value={deposit} />}
-            {Number(initial.purchaseAddOnAmount) > 0 && <Line title="Vật tư mua một lần" value={initial.purchaseAddOnAmount} />}
-            {Number(initial.rentalAddOnAmount) > 0 && <Line title="Thiết bị kỳ đầu" value={initial.rentalAddOnAmount} />}
-            <View style={s.subtotal}><Line title="Tổng hóa đơn đầu tiên" value={sum.first} /></View>
-          </View>}
-          {laterPayments}
+          {summary}
           <View style={s.breakdown}>
             <Text style={s.strong}>Chi phí toàn kỳ</Text>
-            <Line title={quote.billingMode === 'DAILY' ? 'Đơn giá một kho / ngày' : 'Đơn giá một kho / tháng'}
-              value={quote.billingMode === 'DAILY' && typeof quote.dailyUnitPrice === 'string' && /^\d+(?:\.\d+)?$/.test(quote.dailyUnitPrice)
-                ? formatMoney(Number(quote.dailyUnitPrice)) : quote.billingMode === 'DAILY' ? quote.dailyUnitPrice : quote.monthlyUnitPrice} />
-            <Line title="Số kho" value={typeof quote.quantity === 'number' ? quote.quantity + ' kho' : ''} />
-            <Line title="Thời hạn thuê" value={duration} />
-            <Line title={discount ? 'Tiền thuê trước giảm giá' : 'Tiền thuê'} value={quote.baseRentalAmount ?? quote.rentalAmount} />
+            <Line title={discount ? 'Tiền thuê cả kỳ trước giảm giá' : 'Tiền thuê cả kỳ'} value={quote.baseRentalAmount ?? quote.rentalAmount} />
             {discount > 0 ? <Line title="Giảm giá trả thẳng" value={-discount} /> : null}
-            <Line title="Tiền cọc" value={quote.depositAmount} />
+            {Number(quote.depositAmount) > 0 && <Line title="Tiền cọc" value={quote.depositAmount} />}
             {rows(quote.services).map((item, index) => <Line key={index} title={text(item, 'name') + (item.quantity ? ' × ' + String(item.quantity) : '')} value={item.amount} />)}
-            <Line title="Tổng thiết bị và vật tư" value={quote.addOnTotalAmount} />
-            <View style={s.panel}><Text style={s.strong}>Tổng cả kỳ{Number(deposit) > 0 ? ' (gồm cọc)' : ''}</Text><Text style={s.amount}>{money(sum.total)}</Text></View>
+            {Number(quote.addOnTotalAmount) > 0 && <Line title="Tổng thiết bị và vật tư" value={quote.addOnTotalAmount} />}
           </View>
           {typeof early.feeMethod === 'string' && <View style={s.breakdown}>
             <Text style={s.strong}>Trả kho trước hạn</Text>
@@ -100,7 +101,6 @@ const s = StyleSheet.create({
   lineCopy: { flex: 1 },
   subtotal: { borderTopWidth: 1, borderColor: '#DCE3EC', marginTop: 4 },
   breakdown: { borderWidth: 1, borderColor: '#DCE3EC', borderRadius: 12, padding: 10, gap: 3 },
-  firstPayment: { padding: 16, gap: 6 },
   firstAmount: { color: blue, fontSize: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
   group: { gap: 8 }, panel: { backgroundColor: '#EDF3FD', borderRadius: 12, padding: 12, gap: 4 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, noticeText: { flex: 1, gap: 4 },

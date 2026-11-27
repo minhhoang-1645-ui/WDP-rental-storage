@@ -2,6 +2,7 @@ import { ArrowRight, Clock, MapPin } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCatalog, type PublicFacility } from '../../catalog/catalog-context'
 import { Container } from '../../components/ui/Container'
+import { FacilityPhoto } from '../../components/public/FacilityPhoto'
 
 export function FacilitiesPage() {
   const { facilities } = useCatalog()
@@ -24,6 +25,7 @@ export function FacilityCards({ facilities, compact = false }: { facilities: Pub
       const types = storageListings.filter(product => product.facilityId === facility.id)
       const typeNames = [...new Set(types.map(product => product.name))]
       return <article className="facility-directory-card" key={facility.id}>
+        {facility.photo && <FacilityPhoto photo={facility.photo} name={facility.name} />}
         <div className="facility-directory-heading">
           <span className="landing-step-icon"><MapPin size={21} aria-hidden="true" /></span>
           <div>

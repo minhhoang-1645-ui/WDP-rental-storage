@@ -26,6 +26,7 @@ type Mode = keyof typeof modes;
 type Facility = {
   id: string; code: string; name: string; address: string; officeHours: string | null; accessHours: string | null;
   bookingEnabled: boolean; operationalStatus: State; updatedAt: string;
+  photo?: string | null;
   serviceSchedule?: ServiceWindow[];
   closureMode?: Mode | null; closureReason?: string | null; closureExpectedAt?: string | null; closureStartedAt?: string | null;
   closureProgress?: { activeContracts: number; openTasks: number; openTransfers: number; pendingBookings: number };
@@ -100,7 +101,10 @@ export function OperationsFacilities() {
       setNotice(success);
       resource.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Chưa lưu được cơ sở.');
+      const photoUnsupported = Object.hasOwn(body, 'photo') && caught instanceof ApiError
+        && caught.status === 400 && caught.message === 'Có trường không được phép sửa.';
+      setError(photoUnsupported ? 'Máy chủ đang dùng phiên bản chưa hỗ trợ ảnh cơ sở. Ảnh chưa được lưu.'
+        : caught instanceof Error ? caught.message : 'Chưa lưu được cơ sở.');
     } finally {
       setBusy(false);
       working.current = false;
@@ -262,6 +266,25 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   const previousClosureDate = starting ? '' : facility?.closureExpectedAt?.slice(0, 10) ?? '';
   const cancelling = dialog.kind === 'reopen' && facility?.operationalStatus === 'CLOSING';
   const [issues, setIssues] = useState<Record<string, string>>({});
+  const [photo, setPhoto] = useState<string | null>(facility?.photo ?? null);
+  const [readingPhoto, setReadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  function choosePhoto(file?: File) {
+    if (!file || readingPhoto || busy) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !file.size || file.size > 400 * 1024) {
+      setPhotoError('Chọn ảnh JPG, PNG hoặc WebP tối đa 400 KB.');
+      return;
+    }
+    setPhotoError('');
+    setReadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setPhoto(reader.result);
+    };
+    reader.onerror = () => setPhotoError('Không đọc được ảnh. Vui lòng chọn lại.');
+    reader.onloadend = () => setReadingPhoto(false);
+    reader.readAsDataURL(file);
+  }
   const [serviceSchedule, setServiceSchedule] = useState(() => groupWindows(facility?.serviceSchedule ?? []));
   const [scheduleChanged, setScheduleChanged] = useState(false);
   const [hours, setHours] = useState<Partial<Record<(typeof hourFields)[number][0], { value: string; incomplete: boolean }>>>({});
@@ -297,7 +320,7 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
     };
     let body: object;
     if (creating || editing) {
-      if (scheduleInvalid) return;
+      if (scheduleInvalid || readingPhoto || photoError) return;
       const values = Object.fromEntries(fields.flatMap(field => {
         if (editing && field.key === 'code') return [];
         return [[field.key, required(field.key, field.label, field.max)]];
@@ -307,6 +330,7 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
         if (changed) values[key] = read(key);
       }
       body = { ...values, ...(creating ? { operationalStatus: 'OPEN', bookingEnabled: false } : {}),
+        ...(photo !== (facility?.photo ?? null) ? { photo } : {}),
         ...(scheduleChanged ? { serviceSchedule: windows } : {}) };
     } else if (planning) {
       const expected = read('closureExpectedAt');
@@ -341,7 +365,7 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
   const validation = (key: string) => ({ 'aria-invalid': !!issues[key], 'aria-describedby': issues[key] ? id + '-' + key : undefined });
   return <Modal title={title} className={'bom-facility-dialog' + (creating || editing ? ' bom-facility-editor' : '')} busy={busy} onClose={onClose} focusTitle
     footer={<><button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
-      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy || ((creating || editing) && scheduleInvalid)}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
+      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy || ((creating || editing) && (scheduleInvalid || readingPhoto || Boolean(photoError)))}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
     <form id={id} className="bom-facility-form" onSubmit={submit} noValidate>
       {(creating || editing) && <div className="bom-facility-fields">
         {fields.map(field => <label className={'field-label' + (field.key === 'address' ? ' bom-facility-span' : '')} key={field.key}>
@@ -350,6 +374,22 @@ function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
             readOnly={editing && field.key === 'code'} required={!editing || field.key !== 'code'} {...validation(field.key)} />
           {issue(field.key)}
         </label>)}
+        <div className="bom-facility-span bom-facility-photo">
+          <label className="field-label">Ảnh đại diện cơ sở (tùy chọn)
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || readingPhoto} onChange={event => {
+              choosePhoto(event.currentTarget.files?.[0]);
+              event.currentTarget.value = '';
+            }} />
+          </label>
+          <small>Ảnh hiển thị công khai. JPG, PNG hoặc WebP, tối đa 400 KB.</small>
+          {readingPhoto && <p role="status">Đang đọc ảnh…</p>}
+          {photo && <img src={photo} alt="Xem trước ảnh cơ sở" />}
+          {(photo || photoError) && <button type="button" className="button-secondary" disabled={busy || readingPhoto} onClick={() => {
+            if (!photoError) setPhoto(null);
+            setPhotoError('');
+          }}>{photoError ? 'Bỏ tệp vừa chọn' : 'Gỡ ảnh'}</button>}
+          {photoError && <small role="alert" className="bom-facility-field-error">{photoError}</small>}
+        </div>
         <h3 className="bom-facility-span bom-facility-hours-heading">Lịch hoạt động · UTC+7</h3>
         {hourFields.map(([key, label]) => <div className="bom-facility-span" key={key}><WorkingHoursPicker name={key} label={label}
           original={facility?.[key] ?? ''} error={scheduleErrors[key]} limits={key === 'accessHours' ? work : undefined}

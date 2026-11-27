@@ -291,3 +291,6 @@
 @media (max-width: 580px) {
   .bom-service-window { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.bom-facility-photo { display: grid; justify-items: start; gap: 8px; }
+.bom-facility-photo .field-label { width: 100%; }
+.bom-facility-photo img { width: min(100%, 300px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; }

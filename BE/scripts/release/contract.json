@@ -36,7 +36,11 @@
     "20261125000500_return_inspection_schedule",
     "20261125000600_work_dispatch_fields",
     "20261125000700_staff_shift_break",
-    "20261126000100_single_facility_and_relocation_decision"
+    "20261126000100_single_facility_and_relocation_decision",
+    "20261127000600_payos_payin",
+    "20261127000600_maintenance_costs",
+    "20261127000700_maintenance_work_history",
+    "20261127000800_maintenance_actual_cost_only"
   ],
   "migrations": [
     {
@@ -545,10 +549,31 @@
       ]
     },
     {
+      "name": "20261127000600_maintenance_costs",
+      "checksums": [
+        "ea76c56e5b0a548bf3d9b84a45470aa9eab5024a49b6ff620a305b42043eed6e",
+        "eaaec342d94d410267ad6a701d9ecdd171fd0723f0b8dbc47ffd1351d726a765"
+      ]
+    },
+    {
       "name": "20261127000600_payos_payin",
       "checksums": [
         "18278379e7a769635c2c6f59e3ece7f3391eb3264021fe155759300d422eace6",
         "1c1c1c7634970b39a4baa954ddd16194cab677333c3b1fceb792b28ab1c5106b"
+      ]
+    },
+    {
+      "name": "20261127000700_maintenance_work_history",
+      "checksums": [
+        "66b7923b20c87198b68b87f0bdd91969822cc63bdb3159b1e883e07c2515f12a",
+        "32f7f61efce899965edd0aef5b1a961fca6ee69148698f26619554e2b5d7a3bc"
+      ]
+    },
+    {
+      "name": "20261127000800_maintenance_actual_cost_only",
+      "checksums": [
+        "30f95381a50b16d98b44a5e6c27d550e3029c4cb31029232df7f6358d4d8b1e9",
+        "37a4062bc35058554f312caa9b08e440f30fea428521d4bf935aaf0680ef858f"
       ]
     }
   ],

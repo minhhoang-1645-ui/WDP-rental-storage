@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { markFormDirty } from '../../services/live-events';
+import { EvidencePhotoField } from './EvidencePhotoField';
 
 const photoTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -73,30 +74,21 @@ export function useEvidencePhotoPicker(label: string, disabled: boolean, initial
     event.target.value = '';
     void addHandoverPhotos(files, fromCamera);
   }
-  const photoPicker = <div className="staff-handover-photo-picker">
-                <label className="field-label">{label}
-                  <input type="file" accept={photoTypes.join(',')} multiple disabled={busy || handoverPhotos.length === 3}
-                    onChange={event => selectPhotos(event)} />
-                  <small>JPG, PNG hoặc WebP, tối đa 400 KB mỗi ảnh. Có thể chọn từng ảnh hoặc chọn nhiều ảnh cùng lúc.</small>
-                </label>
-                <label className="field-label">Chụp ảnh bằng camera
-                  <input type="file" accept={photoTypes.join(',')} capture="environment" disabled={busy || handoverPhotos.length === 3}
-                    onChange={event => selectPhotos(event, true)} />
-                </label>
-                <p role="status">{readingPhotos ? 'Đang đọc ảnh…' : `Đã chọn ${handoverPhotos.length}/3 ảnh`}</p>
-                {photoError && <p className="booking-alert is-error" role="alert">{photoError}</p>}
-                {handoverPhotos.length > 0 && <ul className="staff-handover-photos staff-handover-photo-preview" aria-label={'Ảnh đã chọn'}>
-                  {handoverPhotos.map(photo => <li key={photo.id}>
-                    <img src={photo.src} alt={photo.name} />
-                    <span>{photo.name}</span>
-                    <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={event => {
-                      const form = event.currentTarget.form;
-                      if (form) markFormDirty(form);
-                      setHandoverPhotos(previous => previous.filter(item => item.id !== photo.id));
-                      setPhotoError('');
-                    }}>Bỏ ảnh</button>
-                  </li>)}
-                </ul>}
-              </div>;
+  const photoPicker = <EvidencePhotoField label={label} accept={photoTypes.join(',')}
+    count={handoverPhotos.length} limit={3} help="JPG, PNG hoặc WebP · Tối đa 400 KB mỗi ảnh"
+    disabled={disabled} reading={readingPhotos} error={photoError} onSelect={selectPhotos}>
+    {handoverPhotos.length > 0 && <ul className="evidence-photo-previews" aria-label="Ảnh đã chọn">
+      {handoverPhotos.map(photo => <li key={photo.id}>
+        <img src={photo.src} alt={photo.name} />
+        <span title={photo.name}>{photo.name}</span>
+        <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={event => {
+          const form = event.currentTarget.form;
+          if (form) markFormDirty(form);
+          setHandoverPhotos(previous => previous.filter(item => item.id !== photo.id));
+          setPhotoError('');
+        }}>Bỏ ảnh</button>
+      </li>)}
+    </ul>}
+  </EvidencePhotoField>;
   return { handoverPhotos, readingPhotos, photoPicker, photoReadLock };
 }

@@ -20,6 +20,14 @@ npm run test:release-safety
 npm run release:check
 ```
 
+Use a Node 22 release runtime at least 22.22.3 for the locked Nest CLI/Angular DevKit dependencies. Check the Render runtime against the same range before deploying.
+
+### Backup and rehearsal
+
+From `BE` with the verified direct Neon connection in the environment, run `node scripts/foundation-db/backup-rehearse.mjs --preliminary` for a read-only trial. The script searches `PG_BIN_DIR`, or PATH and the standard installation directory when it is unset. All six tools must come from a PostgreSQL distribution whose major version matches Neon. On Windows, set `$env:PG_BIN_DIR` to the absolute PostgreSQL bin directory if needed. Backups and restored data stay under the private `BE/artifacts` directory. The restore cluster binds only to loopback.
+
+After confirming writers are stopped, run `node scripts/foundation-db/backup-rehearse.mjs` on the final release commit to create a fresh cutover manifest. The manifest is bound to that commit. A preliminary manifest stays preliminary on replay and cannot authorize cutover. The tool compares row counts and fingerprints of the original columns before and after migration. Legacy TAPE baseline checks apply only when rehearsing the original shared-catalog migration. PayOS rehearsal also verifies its enums, columns, keys and reconciliation constraint.
+
 `release:check` reads only. Exit 2 means schema is incomplete. It prints the database host/name, pending migrations and the known historical checksum divergence, without credentials.
 The start entrypoint verifies the foundation schema **before creating Nest providers or starting workers**. Build/start never run migrations.
 Use the existing Render service with the settings in `render-release.json`; Auto-Deploy must be disabled before changing its deployment branch. No Blueprint/new service is created.

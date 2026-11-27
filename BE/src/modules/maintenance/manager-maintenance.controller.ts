@@ -65,6 +65,31 @@ export class ManagerMaintenanceController {
     return this.maintenance.listAssessmentUnits(id, request.user!, parseMaintenanceQuery(input));
   }
 
+  @ManagerAssignment() @Patch(':id/repair-plan')
+  planRepair(@Param('id') id: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest) {
+    return this.maintenance.planRepair(id, body, key, request.user!);
+  }
+
+  @ManagerAssignment() @Post(':id/confirm-cost')
+  confirmCost(@Param('id') id: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest) {
+    return this.maintenance.confirmCost(id, body, key, request.user!);
+  }
+
+  @ManagerAssignment() @Patch(':id/adjust-cost')
+  adjustCost(@Param('id') id: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest) {
+    return this.maintenance.adjustCost(id, body, key, request.user!);
+  }
+
+  @Roles('FACILITY_MANAGER') @Get(':id/cost-history')
+  costHistory(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.maintenance.costHistory(id, request.user!);
+  }
+
+  @ManagerAssignment() @Post(':id/close-without-repair')
+  closeWithoutRepair(@Param('id') id: string, @Body() body: Record<string, unknown>, @Headers('idempotency-key') key: string | undefined, @Req() request: AuthenticatedRequest) {
+    return this.maintenance.closeWithoutRepair(id, body, key, request.user!);
+  }
+
   @ManagerAssignment() @Patch(':id/assign')
   @ApiOperation({ summary: 'Giao/reassign case chưa hoàn tất cho FACILITY_STAFF' }) @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-assign-001' }) @ApiBody({ type: AssignMaintenanceRequestDto })
   @ApiCreatedResponse({ description: 'Assignment được cập nhật; status/unit không đổi.' }) @ApiBadRequestResponse({ description: 'Target không phải FACILITY_STAFF.' }) @ApiConflictResponse({ description: 'Case đã hoàn tất/concurrent update.' })

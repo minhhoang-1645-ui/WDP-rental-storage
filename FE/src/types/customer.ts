@@ -24,7 +24,7 @@ export interface CustomerContract {
   endDate: string
   reservation: { id: string; reference: string; status: string; quantity: number; facility?: { name: string; code: string; address: string } | null }
   storageType: CustomerStorageType
-  storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string }
+  storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string; maintenanceNotice?: string }
   activatedAt: string | null
   completedAt: string | null
   terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null; document: Record<string, unknown>; snapshotHash: string; signatureImage: string | null; otp?: { required: boolean; emailConfigured: boolean }; verification?: { method: string; verifiedAt: string; recipient: string } | null }

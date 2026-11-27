@@ -2,15 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import pg from 'pg';
-import { root, pgBin, readClient, quote, fail } from './common.mjs';
+import { root, readClient, quote, fail } from './common.mjs';
 import { assertRecoveredHistory, verifyFailedMigration } from '../release/guards.mjs';
 import { recoverableMigration } from '../migration-command-safety.mjs';
+import { archiveHash, assertArchive, legacyCatalogRehearsal, postgresTools, sameFingerprint, verifyPayosSchema } from './rehearsal-checks.mjs';
 const args = process.argv.slice(2);
-const manifests = args.filter(arg => arg !== '--recover-single-facility-migration');
+const preliminary = args.includes('--preliminary');
+const manifests = args.filter(arg => !['--recover-single-facility-migration','--preliminary'].includes(arg));
+const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+if (!preliminary && execFileSync('git', ['status', '--porcelain', '--', '.'], { cwd: root, encoding: 'utf8' }).trim())
+  throw Error('Create the final backup from a clean Backend release checkout.');
 if (manifests.length > 1 || manifests.some(arg => arg.startsWith('--')))
-  throw Error('Pass an optional private manifest path and --recover-single-facility-migration.');
+  throw Error('Pass an optional private manifest path, --preliminary or --recover-single-facility-migration.');
 const directory = path.join(
   root,
   'artifacts',
@@ -18,7 +23,7 @@ const directory = path.join(
 );
 fs.mkdirSync(directory, { recursive: true });
 function command(binary, args, env = process.env) {
-  const ctl = path.basename(binary) === 'pg_ctl.exe';
+  const ctl = /^pg_ctl(?:\.exe)?$/i.test(path.basename(binary));
   const descriptor = ctl
     ? fs.openSync(path.join(directory, 'pgctl-process.log'), 'a')
     : undefined;
@@ -80,6 +85,9 @@ if (
 )
   throw Error('Only a private workspace backup manifest is allowed.');
 const previous = previousPath ? JSON.parse(fs.readFileSync(previousPath, 'utf8')) : undefined;
+if (previous && previous.releaseCommit !== releaseCommit)
+  throw Error('Backup manifest belongs to another release commit. Create a new backup.');
+if (previous && !previous.postgresSource?.number) throw Error('Backup lacks source PostgreSQL version.');
 const archive = previous?.archive ?? path.join(directory, 'neon-full.dump'),
   cluster = path.join(directory, 'restore-pgdata'),
   passwordFile = path.join(directory, 'local-test-password.tmp');
@@ -93,11 +101,16 @@ const manifest = previous
       ...previous,
       recovery: {},
       rehearsal: undefined,
+      localClusterStopped: false,
+      error: undefined,
+      preliminary: preliminary || previous.preliminary,
       sourceManifest: previousPath,
       recoveryStartedAt: new Date().toISOString(),
     }
   : {
       target: connection.identity,
+      releaseCommit,
+      preliminary,
       createdAt: new Date().toISOString(),
       archive,
       format:
@@ -105,7 +118,8 @@ const manifest = previous
       tables: [],
       recovery: {},
     };
-const bin = (name) => path.join(pgBin, name + '.exe');
+let tooling;
+const bin = name => tooling.binaries[name];
 function remoteEnv() {
   const u = connection.url;
   const env = {
@@ -177,6 +191,11 @@ async function inventory(db) {
   return result;
 }
 try {
+  manifest.postgresSource = previous?.postgresSource ?? (await client.query(
+    "SELECT current_setting('server_version') AS version, current_setting('server_version_num') AS number"
+  )).rows[0];
+  tooling = postgresTools(manifest.postgresSource.number);
+  manifest.postgresTools = tooling.versions;
   if (!previous) {
     const snapshot = (
       await client.query('SELECT pg_export_snapshot() AS snapshot')
@@ -201,10 +220,7 @@ try {
       ],
       remoteEnv(),
     );
-    manifest.sha256 = crypto
-      .createHash('sha256')
-      .update(fs.readFileSync(archive))
-      .digest('hex');
+    manifest.sha256 = archiveHash(archive);
     manifest.bytes = fs.statSync(archive).size;
     fs.writeFileSync(
       path.join(directory, 'manifest.json'),
@@ -212,18 +228,8 @@ try {
     );
     await client.query('ROLLBACK');
     await client.end();
-  } else {
-    if (
-      !path
-        .resolve(archive)
-        .startsWith(path.join(root, 'artifacts') + path.sep) ||
-      crypto
-        .createHash('sha256')
-        .update(fs.readFileSync(archive))
-        .digest('hex') !== previous.sha256
-    )
-      throw Error('Backup path/hash verification failed.');
   }
+  assertArchive(archive, manifest.sha256, path.join(root, 'artifacts'));
 
   fs.writeFileSync(passwordFile, password, { flag: 'wx', mode: 0o600 });
   command(bin('initdb'), [
@@ -259,6 +265,7 @@ try {
     ],
     localEnv(),
   );
+  assertArchive(archive, manifest.sha256, path.join(root, 'artifacts'));
   command(
     bin('pg_restore'),
     [
@@ -286,6 +293,11 @@ try {
   });
   await local.connect();
   await local.query("SET TIME ZONE 'UTC'");
+  manifest.postgresRestore = (await local.query(
+    "SELECT current_setting('server_version') AS version, current_setting('server_version_num') AS number"
+  )).rows[0];
+  if (Math.floor(Number(manifest.postgresRestore.number) / 10000) !== tooling.expectedMajor)
+    throw Error('Restore cluster PostgreSQL major does not match the source.');
   const restored = await inventory(local),
     problems = [];
   for (const source of manifest.tables) {
@@ -293,9 +305,7 @@ try {
       (t) => t.schema === source.schema && t.name === source.name,
     );
     if (
-      !copy ||
-      source.count !== copy.count ||
-      source.fingerprint !== copy.fingerprint
+      !sameFingerprint(source, copy)
     )
       problems.push(source.schema + '.' + source.name);
   }
@@ -358,6 +368,14 @@ try {
   };
   const { inspectFoundationDatabase, releaseContract } = await import('../../dist/foundation-schema.js');
   const state = await inspectFoundationDatabase(localUrl);
+  const pending = state.pending;
+  const payosPending = pending.includes('20261127000600_payos_payin');
+  if (payosPending) {
+    const { rows: [before] } = await local.query(`SELECT to_regclass('public."PayosReceipt"') IS NULL AS absent,
+      NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typnamespace='public'::regnamespace
+        AND t.typname IN ('PaymentMethod','PaymentProvider') AND e.enumlabel='PAYOS') AS enum_absent`);
+    if (!before.absent || !before.enum_absent) throw Error('PayOS schema exists before pending migration.');
+  }
   let recoveredId, historyBefore;
   if (state.failed.length) {
     recoveredId = await verifyFailedMigration(local, state, releaseContract, args);
@@ -423,10 +441,7 @@ try {
         ? manifest.originalMigrationIds
         : undefined,
     );
-    if (
-      table.count !== result.count ||
-      table.fingerprint !== result.fingerprint
-    )
+    if (!sameFingerprint(table, result))
       altered.push(table.schema + '.' + table.name);
   }
   if (altered.length)
@@ -445,6 +460,8 @@ try {
       throw Error('Single-facility unique index is missing or invalid.');
   }
 
+  const legacyCatalog = legacyCatalogRehearsal(pending, recoveredId);
+  const payosSchema = payosPending ? await verifyPayosSchema(local) : null;
   // The TAPE-only baseline belongs to the original shared-catalog migration.
   // For later releases, compare the restored service tables to the production snapshot above.
   const offeringRows = (
@@ -452,15 +469,15 @@ try {
       'SELECT o."additionalServiceId",o."facilityId",o."unitPrice"::text,o."stockOnHand",o."rentalCapacity",s.code FROM "FacilityServiceOffering" o JOIN "AdditionalService" s ON s.id=o."additionalServiceId" ORDER BY s.code',
     )
   ).rows;
-  if (!recoveredId && (offeringRows.length !== 1 || offeringRows[0].code !== 'TAPE'))
+  if (legacyCatalog && (offeringRows.length !== 1 || offeringRows[0].code !== 'TAPE'))
     throw Error('Unverified legacy offering created');
   const unchanged = (
     await local.query(
       'SELECT o.id FROM "FacilityServiceOffering" o JOIN "AdditionalService" s ON s.id=o."additionalServiceId" LEFT JOIN "AdditionalServiceInventory" i ON i."additionalServiceId"=s.id WHERE o."unitPrice" IS DISTINCT FROM s."unitPrice" OR o."stockOnHand" IS DISTINCT FROM i."stockOnHand" OR o."rentalCapacity" IS DISTINCT FROM i."rentalCapacity"',
     )
   ).rows;
-  if (!recoveredId && unchanged.length) throw Error('Legacy price/stock was changed');
-  if (!recoveredId) command(
+  if (legacyCatalog && unchanged.length) throw Error('Legacy price/stock was changed');
+  if (legacyCatalog) command(
     process.execPath,
     [
       'node_modules/vitest/vitest.mjs',
@@ -484,7 +501,7 @@ try {
     )
   ).rows;
   if (
-    !recoveredId && (serviceOwners.some(
+    legacyCatalog && (serviceOwners.some(
       (s) => s.code === 'TAPE' && s.facility_code !== 'NESTBOX-DEMO',
     ) ||
     serviceOwners.some((s) => s.code !== 'TAPE' && s.facility_id !== null))
@@ -527,7 +544,10 @@ try {
   manifest.rehearsal = {
     passed: true,
     verifiedOfferings: offeringRows,
-    focusedOfferingTestsPassed: recoveredId ? null : true,
+    focusedOfferingTestsPassed: legacyCatalog ? true : null,
+    payosSchema,
+    catalogSnapshotPreserved: !legacyCatalog,
+    catalogOfferingCount: offeringRows.length,
     recoveredFailedMigration: recoveredId ? recoverableMigration : null,
     startupSchemaGuardBeforeAndAfterPassed: true,
     historyChecksumsPreserved: true,
@@ -540,7 +560,7 @@ try {
     originalRowsAndColumnsPreserved: true,
   };
   delete manifest.localRehearsalPending;
-  console.log(JSON.stringify({ rehearsal: manifest.rehearsal }));
+  console.log(JSON.stringify({ rehearsalPassed: true, tableCount: manifest.tables.length, catalogOfferingCount: offeringRows.length, payosSchema }));
 } catch (error) {
   const message = error instanceof Error ? error.message : '';
   if (message && !/password|postgres(?:ql)?:\/\//i.test(message) && !error.safeMessage)
@@ -559,6 +579,7 @@ try {
       manifest.localClusterStopped = true;
     } catch (error) {
       manifest.localClusterStopped = false;
+      if (manifest.rehearsal) manifest.rehearsal.passed = false;
       fail(error);
     }
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { AppState, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { useAuth } from '@/auth/use-auth';
 import { apiRequest } from '@/services/api';
 import { useDraftGuard } from '@/services/live-events';
@@ -35,7 +35,13 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
   const accepted = Boolean(document.acceptedAt), hash = text(document, 'snapshotHash'), configured = object(document.otp).emailConfigured !== false;
   const base = `/customer/${resource}/${encodeURIComponent(idOf(row))}/${resource === 'renewals' ? 'appendix/' : ''}`;
   useDraftGuard(!accepted && (signing || agreed || busy));
-  useEffect(() => { if (!remaining && !expiresIn) return; const timer = setTimeout(() => setNow(Date.now()), 1000); return () => clearTimeout(timer); }, [remaining, expiresIn, now]);
+  useEffect(() => {
+    if (!remaining && !expiresIn) return;
+    const refresh = () => setNow(Date.now());
+    const timer = setTimeout(refresh, expiresIn > 0 ? Math.min(1000, expiration - now) : 1000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => { clearTimeout(timer); subscription.remove(); };
+  }, [remaining, expiresIn, expiration, now]);
   async function submit(verify: boolean) {
     if (lock.current || !agreed || !user || !hash || accepted || !maySign || (verify ? !receipt || otp.length !== 6 || !(expiration > Date.now()) : !configured || Date.now() < resendAt)) return;
     lock.current = true; setBusy(true); setError('');
@@ -55,7 +61,7 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
   if (transfer && !contentReady) return <Panel title="Phụ lục chuyển kho"><Text accessibilityRole="alert" style={styles.error}>Chưa tải được nội dung phụ lục. Hãy thử làm mới trước khi ký.</Text></Panel>;
   const consent = transfer ? 'Tôi đã đọc và đồng ý với nội dung phụ lục.' : 'Tôi đã đọc và đồng ý nội dung tài liệu này.';
   return <Panel title={transfer ? 'Phụ lục chuyển kho' : 'Tài liệu & chữ ký'}>
-    {(!transfer || (receipt && !accepted)) && <StatusBadge status={accepted ? 'Đã ký' : receipt && transfer ? 'Đang xác thực' : 'Chờ bạn ký'} tone={accepted?'success':'warning'}/>}
+    {(!transfer || (receipt && !accepted)) && <StatusBadge status={accepted ? 'Đã ký' : receipt && transfer ? (expiresIn > 0 ? 'Đang xác thực' : 'Mã hết hạn') : 'Chờ bạn ký'} tone={accepted?'success':'warning'}/>}
     {(!transfer || accepted) && <Facts values={[["Người ký", document.acceptanceName || user?.fullName], ["Ngày ký", accepted ? formatDate(String(document.acceptedAt),true) : '']]} />}
     {resource === 'contracts' ? <Navigation title="Xem hợp đồng" path={'/customer/contract-document?id=' + encodeURIComponent(idOf(row))} />
       : resource === 'renewals' ? <Navigation title="Xem phụ lục gia hạn" path={'/customer/contract-document?renewalId=' + encodeURIComponent(idOf(row))} />
@@ -67,7 +73,11 @@ function Acceptance({ row, resource, document, onSaved }: { row: Row; resource: 
       {receipt ? <Image accessibilityLabel="Chữ ký chờ xác thực" source={{ uri: signature }} resizeMode="contain" style={{ height: 180, backgroundColor: '#fff' }} /> : <SignaturePad ref={pad} compact={transfer} onValidityChange={transfer ? setHasSignature : undefined} />}
       <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{pad.current?.clear();setSignature('');setReceipt(null);setOtp('');setAgreed(false);setHasSignature(false);}} style={{minHeight:44,alignSelf:'flex-start',justifyContent:'center',paddingHorizontal:4}}><Text style={{fontSize:14,fontWeight:'600',color:'#175CD3'}}>{transfer ? 'Xóa chữ ký' : 'Ký lại'}</Text></Pressable>
       <Pressable accessibilityRole="checkbox" aria-checked={agreed} accessibilityLabel={consent} accessibilityState={{ checked: agreed, disabled: busy || Boolean(receipt) || (transfer && !reviewed) }} disabled={busy || Boolean(receipt) || (transfer && !reviewed)} onPress={() => setAgreed(value => !value)} style={{ minHeight: 48, justifyContent: 'center' }}><Text style={styles.copy}>{agreed ? '☑' : '☐'} {consent}</Text></Pressable>
-      {receipt ? <View style={{ gap: 12 }}><Text accessibilityRole="alert" style={styles.copy}>Mã đã gửi đến {receipt.recipient}. {expiresIn ? 'Mã hết hạn sau ' + Math.floor(expiresIn / 60) + ':' + String(expiresIn % 60).padStart(2, '0') + '.' : 'Mã đã hết hạn. Hãy gửi mã mới.'} Chữ ký chưa được lưu.</Text><Text style={styles.label}>Mã xác thực 6 số</Text><TextInput accessibilityLabel="Mã xác thực chữ ký" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, ''))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} editable={!busy && expiresIn > 0} style={{ minHeight: 50, borderWidth: 1, borderColor: '#cbd7df', borderRadius: 10, padding: 12, fontSize: 22, backgroundColor: '#fff' }} /><Button title={busy ? 'Đang xác thực…' : 'Xác thực và ký tài liệu'} disabled={busy || expiresIn === 0 || otp.length !== 6} onPress={() => void submit(true)} /><Button title={remaining ? `Gửi lại sau ${remaining}s` : 'Gửi lại mã'} variant="secondary" disabled={busy || !configured || remaining > 0} onPress={() => void submit(false)} /></View> : <Button title={busy ? 'Đang gửi mã…' : remaining ? `Gửi lại sau ${remaining}s` : transfer ? 'Gửi mã xác thực' : 'Gửi mã xác thực qua email'} disabled={!agreed || !maySign || busy || !configured || remaining > 0} onPress={() => void submit(false)} />}
+      {receipt ? <View style={{ gap: 12 }}><Text accessibilityRole="alert" style={styles.copy}>Mã đã gửi đến {receipt.recipient}. {expiresIn ? 'Mã hết hạn sau ' + Math.floor(expiresIn / 60) + ':' + String(expiresIn % 60).padStart(2, '0') + '.' : 'Mã đã hết hạn. Hãy gửi mã mới.'} Chữ ký chưa được lưu.</Text>
+        {expiresIn > 0 && <>
+          <Text style={styles.label}>Mã xác thực 6 số</Text><TextInput accessibilityLabel="Mã xác thực chữ ký" value={otp} onChangeText={value => setOtp(value.replace(/\D/g, ''))} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} editable={!busy && expiresIn > 0} style={{ minHeight: 50, borderWidth: 1, borderColor: '#cbd7df', borderRadius: 10, padding: 12, fontSize: 22, backgroundColor: '#fff' }} /><Button title={busy ? 'Đang xác thực…' : 'Xác thực và ký tài liệu'} disabled={busy || expiresIn === 0 || otp.length !== 6} onPress={() => void submit(true)} />
+        </>}
+        <Button title={remaining ? `Gửi lại sau ${remaining}s` : 'Gửi lại mã'} variant="secondary" disabled={busy || !configured || remaining > 0} onPress={() => void submit(false)} /></View> : <Button title={busy ? 'Đang gửi mã…' : remaining ? `Gửi lại sau ${remaining}s` : transfer ? 'Gửi mã xác thực' : 'Gửi mã xác thực qua email'} disabled={!agreed || !maySign || busy || !configured || remaining > 0} onPress={() => void submit(false)} />}
     </> : null}
     {document.version != null && <Disclosure title="Phiên bản tài liệu"><Text style={styles.copy}>{String(document.version)}</Text></Disclosure>}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

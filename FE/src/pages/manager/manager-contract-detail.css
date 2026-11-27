@@ -1,0 +1,73 @@
+.contract-dashboard {
+  --contract-primary: #3858f5;
+  --contract-soft: #edf1ff;
+  --contract-border: var(--workspace-border, #e2e8f0);
+  --contract-surface: var(--workspace-surface, #fff);
+  --contract-muted: var(--workspace-secondary, #64748b);
+  --contract-pdf: #c82020;
+  --contract-occupied: #08603e;
+  --contract-occupied-bg: #ddf6e8;
+  display: grid; gap: 16px; min-width: 0; font-size: 14px;
+  color: var(--workspace-text, #101d35);
+}
+[data-workspace-theme="dark"] .contract-dashboard { --contract-primary: #a8b8ff; --contract-soft: #24315b; --contract-pdf: #ff9e9e; --contract-occupied: #72dfaf; --contract-occupied-bg: #173832; }
+.contract-dashboard :is(h1,h2,p,dl,dd) { margin: 0; }
+.contract-header, .contract-title, .contract-header-actions, .contract-breadcrumb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.contract-header { justify-content: space-between; }
+.contract-breadcrumb a, .contract-inline-link { display: inline-flex; align-items: center; gap: 6px; color: var(--contract-primary); font-weight: 650; }
+.contract-title { margin: 5px 0; }
+.contract-title h1 { font-size: clamp(24px, 2.4vw, 30px); font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.contract-card { min-width: 0; padding: clamp(13px, 1.35vw, 20px); border: 1px solid var(--contract-border); border-radius: 12px; background: var(--contract-surface); box-shadow: 0 1px 2px #101d3509; }
+.contract-card h2 { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; font-size: 18px; font-weight: 800; }
+.contract-dashboard svg { flex-shrink: 0; }
+.contract-card h2 svg, .contract-overview svg { color: var(--contract-primary); }
+.contract-overview { display: grid; grid-template-columns: .9fr 1.2fr 1fr; gap: 14px; }
+.contract-overview > div { display: flex; gap: 14px; align-items: center; padding-inline: 8px; min-width: 0; }
+.contract-overview > div + div, .contract-unit > div + div { border-inline-start: 1px solid var(--contract-border); padding-inline-start: 15px; }
+.contract-overview dt, .contract-unit dt, .contract-facts dt, .contract-muted, .contract-file small, .contract-unit small, .contract-history time { color: var(--contract-muted); }
+.contract-overview dd { font-size: clamp(15px, 1.5vw, 19px); font-weight: 800; overflow-wrap: anywhere; }
+.contract-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 17px; align-items: start; }
+.contract-column { display: grid; gap: 14px; min-width: 0; }
+.contract-facts { display: grid; gap: 10px; }
+.contract-facts + .contract-facts { border-top: 1px solid var(--contract-border); padding-top: 11px; margin-top: 11px; }
+.contract-facts > div { display: grid; grid-template-columns: minmax(0, 33%) minmax(0, 1fr); align-items: baseline; gap: 10px; }
+.contract-facts dt, .contract-quote-lines dt { display: flex; align-items: center; gap: 8px; }
+.contract-facts dd { font-weight: 650; overflow-wrap: anywhere; }
+.contract-facts a, .contract-unit a, .contract-invoices a { color: var(--contract-primary); text-decoration: underline; }
+.contract-unit { display: grid; grid-template-columns: 1fr 1.15fr 1.2fr; gap: 10px; }
+.contract-unit + .contract-unit { border-top: 1px solid var(--contract-border); padding-top: 9px; margin-top: 9px; }
+.contract-unit dd { margin-top: 3px; font-weight: 650; overflow-wrap: anywhere; }
+.contract-dashboard .contract-unit .manager-status.is-occupied { color: var(--contract-occupied); background: var(--contract-occupied-bg); }
+.contract-unit small, .contract-file small { display: block; }
+.contract-file { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--contract-border); border-radius: 9px; overflow-wrap: anywhere; }
+.contract-file svg { color: var(--contract-pdf); }
+.contract-file-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+.contract-dashboard button { min-height: 36px; }
+.contract-dashboard .contract-file-actions .button-secondary.contract-pdf-view { background: var(--contract-soft); color: var(--contract-primary); border-color: transparent; }
+.contract-dashboard .contract-muted { font-size: 13px; }
+.contract-document > p { margin-top: 8px; }
+.contract-quote { display: grid; gap: 9px; }
+.contract-quote h2 { margin-bottom: 0; }
+.contract-quote-lines { border: 1px solid var(--contract-border); border-radius: 8px; overflow: hidden; }
+.contract-quote-lines > div { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 7px 9px; }
+.contract-quote-lines > div + div { border-top: 1px solid var(--contract-border); }
+.contract-quote-lines dd { font-weight: 750; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.contract-quote-total { background: var(--contract-soft); color: var(--contract-primary); font-weight: 800; }
+.contract-quote-lines .contract-quote-equation dd { white-space: normal; text-align: end; overflow-wrap: anywhere; }
+.contract-dashboard .record-disclosure summary > svg:last-child { margin-inline-start: auto; }
+.contract-history, .contract-invoices { margin: 0; padding: 0; list-style: none; }
+.contract-history li, .contract-invoices li { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; padding-block: 7px; }
+.contract-history li + li, .contract-invoices li + li { border-top: 1px solid var(--contract-border); }
+.contract-dashboard .record-disclosure-content > .customer-panel { margin-top: 12px; }
+@media (max-width: 900px) { .contract-grid { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 560px) {
+  .contract-overview { grid-template-columns: 1fr; gap: 9px; }
+  .contract-overview > div + div { border-inline-start: 0; padding-inline-start: 8px; border-top: 1px solid var(--contract-border); padding-top: 8px; }
+  .contract-unit { grid-template-columns: 1fr 1fr; }
+  .contract-unit > div:last-child { grid-column: 1 / -1; border: 0; padding: 0; }
+  .contract-facts > div { grid-template-columns: minmax(0,43%) minmax(0,1fr); }
+}
+@media print {
+  .contract-dashboard :is(.contract-header-actions,.contract-breadcrumb,.contract-file-actions,.record-copy) { display: none !important; }
+  .contract-card { break-inside: avoid; box-shadow: none; }
+}

@@ -9,7 +9,8 @@ import { DocumentFile } from '../../components/customer/DocumentFile';
 import type { StaffOperation } from './staff-resources';
 import { transferProblem } from '../../utils/transfer-problem';
 import { incidentArea } from '../../utils/maintenance-incident';
-import { MaintenanceRepairFacts, maintenanceMoney } from '../../components/manager/MaintenanceCosts';
+import { maintenanceMoney } from '../../components/manager/MaintenanceCosts';
+import { MaintenanceRepairPlan } from '../../components/manager/MaintenanceRepairPlan';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
@@ -195,6 +196,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
     return <>
       <Section title="Thông tin bảo trì" items={[
         ['Cơ sở', first(row, 'facility.name')], ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
+        ['Ô kho bị ảnh hưởng', rows(row.affectedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ')],
         ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
         ['Nguồn phát sinh', row.source ? label(row.source) : ''],
         ['Người báo cáo', first(row, 'reportedBy.fullName')],
@@ -204,10 +206,11 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         <MaintenancePhotoGallery staff record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
         <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />
       </Section>
-      <MaintenanceRepairFacts row={row} />
+      {Boolean(row.repair) && <MaintenanceRepairPlan row={row} />}
+      {row.status === 'IN_PROGRESS' && verification && <p className="booking-alert" role="status"><strong>Yêu cầu sửa lại.</strong> {verification}</p>}
       {actions}
       {(workNote || verification || row.workCompletedAt || row.verifiedAt || ['COMPLETED', 'AWAITING_VERIFICATION'].includes(String(row.status))) &&
-        <Section title="Kết quả bảo trì" items={[
+        <Section title="Kết quả sửa chữa" items={[
           ['Công việc đã làm', workNote], ['Ngày hoàn thành sửa chữa', dateField('workCompletedAt', true)],
           [first(row, 'costs.status') === 'CONFIRMED' ? 'Chi phí đã xác nhận' : 'Tổng chi phí đề xuất', row.costs ? maintenanceMoney(at(row, 'costs.actualVnd')) : ''],
           ['Kết quả xử lý', row.closedWithoutRepair === true ? 'Đã đóng · Không cần sửa' : row.status === 'COMPLETED' ? 'Đã nghiệm thu' : row.status === 'AWAITING_VERIFICATION' ? 'Chờ quản lý nghiệm thu' : ''],

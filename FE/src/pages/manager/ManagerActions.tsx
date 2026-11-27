@@ -55,7 +55,7 @@ export function ManagerActions({
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
-  const [maintenancePassed, setMaintenancePassed] = useState(true);
+  const [maintenanceSafetyVerified, setMaintenanceSafetyVerified] = useState(false);
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
   const [problemDecision, setProblemDecision] = useState('CONTINUE');
   const [problemNote, setProblemNote] = useState('');
@@ -612,39 +612,53 @@ export function ManagerActions({
           ))}
         {resource === 'deposit-settlements' && Boolean(row.earlyReturnSettlement) && <CombinedReturnRefund
           row={row} busy={busy} onConfirm={body => void run(`${root}/confirm-return-refund`, 'POST', body, true)} />}
-        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
-          <form className="portal-form maintenance-verification-form" onSubmit={event => {
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (!row.repairPlanReady || !row.workCompletedAt || !row.workNote)
+          && <p className="record-text">{!row.repairPlanReady ? 'Lưu khảo sát và phương án trước khi nghiệm thu.' : 'Chờ Staff gửi kết quả sửa chữa.'}</p>}
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && row.repairPlanReady === true && Boolean(row.workCompletedAt && row.workNote) && <>
+          <form className="portal-form maintenance-verification-form incident-booking-impact" onSubmit={event => {
             event.preventDefault();
-            if (maintenancePassed) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined }, true);
-            else if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+            if (maintenanceSafetyVerified) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined, safetyVerified: true }, true);
           }}>
-            <label className="field-label">Kết quả nghiệm thu
-              <select value={maintenancePassed ? 'pass' : 'rework'} onChange={event => setMaintenancePassed(event.target.value === 'pass')}>
-                <option value="pass">Đạt</option>
-                <option value="rework">Cần sửa lại</option>
-              </select>
+            <p className="record-text">{first(row, 'workNote')}</p>
+            {Boolean(row.blocksUnit) && <p className="record-attribution">Khóa của phiếu được xem xét gỡ
+              {' · '}{rows(row.affectedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ') || first(row, 'unit.unitCode') || 'Theo phạm vi của phiếu'}.
+              Các khóa thuộc phiếu khác vẫn được áp dụng.</p>}
+            <label className="incident-booking-choice">
+              <input type="checkbox" checked={maintenanceSafetyVerified} onChange={event => setMaintenanceSafetyVerified(event.target.checked)} required />
+              <span>Tôi đã kiểm tra và xác nhận khu vực đủ an toàn.</span>
             </label>
-            <label className="field-label">
-              {maintenancePassed ? 'Ghi chú nghiệm thu' : 'Yêu cầu sửa lại'}
-              <textarea required={!maintenancePassed} rows={3} maxLength={4000}
-                value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
+            <label className="field-label">Ghi chú nghiệm thu
+              <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)} />
             </label>
-            {maintenancePassed && Boolean(row.blocksUnit) && <p className="record-attribution">Chọn Đạt để đóng phiếu và gỡ khóa đặt mới của phiếu này.</p>}
-            <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
-              {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
+            <button className="button-primary" disabled={busy || !maintenanceSafetyVerified}>
+              {busy ? 'Đang lưu…' : 'Xác nhận nghiệm thu'}
             </button>
           </form>
-        )}
+          <DetailDisclosure title="Yêu cầu sửa chữa lại">
+            <form className="portal-form" onSubmit={event => {
+              event.preventDefault();
+              if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+            }}>
+              <label className="field-label">Lý do yêu cầu sửa lại
+                <textarea required rows={3} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} />
+              </label>
+              <button className="button-secondary" disabled={busy || !reason.trim()}>Gửi yêu cầu sửa lại</button>
+            </form>
+          </DetailDisclosure>
+        </>}
         {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.status === 'OPEN' && !row.startedAt &&
           <DetailDisclosure title="Kết thúc vì không cần sửa chữa">
             <form className="portal-form incident-booking-impact" onSubmit={event => {
               event.preventDefault();
               const fields = new FormData(event.currentTarget);
               void run(`${root}/close-without-repair`, 'POST', {
-                reason: fields.get('closeReason'), safetyVerified: fields.get('safetyVerified') === 'on',
+                surveyResult: fields.get('closeSurvey'), reason: fields.get('closeReason'), safetyVerified: fields.get('safetyVerified') === 'on',
               }, true);
             }}>
-              <label className="field-label">Lý do và kết quả kiểm tra an toàn
+              <label className="field-label">Kết quả kiểm tra hiện trạng
+                <textarea name="closeSurvey" rows={3} required maxLength={4000} defaultValue={first(row, 'repair.surveyResult')} />
+              </label>
+              <label className="field-label">Lý do không cần sửa chữa
                 <textarea name="closeReason" rows={3} required minLength={3} maxLength={4000} />
               </label>
               <label className="incident-booking-choice">

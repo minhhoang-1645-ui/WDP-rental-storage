@@ -64,7 +64,8 @@ import { staffRecordIdentity } from '../staff/staff-work';
 import { PolicySettlementActions } from '../../components/manager/PolicySettlementActions';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
-import { MaintenanceCosts, MaintenanceRepairFacts } from '../../components/manager/MaintenanceCosts';
+import { MaintenanceCosts } from '../../components/manager/MaintenanceCosts';
+import { maintenanceAssignmentHint, MaintenanceProcessingHistory, MaintenanceRepairPlan } from '../../components/manager/MaintenanceRepairPlan';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 
@@ -85,7 +86,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
   const data = useApiResource<Row>(
     config && id ? `/manager/${resource}/${encodeURIComponent(id)}` : null,
     user?.id ?? "",
-    false,
+    resource === 'maintenance',
     true,
   );
   const isStaff = user?.role === 'FACILITY_STAFF';
@@ -192,10 +193,6 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
             ? status === 'REQUESTED' ? 'Chờ duyệt' : status === 'APPROVED' && row.commercial && !first(row, 'commercial.acceptedAt') ? 'Chờ ký phụ lục' : status === 'APPROVED' && isStaff ? 'Chờ bàn giao' : undefined
             : resource === 'maintenance' && row.closedWithoutRepair === true ? 'Đã đóng · Không cần sửa' : undefined} /> : undefined}
             meta={resource !== 'customers' && reference ? <CopyRecordCode value={reference} /> : undefined}>
-            {canAssignMaintenance && <Link className="button-primary" to={`/manager/assignments?kind=maintenance&record=${encodeURIComponent(id)}`}>
-              <Users size={16} />
-              {first(row, 'assignedStaff.id') ? 'Đổi người phụ trách' : 'Phân công nhân viên'}
-            </Link>}
             {isStaff && staffOperation && <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>}
             {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <button className="button-secondary" onClick={() => window.print()}>
@@ -232,8 +229,19 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
-              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && <MaintenanceRepairFacts row={row} />}
+              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' &&
+                <MaintenanceRepairPlan key={first(row, 'updatedAt')} row={row} refresh={data.refresh} onSuccess={setNotice} />}
               {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
+              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && <section className="manager-section">
+                <h2>Phân công nhân viên</h2>
+                <Facts items={[[ 'Người phụ trách', first(row, 'assignedStaff.fullName') || 'Chưa phân công' ]]} />
+                {canAssignMaintenance && (row.repairPlanReady === true
+                  ? <Link className="button-primary" to={`/manager/assignments?kind=maintenance&record=${encodeURIComponent(id)}`}>
+                    <Users size={16} /> {first(row, 'assignedStaff.id') ? 'Phân công lại' : 'Phân công nhân viên'}
+                  </Link>
+                  : <><p className="record-text">{maintenanceAssignmentHint}</p>
+                    <button className="button-primary" type="button" disabled>Phân công nhân viên</button></>)}
+              </section>}
               {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
                 <ManagerContractTransfers
@@ -244,9 +252,9 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               )}
               {user?.role === 'FACILITY_MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
+              {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.costs &&
                 <MaintenanceCosts key={first(row, 'updatedAt')} row={row} refresh={data.refresh} onSuccess={setNotice} />}
-              {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
                   ...(row.commercial ? [['Phụ lục đổi loại', first(row, 'commercial.acceptedAt') ? 'Đã ký' : 'Chờ khách ký']] as [string, string][] : [])]} />
@@ -257,7 +265,8 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {service && <ServiceReferences row={row} staff={isStaff} />}
               </>}
               {staffOperation === 'transfers' && row.status === 'COMPLETED' && <CompletedTransferSync row={row} refresh={data.refresh} />}
-              {staffOperation !== 'transfers' && (timeline.length > 0 || operationActors.some(([field]) => first(row, field + '.fullName'))) && <DetailDisclosure title="Lịch sử xử lý">
+              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' ? <MaintenanceProcessingHistory row={row} />
+                : staffOperation !== 'transfers' && (timeline.length > 0 || operationActors.some(([field]) => first(row, field + '.fullName'))) && <DetailDisclosure title="Lịch sử xử lý">
                 {operationActors.some(([field]) => first(row, field + '.fullName')) && <Facts items={operationActors.filter(([field]) => first(row, field + '.fullName')).map(([field, title]) => [field === 'approvedBy' && row.status === 'REJECTED' ? 'Người từ chối' : title, first(row, field + '.fullName')])} />}
                 <div className="portal-timeline">
                   {timeline.map(({ key, label, value }) => (
@@ -270,7 +279,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               </DetailDisclosure>}
             </div>
             {showProcessing && <aside className="manager-processing" id={isStaff ? 'staff-processing' : undefined} tabIndex={isStaff ? -1 : undefined}>
-              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? 'Nghiệm thu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : resource === 'invoices' ? 'Ghi nhận thanh toán' : 'Xử lý hồ sơ'}</h2>
+              <h2>{staffOperation === 'transfers' ? 'Bàn giao kho chuyển' : resource === 'maintenance' ? status === 'AWAITING_VERIFICATION' ? 'Nghiệm thu bảo trì' : 'Xử lý phiếu bảo trì' : resource === 'support-requests' ? 'Xem xét yêu cầu hỗ trợ' : resource === 'invoices' ? 'Ghi nhận thanh toán' : 'Xử lý hồ sơ'}</h2>
               <ManagerActions
                 key={`${resource}:${id}:${row.updatedAt ?? row.status}`}
                 resource={resource}

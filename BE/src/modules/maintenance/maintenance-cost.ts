@@ -31,7 +31,7 @@ export function maintenanceCost(record: {
 }
 
 const auditFields: Record<string, readonly string[]> = {
-  MAINTENANCE_REPAIR_PLANNED: ['surveyResult', 'repairPlan', 'repairMethod'],
+  MAINTENANCE_REPAIR_PLANNED: ['surveyResult', 'repairPlan', 'repairMethod', 'before'],
   MAINTENANCE_COST_PROPOSED: ['actualVnd', 'evidenceLinks'],
   MAINTENANCE_COST_CONFIRMED: ['actualVnd', 'status', 'proposedVnd', 'approvedIds'],
   MAINTENANCE_COST_RETURNED: ['actualVnd', 'status', 'evidenceLinks', 'note'],
@@ -46,6 +46,9 @@ function pickAuditFields(data: Prisma.JsonValue, fields: readonly string[]) {
 /** Keep the audit rows intact and expose only the fields used by the current workflow. */
 export function maintenanceAuditDetail(action: string, data: Prisma.JsonValue) {
   const detail = pickAuditFields(data, auditFields[action] ?? []);
+  if (action === 'MAINTENANCE_REPAIR_PLANNED') {
+    return { ...detail, before: pickAuditFields(detail.before ?? null, ['surveyResult', 'repairPlan', 'repairMethod']) };
+  }
   if (action !== 'MAINTENANCE_COST_ADJUSTED') return detail;
   return {
     ...detail,

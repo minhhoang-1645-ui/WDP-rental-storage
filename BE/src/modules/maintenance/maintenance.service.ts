@@ -12,7 +12,7 @@ import { validateMaintenancePhotos, type MaintenanceUpload } from './maintenance
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '../../generated/prisma/client.js';
+import { Prisma, type MaintenanceRequest } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { maintenanceAmount, maintenanceAuditDetail, maintenanceCost, maintenanceCostEvidence } from './maintenance-cost.js';
@@ -25,6 +25,7 @@ type MaintenancePriority = typeof maintenancePriorities[number];
 type MaintenanceCategory = typeof maintenanceCategories[number];
 type RentalImpact = 'NO_IMPACT' | 'AFFECTED' | 'UNKNOWN';
 type ViewMode = 'FACILITY_STAFF' | 'FACILITY_MANAGER';
+type RepairPlanFields = Pick<MaintenanceRequest, 'surveyResult' | 'repairPlan' | 'repairMethod'>;
 
 export interface MaintenanceListQuery {
   page: number;
@@ -173,7 +174,22 @@ export class MaintenanceService {
       include: { ...this.include(true), evidenceSubmissions: {
         omit: { maintenanceSubmissionKey: true }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return { ...this.toMaintenance(record, 'FACILITY_MANAGER'), workPhotos: record.workPhotos ?? [], evidenceSubmissions: record.evidenceSubmissions };
+    const history = await this.prisma.auditEvent.findMany({
+      where: { resource: 'maintenance', resourceId: record.id, action: { in: [
+        'MAINTENANCE_REPAIR_PLANNED', 'TASK_ASSIGNMENT', 'TASK_STAFF_COMPLETED', 'INCIDENT_VERIFIED',
+        'INCIDENT_VERIFICATION_REJECTED', 'INCIDENT_CLOSED_WITHOUT_REPAIR', 'MAINTENANCE_COST_ADJUSTED',
+      ] } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, action: true, actorName: true, createdAt: true, metadata: true },
+    });
+    return {
+      ...this.toMaintenance(record, 'FACILITY_MANAGER'),
+      workPhotos: record.workPhotos ?? [], evidenceSubmissions: record.evidenceSubmissions,
+      history: history.map(({ metadata, ...event }) => ({
+        ...event, metadata: event.action.startsWith('MAINTENANCE_') ? maintenanceAuditDetail(event.action, metadata)
+          : metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? { note: metadata.note } : {},
+      })),
+    };
   }
 
   private detailScope(id: string, actor: PublicUser): Prisma.MaintenanceRequestWhereInput {
@@ -203,6 +219,7 @@ export class MaintenanceService {
       this.assertUnresolved(current);
       const staff = await assertAssignmentAccess(tx, actor, staffUserId, current);
       if (!staff || staff.role !== 'FACILITY_STAFF' || staff.accountStatus !== 'ACTIVE') throw new BadRequestException('Chỉ giao bảo trì cho nhân viên đang hoạt động.');
+      this.assertRepairPlan(current);
       assertAssignmentVersion(input, current.assignedStaffUserId);
       if (current.assignedStaffUserId === staff.id) return current;
       await recordAssignment(tx,actor,"maintenance",current.id,current.assignedStaffUserId,staff.id,
@@ -298,6 +315,7 @@ export class MaintenanceService {
       if (current.status !== 'OPEN') throw new ConflictException(`Chỉ maintenance OPEN mới có thể bắt đầu; trạng thái hiện tại là ${current.status}.`);
       if (!current.assignedStaffUserId) throw new ConflictException({ code: 'MAINTENANCE_ASSIGNMENT_REQUIRED', message: 'Manager phải giao Staff trước khi bắt đầu.' });
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể bắt đầu công việc này.');
+      this.assertRepairPlan(current);
       this.assertUnitMaintenance(current);
       await assertCanStartDirectWork(tx, actor.id, 'maintenance', current.id);
       return tx.maintenanceRequest.update({
@@ -325,6 +343,7 @@ export class MaintenanceService {
       }
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể hoàn tất công việc này.');
+      this.assertRepairPlan(current);
       this.assertUnitMaintenance(current);
       const facilityId = current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id;
       await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'maintenance', current.id,
@@ -366,6 +385,7 @@ export class MaintenanceService {
       if (input.expectedUpdatedAt !== current.updatedAt.toISOString()) throw new ConflictException('Phiếu vừa thay đổi. Tải lại trước khi lưu.');
       await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_REPAIR_PLANNED', {
         surveyResult, repairPlan, repairMethod,
+        before: { surveyResult: current.surveyResult, repairPlan: current.repairPlan, repairMethod: current.repairMethod },
       });
       return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
         surveyResult, repairPlan, repairMethod,
@@ -448,27 +468,31 @@ export class MaintenanceService {
     const note = this.optionalText(input?.note, 4000, 'note');
     return this.transition(id, key, 'VERIFY', async (tx, current, safeKey) => {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể xác minh; trạng thái hiện tại là ${current.status}.`);
+      this.assertRepairReadyForReview(current);
+      if (input.safetyVerified !== true) throw new BadRequestException('Hãy xác nhận đã kiểm tra an toàn.');
       return this.finishMaintenance(tx, current, actor, note, safeKey, 'VERIFY');
     }, actor, 'FACILITY_MANAGER');
   }
 
   closeWithoutRepair(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const surveyResult = this.requiredText(input.surveyResult, 4000, 'Kết quả kiểm tra hiện trạng');
     const reason = this.requiredText(input.reason, 4000, 'Lý do không cần sửa chữa');
     if (input.safetyVerified !== true) throw new BadRequestException('Hãy xác nhận đã kiểm tra an toàn.');
     return this.transition(id, key, 'CLOSE_WITHOUT_REPAIR', async (tx, current, safeKey) => {
       if (current.status !== 'OPEN' || current.startedAt) {
         throw new ConflictException('Phiếu đã bắt đầu xử lý. Hãy ghi nhận kết quả và nghiệm thu.');
       }
-      return this.finishMaintenance(tx, current, actor, reason, safeKey, 'CLOSE_WITHOUT_REPAIR');
+      return this.finishMaintenance(tx, current, actor, reason, safeKey, 'CLOSE_WITHOUT_REPAIR', surveyResult);
     }, actor, 'FACILITY_MANAGER');
   }
 
   private async finishMaintenance(tx: Prisma.TransactionClient, current: any, actor: PublicUser, note: string | null,
-    safeKey: string, action: 'VERIFY' | 'CLOSE_WITHOUT_REPAIR') {
+    safeKey: string, action: 'VERIFY' | 'CLOSE_WITHOUT_REPAIR', surveyResult?: string) {
     this.assertUnitMaintenance(current);
     await this.replaceBlocks(tx, current.id, current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id,
       [], actor, action === 'VERIFY' ? 'VERIFIED' : action);
-    await this.auditIncident(tx, actor, current.id, action === 'VERIFY' ? 'INCIDENT_VERIFIED' : 'INCIDENT_CLOSED_WITHOUT_REPAIR', { note });
+    await this.auditIncident(tx, actor, current.id, action === 'VERIFY' ? 'INCIDENT_VERIFIED' : 'INCIDENT_CLOSED_WITHOUT_REPAIR',
+      { note, safetyVerified: true, ...(surveyResult === undefined ? {} : { surveyResult }) });
     if (current.activeKey && current.storageUnit?.status === 'MAINTENANCE') {
       const occupied = await tx.rentalContract.count({ where: {
         status: 'ACTIVE', reservationUnit: { storageUnitId: current.storageUnitId, releasedAt: null },
@@ -488,6 +512,7 @@ export class MaintenanceService {
       where: { id: current.id },
       data: {
         status: 'COMPLETED', activeKey: null, verifiedByUserId: actor.id, verifiedAt: new Date(), verificationNote: note,
+        ...(surveyResult === undefined ? {} : { surveyResult }),
         lastAction: action, lastActionIdempotencyKey: safeKey,
       },
       include: this.include(),
@@ -498,6 +523,7 @@ export class MaintenanceService {
     const note = this.requiredText(input.note, 4000, 'note');
     return this.transition(id, key, 'REJECT_VERIFICATION', async (tx, current, safeKey) => {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể bị trả lại; trạng thái hiện tại là ${current.status}.`);
+      this.assertRepairReadyForReview(current);
       this.assertUnitMaintenance(current);
       await this.auditIncident(tx, actor, current.id, 'INCIDENT_VERIFICATION_REJECTED', { note });
       const latest = await tx.staffEvidenceSubmission.findFirst({
@@ -682,6 +708,7 @@ export class MaintenanceService {
         storageType: { id: record.storageUnit.storageType.id, code: record.storageUnit.storageType.code, name: record.storageUnit.storageType.name },
       } : null,
       coordination: workPhase('maintenance', record),
+      repairPlanReady: this.hasRepairPlan(record),
       reportedBy: record.reportedBy,
       ...(record.evidenceSubmissions ? { evidenceSubmissions: record.evidenceSubmissions } : {}),
       assignedStaff: record.assignedStaff, startedAt: record.startedAt?.toISOString() ?? null,
@@ -774,6 +801,23 @@ export class MaintenanceService {
 
   private assertUnresolved(record: any) {
     if (!unresolvedStatuses.includes(record.status)) throw new ConflictException('Maintenance đã hoàn tất và không thể thay đổi.');
+  }
+
+  private hasRepairPlan(record: RepairPlanFields) {
+    return Boolean(record.surveyResult?.trim() && record.repairPlan?.trim()
+      && (record.repairMethod === 'INTERNAL' || record.repairMethod === 'EXTERNAL'));
+  }
+
+  private assertRepairPlan(record: RepairPlanFields) {
+    if (!this.hasRepairPlan(record)) throw new ConflictException({
+      code: 'MAINTENANCE_REPAIR_PLAN_REQUIRED',
+      message: 'Vui lòng hoàn thành khảo sát và lưu phương án xử lý trước khi tiếp tục.',
+    });
+  }
+
+  private assertRepairReadyForReview(record: RepairPlanFields & Pick<MaintenanceRequest, 'workCompletedAt' | 'workNote'>) {
+    this.assertRepairPlan(record);
+    if (!record.workCompletedAt || !record.workNote?.trim()) throw new ConflictException('Cần có kết quả sửa chữa do Staff gửi.');
   }
 
   private assertUnitMaintenance(record: any) {

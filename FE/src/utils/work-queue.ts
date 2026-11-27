@@ -57,6 +57,10 @@ export function canAssignWork(resource: string, row: WorkRow) {
     Boolean(assignableStates[resource]?.includes(String(row.status)));
 }
 
+export function assignmentRequiresRepairPlan(resource: string, row: WorkRow) {
+  return resource === 'maintenance' && row.repairPlanReady !== true;
+}
+
 export function isAssignedStaffWork(resource: string, row: WorkRow, userId: string) {
   if (resource === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId && userId) return true;
   return Boolean(userId && assignee(row) === userId) &&

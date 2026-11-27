@@ -97,6 +97,10 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ['Yêu cầu của khách', supportId && first(row, 'supportRequest.status') === 'RESOLVED' &&
           first(row, 'supportRequest.resolutionType') !== 'TRANSFER_RECOMMENDED' ? 'Đã cập nhật kết quả' : ''],
       ]} note={first(handover, 'note')}>
+        {Array.isArray(handover.photos) && handover.photos.length > 0 && <div className="staff-handover-photos">
+          {handover.photos.map((photo, index) => typeof photo === 'string' &&
+            <img key={index} src={photo} alt={`Ảnh bàn giao chuyển kho ${index + 1}`} />)}
+        </div>}
         {handover.goodsMoved === true && contractId && transferId && <DocumentFile
           path={`/staff/management/documents/contracts/${encodeURIComponent(contractId)}/transfers/${encodeURIComponent(transferId)}`}
           name={`${first(row, 'transferCode')}-BB`} description="Biên bản chuyển kho · PDF" />}

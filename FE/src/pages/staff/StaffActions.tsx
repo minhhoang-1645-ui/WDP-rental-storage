@@ -19,16 +19,7 @@ import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointme
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { ApiError } from '../../services/api';
 
-const photoTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-function readHandoverPhoto(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được ảnh bàn giao.'));
-    reader.onerror = () => reject(new Error('Không đọc được ảnh bàn giao.'));
-    reader.readAsDataURL(file);
-  });
-}
+import { useEvidencePhotoPicker } from '../../components/workspace/useEvidencePhotoPicker';
 
 export function StaffActions({
   resource,
@@ -47,37 +38,10 @@ export function StaffActions({
   const confirm = useConfirmation();
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
-  const [readingPhotos, setReadingPhotos] = useState(false);
-  const [handoverPhotos, setHandoverPhotos] = useState<{ id: number; name: string; src: string }[]>([]);
-  const [photoError, setPhotoError] = useState('');
-  const nextPhotoId = useRef(0);
-  const photoReadLock = useRef(false);
-
-  async function addHandoverPhotos(files: File[]) {
-    if (!files.length || photoReadLock.current || pendingAction !== undefined) return;
-    if (handoverPhotos.length + files.length > 3) {
-      setPhotoError('Chỉ được đính kèm tối đa 3 ảnh. Bỏ ảnh đã chọn để thêm ảnh khác.');
-      return;
-    }
-    if (files.some(file => !photoTypes.includes(file.type) || file.size === 0 || file.size > 400 * 1024)) {
-      setPhotoError('Chọn ảnh JPG, PNG hoặc WebP tối đa 400 KB mỗi ảnh.');
-      return;
-    }
-    photoReadLock.current = true;
-    setReadingPhotos(true);
-    setPhotoError('');
-    try {
-      const additions = await Promise.all(files.map(async file => ({
-        id: nextPhotoId.current++, name: file.name, src: await readHandoverPhoto(file),
-      })));
-      setHandoverPhotos(previous => [...previous, ...additions]);
-    } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : 'Không đọc được ảnh bàn giao.');
-    } finally {
-      photoReadLock.current = false;
-      setReadingPhotos(false);
-    }
-  }
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
+    pendingAction !== undefined,
+  );
   const busy = pendingAction !== undefined || readingPhotos;
   const lock = useRef(false);
   const returnRequirementsId = useId();
@@ -212,29 +176,6 @@ export function StaffActions({
     }
     void run(suffix, 'POST', input, idempotent);
   };
-  const photoPicker = <div className="staff-handover-photo-picker">
-                <label className="field-label">{resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)'}
-                  <input type="file" accept={photoTypes.join(',')} multiple disabled={busy || handoverPhotos.length === 3}
-                    onChange={event => {
-                      const files = Array.from(event.target.files ?? []);
-                      event.target.value = '';
-                      void addHandoverPhotos(files);
-                    }} />
-                  <small>JPG, PNG hoặc WebP, tối đa 400 KB mỗi ảnh. Có thể chọn từng ảnh hoặc chọn nhiều ảnh cùng lúc.</small>
-                </label>
-                <p role="status">{readingPhotos ? 'Đang đọc ảnh…' : `Đã chọn ${handoverPhotos.length}/3 ảnh`}</p>
-                {photoError && <p className="booking-alert is-error" role="alert">{photoError}</p>}
-                {handoverPhotos.length > 0 && <ul className="staff-handover-photos staff-handover-photo-preview" aria-label={resource === 'appointments' ? 'Ảnh bàn giao đã chọn' : 'Ảnh hỗ trợ đã chọn'}>
-                  {handoverPhotos.map(photo => <li key={photo.id}>
-                    <img src={photo.src} alt={photo.name} />
-                    <span>{photo.name}</span>
-                    <button type="button" className="button-secondary" disabled={busy} aria-label={'Bỏ ảnh ' + photo.name} onClick={() => {
-                      setHandoverPhotos(previous => previous.filter(item => item.id !== photo.id));
-                      setPhotoError('');
-                    }}>Bỏ ảnh</button>
-                  </li>)}
-                </ul>}
-              </div>;
   const inspections = rows(row.inspections);
   const inspecting = ["INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
     String(row.status),

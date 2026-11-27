@@ -1,10 +1,13 @@
+import { useEvidencePhotoPicker } from '../workspace/useEvidencePhotoPicker';
 import type { Row } from './portal-data';
 
 export function TransferHandoverForm({ busy, onSubmit, onProblem }: { busy: boolean; onSubmit: (input: Row) => void; onProblem: (note: string) => void }) {
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker('Ảnh hiện trạng bàn giao (tùy chọn)', busy);
   return <><form className="portal-form transfer-handover-form" onSubmit={event => {
     event.preventDefault();
+    if (busy || photoReadLock.current) return;
     const fields = new FormData(event.currentTarget);
-    onSubmit({ recipientName: fields.get('recipientName'), returnedKeyCount: Number(fields.get('returnedKeyCount')), deliveredKeyCount: Number(fields.get('deliveredKeyCount')), destinationReady: fields.get('destinationReady') === 'on', oldKeysReturned: fields.get('oldKeysReturned') === 'on', newKeysDelivered: fields.get('newKeysDelivered') === 'on', goodsMoved: fields.get('goodsMoved') === 'on', note: fields.get('note') });
+    onSubmit({ recipientName: fields.get('recipientName'), returnedKeyCount: Number(fields.get('returnedKeyCount')), deliveredKeyCount: Number(fields.get('deliveredKeyCount')), destinationReady: fields.get('destinationReady') === 'on', oldKeysReturned: fields.get('oldKeysReturned') === 'on', newKeysDelivered: fields.get('newKeysDelivered') === 'on', goodsMoved: fields.get('goodsMoved') === 'on', note: fields.get('note'), photos: handoverPhotos.map(photo => photo.src) });
   }}>
     <p>Kiểm tra kho cũ đã trống và đối chiếu chìa khóa, thẻ hoặc mã truy cập với khách trước khi xác nhận.</p>
     <label className="field-label">Người nhận kho mới<input name="recipientName" required minLength={2} maxLength={120} /></label>
@@ -14,7 +17,8 @@ export function TransferHandoverForm({ busy, onSubmit, onProblem }: { busy: bool
     <label className="portal-checkbox"><input name="oldKeysReturned" type="checkbox" required />Đã thu lại chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ</label>
     <label className="portal-checkbox"><input name="newKeysDelivered" type="checkbox" required />Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới cho khách</label>
     <label className="field-label">Ghi chú bàn giao<textarea name="note" rows={3} maxLength={2000} placeholder="Nếu không dùng chìa khóa/thẻ vật lý, ghi rõ cách thu hồi mã cũ và cấp mã mới." /></label>
-    <button className="button-primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Hoàn tất chuyển kho'}</button>
+    {photoPicker}
+    <button className="button-primary" disabled={busy || readingPhotos}>{busy ? 'Đang lưu…' : 'Hoàn tất chuyển kho'}</button>
   </form>
   <TransferProblemForm busy={busy} onProblem={onProblem} /></>;
 }

@@ -41,7 +41,7 @@ import {
   Status,
 } from "../../components/manager/PortalUi";
 import { ManagerCreateDialog } from "./ManagerCreateDialog";
-import { InventoryEditor } from './InventoryEditor';
+import { NewInventoryUnit } from './InventoryEditor';
 import { isManagerReviewWorkflow, managerReviewStatus, managerReviewTitle } from '../../utils/manager-review-access';
 import { normalizeSearch } from '../../utils/notification-tools';
 import { StaffTaskPagination } from '../../components/workspace/StaffTaskTable';
@@ -323,7 +323,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
   </>;
   return (
     <section className={managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
-      {creatingUnit && <InventoryEditor kind="unit" onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
+      {creatingUnit && <NewInventoryUnit onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
         {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
         {user?.role === 'FACILITY_STAFF' && resource === 'maintenance' && (

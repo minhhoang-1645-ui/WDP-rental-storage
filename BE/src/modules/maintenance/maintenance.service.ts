@@ -155,17 +155,22 @@ export class MaintenanceService {
   }
 
   async getStaff(id: string, actor: PublicUser) {
-    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include() });
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
+      include: { ...this.include(), evidenceSubmissions: { where: { staffUserId: actor.id }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return { ...this.toMaintenance(record, 'FACILITY_STAFF', actor.id), workPhotos: record.workPhotos ?? [] };
+    const view = this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
+    const hasCurrentRole = record.assignedStaffUserId === actor.id || record.reportedByUserId === actor.id;
+    return { ...view, ...(hasCurrentRole ? { workPhotos: record.workPhotos ?? [] } : { workPhotos: [], workNote: null }),
+      evidenceSubmissions: record.evidenceSubmissions };
   }
 
   async getManager(id: string, actor:PublicUser) {
     managerReservationScope(actor);
 
-    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor), include: this.include(true) });
+    const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
+      include: { ...this.include(true), evidenceSubmissions: { orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
-    return { ...this.toMaintenance(record, 'FACILITY_MANAGER'), workPhotos: record.workPhotos ?? [] };
+    return { ...this.toMaintenance(record, 'FACILITY_MANAGER'), workPhotos: record.workPhotos ?? [], evidenceSubmissions: record.evidenceSubmissions };
   }
 
   private detailScope(id: string, actor: PublicUser): Prisma.MaintenanceRequestWhereInput {
@@ -175,6 +180,7 @@ export class MaintenanceService {
       ...(actor.role === 'FACILITY_STAFF' ? [{ OR: [
         { assignedStaffUserId: actor.id },
         { source: 'MANUAL' as const, reportedByUserId: actor.id },
+        { evidenceSubmissions: { some: { staffUserId: actor.id } } },
       ] }] : []),
     ] };
   }
@@ -311,9 +317,15 @@ export class MaintenanceService {
       const facilityId = current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id;
       await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'maintenance', current.id,
         { ...(facilityId && { facilityId }), nextStatus: 'AWAITING_VERIFICATION' });
+      const now = new Date();
       return tx.maintenanceRequest.update({
         where: { id: current.id },
-        data: { status: 'AWAITING_VERIFICATION', workCompletedAt: new Date(), workNote, workPhotos, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey },
+        data: {
+          status: 'AWAITING_VERIFICATION', workCompletedAt: now, workNote, workPhotos, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey,
+          ...(workPhotos.length || input.evidenceLink ? { evidenceSubmissions: { create: {
+            staffUserId: actor.id, staffName: actor.fullName, note: workNote, photos: workPhotos, recordedAt: now,
+          } } } : {}),
+        },
         include: this.include(),
       });
     }, actor, 'FACILITY_STAFF');
@@ -436,30 +448,36 @@ export class MaintenanceService {
   }
 
   private async list(query: MaintenanceListQuery, mode: ViewMode, assignedStaffUserId: string|undefined, actor:PublicUser) {
+    const search = query.search ? { contains: query.search, mode: 'insensitive' as const } : undefined;
     const where: Prisma.MaintenanceRequestWhereInput = {
       ...maintenanceFacilityScope(actor),
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.category ? { category: query.category } : {}),
-      ...(assignedStaffUserId ? { assignedStaffUserId } : {}),
-      ...(query.search ? { AND: [{ OR: [
-        { maintenanceCode: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
-        { locationNote: { contains: query.search, mode: 'insensitive' } },
-        { incidentBlocks: { some: { releasedAt: null, storageUnit: {
-          storageType: { facility: facilityScope(actor) },
-          unitNumber: { contains: query.search, mode: 'insensitive' },
-        } } } },
-        { storageUnit: { is: { OR: [
-          { unitNumber: { contains: query.search, mode: 'insensitive' } },
-          { floor: { contains: query.search, mode: 'insensitive' } },
-          { zone: { contains: query.search, mode: 'insensitive' } },
-        ] } } },
-      ] }] } : {}),
+      ...(assignedStaffUserId && mode !== 'FACILITY_STAFF' ? { assignedStaffUserId } : {}),
+      AND: [
+        ...(assignedStaffUserId && mode === 'FACILITY_STAFF' ? [{ OR: [
+          { assignedStaffUserId }, { source: 'MANUAL' as const, reportedByUserId: assignedStaffUserId },
+          { evidenceSubmissions: { some: { staffUserId: assignedStaffUserId } } },
+        ] }] : []),
+        ...(search ? [{ OR: [
+          { maintenanceCode: search },
+          { description: search },
+          { locationNote: search },
+          { incidentBlocks: { some: { releasedAt: null, storageUnit: {
+            storageType: { facility: facilityScope(actor) },
+            unitNumber: search,
+          } } } },
+          { storageUnit: { is: { OR: [{ unitNumber: search }, { floor: search }, { zone: search }] } } },
+        ] }] : []),
+      ],
     };
     const [total, records] = await this.prisma.$transaction([
       this.prisma.maintenanceRequest.count({ where }),
-      this.prisma.maintenanceRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.include(mode === 'FACILITY_MANAGER') }),
+      this.prisma.maintenanceRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: {
+        ...this.include(mode === 'FACILITY_MANAGER'),
+        ...(mode === 'FACILITY_STAFF' ? { evidenceSubmissions: { where: { staffUserId: actor.id }, select: { recordedAt: true, staffUserId: true } } } : {}),
+      } }),
     ]);
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toMaintenance(record, mode, undefined, false)) };
   }
@@ -519,6 +537,8 @@ export class MaintenanceService {
         storageType: { id: record.storageUnit.storageType.id, code: record.storageUnit.storageType.code, name: record.storageUnit.storageType.name },
       } : null,
       coordination: workPhase('maintenance', record),
+      reportedBy: record.reportedBy,
+      ...(record.evidenceSubmissions ? { evidenceSubmissions: record.evidenceSubmissions } : {}),
       assignedStaff: record.assignedStaff, startedAt: record.startedAt?.toISOString() ?? null,
       workCompletedAt: record.workCompletedAt?.toISOString() ?? null, workNote: record.workNote,
       createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
@@ -532,7 +552,7 @@ export class MaintenanceService {
     } : base;
     const bookings = affectedBookings(record.incidentBlocks, base.facility?.id);
     return {
-      ...base, reportedBy: record.reportedBy, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
+      ...base, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
       affectedBookingCount: bookings.length,
       affectedAppointmentCount: bookings.reduce((count, booking) => count + booking.appointments.length, 0),
       ...(includeAffectedDetails ? { affectedBookings: bookings } : {}),

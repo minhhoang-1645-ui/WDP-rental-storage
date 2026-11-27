@@ -1,12 +1,12 @@
 import { useEffect, useReducer, useState } from 'react';
 import { apiRequest } from '../../services/api';
 
-export function MaintenancePhotoGallery({ record, ids }: { record: string; ids: string[] }) {
+export function MaintenancePhotoGallery({ record, ids, staff = false }: { record: string; ids: string[]; staff?: boolean }) {
   if (!ids.length) return null;
   return <div className="maintenance-evidence">
     <h3>Hình ảnh sự cố</h3>
     <ul className="incident-photos">{ids.map((id, index) => <li key={id}>
-      <MaintenancePhoto path={`/manager/maintenance/${encodeURIComponent(record)}/photos/${encodeURIComponent(id)}`} index={index + 1} />
+      <MaintenancePhoto path={`/${staff ? 'staff' : 'manager'}/maintenance/${encodeURIComponent(record)}/photos/${encodeURIComponent(id)}`} index={index + 1} />
     </li>)}</ul>
   </div>;
 }

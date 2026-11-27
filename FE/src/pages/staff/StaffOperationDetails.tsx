@@ -11,6 +11,7 @@ import { transferProblem } from '../../utils/transfer-problem';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
+import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 type Fact = [string, ReactNode];
 
 function DateFact({ value, withTime = false }: { value: string; withTime?: boolean }) {
@@ -195,9 +196,12 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ['Cơ sở', first(row, 'facility.name')], ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
         ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
         ['Nguồn phát sinh', row.source ? label(row.source) : ''],
+        ['Người báo cáo', first(row, 'reportedBy.fullName')],
+        ['Thời điểm báo cáo', dateField('createdAt', true)],
         ['Khóa đặt thuê của phiếu', row.blocksUnit === true ? 'Đang tạm chặn' : 'Không còn chặn'],
       ]} note={first(row, 'description')}>
-        <MaintenancePhotoGallery record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
+        <MaintenancePhotoGallery staff record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
+        <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />
       </Section>
       {actions}
       {(workNote || verification || row.workCompletedAt || row.verifiedAt || ['COMPLETED', 'AWAITING_VERIFICATION'].includes(String(row.status))) &&
@@ -208,10 +212,13 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           ['Nhận xét nghiệm thu', verification],
           ['Tình trạng kho hiện tại', first(row, 'unit.status') && <Status value={at(row, 'unit.status')} />],
         ]}>
+          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" /> : <>
           {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
             {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
               <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}
           </div>}
+          <EvidenceLinks links={evidenceLinks(workNote)} />
+          </>}
         </Section>}
       <References items={[[ 'Trả kho', returnId && <Link to={`/staff/returns/${encodeURIComponent(returnId)}`}>{first(row, 'returnContext.returnRequest.returnCode')}</Link> ]]} />
     </>;

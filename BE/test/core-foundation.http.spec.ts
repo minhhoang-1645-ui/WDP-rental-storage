@@ -341,13 +341,25 @@ it('reports incidents without mutating rentals and secures photo evidence throug
   await denied('get', task + '/photos/' + photos[0].id, 'managerB');
   await denied('get', staffTask + '/photos/' + photos[0].id, 'staffB');
   expect((await api('get', task + '/photos/' + photos[0].id, 'managerA')).body).toEqual(png);
+  expect((await api('get', staffTask + '/photos/' + photos[0].id, 'incidentReporter')).body).toEqual(png);
+  expect((await api('get', '/staff/maintenance', 'incidentReporter')).body.items)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ id, reportedBy: { id: identity('incidentReporter'), fullName: expect.any(String), role: 'FACILITY_STAFF' } })]));
   expect((await api('get', '/manager/staff?taskType=maintenance&taskId=' + id, 'managerA')).body.items)
     .toEqual(expect.arrayContaining([expect.objectContaining({ id: identity('staffA') })]));
   await denied('patch', task + '/assign', 'managerA', { staffUserId: identity('staffB') });
   await api('patch', task + '/assign', 'managerA', { staffUserId: identity('staffA') });
   await denied('post', staffTask + '/start', 'incidentReporter');
   await api('post', staffTask + '/start', 'staffA', {}, 201);
-  await api('post', staffTask + '/complete-work', 'staffA', { workNote: 'Đã xử lý nước rò rỉ và kiểm tra lại.' }, 201);
+  const workPhotos = ['data:image/png;base64,' + png.toString('base64')];
+  const evidenceLink = 'https://example.test/maintenance.jpg';
+  await api('post', staffTask + '/complete-work', 'staffA', { workNote: 'Đã xử lý nước rò rỉ và kiểm tra lại.', workPhotos, evidenceLink }, 201);
+  await api('post', task + '/reject-verification', 'managerA', { note: 'Gửi lại kết quả kiểm tra.' }, 201);
+  await api('post', staffTask + '/complete-work', 'staffA', { workNote: 'Đã kiểm tra lại lần hai.' }, 201);
+  for (const [path, viewer] of [[task, 'managerA'], [staffTask, 'staffA']]) {
+    expect((await api('get', path, viewer)).body.evidenceSubmissions).toEqual([
+      expect.objectContaining({ staffUserId: identity('staffA'), photos: workPhotos, note: expect.stringContaining(evidenceLink) }),
+    ]);
+  }
   await api('post', task + '/verify', 'managerA', { note: 'Đã kiểm tra khu vực.' }, 201);
   expect((await api('get', staffTask, 'incidentReporter')).body).toMatchObject({ status: 'COMPLETED', unit: null });
   expect((await api('get', '/staff/maintenance/reported-by-me', 'incidentReporter')).body.items)
@@ -373,6 +385,43 @@ it('reports incidents without mutating rentals and secures photo evidence throug
   await denied('post', '/staff/maintenance', 'incidentReporter', {
     facilityId: identity('A'), commonArea: 'CORRIDOR', description: 'Báo tin sau thu hồi quyền', category: 'SECURITY', rentalImpact: 'NO_IMPACT',
   });
+});
+
+it('scopes saved handover, transfer and support photo evidence to the Staff and Manager facility', async () => {
+  const reservation = await reserve();
+  const allocation = await db.reservationUnit.findFirstOrThrow({ where: { reservationId: reservation.id } });
+  const contract = await db.rentalContract.findFirstOrThrow({ where: { reservationId: reservation.id } });
+  const staff = identity('staffA2'), customer = identity('customer'), now = new Date();
+  const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jLZkAAAAASUVORK5CYII='];
+  const photoLinks = ['https://example.test/handover.jpg'];
+  const appointment = await db.handoverAppointment.create({ data: {
+    reservationId: reservation.id, appointmentCode: key(), idempotencyKey: key(), status: 'COMPLETED',
+    assignedStaffUserId: staff, completedByUserId: staff, requestedByUserId: customer, completedAt: now, scheduledAt: now,
+    handoverReport: { photos, photoLinks },
+  } });
+  const transfer = await db.transferRequest.create({ data: {
+    reservationId: reservation.id, rentalContractId: contract.id, fromStorageUnitId: allocation.storageUnitId,
+    fromReservationUnitId: allocation.id, transferCode: key(), idempotencyKey: key(), status: 'COMPLETED',
+    assignedStaffUserId: staff, completedByUserId: staff, requestedByUserId: customer, completedAt: now,
+    reason: 'OTHER', handoverReport: { photos, recordedByUserId: staff },
+  } });
+  const support = await db.supportRequest.create({ data: {
+    reservationId: reservation.id, customerUserId: customer, supportCode: key(), idempotencyKey: key(), category: 'OTHER',
+    assignedStaffUserId: staff, subject: 'Kiểm thử ảnh hỗ trợ', description: 'Đính kèm ảnh', status: 'IN_PROGRESS',
+  } });
+  await api('post', `/staff/support-requests/${support.id}/resolve`, 'staffA2', {
+    resolutionType: 'CUSTOMER_GUIDANCE', resolutionNote: 'Đã hướng dẫn khách.', resolutionPhotos: photos,
+  }, 201);
+  for (const [resource, id, evidence] of [
+    ['appointments', appointment.id, { handoverReport: { photos, photoLinks }, completedBy: { id: staff } }],
+    ['transfers', transfer.id, { handoverReport: { photos, recordedByUserId: staff }, completedBy: { id: staff } }],
+    ['support-requests', support.id, { resolutionPhotos: photos, resolvedBy: { id: staff } }],
+  ] as const) {
+    await denied('get', `/manager/${resource}/${id}`, 'managerB');
+    await denied('get', `/staff/${resource}/${id}`, 'staffB');
+    expect((await api('get', `/manager/${resource}/${id}`, 'managerA')).body).toMatchObject(evidence);
+    expect((await api('get', `/staff/${resource}/${id}`, 'staffA2')).body).toMatchObject(evidence);
+  }
 });
 
 it('applies incident rental holds immediately and releases only the assessed incident scope', async () => {

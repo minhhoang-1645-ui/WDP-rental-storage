@@ -131,19 +131,33 @@ export class ReturnsService {
   }
 
   listStaffReturns(query: ReturnListQuery, actor: PublicUser) {
-    return this.page({ AND: [this.operationalWhere(query), returnTaskScope(actor)], assignedStaffUserId: actor.id }, query, 'FACILITY_STAFF');
+    return this.page({ AND: [this.operationalWhere(query), this.staffReadScope(actor)] }, query, 'FACILITY_STAFF', actor.id);
+  }
+
+  private staffReadScope(actor: PublicUser): Prisma.ReturnRequestWhereInput {
+    return { AND: [returnTaskScope(actor), { OR: [
+      { assignedStaffUserId: actor.id },
+      { inspections: { some: { inspectedByUserId: actor.id } } },
+      { inspections: { some: { evidenceSubmissions: { some: { staffUserId: actor.id } } } } },
+    ] }] };
   }
 
   async getManagerReturn(id: string,actor:PublicUser) {
     managerReservationScope(actor);
 
- const row=await this.find(id,this.prisma);await assertTaskFacility(this.prisma,actor,{returnRequestId:row.id});return this.toReturn(row,'FACILITY_MANAGER');
+ const row=await this.find(id,this.prisma,true);await assertTaskFacility(this.prisma,actor,{returnRequestId:row.id});return this.toReturn(row,'FACILITY_MANAGER');
   }
 
   async getStaffReturn(id: string, actor: PublicUser) {
-    const record = await this.prisma.returnRequest.findFirst({ where: { AND: [returnTaskScope(actor), { OR: [{ id }, { returnCode: id }] }], assignedStaffUserId: actor.id }, include: this.include(true, actor.id) });
+    const record = await this.prisma.returnRequest.findFirst({ where: { AND: [this.staffReadScope(actor), { OR: [{ id }, { returnCode: id }] }] }, include: this.include(true, actor.id) });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
     const view = this.toReturn(record, 'FACILITY_STAFF');
+    if (record.assignedStaffUserId !== actor.id) return {
+      ...view,
+      inspections: view.inspections.flatMap((inspection: { inspectedBy?: { id: string }; evidenceSubmissions?: unknown[]; inspectionPhotos?: unknown; conditionNote?: string; issueNote?: string }) =>
+        inspection.inspectedBy?.id === actor.id ? [inspection] : inspection.evidenceSubmissions?.length
+          ? [{ ...inspection, inspectionPhotos: undefined, conditionNote: undefined, issueNote: undefined }] : []),
+    };
     if (record.physicallyReturnedAt || !['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(record.status)) return view;
     return { ...view, waitingForManager: Boolean(await pendingTaskException(this.prisma, 'returns', record.id)) };
   }
@@ -248,6 +262,8 @@ export class ReturnsService {
         return this.toReturn(current, 'FACILITY_STAFF');
       }
       const now = new Date();
+      const addedPhotos = photos?.filter(photo => !existingPhotos.includes(photo)) ?? [];
+      const submittedLink = typeof input.evidenceLink === 'string' && input.evidenceLink ? appendEvidenceLink('', input.evidenceLink) as string : null;
       await tx.returnInspection.update({
         where: { id: inspection.id },
         data: {
@@ -256,6 +272,10 @@ export class ReturnsService {
           conditionNote: parsed.conditionNote,
           issueNote: parsed.issueNote,
           ...(photosChanged ? { inspectionPhotos: photos } : {}),
+          ...(addedPhotos.length || submittedLink ? {
+            evidenceSubmissions: { create: { staffUserId: actor.id, staffName: actor.fullName,
+              note: submittedLink, photos: addedPhotos, recordedAt: now } },
+          } : {}),
           inspectedByUserId: actor.id,
           inspectedAt: now,
         },
@@ -749,7 +769,7 @@ export class ReturnsService {
     } satisfies Prisma.ReservationInclude;
   }
 
-  private include(includeAssignee = true, staffDetailId?: string, omitInspectionPhotos = !includeAssignee) {
+  private include(includeAssignee = true, staffDetailId?: string, omitInspectionPhotos = !includeAssignee, historyStaffId?: string, managerDetail = false) {
     return {
       ...(includeAssignee ? { assignedStaff: { select: operationalAssignee } } : {}),
       requestedBy: { select: { id: true, fullName: true, role: true } },
@@ -760,6 +780,12 @@ export class ReturnsService {
       inspections: {
         omit: { inspectionPhotos: omitInspectionPhotos },
         include: {
+          ...(managerDetail || staffDetailId || historyStaffId ? { evidenceSubmissions: {
+            ...(staffDetailId || historyStaffId ? { where: { staffUserId: staffDetailId ?? historyStaffId } } : {}),
+            select: { id: true, staffUserId: true, staffName: true, recordedAt: true,
+              ...(!omitInspectionPhotos ? { photos: true as const, note: true as const } : {}) },
+            orderBy: [{ recordedAt: 'desc' as const }, { id: 'desc' as const }],
+          } } : {}),
           inspectedBy: { select: { id: true, fullName: true, role: true } },
           ...(staffDetailId ? { maintenanceRequest: { select: { id: true, maintenanceCode: true, assignedStaffUserId: true } } } : {}),
           rentalContract: { select: { id: true, contractCode: true, status: true, startDate: true, endDate: true, completedAt: true } },
@@ -792,10 +818,10 @@ export class ReturnsService {
     };
   }
 
-  private async page(where: Prisma.ReturnRequestWhereInput, query: Pick<ReturnListQuery, 'page' | 'limit'>, mode: ViewMode) {
+  private async page(where: Prisma.ReturnRequestWhereInput, query: Pick<ReturnListQuery, 'page' | 'limit'>, mode: ViewMode, staffId?: string) {
     const [total, records] = await Promise.all([
       this.prisma.returnRequest.count({ where }),
-      this.prisma.returnRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], omit: { assignedStaffUserId: mode === 'STORAGE_CUSTOMER' }, include: this.include(mode !== 'STORAGE_CUSTOMER', undefined, true) }),
+      this.prisma.returnRequest.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], omit: { assignedStaffUserId: mode === 'STORAGE_CUSTOMER' }, include: this.include(mode !== 'STORAGE_CUSTOMER', undefined, true, staffId) }),
     ]);
     const waiting = mode === 'FACILITY_STAFF' ? await pendingTaskIds(this.prisma, 'returns', records.filter(record =>
       !record.physicallyReturnedAt && ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(record.status)).map(record => record.id)) : new Set<string>();
@@ -855,6 +881,7 @@ export class ReturnsService {
         conditionNote: inspection.conditionNote,
         issueNote: inspection.issueNote,
         ...(Array.isArray(inspection.inspectionPhotos) ? { inspectionPhotos: inspection.inspectionPhotos } : {}),
+        ...(inspection.evidenceSubmissions ? { evidenceSubmissions: inspection.evidenceSubmissions } : {}),
         inspectedBy: inspection.inspectedBy,
         ...(mode === 'FACILITY_STAFF' && inspection.maintenanceRequest?.assignedStaffUserId === record.assignedStaffUserId && inspection.maintenanceRequest
           ? { maintenance: { id: inspection.maintenanceRequest.id, maintenanceCode: inspection.maintenanceRequest.maintenanceCode } } : {}),
@@ -1036,8 +1063,8 @@ export class ReturnsService {
     return identity;
   }
 
-  private async find(id: string, db: DbClient) {
-    const record = await db.returnRequest.findFirst({ where: { OR: [{ id }, { returnCode: id }] }, include: this.include() });
+  private async find(id: string, db: DbClient, managerDetail = false) {
+    const record = await db.returnRequest.findFirst({ where: { OR: [{ id }, { returnCode: id }] }, include: this.include(true, undefined, false, undefined, managerDetail) });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu trả kho.');
     return record;
   }

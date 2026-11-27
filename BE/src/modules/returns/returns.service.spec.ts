@@ -273,16 +273,26 @@ await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, 
     const result = { result: 'PASS', conditionNote: 'Kho sạch' };
     await returns.updateInspection(request.id, first.id, result, staff);
     await expect(returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: ['data:image/png;base64,AAAA'] }, staff)).rejects.toBeInstanceOf(BadRequestException);
-    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: photos }, staff);
+    const evidenceLink = 'https://example.test/return.jpg';
+    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: photos, evidenceLink }, staff);
     await returns.updateInspection(request.id, first.id, { ...result, conditionNote: 'Kho sạch, cửa đã đóng' }, staff);
     const managerDetail = await returns.getManagerReturn(request.id, manager);
-    expect(managerDetail.inspections).toEqual(expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: photos })]));
+    const recorded = expect.objectContaining({ staffUserId: staff.id, photos, note: expect.stringContaining(evidenceLink) });
+    expect(managerDetail.inspections).toEqual(expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: photos, evidenceSubmissions: [recorded] })]));
+    await expect(returns.getManagerReturn(request.id, actor('no-facility-grant', 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(ForbiddenException);
     expect(managerDetail.inspections.find((item: { id: string }) => item.id === second.id)).not.toHaveProperty('inspectionPhotos');
     const customerDetail = await returns.getCustomerReturn(customerId, request.id);
     expect(customerDetail.inspections.find((item: { id: string }) => item.id === first.id)).not.toHaveProperty('inspectionPhotos');
     await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: [] }, staff);
     expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: [] })]),
+      expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: [], evidenceSubmissions: [recorded] })]),
+    );
+    await prisma.returnRequest.update({ where: { id: request.id }, data: { assignedStaffUserId: null } });
+    expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual([
+      expect.objectContaining({ id: first.id, evidenceSubmissions: [recorded] }),
+    ]);
+    expect((await returns.listStaffReturns({ page: 1, limit: 20 }, staff)).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: request.id })]),
     );
   });
 

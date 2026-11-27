@@ -65,6 +65,19 @@ export function isAssignedStaffWork(resource: string, row: WorkRow, userId: stri
       || row.status === 'REJECTED' && transferProblem(row).review.decision === 'CANCEL');
 }
 
+export function staffRecordedAt(resource: string, row: WorkRow, userId: string): string {
+  const evidenceDates = (record: WorkRow) => (Array.isArray(record.evidenceSubmissions) ? record.evidenceSubmissions : [])
+    .filter(item => item?.staffUserId === userId && typeof item.recordedAt === 'string')
+    .map(item => item.recordedAt as string);
+  if (resource === 'maintenance') return [...evidenceDates(row),
+    row.source === 'MANUAL' && (row.reportedBy as WorkRow | undefined)?.id === userId ? String(row.createdAt ?? '') : '',
+  ].sort().at(-1) ?? '';
+  if (resource === 'returns' && Array.isArray(row.inspections)) return row.inspections
+    .flatMap(item => [...evidenceDates(item), item?.inspectedBy?.id === userId ? String(item.inspectedAt ?? '') : ''])
+    .sort().at(-1) ?? '';
+  return '';
+}
+
 /** Receiving a request does not grant an employee authority to assign it. */
 export function staffNeedsAction(
   resource: string,

@@ -1012,6 +1012,7 @@ model ReturnInspection {
   conditionNote      String?
   issueNote          String?
   inspectionPhotos   Json?
+  evidenceSubmissions StaffEvidenceSubmission[]
   inspectedByUserId  String?
   inspectedBy        User?                   @relation("ReturnInspector", fields: [inspectedByUserId], references: [id], onDelete: Restrict)
   inspectedAt        DateTime?
@@ -1024,6 +1025,22 @@ model ReturnInspection {
   @@unique([returnRequestId, storageUnitId])
   @@index([storageUnitId, result])
   @@index([rentalContractId])
+}
+
+model StaffEvidenceSubmission {
+  id                   String @id @default(cuid())
+  returnInspectionId   String?
+  returnInspection     ReturnInspection? @relation(fields: [returnInspectionId], references: [id], onDelete: Cascade)
+  maintenanceRequestId String?
+  maintenanceRequest   MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  staffUserId          String
+  staffName            String
+  note                 String?
+  photos               Json
+  recordedAt          DateTime
+
+  @@index([returnInspectionId, staffUserId])
+  @@index([maintenanceRequestId, staffUserId])
 }
 
 model MaintenanceRequest {
@@ -1056,6 +1073,7 @@ model MaintenanceRequest {
   workCompletedAt          DateTime?
   workNote                 String?
   workPhotos               Json?
+  evidenceSubmissions      StaffEvidenceSubmission[]
   verificationNote         String?
   verifiedByUserId         String?
   verifiedBy               User?               @relation("MaintenanceVerifier", fields: [verifiedByUserId], references: [id], onDelete: Restrict)

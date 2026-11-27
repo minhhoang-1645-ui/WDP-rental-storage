@@ -4,7 +4,7 @@ import { activitySources } from '../../utils/activity';
 import { recordIdentity } from '../../utils/record-identity';
 import { physicalUnitLabel } from '../../utils/physical-units';
 import { transferProblem } from '../../utils/transfer-problem';
-import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction } from '../../utils/work-queue';
+import { isAssignedStaffWork, needsStaffAssignment, staffNeedsAction, staffRecordedAt } from '../../utils/work-queue';
 
 export const missedScheduleHelp = 'Việc có lịch hẹn đã đến giờ và vẫn chờ nhân viên xử lý.';
 
@@ -31,6 +31,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const row = records.get(entry.id);
     if (!row || !staffSourceNames.has(entry.kind)) return false;
     const assigned = isAssignedStaffWork(entry.kind, row, userId);
+    if (includeHistory && staffRecordedAt(entry.kind, row, userId)) return true;
     if (!assigned) return includeHistory && !entry.action && first(row, 'completedBy.id', 'resolvedBy.id') === userId;
     if (first(row, 'assignedStaff.accountStatus') === 'DISABLED') return false;
     const role = first(row, 'assignedStaff.role');
@@ -41,6 +42,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     const row = records.get(entry.id)!;
     const identity = staffRecordIdentity(row, entry.kind);
     const status = first(row, 'status');
+    const recordedAt = includeHistory ? staffRecordedAt(entry.kind, row, userId) : '';
     const recovery = entry.kind === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId;
     const phase = recovery ? 'ASSIGNED' : row.waitingForManager === true ? 'WAITING' : first(row, 'coordination.phase');
     const waitReason = row.waitingForManager === true ? 'MANAGER' : first(row, 'coordination.waitReason');
@@ -53,7 +55,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION';
     const actionable = !blocked && !waiting && entry.action
       && (entry.kind === 'damage-claims' || staffNeedsAction(entry.kind, row, userId));
-    const processed = !recovery && (phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
+    const processed = Boolean(recordedAt) || !recovery && (phase === 'STAFF_DONE' || !entry.action && (['COMPLETED', 'RESOLVED'].includes(status)
       || entry.kind === 'maintenance' && status === 'AWAITING_VERIFICATION'
       || entry.kind === 'returns' && Boolean(row.physicallyReturnedAt)
       || entry.kind === 'damage-claims' && Boolean(row.staffFacts)
@@ -70,7 +72,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
     };
     return {
       entry, status, phase, waitReason, scheduledAt, processed, blocked, waiting, actionable, actualCompletionAt, blockingReason: first(row, 'bookingBlockReason'),
-      title: recovery ? 'Thu hồi quyền truy cập kho' : titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
+      title: recovery ? 'Thu hồi quyền truy cập kho' : entry.kind === 'maintenance' && recordedAt && recordedAt === first(row, 'createdAt') ? 'Báo cáo sự cố' : titles[entry.kind] ?? staffSourceNames.get(entry.kind) ?? 'Xử lý hồ sơ',
       customer: identity.person || first(row, 'fullName'),
       unit: physicalUnitLabel(row, entry.kind),
       reference: first(row, 'reservation.reference'),
@@ -78,7 +80,7 @@ export function staffWorkItems(activity: ActivityState, userId?: string, include
       priority: first(row, 'priority'),
       facilityId: first(row, 'facility.id'),
       facilityName: first(row, 'facility.name'),
-      finishedAt: first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt',
+      finishedAt: recordedAt || first(row, 'physicallyReturnedAt', 'workCompletedAt', 'factsRecordedAt', 'resolvedAt', 'escalatedAt', 'completedAt',
         'handoverReport.problemReview.reviewedAt', 'scheduleAdjustment.at') || entry.at,
       timestamp: dueAt || scheduledAt || entry.at,
       overdue: actionable && !processed && Date.parse(scheduledAt) < now,

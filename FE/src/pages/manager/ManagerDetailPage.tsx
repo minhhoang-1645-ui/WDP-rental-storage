@@ -63,6 +63,7 @@ import { PolicySettlementActions } from '../../components/manager/PolicySettleme
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
+import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 
 export function ManagerDetailPage({ resource }: { resource: string }) {
   const { user } = useAuth();
@@ -298,6 +299,7 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
     <h2>{maintenance ? 'Nội dung sự cố' : 'Nội dung khách gửi'}</h2>
     <Facts items={[
       ...(maintenance && first(row, 'facility.name') ? [['Cơ sở', first(row, 'facility.name')] as [string, string]] : []),
+      ...(maintenance && first(row, 'reportedBy.fullName') ? [['Người báo cáo', first(row, 'reportedBy.fullName')], ['Thời điểm báo cáo', date(row.createdAt, true)]] as [string, string][] : []),
       ...(maintenance && incidentArea(row.commonArea) ? [['Khu vực chung', [incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(unitCode ? [['Kho', [unitCode, location].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(maintenance ? [['Khóa đặt thuê của phiếu', row.blocksUnit === true
@@ -312,6 +314,7 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
       {Boolean(row.description) && <p>{first(row, 'description')}</p>}
     </div>}
     {maintenance && <MaintenancePhotoGallery record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />}
+    {maintenance && <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />}
   </section>;
 }
 
@@ -343,13 +346,17 @@ const staffEvidenceTitles: Record<string, string> = {
 function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
   const title = staffEvidenceTitles[resource];
   if (!title) return null;
+  if (resource === 'maintenance' && rows(row.evidenceSubmissions).length > 0) return <section className="manager-section">
+    <h2>{title}</h2>
+    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} />
+  </section>;
   const report = object(row.handoverReport);
   const uploaded = resource === 'maintenance' ? row.workPhotos
     : resource === 'support-requests' ? row.resolutionPhotos : report.photos;
   const photos = Array.isArray(uploaded) ? uploaded.filter((value): value is string =>
     typeof value === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(value)) : [];
   const linkValues = resource === 'appointments' && Array.isArray(report.photoLinks) ? report.photoLinks
-    : resource === 'maintenance' ? [...first(row, 'workNote').matchAll(/^Chứng cứ: (https:\/\/[^\s]+)$/gm)].map(match => match[1]) : [];
+    : resource === 'maintenance' ? evidenceLinks(first(row, 'workNote')) : [];
   const links = linkValues.filter((value): value is string => typeof value === 'string' && /^https:\/\//i.test(value));
   const showMaintenanceResult = resource === 'maintenance' && ['AWAITING_VERIFICATION', 'COMPLETED'].includes(String(row.status));
   if (!photos.length && !links.length && !showMaintenanceResult) return null;
@@ -361,9 +368,7 @@ function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
     {photos.length > 0 && <div className="staff-handover-photos">
       {photos.map((photo, index) => <img key={index} src={photo} alt={title + ' ' + (index + 1)} loading="lazy" />)}
     </div>}
-    {links.length > 0 && <ul>
-      {links.map((href, index) => <li key={index}><a href={href} target="_blank" rel="noopener noreferrer">Mở liên kết ảnh {index + 1}</a></li>)}
-    </ul>}
+    <EvidenceLinks links={links} />
   </section>;
 }
 

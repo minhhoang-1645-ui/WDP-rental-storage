@@ -1,4 +1,5 @@
-import { first, type Row } from '../manager/portal-data';
+import { first, rows, type Row } from '../manager/portal-data';
+import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from './EvidenceLinks';
 
 export function inspectionPhotos(inspection: Row): string[] {
   return Array.isArray(inspection.inspectionPhotos) ? inspection.inspectionPhotos.filter((photo): photo is string =>
@@ -7,7 +8,12 @@ export function inspectionPhotos(inspection: Row): string[] {
 
 export function ReturnInspectionPhotos({ inspection }: { inspection: Row }) {
   const photos = inspectionPhotos(inspection);
-  const links = [...first(inspection, 'conditionNote').matchAll(/^Chứng cứ: (https:\/\/[^\s]+)$/gm)];
+  const links = evidenceLinks(first(inspection, 'conditionNote'));
+  const title = 'Ảnh kiểm tra kho ' + first(inspection, 'unit.unitCode');
+  if (rows(inspection.evidenceSubmissions).length > 0) return <div>
+    <h3>{title}</h3>
+    <EvidenceSubmissions value={inspection.evidenceSubmissions} title={title} />
+  </div>;
   if (!photos.length && !links.length) return null;
   return <div>
     <h3>Ảnh kiểm tra kho {first(inspection, 'unit.unitCode')}</h3>
@@ -15,7 +21,6 @@ export function ReturnInspectionPhotos({ inspection }: { inspection: Row }) {
       {photos.map((photo, index) => <img key={index} src={photo}
         alt={`Ảnh kiểm tra kho ${first(inspection, 'unit.unitCode')} (${index + 1})`} loading="lazy" />)}
     </div>}
-    {links.length > 0 && <ul>{links.map((match, index) =>
-      <li key={index}><a href={match[1]} target="_blank" rel="noreferrer">Mở liên kết ảnh {index + 1}</a></li>)}</ul>}
+    <EvidenceLinks links={links} />
   </div>;
 }

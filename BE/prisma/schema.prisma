@@ -151,6 +151,7 @@ enum PaymentMethod {
   BANK_TRANSFER
   CASH
   VNPAY
+  PAYOS
 }
 
 enum GuestBookingStatus {
@@ -163,6 +164,7 @@ enum GuestBookingStatus {
 
 enum PaymentProvider {
   VNPAY
+  PAYOS
 }
 
 enum OnlinePaymentStatus {
@@ -1436,6 +1438,12 @@ model PaymentSubmission {
 }
 
 model OnlinePaymentTransaction {
+  payosOrderCode        BigInt?             @unique
+  payosLinkId           String?             @unique
+  checkoutUrl           String?
+  expiresAt             DateTime?
+  providerCheckedAt     DateTime?
+  payosReceipts         PayosReceipt[]
   id                    String              @id @default(cuid())
   invoiceId             String
   invoice               Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
@@ -1461,6 +1469,8 @@ model OnlinePaymentTransaction {
 }
 
 model OnlinePaymentReconciliation {
+  payosReceiptId String? @unique
+  payosReceipt PayosReceipt? @relation(fields: [payosReceiptId], references: [id], onDelete: Restrict)
   paymentSubmissionId String? @unique
   paymentSubmission PaymentSubmission? @relation(fields:[paymentSubmissionId],references:[id],onDelete:Restrict)
   externalReferenceKey String? @unique
@@ -1481,6 +1491,20 @@ model OnlinePaymentReconciliation {
 
   @@index([status, createdAt])
   @@index([reviewedByUserId, reviewedAt])
+}
+
+model PayosReceipt {
+  id            String @id @default(cuid())
+  orderCode     BigInt
+  paymentLinkId String
+  reference     String @unique
+  amount        BigInt
+  receivedAt    DateTime
+  transactionId String?
+  transaction   OnlinePaymentTransaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  reconciliation OnlinePaymentReconciliation?
+
+  @@index([transactionId])
 }
 
 model HandoverAppointment {

@@ -12,8 +12,11 @@ import { useDraftGuard } from '@/services/live-events';
 import { isScheduledRenewalInvoice, invoicePaymentBlockedBySchedule, paymentWindowClosed } from '@/utils/payment-state';
 import { OnlinePayment } from './online-payment';
 
-export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, compactSummary = false }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void; onlineOnly?: boolean; compactSummary?: boolean }) {
+export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly: onlineOnlyProp = true, compactSummary = false }: { invoice: Row; refresh: () => void; onNotice: (message: string) => void; onlineOnly?: boolean; compactSummary?: boolean }) {
   const submissions = useResource<Row>('/customer/payment-submissions', true), bank = useResource<Row>('/customer/payment-config');
+  const onlineOnly = onlineOnlyProp || bank.data?.cutover === true;
+  const gateway = bank.data?.payosConfigured === true ? 'payOS' : 'VNPay';
+  const configured = bank.data?.payosConfigured === true || bank.data?.vnpayConfigured === true;
   const [form, setForm] = useState<FormAction>(), [onlinePending, setOnlinePending] = useState(false), [now, setNow] = useState(Date.now);
   const [showTransfer, setShowTransfer] = useState(false);
   const invoiceId = idOf(invoice), balance = Number(invoice.balanceDue);
@@ -43,10 +46,10 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, 
     {holdExpired && <Text accessibilityRole="alert" style={styles.error}>Đã hết hạn giữ kho. Kiểm tra trạng thái yêu cầu; nếu đã chuyển tiền, gửi hỗ trợ để NestBox đối chiếu.</Text>}
     {scheduled && <Text style={styles.copy}>Hóa đơn gia hạn chưa đến kỳ thanh toán.</Text>}
     {invoice.closeoutPaymentAllowed === true && balance > 0 && isScheduledRenewalInvoice(invoice, now) && <Text style={styles.copy}>Kho đã được duyệt trả trước hạn. Bạn có thể thanh toán sớm kỳ này để tất toán toàn bộ công nợ trước khi trả kho.</Text>}
-    <OnlinePayment paid={invoice.status === 'PAID'} invoiceType={String(invoice.type)} invoiceId={invoiceId} eligible={bank.data?.vnpayConfigured === true && payable && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type))} disabled={pending || submissions.loading || Boolean(submissions.error) || Boolean(form)} refresh={refresh} onWaitingChange={setOnlinePending} />
-    {payable && !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true && <Text accessibilityRole="alert" style={styles.copy}>VNPay hiện chưa khả dụng. Vui lòng thử lại hoặc gửi hỗ trợ về hóa đơn.</Text>}
+    <OnlinePayment paid={invoice.status === 'PAID'} invoiceType={String(invoice.type)} invoiceId={invoiceId} actionTitle={'Thanh toán trực tuyến qua ' + gateway} eligible={configured && payable && ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type))} disabled={pending || submissions.loading || Boolean(submissions.error) || Boolean(form)} refresh={refresh} onWaitingChange={setOnlinePending} />
+    {payable && !bank.loading && !bank.error && !configured && <Text accessibilityRole="alert" style={styles.copy}>Thanh toán trực tuyến hiện chưa khả dụng. Vui lòng thử lại hoặc gửi hỗ trợ về hóa đơn.</Text>}
     {payable && !onlineOnly && bank.data?.vnpayConfigured === true && !pending && !onlinePending && <Button title={showTransfer ? 'Ẩn hướng dẫn chuyển khoản' : 'Chuyển khoản ngân hàng'} variant="secondary" disabled={Boolean(form)} onPress={() => setShowTransfer(value => !value)}/>}
-    {submissions.loading ? <LoadingState layout="compact" /> : submissions.error ? <ErrorState message={submissions.error} onRetry={submissions.refresh} /> : pending ? <Text style={styles.copy}>Khoản chuyển khoản đang được kiểm tra hoặc đối soát. Không chuyển thêm tiền cho cùng khoản này.</Text> : onlinePending ? <Text style={styles.copy}>Đang theo dõi phiên VNPay. Vui lòng không chuyển khoản thêm cho cùng hóa đơn.</Text> : payable && !onlineOnly && (showTransfer || bank.data?.vnpayConfigured !== true) && <>
+    {submissions.loading ? <LoadingState layout="compact" /> : submissions.error ? <ErrorState message={submissions.error} onRetry={submissions.refresh} /> : pending ? <Text style={styles.copy}>Khoản chuyển khoản đang được kiểm tra hoặc đối soát. Không chuyển thêm tiền cho cùng khoản này.</Text> : onlinePending ? <Text style={styles.copy}>Đang theo dõi phiên thanh toán. Vui lòng không chuyển khoản thêm cho cùng hóa đơn.</Text> : payable && !onlineOnly && (showTransfer || bank.data?.vnpayConfigured !== true) && <>
       {bank.loading ? <LoadingState layout="compact" /> : bank.error ? <ErrorState message={bank.error} onRetry={bank.refresh} /> : bank.data?.configured ? <>
         <Facts values={[["Ngân hàng", bank.data.bankName], ["Chủ tài khoản", bank.data.accountName], ["Số tài khoản", bank.data.accountNumber], ["Nội dung chuyển khoản", invoice.invoiceCode]]} />
         <Field title="Số tiền chuyển khoản (đ)" numeric value={qrAmount} onChange={setQrAmount} maxLength={13} disabled={busy || Boolean(form)} />
@@ -55,6 +58,7 @@ export function InvoicePayment({ invoice, refresh, onNotice, onlineOnly = true, 
         {!form && <Button title="Tôi đã chuyển khoản" disabled={busy || !qrPayload} onPress={() => setForm(transfer())} />}
       </> : <Text style={styles.copy}>{bank.data?.vnpayConfigured === true ? 'Chuyển khoản chưa khả dụng. Bạn có thể thanh toán qua VNPay hoặc gửi hỗ trợ.' : 'Thanh toán trực tuyến hiện chưa khả dụng. Bạn có thể thanh toán tại cơ sở hoặc gửi hỗ trợ về hóa đơn để được hướng dẫn. Chỉ khi NestBox xác nhận thu tiền, hóa đơn mới được cập nhật.'}</Text>}
     </>}
-    {form ? <OperationForm key={form.title} action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); onNotice('Đã gửi. NestBox sẽ kiểm tra và cập nhật kết quả.'); refresh(); }} /> : invoiceId ? <Navigation compact title="Hỗ trợ về hóa đơn" path={supportPath + '/new?invoiceId=' + encodeURIComponent(invoiceId)} /> : null}
+    {payable && bank.data?.cutover === true && <Text style={styles.copy}>Thanh toán tiền mặt tại cơ sở.</Text>}
+    {form && !onlineOnly ? <OperationForm key={form.title} action={form} onClose={() => setForm(undefined)} onSaved={() => { setForm(undefined); onNotice('Đã gửi. NestBox sẽ kiểm tra và cập nhật kết quả.'); refresh(); }} /> : invoiceId ? <Navigation compact title="Hỗ trợ về hóa đơn" path={supportPath + '/new?invoiceId=' + encodeURIComponent(invoiceId)} /> : null}
   </Panel>;
 }

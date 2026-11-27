@@ -1,10 +1,11 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { businessToday } from '../../business-date.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { pricingPolicyValidators, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 import { invoiceMoney } from './invoice-breakdown.js';
 import { ONLINE_PAYMENT_TTL_MS } from './online-payment-policy.js';
+import { PayosPaymentService } from './payos-payment.service.js';
 
 const dayMs = 86_400_000;
 
@@ -33,7 +34,7 @@ export class OverduePaymentWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private readonly logger = new Logger(OverduePaymentWorker.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly payos?: PayosPaymentService) {}
 
   onModuleInit() {
     if (process.env.NODE_ENV === 'test' || process.env.DATABASE_CONNECT_ON_STARTUP === 'false') return;
@@ -49,6 +50,7 @@ export class OverduePaymentWorker implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
+      await this.payos?.syncClosedInvoices(now).catch(() => this.logger.warn('Could not synchronize closed payOS sessions'));
       let lastId: string | undefined;
       while (true) {
         const invoices: { id: string }[] = await this.prisma.invoice.findMany({
@@ -93,6 +95,7 @@ export class OverduePaymentWorker implements OnModuleInit, OnModuleDestroy {
         tx.onlinePaymentTransaction.count({ where: { invoiceId: id, OR: [
           { status: 'PENDING', createdAt: { gt: new Date(+now - ONLINE_PAYMENT_TTL_MS) } },
           { reconciliation: { is: { status: { in: ['PENDING_REVIEW', 'REFUND_REQUIRED'] } } } },
+          { payosReceipts: { some: { reconciliation: { is: { status: { in: ['PENDING_REVIEW', 'REFUND_REQUIRED'] } } } } } },
         ] } }),
       ]);
       if (bank || online) return;

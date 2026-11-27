@@ -93,7 +93,7 @@ export class ManagerBillingController {
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'BANK-REF-123' })
-  @ApiQuery({ name: 'method', required: false, enum: [...paymentMethods, 'VNPAY'] })
+  @ApiQuery({ name: 'method', required: false, enum: [...paymentMethods, 'VNPAY', 'PAYOS'] })
   @ApiQuery({ name: 'from', required: false, example: '2026-11-01' })
   @ApiQuery({ name: 'to', required: false, example: '2026-11-30' })
   @ApiOkResponse({ description: 'Danh sách Payment.' })
@@ -174,7 +174,7 @@ export class ManagerBillingController {
   private paymentQuery(query: Record<string, unknown>): PaymentListQuery {
     const common = this.commonQuery(query);
     const method = this.optional(query.method, 'method');
-    if (method && method !== 'VNPAY' && !paymentMethods.includes(method as (typeof paymentMethods)[number])) throw new BadRequestException('Phương thức thanh toán không hợp lệ.');
+    if (method && method !== 'VNPAY' && method !== 'PAYOS' && !paymentMethods.includes(method as (typeof paymentMethods)[number])) throw new BadRequestException('Phương thức thanh toán không hợp lệ.');
     const from = this.optional(query.from, 'Từ ngày');
     const to = this.optional(query.to, 'Đến ngày');
     if ((from && !isIsoCalendarDate(from)) || (to && !isIsoCalendarDate(to)) || (from && to && from > to))

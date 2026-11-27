@@ -12,9 +12,9 @@ import { useApiResource } from '../../services/useApiResource';
 import { financeReviewTypes, managerPaymentsPath } from '../../utils/manager-finance-review';
 import './manager-payments.css';
 
-type PaymentPage = Page<Row> & { summary: { total: string; online: string; cash: string } };
+type PaymentPage = Page<Row> & { summary: { total: string; online: string; cash: string; transfer: string } };
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
-const methods: [string, string][] = [['', 'Tất cả phương thức'], ['VNPAY', 'VNPay'], ['CASH', 'Tiền mặt'], ['BANK_TRANSFER', 'Chuyển khoản ngân hàng']];
+const methods: [string, string][] = [['', 'Tất cả phương thức'], ['PAYOS', 'payOS'], ['VNPAY', 'VNPay'], ['CASH', 'Tiền mặt'], ['BANK_TRANSFER', 'Chuyển khoản ngân hàng']];
 
 export function ManagerPaymentsPage() {
   const { user } = useAuth();
@@ -63,10 +63,10 @@ export function ManagerPaymentsPage() {
         disabled={payments.refreshing || submissions.refreshing || pending.refreshing || refund.refreshing}><RefreshCw size={16} aria-hidden="true" /> Làm mới</button>
     </PageHeader>
     <dl className="manager-payment-totals">
-      {([['total', 'Tổng khoản thu'], ['online', 'Thanh toán trực tuyến'], ['cash', 'Tiền mặt']] as const).map(([key, title]) =>
-        <div key={key}><dt>{title}</dt><dd>{summary ? currency.format(BigInt(summary[key])) : '—'}</dd></div>)}
+      {([['total', 'Tổng khoản thu'], ['online', 'Thanh toán trực tuyến'], ['cash', 'Tiền mặt'], ['transfer', 'Chuyển khoản lịch sử']] as const).map(([key, title]) =>
+        <div key={key}><dt>{title}</dt><dd>{summary?.[key] !== undefined ? currency.format(BigInt(summary[key])) : '—'}</dd></div>)}
     </dl>
-    <p className="manager-payment-caption">Tổng gồm chuyển khoản đã xác minh. Thanh toán trực tuyến hiện gồm VNPay. Các số liệu chưa trừ khoản hoàn.</p>
+    <p className="manager-payment-caption">Thanh toán trực tuyến gồm payOS và VNPay lịch sử. Các số liệu chưa trừ khoản hoàn.</p>
     <div className="portal-toolbar" role="group" aria-label="Nội dung khoản thu">
       <button type="button" className={exceptions ? 'button-secondary' : 'button-primary'} aria-pressed={!exceptions} onClick={() => selectTab(false)}>Lịch sử khoản thu</button>
       <button type="button" className={exceptions ? 'button-primary' : 'button-secondary'} aria-pressed={exceptions} onClick={() => selectTab(true)}>
@@ -94,7 +94,7 @@ export function ManagerPaymentsPage() {
                 <td>{first(row, 'invoice.reservation.customer.fullName') || '—'}</td>
                 <td>{first(row, 'unitCode') || '—'}</td>
                 <td>{first(row, 'invoice.invoiceCode')}</td>
-                <td>{row.method === 'VNPAY' ? 'VNPay' : label(row.method)}</td>
+                <td>{row.method === 'PAYOS' ? 'payOS' : row.method === 'VNPAY' ? 'VNPay' : label(row.method)}</td>
                 <td>{money(row.amount)}</td>
                 <td>{date(row.receivedAt, true)}</td>
                 <td><Link to={managerPaymentsPath + '/' + encodeURIComponent(first(row, 'id'))}

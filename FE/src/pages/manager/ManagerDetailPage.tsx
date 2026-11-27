@@ -868,6 +868,7 @@ function DetailContent({ row, resource, staff }: { row: Row; resource: string; s
               ["Mã kho", first(row, "unitCode") || "—"],
               ["Mã giao dịch", first(row, "paymentCode") || "—"],
               ...(row.method === 'VNPAY' ? [['Tham chiếu VNPay', first(row, 'gatewayReference', 'reference') || '—'] as [string, string]] : []),
+              ...(row.method === 'PAYOS' ? [['Tham chiếu payOS', first(row, 'gatewayReference', 'reference') || '—'] as [string, string]] : []),
               ...(row.method === 'BANK_TRANSFER' ? [['Tham chiếu chuyển khoản', first(row, 'reference') || '—'] as [string, string]] : []),
               ...(row.method === 'CASH' ? [['Người ghi nhận', first(row, 'recordedBy.fullName') || '—'] as [string, string]] : []),
               ["Thời gian ghi nhận", date(row.receivedAt, true)],

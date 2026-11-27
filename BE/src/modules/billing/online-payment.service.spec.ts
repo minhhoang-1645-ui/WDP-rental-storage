@@ -204,7 +204,7 @@ describe('OnlinePaymentService VNPay status and callbacks', () => {
 
     await expect(service.returnStatus({ vnp_TxnRef: 'WDP-ORDER-1' })).resolves.toMatchObject({ valid: true, transaction: { status: 'CANCELLED' }, invoice: { status: 'OPEN' } });
     expect(prisma.onlinePaymentTransaction.updateMany).toHaveBeenCalledWith({
-      where: { merchantOrderRef: 'WDP-ORDER-1', status: { in: ['PENDING', 'EXPIRED'] } },
+      where: { merchantOrderRef: 'WDP-ORDER-1', provider: 'VNPAY', status: { in: ['PENDING', 'EXPIRED'] } },
       data: { status: 'CANCELLED', responseCode: '24' },
     });
     expect(billing.recordVerifiedOnlinePayment).not.toHaveBeenCalled();

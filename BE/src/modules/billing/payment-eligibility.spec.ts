@@ -22,9 +22,9 @@ describe('invoice signing guidance', () => {
   });
 });
 
-it('allows online payment of policy charges with a source while preserving deposit settlement payment rules', () => {
-  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE', sourceInvoiceId: 'base' } })).toBe(true);
-  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PERIOD_CLOSEOUT_V1', returnRequestId: 'return' } })).toBe(true);
-  expect(supportsOnlinePayment({ type: 'SETTLEMENT', pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE' } })).toBe(false);
-  expect(supportsOnlinePayment({ type: 'SETTLEMENT', depositSettlementId: 'deposit' })).toBe(false);
+it('keeps settlement invoices out of online checkout until their posting flow is supported', () => {
+  expect(supportsOnlinePayment({ type: 'SETTLEMENT' })).toBe(false);
+  expect(supportsOnlinePayment({ type: 'INITIAL' })).toBe(true);
+  expect(supportsOnlinePayment({ type: 'RECURRING' })).toBe(true);
+  expect(supportsOnlinePayment({ type: 'RENEWAL' })).toBe(true);
 });

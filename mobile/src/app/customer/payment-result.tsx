@@ -10,6 +10,7 @@ import { formatDate, formatMoney } from '@/utils/format';
 type Result = {
   transactionId: string; merchantOrderRef: string; status: 'SUCCESS' | 'FAILED' | 'PENDING'; providerStatus: string; amount: number;
   invoice: { id: string; invoiceCode: string; status: string; balanceDue: number };
+  provider?: string;
   payment?: { amount: number; receivedAt: string; paymentCode: string } | null;
   reconciliation?: { status: string } | null;
 };
@@ -80,11 +81,11 @@ export default function PaymentResult() {
     <View style={[s.icon, success && s.green]}>{success ? <Check size={32} color="#18773A" /> : failed ? <Info size={30} color="#0758DC" /> : <Clock size={30} color="#0758DC" />}</View>
     <Text accessibilityRole="header" style={[s.title, success && { color: '#18773A' }]}>{title}</Text>
     {checking && !success && !failed ? <ActivityIndicator color="#0758DC" /> : null}
-    <Text style={s.copy}>{!contextValid ? 'Liên kết giao dịch chưa đầy đủ. Hãy kiểm tra trong mục hóa đơn.' : error || (success ? 'NestBox đã ghi nhận khoản thanh toán.' : failed ? (result?.providerStatus === 'CANCELLED' ? 'Bạn đã hủy phiên VNPay.' : result?.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : 'Giao dịch chưa được ghi nhận.') : result?.reconciliation ? 'NestBox đang đối chiếu giao dịch. Hãy theo dõi kết quả trước khi thanh toán lại.' : checking ? 'NestBox đang kiểm tra giao dịch. Vui lòng đợi trong giây lát.' : 'Bạn có thể kiểm tra lại hoặc trở về hóa đơn.')}</Text>
+    <Text style={s.copy}>{!contextValid ? 'Liên kết giao dịch chưa đầy đủ. Hãy kiểm tra trong mục hóa đơn.' : error || (success ? 'NestBox đã ghi nhận khoản thanh toán.' : failed ? (result?.providerStatus === 'CANCELLED' ? 'Phiên thanh toán đã được hủy.' : result?.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : 'Giao dịch chưa được ghi nhận.') : result?.reconciliation ? 'NestBox đang đối chiếu giao dịch. Hãy theo dõi kết quả trước khi thanh toán lại.' : checking ? 'NestBox đang kiểm tra giao dịch. Vui lòng đợi trong giây lát.' : 'Bạn có thể kiểm tra lại hoặc trở về hóa đơn.')}</Text>
     {result ? <View style={s.card}>
       <Text style={s.label}>{result.invoice.invoiceCode}</Text>
       <Text style={s.amount}>{formatMoney(result.payment?.amount ?? result.amount)}</Text>
-      <Text style={s.label}>VNPay</Text>
+      <Text style={s.label}>{result.provider === 'PAYOS' ? 'payOS' : 'VNPay'}</Text>
       {result.payment?.receivedAt ? <Text style={s.label}>{formatDate(result.payment.receivedAt, true)}</Text> : null}
       {result.payment?.paymentCode ? <Text selectable style={s.label}>{result.payment.paymentCode}</Text> : null}
       {success && result.invoice.status === 'PAID' ? <Text style={s.label}>Hóa đơn đã thanh toán</Text> :

@@ -124,6 +124,9 @@ export async function inspectFoundationDatabase(
       'OnlinePaymentReconciliation.externalReferenceKey',
       'OnlinePaymentReconciliation.onlinePaymentTransactionId',
       'OnlinePaymentReconciliation.paymentSubmissionId',
+      'OnlinePaymentReconciliation.payosReceiptId',
+      ...['payosOrderCode', 'payosLinkId', 'checkoutUrl', 'expiresAt', 'providerCheckedAt'].map(name => 'OnlinePaymentTransaction.' + name),
+      ...['orderCode', 'paymentLinkId', 'reference', 'amount', 'receivedAt', 'transactionId'].map(name => 'PayosReceipt.' + name),
     ];
     const missingColumns = requiredColumns.filter((c) => !columns.includes(c));
     const receiptColumns = (

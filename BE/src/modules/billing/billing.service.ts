@@ -28,7 +28,7 @@ export interface PaymentListQuery {
   page: number;
   limit: number;
   search?: string;
-  method?: 'BANK_TRANSFER' | 'CASH' | 'VNPAY';
+  method?: 'BANK_TRANSFER' | 'CASH' | 'VNPAY' | 'PAYOS';
   from?: string;
   to?: string;
 }
@@ -250,6 +250,13 @@ export class BillingService {
   async listManagerPayments(query: PaymentListQuery, actor: PublicUser) {
     const localStart = (day: string) => new Date(day + 'T00:00:00+07:00');
     const term = { contains: query.search, mode: 'insensitive' } as const;
+    const snapshotMatches = query.search ? await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Invoice" AS invoice WHERE EXISTS (
+        SELECT 1 FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(invoice."pricingSnapshot" #> '{breakdown,units}') = 'array'
+            THEN invoice."pricingSnapshot" #> '{breakdown,units}' ELSE '[]'::jsonb END
+        ) AS unit WHERE strpos(lower(unit ->> 'unitCode'), lower(${query.search})) > 0
+      )` : [];
     const where: Prisma.PaymentWhereInput = {
       AND:[{invoice:invoiceFacilityScope(actor)}],
       ...(query.method ? { method: query.method } : {}),
@@ -262,6 +269,8 @@ export class BillingService {
         { reference: { contains: query.search, mode: 'insensitive' } },
         { onlinePaymentTransaction: { OR: [{ providerTransactionId: term }, { merchantOrderRef: term }] } },
         { invoice: { renewalRequest: { rentalContract: { reservationUnit: { storageUnit: { unitNumber: term } } } } } },
+        { invoiceId: { in: snapshotMatches.map(row => row.id) } },
+        { invoice: { depositSettlement: { returnRequest: { inspections: { some: { storageUnit: { unitNumber: term } } } } } } },
         { invoice: { invoiceCode: { contains: query.search, mode: 'insensitive' } } },
         { invoice: { reservation: { reservationCode: { contains: query.search, mode: 'insensitive' } } } },
         { invoice: { reservation: { customer: { fullName: { contains: query.search, mode: 'insensitive' } } } } },
@@ -275,7 +284,7 @@ export class BillingService {
     const methodAmount = (method: PaymentListQuery['method']) => amounts.find(item => item.method === method)?._sum.amount ?? 0n;
     return { ...result, summary: {
       total: amounts.reduce((sum, item) => sum + (item._sum.amount ?? 0n), 0n).toString(),
-      online: methodAmount('VNPAY').toString(), cash: methodAmount('CASH').toString(),
+      online: (methodAmount('VNPAY') + methodAmount('PAYOS')).toString(), transfer: methodAmount('BANK_TRANSFER').toString(), cash: methodAmount('CASH').toString(),
     } };
   }
 
@@ -309,6 +318,11 @@ export class BillingService {
         if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
         if (parsed.amount > invoice.balanceDue) throw new BadRequestException('Số tiền thanh toán không được vượt quá số dư hóa đơn.');
 
+        if ((process.env.PAYOS_ENABLED === 'true' || process.env.PAYOS_CUTOVER === 'true') && parsed.method !== 'CASH')
+          throw new ConflictException('Chỉ ghi nhận tiền mặt cho giao dịch mới.');
+        if (parsed.method === 'CASH' && (process.env.PAYOS_ENABLED === 'true' || process.env.PAYOS_CUTOVER === 'true')
+          && await tx.onlinePaymentTransaction.findFirst({ where: { invoiceId: invoice.id, provider: 'PAYOS', status: 'PENDING', expiresAt: { gt: new Date() } }, select: { id: true } }))
+          throw new ConflictException('Hóa đơn có phiên payOS đang hoạt động. Kiểm tra phiên trước khi thu tiền mặt.');
         if(parsed.method==='BANK_TRANSFER') await this.assertUnusedBankReference(tx,parsed.reference!);
         const sequence = await tx.payment.count({ where: { invoiceId: invoice.id } }) + 1;
         const payment = await tx.payment.create({
@@ -342,7 +356,8 @@ export class BillingService {
         if (parsed.method === 'BANK_TRANSFER') throw new ConflictException('Giao dịch ngân hàng này đã được ghi nhận cho một hóa đơn khác.');
       }
       if (transaction && this.isPrismaCode(error, 'P2002') && parsed.method === 'BANK_TRANSFER') throw new ConflictException('Giao dịch ngân hàng này đã được ghi nhận cho một hóa đơn khác.');
-      if (this.isPrismaCode(error, 'P2034')) throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
+      if (this.isPrismaCode(error, 'P2034') || this.isRawTransactionConflict(error))
+        throw new ConflictException('Hóa đơn vừa được cập nhật. Vui lòng tải lại và thử lại.');
       throw error;
     }
   }
@@ -521,7 +536,8 @@ export class BillingService {
     }, { maxWait: 10000, timeout: 20000 });
   }
 
-  async recordVerifiedOnlinePayment(tx: Prisma.TransactionClient, invoice: any, transaction: any, providerTransactionId: string | null) {
+  async recordVerifiedOnlinePayment(tx: Prisma.TransactionClient, invoice: any, transaction: any, providerTransactionId: string | null, receivedAt?: Date) {
+    const method = transaction.provider === 'PAYOS' ? 'PAYOS' : 'VNPAY';
     if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
     const existing = await tx.payment.findUnique({ where: { onlinePaymentTransactionId: transaction.id } });
     if (existing) return existing;
@@ -530,7 +546,7 @@ export class BillingService {
     if (invoice.status === 'PAID' || invoice.balanceDue === 0n) throw new ConflictException('Hóa đơn đã được thanh toán đầy đủ.');
     if (transaction.amount !== invoice.balanceDue) throw new ConflictException({ code: 'PAYMENT_AMOUNT_MISMATCH', message: 'Số tiền giao dịch không khớp số dư hóa đơn.' });
     const sequence = await tx.payment.count({ where: { invoiceId: invoice.id } }) + 1;
-    const payment = await tx.payment.create({ data: { paymentCode: `${invoice.invoiceCode}-P${String(sequence).padStart(2, '0')}`, invoiceId: invoice.id, amount: transaction.amount, method: 'VNPAY', reference: providerTransactionId ?? transaction.merchantOrderRef, note: 'Verified automatically by VNPAY IPN.', recordedByUserId: null, onlinePaymentTransactionId: transaction.id, idempotencyKey: `vnpay:${transaction.id}` } });
+    const payment = await tx.payment.create({ data: { paymentCode: `${invoice.invoiceCode}-P${String(sequence).padStart(2, '0')}`, invoiceId: invoice.id, amount: transaction.amount, method, receivedAt, reference: providerTransactionId ?? transaction.merchantOrderRef, note: 'Verified automatically by ' + method, recordedByUserId: null, onlinePaymentTransactionId: transaction.id, idempotencyKey: `${method.toLowerCase()}:${transaction.id}` } });
     await this.applyInvoicePayment(tx, invoice, transaction.amount, null);
     return payment;
   }
@@ -836,6 +852,9 @@ export class BillingService {
       ...(managerView ? { onlinePaymentTransaction: { select: { providerTransactionId: true, merchantOrderRef: true } } } : {}),
       invoice: { include: {
         ...(managerView ? {
+          depositSettlement: { select: { returnRequest: { select: { inspections: {
+            select: { storageUnit: { select: { unitNumber: true } } },
+          } } } } },
           renewalRequest: {
             select: {
               rentalContract: {
@@ -864,6 +883,7 @@ export class BillingService {
       invoiceCode: record.invoiceCode,
       signing: invoiceSigningRequirements(record),
       onlinePaymentSupported: supportsOnlinePayment(record),
+      ...(includeCustomer ? { cashOnly: process.env.PAYOS_ENABLED === 'true' || process.env.PAYOS_CUTOVER === 'true' } : {}),
       type: record.type,
       billingCycle: record.billingCycle,
       renewalCycle: record.renewalCycle,
@@ -920,6 +940,10 @@ export class BillingService {
   }
 
   private toPayment(record: any, includeCustomer: boolean) {
+    const snapshot = includeCustomer ? savedInvoiceBreakdown(record.invoice.pricingSnapshot, record.invoice) : null;
+    const unitCodes: string[] = snapshot?.units.map(unit => unit.unitCode) ??
+      record.invoice.depositSettlement?.returnRequest.inspections.map((entry: { storageUnit: { unitNumber: string } }) => entry.storageUnit.unitNumber) ??
+      [record.invoice.renewalRequest?.rentalContract?.reservationUnit.storageUnit.unitNumber].filter(Boolean);
     return {
       id: record.id,
       paymentCode: record.paymentCode,
@@ -929,7 +953,7 @@ export class BillingService {
       note: record.note,
       receivedAt: record.receivedAt.toISOString(),
       ...(includeCustomer && Object.hasOwn(record.invoice, 'renewalRequest') ? {
-        unitCode: record.invoice.renewalRequest?.rentalContract?.reservationUnit.storageUnit.unitNumber ?? null,
+        unitCode: [...new Set(unitCodes)].join(', ') || null,
         gatewayReference: record.onlinePaymentTransaction?.providerTransactionId ?? record.onlinePaymentTransaction?.merchantOrderRef ?? null,
       } : {}),
       invoice: {
@@ -977,5 +1001,12 @@ export class BillingService {
 
   private isPrismaCode(error: unknown, code: string) {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
+  }
+
+  private isRawTransactionConflict(error: unknown) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2010') return false;
+    const driver = error.meta?.driverAdapterError as { cause?: { originalCode?: string } } | undefined;
+    const sqlState = driver?.cause?.originalCode ?? error.meta?.code;
+    return sqlState === '40001' || sqlState === '40P01';
   }
 }

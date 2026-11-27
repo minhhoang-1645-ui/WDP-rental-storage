@@ -67,6 +67,7 @@ import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointments
 import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
 import { CustomerPaymentsPage } from "../pages/customer/CustomerPaymentsPage";
 import { CustomerVnpayReturnPage } from "../pages/customer/CustomerVnpayReturnPage";
+import { PayosReturnPage } from "../pages/customer/PayosReturnPage";
 import { MobileVnpayReturnPage } from "../pages/customer/MobileVnpayReturnPage";
 import { CustomerRenewalsPage } from "../pages/customer/CustomerRenewalsPage";
 import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
@@ -134,6 +135,8 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/customer/payments/vnpay-return/mobile/:invoiceId" element={<MobileVnpayReturnPage />} />
+      <Route path="/customer/payments/payos-return/mobile" element={<PayosReturnPage mobile />} />
+      <Route path="/customer/payments/payos-return" element={<PayosReturnPage />} />
       <Route element={<PublicLayout />}>
         <Route path="claim-booking" element={<ClaimBookingPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />

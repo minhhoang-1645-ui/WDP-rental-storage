@@ -50,7 +50,9 @@ export function ManagerActions({
   const [note, setNote] = useState(first(row, "internalNotes"));
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("BANK_TRANSFER");
+  const cashOnly = resource === 'invoices' && row.cashOnly === true;
+  const [selectedMethod, setMethod] = useState("BANK_TRANSFER");
+  const method = cashOnly ? 'CASH' : selectedMethod;
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
@@ -149,7 +151,7 @@ export function ManagerActions({
       <label className="field-label">
         Phương thức
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="BANK_TRANSFER">Chuyển khoản</option>
+          {!cashOnly && <option value="BANK_TRANSFER">Chuyển khoản</option>}
           <option value="CASH">Tiền mặt</option>
         </select>
       </label>

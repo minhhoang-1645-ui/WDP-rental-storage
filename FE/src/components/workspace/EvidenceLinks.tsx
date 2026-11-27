@@ -1,6 +1,7 @@
 import { date, first, rows } from '../manager/portal-data';
 import { maintenanceMoney } from '../manager/MaintenanceCosts';
 import { DetailDisclosure } from './DetailDisclosure';
+import { MaintenanceRepairFiles } from '../manager/MaintenanceRepairFiles';
 
 export function evidenceLinks(note: string) {
   return [...note.matchAll(/^Chứng cứ: (https:\/\/[^\s]+)$/gm)].map(match => match[1]);
@@ -11,7 +12,8 @@ export function EvidenceLinks({ links, label = 'Mở liên kết ảnh' }: { lin
   return <ul>{[...new Set(links)].map((href, index) =>
     <li key={href}><a href={href} target="_blank" rel="noopener noreferrer">{label} {index + 1}</a></li>)}</ul>;
 }
-export function EvidenceSubmissions({ value, title, maintenance = false }: { value: unknown; title: string; maintenance?: boolean }) {
+export function EvidenceSubmissions({ value, title, maintenanceRecord }: { value: unknown; title: string; maintenanceRecord?: string }) {
+  const maintenance = Boolean(maintenanceRecord);
   const submissions = rows(value).map(submission => {
     const photos = Array.isArray(submission.photos) ? submission.photos.filter((photo): photo is string =>
       typeof photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(photo)) : [];
@@ -30,6 +32,10 @@ export function EvidenceSubmissions({ value, title, maintenance = false }: { val
       {maintenance && submission.maintenanceCostVnd != null &&
         <p className="record-text">Chi phí đề xuất của lần sửa này <strong>{maintenanceMoney(submission.maintenanceCostVnd)}</strong></p>}
       <EvidenceLinks links={receipts} label="Mở chứng từ" />
+      {maintenanceRecord && <>
+        <MaintenanceRepairFiles record={maintenanceRecord} submission={submission} kind="PHOTO" />
+        <MaintenanceRepairFiles record={maintenanceRecord} submission={submission} kind="RECEIPT" />
+      </>}
       {photos.length > 0 && <div className="staff-handover-photos">{photos.map((photo, index) =>
         <img key={index} src={photo} alt={`${title} ${index + 1}`} loading="lazy" />)}</div>}
       <EvidenceLinks links={links} />

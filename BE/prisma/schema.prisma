@@ -1047,9 +1047,23 @@ model StaffEvidenceSubmission {
   maintenanceCostLinks String[] @default([])
   maintenanceRejectedAt DateTime?
   maintenanceRejectionReason String?
+  repairAttachments    MaintenanceRepairAttachment[]
 
   @@index([returnInspectionId, staffUserId])
   @@index([maintenanceRequestId, staffUserId])
+}
+
+model MaintenanceRepairAttachment {
+  id           String                  @id @default(cuid())
+  submissionId String
+  submission   StaffEvidenceSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  kind         String
+  fileName     String
+  mimeType     String
+  bytes        Bytes
+  position     Int
+
+  @@unique([submissionId, kind, position], map: "MaintenanceRepairAttachment_submission_kind_position_key")
 }
 
 model MaintenanceRequest {

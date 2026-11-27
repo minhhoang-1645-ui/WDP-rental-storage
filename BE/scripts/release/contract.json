@@ -41,7 +41,8 @@
     "20261127000600_maintenance_costs",
     "20261127000700_maintenance_work_history",
     "20261127000800_maintenance_actual_cost_only",
-    "20261127000900_facility_photo"
+    "20261127000900_facility_photo",
+    "20261128000100_maintenance_repair_attachments"
   ],
   "migrations": [
     {
@@ -582,6 +583,13 @@
       "checksums": [
         "21ccd8de2981dedafae348f40b2dfe3a85334a363a45b371468450f69743e86f",
         "6618cf2cfe73a84bf373b505900b2a4e67b58fb0e2a06b314afa8d638c3574be"
+      ]
+    },
+    {
+      "name": "20261128000100_maintenance_repair_attachments",
+      "checksums": [
+        "7e5c7f91c066d4f631681ce154cb7c3120ccf09faa2807ee203bbdaf0df1ed3b",
+        "f0515e954ebc62010587a6f03a2167fbb1535d1ed32ec64fb24c7984c76e2520"
       ]
     }
   ],

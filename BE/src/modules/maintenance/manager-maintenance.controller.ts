@@ -7,6 +7,7 @@ import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseMaintenanceQuery } from './maintenance-query.js';
 import { MaintenanceService, maintenanceCategories, maintenancePriorities } from './maintenance.service.js';
+import { streamRepairAttachment } from './maintenance-repair-attachment.js';
 
 @Controller(['manager/maintenance', 'staff/management/maintenance'])
 @StaffWorkflow()
@@ -45,6 +46,14 @@ export class ManagerMaintenanceController {
   async photo(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Param('photoId') photoId: string) {
     const photo = await this.maintenance.getPhoto(id, photoId, request.user!);
     return new StreamableFile(photo.bytes, { type: photo.mimeType });
+  }
+
+  @Get(':id/submissions/:submissionId/attachments/:attachmentId')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async attachment(@Req() request: AuthenticatedRequest, @Param('id') id: string,
+    @Param('submissionId') submissionId: string, @Param('attachmentId') attachmentId: string, @Query('download') download?: string) {
+    return streamRepairAttachment(await this.maintenance.getRepairAttachment(id, submissionId, attachmentId, request.user!), download);
   }
 
   @ManagerAssignment() @Post(':id/hold-unsafe-unit')

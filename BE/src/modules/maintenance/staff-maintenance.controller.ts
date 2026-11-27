@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Headers, Param, Post, Query, Req, StreamableFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiConsumes, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CompleteMaintenanceWorkDto, CreateMaintenanceRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -8,6 +8,7 @@ import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { parseMaintenanceQuery } from './maintenance-query.js';
 import { MaintenanceService, maintenanceCategories, maintenancePriorities } from './maintenance.service.js';
 import { maintenanceUploadLimits, type MaintenanceUpload } from './maintenance-photo.js';
+import { repairPhotoCount, repairReceiptCount, repairUploadLimits, type RepairUploads } from './maintenance-repair-attachment.js';
 
 @Controller('staff/maintenance')
 @UseGuards(AuthGuard, RolesGuard)
@@ -87,11 +88,13 @@ export class StaffMaintenanceController {
 
   @Post(':id/complete-work')
   @Roles('FACILITY_STAFF')
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'photos', maxCount: repairPhotoCount }, { name: 'receipts', maxCount: repairReceiptCount }], { limits: repairUploadLimits }))
+  @ApiConsumes('multipart/form-data', 'application/json')
   @ApiOperation({ summary: 'Staff gửi công việc đã hoàn tất để Manager xác minh' }) @ApiParam({ name: 'id', example: 'WDP-MNT-ABC1234567' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'mnt-complete-20261009-001' }) @ApiBody({ type: CompleteMaintenanceWorkDto })
   @ApiCreatedResponse({ description: 'IN_PROGRESS → AWAITING_VERIFICATION; unit vẫn MAINTENANCE.' })
   @ApiBadRequestResponse({ description: 'workNote trống/không hợp lệ.' }) @ApiConflictResponse({ description: 'Sai state.' }) @ApiForbiddenResponse({ description: 'Không phải assigned Staff.' })
-  complete(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
-    return this.maintenance.completeWork(id, body, key, request.user!);
+  complete(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>, @UploadedFiles() files?: RepairUploads) {
+    return this.maintenance.completeWork(id, body, key, request.user!, files);
   }
 }

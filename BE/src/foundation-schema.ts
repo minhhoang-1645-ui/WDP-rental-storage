@@ -55,6 +55,7 @@ export async function inspectFoundationDatabase(
       )
     ).rows.map((r) => r.table_name + '.' + r.column_name);
     const requiredColumns = [
+      ...['submissionId', 'kind', 'fileName', 'mimeType', 'bytes', 'position'].map(name => 'MaintenanceRepairAttachment.' + name),
       ...['closurePlanId','closureMode','closureReason','closureStartedAt','closureExpectedAt','closureStartedById'].map(name => 'Facility.' + name),
       ...['closurePlanId','receivingStaffId','consentEvidence','sourceHandover','destinationHandover','relocationException','safetyEvidence'].map(name => 'TransferRequest.' + name),
       'SupportRequest.closurePlanId',

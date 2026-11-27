@@ -218,7 +218,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           ['Nhận xét nghiệm thu', verification],
           ['Tình trạng kho hiện tại', first(row, 'unit.status') && <Status value={at(row, 'unit.status')} />],
         ]}>
-          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" maintenance /> : <>
+          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" maintenanceRecord={first(row, 'id')} /> : <>
           {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
             {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
               <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}

@@ -389,7 +389,7 @@ function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
   if (!title) return null;
   if (resource === 'maintenance' && rows(row.evidenceSubmissions).length > 0) return <section className="manager-section">
     <h2>Các lần gửi kết quả sửa chữa</h2>
-    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} maintenance />
+    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} maintenanceRecord={first(row, 'id')} />
   </section>;
   const report = object(row.handoverReport);
   const uploaded = resource === 'maintenance' ? row.workPhotos

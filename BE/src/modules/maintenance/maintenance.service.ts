@@ -9,6 +9,7 @@ import { assertAssignmentVersion, physicalHandoff } from '../facility-access/ope
 import { assertTaskFacility, facilityScope } from '../facility-access/task-access.js';
 import { assertAssignmentAccess } from '../facility-access/facility-access.service.js';
 import { validateMaintenancePhotos, type MaintenanceUpload } from './maintenance-photo.js';
+import { validateRepairAttachments, type RepairUploads } from './maintenance-repair-attachment.js';
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -39,6 +40,10 @@ export interface MaintenanceListQuery {
 }
 
 const unresolvedStatuses: MaintenanceStatus[] = ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'];
+const repairAttachments = {
+  select: { id: true, kind: true, fileName: true, mimeType: true },
+  orderBy: [{ kind: 'asc' }, { position: 'asc' }],
+} satisfies Prisma.StaffEvidenceSubmissionInclude['repairAttachments'];
 const affectedAllocationSelect = {
   reservation: { select: {
     id: true, facilityId: true, reservationCode: true,
@@ -159,6 +164,7 @@ export class MaintenanceService {
   async getStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
       include: { ...this.include(), evidenceSubmissions: { where: { staffUserId: actor.id },
+        include: { repairAttachments },
         omit: { maintenanceSubmissionKey: true }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
     const view = this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
@@ -172,6 +178,7 @@ export class MaintenanceService {
 
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
       include: { ...this.include(true), evidenceSubmissions: {
+        include: { repairAttachments },
         omit: { maintenanceSubmissionKey: true }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
     const history = await this.prisma.auditEvent.findMany({
@@ -211,6 +218,19 @@ export class MaintenanceService {
     });
     if (!photo) throw new NotFoundException('Không tìm thấy ảnh sự cố.');
     return photo;
+  }
+
+  async getRepairAttachment(id: string, submissionId: string, attachmentId: string, actor: PublicUser) {
+    const file = await this.prisma.maintenanceRepairAttachment.findFirst({
+      where: { id: attachmentId, submission: {
+        id: submissionId,
+        maintenanceRequest: this.detailScope(id, actor),
+        ...(actor.role === 'FACILITY_STAFF' ? { staffUserId: actor.id } : {}),
+      } },
+      select: { bytes: true, mimeType: true, fileName: true },
+    });
+    if (!file) throw new NotFoundException('Không tìm thấy tệp của lần sửa chữa.');
+    return file;
   }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
@@ -326,12 +346,13 @@ export class MaintenanceService {
     }, actor, 'FACILITY_STAFF');
   }
 
-  completeWork(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+  completeWork(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser, files: RepairUploads = {}) {
     this.requiredText(input.workNote, 4000, 'workNote');
     const workNote = this.requiredText(appendEvidenceLink(input.workNote, input.evidenceLink), 4000, 'workNote');
     const workPhotos = evidencePhotos(input.workPhotos);
     const actualCostVnd = maintenanceAmount(input.actualCostVnd, 'Chi phí thực tế');
     const costEvidenceLinks = maintenanceCostEvidence(input.costEvidenceLinks);
+    const attachments = validateRepairAttachments(files);
     return this.transition(id, key, 'COMPLETE_WORK', async (tx, current, safeKey) => {
       if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
       const submitted = await tx.staffEvidenceSubmission.findUnique({ where: { maintenanceSubmissionKey: safeKey } });
@@ -349,7 +370,7 @@ export class MaintenanceService {
       await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'maintenance', current.id,
         { ...(facilityId && { facilityId }), nextStatus: 'AWAITING_VERIFICATION' });
       const now = new Date();
-      if (actualCostVnd !== null || costEvidenceLinks.length) {
+      if (actualCostVnd !== null || costEvidenceLinks.length || attachments.some(file => file.kind === 'RECEIPT')) {
         await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_COST_PROPOSED', {
           actualVnd: actualCostVnd?.toFixed(0) ?? null, evidenceLinks: costEvidenceLinks,
         });
@@ -366,6 +387,7 @@ export class MaintenanceService {
           evidenceSubmissions: { create: {
             staffUserId: actor.id, staffName: actor.fullName, note: workNote, photos: workPhotos, recordedAt: now,
             maintenanceSubmissionKey: safeKey, maintenanceCostVnd: actualCostVnd, maintenanceCostLinks: costEvidenceLinks,
+              ...(attachments.length ? { repairAttachments: { create: attachments } } : {}),
           } },
         },
         include: this.include(),

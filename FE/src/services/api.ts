@@ -39,11 +39,29 @@ export class ApiError extends Error {
   }
 }
 
+function uploadForm(url: string, method: string, headers: Headers, body: FormData, signal: AbortSignal,
+  onProgress: (percentage: number | null) => void): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(signal.reason); return; }
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    xhr.open(method, url);
+    headers.forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.upload.onprogress = event => onProgress(event.lengthComputable ? Math.round(event.loaded * 100 / event.total) : null);
+    xhr.onload = () => resolve(new Response(xhr.status === 204 ? null : xhr.responseText, { status: xhr.status }));
+    xhr.onerror = () => reject(new TypeError('Upload failed'));
+    xhr.onabort = () => reject(signal.reason);
+    xhr.onloadend = () => signal.removeEventListener('abort', abort);
+    signal.addEventListener('abort', abort, { once: true });
+    xhr.send(body);
+  });
+}
+
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null; responseType?: 'json' | 'blob' } = {},
+  options: RequestInit & { authenticated?: boolean; timeoutMs?: number; expectedToken?: string | null; responseType?: 'json' | 'blob'; onUploadProgress?: (percentage: number | null) => void } = {},
 ): Promise<T> {
-  const { authenticated = true, timeoutMs = 30000, signal, expectedToken, responseType = 'json', ...request } = options;
+  const { authenticated = true, timeoutMs = 30000, signal, expectedToken, responseType = 'json', onUploadProgress, ...request } = options;
   const token = authenticated ? safeLocalStorage.getItem(AUTH_TOKEN_KEY) : null;
   // Effects already queued when a session expires must not send protected reads
   // or writes without credentials while the router removes the old workspace.
@@ -67,7 +85,10 @@ export async function apiRequest<T>(
     if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     const apiPath = operationApiPath(path, role, request.method ?? 'GET');
 
-    const response = await fetch(`${API_URL.replace(/\/$/, "")}${apiPath}`, { ...request, signal: controller.signal, headers });
+    const url = `${API_URL.replace(/\/$/, "")}${apiPath}`;
+    const response = onUploadProgress && request.body instanceof FormData
+      ? await uploadForm(url, request.method ?? 'POST', headers, request.body, controller.signal, onUploadProgress)
+      : await fetch(url, { ...request, signal: controller.signal, headers });
     const payload = response.ok && responseType === 'blob' ? await response.blob() : response.status === 204 ? null : await response.json().catch((error: unknown) => {
       if (controller.signal.aborted) throw error;
       return null;
@@ -77,7 +98,9 @@ export async function apiRequest<T>(
         window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: sessionEndReason(payload) }));
       }
       const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
-      throw new ApiError(response.status, typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
+      throw new ApiError(response.status, onUploadProgress && response.status === 413
+        ? 'Tệp hoặc tổng dung lượng vượt giới hạn tải lên.'
+        : typeof message === "string" ? userMessage(message) : `Yêu cầu thất bại (${response.status})`, payload);
     }
     if (token && safeLocalStorage.getItem(AUTH_TOKEN_KEY) !== token) throw new DOMException('Phiên đăng nhập đã thay đổi.', 'AbortError');
     if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);

@@ -1,3 +1,4 @@
+import { MaintenanceWorkForm } from './MaintenanceWorkForm';
 import { StaffTaskException } from './StaffTaskException';
 import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { vietnamCalendarDate } from '../../utils/business-date';
@@ -40,7 +41,7 @@ export function StaffActions({
   const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
   const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
-    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : resource === 'maintenance' ? 'Ảnh sửa chữa và chứng từ (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
+    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
     pendingAction !== undefined,
   );
   const busy = pendingAction !== undefined || readingPhotos;
@@ -144,12 +145,6 @@ export function StaffActions({
     if (busy || photoReadLock.current || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
-    if (suffix === '/complete-work') {
-      input.evidenceLink = String(data.get('evidenceLink') ?? '').trim() || undefined;
-      input.workPhotos = handoverPhotos.map(photo => photo.src);
-      input.actualCostVnd = String(data.get('actualCostVnd') ?? '').trim() || null;
-      input.costEvidenceLinks = String(data.get('costEvidenceLinks') ?? '').split(/\r?\n/).map(link => link.trim()).filter(Boolean);
-    }
     if (suffix === '/complete-handover') {
       const deliveredPurchaseIds = data.getAll('deliveredPurchaseIds').map(String);
       if (deliveredPurchaseIds.length) input.deliveredPurchaseIds = deliveredPurchaseIds;
@@ -354,40 +349,9 @@ export function StaffActions({
               </button>
             )}
             {assigned && row.repairPlanReady === true && row.status === "IN_PROGRESS" && (
-              <form
-                className="portal-form staff-maintenance-result"
-                onSubmit={(event) =>
-                  submit(event, "/complete-work", "workNote", true)
-                }
-              >
-                <label className="field-label">
-                  Công việc đã thực hiện
-                  <textarea
-                    name="workNote"
-                    required
-                    minLength={3}
-                    maxLength={4000}
-                    rows={3}
-                    placeholder="Ghi lại việc đã kiểm tra hoặc sửa chữa và tình trạng hiện tại."
-                  />
-                </label>
-                {Array.isArray(row.workPhotos) ? photoPicker : (
-                  <p role="status">Bạn có thể đính kèm ảnh bằng liên kết HTTPS.</p>
-                )}
-                <label className="field-label">Liên kết ảnh (tùy chọn)
-                  <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
-                </label>
-                <label className="field-label">Chi phí của lần sửa này (VND)
-                  <input name="actualCostVnd" inputMode="numeric" pattern="[0-9]{1,18}" maxLength={18} placeholder="Chưa xác định" />
-                  <small>Chỉ nhập khoản phát sinh lần này. Để trống nếu chưa rõ, nhập 0 nếu không phát sinh.</small>
-                </label>
-                <label className="field-label">Liên kết chứng từ (tùy chọn)
-                  <textarea name="costEvidenceLinks" rows={2} maxLength={5005} placeholder="Mỗi liên kết HTTPS trên một dòng" />
-                </label>
-                <button className="button-primary" disabled={busy}>
-                  Gửi kết quả để nghiệm thu
-                </button>
-              </form>
+              <MaintenanceWorkForm path={root + '/complete-work'}
+                onSaved={result => { setError(''); onSuccess('Đã gửi kết quả để nghiệm thu.', result); refresh(); }}
+                onError={caught => reportFailure(caught, 'Không thể gửi kết quả sửa chữa.')} />
             )}
             {row.status === "AWAITING_VERIFICATION" && (
               <p>Đang chờ quản lý nghiệm thu.</p>

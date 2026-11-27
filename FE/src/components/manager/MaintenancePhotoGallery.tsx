@@ -11,7 +11,7 @@ export function MaintenancePhotoGallery({ record, ids, staff = false }: { record
   </div>;
 }
 
-function MaintenancePhoto({ path, index }: { path: string; index: number }) {
+export function MaintenancePhoto({ path, index, label = 'Ảnh sự cố' }: { path: string; index: number; label?: string }) {
   const [version, retry] = useReducer((value: number) => value + 1, 0);
   const [result, setResult] = useState<{ url: string; error: boolean }>();
   useEffect(() => {
@@ -31,5 +31,5 @@ function MaintenancePhoto({ path, index }: { path: string; index: number }) {
   }, [path, version]);
   if (result?.error) return <button type="button" className="button-secondary" onClick={() => { setResult(undefined); retry(); }}>Tải lại ảnh {index}</button>;
   if (!result) return <span role="status">Đang tải ảnh {index}…</span>;
-  return <a href={result.url} target="_blank" rel="noreferrer"><img src={result.url} alt={`Ảnh sự cố ${index}, mở ảnh đầy đủ`} /></a>;
+  return <a href={result.url} target="_blank" rel="noreferrer"><img src={result.url} alt={`${label} ${index}, mở ảnh đầy đủ`} /></a>;
 }

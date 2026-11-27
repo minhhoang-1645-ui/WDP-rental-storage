@@ -4,6 +4,7 @@ import { date, first, object, rows, type Row } from './portal-data';
 import { Facts, LoadState } from './PortalUi';
 import { mutate } from '../../services/portal';
 import { useApiResource } from '../../services/useApiResource';
+import { MaintenanceRepairFiles } from './MaintenanceRepairFiles';
 
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
 export const maintenanceMoney = (value: unknown) =>
@@ -28,7 +29,9 @@ export function MaintenanceCosts({ row, refresh, onSuccess }: { row: Row; refres
   const completed = row.status === 'COMPLETED';
   const pending = costs.status === 'PENDING';
   const confirmed = costs.status === 'CONFIRMED';
-  const proposals = rows(row.evidenceSubmissions).filter(item => item.maintenanceCostVnd != null);
+  const submissions = rows(row.evidenceSubmissions);
+  const proposals = submissions.filter(item => item.maintenanceCostVnd != null);
+  const receiptSubmissions = submissions.filter(item => rows(item.repairAttachments).some(file => file.kind === 'RECEIPT'));
   const proposedTotal = proposals.reduce((sum, item) => sum + BigInt(String(item.maintenanceCostVnd)), 0n);
   const selectedTotal = proposals.length ? proposals.filter(item => selectedIds.includes(first(item, 'id')))
     .reduce((sum, item) => sum + BigInt(String(item.maintenanceCostVnd)), 0n) : BigInt(String(costs.actualVnd ?? '0'));
@@ -75,6 +78,12 @@ export function MaintenanceCosts({ row, refresh, onSuccess }: { row: Row; refres
     {evidenceLinks.length > 0 && <ul>{evidenceLinks.map((link, index) => <li key={link}>
       <a href={link} target="_blank" rel="noopener noreferrer">Mở chứng từ {index + 1}</a>
     </li>)}</ul>}
+    {receiptSubmissions.length > 0 && <DetailDisclosure title="Chứng từ theo lần sửa chữa">
+      {receiptSubmissions.map(item => <div key={first(item, 'id')}>
+        <p className="record-attribution">{date(item.recordedAt, true)} · {maintenanceMoney(item.maintenanceCostVnd)}</p>
+        <MaintenanceRepairFiles record={id} submission={item} kind="RECEIPT" />
+      </div>)}
+    </DetailDisclosure>}
     {error && <p className="portal-error" role="alert">{error}</p>}
     {completed && pending && <form className="portal-form portal-form-divider incident-booking-impact" onSubmit={event => void save(event, 'confirm')}>
       {proposals.length > 0 && <fieldset className="incident-booking-group">

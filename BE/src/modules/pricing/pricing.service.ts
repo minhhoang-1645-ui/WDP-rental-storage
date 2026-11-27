@@ -28,6 +28,7 @@ type PricedStorageType = {
 
 type PricedService = {
   physicalUnit?: string | null;
+  minimumRentalMonths?: number | null;
   id: string;
   code: string;
   name: string;
@@ -395,6 +396,9 @@ export class PricingService {
           code: 'INVALID_SERVICE_SELECTION',
           message: 'serviceId và quantity dịch vụ không hợp lệ.',
         });
+      if (['serviceStartDate', 'serviceEndDate'].some(key => Object.hasOwn(item, key)
+        && (typeof (item as Record<string, unknown>)[key] !== 'string' || !(item as Record<string, unknown>)[key])))
+        throw new BadRequestException({ code: 'INVALID_ADDON_RENTAL_INTERVAL', message: 'Ngày sử dụng thiết bị không hợp lệ.' });
       const serviceStartDate =
         typeof (item as any).serviceStartDate === 'string'
           ? (item as any).serviceStartDate
@@ -505,8 +509,8 @@ export class PricingService {
           code: 'INVALID_ADDITIONAL_SERVICE_BILLING_UNIT',
           message: `Thiết bị ${service.name} phải dùng đơn vị DAY hoặc MONTH.`,
         });
-      const serviceStartDate = selection.serviceStartDate ?? '',
-        serviceEndDate = selection.serviceEndDate ?? '';
+      const serviceStartDate = selection.serviceStartDate ?? reservationStart,
+        serviceEndDate = selection.serviceEndDate ?? reservationEnd;
       if (
         !this.isDate(serviceStartDate) ||
         !this.isDate(serviceEndDate) ||
@@ -524,6 +528,7 @@ export class PricingService {
         selection.quantity,
         serviceStartDate,
         serviceEndDate,
+        service.minimumRentalMonths ?? 1,
       );
       return {
         serviceId: service.id,
@@ -547,6 +552,7 @@ export class PricingService {
     quantity: number,
     startDate: string,
     endDate: string,
+    minimumRentalMonths: number,
   ) {
     if (billingUnit === 'DAY')
       return (
@@ -555,7 +561,13 @@ export class PricingService {
         BigInt(this.daysBetween(this.date(startDate), this.date(endDate)))
       );
     const months = this.wholeCalendarMonths(startDate, endDate);
-    if (months !== null) return unitPrice * BigInt(quantity) * BigInt(months);
+    if (months !== null) {
+      if (months < minimumRentalMonths) throw new BadRequestException({
+        code: 'MINIMUM_MONTHLY_ADDON_RENTAL_TERM',
+        message: `Thiết bị này cần thuê tối thiểu ${minimumRentalMonths} tháng.`,
+      });
+      return unitPrice * BigInt(quantity) * BigInt(months);
+    }
     throw new BadRequestException({
       code: 'INVALID_MONTHLY_ADDON_RENTAL_TERM',
       message:

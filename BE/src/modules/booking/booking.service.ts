@@ -111,7 +111,7 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       // Keep the legacy response field for deployed clients.
       approvedDurations: suggestedRentalMonths,
       suggestedRentalMonths,
-      addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, physicalUnit: addon.physicalUnit, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
+      addons: addons.map((addon) => ({ id: addon.id, facilityId:addon.facilityId, code: addon.code, name: addon.name, description: addon.description, kind: addon.kind, billingUnit: addon.billingUnit, physicalUnit: addon.physicalUnit, minimumRentalMonths: addon.billingUnit === 'MONTH' ? addon.minimumRentalMonths ?? 1 : null, unitPrice: addon.unitPrice === null ? null : Number(addon.unitPrice), imageUrl: addon.imageUrl, imageAlt: addon.imageAlt })),
       pricingPolicy: 'PRICING_V1' as const,
       inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' as const,
     };
@@ -886,7 +886,12 @@ export class BookingService implements OnModuleInit, OnModuleDestroy {
       endDate: endDateExclusive,
       paymentPlan: draft.paymentPlan,
       serviceSelections: selections,
-    }, services.map((service) => ({ ...service, unitPrice: service.unitPrice })) as any, await loadPricingPolicy(db));
+    }, services.map((service) => ({
+      ...service,
+      // A guest converting a stored quote already selected this period under the previous policy.
+      minimumRentalMonths: committedQuote?.services?.some(item => item.serviceId === service.id && item.billingUnit === service.billingUnit)
+        ? 1 : service.minimumRentalMonths,
+    })), await loadPricingPolicy(db));
   }
 
   private async validateDraft(input: Record<string, unknown>, legacyGuestDates = false) {

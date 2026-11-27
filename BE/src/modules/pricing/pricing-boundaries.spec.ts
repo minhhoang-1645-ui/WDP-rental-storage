@@ -133,6 +133,19 @@ describe('existing pricing policy boundaries, no live database', () => {
     expect(quote).toMatchObject({ purchaseAddOnAmount: 20000, rentalAddOnAmount: 19990, estimatedInitialAmountDue: 6020000 });
     expect(quote.services[1].amount).toBe(19990);
   });
+  it('prices 1, 2 or 3 months within a three-month warehouse rental and defaults to the full term', () => {
+    const addon = { id: 'vacuum', code: 'VACUUM', name: 'Máy hút', kind: 'RENTAL' as const, billingUnit: 'MONTH' as const, unitPrice: 1000n, isActive: true };
+    const draft = { ...input, startDate: '2026-01-01', endDate: '2026-04-01' };
+    const selection = { serviceId: addon.id, quantity: 1 };
+    for (const [endDate, fee] of [['2026-02-01', 1000], ['2026-03-01', 2000], ['2026-04-01', 3000]] as const) {
+      const quote = service.calculate(storage, { ...draft, serviceSelections: [{ ...selection, serviceEndDate: endDate }] }, [addon]);
+      expect(quote.services[0]).toMatchObject({ amount: fee, serviceStartDate: draft.startDate, serviceEndDate: endDate });
+    }
+    expect(service.calculate(storage, { ...draft, serviceSelections: [selection] }, [addon]).rentalAddOnAmount).toBe(3000);
+    expect(() => service.calculate(storage, { ...draft, serviceSelections: [{ ...selection, serviceEndDate: '2026-02-01' }] }, [{ ...addon, minimumRentalMonths: 2 }])).toThrow('tối thiểu 2 tháng');
+    expect(() => service.calculate(storage, { ...draft, serviceSelections: [{ ...selection, serviceEndDate: '2026-05-01' }] }, [addon])).toThrow('phải nằm trong thời hạn thuê kho');
+  });
+
   it('accepts an exact calendar MONTH service and rejects a partial calendar month or outside interval', () => {
     const addon = { id: 'monthly', code: 'MONTHLY', name: 'Thiết bị tháng', kind: 'RENTAL' as const, billingUnit: 'MONTH' as const, unitPrice: 100000n, isActive: true };
     const selection = { serviceId: 'monthly', quantity: 3, serviceStartDate: '2026-01-31', serviceEndDate: '2026-02-28' };

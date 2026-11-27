@@ -19,12 +19,24 @@ function setup(kind: 'PURCHASE' | 'RENTAL') {
     reservationService: { aggregate: vi.fn().mockResolvedValue({ _sum: { quantity: 4 } }), findMany: vi.fn().mockResolvedValue([]) },
     auditEvent: { create: vi.fn() },
     $queryRaw: vi.fn(),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
   };
   const service = new AdditionalServiceInventoryService({ ...tx, $transaction: async (work: (client: typeof tx) => unknown) => work(tx) } as never);
   return { service, update, tx };
 }
 
 describe('Facility inventory PATCH response', () => {
+  it('enforces the monthly minimum and reports insufficient equipment for the checked dates', async () => {
+    const { service, tx } = setup('RENTAL');
+    const [offer] = await tx.facilityServiceOffering.findMany();
+    tx.facilityServiceOffering.findMany.mockResolvedValue([{
+      ...offer, additionalService: { ...offer.additionalService, billingUnit: 'MONTH', minimumRentalMonths: 2 },
+    } as typeof offer]);
+    const query = { facilityId: 'facility', quantity: 2, startDate: '2099-01-01' };
+    await expect(service.publicAvailability('service', { ...query, endDate: '2099-02-01' })).rejects.toThrow('tối thiểu 2 tháng');
+    tx.reservationService.findMany.mockResolvedValue([{ quantity: 9, serviceStartDate: new Date('2099-01-01'), serviceEndDate: new Date('2099-03-01') }] as never);
+    await expect(service.publicAvailability('service', { ...query, endDate: '2099-03-01' })).resolves.toMatchObject({ available: false, availableQuantity: 1 });
+  });
   it.each(['PURCHASE', 'RENTAL'] as const)('returns JSON-safe inventory after updating %s', async kind => {
     const { service, update } = setup(kind);
     const field = kind === 'PURCHASE' ? 'stockOnHand' : 'rentalCapacity';

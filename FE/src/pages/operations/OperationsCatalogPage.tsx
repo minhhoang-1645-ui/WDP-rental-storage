@@ -160,6 +160,7 @@ export function OperationsCatalogDetail() {
         <dl className="operations-catalog-facts">
           <div><dt>Phân loại</dt><dd>{categoryLabels[item.kind]}</dd></div>
           <div><dt>Hình thức tính phí</dt><dd>{billingLabels[item.billingUnit]}</dd></div>
+          {item.billingUnit === 'MONTH' && <div><dt>Thuê tối thiểu</dt><dd>{item.minimumRentalMonths ?? 1} tháng</dd></div>}
           <div><dt>Đơn vị tính</dt><dd>{item.physicalUnit ?? 'Chưa thiết lập'}</dd></div>
           <div className="operations-catalog-description"><dt>Mô tả</dt><dd className={item.description?.trim() ? undefined : 'operations-catalog-muted'}>{item.description?.trim() || 'Chưa có mô tả'}</dd></div>
         </dl>
@@ -207,6 +208,7 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
   const canEditStructure = !item || item.canEditStructure === true;
   const [kind, setKind] = useState<AdditionalService['kind']>(item?.kind ?? 'PURCHASE');
   const [billingUnit, setBillingUnit] = useState(item?.billingUnit ?? 'ONE_TIME');
+  const [minimumMonths, setMinimumMonths] = useState(String(item?.minimumRentalMonths ?? 1));
   const [physicalUnit, setPhysicalUnit] = useState(item?.physicalUnit ?? '');
   const [custom, setCustom] = useState(Boolean(item?.physicalUnit && !serviceUnits(item.kind).includes(item.physicalUnit)));
   const unitOptions = serviceUnits(kind);
@@ -236,6 +238,11 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
       return;
     }
     const unit = physicalUnit.trim().replace(/\s+/g, ' ') || null;
+    const minimum = minimumMonths.trim() ? Number(minimumMonths) : null;
+    if (billingUnit === 'MONTH' && minimum !== null && (!Number.isInteger(minimum) || minimum < 1 || minimum > 2147483647)) {
+      setError('Nhập số tháng thuê tối thiểu là số nguyên từ 1.');
+      return;
+    }
     lock.current = true;
     setBusy(true);
     try {
@@ -246,6 +253,8 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
           description: String(form.get('description') ?? '').trim(),
           isActive,
           ...(item ? { expectedUpdatedAt: item.updatedAt } : { code }),
+          ...(billingUnit === 'MONTH' && (!item || (minimum ?? 1) !== (item.minimumRentalMonths ?? 1))
+            ? { minimumRentalMonths: minimum } : {}),
           ...(canEditStructure ? {
             kind,
             billingUnit,
@@ -279,6 +288,10 @@ function CatalogForm({ item, onClose, onSave }: { item?: CatalogDetail; onClose:
         <label>Hình thức tính phí
           <input readOnly value={billingLabels[billingUnit] + (billingUnit === 'DAY' ? ' (dữ liệu cũ)' : '')} />
         </label>
+        {billingUnit === 'MONTH' && <label>Thời gian thuê tối thiểu (tháng)
+          <input type="number" min={1} step={1} value={minimumMonths} placeholder="1" onChange={event => setMinimumMonths(event.target.value)} />
+          <small>Để trống sẽ áp dụng tối thiểu 1 tháng.</small>
+        </label>}
         <label>Đơn vị vật lý
           <select name="physicalUnit" disabled={!canEditStructure} aria-describedby={!canEditStructure ? structureHelpId : undefined}
             value={custom ? '__custom__' : physicalUnit} onChange={event => {

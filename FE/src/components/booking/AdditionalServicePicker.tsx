@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from '../../services/api';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '../../types/additional-service';
-import { defaultServiceSelection, serviceSelectionIssue } from '../../utils/service-period';
+import { defaultServiceSelection, maxServiceMonths, serviceCalendarMonths, serviceEstimatedTotal, serviceMonthEnd, serviceSelectionIssue } from '../../utils/service-period';
 import { localizeService, serviceRateUnit } from '../../utils/service-labels';
 
 function serviceGroup(service: AdditionalService): 'DAY' | 'MONTH' | 'ONE_TIME' {
@@ -33,7 +33,7 @@ export function AdditionalServicePicker({ services: rawServices, selections, sta
     })).then(items => { if (!controller.signal.aborted) setState({ key, items, error: '' }); })
       .catch(error => { if (!controller.signal.aborted) setState({ key, items: [], error: error instanceof Error ? error.message : 'Không kiểm tra được dịch vụ.' }); });
     return () => controller.abort();
-  }, [key, validSelections]);
+  }, [key, validSelections, services]);
   const change = (serviceId: string, patch: Partial<ServiceSelection>) => onChange(selections.map(item => item.serviceId === serviceId ? { ...item, ...patch } : item));
   const removedSelections = selections.filter(selection => !services.some(service => service.id === selection.serviceId));
   if (!services.length) return <div className="addon-empty">Chưa có dịch vụ bổ sung được NestBox duyệt{selections.length > 0 && <button type="button" className="button-secondary" onClick={() => onChange([])}>Xóa dịch vụ không còn trong danh mục</button>}</div>;
@@ -60,12 +60,24 @@ export function AdditionalServicePicker({ services: rawServices, selections, sta
           const isRental = service.kind === 'RENTAL';
           const issue = issues.get(service.id);
           const suggested = defaultServiceSelection(service, startDate, endDate);
+          const monthly = service.billingUnit === 'MONTH';
+          const minimum = service.minimumRentalMonths ?? 1;
+          const from = selected?.serviceStartDate || startDate;
+          const maximum = maxServiceMonths(from, endDate);
+          const estimate = selected ? serviceEstimatedTotal(service, selected, startDate, endDate) : null;
           return <div className="addon-service-item" key={service.id}>
             <label className="booking-checkbox"><input aria-label={service.name} type="checkbox" checked={Boolean(selected)} disabled={!selected && (!suggested || service.isActive === false || service.unitPrice === null || service.unitPrice <= 0)} onChange={event => onChange(event.target.checked && suggested ? [...selections, suggested] : selections.filter(item => item.serviceId !== service.id))} /><span><strong>{service.name}</strong><small>{service.unitPrice === null ? 'Cần xác nhận báo giá' : `${new Intl.NumberFormat('vi-VN').format(service.unitPrice)} đ / ${serviceRateUnit(service)}`}</small>{!suggested && isRental && <small>Chọn thời gian thuê phù hợp để thuê thiết bị.</small>}</span></label>
+            {monthly && <small>Tối thiểu {minimum} tháng. {suggested ? `Mặc định ${serviceCalendarMonths(startDate, suggested.serviceEndDate ?? '')} tháng theo kỳ thuê kho.` : 'Kỳ thuê kho ngắn hơn mức tối thiểu.'}</small>}
             {selected && <div className="checkout-fields">
               <label className="field-label">Số lượng {service.name}<input type="number" min={1} max={100} step={1} required value={selected.quantity} onChange={event => change(service.id, { quantity: Number(event.target.value) })} /></label>
-              {isRental && <><label className="field-label">Ngày bắt đầu {service.name}<input type="date" required min={startDate} max={endDate} value={selected.serviceStartDate ?? ''} onChange={event => change(service.id, { serviceStartDate: event.target.value })} /></label><label className="field-label">Ngày trả {service.name}<input type="date" required min={selected.serviceStartDate || startDate} max={endDate} value={selected.serviceEndDate ?? ''} onChange={event => change(service.id, { serviceEndDate: event.target.value })} /></label></>}
-              {isRental && suggested && <button type="button" className="portal-text-button" onClick={() => change(service.id, suggested)}>Đặt lại kỳ sử dụng theo kho</button>}
+              {monthly ? <label className="field-label">Số tháng sử dụng {service.name}<input type="number" min={minimum} max={maximum} step={1}
+                value={serviceCalendarMonths(from, selected.serviceEndDate ?? '') ?? ''} readOnly={maximum === minimum}
+                onChange={event => change(service.id, { serviceEndDate: serviceMonthEnd(from, Number(event.target.value)) })} />
+                {maximum === minimum && <small>Kỳ thuê kho chỉ đủ cho mức tối thiểu.</small>}</label>
+                : isRental && <><label className="field-label">Ngày bắt đầu {service.name}<input type="date" required min={startDate} max={endDate} value={selected.serviceStartDate ?? ''} onChange={event => change(service.id, { serviceStartDate: event.target.value })} /></label><label className="field-label">Ngày trả {service.name}<input type="date" required min={selected.serviceStartDate || startDate} max={endDate} value={selected.serviceEndDate ?? ''} onChange={event => change(service.id, { serviceEndDate: event.target.value })} /></label></>}
+              {estimate !== null && <p>Tạm tính <strong>{estimate.toLocaleString('vi-VN')} ₫</strong></p>}
+              {!issue && typeof inventory?.availableQuantity === 'number' && <p>Còn {inventory.availableQuantity} {service.physicalUnit || 'thiết bị'} trong kỳ đã chọn.</p>}
+              {isRental && suggested && <button type="button" className="portal-text-button" onClick={() => change(service.id, { serviceStartDate: suggested.serviceStartDate, serviceEndDate: suggested.serviceEndDate })}>Đặt lại kỳ sử dụng theo kho</button>}
               {issue && <p role="alert">{issue}</p>}
               {!issue && state?.key === key && state.error && <p role="status">Chưa kiểm tra được dịch vụ.</p>}
               {!issue && inventory?.available === false && <p role="alert">Dịch vụ không đủ số lượng.</p>}

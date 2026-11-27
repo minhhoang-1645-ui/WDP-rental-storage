@@ -5,6 +5,7 @@ export interface ServiceDefinition {
 }
 
 export interface AdditionalService {
+  minimumRentalMonths?: number | null;
   updatedAt?: string;
   configurationReview?: { revision: string; before: ServiceDefinition; after: ServiceDefinition } | null;
   stockOnHand?: number | null;

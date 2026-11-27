@@ -69,6 +69,8 @@ export class AdditionalServiceInventoryService {
       Number(endDate.slice(5, 7)) - Number(startDate.slice(5, 7));
     if (rentalMonthEnd(startDate, months) !== endDate)
       throw new BadRequestException('Thiết bị thuê tháng cần thời gian sử dụng đủ số tháng theo lịch.');
+    const minimum = service.minimumRentalMonths ?? 1;
+    if (months < minimum) throw new BadRequestException(`Thiết bị này cần thuê tối thiểu ${minimum} tháng.`);
     return this.rentalAvailability(
       this.prisma,
       service,

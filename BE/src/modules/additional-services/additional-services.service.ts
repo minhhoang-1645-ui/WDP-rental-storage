@@ -555,6 +555,15 @@ export class AdditionalServicesService {
         message:
           'Sản phẩm tiêu hao tính phí một lần. Thiết bị cho thuê mới chỉ tính phí theo tháng.',
       });
+    if (input.minimumRentalMonths !== undefined) {
+      const minimum = input.minimumRentalMonths;
+      if (minimum !== null && (billingUnit !== 'MONTH' || typeof minimum !== 'number' ||
+        !Number.isInteger(minimum) || minimum < 1 || minimum > 2147483647))
+        throw new BadRequestException('Số tháng thuê tối thiểu phải là số nguyên từ 1 và chỉ áp dụng cho thiết bị thuê tháng.');
+      data.minimumRentalMonths = minimum;
+    } else if (current && current.billingUnit === 'MONTH' && billingUnit !== 'MONTH') {
+      data.minimumRentalMonths = null;
+    }
     if (input.imageUrl !== undefined) {
       if (
         input.imageUrl !== null &&
@@ -599,6 +608,7 @@ export class AdditionalServicesService {
       kind: item.kind,
       billingUnit: item.billingUnit,
       physicalUnit: item.physicalUnit ?? null,
+      minimumRentalMonths: item.billingUnit === 'MONTH' ? item.minimumRentalMonths ?? 1 : null,
       unitPrice: item.unitPrice === null ? null : Number(item.unitPrice),
       imageUrl: item.imageUrl,
       imageAlt: item.imageAlt,

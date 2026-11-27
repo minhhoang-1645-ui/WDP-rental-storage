@@ -345,6 +345,7 @@ model AdditionalService {
   kind          AdditionalServiceKind
   billingUnit   AdditionalServiceBillingUnit
   physicalUnit  String?
+  minimumRentalMonths Int?
   unitPrice     BigInt?
   imageUrl      String?
   imageAlt      String?

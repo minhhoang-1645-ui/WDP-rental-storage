@@ -1,4 +1,5 @@
 export interface AdditionalService {
+  minimumRentalMonths?: number | null;
   facilityId?:string|null;
   id: string;
   code: string;

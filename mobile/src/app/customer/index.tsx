@@ -1,7 +1,8 @@
 import { useAuth } from '@/auth/use-auth';
 import { invoiceBadge, invoiceTitle, outstanding } from '@/components/customer-invoice-list';
 import { useEffect, useState } from 'react';
-import { FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Box, Building2, CalendarDays, Check, ChevronRight, ClipboardList, CreditCard, FileText, Headphones, MapPin, Search, Tag, Warehouse, X } from 'lucide-react-native';
@@ -163,8 +164,8 @@ export default function CustomerHomeScreen() {
     refreshControl={<RefreshControl refreshing={refreshing && loading} onRefresh={() => { setRefreshing(true); setNow(Date.now()); sources.forEach(source => source.refresh()); }} />}>
     <View style={s.heroFrame}>
       <CustomerHero topInset={top} compact>
-        <Image source={require('../../../assets/images/customer-home-hero.png')} resizeMode="cover"
-          accessible={false} pointerEvents="none" style={s.heroArt} />
+        <Image source={require('../../../assets/images/customer-home-hero.png')} contentFit="cover" contentPosition="center"
+          accessible={false} pointerEvents="none" style={StyleSheet.absoluteFill} />
         <View style={s.heroHeader}>
           <View style={s.grow}><Text style={s.logo}>NestBox</Text><Text style={s.heroMessage}>Xin chào{user?.fullName ? <Text style={s.greetingName}>{", " + user.fullName}</Text> : null}</Text></View>
           <CustomerNotifications inverse />
@@ -307,7 +308,6 @@ const s = StyleSheet.create({
   page: { paddingBottom: 24 },
   heroFrame: { borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden', width: '100%', maxWidth: 540, alignSelf: 'center' },
   heroHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroArt: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   logo: { fontSize: 26, fontWeight: '800', color: C.onHero },
   profile: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   count: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingVertical: 3 },

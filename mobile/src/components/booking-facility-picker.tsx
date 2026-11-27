@@ -1,5 +1,6 @@
 import { BookingHeader } from './booking-header';
 import { useState } from 'react';
+import { Image } from 'expo-image';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowRight, Check, ChevronRight, Clock3, MapPin, Search, Warehouse, X } from 'lucide-react-native';
 export type BookingFacility = {
@@ -8,6 +9,7 @@ export type BookingFacility = {
   address: string;
   operationalStatus: 'OPEN' | 'CLOSED';
   bookingEnabled: boolean;
+  photo?: string | null;
   officeHours?: string;
   accessHours?: string;
 };
@@ -53,15 +55,15 @@ export function BookingFacilityPicker({ facilities, selected, onSelect, onBack, 
   const accepting = facilities.filter(acceptsBookings);
   const choice = accepting.find(item => item.id === pending);
   const phrase = normalize(search);
-  const visible = accepting.filter(item => normalize(item.name + ' ' + item.address).includes(phrase));
+  const visible = facilities.filter(item => normalize(item.name + ' ' + item.address).includes(phrase));
   const canContinue = Boolean(choice && !error && !loading);
 
   return <View style={ui.screen}>
     <BookingHeader step={1} title={detail ? 'Chi tiết cơ sở' : undefined} onBack={detail ? () => setDetailId('') : onBack} />
     {detail ? <ScrollView contentContainerStyle={ui.detail}>
-      <View style={ui.detailCover}><Warehouse size={76} color={blue} strokeWidth={1.4} /></View>
+      <Cover key={detail.id} photo={detail.photo} detail />
       <Text accessibilityRole="header" style={ui.heroTitle}>{detail.name}</Text>
-      <Status />
+      <Status available={acceptsBookings(detail)} />
       {detail.address ? <Fact kind="address" value={detail.address} /> : <Text style={ui.secondary}>Chưa có thông tin địa chỉ.</Text>}
       {detail.officeHours ? <Fact kind="hours" value={'Giờ văn phòng · ' + detail.officeHours} /> : null}
       {detail.accessHours ? <Fact kind="hours" value={'Giờ vào kho · ' + detail.accessHours} /> : null}
@@ -89,22 +91,22 @@ export function BookingFacilityPicker({ facilities, selected, onSelect, onBack, 
             {search ? <Pressable accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm"
               style={ui.clear} onPress={() => setSearch('')}><X size={18} color={muted} /></Pressable> : null}
           </View>
-          <Text accessibilityRole="header" style={ui.section}>Cơ sở đang nhận đặt kho{!loading && !error ? ' (' + visible.length + ')' : ''}</Text>
+          <Text accessibilityRole="header" style={ui.section}>Cơ sở lưu trữ{!loading && !error ? ' (' + visible.length + ')' : ''}</Text>
         </View>}
-        renderItem={({ item }) => <View style={[ui.card, item.id === pending && ui.selected]}>
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: item.id === pending }}
+        renderItem={({ item }) => <View style={[ui.card, item.id === choice?.id && ui.selected]}>
+          <Pressable accessibilityRole="radio" accessibilityState={{ checked: item.id === choice?.id, disabled: !acceptsBookings(item) }} disabled={!acceptsBookings(item)}
             accessibilityLabel={item.name} onPress={() => setPending(item.id)} style={ui.cardMain}>
-            <Cover />
+            <Cover photo={item.photo} />
             <View style={ui.cardCopy}>
               <Text style={ui.name}>{item.name}</Text>
-              <Status />
+              <Status available={acceptsBookings(item)} />
               {item.address ? <Fact kind="address" value={item.address} /> : null}
               {item.officeHours || item.accessHours
                 ? <Fact kind="hours" value={item.officeHours || item.accessHours || ''} /> : null}
             </View>
-            <View style={[ui.radio, item.id === pending && ui.checked]}>
+            {acceptsBookings(item) && <View style={[ui.radio, item.id === pending && ui.checked]}>
               {item.id === pending ? <Check color="white" size={15} strokeWidth={3} /> : null}
-            </View>
+            </View>}
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={'Xem chi tiết ' + item.name}
             style={ui.detailsLink} onPress={() => setDetailId(item.id)}>
@@ -115,8 +117,8 @@ export function BookingFacilityPicker({ facilities, selected, onSelect, onBack, 
           {[0, 1, 2].map(key => <View key={key} style={ui.skeleton} />)}
         </View> : <View style={ui.empty}>
           <Text accessibilityRole="header" style={ui.name}>{error ? 'Không tải được danh sách cơ sở'
-            : phrase && accepting.length ? 'Không tìm thấy cơ sở' : 'Chưa có cơ sở nhận đặt kho'}</Text>
-          <Text style={ui.secondary}>{error || (phrase && accepting.length
+            : phrase && facilities.length ? 'Không tìm thấy cơ sở' : 'Chưa có cơ sở được công bố'}</Text>
+          <Text style={ui.secondary}>{error || (phrase && facilities.length
             ? 'Thử tìm bằng tên cơ sở hoặc địa chỉ khác.' : 'Hiện tại chưa có cơ sở phù hợp. Vui lòng quay lại sau.')}</Text>
           {error || phrase ? <Action title={error ? 'Thử lại' : 'Xóa tìm kiếm'}
             onPress={error ? onRetry : () => setSearch('')} /> : null}
@@ -124,10 +126,10 @@ export function BookingFacilityPicker({ facilities, selected, onSelect, onBack, 
       />
       <View style={ui.footer}>
         <View style={ui.summary}>
-          {choice ? <Cover small /> : null}
+          {choice ? <Cover photo={choice.photo} small /> : null}
           <View style={ui.summaryCopy}>
             <Text style={ui.caption}>{choice ? 'Đã chọn cơ sở' : 'Bạn chưa chọn cơ sở'}</Text>
-            <Text style={choice ? ui.name : ui.caption} numberOfLines={2}>{choice?.name || 'Vui lòng chọn một cơ sở để tiếp tục.'}</Text>
+            <Text style={choice ? ui.name : ui.caption} numberOfLines={2}>{choice?.name || (facilities.length && !accepting.length ? 'Hiện chưa có cơ sở nhận đặt kho.' : 'Vui lòng chọn một cơ sở để tiếp tục.')}</Text>
           </View>
         </View>
         <View style={ui.footerAction}>
@@ -139,13 +141,18 @@ export function BookingFacilityPicker({ facilities, selected, onSelect, onBack, 
   </View>;
 }
 
-function Cover({ small = false }: { small?: boolean }) {
-  return <View style={[ui.cover, small && ui.smallCover]}><Warehouse size={small ? 19 : 35} color="#2165A1" strokeWidth={1.6} /></View>;
+function Cover({ photo, small = false, detail = false }: { photo?: string | null; small?: boolean; detail?: boolean }) {
+  const [failed, setFailed] = useState<string>();
+  return <View style={[ui.cover, detail ? ui.detailCover : small && ui.smallCover]}>
+    {typeof photo === 'string' && photo.trim() && photo !== failed
+      ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" onError={() => setFailed(photo)} />
+      : <Warehouse size={detail ? 76 : small ? 19 : 35} color="#2165A1" strokeWidth={1.6} />}
+  </View>;
 }
 
-function Status() {
-  return <View style={ui.badge}><Check size={12} color="#067A3A" strokeWidth={3} />
-    <Text style={ui.badgeText}>Đang nhận đặt kho</Text></View>;
+function Status({ available }: { available: boolean }) {
+  return <View style={[ui.badge, !available && ui.pausedBadge]}>{available && <Check size={12} color="#067A3A" strokeWidth={3} />}
+    <Text style={[ui.badgeText, !available && ui.pausedText]}>{available ? 'Đang nhận đặt kho' : 'Tạm dừng nhận đặt kho'}</Text></View>;
 }
 
 function Fact({ kind, value }: { kind: 'address' | 'hours'; value: string }) {
@@ -179,19 +186,21 @@ const ui = StyleSheet.create({
   card: { borderWidth: 1, borderColor: border, borderRadius: 14, backgroundColor: 'white', paddingHorizontal: 11, paddingTop: 11 },
   selected: { borderColor: blue, backgroundColor: '#EDF6FF' },
   cardMain: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  cover: { width: 81, height: 68, borderRadius: 10, backgroundColor: '#DCEEFE', alignItems: 'center', justifyContent: 'center' },
+  cover: { width: 81, height: 68, borderRadius: 10, backgroundColor: '#DCEEFE', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   smallCover: { width: 36, height: 35, borderRadius: 7 },
   cardCopy: { flex: 1, alignItems: 'flex-start', gap: 4 },
   name: { color: navy, fontWeight: '800', fontSize: 15 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: '#D6F5E4', alignSelf: 'flex-start' },
   badgeText: { color: '#067A3A', fontSize: 11, fontWeight: '700' },
+  pausedBadge: { backgroundColor: '#EDF2F8' },
+  pausedText: { color: muted },
   fact: { flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
   factText: { flexShrink: 1, fontSize: 13, lineHeight: 18, color: navy },
   radio: { width: 22, height: 22, borderRadius: 12, borderWidth: 1.5, borderColor: '#BBC8D5', alignItems: 'center', justifyContent: 'center' },
   checked: { backgroundColor: blue, borderColor: blue },
   detailsLink: { alignSelf: 'flex-end', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 3 },
   detail: { padding: 16, gap: 13 },
-  detailCover: { height: 150, borderRadius: 15, backgroundColor: '#E5F3FF', alignItems: 'center', justifyContent: 'center' },
+  detailCover: { width: '100%', height: 150, borderRadius: 15 },
   skeletons: { gap: 8 },
   skeleton: { height: 112, borderRadius: 14, backgroundColor: '#EDF2F8' },
   empty: { borderRadius: 14, backgroundColor: '#F6F9FD', padding: 16, gap: 8 },

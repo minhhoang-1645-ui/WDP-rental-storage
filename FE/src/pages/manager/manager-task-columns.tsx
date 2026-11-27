@@ -151,8 +151,16 @@ export function managerResourceColumns(resource: TableResource, dateSort?: Staff
     { key: 'unit', label: 'Mã kho', cell: row => <CopyRecordCode label="Mã kho" showLabel={false} value={first(row, 'unitCode')} /> },
     { key: 'type', label: 'Loại kho', cell: row => first(row, 'storageType.name') || '—' },
     { key: 'location', label: 'Tầng / Khu', optional: true, cell: row => [first(row, 'floor'), first(row, 'zone')].filter(Boolean).join(' · ') || '—' },
-    { key: 'status', label: 'Trạng thái vật lý', cell: row => <><Status value={row.status} />{unitBookingSummary(row) && <small>{unitBookingSummary(row)}</small>}</> },
-    { key: 'customer', label: 'Phân bổ hiện tại', optional: true, cell: row => first(row, 'allocationSummary.current.customer.fullName') || '—' },
+    { key: 'status', label: 'Trạng thái kho', cell: row => {
+      const upcoming = unitBookingSummary(row);
+      return <><Status value={row.status} />{upcoming && <small>{upcoming}</small>}</>;
+    } },
+    { key: 'customer', label: 'Khách được phân bổ', optional: true, cell: row => {
+      const customer = first(row, 'allocationSummary.current.customer.fullName');
+      if (!customer) return '—';
+      const usingUnit = row.status === 'OCCUPIED' && first(row, 'allocationSummary.current.contract.status') === 'ACTIVE';
+      return <>{customer}<small>{usingUnit ? 'Đang sử dụng kho' : row.status === 'RESERVED' ? 'Được giữ kho' : 'Được phân bổ'}</small></>;
+    } },
   ];
   if (resource === 'deposit-settlements') return [
     { key: 'customer', label: 'Khách hàng / Kho', cell: row => <><strong>{person(row)}</strong>

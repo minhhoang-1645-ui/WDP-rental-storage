@@ -228,7 +228,7 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
                 <div><dt>Giá thuê tháng</dt><dd>{money(selectedType.monthlyRate)}</dd></div>
               </>}
             </dl>
-            {!record && <small>Backend cấp mã chính thức khi lưu thành công.</small>}
+            {!record && <small>Mã kho được tạo tự động khi lưu.</small>}
           </div>
           {!record && unitCode.error && <LoadState loading={false} error={unitCode.error} retry={unitCode.refresh} />}
           </section>

@@ -6,11 +6,37 @@ export function unitLocation(unit: Row) {
 }
 
 export function unitBookingSummary(unit: Row) {
-  const current = object(unit.currentAllocation ?? object(unit.allocationSummary).current);
-  if (first(current, 'id', 'reservationReference', 'customer.fullName')) return 'Có phân bổ hiện tại';
   const next = rows(unit.futureAllocations ?? object(unit.allocationSummary).future)[0];
-  if (next?.startDate) return `Có lịch từ ${date(next.startDate)}`;
+  if (next?.startDate) return `Có lịch thuê từ ${date(next.startDate)}`;
   return '';
+}
+
+const unitStatusDescriptions: Record<string, string> = {
+  AVAILABLE: 'Cần kiểm tra khả dụng theo kỳ thuê.',
+  RESERVED: 'Đã giữ cho một nghiệp vụ, chưa đưa vào sử dụng.',
+  OCCUPIED: 'Đã bàn giao và đang được sử dụng.',
+  MAINTENANCE: 'Kho đang được bảo trì.',
+};
+
+export function unitStatusDescription(unit: Row) {
+  return unitStatusDescriptions[first(unit, 'status')] ?? '';
+}
+
+const dimensionFormat = new Intl.NumberFormat('vi-VN');
+const areaFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 });
+const volumeFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 6 });
+
+export function unitMeasurements(unit: Row) {
+  const { widthCm, lengthCm, heightCm } = object(unit.dimensions);
+  const validCm = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  const hasFloor = validCm(widthCm) && validCm(lengthCm);
+  const hasVolume = hasFloor && validCm(heightCm);
+  return {
+    dimensions: hasVolume ? `${dimensionFormat.format(widthCm)} × ${dimensionFormat.format(lengthCm)} × ${dimensionFormat.format(heightCm)} cm` : '—',
+    area: hasFloor ? `${areaFormat.format(widthCm * lengthCm / 10_000)} m²` : '—',
+    volume: hasVolume ? `${volumeFormat.format(widthCm * lengthCm * heightCm / 1_000_000)} m³` : '—',
+  };
 }
 
 export function allocationDisplay(allocation: Row, occupied = false, today = staffDay(Date.now())) {

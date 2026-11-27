@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { datedPaymentOverdue, OverduePaymentWorker, verifiedRentDebt } from './overdue-payment.js';
+import { OverduePaymentWorker } from './overdue-payment.js';
+import { datedPaymentOverdue, verifiedRentDebt } from './overdue-payment-rules.js';
 
 const dueAt = new Date('2026-11-01T00:00:00Z');
 const now = new Date('2026-11-07T00:00:00+07:00');

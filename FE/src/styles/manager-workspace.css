@@ -345,7 +345,7 @@
 .manager-unit-list .staff-table-options select { min-width: 0; text-overflow: ellipsis; }
 .workspace-themed[data-workspace-role="manager"] .manager-unit-list .manager-task-list .manager-table td:last-child { width: auto; }
 .manager-unit-list .record-code-value { font-weight: 600; color: var(--workspace-text); }
-.manager-unit-detail .manager-section .manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.manager-unit-detail .manager-section .manager-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
 .workspace-themed .manager-unit-list .manager-status.is-occupied, .workspace-themed .manager-unit-detail .manager-status.is-occupied { color: var(--report-rent); }
 .workspace-themed .manager-unit-list .manager-status.is-available, .workspace-themed .manager-unit-detail .manager-status.is-available { color: var(--report-received); }
 .workspace-themed .manager-unit-list .manager-status.is-reserved, .workspace-themed .manager-unit-detail .manager-status.is-reserved { color: var(--manager-reserved); }

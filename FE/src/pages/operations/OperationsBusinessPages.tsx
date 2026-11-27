@@ -11,6 +11,7 @@ import { isReportDay } from '../../utils/reporting';
 import { ReportComparison, ReportDateContext, ReportFinances, ReportMetrics, ReportTrend, ReportTrendTable } from './OperationsReportSections';
 import { displayDate, periods, reportPreset, reportTrendGroup, type Facility, type Period, type PerformanceReport, type Trend } from './operations-report-data';
 import './operations-report.css';
+import { MaintenanceCostTable, type MaintenanceCostReport } from '../../components/workspace/MaintenanceCostTable';
 
 const updatedAt = new Intl.DateTimeFormat('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -33,11 +34,12 @@ export function OperationsBusinessReport() {
   const report = useApiResource<PerformanceReport>(valid ? '/operations/reports/performance?' + query : null, user?.id);
   const group = reportTrendGroup(period, from, to);
   const trend = useApiResource<Trend>(valid ? '/operations/reports/financial?' + new URLSearchParams({ ...Object.fromEntries(query), group }) : null, user?.id);
+  const maintenance = useApiResource<MaintenanceCostReport>(valid ? '/operations/reports/maintenance-costs?' + query : null, user?.id);
   const facilities = useApiResource<Facility[]>('/operations/facilities', user?.id);
   const [exportError, setExportError] = useState('');
   const [exporting, setExporting] = useState(false);
   const exportLock = useRef(false);
-  const updating = report.refreshing || trend.refreshing;
+  const updating = report.refreshing || trend.refreshing || maintenance.refreshing;
   const timestamp = Date.parse(report.data?.asOf ?? '');
   const items = report.data?.items ?? [];
 
@@ -56,6 +58,7 @@ export function OperationsBusinessReport() {
   function refresh() {
     report.refresh();
     trend.refresh();
+    maintenance.refresh();
     if (facilities.error) facilities.refresh();
   }
 
@@ -137,5 +140,7 @@ export function OperationsBusinessReport() {
       <ReportTrendTable trend={trend.data} group={group} loading={trend.loading} context={dateContext} />
     </>}
     {report.data && !items.length && <Empty title="Không có cơ sở phù hợp" description="Chọn lại phạm vi cơ sở để xem báo cáo." />}
+    {valid && <MaintenanceCostTable className="bom-report-panel" data={maintenance.data} loading={maintenance.loading} error={maintenance.error} refresh={maintenance.refresh} />}
+
   </section>;
 }

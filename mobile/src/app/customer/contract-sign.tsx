@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Check, Info, Mail, Trash2 } from 'lucide-react-native';
 import { useAuth } from '@/auth/use-auth';
@@ -42,9 +42,11 @@ export default function ContractSign() {
   useDraftGuard(true);
   useEffect(() => {
     if (!remaining && !expiresIn) return;
-    const timer = setTimeout(() => setNow(currentTimeMs()), 1000);
-    return () => clearTimeout(timer);
-  }, [remaining, expiresIn, now]);
+    const refresh = () => setNow(currentTimeMs());
+    const timer = setTimeout(refresh, expiresIn > 0 ? Math.min(1000, expiresAt - now) : 1000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => { clearTimeout(timer); subscription.remove(); };
+  }, [remaining, expiresIn, expiresAt, now]);
 
   const row = source.data;
   const terms = object(row?.terms);
@@ -96,13 +98,13 @@ export default function ContractSign() {
         </> : receipt ? <>
           <View style={styles.otpIntro}>
             <View style={styles.mailIcon}><Mail size={32} color="#0758DC" /></View>
-            <Text style={s.section}>Nhập mã xác thực (OTP)</Text>
+            <Text style={s.section}>{expiresIn > 0 ? 'Nhập mã xác thực (OTP)' : 'Mã xác thực đã hết hạn'}</Text>
             <Text style={[s.secondary, { textAlign: 'center' }]}>Mã xác thực đã được gửi đến email {receipt.recipient}.</Text>
             <Text style={s.secondary}>{expiresIn > 0
               ? 'Mã hết hạn sau ' + Math.floor(expiresIn / 60) + ':' + String(expiresIn % 60).padStart(2, '0')
               : 'Mã đã hết hạn. Hãy gửi mã mới.'}</Text>
           </View>
-          <View>
+          {expiresIn > 0 && <View>
             <TextInput accessibilityLabel="Mã xác thực email gồm 6 số" value={otp} editable={!busy && expiresIn > 0}
               onChangeText={value => { setOtp(value.replace(/\D/g, '')); setError(''); }} maxLength={otpLength}
               keyboardType="number-pad" autoComplete="one-time-code" caretHidden underlineColorAndroid="transparent"
@@ -111,7 +113,7 @@ export default function ContractSign() {
               {Array.from({ length: otpLength }, (_, index) => <View key={index} style={[styles.cell, index === otp.length && styles.current]}>
                 <Text style={styles.digit}>{otp[index] ?? ''}</Text></View>)}
             </View>
-          </View>
+          </View>}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable accessibilityRole="button" disabled={busy || remaining > 0 || !emailReady} onPress={() => void submit(false)} style={styles.center}>
             <Text style={remaining > 0 || busy || !emailReady ? s.secondary : s.link}>{operation === 'send' ? 'Đang gửi lại mã…' : remaining > 0 ? 'Gửi lại sau ' + remaining + ' giây' : emailReady ? 'Gửi lại mã qua email' : 'Chưa thể gửi lại mã qua email'}</Text>
@@ -119,7 +121,7 @@ export default function ContractSign() {
           <View style={styles.notice}><Info size={20} color="#0758DC" />
             <Text style={[s.secondary, { flex: 1 }]}>Hợp đồng được ký sau khi hệ thống xác nhận mã hợp lệ.</Text>
           </View>
-          <Button title={operation === 'verify' ? 'Đang xác nhận chữ ký…' : 'Xác nhận ký'} disabled={busy || expiresIn === 0 || otp.length !== otpLength} onPress={() => void submit(true)} />
+          {expiresIn > 0 && <Button title={operation === 'verify' ? 'Đang xác nhận chữ ký…' : 'Xác nhận ký'} disabled={busy || expiresIn === 0 || otp.length !== otpLength} onPress={() => void submit(true)} />}
           <Pressable accessibilityRole="button" disabled={busy} style={styles.center} onPress={() => {
             setReceipt(undefined); setImage(''); setOtp(''); setSignatureReady(false); setAgreed(false); setError('');
           }}><Text style={s.link}>Vẽ lại chữ ký</Text></Pressable>

@@ -13,6 +13,7 @@ import { useApiResource } from '../../services/useApiResource';
 import type { ManagerPeriodReport, ManagerReport } from '../../types/manager-report';
 import { isReportCount, isReportDay, reportBucketLabel, reportDay, reportMoney, type ReportGroup } from '../../utils/reporting';
 import '../../styles/manager-reports.css';
+import { MaintenanceCostTable, type MaintenanceCostReport } from '../../components/workspace/MaintenanceCostTable';
 
 type Dates = { from: string; to: string };
 type Period = 'today' | 'week' | 'month' | 'quarter' | 'custom';
@@ -116,10 +117,13 @@ export function ManagerReportsPage() {
   const typeId = params.get('typeId') ?? '';
   const typeQuery = new URLSearchParams({ ...dates, group, typeId });
   const range = useApiResource<ManagerPeriodReport>('/manager/reports?' + query, user?.id, true);
+  const maintenance = useApiResource<MaintenanceCostReport>(
+    tab === 'finance' ? '/manager/reports/maintenance-costs?' + new URLSearchParams(dates) : null, user?.id,
+  );
   const snapshot = useApiResource<ManagerReport>(snapshotPath, user?.id, true);
   const typeReport = useApiResource<ManagerPeriodReport>(tab === 'operations' && expanded.operations && typeId ? '/manager/reports?' + typeQuery : null, user?.id);
   const catalog = useApiResource<{ items: { id: string; name: string; code: string }[] }>(expanded[tab] ? '/manager/storage-types' : null, user?.id);
-  function refresh() { range.refresh(); snapshot.refresh(); typeReport.refresh(); catalog.refresh(); }
+  function refresh() { range.refresh(); snapshot.refresh(); typeReport.refresh(); catalog.refresh(); maintenance.refresh(); }
   useLiveRefresh('/manager/*', refresh);
   const invalidDraft = !isReportDay(draft.from) || !isReportDay(draft.to) || draft.from > draft.to;
   const rangeLabel = dates.from === dates.to ? reportBucketLabel(dates.from, 'day') :
@@ -129,7 +133,7 @@ export function ManagerReportsPage() {
   const report = range.data;
   const operations = typeId ? typeReport.data : report;
   const categories = operations?.categories;
-  const refreshing = range.refreshing || snapshot.refreshing || typeReport.refreshing;
+  const refreshing = range.refreshing || snapshot.refreshing || typeReport.refreshing || maintenance.refreshing;
   const occupancy = isReportCount(units?.occupied) && isReportCount(units.total) && units.occupied <= units.total
     ? `${count.format(units.occupied)} / ${count.format(units.total)} kho` : '—';
 
@@ -231,6 +235,8 @@ export function ManagerReportsPage() {
           <LoadState loading={range.loading} error={range.error} retry={range.refresh} placeholder={<DashboardSkeleton variant="bars" />} />
           {report && <ReceivedMoneyChart key={query.toString()} buckets={report.times} received={report.received} group={group} {...dates} />}
         </section>
+        <MaintenanceCostTable className="manager-report-chart" data={maintenance.data}
+          loading={maintenance.loading} error={maintenance.error} refresh={maintenance.refresh} />
         <details className="manager-report-details manager-report-finance-accordion" open={expanded.finance} onToggle={event => {
           const open = event.currentTarget.open;
           setExpanded(current => current.finance === open ? current : { ...current, finance: open });

@@ -14,7 +14,7 @@ import { DocumentFile } from '../../components/customer/DocumentFile';
 import { InvoiceBreakdown } from '../../components/customer/InvoiceBreakdown';
 import type { CustomerInvoice } from '../../types/customer';
 /* oxlint-disable react/jsx-key -- Tuple values below are rendered inside keyed fact fields and table cells, not directly as a child list. */
-import { ArrowLeft, Printer, RefreshCw } from "lucide-react";
+import { ArrowLeft, Printer, RefreshCw, Users } from "lucide-react";
 import { useState } from "react";
 import { WorkflowHint } from '../../components/workspace/WorkHub';
 import { workflowGuide } from '../../utils/workflow-guide';
@@ -64,6 +64,7 @@ import { staffRecordIdentity } from '../staff/staff-work';
 import { PolicySettlementActions } from '../../components/manager/PolicySettlementActions';
 import { incidentArea } from '../../utils/maintenance-incident';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
+import { MaintenanceCosts, MaintenanceRepairFacts } from '../../components/manager/MaintenanceCosts';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 
@@ -124,11 +125,14 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
     (row && operationalRecord ? [config.title, physical].filter(Boolean).join(' · ') : undefined) ||
     (row && (resource === 'customers' ? first(row, 'fullName', 'name') : identity?.title !== reference ? identity?.title : '')) || config.title;
   const status = row?.status ?? row?.rentalState ?? row?.accountStatus;
+  const canAssignMaintenance = user?.role === 'FACILITY_MANAGER' && resource === 'maintenance'
+    && (status === 'OPEN' || status === 'IN_PROGRESS');
   const timeline = row ? Object.entries(timelineLabels).flatMap(([key, label]) => {
     if (isStaff && (key === 'updatedAt' || key === 'createdAt' && row.requestedAt)) return [];
     const value = first(row, key);
     const time = Date.parse(value);
-    return Number.isFinite(time) ? [{ key, label, value, time }] : [];
+    const title = resource === 'maintenance' && key === 'createdAt' ? 'Tạo phiếu bảo trì' : label;
+    return Number.isFinite(time) ? [{ key, label: title, value, time }] : [];
   }).sort((left, right) => left.time - right.time) : [];
   const transferSupport = resource === 'support-requests' && isCustomerTransferSubject(row?.subject);
   const hasInlineActions = isStaff && service;
@@ -186,8 +190,12 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
         <>
           <PageHeader title={title} status={status ? <Status value={status} text={resource === 'transfers'
             ? status === 'REQUESTED' ? 'Chờ duyệt' : status === 'APPROVED' && row.commercial && !first(row, 'commercial.acceptedAt') ? 'Chờ ký phụ lục' : status === 'APPROVED' && isStaff ? 'Chờ bàn giao' : undefined
-            : undefined} /> : undefined}
+            : resource === 'maintenance' && row.closedWithoutRepair === true ? 'Đã đóng · Không cần sửa' : undefined} /> : undefined}
             meta={resource !== 'customers' && reference ? <CopyRecordCode value={reference} /> : undefined}>
+            {canAssignMaintenance && <Link className="button-primary" to={`/manager/assignments?kind=maintenance&record=${encodeURIComponent(id)}`}>
+              <Users size={16} />
+              {first(row, 'assignedStaff.id') ? 'Đổi người phụ trách' : 'Phân công nhân viên'}
+            </Link>}
             {isStaff && staffOperation && <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>}
             {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-secondary" onClick={() => setEditingUnit(true)}>Sửa thông tin kho</button>}
             <button className="button-secondary" onClick={() => window.print()}>
@@ -224,6 +232,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               {user?.role !== 'FACILITY_STAFF' && (['contracts', 'invoices'].includes(resource) || resource === 'renewals' && Boolean(row.appendix)) &&
                 <DocumentFile path={`/manager/documents/${resource}/${encodeURIComponent(id)}`} name={code(row)} signed={Boolean(first(row, 'terms.acceptedAt', 'appendix.acceptedAt'))} />}
               {service ? <ServiceSummary row={row} maintenance={resource === 'maintenance'} includeAssignee /> : <DetailContent row={row} resource={resource} staff={isStaff} />}
+              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && <MaintenanceRepairFacts row={row} />}
               {!isStaff && resource === 'maintenance' && <AffectedBookingWarning bookings={rows(row.affectedBookings)} />}
               {user?.role === 'FACILITY_STAFF' && Object.hasOwn(staffResources, resource) && !(resource === 'support-requests' && isTransferRequest(row)) && <StaffActions resource={resource as StaffResource} row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />}
               {resource === "contracts" && (
@@ -235,6 +244,8 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               )}
               {user?.role === 'FACILITY_MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
+              {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.costs &&
+                <MaintenanceCosts key={first(row, 'updatedAt')} row={row} refresh={data.refresh} onSuccess={setNotice} />}
               {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
@@ -318,12 +329,14 @@ function ServiceSummary({ row, maintenance, includeAssignee }: { row: Row; maint
     <h2>{maintenance ? 'Nội dung sự cố' : 'Nội dung khách gửi'}</h2>
     <Facts items={[
       ...(maintenance && first(row, 'facility.name') ? [['Cơ sở', first(row, 'facility.name')] as [string, string]] : []),
-      ...(maintenance && first(row, 'reportedBy.fullName') ? [['Người báo cáo', first(row, 'reportedBy.fullName')], ['Thời điểm báo cáo', date(row.createdAt, true)]] as [string, string][] : []),
+      ...(maintenance && first(row, 'reportedBy.fullName') ? [['Người ghi nhận', first(row, 'reportedBy.fullName')]] as [string, string][] : []),
+      ...(maintenance && row.createdAt ? [['Ngày tạo phiếu', date(row.createdAt, true)]] as [string, string][] : []),
       ...(maintenance && incidentArea(row.commonArea) ? [['Khu vực chung', [incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ')] as [string, string]] : []),
       ...(unitCode ? [['Kho', [unitCode, location].filter(Boolean).join(' · ')] as [string, string]] : []),
-      ...(maintenance ? [['Khóa đặt thuê của phiếu', row.blocksUnit === true
-        ? rows(row.affectedUnits).map(item => first(item, 'unitCode')).filter(Boolean).join(', ') || 'Đang tạm chặn'
-        : 'Không còn chặn'] as [string, string]] : []),
+      ...(maintenance ? [['Nhận đặt mới', row.legacyBookingHold === true ? 'Đang khóa do bảo trì'
+        : row.blocksUnit === true
+          ? ['Tạm ngừng', rows(row.affectedUnits).map(item => first(item, 'unitCode')).filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+          : 'Phiếu này không chặn đặt mới'] as [string, string]] : []),
       ...(row.category ? [['Vấn đề', label(row.category)] as [string, string]] : []),
       ...(row.priority ? [['Ưu tiên', label(row.priority)] as [string, string]] : []),
       ...(includeAssignee ? serviceAssignee(row) : []),
@@ -366,8 +379,8 @@ function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
   const title = staffEvidenceTitles[resource];
   if (!title) return null;
   if (resource === 'maintenance' && rows(row.evidenceSubmissions).length > 0) return <section className="manager-section">
-    <h2>{title}</h2>
-    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} />
+    <h2>Các lần gửi kết quả sửa chữa</h2>
+    <EvidenceSubmissions value={row.evidenceSubmissions} title={title} maintenance />
   </section>;
   const report = object(row.handoverReport);
   const uploaded = resource === 'maintenance' ? row.workPhotos
@@ -398,11 +411,15 @@ function ServiceOutcome({ row, maintenance }: { row: Row; maintenance: boolean }
   const owner = first(row, maintenance ? 'verifiedBy.fullName' : 'resolvedBy.fullName', 'escalatedBy.fullName', 'assignedStaff.fullName');
   if (!outcome && !review && !closedAt) return null;
   return <section className="manager-section">
-    <h2>{maintenance ? 'Kết quả đã ghi nhận' : 'Kết quả xử lý'}</h2>
+    <h2>{maintenance ? row.closedWithoutRepair === true ? 'Kết quả khảo sát' : 'Kết quả đã ghi nhận' : 'Kết quả xử lý'}</h2>
     {Boolean(row.resolutionType) && <strong>{label(row.resolutionType)}</strong>}
     {outcome && <p className="record-text">{outcome}</p>}
-    {review && <p className="record-text"><strong>Nhận xét nghiệm thu</strong> {review}</p>}
-    {(owner || closedAt) && <p className="record-attribution">{[owner, closedAt && date(closedAt, true)].filter(Boolean).join(' · ')}</p>}
+    {review && <p className="record-text"><strong>{row.closedWithoutRepair === true ? 'Lý do kết thúc' : 'Nhận xét nghiệm thu'}</strong> {review}</p>}
+    {maintenance ? <Facts items={[
+      ...(row.workCompletedAt ? [['Ngày gửi kết quả', date(row.workCompletedAt, true)] as [string, string]] : []),
+      ...(row.verifiedAt ? [[row.closedWithoutRepair === true ? 'Ngày kết thúc' : 'Ngày nghiệm thu', date(row.verifiedAt, true)] as [string, string]] : []),
+      ...(first(row, 'verifiedBy.fullName') ? [[row.closedWithoutRepair === true ? 'Người kết thúc' : 'Người nghiệm thu', first(row, 'verifiedBy.fullName')] as [string, string]] : []),
+    ]} /> : (owner || closedAt) && <p className="record-attribution">{[owner, closedAt && date(closedAt, true)].filter(Boolean).join(' · ')}</p>}
   </section>;
 }
 

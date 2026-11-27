@@ -5,18 +5,46 @@ export type OtpProof = { challengeId: string; otp: string };
 export function SignatureAgreement({ busy, onSubmit, onRequestOtp, otpConfigured = true, label = 'Xác nhận' }: { busy: boolean; onSubmit: (signatureImage: string, proof: OtpProof) => Promise<void>; onRequestOtp: (signatureImage: string) => Promise<OtpReceipt>; otpConfigured?: boolean; label?: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false), lock = useRef(false);
-  const [receipt, setReceipt] = useState<OtpReceipt | null>(null), [image, setImage] = useState(''), [otp, setOtp] = useState(''), [error, setError] = useState(''), [sending, setSending] = useState(false), [remaining, setRemaining] = useState(0);
-  useEffect(() => { if (!remaining) return; const timer = window.setTimeout(() => setRemaining(value => Math.max(0, value - 1)), 1000); return () => window.clearTimeout(timer); }, [remaining]);
+  const [receipt, setReceipt] = useState<OtpReceipt | null>(null), [image, setImage] = useState(''), [otp, setOtp] = useState(''), [error, setError] = useState(''), [sending, setSending] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  const [resendAt, setResendAt] = useState(0);
+  const expiresAt = receipt ? Date.parse(receipt.expiresAt) : NaN;
+  const expiresIn = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : 0;
+  const remaining = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  useEffect(() => {
+    const deadline = Math.max(resendAt, Number.isFinite(expiresAt) ? expiresAt : 0);
+    if (now >= deadline) return;
+    const refresh = () => setNow(Date.now());
+    const untilExpiry = expiresAt > now ? expiresAt - now : Infinity;
+    const timer = window.setTimeout(refresh, Math.min(1000, untilExpiry, deadline - now));
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [expiresAt, now, resendAt]);
   async function send() {
-    if (lock.current || busy) return;
+    if (lock.current || busy || !otpConfigured || Date.now() < resendAt) return;
     const signature = image || canvas.current?.toDataURL('image/png'); if (!signature) return;
     lock.current = true; setSending(true); setError('');
-    try { const result = await onRequestOtp(signature); setImage(signature); setReceipt(result); setOtp(''); setRemaining(result.resendAfterSeconds); }
+    try {
+      const result = await onRequestOtp(signature);
+      const receivedAt = Date.now();
+      setImage(signature);
+      setReceipt(result);
+      setOtp('');
+      setNow(receivedAt);
+      setResendAt(receivedAt + result.resendAfterSeconds * 1000);
+    }
     catch (error) { setError(error instanceof Error ? error.message : 'Chưa gửi được mã xác thực.'); }
     finally { lock.current = false; setSending(false); }
   }
   async function confirm() {
     if (!receipt || lock.current || busy) return;
+    if (!(expiresAt > Date.now())) {
+      setNow(Date.now());
+      return;
+    }
     lock.current = true; setSending(true); setError('');
     try { await onSubmit(image, { challengeId: receipt.challengeId, otp }); }
     catch (error) { setError(error instanceof Error ? error.message : 'Chưa lưu được chữ ký.'); }
@@ -48,7 +76,16 @@ export function SignatureAgreement({ busy, onSubmit, onRequestOtp, otpConfigured
       <button type="button" className="button-secondary" disabled={busy || sending} onClick={() => { setReceipt(null); setImage(''); setOtp(''); setError(''); const element = canvas.current; element?.getContext('2d')?.clearRect(0, 0, element.width, element.height); setSigned(false); }}>Xóa và ký lại</button>
       {!receipt && <button type="button" className="button-primary" disabled={!agreed || !signed || busy || sending || !otpConfigured || remaining > 0} onClick={() => void send()}>{sending ? 'Đang gửi mã…' : remaining > 0 ? `Gửi lại sau ${remaining}s` : 'Gửi mã xác thực qua email'}</button>}
     </div>
-    {receipt && <div className="signature-otp"><p role="status">Mã đã gửi đến <strong>{receipt.recipient}</strong>. Có hiệu lực 10 phút, tối đa 5 lần nhập sai. Chữ ký chưa được lưu cho đến khi xác thực thành công.</p><label className="field-label">Mã xác thực 6 số<input aria-label="Mã xác thực chữ ký" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} disabled={busy || sending} onChange={event => setOtp(event.target.value.replace(/\D/g, ''))} /></label><button type="button" className="button-primary" disabled={otp.length !== 6 || busy || sending} onClick={() => void confirm()}>{busy || sending ? 'Đang xác thực…' : label}</button><button type="button" className="portal-text-button" disabled={remaining > 0 || sending || busy} onClick={() => void send()}>{remaining > 0 ? `Gửi lại mã sau ${remaining}s` : 'Gửi lại mã'}</button></div>}
+    {receipt && <div className="signature-otp">
+      {expiresIn > 0 ? <>
+        <p>Mã đã gửi đến <strong>{receipt.recipient}</strong>. Hết hạn sau {Math.floor(expiresIn / 60)}:{String(expiresIn % 60).padStart(2, '0')}. Bạn được nhập sai tối đa 5 lần.</p>
+        <label className="field-label">Mã xác thực 6 số
+          <input aria-label="Mã xác thực chữ ký" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} disabled={busy || sending} onChange={event => setOtp(event.target.value.replace(/\D/g, ''))} />
+        </label>
+        <button type="button" className="button-primary" disabled={otp.length !== 6 || busy || sending} onClick={() => void confirm()}>{busy || sending ? 'Đang xác thực…' : label}</button>
+      </> : <p role="status">Mã đã hết hạn. Hãy gửi mã mới để tiếp tục ký.</p>}
+      <button type="button" className="portal-text-button" disabled={remaining > 0 || sending || busy || !otpConfigured} onClick={() => void send()}>{remaining > 0 ? `Gửi lại mã sau ${remaining}s` : 'Gửi lại mã'}</button>
+    </div>}
     {error && <p role="alert" className="portal-error">{error}</p>}
   </div>;
 }

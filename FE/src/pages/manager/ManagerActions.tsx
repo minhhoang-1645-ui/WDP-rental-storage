@@ -612,15 +612,8 @@ export function ManagerActions({
           ))}
         {resource === 'deposit-settlements' && Boolean(row.earlyReturnSettlement) && <CombinedReturnRefund
           row={row} busy={busy} onConfirm={body => void run(`${root}/confirm-return-refund`, 'POST', body, true)} />}
-        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER'
-          && ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'].includes(String(row.status)) && (
-          <DetailDisclosure title="Đánh giá ảnh hưởng đến cho thuê">
-            <IncidentBookingImpact key={first(row, 'updatedAt')} row={row} root={root} busy={busy}
-              onSave={(affectedUnitIds, expectedAffectedUnitIds) => void run(`${root}/booking-impact`, 'PATCH', { affectedUnitIds, expectedAffectedUnitIds }, true)} />
-          </DetailDisclosure>
-        )}
         {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
-          <form className="portal-form" onSubmit={event => {
+          <form className="portal-form maintenance-verification-form" onSubmit={event => {
             event.preventDefault();
             if (maintenancePassed) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined }, true);
             else if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
@@ -636,11 +629,38 @@ export function ManagerActions({
               <textarea required={!maintenancePassed} rows={3} maxLength={4000}
                 value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
             </label>
-            {maintenancePassed && Boolean(row.blocksUnit) && <p className="record-attribution">Nghiệm thu gỡ khóa do phiếu này tạo. Những khóa khác và lịch thuê vẫn được áp dụng.</p>}
+            {maintenancePassed && Boolean(row.blocksUnit) && <p className="record-attribution">Chọn Đạt để đóng phiếu và gỡ khóa đặt mới của phiếu này.</p>}
             <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
               {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
             </button>
           </form>
+        )}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.status === 'OPEN' && !row.startedAt &&
+          <DetailDisclosure title="Kết thúc vì không cần sửa chữa">
+            <form className="portal-form incident-booking-impact" onSubmit={event => {
+              event.preventDefault();
+              const fields = new FormData(event.currentTarget);
+              void run(`${root}/close-without-repair`, 'POST', {
+                reason: fields.get('closeReason'), safetyVerified: fields.get('safetyVerified') === 'on',
+              }, true);
+            }}>
+              <label className="field-label">Lý do và kết quả kiểm tra an toàn
+                <textarea name="closeReason" rows={3} required minLength={3} maxLength={4000} />
+              </label>
+              <label className="incident-booking-choice">
+                <input type="checkbox" name="safetyVerified" required />
+                <span>Tôi đã kiểm tra và xác nhận khu vực đủ an toàn.</span>
+              </label>
+              <button type="submit" className="button-secondary" disabled={busy}>Kết thúc phiếu</button>
+            </form>
+          </DetailDisclosure>}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER'
+          && (row.legacyBookingHold !== true || rows(row.affectedUnits).length > 0)
+          && ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'].includes(String(row.status)) && (
+          <DetailDisclosure title="Tạm ngừng nhận đặt mới">
+            <IncidentBookingImpact key={first(row, 'updatedAt')} row={row} root={root} busy={busy}
+              onSave={(affectedUnitIds, expectedAffectedUnitIds) => void run(`${root}/booking-impact`, 'PATCH', { affectedUnitIds, expectedAffectedUnitIds }, true)} />
+          </DetailDisclosure>
         )}
         {resource === "support-requests" && row.status === "ESCALATED" && (
           <form

@@ -9,6 +9,7 @@ import { DocumentFile } from '../../components/customer/DocumentFile';
 import type { StaffOperation } from './staff-resources';
 import { transferProblem } from '../../utils/transfer-problem';
 import { incidentArea } from '../../utils/maintenance-incident';
+import { MaintenanceRepairFacts, maintenanceMoney } from '../../components/manager/MaintenanceCosts';
 import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
 import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
@@ -203,16 +204,18 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         <MaintenancePhotoGallery staff record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
         <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />
       </Section>
+      <MaintenanceRepairFacts row={row} />
       {actions}
       {(workNote || verification || row.workCompletedAt || row.verifiedAt || ['COMPLETED', 'AWAITING_VERIFICATION'].includes(String(row.status))) &&
         <Section title="Kết quả bảo trì" items={[
           ['Công việc đã làm', workNote], ['Ngày hoàn thành sửa chữa', dateField('workCompletedAt', true)],
-          ['Nghiệm thu', row.status === 'COMPLETED' ? 'Đã nghiệm thu' : row.status === 'AWAITING_VERIFICATION' ? 'Chờ quản lý nghiệm thu' : ''],
+          [first(row, 'costs.status') === 'CONFIRMED' ? 'Chi phí đã xác nhận' : 'Tổng chi phí đề xuất', row.costs ? maintenanceMoney(at(row, 'costs.actualVnd')) : ''],
+          ['Kết quả xử lý', row.closedWithoutRepair === true ? 'Đã đóng · Không cần sửa' : row.status === 'COMPLETED' ? 'Đã nghiệm thu' : row.status === 'AWAITING_VERIFICATION' ? 'Chờ quản lý nghiệm thu' : ''],
           ['Người nghiệm thu', first(row, 'verifiedBy.fullName')], ['Ngày nghiệm thu', dateField('verifiedAt', true)],
           ['Nhận xét nghiệm thu', verification],
           ['Tình trạng kho hiện tại', first(row, 'unit.status') && <Status value={at(row, 'unit.status')} />],
         ]}>
-          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" /> : <>
+          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" maintenance /> : <>
           {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
             {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
               <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}

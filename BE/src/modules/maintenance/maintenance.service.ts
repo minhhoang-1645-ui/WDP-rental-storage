@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { maintenanceAmount, maintenanceAuditDetail, maintenanceCost, maintenanceCostEvidence } from './maintenance-cost.js';
 
 type MaintenanceStatus = 'OPEN' | 'IN_PROGRESS' | 'AWAITING_VERIFICATION' | 'COMPLETED';
 export const maintenancePriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
@@ -156,7 +157,8 @@ export class MaintenanceService {
 
   async getStaff(id: string, actor: PublicUser) {
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
-      include: { ...this.include(), evidenceSubmissions: { where: { staffUserId: actor.id }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
+      include: { ...this.include(), evidenceSubmissions: { where: { staffUserId: actor.id },
+        omit: { maintenanceSubmissionKey: true }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
     const view = this.toMaintenance(record, 'FACILITY_STAFF', actor.id);
     const hasCurrentRole = record.assignedStaffUserId === actor.id || record.reportedByUserId === actor.id;
@@ -168,7 +170,8 @@ export class MaintenanceService {
     managerReservationScope(actor);
 
     const record = await this.prisma.maintenanceRequest.findFirst({ where: this.detailScope(id, actor),
-      include: { ...this.include(true), evidenceSubmissions: { orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
+      include: { ...this.include(true), evidenceSubmissions: {
+        omit: { maintenanceSubmissionKey: true }, orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }] } } });
     if (!record) throw new NotFoundException('Không tìm thấy yêu cầu bảo trì.');
     return { ...this.toMaintenance(record, 'FACILITY_MANAGER'), workPhotos: record.workPhotos ?? [], evidenceSubmissions: record.evidenceSubmissions };
   }
@@ -309,8 +312,17 @@ export class MaintenanceService {
     this.requiredText(input.workNote, 4000, 'workNote');
     const workNote = this.requiredText(appendEvidenceLink(input.workNote, input.evidenceLink), 4000, 'workNote');
     const workPhotos = evidencePhotos(input.workPhotos);
+    const actualCostVnd = maintenanceAmount(input.actualCostVnd, 'Chi phí thực tế');
+    const costEvidenceLinks = maintenanceCostEvidence(input.costEvidenceLinks);
     return this.transition(id, key, 'COMPLETE_WORK', async (tx, current, safeKey) => {
       if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ Staff được hoàn tất công việc được giao.');
+      const submitted = await tx.staffEvidenceSubmission.findUnique({ where: { maintenanceSubmissionKey: safeKey } });
+      if (submitted) {
+        if (submitted.maintenanceRequestId !== current.id || submitted.staffUserId !== actor.id) {
+          throw new ConflictException('Idempotency-Key đã được dùng cho lần sửa chữa khác.');
+        }
+        return current;
+      }
       if (current.status !== 'IN_PROGRESS') throw new ConflictException(`Chỉ maintenance IN_PROGRESS mới có thể gửi xác minh; trạng thái hiện tại là ${current.status}.`);
       if (current.assignedStaffUserId !== actor.id) throw new ForbiddenException('Chỉ Staff được giao mới có thể hoàn tất công việc này.');
       this.assertUnitMaintenance(current);
@@ -318,50 +330,168 @@ export class MaintenanceService {
       await recordTaskEvent(tx, actor, 'TASK_STAFF_COMPLETED', 'maintenance', current.id,
         { ...(facilityId && { facilityId }), nextStatus: 'AWAITING_VERIFICATION' });
       const now = new Date();
+      if (actualCostVnd !== null || costEvidenceLinks.length) {
+        await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_COST_PROPOSED', {
+          actualVnd: actualCostVnd?.toFixed(0) ?? null, evidenceLinks: costEvidenceLinks,
+        });
+      }
+      const actualTotal = actualCostVnd == null ? current.actualCostVnd
+        : (current.actualCostVnd ?? new Prisma.Decimal(0)).plus(actualCostVnd);
+      this.assertCostLimit(actualTotal);
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: {
           status: 'AWAITING_VERIFICATION', workCompletedAt: now, workNote, workPhotos, lastAction: 'COMPLETE_WORK', lastActionIdempotencyKey: safeKey,
-          ...(workPhotos.length || input.evidenceLink ? { evidenceSubmissions: { create: {
+          actualCostVnd: actualTotal,
+          costEvidenceLinks: [...new Set([...(current.costEvidenceLinks ?? []), ...costEvidenceLinks])],
+          evidenceSubmissions: { create: {
             staffUserId: actor.id, staffName: actor.fullName, note: workNote, photos: workPhotos, recordedAt: now,
-          } } } : {}),
+            maintenanceSubmissionKey: safeKey, maintenanceCostVnd: actualCostVnd, maintenanceCostLinks: costEvidenceLinks,
+          } },
         },
         include: this.include(),
       });
     }, actor, 'FACILITY_STAFF');
   }
 
+  planRepair(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const surveyResult = this.requiredText(input.surveyResult, 4000, 'Kết quả khảo sát');
+    const repairPlan = this.requiredText(input.repairPlan, 4000, 'Phương án sửa chữa');
+    const repairMethod = input.repairMethod;
+    if (repairMethod !== 'INTERNAL' && repairMethod !== 'EXTERNAL') {
+      throw new BadRequestException('Chọn sửa chữa nội bộ hoặc thuê ngoài.');
+    }
+    return this.transition(id, key, 'PLAN_REPAIR', async (tx, current, safeKey) => {
+      if (current.status === 'COMPLETED' || current.costConfirmedAt) throw new ConflictException('Phiếu đã hoàn tất.');
+      if (input.expectedUpdatedAt !== current.updatedAt.toISOString()) throw new ConflictException('Phiếu vừa thay đổi. Tải lại trước khi lưu.');
+      await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_REPAIR_PLANNED', {
+        surveyResult, repairPlan, repairMethod,
+      });
+      return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
+        surveyResult, repairPlan, repairMethod,
+        lastAction: 'PLAN_REPAIR', lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  confirmCost(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    return this.transition(id, key, 'CONFIRM_COST', async (tx, current, safeKey) => {
+      if (current.costConfirmedAt) throw new ConflictException('Chi phí của phiếu đã được xác nhận.');
+      if (current.status !== 'COMPLETED' || current.actualCostVnd == null) {
+        throw new ConflictException('Cần nghiệm thu đạt và có chi phí thực tế do Staff ghi nhận.');
+      }
+      const cost = maintenanceCost(current);
+      if (input.expectedActualVnd !== cost.actualVnd) {
+        throw new ConflictException('Chi phí đã thay đổi. Tải lại trước khi xác nhận.');
+      }
+      const proposals = await tx.staffEvidenceSubmission.findMany({
+        where: { maintenanceRequestId: current.id, maintenanceCostVnd: { not: null } },
+        select: { id: true, maintenanceCostVnd: true },
+      });
+      const selected = input.submissionIds;
+      if ((proposals.length || selected !== undefined) && (!Array.isArray(selected) || (proposals.length > 0 && selected.length === 0) || new Set(selected).size !== selected.length ||
+        selected.some(id => typeof id !== 'string' || !proposals.some(proposal => proposal.id === id)))) {
+        throw new BadRequestException('Chọn các khoản chi phí hợp lệ của phiếu này.');
+      }
+      const approved = proposals.filter(proposal => Array.isArray(selected) && selected.includes(proposal.id));
+      const approvedIds = approved.map(proposal => proposal.id);
+      const actualCostVnd = approved.length
+        ? approved.reduce((sum, proposal) => sum.plus(proposal.maintenanceCostVnd!), new Prisma.Decimal(0))
+        : current.actualCostVnd;
+      const costConfirmedAt = new Date();
+      const confirmed = maintenanceCost({ ...current, actualCostVnd, costConfirmedAt });
+      await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_COST_CONFIRMED', {
+        ...confirmed, proposedVnd: cost.actualVnd, approvedIds,
+      });
+      return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
+        actualCostVnd, confirmedCostSubmissionIds: approvedIds,
+        costConfirmedAt, costConfirmedByUserId: actor.id,
+        lastAction: 'CONFIRM_COST', lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  adjustCost(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const reason = this.requiredText(input.reason, 4000, 'Lý do điều chỉnh');
+    const amount = maintenanceAmount(input.actualCostVnd, 'Chi phí sau điều chỉnh');
+    if (amount === null) throw new BadRequestException('Nhập chi phí sau điều chỉnh.');
+    return this.transition(id, key, 'ADJUST_COST', async (tx, current, safeKey) => {
+      if (!current.costConfirmedAt || current.actualCostVnd == null) throw new ConflictException('Phiếu chưa có chi phí được xác nhận.');
+      if (input.expectedUpdatedAt !== current.updatedAt.toISOString()) throw new ConflictException('Phiếu vừa thay đổi. Tải lại trước khi lưu.');
+      if (amount.eq(current.actualCostVnd)) throw new BadRequestException('Chi phí sau điều chỉnh phải khác số đã xác nhận.');
+      await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_COST_ADJUSTED', {
+        before: maintenanceCost(current), after: maintenanceCost({ ...current, actualCostVnd: amount }),
+        firstConfirmedAt: current.costConfirmedAt.toISOString(), reason,
+      });
+      return tx.maintenanceRequest.update({ where: { id: current.id }, data: {
+        actualCostVnd: amount, lastAction: 'ADJUST_COST', lastActionIdempotencyKey: safeKey,
+      }, include: this.include() });
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  private assertCostLimit(amount: Prisma.Decimal | null) {
+    if (amount?.gt('999999999999999999')) throw new BadRequestException('Tổng chi phí vượt giới hạn 18 chữ số VND.');
+  }
+
+  async costHistory(id: string, actor: PublicUser) {
+    const report = await this.getManager(id, actor);
+    const events = await this.prisma.auditEvent.findMany({
+      where: { resource: 'maintenance', resourceId: report.id,
+        action: { in: ['MAINTENANCE_REPAIR_PLANNED', 'MAINTENANCE_COST_PROPOSED', 'MAINTENANCE_COST_CONFIRMED', 'MAINTENANCE_COST_RETURNED', 'MAINTENANCE_COST_ADJUSTED'] } },
+      select: { id: true, action: true, actorName: true, createdAt: true, metadata: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    return events.map(event => ({ ...event, metadata: maintenanceAuditDetail(event.action, event.metadata) }));
+  }
+
   verify(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const note = this.optionalText(input?.note, 4000, 'note');
     return this.transition(id, key, 'VERIFY', async (tx, current, safeKey) => {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể xác minh; trạng thái hiện tại là ${current.status}.`);
-      this.assertUnitMaintenance(current);
-      await this.replaceBlocks(tx, current.id, current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id, [], actor, 'VERIFIED');
-      await this.auditIncident(tx, actor, current.id, 'INCIDENT_VERIFIED', { note });
-      if (current.activeKey && current.storageUnit?.status === 'MAINTENANCE') {
-        const occupied = await tx.rentalContract.count({ where: {
-          status: 'ACTIVE', reservationUnit: { storageUnitId: current.storageUnitId, releasedAt: null },
-        } });
-        if (occupied) throw new ConflictException('Kho vẫn còn hợp đồng đang sử dụng. Kiểm tra phân bổ trước khi nghiệm thu.');
-        const today = businessToday();
-        const held = await tx.reservationUnit.count({ where: {
-          storageUnitId: current.storageUnitId, releasedAt: null,
-          OR: [{ incomingTransfer: { status: 'APPROVED' } }, {
-            reservation: { status: 'CONFIRMED' }, plannedStartDate: { lte: today }, plannedEndDate: { gt: today },
-          }],
-        } });
-        const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: held ? 'RESERVED' : 'AVAILABLE' } });
-        if (changed.count !== 1) throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
-      }
-      return tx.maintenanceRequest.update({
-        where: { id: current.id },
-        data: {
-          status: 'COMPLETED', activeKey: null, verifiedByUserId: actor.id, verifiedAt: new Date(), verificationNote: note,
-          lastAction: 'VERIFY', lastActionIdempotencyKey: safeKey,
-        },
-        include: this.include(),
-      });
+      return this.finishMaintenance(tx, current, actor, note, safeKey, 'VERIFY');
     }, actor, 'FACILITY_MANAGER');
+  }
+
+  closeWithoutRepair(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    const reason = this.requiredText(input.reason, 4000, 'Lý do không cần sửa chữa');
+    if (input.safetyVerified !== true) throw new BadRequestException('Hãy xác nhận đã kiểm tra an toàn.');
+    return this.transition(id, key, 'CLOSE_WITHOUT_REPAIR', async (tx, current, safeKey) => {
+      if (current.status !== 'OPEN' || current.startedAt) {
+        throw new ConflictException('Phiếu đã bắt đầu xử lý. Hãy ghi nhận kết quả và nghiệm thu.');
+      }
+      return this.finishMaintenance(tx, current, actor, reason, safeKey, 'CLOSE_WITHOUT_REPAIR');
+    }, actor, 'FACILITY_MANAGER');
+  }
+
+  private async finishMaintenance(tx: Prisma.TransactionClient, current: any, actor: PublicUser, note: string | null,
+    safeKey: string, action: 'VERIFY' | 'CLOSE_WITHOUT_REPAIR') {
+    this.assertUnitMaintenance(current);
+    await this.replaceBlocks(tx, current.id, current.commonAreaFacilityId ?? current.storageUnit?.storageType.facility.id,
+      [], actor, action === 'VERIFY' ? 'VERIFIED' : action);
+    await this.auditIncident(tx, actor, current.id, action === 'VERIFY' ? 'INCIDENT_VERIFIED' : 'INCIDENT_CLOSED_WITHOUT_REPAIR', { note });
+    if (current.activeKey && current.storageUnit?.status === 'MAINTENANCE') {
+      const occupied = await tx.rentalContract.count({ where: {
+        status: 'ACTIVE', reservationUnit: { storageUnitId: current.storageUnitId, releasedAt: null },
+      } });
+      if (occupied) throw new ConflictException('Kho vẫn còn hợp đồng đang sử dụng. Kiểm tra phân bổ trước khi nghiệm thu.');
+      const today = businessToday();
+      const held = await tx.reservationUnit.count({ where: {
+        storageUnitId: current.storageUnitId, releasedAt: null,
+        OR: [{ incomingTransfer: { status: 'APPROVED' } }, {
+          reservation: { status: 'CONFIRMED' }, plannedStartDate: { lte: today }, plannedEndDate: { gt: today },
+        }],
+      } });
+      const changed = await tx.storageUnit.updateMany({ where: { id: current.storageUnitId, status: 'MAINTENANCE' }, data: { status: held ? 'RESERVED' : 'AVAILABLE' } });
+      if (changed.count !== 1) throw new ConflictException('StorageUnit không còn ở trạng thái MAINTENANCE.');
+    }
+    return tx.maintenanceRequest.update({
+      where: { id: current.id },
+      data: {
+        status: 'COMPLETED', activeKey: null, verifiedByUserId: actor.id, verifiedAt: new Date(), verificationNote: note,
+        lastAction: action, lastActionIdempotencyKey: safeKey,
+      },
+      include: this.include(),
+    });
   }
 
   rejectVerification(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
@@ -370,6 +500,19 @@ export class MaintenanceService {
       if (current.status !== 'AWAITING_VERIFICATION') throw new ConflictException(`Chỉ maintenance AWAITING_VERIFICATION mới có thể bị trả lại; trạng thái hiện tại là ${current.status}.`);
       this.assertUnitMaintenance(current);
       await this.auditIncident(tx, actor, current.id, 'INCIDENT_VERIFICATION_REJECTED', { note });
+      const latest = await tx.staffEvidenceSubmission.findFirst({
+        where: { maintenanceRequestId: current.id, maintenanceSubmissionKey: { not: null } },
+        orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      });
+      if (latest) await tx.staffEvidenceSubmission.update({
+        where: { id: latest.id }, data: { maintenanceRejectedAt: new Date(), maintenanceRejectionReason: note },
+      });
+      if (current.actualCostVnd != null || current.costEvidenceLinks?.length) {
+        await this.auditIncident(tx, actor, current.id, 'MAINTENANCE_COST_RETURNED', {
+          ...maintenanceCost(current), evidenceLinks: current.costEvidenceLinks, note,
+        });
+      }
       return tx.maintenanceRequest.update({
         where: { id: current.id },
         data: { status: 'IN_PROGRESS', verificationNote: note, lastAction: 'REJECT_VERIFICATION', lastActionIdempotencyKey: safeKey },
@@ -509,6 +652,7 @@ export class MaintenanceService {
       reportedBy: { select: { id: true, fullName: true, role: true } },
       assignedStaff: { select: { id: true, fullName: true, role: true, accountStatus: true } },
       verifiedBy: { select: { id: true, fullName: true, role: true } },
+      costConfirmedBy: { select: { fullName: true } },
       returnInspection: { include: { returnRequest: { select: { id: true, returnCode: true, assignedStaffUserId: true } } } },
     };
   }
@@ -525,6 +669,7 @@ export class MaintenanceService {
       id: record.id, maintenanceCode: record.maintenanceCode, status: record.status, priority: record.priority, category: record.category,
       source: record.source, description: record.description, commonArea: record.commonArea, locationNote: record.locationNote,
       rentalImpact: record.rentalImpact,
+      closedWithoutRepair: record.lastAction === 'CLOSE_WITHOUT_REPAIR',
       blocksUnit: Boolean(record.activeKey || record.incidentBlocks.length),
       legacyBookingHold: Boolean(record.activeKey),
       affectedUnits: record.incidentBlocks.map((block: { storageUnitId: string; storageUnit: { unitNumber: string } }) => ({
@@ -544,15 +689,25 @@ export class MaintenanceService {
       createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
     };
     const relatedReturn = record.returnInspection?.returnRequest;
+    const repair = {
+      surveyResult: record.surveyResult, method: record.repairMethod, plan: record.repairPlan,
+    };
+    const costs = {
+      ...maintenanceCost(record), evidenceLinks: record.costEvidenceLinks ?? [],
+      confirmedSubmissionIds: record.confirmedCostSubmissionIds ?? [],
+      confirmedBy: record.costConfirmedBy?.fullName ?? null,
+      confirmedAt: record.costConfirmedAt?.toISOString() ?? null,
+    };
     if (mode === 'FACILITY_STAFF') return staffDetailId ? {
       ...base, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
+      ...(record.assignedStaffUserId === staffDetailId ? { repair, costs } : {}),
       verifiedAt: record.verifiedAt?.toISOString() ?? null,
       ...(relatedReturn?.assignedStaffUserId === staffDetailId
         ? { returnContext: { returnRequest: { id: relatedReturn.id, returnCode: relatedReturn.returnCode } } } : {}),
     } : base;
     const bookings = affectedBookings(record.incidentBlocks, base.facility?.id);
     return {
-      ...base, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
+      ...base, repair, costs, verificationNote: record.verificationNote, verifiedBy: record.verifiedBy,
       affectedBookingCount: bookings.length,
       affectedAppointmentCount: bookings.reduce((count, booking) => count + booking.appointments.length, 0),
       ...(includeAffectedDetails ? { affectedBookings: bookings } : {}),
@@ -662,8 +817,12 @@ export class MaintenanceService {
       try {
         return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
       } catch (error) {
-        if (this.isPrismaCode(error, 'P2034') && attempt < 2) continue;
-        if (this.isPrismaCode(error, 'P2034')) throw new ConflictException(message);
+        const meta = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2010' ? error.meta : undefined;
+        const adapter = meta?.driverAdapterError as { cause?: { originalCode?: string } } | undefined;
+        const sqlState = adapter?.cause?.originalCode ?? meta?.code;
+        const conflict = this.isPrismaCode(error, 'P2034') || sqlState === '40001' || sqlState === '40P01';
+        if (conflict && attempt < 2) continue;
+        if (conflict) throw new ConflictException(message);
         throw error;
       }
     }

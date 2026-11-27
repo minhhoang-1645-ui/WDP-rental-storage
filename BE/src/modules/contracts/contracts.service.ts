@@ -219,7 +219,10 @@ export class ContractsService {
           } },
         },
       },
-      reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
+      reservationUnit: { include: { storageUnit: { select: {
+        id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
+        incidentBlocks: { where: { releasedAt: null }, take: 1, select: { id: true } },
+      } } } },
       transferRequests: {
         orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
         id: true, transferCode: true, status: true, reason: true, handoverReport: true, createdAt: true, approvedAt: true, completedAt: true,
@@ -256,6 +259,9 @@ export class ContractsService {
         row: storageUnit.row,
         position: storageUnit.position,
         physicalStatus: storageUnit.status,
+        ...(contract.reservationUnit.releasedAt == null && ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE'].includes(contract.status)
+          && (storageUnit.status === 'MAINTENANCE' || storageUnit.incidentBlocks?.length)
+          ? { maintenanceNotice: 'Ô kho đang được kiểm tra an toàn. Hãy liên hệ NestBox nếu cần hỗ trợ về việc bàn giao hoặc sử dụng kho.' } : {}),
       },
       reservationPricing: reservation.quoteSnapshot,
       services: reservation.services.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, unitPrice: Number(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: service.serviceStartDate?.toISOString().slice(0, 10) ?? null, serviceEndDate: service.serviceEndDate?.toISOString().slice(0, 10) ?? null, amount: Number(service.amountSnapshot) })),

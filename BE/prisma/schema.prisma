@@ -437,6 +437,7 @@ model User {
   reportedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceReporter")
   assignedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceAssignee")
   verifiedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceVerifier")
+  confirmedMaintenanceCosts   MaintenanceRequest[]       @relation("MaintenanceCostConfirmer")
   customerSupportRequests     SupportRequest[]           @relation("SupportCustomer")
   assignedSupportRequests     SupportRequest[]           @relation("SupportAssignee")
   escalatedSupportRequests    SupportRequest[]           @relation("SupportEscalator")
@@ -1040,6 +1041,11 @@ model StaffEvidenceSubmission {
   note                 String?
   photos               Json
   recordedAt          DateTime
+  maintenanceSubmissionKey String? @unique
+  maintenanceCostVnd   Decimal? @db.Decimal(18, 0)
+  maintenanceCostLinks String[] @default([])
+  maintenanceRejectedAt DateTime?
+  maintenanceRejectionReason String?
 
   @@index([returnInspectionId, staffUserId])
   @@index([maintenanceRequestId, staffUserId])
@@ -1080,6 +1086,19 @@ model MaintenanceRequest {
   verifiedByUserId         String?
   verifiedBy               User?               @relation("MaintenanceVerifier", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
   verifiedAt               DateTime?
+  surveyResult             String?
+  repairMethod             String?
+  repairPlan               String?
+  /// Retained for historical reporting records only.
+  estimatedCostVnd         Decimal?            @db.Decimal(18, 0) @ignore
+  actualCostVnd            Decimal?            @db.Decimal(18, 0)
+  costEvidenceLinks        String[]            @default([])
+  /// Retained for historical reporting records only.
+  costVarianceReason       String?             @ignore
+  costConfirmedAt          DateTime?
+  costConfirmedByUserId    String?
+  confirmedCostSubmissionIds String[]         @default([])
+  costConfirmedBy          User?               @relation("MaintenanceCostConfirmer", fields: [costConfirmedByUserId], references: [id], onDelete: Restrict, map: "MaintenanceRequest_cost_confirmer_fkey")
   activeKey                String?             @unique
   createIdempotencyKey     String              @unique
   lastAction               String?

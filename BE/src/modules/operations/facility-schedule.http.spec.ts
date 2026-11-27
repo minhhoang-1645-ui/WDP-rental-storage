@@ -74,6 +74,15 @@ describe('BOM facility schedule HTTP', () => {
       accessHours: '01:00–06:00, Thứ Hai', serviceSchedule: [{ weekday: 1, starts: '03:00', ends: '06:00', capacity: 1 }] }).expect(201);
   });
 
+  it('accepts a facility photo on create and edit, and allows removal', async () => {
+    const photo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWioAAAAASUVORK5CYII=';
+    expect((await create({ ...identity, photo }).expect(201)).body.photo).toBe(photo);
+    expect((await patch({ photo }).expect(200)).body.photo).toBe(photo);
+    expect((await patch({ photo: null }).expect(200)).body.photo).toBeNull();
+    await patch({ photo: 'data:image/png;base64,ZmFrZQ==' }).expect(400);
+    expect(tx.facility.update).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     { accessHours: '06:59–16:00, Thứ Hai' },
     { accessHours: '09:00–17:31, Thứ Hai' },

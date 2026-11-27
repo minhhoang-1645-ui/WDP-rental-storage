@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { businessDate, isIsoCalendarDate } from '../../business-date.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { evidencePhotos } from '../../evidence-photos.js';
 import { randomUUID } from 'node:crypto';
 import { analyticsPeriod } from '../manager/manager-analytics.service.js';
 import { CLOSURE_BOOKING_REFUND_PENDING, CLOSURE_BOOKING_REFUND_RECORDED } from '../transfers/closure-booking.js';
@@ -25,6 +26,7 @@ const fields = [
   'code',
   'name',
   'address',
+  'photo',
   'officeHours',
   'serviceSchedule',
   'accessHours',
@@ -190,6 +192,7 @@ export class OperationsService {
         code: text('code', 80),
         name: text('name', 120),
         address: text('address', 500),
+        ...(body.photo !== undefined ? { photo: body.photo === null ? null : evidencePhotos([body.photo])[0] } : {}),
         officeHours,
         accessHours,
         ...(editsSchedule ? { serviceSchedule: windows } : {}),

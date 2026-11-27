@@ -4,6 +4,7 @@ import { useCatalog } from '../../catalog/catalog-context'
 import { QuickFinder } from '../../components/public/QuickFinder'
 import { ComparisonChoice } from '../../components/public/StorageComparison'
 import { StorageImage } from '../../components/public/StorageImage'
+import { FacilityPhoto } from '../../components/public/FacilityPhoto'
 import { Container } from '../../components/ui/Container'
 import { faqs } from '../../data/storage'
 
@@ -109,7 +110,7 @@ export function LandingPage() {
           {facilities.map(facility => {
             const names = [...new Set(products.filter(product => product.facilityId === facility.id).map(product => product.name))]
             return <article key={facility.id} className="landing-facility">
-              <WarehousePlaceholder />
+              <FacilityPhoto photo={facility.photo} name={facility.name} />
               <div><h3>{facility.name}</h3>
                 {facility.address && <p><MapPin size={15} aria-hidden="true" /> {facility.address}</p>}
                 {facility.officeHours && <p>Giờ văn phòng {facility.officeHours}</p>}

@@ -468,6 +468,7 @@ model AuthSession {
 }
 
 model Facility {
+  photo String?
   serviceCommitments ReservationService[]
   financialInvoices Invoice[]
   serviceSchedule Json @default("[]")

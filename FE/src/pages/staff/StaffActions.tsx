@@ -367,7 +367,9 @@ export function StaffActions({
                 <label className="field-label">Liên kết ảnh kết quả (tùy chọn)
                   <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
                 </label>
-                {photoPicker}
+                {Array.isArray(row.workPhotos) ? photoPicker : (
+                  <p role="status">Máy chủ hiện chỉ lưu liên kết ảnh bảo trì. Hãy dán liên kết HTTPS vào ô trên.</p>
+                )}
                 <button className="button-primary" disabled={busy}>
                   Gửi kết quả nghiệm thu
                 </button>

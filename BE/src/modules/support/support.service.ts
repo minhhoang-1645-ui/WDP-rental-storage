@@ -136,7 +136,10 @@ export class SupportService {
   }
   async getManager(id: string, actor:PublicUser) {
     managerReservationScope(actor);
- const row=await this.find(id,this.prisma); await assertTaskFacility(this.prisma,actor,supportTaskReference(row)); return this.toView(row,'FACILITY_MANAGER'); }
+    const row = await this.find(id, this.prisma);
+    await assertTaskFacility(this.prisma, actor, supportTaskReference(row));
+    return { ...this.toView(row, 'FACILITY_MANAGER'), resolutionPhotos: row.resolutionPhotos ?? [] };
+  }
 
   assign(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
     const staffUserId = this.id(input.staffUserId, 'staffUserId');

@@ -12,7 +12,7 @@ import { physicalUnitLabel } from '../../utils/physical-units';
 import { internalPageSize } from '../../utils/internal-pagination';
 import { isScheduledRenewalInvoice } from '../../utils/payment-state';
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowRight, Plus, RefreshCw } from "lucide-react";
+import { ArrowRight, Map as MapIcon, Plus, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
@@ -351,6 +351,7 @@ export function ManagerListPage({ resource }: { resource: string }) {
     <section className={managerRecords ? `manager-record-list manager-record-list-${managerRecords}` : managerTable === 'units' ? 'manager-unit-list' : staffAppointments ? 'staff-appointment-list' : staffTable ? `staff-operation-list staff-operation-list-${staffTable}` : undefined}>
       {creatingUnit && <NewInventoryUnit onClose={() => setCreatingUnit(false)} onSaved={saved => { setCreatingUnit(false); setUnitCreated(first(saved, "unitNumber", "unitCode")); refresh(); }} />}
       <PageHeader title={reviewOnly ? managerReviewTitle(resource) : listTitle} description={description}>
+        {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <Link className="button-secondary" to="/manager/units/floor-plan"><MapIcon size={16} />Sơ đồ kho</Link>}
         {resource === 'units' && user?.role === 'FACILITY_MANAGER' && <button className="button-primary" onClick={() => { setUnitCreated(''); setCreatingUnit(true); }}><Plus size={17} />Thêm kho</button>}
         {user?.role === 'FACILITY_STAFF' && resource === 'maintenance' && (
           <button type="button" className="button-primary" onClick={() => setCreating(true)}>

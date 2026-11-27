@@ -30,6 +30,7 @@ import { SizeGuidePage } from "../pages/public/SizeGuideExperiencePage";
 import { StorageDetailPage } from "../pages/public/StorageDetailPage";
 import { StoragePage } from "../pages/public/StoragePage";
 import { ManagerLayout } from "../pages/manager/ManagerLayout";
+import { ManagerFloorPlanPage } from "../pages/manager/ManagerFloorPlanPage";
 import { ManagerUnitsPage } from "../pages/manager/ManagerUnitsPage";
 import { ManagerUnitDetailPage } from "../pages/manager/ManagerUnitDetailPage";
 import { ManagerCustomersPage } from "../pages/manager/ManagerCustomersPage";
@@ -104,6 +105,7 @@ function operationalRoutes(base: string) {
       <Route path="units" element={<ManagerUnitsPage />} />
       <Route path="catalog" element={<ManagerCatalogPage />} />
       <Route path="catalog/additional-services" element={<ManagerAdditionalServicesPage />} />
+      <Route path="units/floor-plan" element={<ManagerFloorPlanPage />} />
       <Route path="units/:id" element={<ManagerUnitDetailPage />} />
       <Route
         path="inventory"

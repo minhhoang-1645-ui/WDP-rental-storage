@@ -214,6 +214,7 @@ function ManagerOperationalDetail({ resource }: { resource: string }) {
               )}
               {user?.role === 'FACILITY_MANAGER' && transferSupport && <TransferIntake row={row} from={reviewReturn ?? ''} />}
               {service && <ServiceOutcome row={row} maintenance={resource === 'maintenance'} />}
+              {user?.role === 'FACILITY_MANAGER' && <StaffEvidence row={row} resource={resource} />}
               {resource === 'transfers' && !isStaff && <section className="manager-section"><h2>Điều kiện chuyển kho</h2>
                 <Facts items={[[ 'Hạn thuê còn lại đến', date(first(row, 'contract.endDate')) ], ['Nhân viên thực hiện', first(row, 'assignedStaff.fullName') || 'Chưa phân công'],
                   ...(row.commercial ? [['Phụ lục đổi loại', first(row, 'commercial.acceptedAt') ? 'Đã ký' : 'Chờ khách ký']] as [string, string][] : [])]} />
@@ -331,6 +332,40 @@ function AffectedBookingWarning({ bookings }: { bookings: Row[] }) {
   </section>;
 }
 
+const staffEvidenceTitles: Record<string, string> = {
+  maintenance: 'Ảnh kết quả sửa chữa',
+  appointments: 'Ảnh bàn giao kho',
+  'support-requests': 'Ảnh kết quả hỗ trợ',
+  transfers: 'Ảnh bàn giao chuyển kho',
+};
+
+function StaffEvidence({ row, resource }: { row: Row; resource: string }) {
+  const title = staffEvidenceTitles[resource];
+  if (!title) return null;
+  const report = object(row.handoverReport);
+  const uploaded = resource === 'maintenance' ? row.workPhotos
+    : resource === 'support-requests' ? row.resolutionPhotos : report.photos;
+  const photos = Array.isArray(uploaded) ? uploaded.filter((value): value is string =>
+    typeof value === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(value)) : [];
+  const linkValues = resource === 'appointments' && Array.isArray(report.photoLinks) ? report.photoLinks
+    : resource === 'maintenance' ? [...first(row, 'workNote').matchAll(/^Chứng cứ: (https:\/\/[^\s]+)$/gm)].map(match => match[1]) : [];
+  const links = linkValues.filter((value): value is string => typeof value === 'string' && /^https:\/\//i.test(value));
+  const showMaintenanceResult = resource === 'maintenance' && ['AWAITING_VERIFICATION', 'COMPLETED'].includes(String(row.status));
+  if (!photos.length && !links.length && !showMaintenanceResult) return null;
+  return <section className="manager-section">
+    <h2>{title}</h2>
+    {!photos.length && !links.length && <p>{Array.isArray(row.workPhotos)
+      ? 'Phiếu này chưa có ảnh hoặc liên kết ảnh đã lưu.'
+      : 'Máy chủ hiện chưa hỗ trợ ảnh tải trực tiếp cho kết quả bảo trì.'}</p>}
+    {photos.length > 0 && <div className="staff-handover-photos">
+      {photos.map((photo, index) => <img key={index} src={photo} alt={title + ' ' + (index + 1)} loading="lazy" />)}
+    </div>}
+    {links.length > 0 && <ul>
+      {links.map((href, index) => <li key={index}><a href={href} target="_blank" rel="noopener noreferrer">Mở liên kết ảnh {index + 1}</a></li>)}
+    </ul>}
+  </section>;
+}
+
 function ServiceOutcome({ row, maintenance }: { row: Row; maintenance: boolean }) {
   const outcome = first(row, maintenance ? 'workNote' : 'resolutionNote', 'escalationReason');
   const review = first(row, 'verificationNote', 'reviewNote');
@@ -341,10 +376,6 @@ function ServiceOutcome({ row, maintenance }: { row: Row; maintenance: boolean }
     <h2>{maintenance ? 'Kết quả đã ghi nhận' : 'Kết quả xử lý'}</h2>
     {Boolean(row.resolutionType) && <strong>{label(row.resolutionType)}</strong>}
     {outcome && <p className="record-text">{outcome}</p>}
-    {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
-      {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
-        <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}
-    </div>}
     {review && <p className="record-text"><strong>Nhận xét nghiệm thu</strong> {review}</p>}
     {(owner || closedAt) && <p className="record-attribution">{[owner, closedAt && date(closedAt, true)].filter(Boolean).join(' · ')}</p>}
   </section>;

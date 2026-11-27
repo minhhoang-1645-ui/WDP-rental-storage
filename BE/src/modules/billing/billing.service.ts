@@ -11,7 +11,7 @@ import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlocke
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
 import { invoiceSigningRequirements, supportsOnlinePayment } from './payment-eligibility.js';
-import { datedPaymentOverdue, verifiedRentDebt } from './overdue-payment.js';
+import { datedPaymentOverdue, verifiedRentDebt } from './overdue-payment-rules.js';
 import { homogeneousInvoiceUnits, invoiceBreakdown, invoiceContractInclude, invoiceMoney, invoiceUnit, savedInvoiceBreakdown } from './invoice-breakdown.js';
 
 export interface InvoiceListQuery {

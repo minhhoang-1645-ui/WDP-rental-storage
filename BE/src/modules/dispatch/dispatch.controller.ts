@@ -47,6 +47,12 @@ export class DispatchController {
     return this.calendar.agenda(req.user!, from, to);
   }
 
+  @Get('staff/service-calendar')
+  @Roles('FACILITY_STAFF')
+  staffAgenda(@Req() req: AuthenticatedRequest, @Query('from') from: string, @Query('to') to: string) {
+    return this.calendar.staffAgenda(req.user!, from, to);
+  }
+
   @Patch('manager/service-calendar/returns/:id')
   @Roles('FACILITY_MANAGER')
   planReturn(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() input: Record<string, unknown>) {

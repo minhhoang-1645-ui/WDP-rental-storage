@@ -74,8 +74,8 @@ function FormValue({ name, value, required, disabled, error, onInvalid }: {
     tabIndex={-1} aria-hidden="true" onInvalid={event => { event.preventDefault(); onInvalid?.(); }} />;
 }
 
-export function DatePicker(props: Field) {
-  const { label, name, required, disabled, min, max, error } = props;
+export function DatePicker(props: Field & { existingDateBeforeMin?: string }) {
+  const { label, name, required, disabled, min, max, error, existingDateBeforeMin } = props;
   const [value, change] = useField(props);
   const [invalid, setInvalid] = useState(false);
   const [open, setOpen] = useState(false);
@@ -88,14 +88,15 @@ export function DatePicker(props: Field) {
   const grid = useRef<HTMLDivElement>(null);
   usePickerPosition(open, popup, trigger);
   const blocked = (day: string) => Boolean((min && day < min) || (max && day > max));
-  const rangeError = value && (!isCalendarDate(value) || blocked(value)) ? 'Chọn ngày trong phạm vi cho phép.' : '';
+  const existingPastDate = value === existingDateBeforeMin && min && value < min;
+  const rangeError = value && (!isCalendarDate(value) || (blocked(value) && !existingPastDate)) ? 'Chọn ngày trong phạm vi cho phép.' : '';
   const problem = error || rangeError || (invalid && !value ? 'Hãy chọn ngày.' : '');
   const show = () => {
     const panel = popup.current;
     const anchor = trigger.current;
     if (!panel || !anchor) return;
     if (panel.matches(':popover-open')) { panel.hidePopover(); return; }
-    const initial = isCalendarDate(value) ? value : min && today < min && isCalendarDate(min) ? min :
+    const initial = isCalendarDate(value) && !existingPastDate ? value : min && today < min && isCalendarDate(min) ? min :
       max && today > max && isCalendarDate(max) ? max : today;
     setFocusedDay(initial);
     setMonth(initial.slice(0, 7));

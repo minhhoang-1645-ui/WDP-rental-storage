@@ -17,6 +17,10 @@ import { ReturnsService } from '../returns/returns.service.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { BookingService } from '../booking/booking.service.js';
 
+const isolatedTarget = 'postgresql://nestbox_test@127.0.0.1:55439/nestbox_foundation_test';
+if (process.env.NESTBOX_ISOLATED_TEST !== '1' || process.env.DATABASE_URL !== isolatedTarget || process.env.DIRECT_URL !== isolatedTarget)
+  throw new Error('Billing V1 requires the disposable local PostgreSQL database.');
+
 const runId = randomUUID().slice(0, 8);
 const facilityId = `billing-facility-${runId}`;
 const storageTypeId = `billing-product-${runId}`;
@@ -40,12 +44,13 @@ describe('Invoice and Payment V1', () => {
     await prisma.$connect();
     service = new BillingService(prisma);
     rentals = new ActiveRentalsService(prisma);
-    await prisma.facility.create({ data: { id: facilityId, code: `BILL-${runId}`, name: 'Billing test', address: 'Test only' } });
+    await prisma.facility.create({ data: { id: facilityId, code: `BILL-${runId}`, name: 'Billing test', address: 'Test only',
+      operationalStatus: 'OPEN', bookingEnabled: true, officeHours: '08:00–20:00 hằng ngày', accessHours: '08:00–20:00 hằng ngày' } });
     await prisma.storageType.create({
       data: {
         id: storageTypeId, facilityId, code: `BP-${runId}`, name: 'Billing product', sizeId: 'small', sizeName: 'Kho nhỏ', kicker: 'Test', condition: 'STANDARD',
         widthCm: 150, lengthCm: 200, heightCm: 240, roomEquivalent: 'Test', capacity: 'Test', boxCount: '20', suitableItems: ['Boxes'],
-        image: 'https://example.test/billing.jpg', imageAlt: 'Test', floor: 'Ground', access: 'Test', features: ['Test'], monthlyRate: 1500000,
+        image: 'https://example.test/billing.jpg', imageAlt: 'Test', floor: 'Ground', access: 'Test', features: ['Test'], monthlyRate: 1500000, bookingEnabled: true,
       },
     });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, row: 1, position: index + 1 })) });
@@ -56,9 +61,14 @@ describe('Invoice and Payment V1', () => {
       { id: adminId, email: `${adminId}@example.test`, fullName: 'Billing Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
       { id: staffId, email: `${staffId}@example.test`, fullName: 'Billing Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
     ] });
+    await prisma.facilityAccess.create({ data: { userId: managerId, facilityId, grantedById: adminId,
+      activeKey: JSON.stringify([managerId, facilityId]) } });
+    await prisma.businessRule.create({ data: { key: 'monthlyPriceRange:small', facilityId, version: 1,
+      value: { min: 1_000_000, max: 5_000_000 }, effectiveFrom: new Date('2020-01-01'), createdById: adminId } });
   });
 
   afterEach(async () => {
+    await prisma.onlinePaymentReconciliation.deleteMany({ where: { paymentSubmission: { invoice: { reservation: { storageTypeId } } } } });
     await prisma.paymentSubmission.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -78,6 +88,8 @@ describe('Invoice and Payment V1', () => {
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
+    await prisma.businessRule.deleteMany({ where: { facilityId } });
+    await prisma.facilityAccess.deleteMany({ where: { facilityId } });
     await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, adminId, staffId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
@@ -97,7 +109,10 @@ describe('Invoice and Payment V1', () => {
       periodMode: 'DURATION', durationMonths: 6, availabilitySnapshot: {}, quoteSnapshot: snapshot as Prisma.InputJsonValue,
       status: 'CONFIRMED', confirmedAt: new Date(), idempotencyKey: `billing-${randomUUID()}`,
     } });
-    const units = await prisma.storageUnit.findMany({ where: { storageTypeId }, orderBy: { unitNumber: 'asc' }, take: quantity });
+    const units = await prisma.storageUnit.findMany({ where: { storageTypeId, reservationUnits: { none: {
+      releasedAt: null, plannedStartDate: { lt: reservation.endDate }, plannedEndDate: { gt: reservation.startDate },
+    } } }, orderBy: { unitNumber: 'asc' }, take: quantity });
+    expect(units).toHaveLength(quantity);
     for (const [index, unit] of units.entries()) {
       const allocation = await prisma.reservationUnit.create({ data: { reservationId: reservation.id, storageUnitId: unit.id, plannedStartDate: reservation.startDate, plannedEndDate: reservation.endDate } });
       await prisma.rentalContract.create({ data: { contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: reservation.id, reservationUnitId: allocation.id, startDate: reservation.startDate, endDate: reservation.endDate, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer } });
@@ -463,7 +478,7 @@ describe('Invoice and Payment V1', () => {
     await expect(service.rejectPaymentSubmission(notice.id, { reason: '' }, actor(managerId, 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('blocks payment notices on paid invoices and restricts verification to managers and admins', async () => {
+  it('blocks payment notices on paid invoices and restricts verification to facility managers', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
     const manager = actor(managerId, 'FACILITY_MANAGER');
@@ -474,6 +489,7 @@ describe('Invoice and Payment V1', () => {
     const notice = await service.createCustomerPaymentSubmission(customerId, otherInvoice.id, { amount: 1 }, `role-notice-${runId}`);
     await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(customerId, 'STORAGE_CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(staffId, 'FACILITY_STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(adminId, 'SYSTEM_ADMINISTRATOR'))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('restricts Customer and Manager payment-submission endpoints by controller role', () => {
@@ -491,12 +507,14 @@ describe('Invoice and Payment V1', () => {
     }
   });
 
-  it('enforces payment mutation roles while allowing SYSTEM_ADMINISTRATOR', async () => {
+  it('allows a scoped Facility Manager to record payment and rejects SYSTEM_ADMINISTRATOR', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
     await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `customer-${runId}`, actor(customerId, 'STORAGE_CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `staff-${runId}`, actor(staffId, 'FACILITY_STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
-    expect((await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `admin-${runId}`, actor(adminId, 'SYSTEM_ADMINISTRATOR'))).payment.recordedBy.role).toBe('SYSTEM_ADMINISTRATOR');
+    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `admin-${runId}`, actor(adminId, 'SYSTEM_ADMINISTRATOR'))).rejects.toBeInstanceOf(ForbiddenException);
+    const payment = await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `manager-${runId}`, actor(managerId, 'FACILITY_MANAGER'));
+    expect(payment.payment.recordedBy).toMatchObject({ id: managerId, role: 'FACILITY_MANAGER' });
   });
 
   it('keeps customer invoice and payment reads private and never exposes passwordHash', async () => {

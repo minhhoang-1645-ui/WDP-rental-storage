@@ -160,13 +160,16 @@ function FinanceReviewDialog({ kind, row, onClose, onSaved, onReconcile }: {
   const [bankRef, setBankRef] = useState('');
   const [note, setNote] = useState('');
   const [verified, setVerified] = useState(false);
+  const [refundMethod, setRefundMethod] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const isReconciliation = kind === 'reconciliation';
   const pending = row.status === (isReconciliation ? 'PENDING_REVIEW' : 'PENDING_VERIFICATION');
   const refund = isReconciliation && row.status === 'REFUND_REQUIRED';
+  const payosRefund = refund && row.source === 'PAYOS';
   const needsReference = refund || !isReconciliation;
-  const canConfirm = verified && note.trim().length >= 3 && (!needsReference || bankRef.trim().length >= (refund ? 2 : 1));
+  const canConfirm = verified && note.trim().length >= 3 && (!needsReference || bankRef.trim().length >= (refund ? 2 : 1))
+    && (!payosRefund || Boolean(refundMethod));
   const related = first(row, 'reconciliation.id');
   const payment = first(row, 'verifiedPayment.id');
   const invoice = invoiceId(row);
@@ -182,7 +185,8 @@ function FinanceReviewDialog({ kind, row, onClose, onSaved, onReconcile }: {
       setBusy(true);
       setError('');
       const body = isReconciliation
-        ? { resolution: action, resolutionNote: note.trim(), refundReference: bankRef.trim(), refundConfirmed: verified }
+        ? { resolution: action, resolutionNote: note.trim(), refundReference: bankRef.trim(), refundConfirmed: verified,
+          ...(payosRefund ? { refundMethod } : {}) }
         : action === 'verify' ? { reference: bankRef.trim(), note: note.trim() } : { reason: note.trim() };
       const result = await mutate(`${financeReviewTypes[kind].api}/${encodeURIComponent(first(row, 'id'))}/${isReconciliation ? 'resolve' : action}`, 'POST', body);
       onSaved(result);
@@ -196,7 +200,7 @@ function FinanceReviewDialog({ kind, row, onClose, onSaved, onReconcile }: {
       ['Trạng thái hóa đơn', <Status value={first(row, 'invoice.status', 'transaction.invoice.status')} />],
       ['Số tiền giao dịch', money(row.amount)],
       ...(row.invoice ? [['Số dư hóa đơn', money(object(row.invoice).balanceDue)] as [string, string]] : []),
-      ['Nguồn giao dịch', row.source === 'VNPAY' ? 'VNPay' : 'Chuyển khoản ngân hàng'],
+      ['Nguồn giao dịch', row.source === 'PAYOS' ? 'payOS' : row.source === 'VNPAY' ? 'VNPay' : 'Chuyển khoản ngân hàng'],
       ['Mã giao dịch', reference(row) || '—'],
       ['Mã giao dịch gốc', first(row, 'transaction.merchantOrderRef') || '—'],
       ['Thời điểm ghi nhận', date(first(row, 'submittedAt', 'createdAt'), true)],
@@ -212,6 +216,11 @@ function FinanceReviewDialog({ kind, row, onClose, onSaved, onReconcile }: {
       <p>{isReconciliation ? 'Đối chiếu kết quả thực tế trước khi cập nhật. Thao tác này chỉ ghi nhận quyết định và kết quả.' : 'Chỉ xác minh sau khi đã đối chiếu khoản tiền thực nhận tại ngân hàng.'}</p>
       {needsReference && <label className="field-label">{refund ? 'Mã giao dịch hoàn tiền' : 'Mã giao dịch ngân hàng đã kiểm tra'}
         <input value={bankRef} onChange={event => setBankRef(event.target.value)} maxLength={200} disabled={busy} />
+      </label>}
+      {payosRefund && <label className="field-label">Phương thức đã hoàn
+        <select value={refundMethod} onChange={event => setRefundMethod(event.target.value)} disabled={busy}>
+          <option value="">Chọn phương thức</option><option value="CASH">Tiền mặt</option><option value="BANK_TRANSFER">Chuyển khoản ngân hàng</option>
+        </select>
       </label>}
       <label className="field-label">Ghi chú / Lý do<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} disabled={busy} /></label>
       <label className="portal-checkbox"><input type="checkbox" checked={verified} onChange={event => setVerified(event.target.checked)} disabled={busy} />

@@ -47,6 +47,7 @@ import { ManagerResourceDetailPage } from "../pages/manager/ManagerResourceDetai
 import { StaffLayout, staffSections } from "../pages/staff/StaffLayout";
 import { StaffOperationsPage } from "../pages/staff/StaffOperationsPage";
 import { StaffTasksPage } from "../pages/staff/StaffTasksPage";
+import { StaffSchedulePage } from "../pages/staff/StaffSchedulePage";
 import { StaffIssueReportPage } from "../pages/staff/StaffIssueReportPage";
 import { ManagerListPage } from "../pages/manager/ManagerListPage";
 import { ManagerPaymentsPage } from "../pages/manager/ManagerPaymentsPage";
@@ -67,6 +68,7 @@ import { CustomerAppointmentsPage } from "../pages/customer/CustomerAppointments
 import { CustomerContractsPage } from "../pages/customer/CustomerContractsPage";
 import { CustomerPaymentsPage } from "../pages/customer/CustomerPaymentsPage";
 import { CustomerVnpayReturnPage } from "../pages/customer/CustomerVnpayReturnPage";
+import { PayosReturnPage } from "../pages/customer/PayosReturnPage";
 import { MobileVnpayReturnPage } from "../pages/customer/MobileVnpayReturnPage";
 import { CustomerRenewalsPage } from "../pages/customer/CustomerRenewalsPage";
 import { CustomerRentalsPage } from "../pages/customer/CustomerRentalsPage";
@@ -134,6 +136,8 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/customer/payments/vnpay-return/mobile/:invoiceId" element={<MobileVnpayReturnPage />} />
+      <Route path="/customer/payments/payos-return/mobile" element={<PayosReturnPage mobile />} />
+      <Route path="/customer/payments/payos-return" element={<PayosReturnPage />} />
       <Route element={<PublicLayout />}>
         <Route path="claim-booking" element={<ClaimBookingPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
@@ -210,7 +214,7 @@ export function AppRouter() {
           <Route index element={<StaffOperationsPage />} />
           <Route path="tasks" element={<StaffTasksPage />} />
           <Route path="policies" element={<StaffAppliedPoliciesPage />} />
-          <Route path="schedule" element={<StaffTasksPage view="schedule" />} />
+          <Route path="schedule" element={<StaffSchedulePage />} />
           <Route path="history" element={<StaffTasksPage view="history" />} />
           <Route path="report-issue" element={<StaffIssueReportPage />} />
           <Route path="notifications" element={<ActivityInboxPage />} />

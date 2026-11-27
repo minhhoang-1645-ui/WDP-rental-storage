@@ -5,6 +5,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { BillingService } from './billing.service.js';
+import { PayosService } from './payos.service.js';
 import { VnpayService } from './vnpay.service.js';
 
 @Controller('customer')
@@ -13,12 +14,16 @@ import { VnpayService } from './vnpay.service.js';
 @ApiTags('Customer Billing')
 @ApiBearerAuth('bearerAuth')
 export class CustomerBillingController {
-  constructor(private readonly billing: BillingService, private readonly config: ConfigService, private readonly vnpay: VnpayService) {}
+  constructor(private readonly billing: BillingService, private readonly config: ConfigService, private readonly vnpay: VnpayService, private readonly payos: PayosService) {}
 
   @Get('payment-config')
   @ApiOperation({ summary: 'Các kênh thanh toán khả dụng và thông tin nhận chuyển khoản', description: 'configured là khả dụng của chuyển khoản/QR ngân hàng; vnpayConfigured là khả dụng của VNPay. Không bao gồm thông tin xác thực hoặc bí mật ngân hàng/cổng thanh toán.' })
   @ApiOkResponse({ schema: { example: { configured: true, vnpayConfigured: true, bankName: 'Vietcombank', bankCode: '970436', accountNumber: '0123456789', accountName: 'NESTBOX STORAGE' } } })
   getPaymentConfig(@Req() request: AuthenticatedRequest) {
+    if (this.payos.cutover) {
+      if (this.payos.enabled) this.payos.assertConfigured();
+      return { configured: false, vnpayConfigured: false, payosConfigured: this.payos.enabled, cutover: true, demoEnabled: false };
+    }
     const bankName = this.config.get<string>('WDP_BANK_NAME')?.trim() ?? '';
     const bankCode = this.config.get<string>('WDP_BANK_CODE')?.trim() ?? '';
     const accountNumber = this.config.get<string>('WDP_BANK_ACCOUNT_NUMBER')?.trim() ?? '';
@@ -82,6 +87,7 @@ export class CustomerBillingController {
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc khách hàng.' })
   @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được gửi thông báo.' })
   createPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
+    if (this.payos.cutover) throw new BadRequestException('Chuyển khoản thủ công đã ngừng cho giao dịch mới.');
     return this.billing.createCustomerPaymentSubmission(request.user!.id, invoiceId, body, idempotencyKey);
   }
 
@@ -90,6 +96,7 @@ export class CustomerBillingController {
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Yêu cầu demo đang chờ Manager xác nhận; chưa tạo Payment.' })
   createDemoPaymentSubmission(@Req() request: AuthenticatedRequest, @Param('invoiceId') invoiceId: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
+    if (this.payos.cutover) throw new BadRequestException('Thanh toán demo đã ngừng.');
     return this.billing.createDemoPaymentSubmission(request.user!, invoiceId, body, idempotencyKey);
   }
 

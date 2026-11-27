@@ -135,6 +135,45 @@ it('keeps a newly created facility closed to new bookings until local configurat
  await expect(service.save(undefined,body,actor('BUSINESS_OPERATIONS_MANAGER'))).rejects.toThrow('cấu hình kho');
  expect(tx.facility.create).not.toHaveBeenCalled();
 });
+it('validates new closure dates at Vietnam midnight and preserves an overdue plan until its date changes', async () => {
+ const updatedAt = new Date('2026-11-01T00:00:00Z');
+ const open = { id: 'A', code: 'A', name: 'Facility', address: 'Address', officeHours: '8–17', accessHours: '8–20',
+  operationalStatus: 'OPEN', bookingEnabled: true, updatedAt };
+ const update = vi.fn(async ({ data }) => data);
+ const findUnique = vi.fn().mockResolvedValue(open);
+ const tx = { user: { findFirst: vi.fn().mockResolvedValue({ id: 'u' }) }, $queryRawUnsafe: vi.fn(),
+  facility: { findUnique, update }, reservation: { findMany: vi.fn().mockResolvedValue([]) }, auditEvent: { create: vi.fn() } };
+ const service = new OperationsService({ $transaction: async (fn: (t: unknown) => unknown) => fn(tx) } as never);
+ const bom = actor('BUSINESS_OPERATIONS_MANAGER');
+ const plan = { operationalStatus: 'CLOSING', closureReason: 'Hết hợp đồng mặt bằng', expectedUpdatedAt: updatedAt.toISOString() };
+ vi.useFakeTimers();
+ try {
+  vi.setSystemTime(new Date('2026-11-27T16:59:59.999Z'));
+  await expect(service.save('A', { ...plan, closureExpectedAt: '2026-11-27' }, bom))
+   .resolves.toMatchObject({ closureExpectedAt: new Date('2026-11-27') });
+  vi.setSystemTime(new Date('2026-11-27T17:00:00.000Z'));
+  update.mockClear();
+  await expect(service.save('A', { ...plan, closureExpectedAt: '2026-11-27' }, bom))
+   .rejects.toMatchObject({ status: 400, message: 'Ngày dự kiến ngừng phục vụ không được trước ngày hiện tại.' });
+  await expect(service.save('A', { ...plan, closureExpectedAt: '2026-11-31' }, bom))
+   .rejects.toMatchObject({ status: 400, message: 'Ngày dự kiến ngừng phục vụ không hợp lệ.' });
+  expect(update).not.toHaveBeenCalled();
+  for (const expected of ['', '2026-11-28', '2026-11-29']) {
+   await expect(service.save('A', { ...plan, closureExpectedAt: expected }, bom))
+    .resolves.toMatchObject({ closureExpectedAt: expected ? new Date(expected) : null });
+  }
+  findUnique.mockResolvedValue({ ...open, operationalStatus: 'CLOSING', bookingEnabled: false, closureMode: 'CONTRACT_EXPIRY',
+   closureReason: plan.closureReason, closurePlanId: 'plan', closureExpectedAt: new Date('2026-11-27') });
+  await expect(service.save('A', { ...plan, closureReason: 'Cập nhật lý do' }, bom))
+   .resolves.toMatchObject({ closureExpectedAt: new Date('2026-11-27'), closurePlanId: 'plan' });
+  await expect(service.save('A', { ...plan, closureExpectedAt: '2026-11-26' }, bom)).rejects.toMatchObject({ status: 400 });
+  await expect(service.save('A', { ...plan, closureExpectedAt: '2026-11-29' }, bom))
+   .resolves.toMatchObject({ closureExpectedAt: new Date('2026-11-29'), closurePlanId: 'plan' });
+  await expect(service.save('A', { ...plan, closureExpectedAt: '' }, bom)).resolves.toMatchObject({ closureExpectedAt: null });
+ } finally {
+  vi.useRealTimers();
+ }
+});
 it('resolves a policy at the supplied historical time without modifying the published version',async()=>{
  const asOf=new Date('2026-11-24T00:00:00Z');
  const db={businessRule:{findFirst:vi.fn().mockResolvedValue({value:90})},businessPolicy:{findUnique:vi.fn()}};

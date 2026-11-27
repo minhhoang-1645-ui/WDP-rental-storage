@@ -13,7 +13,7 @@ import { InvoiceIdentity, outstanding } from './customer-invoice-list';
 import { invoiceStyles as s } from './customer-invoice-styles';
 import { EmptyState, LoadingState, ErrorState } from './screen-state';
 
-const methods: Record<string, string> = { VNPAY: 'VNPay', CASH: 'Tiền mặt', BANK_TRANSFER: 'Chuyển khoản ngân hàng' };
+const methods: Record<string, string> = { PAYOS: 'payOS', VNPAY: 'VNPay', CASH: 'Tiền mặt', BANK_TRANSFER: 'Chuyển khoản ngân hàng' };
 const amount = (value: unknown) => typeof value === 'number' ? formatMoney(value) : '—';
 const dateLabel = (date: string) => date ? formatDate(date) : '';
 
@@ -56,7 +56,9 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
   const scheduled = invoicePaymentBlockedBySchedule(invoice, now);
   const supported = typeof invoice.onlinePaymentSupported === 'boolean' ? invoice.onlinePaymentSupported
     : ['INITIAL', 'RECURRING', 'RENEWAL'].includes(String(invoice.type));
-  const eligible = Boolean(id && payableBalance && !unsigned && !holdExpired && !scheduled && supported && bank.data?.vnpayConfigured === true);
+  const gateway = bank.data?.payosConfigured === true ? 'payOS' : 'VNPay';
+  const configured = bank.data?.payosConfigured === true || bank.data?.vnpayConfigured === true;
+  const eligible = Boolean(id && payableBalance && !unsigned && !holdExpired && !scheduled && supported && configured && !(gateway === 'payOS' && text(invoice, 'type') === 'SETTLEMENT'));
   const blocked = submissions.loading || Boolean(submissions.error) || pendingTransfer;
   const paymentScreen = selecting && payableBalance;
   const payments = rows(invoice.payments);
@@ -76,9 +78,9 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
   const reason = !payableBalance ? '' : holdExpired ? 'Đã hết hạn giữ kho cho đơn đặt này.'
     : scheduled ? 'Hóa đơn gia hạn chưa đến kỳ thanh toán.'
     : unsigned ? 'Bạn cần ký ' + (renewalId ? 'phụ lục gia hạn' : 'hợp đồng') + ' trước khi thanh toán.'
-    : !supported ? 'Loại hóa đơn này chưa hỗ trợ thanh toán qua VNPay.'
+    : !supported ? 'Loại hóa đơn này chưa hỗ trợ thanh toán trực tuyến.'
     : pendingTransfer ? ''
-    : !bank.loading && !bank.error && bank.data?.vnpayConfigured !== true ? 'VNPay hiện chưa khả dụng.' : '';
+    : !bank.loading && !bank.error && !configured ? 'Thanh toán trực tuyến hiện chưa khả dụng.' : '';
 
   return <View style={s.screen}>
     <InvoiceHeader title={paymentScreen ? "Thanh toán hóa đơn" : "Chi tiết hóa đơn"} onBack={paymentScreen ? () => setSelecting(false) : undefined} />
@@ -101,15 +103,15 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
 
       {paymentScreen ? <View style={s.section}>
         <Text accessibilityRole="header" style={s.title}>Phương thức thanh toán</Text>
-        <View style={s.method} accessible accessibilityLabel="VNPay, tự động xác nhận">
+        <View style={s.method} accessible accessibilityLabel={gateway + ", tự động xác nhận"}>
           <View style={s.iconSmall}><Check size={20} color={C.navy} /></View>
-          <View style={s.grow}><Text style={s.title}>VNPay / VNPay QR</Text><Text style={s.link}>Tự động xác nhận</Text></View>
+          <View style={s.grow}><Text style={s.title}>Thanh toán trực tuyến qua {gateway}</Text><Text style={s.link}>Quét mã QR bằng ứng dụng ngân hàng để thanh toán.</Text></View>
           <View style={[s.icon, s.providerBadge]}>
-            <Text style={s.link} numberOfLines={1} adjustsFontSizeToFit>VNPay</Text>
+            <Text style={s.link} numberOfLines={1} adjustsFontSizeToFit>{gateway}</Text>
           </View>
         </View>
         <View style={[s.hero, s.row]}><Info size={20} color={C.navy} />
-          <Text style={[s.body, s.grow]}>Bạn sẽ mở cổng VNPay để hoàn tất giao dịch. NestBox sẽ kiểm tra kết quả khi bạn quay lại.</Text></View><View style={s.card}><Text style={s.heading}>Lưu ý</Text><Text style={s.muted}>VNPay tự động xác nhận giao dịch. Bạn không cần gửi thông báo chuyển khoản thủ công.</Text></View>
+          <Text style={[s.body, s.grow]}>Bạn sẽ mở cổng {gateway} để hoàn tất giao dịch. NestBox sẽ kiểm tra kết quả khi bạn quay lại.</Text></View><View style={s.card}><Text style={s.heading}>Lưu ý</Text><Text style={s.muted}>{gateway} tự động xác nhận giao dịch. Bạn không cần gửi thông báo chuyển khoản thủ công.</Text></View>
       </View> : <>
         <View style={s.section}>
           <Text accessibilityRole="header" style={s.title}>Thông tin hóa đơn</Text>
@@ -143,8 +145,12 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         <Text style={s.heading}>Thông báo chuyển khoản đang chờ xác minh</Text>
         <Text style={s.muted}>Số dư sẽ cập nhật sau khi NestBox đối chiếu khoản chuyển.</Text>
       </View> : null}
-      {!paymentScreen && eligible && !blocked && <View style={[s.hero,s.row]}><Info size={18} color={C.cobalt} /><Text style={[s.body,s.grow]}>Hóa đơn này có thể thanh toán qua VNPay / VNPay QR.</Text></View>}
+      {!paymentScreen && eligible && !blocked && <View style={[s.hero,s.row]}><Info size={18} color={C.cobalt} /><Text style={[s.body,s.grow]}>Hóa đơn này có thể thanh toán qua {gateway}.</Text></View>}
       {reason ? <Text accessibilityRole="alert" style={s.muted}>{reason}</Text> : null}
+      {payableBalance && bank.data?.cutover === true && <View style={s.card}>
+        <Text style={s.heading}>Thanh toán tiền mặt tại cơ sở</Text>
+        <Text style={s.muted}>Mang mã hóa đơn đến cơ sở. Hóa đơn cập nhật sau khi quản lý ghi nhận khoản thu.</Text>
+      </View>}
       {!paymentScreen && text(invoice, 'renewalRequest.id') ? <Pressable accessibilityRole="button" style={[s.card, s.row]}
         onPress={() => router.push(('/customer/renewals/' + encodeURIComponent(text(invoice, 'renewalRequest.id'))) as Href)}>
         <Calendar size={18} color={C.cobalt} /><Text style={[s.heading, s.grow]}>Xem yêu cầu gia hạn</Text><ChevronRight size={17} color={C.muted} />
@@ -155,7 +161,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
     </ScrollView>
     <View style={s.footer}>
       <OnlinePayment invoiceId={id} invoiceType={String(invoice.type)} eligible={paymentScreen && eligible} disabled={blocked}
-        paid={paid} refresh={refresh} onWaitingChange={setWaiting} actionTitle="Tiếp tục với VNPay" hidePaidSummary showStartAction={paymentScreen} />
+        paid={paid} refresh={refresh} onWaitingChange={setWaiting} actionTitle={"Tiếp tục với " + gateway} hidePaidSummary showStartAction={paymentScreen} />
     </View>
     {!paymentScreen && ((eligible && !blocked) || waiting && payableBalance || payableBalance && unsigned && !holdExpired && !scheduled) ? <View style={s.footer}>
       <Pressable accessibilityRole="button" style={s.action} onPress={() => {
@@ -163,7 +169,7 @@ function InvoiceDetails({ invoice, refresh }: { invoice: Row; refresh: () => voi
         else setSelecting(true);
       }}>
         <CreditCard size={19} color={C.onHero} />
-        <Text style={[s.heading, s.white]}>{waiting ? 'Theo dõi VNPay' : unsigned ? 'Xem và ký ' + (renewalId ? 'phụ lục' : 'hợp đồng') : 'Thanh toán với VNPay'}</Text>
+        <Text style={[s.heading, s.white]}>{waiting ? 'Theo dõi giao dịch' : unsigned ? 'Xem và ký ' + (renewalId ? 'phụ lục' : 'hợp đồng') : 'Thanh toán với ' + gateway}</Text>
       </Pressable>
     </View> : null}
   </View>;

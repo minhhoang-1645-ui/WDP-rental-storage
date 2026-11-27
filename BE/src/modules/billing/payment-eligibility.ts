@@ -1,13 +1,8 @@
 type Contract = { id: string; contractCode: string; termsAcceptedAt?: Date | null };
 type Invoice = { type: string; reservation: { quantity: number; contracts: Contract[] }; renewalRequest?: { id: string; status: string; appendixAcceptedAt?: Date | null } | null };
 
-export function supportsOnlinePayment(invoice: { type: string; pricingSnapshot?: unknown; depositSettlementId?: string | null }) {
-  if (['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) return true;
-  const pricing = invoice.pricingSnapshot as { adjustment?: string; sourceInvoiceId?: string; returnRequestId?: string; transferId?: string } | null;
-  return invoice.type === 'SETTLEMENT' && !invoice.depositSettlementId &&
-    (pricing?.adjustment === 'PAYMENT_OVERDUE' && Boolean(pricing.sourceInvoiceId) ||
-      ['PERIOD_CLOSEOUT_V1', 'RETURN_OVERDUE'].includes(pricing?.adjustment ?? '') && Boolean(pricing?.returnRequestId) ||
-      ['TRANSFER_FINANCE', 'TRANSFER_RETURN_BALANCE'].includes(pricing?.adjustment ?? '') && Boolean(pricing?.transferId));
+export function supportsOnlinePayment(invoice: { type: string }) {
+  return ['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type);
 }
 
 /** Display metadata only; BillingService still validates signatures inside payment transactions. */

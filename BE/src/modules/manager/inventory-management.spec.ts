@@ -29,6 +29,17 @@ function fixture() {
   return { tx, prisma, service: new InventoryManagementService(prisma as never) };
 }
 describe('Manager inventory configuration safety (mock DB only)', () => {
+  it('accepts HTTPS links and valid raster uploads, but rejects mislabeled image data', async () => {
+    const { service } = fixture();
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/0sAAAAASUVORK5CYII=';
+    for (const image of ['https://example.test/kho.png', 'data:image/png;base64,' + png]) {
+      await expect(service.saveType('type', { image, expectedUpdatedAt: version }, actor)).resolves.toMatchObject({ image });
+    }
+    await expect(service.saveType('type', {
+      image: 'data:image/webp;base64,' + png, expectedUpdatedAt: version,
+    }, actor)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('merges equivalent ground labels and lists locations independently of pagination', async () => {
     const { service, tx } = fixture();
     tx.storageUnit.groupBy.mockResolvedValue([{ floor: 'Ground', zone: 'a' }, { floor: 'Tầng trệt', zone: 'A' }, { floor: 'Tầng 1', zone: 'B' }]);

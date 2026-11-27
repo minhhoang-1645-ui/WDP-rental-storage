@@ -2,6 +2,7 @@ import { assertFacility, facilityIds } from '../facility-access/facility-access.
 import { assertPriceWithin, groupPriceKeys, lockPriceRange, maxMonthlyPrice, missingPriceRange, priceBounds, priceVersionStatus, resolveMonthlyRange, sizeGroups as groups } from '../pricing/monthly-price-range.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { rasterImageMime } from '../../raster-image.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -215,6 +216,17 @@ export class InventoryManagementService {
   private optionalInteger(value: unknown, title: string) { return value === null || value === undefined || value === '' ? null : this.integer(value, title, 1, 100000); }
   private image(value: unknown) {
     if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'string' && value.startsWith('data:')) {
+      const maxBytes = 1024 * 1024;
+      if (value.length <= 4 * Math.ceil(maxBytes / 3) + 32) {
+        const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+        if (match) {
+          const bytes = Buffer.from(match[2], 'base64');
+          if (bytes.length <= maxBytes && bytes.toString('base64') === match[2] && rasterImageMime(bytes) === match[1]) return value;
+        }
+      }
+      throw new BadRequestException('Tệp ảnh phải là JPG, PNG hoặc WebP hợp lệ, tối đa 1 MB.');
+    }
     const result = this.text(value, 'Ảnh', 2000);
     if (!/^https:\/\/[^\s]+$/i.test(result) && !/^\/(?!\/)[^\s]*$/.test(result)) throw new BadRequestException('Ảnh phải là URL HTTPS hoặc đường dẫn ảnh nội bộ.');
     return result;

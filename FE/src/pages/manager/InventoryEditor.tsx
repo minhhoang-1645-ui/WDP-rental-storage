@@ -1,5 +1,5 @@
 import { EntitySelect } from '../../components/EntitySelect';
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 
 import { useAuth } from '../../auth/auth-context';
 import { Modal, LoadState } from '../../components/manager/PortalUi';
@@ -9,6 +9,18 @@ import { mutate } from '../../services/portal';
 import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { useOutletContext } from 'react-router-dom';
 import { priceRangeFor, priceRangeLabel, priceRangeNotice, type PriceRange } from './inventory-pricing';
+
+const imageFileTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const maxImageBytes = 1024 * 1024;
+
+function readInventoryImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được tệp ảnh.'));
+    reader.onerror = () => reject(new Error('Không đọc được tệp ảnh.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function NewInventoryUnit({ onClose, onSaved }: { onClose: () => void; onSaved: (saved: Row) => void }) {
   const [creatingType, setCreatingType] = useState(false);
@@ -52,6 +64,31 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
   const [price, setPrice] = useState(first(record ?? {}, 'monthlyRate'));
   const [enabled, setEnabled] = useState<boolean | undefined>(record ? record.bookingEnabled !== false : undefined);
   const [daily, setDaily] = useState(record?.allowDailyRental === true);
+  const initialImage = first(record ?? {}, 'image');
+  const [image, setImage] = useState(initialImage);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageError, setImageError] = useState('');
+  const [filePreview, setFilePreview] = useState('');
+  useEffect(() => {
+    if (!imageFile) {
+      setFilePreview('');
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setFilePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+  const imagePreview = imageFile ? filePreview : image === initialImage || /^https:\/\//i.test(image) ? image : '';
+
+  function chooseImage(file: File) {
+    if (!imageFileTypes.includes(file.type) || file.size === 0 || file.size > maxImageBytes) {
+      setImageError('Chọn ảnh JPG, PNG hoặc WebP tối đa 1 MB.');
+      return;
+    }
+    setImageError('');
+    setImage('');
+    setImageFile(file);
+  }
   const storageTypes = rows(options.data?.items);
   const selectedType = storageTypes.find(row => row.id === storageTypeId);
   const needsType = Boolean(!type && onCreateType && options.data && !options.error && !storageTypes.length);
@@ -80,6 +117,7 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
     if (record) input.expectedUpdatedAt = record.updatedAt;
     lock.current = true; setBusy(true); setError('');
     try {
+      if (type) input.image = imageFile ? await readInventoryImage(imageFile) : image.trim();
       const saved = await mutate<Row>(`/manager/${type ? 'storage-types' : 'units'}${record ? `/${encodeURIComponent(first(record, 'id'))}` : ''}`, record ? 'PATCH' : 'POST', input);
       onSaved(saved);
     } catch (caught) {
@@ -88,9 +126,12 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
     }
     finally { lock.current = false; setBusy(false); }
   };
-  const field = (name: string, title: string, numeric = false, required = true, maximum = 100000) => <label className="field-label" key={name}>{title}<input name={name} type={numeric ? 'number' : 'text'} defaultValue={first(record ?? {}, name)} required={required} min={numeric ? 1 : undefined} max={numeric ? maximum : undefined} step={numeric ? 1 : undefined} maxLength={numeric ? undefined : 100} /></label>;
+  const field = (name: string, title: string, numeric = false, required = true, maximum = 100000) => <label className="field-label" key={name}>{title}<input name={name} type={numeric ? 'number' : 'text'} defaultValue={first(record ?? {}, name)} required={required} min={numeric ? 1 : undefined} max={numeric ? maximum : undefined} step={numeric ? 1 : undefined} maxLength={numeric ? undefined : name === 'imageAlt' ? maximum : 100} /></label>;
   return <Modal title={`${record ? 'Sửa' : 'Thêm'} ${type ? 'loại kho' : 'kho vật lý'}`} onClose={close} busy={busy}
-    className={type ? undefined : 'inventory-unit-dialog'} footer={type ? undefined : <>
+    className={type ? 'inventory-type-dialog' : 'inventory-unit-dialog'} footer={type ? <>
+      <button type="button" className="button-secondary" disabled={busy} onClick={close}>Hủy</button>
+      <button type="submit" form={formId} className="button-primary" disabled={busy || priceError || !options.data}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
+    </> : <>
       <button type="button" className="button-secondary" disabled={busy} onClick={close}>{locked ? 'Đóng' : 'Hủy'}</button>
       {needsType ? <button type="button" className="button-primary" onClick={onCreateType}>Thêm loại kho</button> : !locked && <button type="submit" form={formId} className="button-primary" disabled={busy || !options.data || !selectedType}>
         {busy ? 'Đang lưu…' : record ? 'Lưu thay đổi' : 'Thêm kho'}
@@ -113,9 +154,13 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
             <small id={formId + '-type-code'}>Mã này dùng làm tiền tố của mã kho vật lý. Chỉ dùng chữ, số, gạch ngang hoặc gạch dưới.</small>
           </label>
           {field('name', 'Tên loại kho')}
+          <div className="inventory-type-grid">
           <label className="field-label">Nhóm kho<select aria-label="Nhóm kho" name="sizeId" value={sizeId} onChange={event => setSizeId(event.target.value)}>{Object.entries(object(options.data?.groups)).map(([value, title]) => <option key={value} value={value}>{String(title)}</option>)}</select></label>
           <label className="field-label">Điều kiện<select aria-label="Điều kiện" name="condition" defaultValue={first(record ?? {}, 'condition') || 'STANDARD'}><option value="STANDARD">Tiêu chuẩn</option><option value="AIR_CONDITIONED">Điều hòa</option></select></label>
-          {field('widthCm', 'Rộng (cm)', true)}{field('lengthCm', 'Dài (cm)', true)}{field('heightCm', 'Cao (cm)', true)}
+          </div>
+          <div className="inventory-type-grid inventory-type-dimensions">
+            {field('widthCm', 'Rộng (cm)', true)}{field('lengthCm', 'Dài (cm)', true)}{field('heightCm', 'Cao (cm)', true)}
+          </div>
           <label className="field-label">Giá tháng (VND)<input name="monthlyRate" type="number" min={1} max={9999999999} step={1}
             required={!record || record.monthlyRate !== null} value={price} aria-invalid={outside} aria-describedby={formId + '-price'}
             onChange={event => setPrice(event.target.value)} /></label>
@@ -124,12 +169,42 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
             {outside && <p className="booking-alert is-error" role="alert">Giá tháng đang nằm ngoài khung cho phép.</p>}
             {scheduled && <small className="inventory-price-next">{priceRangeNotice(scheduled)}</small>}
           </div>
-          <label><input type="checkbox" checked={bookingEnabled} disabled={!priceRange && !bookingEnabled}
+          <label className="inventory-type-toggle"><input type="checkbox" checked={bookingEnabled} disabled={!priceRange && !bookingEnabled}
             onChange={event => setEnabled(event.target.checked)} /> Bật kinh doanh loại kho</label>
-          <label><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
+          <label className="inventory-type-toggle"><input name="allowDailyRental" type="checkbox" checked={daily} onChange={event => setDaily(event.target.checked)} /> Cho thuê theo ngày</label>
           {daily && field('minRentalDays', 'Số ngày tối thiểu khi thuê ngày', true, true, 30)}
-          <label className="field-label">URL ảnh (tùy chọn)<input name="image" defaultValue={first(record ?? {}, 'image')} maxLength={2000} /></label>
-          {field('imageAlt', 'Mô tả ảnh', false, false)}
+          <section className="inventory-type-image">
+            <h3>Ảnh loại kho</h3>
+            <div className="inventory-type-grid">
+              <label className="field-label">Tải ảnh từ máy
+                <input type="file" accept={imageFileTypes.join(',')} aria-describedby={formId + '-image-help'}
+                  onChange={event => {
+                    const file = event.target.files?.[0];
+                    if (file) chooseImage(file);
+                    event.target.value = '';
+                  }} />
+                <small id={formId + '-image-help'}>{imageFile?.name ?? 'JPG, PNG hoặc WebP, tối đa 1 MB.'}</small>
+              </label>
+              <label className="field-label">Link ảnh HTTPS
+                <input value={image.startsWith('data:') ? '' : image} maxLength={2000} placeholder="https://..."
+                  onChange={event => {
+                    setImage(event.target.value);
+                    setImageFile(null);
+                    setImageError('');
+                  }} />
+              </label>
+            </div>
+            {imageError && <p role="alert">{imageError}</p>}
+            {(imageFile || image) && <div className="inventory-type-preview-row">
+              {imagePreview && <img key={imagePreview} src={imagePreview} alt="Xem trước ảnh loại kho" onError={event => { event.currentTarget.hidden = true; }} />}
+              <button type="button" className="button-secondary" onClick={() => {
+                setImage('');
+                setImageFile(null);
+                setImageError('');
+              }}>Bỏ ảnh</button>
+            </div>}
+            {field('imageAlt', 'Mô tả ảnh', false, false, 300)}
+          </section>
         </> : <>
           <h3>Thông tin kho</h3>
           <div className="field-label">
@@ -164,7 +239,6 @@ export function InventoryEditor({ kind, record, initialStorageTypeId, onCreateTy
             {field('row', 'Hàng', true, false)}{field('position', 'Vị trí trong hàng', true, false)}
           </div>
         </>}
-        {type && <button className="button-primary" type="submit" disabled={busy || priceError}>{busy ? 'Đang lưu…' : 'Lưu'}</button>}
       </fieldset>
     </form>}
   </Modal>;

@@ -22,6 +22,32 @@ function database() {
   return { user:{findFirst:vi.fn().mockResolvedValue({id:'admin'}),findMany:vi.fn().mockResolvedValue([])}, auditEvent: { create: vi.fn().mockResolvedValue({ id: 'event' }), count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([{ id: 'event', action: 'AUTH_LOGIN' }]) } };
 }
 describe('audit persistence and filters (mock DB)', () => {
+  it('limits permission history to account and access changes, including legacy routes', async () => {
+    const db = database();
+    const service = new AuditService(db as never);
+    db.auditEvent.findMany.mockResolvedValue([]);
+    const categoryFilter = { category: 'ACTIVITY', action: { notIn: ['AUTH_LOGIN', 'AUTH_LOGOUT', 'AUTH_LOGIN_ACCOUNT_DISABLED'] } };
+    const permissionFilter = { OR: [
+      { action: { in: [
+        'CHANGE_ROLE', 'GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'REVOKE_SESSION',
+        'REVOKE_SESSIONS', 'DISABLE_ACCOUNT', 'REACTIVATE_ACCOUNT', 'RELOCATE_FACILITY_ACCESS',
+      ] } },
+      { route: { in: [
+        '/admin/facility-access', '/admin/facility-access/:id/revoke', '/admin/facility-access/users/:id/role',
+        '/admin/facility-access/users/:id/relocate', '/admin/users/:id/status',
+      ] } },
+    ] };
+    await service.list({ category: 'ACTIVITY', scope: 'permissions' }, admin);
+    const where = expect.objectContaining({ AND: [categoryFilter, permissionFilter] });
+    expect(db.auditEvent.count).toHaveBeenLastCalledWith({ where });
+    expect(db.auditEvent.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where }));
+
+    await service.list({ category: 'ACTIVITY', action: 'DISABLE_ACCOUNT' }, admin);
+    expect(db.auditEvent.count).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ AND: [categoryFilter, { action: 'DISABLE_ACCOUNT' }] }),
+    });
+  });
+
   it('selects only successful account events and resolves only public target fields', async () => {
     const db = database();
     const item = { id: 'notice', resource: 'users', resourceId: 'target', action: 'UPDATE', outcome: 'SUCCESS' };

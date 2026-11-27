@@ -91,7 +91,12 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   });
   if (!response.ok) {
     if (path === '/auth/login' && response.status === 404) throw new ApiError('Không tìm thấy API đăng nhập. Kiểm tra địa chỉ máy chủ và khởi động lại ứng dụng.', 404);
-    if (path === '/auth/login' && response.status === 401) throw new ApiError('Email hoặc mật khẩu không đúng.', 401);
+    if (path === '/auth/login' && response.status === 401) {
+      const message = payload?.code === 'ACCOUNT_DISABLED'
+        ? 'Tài khoản của bạn đã bị quản trị viên khóa. Vui lòng liên hệ bộ phận hỗ trợ NestBox.'
+        : 'Email hoặc mật khẩu không đúng.';
+      throw new ApiError(message, 401, payload);
+    }
     if (response.status === 401 && token && await authStorage.getToken() === token) onSessionExpired?.();
     const rawMessage = payload && typeof payload === 'object' && 'message' in payload
       ? (payload as { message?: unknown }).message

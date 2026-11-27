@@ -13,7 +13,6 @@ const accounts = roles.map(([role, fullName], index) => ({
   id: 'role-test-' + index, role, fullName, email: `role-${index}@example.test`, accountStatus: 'ACTIVE',
 }));
 const browser = await launchTestBrowser();
-const compactText = (value) => value.replace(/\s+/g, ' ').trim();
 
 try {
   for (const [theme, width] of [['light', 1366], ['dark', 390]]) {
@@ -86,7 +85,6 @@ try {
       assert.equal(await dialog.getByRole('checkbox').count(), 0);
       assert(!((await dialog.innerText()).includes(key)));
       const scope = await dialog.locator('.admin-role-dialog-facts dd').first().innerText();
-      const permissions = await dialog.locator('.admin-role-permissions').innerText();
       assert(await dialog.evaluate(el => el.getBoundingClientRect().right <= innerWidth && el.scrollWidth <= el.clientWidth + 1));
       const layout = await dialog.evaluate(el => {
         const heading = el.querySelector('.portal-dialog-heading');
@@ -137,10 +135,9 @@ try {
       await account.click();
       await page.getByRole('tab', { name: 'Phân quyền', exact: true }).click();
       const details = page.getByRole('tabpanel', { name: 'Phân quyền', exact: true });
-      await details.getByText('Chi tiết quyền và giới hạn', { exact: true }).click();
-      await details.locator('.admin-role-permissions').waitFor();
+      assert.equal(await details.getByText('Chi tiết quyền và giới hạn', { exact: true }).count(), 0);
+      await details.locator('.admin-permission-cards').waitFor();
       assert.equal(await details.locator('.admin-permission-role > span').last().innerText(), scope);
-      assert.equal(compactText(await details.locator('.admin-role-permissions').innerText()), compactText(permissions));
       await page.goto(base + '/admin/roles');
     }
     assert.deepEqual(errors, []);

@@ -358,7 +358,11 @@ async function testAccounts() {
   await page.getByRole('link', { name: 'Khóa tài khoản', exact: true }).click();
   const permissions = page.getByRole('tabpanel', { name: 'Phân quyền' });
   for (const action of ['Khóa tài khoản', 'Mở khóa tài khoản']) {
-    if (action.startsWith('Mở')) await permissions.getByRole('button', { name: action, exact: true }).click();
+    if (action.startsWith('Mở')) {
+      await page.getByRole('navigation', { name: 'Đường dẫn tài khoản' }).getByRole('link', { name: 'Quản lý tài khoản' }).click();
+      await page.getByRole('button', { name: 'Thao tác tài khoản user-23@example.test' }).click();
+      await page.getByRole('link', { name: action, exact: true }).click();
+    }
     const confirmation = page.getByRole('dialog', { name: new RegExp(action, 'i') });
     const confirm = confirmation.getByRole('button', { name: action, exact: true });
     await confirm.waitFor();

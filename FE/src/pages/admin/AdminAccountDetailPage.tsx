@@ -2,7 +2,7 @@ import { accessPath, type AccountAccess } from './AdminFacilityAccessPage';
 import { AdminAccountSessions } from './AdminAccountSessions';
 import { AdminAvatar } from './AdminAvatar';
 import { AccountRoleEditor } from './AccountRoleEditor';
-import { ArrowLeft, CircleCheck, History, Inbox, Lock, LockOpen, Mail, Pencil, RefreshCw, Settings, Warehouse } from 'lucide-react';
+import { ArrowLeft, CircleCheck, History, Inbox, Mail, Pencil, RefreshCw, Settings, Warehouse } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
@@ -61,15 +61,6 @@ export function AdminAccountDetailPage() {
     const nextTab = tabs[nextIndex].id;
     changeTab(nextTab);
     document.getElementById('admin-tab-' + nextTab)?.focus();
-  }
-
-  function showStatusConfirmation() {
-    setParams(previous => {
-      const updated = new URLSearchParams(previous);
-      updated.set('tab', 'permissions');
-      updated.set('status', next);
-      return updated;
-    }, { replace: true, state });
   }
 
   function onSaved(updated: Row, text: string) {
@@ -131,27 +122,25 @@ export function AdminAccountDetailPage() {
             <section className="manager-section admin-permission-current">
               <AccountRoleAccess value={row.role} />
             </section>
-            <section className="manager-section admin-permission-scope">
-              <h2>{facilityRole ? 'Phạm vi cơ sở' : 'Phạm vi truy cập'}</h2>
+            {facilityRole && <section className="manager-section admin-permission-scope">
+              <h2>Phạm vi cơ sở</h2>
               <div className="admin-scope-content">
                 <div>
-                  {facilityRole ? <>
-                    <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
-                    {access.data && (grants.length ? <ul className="admin-grants-summary">
-                      {grants.map(grant => <li key={grant.id}>
-                        <span className="admin-permission-icon"><Warehouse size={23} aria-hidden="true" /></span>
-                        <div><strong>{grant.facility.name}</strong><small>Cơ sở được cấp cho tài khoản</small></div>
-                        <Status value="ACTIVE" text="Đang được cấp quyền" />
-                      </li>)}
-                    </ul> : <p>Chưa được cấp quyền tại cơ sở nào.</p>)}
-                  </> : <p>Phạm vi truy cập được xác định theo vai trò hiện tại.</p>}
+                  <LoadState loading={access.loading} error={access.error} retry={access.refresh} />
+                  {access.data && (grants.length ? <ul className="admin-grants-summary">
+                    {grants.map(grant => <li key={grant.id}>
+                      <span className="admin-permission-icon"><Warehouse size={23} aria-hidden="true" /></span>
+                      <div><strong>{grant.facility.name}</strong><small>Cơ sở được cấp cho tài khoản</small></div>
+                      <Status value="ACTIVE" text="Đang được cấp quyền" />
+                    </li>)}
+                  </ul> : <p>Chưa được cấp quyền tại cơ sở nào.</p>)}
                 </div>
                 <div className="admin-scope-links">
-                  {facilityRole && <Link to={facilityAccessLink}><Settings size={18} aria-hidden="true" />Quản lý quyền cơ sở</Link>}
+                  <Link to={facilityAccessLink}><Settings size={18} aria-hidden="true" />Quản lý quyền cơ sở</Link>
                   <Link to={historyLink}><History size={18} aria-hidden="true" />Lịch sử thay đổi quyền</Link>
                 </div>
               </div>
-            </section>
+            </section>}
           </div>
           <div className="admin-permission-column">
             {facilityRole && <section className="manager-section admin-permission-work">
@@ -166,17 +155,6 @@ export function AdminAccountDetailPage() {
               refreshing={detail.refreshing || access.loading || access.refreshing}
               onRefresh={() => { detail.refresh(); access.refresh(); }}
               onSaved={() => { detail.refresh(); access.refresh(); setSaved({ id, row, previous: detail.data, text: 'Đã đổi vai trò tài khoản.' }); }} />}
-            <section className="manager-section admin-access-status">
-              <h2>Bảo mật tài khoản</h2>
-              {id === user?.id ? <p>Bạn đang dùng tài khoản này.</p> : canChange && <>
-                <p>{next === 'DISABLED'
-                  ? 'Khi khóa, người dùng không thể đăng nhập và các phiên còn hiệu lực sẽ kết thúc.'
-                  : 'Khi mở khóa, người dùng có thể đăng nhập lại.'}</p>
-                <button type="button" disabled={detail.refreshing || (next === 'DISABLED' && facilityRole && (access.loading || access.refreshing))}
-                  className={next === 'DISABLED' ? 'button-secondary portal-danger' : 'button-primary'}
-                  onClick={showStatusConfirmation}>{next === 'DISABLED' ? <Lock size={17} aria-hidden="true" /> : <LockOpen size={17} aria-hidden="true" />}{next === 'DISABLED' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}</button>
-              </>}
-            </section>
           </div>
         </div>
       </div>

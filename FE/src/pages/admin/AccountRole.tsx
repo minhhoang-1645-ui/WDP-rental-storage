@@ -102,21 +102,20 @@ export function AccountRoleAccess({ value }: { value: unknown }) {
         <div><h3>{title}</h3><p>{copy}</p></div>
       </li>;
     })}</ul>
-    <details className="admin-permission-limits"><summary>Chi tiết quyền và giới hạn</summary><RolePermissions role={role} /></details>
   </div>;
 }
-function RolePermissions({ role, modal = false }: { role: RoleInfo; modal?: boolean }) {
-  const permissions = modal ? role.access.flatMap(permission => permission.split(/(?<=\.) /)) : role.access;
+function RolePermissions({ role }: { role: RoleInfo }) {
+  const permissions = role.access.flatMap(permission => permission.split(/(?<=\.) /));
   return <div className="admin-role-permissions">
     <h3>Quyền và trách nhiệm chính</h3>
-    <ul role={modal ? 'list' : undefined}>{permissions.map(permission => <li key={permission}>
-      {modal && <Check size={16} aria-hidden="true" />}
+    <ul role="list">{permissions.map(permission => <li key={permission}>
+      <Check size={16} aria-hidden="true" />
       <span>{permission}</span>
     </li>)}</ul>
-    {modal ? <div className="admin-role-limits">
+    <div className="admin-role-limits">
       <Info size={17} aria-hidden="true" />
       <div><h3>Giới hạn quyền hạn</h3><p>{role.limits}</p></div>
-    </div> : <><h3>Giới hạn quyền hạn</h3><p>{role.limits}</p></>}
+    </div>
   </div>;
 }
 
@@ -174,7 +173,7 @@ function RoleRow({ value, role, modalHost }: { value: string; role: RoleInfo; mo
           <div><dt>Phạm vi truy cập</dt><dd>{role.scope}</dd></div>
           <div><dt>Số tài khoản</dt><dd>{count === null ? countState : count + ' tài khoản'}</dd></div>
         </dl>
-        <RolePermissions role={role} modal />
+        <RolePermissions role={role} />
       </Modal>, modalHost)}
     </td>
   </tr>;

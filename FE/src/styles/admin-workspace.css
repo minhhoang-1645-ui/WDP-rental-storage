@@ -268,9 +268,7 @@
 .admin-permission-cards li { display: flex; align-items: flex-start; gap: 12px; padding: 15px; border: 1px solid var(--workspace-border); border-radius: 12px; background: var(--workspace-background); }
 .admin-permission-icon { display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 10px; }
 .admin-permission-cards h3 { margin: 0; font-size: 1.08rem; font-weight: 750; }
-.admin-permission-cards p, .admin-permission-limits p, .admin-access-status p, .admin-permission-work > p { color: var(--workspace-secondary); margin: 5px 0 0; }
-.admin-permission-limits { margin-top: 12px; color: var(--workspace-secondary); }
-.admin-permission-limits summary { cursor: pointer; }
+.admin-permission-cards p, .admin-permission-work > p { color: var(--workspace-secondary); margin: 5px 0 0; }
 .admin-scope-content { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 20px; }
 .admin-scope-content > div:first-child { flex: 2 1 260px; min-width: 0; }
 .admin-scope-links { display: grid; gap: 12px; padding-inline-start: 14px; border-inline-start: 1px solid var(--workspace-border); }
@@ -285,7 +283,6 @@
 .admin-role-warning { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border-radius: 9px; background: var(--workspace-warning-bg); color: var(--workspace-warning); }
 .admin-role-warning svg { flex: none; }
 .admin-role-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 14px; }
-.admin-access-status > button { margin-top: 14px; }
 .admin-sessions .admin-detail-heading p { margin: 4px 0 0; color: var(--workspace-secondary); }
 .admin-session-toolbar { margin-bottom: 12px; }
 .workspace-themed[data-workspace-role="admin"] .admin-session-table .manager-table {
